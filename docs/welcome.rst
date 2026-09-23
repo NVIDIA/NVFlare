@@ -4,24 +4,26 @@
 Welcome to NVIDIA FLARE
 ############################
 
-What is Federated Learning?
-===========================
+What is Federated Computing?
+============================
 
-Federated learning lets multiple sites collaboratively train or evaluate models
-using their local data. Sites perform training or evaluation where the data
-resides and exchange model updates, metrics, or other approved results instead
-of collecting the underlying training examples in one place.
+Federated computing coordinates computation across independently controlled
+sites, bringing approved computation to local data instead of collecting the
+underlying datasets in one place. Sites exchange application-defined results
+according to the collaboration's and each site's policies. Applications include
+model training and evaluation, analytics, statistics, site-local data processing,
+and custom multi-site workflows.
 
 This approach can enable collaboration where privacy, regulation, data
 sovereignty, intellectual property, data ownership, or the cost of moving data
-makes central collection impractical. Federated learning includes centralized
-workflows such as federated averaging, decentralized workflows such as swarm
-learning, and horizontal or vertical collaboration patterns.
+makes central collection impractical.
 
-Federated learning is one application of the broader **federated computing**
-paradigm. Federated computing brings approved computation to data distributed
-across parties or locations. It also supports evaluation, analytics,
-statistics, site-local data processing, and custom multi-site computation.
+**Federated learning** is one application of federated computing. It lets
+multiple sites collaboratively train or evaluate models using their local data
+and exchange model updates, metrics, or other approved results. Federated learning
+includes centralized workflows such as federated averaging, decentralized
+workflows such as swarm learning, and horizontal or vertical collaboration
+patterns.
 
 What is NVIDIA FLARE?
 =====================

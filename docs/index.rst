@@ -31,8 +31,8 @@ NVIDIA FLARE
    Agent Skills <user_guide/agent_skills/index>
    Choose an API Path <user_guide/data_scientist_guide/api_selection>
    Client API <user_guide/data_scientist_guide/client_api_usage>
-   Job Recipe <user_guide/data_scientist_guide/job_recipe>
-   Recipe API <user_guide/data_scientist_guide/recipe_api>
+   Getting Started with Recipes <user_guide/data_scientist_guide/job_recipe>
+   Recipe API Reference <user_guide/data_scientist_guide/recipe_api>
    Available Recipes <user_guide/data_scientist_guide/available_recipes>
    Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    FLARE API <user_guide/data_scientist_guide/flare_api>

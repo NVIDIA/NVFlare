@@ -4,7 +4,7 @@
 
 ## Overview
 
-- [Welcome](welcome.md): Understand federated learning, federated computing, NVIDIA FLARE, data locality, and the development-to-production lifecycle.
+- [Welcome](welcome.md): Understand federated computing, federated learning as one application, NVIDIA FLARE, data locality, and the development-to-production lifecycle.
 - [What's New](whats_new.md): Review current release features and changes.
 - [Industry Use Cases](industry_use_cases.md): Explore applications and supporting material across industries.
 
@@ -19,8 +19,8 @@
 - [Agent Skills](user_guide/agent_skills/index.md): Use maintained coding-agent workflows for supported training projects, federated statistics, optimization, and diagnosis.
 - [Choose an API Path](user_guide/data_scientist_guide/api_selection.md): Select the Client API, Recipe, Collaboration API (Technical Preview), or lower-level components for a manual or custom integration.
 - [Client API](user_guide/data_scientist_guide/client_api_usage.md): Use the high-level API for federated training scripts.
-- [Job Recipe](user_guide/data_scientist_guide/job_recipe.md): Define and run federated jobs through maintained workflow builders.
-- [Recipe API](user_guide/data_scientist_guide/recipe_api.md): Build and extend recipes for common federated workflows.
+- [Getting Started with Recipes](user_guide/data_scientist_guide/job_recipe.md): Follow a task-oriented tutorial to create and run a job with a concrete recipe.
+- [Recipe API Reference](user_guide/data_scientist_guide/recipe_api.md): Look up method signatures, helper behavior, ordering requirements, and guarantees for those same recipes.
 - [Available Recipes](user_guide/data_scientist_guide/available_recipes.md): Browse bundled job recipes and supported patterns.
 - [Collaboration API (Technical Preview)](user_guide/data_scientist_guide/collab_api.md): Design custom server-controlled or peer-to-peer algorithms and workflows.
 - [FLARE API](user_guide/data_scientist_guide/flare_api.md): Use runtime APIs to submit, monitor, and manage jobs.
