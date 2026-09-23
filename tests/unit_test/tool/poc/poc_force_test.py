@@ -520,7 +520,8 @@ participants:
         participant = {"name": "site-3", "type": "client", "org": "nvidia"}
         captured_dynamic_config = {}
 
-        def fake_prepare_project(dynamic_config):
+        def fake_prepare_project(dynamic_config, project_file=None):
+            assert project_file == str(workspace / "project.yml")
             captured_dynamic_config.update(dynamic_config)
             return object()
 

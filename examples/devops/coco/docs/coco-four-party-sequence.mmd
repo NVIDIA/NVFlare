@@ -1,0 +1,64 @@
+---
+config:
+  sequence:
+    mirrorActors: true
+---
+sequenceDiagram
+    autonumber
+    participant T as Trusted platform<br/>system
+    participant P as NVFlare<br/>provisioning node
+    participant S as Secure services<br/>TLS registry / Trustee<br/>KBS / AS / RVPS
+    participant C as CoCo IT + cluster<br/>Untrusted host<br/>Protected guest inside
+
+    Note over T,C: Current workflow: AMD SEV-SNP + NVIDIA confidential GPU, Kata 3.29.0 with an approved launch profile
+
+    rect rgb(233, 242, 255)
+        Note over T,C: 1. Prepare and approve the platform
+        S->>S: Deploy TLS private registry and Trustee<br/>KBS, Attestation Service and RVPS
+        T->>T: Fetch pinned public Helm chart<br/>and upstream kata-deploy image
+        T->>T: Install runtime, define workload launch profile<br/>Run nonce-bound SNP collector Pod, repeat rehearsal
+        T->>T: Verify AMD certificate chain, signed report,<br/>nonce and TCB, finalize report-derived measurement
+        Note over T,P: The signed report supplies the approved measurement, offline calculation is diagnostic only.<br/>The four TCB minimums require independent review, not automatic approval of observed versions.
+        T->>P: platform-reference-values.json + separate<br/>approved launch contract + public chart/pins
+        P->>S: Authenticated transfer of five-value JSON only<br/>Measurement + four approved TCB minimums
+        S->>S: Approve sender/values, install RVPS references<br/>Use service-owned AS CPU and GPU policies
+        S-->>P: Public TLS certificates and AS signing public key<br/>Publisher credential via confidential channel
+        P->>C: Public installation kit: chart, runtime digest pins,<br/>approved runtime configuration and public TLS trust
+        C->>C: Install Kubernetes, Kata and GPU Operator<br/>Pull pinned kata-deploy image from public upstream
+        Note over T,C: kata-deploy-3.29.0.tgz is the Helm chart, not the runtime payload.<br/>The separate upstream kata-deploy image provides /opt/kata guest kernel/rootfs, firmware and runtime artifacts.<br/>This public runtime image is distinct from the private registry's encrypted workload image.
+    end
+
+    rect rgb(236, 249, 241)
+        Note over P,C: 2. Prepare an immutable workload release
+        P->>P: Provision signed NVFlare startup kit, build/review image<br/>Use approved launch contract, silence host-visible logs
+        P->>P: Generate per-release image key<br/>Encrypt every OCI layer with CoCo key provider
+        P->>S: Push encrypted image to TLS private registry<br/>Resolve immutable manifest digest
+        P->>S: Cosign-sign that digest and publish signature<br/>Private signing key stays on provisioning node
+        P->>P: Verify publication, run genpolicy<br/>Bind image, command and strict guest policy into init-data
+        P->>S: Confidential authenticated six-file release handoff<br/>Key, public signing key, image policy, authorization,<br/>resource-policy fragment and checksum manifest
+        S->>S: Authenticate and review release, install three resources<br/>Merge tested path-specific KBS authorization
+        S-->>P: Release authorization installed<br/>Platform CPU/GPU gates remain mandatory
+        P->>C: One immutable Pod YAML<br/>Expected SHA-256 via independent authenticated channel
+        Note over P,C: CoCo IT receives no plaintext image, image key, signing private key, publisher credential or KBS admin token.<br/>The Pod checksum detects handoff errors, guest enforcement and attested KBS policy remain the security boundary.
+    end
+
+    rect rgb(255, 246, 231)
+        Note over P,C: 3. Launch, attest CPU + GPU, and authorize resource release
+        C->>C: IT applies Pod YAML, Kata boots confidential guest<br/>Use approved launch inputs and GPU passthrough
+        C->>S: Guest image service fetches encrypted image<br/>and signature by immutable digest
+        C->>S: Guest attestation agent starts KBS attestation
+        S-->>C: KBS sends fresh challenge
+        C->>S: Guest submits CPU + GPU evidence<br/>Bind challenge, guest public key and init-data
+        S->>S: AS verifies AMD and NVIDIA evidence<br/>RVPS measurement/TCB match, GPU NRAS/RIM validation,<br/>produce signed CPU + GPU appraisal results
+        S-->>C: Return signed attestation token<br/>Bound to the attested guest public key
+        C->>S: Guest requests release-specific KBS resource paths<br/>Present attestation token
+        S->>S: KBS checks approved CPU + GPU trust vectors<br/>AND init-data, image, command and requested resource path
+        alt All attestation and workload-release checks pass
+            S-->>C: JWE-wrapped approved resources<br/>Decryptable only by the attested guest key
+            C->>C: Inside guest: enforce signature policy and agent policy,<br/>decrypt workload layers, start authorized workload
+            C-->>P: Authenticated management/application evidence<br/>Trusted operator verifies readiness over owner-controlled mTLS
+        else Any attestation, identity or resource-path check fails
+            S-->>C: Deny protected resource release<br/>No workload decryption key
+        end
+        Note over P,C: Guest digest/signature/decryption/policy failures also block workload start.<br/>Host-visible Pod status is not trusted proof of success, host control can still stop or deny service.<br/>No guest shell/exec/attach or plaintext output is part of this handoff.
+    end

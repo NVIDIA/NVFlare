@@ -1,0 +1,196 @@
+{
+  "common": {
+    "default_caps": [
+      "CAP_CHOWN",
+      "CAP_DAC_OVERRIDE",
+      "CAP_FSETID",
+      "CAP_FOWNER",
+      "CAP_MKNOD",
+      "CAP_NET_RAW",
+      "CAP_SETGID",
+      "CAP_SETUID",
+      "CAP_SETFCAP",
+      "CAP_SETPCAP",
+      "CAP_NET_BIND_SERVICE",
+      "CAP_SYS_CHROOT",
+      "CAP_KILL",
+      "CAP_AUDIT_WRITE"
+    ]
+  },
+  "cluster_config": {
+    "pause_container_image": "mcr.microsoft.com/oss/kubernetes/pause:3.6"
+  },
+  "container": {
+    "OCI": {
+      "Version": "1.1.0",
+      "Process": {
+        "Terminal": false,
+        "User": {
+          "UID": 65535,
+          "GID": 65535,
+          "AdditionalGids": [
+            65535
+          ],
+          "Username": ""
+        },
+        "Args": [
+          "/pause"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "Cwd": "/",
+        "Capabilities": {
+          "Ambient": [],
+          "Bounding": [
+            "$(default_caps)"
+          ],
+          "Effective": [
+            "$(default_caps)"
+          ],
+          "Inheritable": [],
+          "Permitted": [
+            "$(default_caps)"
+          ]
+        },
+        "NoNewPrivileges": true
+      },
+      "Root": {
+        "Path": "$(root_path)",
+        "Readonly": true
+      },
+      "Mounts": [
+        {
+          "destination": "/proc",
+          "source": "proc",
+          "type_": "proc",
+          "options": [
+            "nosuid",
+            "noexec",
+            "nodev"
+          ]
+        },
+        {
+          "destination": "/dev",
+          "source": "tmpfs",
+          "type_": "tmpfs",
+          "options": [
+            "nosuid",
+            "strictatime",
+            "mode=755",
+            "size=65536k"
+          ]
+        },
+        {
+          "destination": "/dev/pts",
+          "source": "devpts",
+          "type_": "devpts",
+          "options": [
+            "nosuid",
+            "noexec",
+            "newinstance",
+            "ptmxmode=0666",
+            "mode=0620",
+            "gid=5"
+          ]
+        },
+        {
+          "destination": "/dev/shm",
+          "source": "/run/kata-containers/sandbox/shm",
+          "type_": "bind",
+          "options": [
+            "rbind"
+          ]
+        },
+        {
+          "destination": "/dev/mqueue",
+          "source": "mqueue",
+          "type_": "mqueue",
+          "options": [
+            "nosuid",
+            "noexec",
+            "nodev"
+          ]
+        },
+        {
+          "destination": "/sys",
+          "source": "sysfs",
+          "type_": "sysfs",
+          "options": [
+            "nosuid",
+            "noexec",
+            "nodev",
+            "ro"
+          ]
+        },
+        {
+          "destination": "/etc/resolv.conf",
+          "source": "$(sfprefix)resolv.conf$",
+          "type_": "bind",
+          "options": [
+            "rbind",
+            "ro",
+            "nosuid",
+            "nodev",
+            "noexec"
+          ]
+        }
+      ],
+      "Annotations": {
+        "io.katacontainers.pkg.oci.bundle_path": "/run/containerd/io.containerd.runtime.v2.task/k8s.io/$(bundle-id)",
+        "io.katacontainers.pkg.oci.container_type": "pod_sandbox",
+        "io.kubernetes.cri.container-type": "sandbox",
+        "io.kubernetes.cri.sandbox-id": "^[a-z0-9]{64}$",
+        "io.kubernetes.cri.sandbox-log-directory": "^/var/log/pods/$(sandbox-namespace)_$(sandbox-name)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "io.kubernetes.cri.sandbox-name": "^pause-profile-fixture$",
+        "io.kubernetes.cri.sandbox-namespace": "",
+        "nerdctl/network-namespace": "^/var/run/netns/cni-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      },
+      "Linux": {
+        "Namespaces": [
+          {
+            "Type": "ipc",
+            "Path": ""
+          },
+          {
+            "Type": "uts",
+            "Path": ""
+          },
+          {
+            "Type": "mount",
+            "Path": ""
+          }
+        ],
+        "MaskedPaths": [
+          "/proc/acpi",
+          "/proc/asound",
+          "/proc/kcore",
+          "/proc/keys",
+          "/proc/latency_stats",
+          "/proc/timer_list",
+          "/proc/timer_stats",
+          "/proc/sched_debug",
+          "/sys/firmware",
+          "/proc/scsi"
+        ],
+        "ReadonlyPaths": [
+          "/proc/bus",
+          "/proc/fs",
+          "/proc/irq",
+          "/proc/sys",
+          "/proc/sysrq-trigger"
+        ],
+        "Devices": [],
+        "Sysctl": {
+          "net.ipv4.ip_unprivileged_port_start": "0",
+          "net.ipv4.ping_group_range": "0 2147483647"
+        }
+      }
+    },
+    "storages": [],
+    "devices": [],
+    "sandbox_pidns": false,
+    "exec_commands": [],
+    "runtime_anno_patterns": {}
+  }
+}
