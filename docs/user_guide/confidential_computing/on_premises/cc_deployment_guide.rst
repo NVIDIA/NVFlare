@@ -20,7 +20,7 @@ application vault, sidecars and launch scripts. Application updates reuse the
 approved generic image and create a new vault.
 
 Prepare the hosts and key service
-================================
+=================================
 
 Configure a trusted Linux build worker with the builder's host tools and Python
 requirements. Hardware finalization and launch require a host supporting the
@@ -82,7 +82,7 @@ use ``cvmctl pull`` to verify and materialize a delivery from its archive or
 immutable registry reference. Follow ``USER_GUIDE.md`` for the exact commands.
 
 Launch and run a job
-===================
+====================
 
 On each configured TEE host, enter the materialized participant directory and
 run ``sudo ./launch_cvm.sh``. The launcher discovers the included CVM bundle.
