@@ -19,7 +19,6 @@ from typing import Dict, Optional
 import numpy as np
 
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
@@ -28,10 +27,16 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 class FedAvgClippedAggregator(ModelAggregator):
     """Standard NVFLARE FedAvg with client-update L2 clipping."""
 
+    # Bound client-reported step weights so a malicious metadata value
+    # cannot create an arbitrarily large aggregation contribution.
+    MAX_NUM_STEPS_WEIGHT = 1_000_000.0
+
     def __init__(
         self,
         max_update_norm: Optional[float] = 10.0,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        expected_schema: Optional[Dict[str, tuple]] = None,
+        expected_dtypes: Optional[Dict[str, str]] = None,
     ):
         super().__init__()
 
@@ -41,13 +46,21 @@ class FedAvgClippedAggregator(ModelAggregator):
 
         self.max_update_norm = max_update_norm
         self.aggregation_weights = aggregation_weights or {}
+        self.expected_schema = expected_schema
+        self.expected_dtypes = expected_dtypes
+
+        if (expected_schema is None) != (expected_dtypes is None):
+            raise ValueError("expected_schema and expected_dtypes must be provided together")
+
+        if expected_schema is not None:
+            if set(expected_schema) != set(expected_dtypes):
+                raise ValueError("expected_schema and expected_dtypes must contain the same keys")
 
         self._aggr_helper = WeightedAggregationHelper()
         self._aggr_metrics_helper = WeightedAggregationHelper()
 
         self._params_type = None
         self._current_round = 0
-        self._fl_ctx: Optional[FLContext] = None
 
     def _get_client_name(self, model: FLModel) -> str:
         client_name = model.meta.get("client_name")
@@ -56,6 +69,41 @@ class FedAvgClippedAggregator(ModelAggregator):
             raise ValueError("client_name is required in model metadata")
 
         return str(client_name)
+
+    def _validate_schema(self, params: Dict[str, np.ndarray], client_name: str):
+        if self.expected_schema is None:
+            return
+
+        expected_keys = set(self.expected_schema)
+        received_keys = set(params)
+
+        missing = sorted(expected_keys - received_keys)
+        extra = sorted(received_keys - expected_keys)
+
+        if missing or extra:
+            raise ValueError(
+                f"Parameter schema mismatch for client {client_name}: " f"missing={missing}, extra={extra}"
+            )
+
+        for name, value in params.items():
+            expected_shape = tuple(self.expected_schema[name])
+            received_shape = tuple(np.asarray(value).shape)
+
+            if received_shape != expected_shape:
+                raise ValueError(
+                    f"Parameter shape mismatch for client {client_name}, "
+                    f"{name}: expected {expected_shape}, got {received_shape}"
+                )
+
+            if self.expected_dtypes is not None:
+                expected_dtype = self.expected_dtypes[name]
+                received_dtype = str(np.asarray(value).dtype)
+
+                if received_dtype != expected_dtype:
+                    raise ValueError(
+                        f"Parameter dtype mismatch for client {client_name}, "
+                        f"{name}: expected {expected_dtype}, got {received_dtype}"
+                    )
 
     def _get_num_steps_weight(self, model: FLModel) -> float:
         value = model.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND)
@@ -70,6 +118,19 @@ class FedAvgClippedAggregator(ModelAggregator):
 
         if not np.isfinite(value) or value <= 0:
             return 1.0
+
+        return min(value, self.MAX_NUM_STEPS_WEIGHT)
+
+    def _get_aggregation_weight(self, client_name: str) -> float:
+        value = self.aggregation_weights.get(client_name, 1.0)
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid aggregation weight for client {client_name}") from None
+
+        if not np.isfinite(value) or value <= 0:
+            raise ValueError(f"Aggregation weight for client {client_name} must be positive and finite")
 
         return value
 
@@ -116,6 +177,7 @@ class FedAvgClippedAggregator(ModelAggregator):
             raise ValueError(f"FedAvgClippedAggregator expects DIFF, got {model.params_type}")
 
         client_name = self._get_client_name(model)
+        self._validate_schema(model.params, client_name)
 
         params = self._clip_params(model.params)
 
@@ -125,9 +187,12 @@ class FedAvgClippedAggregator(ModelAggregator):
         if model.current_round is not None:
             self._current_round = model.current_round
 
-        aggregation_weight = self.aggregation_weights.get(client_name, 1.0)
+        aggregation_weight = self._get_aggregation_weight(client_name)
         num_steps_weight = self._get_num_steps_weight(model)
-        weight = float(aggregation_weight) * num_steps_weight
+        weight = aggregation_weight * num_steps_weight
+
+        if not np.isfinite(weight) or weight <= 0:
+            raise ValueError(f"Invalid effective aggregation weight for client {client_name}: {weight}")
 
         self._aggr_helper.add(
             data=params,

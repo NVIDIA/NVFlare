@@ -42,6 +42,15 @@ def evaluate(checkpoint_path, test_path, batch_size, device):
     images = test_data["images"]
     labels = test_data["labels"]
 
+    if len(images) == 0:
+        raise ValueError("Evaluation dataset is empty")
+
+    if len(labels) == 0:
+        raise ValueError("Evaluation labels are empty")
+
+    if len(images) != len(labels):
+        raise ValueError(f"Evaluation images and labels have different lengths: " f"{len(images)} vs {len(labels)}")
+
     correct = 0
     total = len(labels)
 
@@ -56,6 +65,9 @@ def evaluate(checkpoint_path, test_path, batch_size, device):
             predictions = outputs.argmax(dim=1)
 
             correct += (predictions == batch_labels).sum().item()
+
+    if total == 0:
+        raise ValueError("Evaluation dataset contains zero samples")
 
     accuracy = 100.0 * correct / total
 

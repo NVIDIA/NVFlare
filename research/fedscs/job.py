@@ -67,14 +67,14 @@ def main():
     if args.method == "fedavg_clipped":
         aggregator = FedAvgClippedAggregator(
             max_update_norm=10.0,
+            expected_schema=expected_schema,
+            expected_dtypes=expected_dtypes,
         )
     elif args.method == "fedscs":
-        max_update_norm = 10.0
-
         aggregator = FedSCSAggregator(
             expected_schema=expected_schema,
             expected_dtypes=expected_dtypes,
-            max_update_norm=max_update_norm,
+            max_update_norm=10.0,
         )
 
     train_args = f"--data_dir {data_dir} --seed {args.seed}"
