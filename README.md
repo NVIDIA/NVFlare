@@ -140,7 +140,7 @@ The application stays consistent while its execution environment changes:
 | Stage | Purpose |
 |---|---|
 | [Simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html) (`SimEnv`) | Run a local job directly to test application code and algorithms, without first starting and administering a FLARE deployment. |
-| [Proof of Concept (POC)](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/poc_command.html) (`PocEnv`) | Start a local FLARE deployment to practice job submission, administration, and deployment behavior before moving to provisioned sites. |
+| [Proof&nbsp;of&nbsp;Concept&nbsp;(POC)](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/poc_command.html)&nbsp;(`PocEnv`) | Start a local FLARE deployment to practice job submission, administration, and deployment behavior before moving to provisioned sites. |
 | [Production](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) (`ProdEnv`) | Run across provisioned sites with production identities, authorization, networking, policies, and operations. |
 
 See the [run modes](https://nvflare.readthedocs.io/en/main/run_mode.html) and
