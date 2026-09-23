@@ -40,15 +40,20 @@ custom workflows, and deployment options.
 
 Create and activate a Python virtual environment as described in the
 [installation guide](https://nvflare.readthedocs.io/en/stable/installation.html), then install the latest stable
-NVFLARE release with its PyTorch integration:
+NVFLARE release with its PyTorch integration, retrieve the matching Hello PyTorch example, and run it:
 
 ```bash
 python -m pip install "nvflare[PT]"
+nvflare examples get hello-pt
+cd hello-pt
+python job.py --log_config progress
 ```
 
+This runs a two-client simulation on CPU using synthetic data; no dataset download is required.
+
 Continue with the [Quick Start for the stable release](https://nvflare.readthedocs.io/en/stable/quickstart.html) to
-run your first federation. If you use an older release, select its version in the documentation. Follow the example
-README for that release for dependencies, commands, and troubleshooting.
+understand the run and inspect its results. If you use an older release, select its version in the documentation.
+Follow the example README for that release for dependencies, commands, and troubleshooting.
 
 ## Choose your path
 
