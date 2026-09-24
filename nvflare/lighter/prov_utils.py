@@ -52,7 +52,11 @@ def prepare_builders(project_dict: dict):
     builders = list()
     for b in builder_config:
         builders.append(instantiate_from_config(b))
-    return builders
+    # Signing must follow every other builder's finalize(), so that files created
+    # during finalization are covered by signature.json.
+    from nvflare.lighter.impl.signature import order_builders_for_signing
+
+    return order_builders_for_signing(builders)
 
 
 def prepare_packager(project_dict: dict):

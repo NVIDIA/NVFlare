@@ -358,12 +358,14 @@ def main():
 
     builders = [
         WorkspaceBuilder(["master_template.yml"]),
+        # Immediately after WorkspaceBuilder: reverse finalization then signs
+        # files such as comm_config.json that later builders create in finalize().
+        SignatureBuilder(),
         StaticFileBuilder(
             config_folder="config",
             scheme="http",
         ),
         CertBuilder(),
-        SignatureBuilder(),
         EdgeBuilder(),
     ]
 

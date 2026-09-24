@@ -27,32 +27,26 @@ from nvflare.lighter.spec import Builder
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
 from .azure import AzureSimpleBuilder
 from .coco import CoCoBuilder
-from .onprem_cvm import OnPremCVMBuilder
 
 CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
 
 
-# (deploy_env, CPU_CC_MECHANISM, GPU_CC_MECHANISM)
 VALID_COMPUTE_ENVS = [
-    CCConfigValue.ONPREM_CVM,
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
     CCConfigValue.AZURE_CVM,
-    CCConfigValue.MOCK,
     CCConfigValue.CONFIDENTIAL_CONTAINERS,
 ]
 
 
 BUILDER_CLASSES = {
-    CCConfigValue.ONPREM_CVM: OnPremCVMBuilder,
     CCConfigValue.AZURE_CVM: AzureSimpleBuilder,
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER: AzureSimpleBuilder,
-    CCConfigValue.MOCK: OnPremCVMBuilder,
     CCConfigValue.CONFIDENTIAL_CONTAINERS: CoCoBuilder,
 }
 
 
 class CCBuilder(Builder):
-    """Builder that coordinates different CC implementations (AzureCVM, OnPremCVM, etc.).
+    """Builder that coordinates supported confidential computing implementations.
 
     Each CC implementation builder handles all participants that use its implementation.
     This builder also sets up the CCManager component for each participant.
@@ -119,6 +113,8 @@ class CCBuilder(Builder):
         for participant in project.get_all_participants():
             config_path = participant.get_prop(PropKey.CC_CONFIG)
             if config_path:
+                # An explicitly requested confidential participant must never fall back to a
+                # standard startup kit because its configuration is missing or invalid.
                 try:
                     config_path = resolve_cc_config(project, config_path)
                     cc_config = self._load_and_validate_cc_config(config_path)

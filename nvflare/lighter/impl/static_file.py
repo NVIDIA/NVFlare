@@ -303,9 +303,8 @@ class StaticFileBuilder(Builder):
             dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
         )
 
-        # other builder (e.g. CC) can set the AUTHZ_SECTION_KEY to specify authorization policies for the server
+        # A builder can select a stricter authorization policy during initialization.
         authz_section_key = server.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
-
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False)
 
         studies = project.get_prop("studies")
@@ -465,9 +464,8 @@ class StaticFileBuilder(Builder):
             ProvFileName.PRIVACY_JSON_SAMPLE,
         )
 
-        # other builder (e.g. CC) can set the AUTHZ_SECTION_KEY to specify authorization policies for this client
+        # A builder can select a stricter authorization policy during initialization.
         authz_section_key = client.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
-
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
         # build relay__resources if relay is used by this client

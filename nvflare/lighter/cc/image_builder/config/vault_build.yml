@@ -1,0 +1,40 @@
+# Folder containing profile_set.json, or an immutable generic CVM registry reference.
+cvm_image: ../target/cvm_cpu-2026.09
+# cvm_image: registry.example.org/cvm/cpu-2026.09@sha256:<64-hex-manifest-digest>
+docker_archive: ../inputs/application.tar
+image_id: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+# Optional: omit to build for every platform available in cvm_image.
+# platforms: [intel_tdx]
+requires_gpu: false
+vault_drive_size: 8
+applog_drive_size: 1
+user_config_drive_size: 1
+user_data_drive_size: 1
+allowed_ports: [8080]
+allowed_out_ports: [443, 8443]
+# Optional address allowlists. Without them an allowed port accepts any source
+# or reaches any destination; runtime DNS denies traffic without a discovered resolver.
+# allowed_in_cidrs: [10.0.0.0/8]
+# allowed_out_cidrs: [10.0.0.0/8, 192.0.2.0/24]
+# Optional application_files (encrypted) and clear input directories.
+# application_files: ../inputs/application-files
+# user_config: ../inputs/user-config
+# user_data: ../inputs/user-data
+container:
+  # Omit entrypoint and command to preserve the image defaults.
+  ports: [{host: 8080, container: 8080}]
+  env: {}
+  volumes: []
+  tee_device: false
+  # No capabilities are restored by default; request only what the image needs.
+  # capabilities: [NET_BIND_SERVICE]
+  # pids_limit: 4096
+  # read_only_rootfs: true
+  # Optional non-root identity; prepare writable directories for this UID/GID.
+  # Otherwise the image's USER is preserved.
+  # user: "10001:10001"
+  # Mount the measured root's /usr/bin read-only at /host/bin (opt-in).
+  # host_bin: false
+services: []
+hosts_entries: {}
+# Shared trustee settings belong in the project's cvm_project.yml.

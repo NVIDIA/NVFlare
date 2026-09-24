@@ -26,26 +26,33 @@ class SignatureBuilder(Builder):
     can be cryptographically verified to ensure any tampering is detected. This builder writes the
     signature.json file.
 
-    signature.json is generated only for:
-    - CC (Confidential Computing) kits: full workspace signed for CVM attestation chain.
-    - HE (Homomorphic Encryption) kits: startup + local dirs signed to protect shared TenSEAL context.
+    signature.json is generated for:
+    - Azure Confidential Computing kits: the full workspace is signed for startup integrity.
+    - HE (Homomorphic Encryption) kits: startup + local dirs are signed to protect the shared
+      TenSEAL context.
 
-    Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust anchor for those
-    deployments. Absence of signature.json is the correct and expected state for centrally
-    provisioned standard kits and for kits assembled via the Manual Workflow (nvflare package).
+    Signing runs in ``finalize()``, not ``build()``. Other builders create files while finalizing,
+    notably ``local/comm_config.json`` from StaticFileBuilder, and verification rejects any file
+    that has no signature entry. Signing during ``build()`` therefore left a freshly provisioned
+    kit unable to pass its own startup integrity check.
+
+    Builders finalize in reverse order, so :func:`order_builders_for_signing` places this builder
+    immediately after WorkspaceBuilder: late enough to follow every other builder's ``finalize()``,
+    early enough to precede the workspace relocation WorkspaceBuilder performs.
+
+    CVM vault workspaces are signed separately by :class:`VaultSignatureBuilder`, which already ran
+    after finalization. Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust
+    anchor for those deployments.
     """
 
-    def build(self, project: Project, ctx: ProvisionContext):
+    def finalize(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
         if not root_pri_key:
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
         for p in project.get_all_participants():
             if p.get_prop(PropKey.CC_ENABLED):
-                # CC mode: sign from the root so the full startup kit can be verified
-                # before CVM launch
-                dest_dir = ctx.get_ws_dir(p)
-                sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+                sign_folders(ctx.get_ws_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
             else:
                 kit_dir = ctx.get_kit_dir(p)
                 he_present = os.path.exists(
@@ -56,6 +63,39 @@ class SignatureBuilder(Builder):
                     # load_tenseal_context_from_workspace requires LoadResult.OK in secure mode.
                     sign_folders(kit_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
                     sign_folders(ctx.get_local_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-                # else: plain non-CC, non-HE — no signature.json generated.
-                # mTLS is the trust anchor; signature.json adds no security and would
-                # prevent local config customization and break the Manual Workflow.
+
+
+class VaultSignatureBuilder(Builder):
+    """Sign selected vault workspaces after config finalization, before relocation.
+
+    Insert immediately after WorkspaceBuilder: reverse finalization then signs
+    files such as comm_config.json that other builders create in finalize().
+    """
+
+    def finalize(self, project: Project, ctx: ProvisionContext):
+        root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
+        if not root_pri_key:
+            raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
+        for participant in project.get_all_participants():
+            if participant.get_prop(PropKey.CVM_VAULT):
+                sign_folders(ctx.get_ws_dir(participant), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+
+
+def order_builders_for_signing(builders):
+    """Return the builder list with signature builders positioned to finalize last.
+
+    Finalization runs in reverse builder order and WorkspaceBuilder.finalize() relocates the
+    workspace out of the work-in-progress directory. A signature builder must therefore sit
+    immediately after WorkspaceBuilder so it signs once every other builder has finalized and
+    while the workspace is still in place. Lists that do not start with WorkspaceBuilder are
+    returned unchanged, because there is no safe position to move to.
+    """
+    from nvflare.lighter.impl.workspace import WorkspaceBuilder
+
+    if not builders or not isinstance(builders[0], WorkspaceBuilder):
+        return builders
+    signers = [b for b in builders if isinstance(b, SignatureBuilder)]
+    if not signers:
+        return builders
+    others = [b for b in builders if not isinstance(b, SignatureBuilder)]
+    return others[:1] + signers + others[1:]

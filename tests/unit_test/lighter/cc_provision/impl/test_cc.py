@@ -51,7 +51,7 @@ def test_cc_builder_loads_class_allow_list_from_cc_config_file(tmp_path):
     cc_config_file.write_text(
         "\n".join(
             [
-                f"{CCConfigKey.COMPUTE_ENV}: {CCConfigValue.MOCK}",
+                f"{CCConfigKey.COMPUTE_ENV}: {CCConfigValue.AZURE_CVM}",
                 f"{CCConfigKey.CLASS_ALLOW_LIST}:",
                 "  - hello_cyclic.",
                 "",
@@ -69,12 +69,59 @@ def test_cc_builder_loads_class_allow_list_from_cc_config_file(tmp_path):
     assert server.get_prop(PropKey.CC_CONFIG_DICT)[CCConfigKey.CLASS_ALLOW_LIST] == ["hello_cyclic."]
 
 
+def test_cc_builder_rejects_removed_onprem_compute_environment(tmp_path):
+    cc_config_file = tmp_path / "cc_server.yml"
+    cc_config_file.write_text(f"{CCConfigKey.COMPUTE_ENV}: onprem_cvm\n")
+    project = _project_with_server({PropKey.CC_CONFIG: str(cc_config_file)})
+    ctx = ProvisionContext(str(tmp_path), project)
+
+    with pytest.raises(ValueError, match="Invalid compute environment: onprem_cvm"):
+        CCBuilder().initialize(project, ctx)
+
+
+def test_cc_builder_builds_azure_authorizer_and_manager_resources(tmp_path):
+    cc_config_file = tmp_path / "cc_server.yml"
+    cc_config_file.write_text(
+        "\n".join(
+            [
+                f"{CCConfigKey.COMPUTE_ENV}: {CCConfigValue.AZURE_CVM}",
+                f"{CCConfigKey.CC_ISSUERS}:",
+                "  - id: az_cvm_authorizer",
+                "    path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer",
+                "    token_expiration: 100",
+                f"{CCConfigKey.CC_ATTESTATION_CONFIG}:",
+                "  check_frequency: 120",
+                "",
+            ]
+        )
+    )
+    project = _project_with_server({PropKey.CC_CONFIG: str(cc_config_file)})
+    ctx = ProvisionContext(str(tmp_path), project)
+    server = project.get_server()
+    _write_resources(ctx, server, {"format_version": 2, "components": []})
+    builder = CCBuilder()
+
+    builder.initialize(project, ctx)
+    builder.build(project, ctx)
+
+    local_dir = ctx.get_local_dir(server)
+    with open(os.path.join(local_dir, "az_cvm_authorizer__p_resources.json"), "r") as f:
+        authorizer = json.load(f)["components"][0]
+    assert authorizer["id"] == "az_cvm_authorizer"
+
+    with open(os.path.join(local_dir, "cc_manager__p_resources.json"), "r") as f:
+        manager_args = json.load(f)["components"][0]["args"]
+    assert manager_args["cc_verifier_ids"] == ["az_cvm_authorizer"]
+    assert manager_args["verify_frequency"] == 120
+    assert server.get_prop(PropKey.AUTHZ_SECTION_KEY) == "cc_authz"
+
+
 def test_cc_builder_extends_generated_class_allow_list(tmp_path):
     project = _project_with_server(
         {
             PropKey.CC_ENABLED: True,
             PropKey.CC_CONFIG_DICT: {
-                CCConfigKey.COMPUTE_ENV: CCConfigValue.MOCK,
+                CCConfigKey.COMPUTE_ENV: CCConfigValue.AZURE_CVM,
                 CCConfigKey.CLASS_ALLOW_LIST: ["hello_cyclic.", "nvflare."],
             },
         }
@@ -108,7 +155,7 @@ def test_cc_builder_rejects_invalid_class_allow_list(tmp_path):
         {
             PropKey.CC_ENABLED: True,
             PropKey.CC_CONFIG_DICT: {
-                CCConfigKey.COMPUTE_ENV: CCConfigValue.MOCK,
+                CCConfigKey.COMPUTE_ENV: CCConfigValue.AZURE_CVM,
                 CCConfigKey.CLASS_ALLOW_LIST: "hello_cyclic.",
             },
         }
@@ -123,7 +170,7 @@ def test_cc_builder_rejects_invalid_class_allow_list(tmp_path):
         builder.build(project, ctx)
 
 
-def test_legacy_heterogeneous_issuers_generate_per_site_requirements(tmp_path):
+def test_heterogeneous_issuers_generate_per_site_requirements(tmp_path):
     project = Project("heterogeneous", "CPU server and CPU plus GPU client")
     server = project.set_server("server.example.com", "org", {})
     client = project.add_client("client1", "org", {})
@@ -132,7 +179,7 @@ def test_legacy_heterogeneous_issuers_generate_per_site_requirements(tmp_path):
     builder._cc_enabled_sites = [server, client]
     for participant, ids in ((server, ["snp"]), (client, ["snp", "gpu"])):
         participant.set_prop(PropKey.CC_ENABLED, True)
-        participant.set_prop(PropKey.CC_CONFIG_DICT, {CCConfigKey.COMPUTE_ENV: CCConfigValue.ONPREM_CVM})
+        participant.set_prop(PropKey.CC_CONFIG_DICT, {CCConfigKey.COMPUTE_ENV: CCConfigValue.AZURE_CVM})
         participant.set_prop(PropKey.CC_ISSUERS, [{"id": v, "token_expiration": 300} for v in ids])
         _write_resources(ctx, participant, {"components": []})
     ctx[CC_AUTHORIZERS_KEY] = [{"id": "snp"}, {"id": "gpu"}]
@@ -169,7 +216,7 @@ def test_provisioned_client_validates_server_registration(tmp_path, server_name,
     cc_config_file.write_text(
         json.dumps(
             {
-                "compute_env": CCConfigValue.MOCK,
+                "compute_env": CCConfigValue.AZURE_CVM,
                 "cc_issuers": [
                     {
                         "id": "mock_authorizer",

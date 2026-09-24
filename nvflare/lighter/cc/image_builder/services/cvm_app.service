@@ -1,0 +1,19 @@
+[Unit]
+Description=Run the application's Docker image
+Requires=cvm_bootstrap.service docker.service
+After=cvm_bootstrap.service cvm_integrity.service docker.service
+BindsTo=cvm_bootstrap.service
+FailureAction=poweroff-force
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/lib/cvm
+EnvironmentFile=/run/cvm/platform.env
+ExecStart=/usr/bin/python3 -m cvm.runtime.bootstrap application
+# SIGTERM reaches only the wrapper above. It stops the container itself and
+# exits 0 for a requested stop, so an orderly shutdown or quarantine does not
+# look like a workload failure; an unexpected container exit keeps its status.
+KillMode=mixed
+TimeoutStopSec=60
+Restart=no
+LimitCORE=0

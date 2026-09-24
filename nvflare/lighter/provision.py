@@ -366,14 +366,25 @@ def handle_provision(args):
             if os.path.isdir(item_path):
                 packages.append(item)
 
-    output_ok({"workspace": workspace_full_path, "packages": packages})
+    result = {"workspace": workspace_full_path, "packages": packages}
+    if isinstance(ctx, dict) and CtxKey.CVM_VAULT_RESULTS in ctx:
+        result["cvm_vaults"] = ctx[CtxKey.CVM_VAULT_RESULTS]
+    output_ok(result)
 
     if not is_json_mode():
         print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
         if packages:
             print_human(f"  Packages: {', '.join(packages)}")
             print_human("  Verify each package with: nvflare preflight-check -p <package_path>")
-        print_human("  Distribute packages to each participant and run their start.sh")
+        if result.get("cvm_vaults"):
+            print_human(
+                "  For selected CVM participants, distribute the OCI artifacts and materialize them with cvm_pull."
+            )
+        else:
+            print_human("  Distribute packages to each participant and run their start.sh")
+        for vault in result.get("cvm_vaults", []):
+            for artifact in vault["artifacts"]:
+                print_human(f"  CVM vault for {vault['participant']} ({artifact['platform']}): {artifact['path']}")
     try:
         install_skills()
     except Exception:
@@ -420,6 +431,9 @@ def provision(
     add_client_full_path: Optional[str] = None,
 ):
     project_dict["gen_scripts"] = args.gen_scripts
+    vault_configured = PropKey.CVM_VAULT in project_dict
+    if vault_configured and (project_dict.get("edge") or project_dict.get("packager")):
+        raise ValueError("cvm_vault cannot be combined with edge provisioning or a packager")
     edge_params = project_dict.get("edge")
     if edge_params:
         try:
@@ -432,10 +446,27 @@ def provision(
         return None
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path, project_file=project_full_path)
+    vault_adapter = None
+    if vault_configured:
+        from nvflare.lighter.cc.vault_adapter import VaultAdapter
+
+        vault_adapter = VaultAdapter(project_dict[PropKey.CVM_VAULT], project_full_path, workspace_full_path, project)
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
+    if vault_adapter:
+        from nvflare.lighter.impl.signature import VaultSignatureBuilder
+        from nvflare.lighter.impl.workspace import WorkspaceBuilder
+
+        if not builders or type(builders[0]) is not WorkspaceBuilder:
+            raise ValueError("cvm_vault requires WorkspaceBuilder first so finalized workspaces can be signed")
+        builders.insert(1, VaultSignatureBuilder())
     provisioner = Provisioner(workspace_full_path, builders, packager)
-    return provisioner.provision(project)
+    ctx = provisioner.provision(project)
+    if vault_adapter:
+        if ctx.get(CtxKey.PROVISION_SUCCESS) is not True:
+            raise RuntimeError("Provisioning did not produce a complete new startup kit; no CVM vaults were built")
+        ctx[CtxKey.CVM_VAULT_RESULTS] = vault_adapter.build(ctx)
+    return ctx
 
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None, project_file=None):

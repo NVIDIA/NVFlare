@@ -1,0 +1,89 @@
+# Supply reviewed input files. Example package pins are for Ubuntu 26.04.
+profile_version: cpu-2026.09-r4
+# This checked-in kernel/storage combination is a nonproduction candidate. Set
+# true only in a new profile version after the exact pins pass the full matrix.
+production_ready: false
+# An optional trusted site runner can approve a production-ready profile after
+# finalization. The documented candidate-vault/report flow works without one.
+# acceptance_runner: /usr/local/bin/site_acceptance
+guest_release: '26.04'
+gpu: none
+# For gpu: nvidia_cc, GPU_BUILD.md supplies the required gpu_apt_repositories,
+# exact gpu_packages, gpu_attestation_library and gpu_attestation_provenance.
+# A GPU profile passes exactly this many GPUs (1-8) through to the CVM.
+# Automatic detection selects all assignable NVIDIA display GPUs and requires
+# this count.
+gpu_count: 1
+base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
+build_firmware: /usr/share/ovmf/OVMF.fd
+build_user: ubuntu
+root_drive_size: 8
+vcpus: 4
+memory_gib: 8
+# Maximum writable capacity of the RAM-backed root overlay. If omitted, the
+# builder uses half of memory_gib (4096 MiB for this profile).
+root_overlay_max_mib: 4096
+vault_header_bytes: 16777216
+vault_storage_profile: luks2-xts-random-hmac-sha256-v1
+# Read the whole authenticated vault before the first mount. Every later read is
+# still authenticated and the integrity monitor stays active; very large vaults
+# may set false after site acceptance. The value is part of the measured contract.
+vault_prescan: true
+# NTS-only time sources. Defaults: 1.ntp.ubuntu.com, 2.ntp.ubuntu.com,
+# 3.ntp.ubuntu.com. Distribution/DHCP sources are always excluded.
+# time_servers: [time.cloudflare.com, ptbtime1.ptb.de]
+# Optional Ed25519 private key used only with an explicit acceptance_runner;
+# --approval-key overrides it. Vault builds trust the matching public key through
+# cvm_project.yml.
+# approval_signing_key: ../inputs/acceptance-signing.key
+kernel_version: 7.0.0-31-generic
+python_version: 3.14.3-0ubuntu2
+docker_version: 29.1.3-0ubuntu4.1
+containerd_version: 2.2.2-0ubuntu1.1
+cryptsetup_version: '2:2.8.4-1ubuntu4'
+required_system_packages:
+  - python3=3.14.3-0ubuntu2
+  - python3-yaml=6.0.3-1build1
+  - python3-cryptography=46.0.5-1ubuntu2.2
+  - initramfs-tools=0.151ubuntu1
+  - cryptsetup-bin=2:2.8.4-1ubuntu4
+  - nfs-common=1:2.8.5-1ubuntu1
+  - nftables=1.1.6-1
+  - e2fsprogs=1.47.2-3ubuntu4
+  - dmsetup=2:1.02.205-2ubuntu3
+  - iproute2=6.19.0-1ubuntu1.1
+  - chrony=4.8-2ubuntu1
+  - docker.io=29.1.3-0ubuntu4.1
+  - containerd=2.2.2-0ubuntu1.1
+  - linux-image-7.0.0-31-generic=7.0.0-31.31
+  - linux-modules-7.0.0-31-generic=7.0.0-31.31
+# CoCo v0.23.0 / unmodified Trustee v0.22.0
+trustee_commit: 512fed65642015b849f38fb13bfdec7806639987
+kbs_url: https://kbs.example.org:8443
+kbs_cert: ../inputs/kbs-ca.pem
+as_public_key: ../inputs/as-public.pem
+token_algorithm: ES256
+token_issuer: CoCo-Attestation-Service
+attestation_policy_id: default
+attestation_policy: attestation_policy.rego
+# Supplied by the trusted operator; absent TCB approvals fail closed.
+reference_values: ../inputs/approved-tcb-references.json
+bootstrap_egress: [443, 8443]
+platforms:
+  amd_sev_snp:
+    enabled: true
+    attester: snp
+    firmware: /usr/share/ovmf/OVMF.amdsev.fd
+    kbs_client: ../inputs/kbs-client
+    # Produced by `cvmctl provenance` beside the clean Trustee checkout that built
+    # kbs-client. Production builds require it; the digest alone names no source.
+    kbs_client_provenance: ../inputs/kbs_client_build.json
+    cpu_model: EPYC-v4
+  intel_tdx:
+    enabled: true
+    attester: tdx
+    firmware: ../inputs/OVMF.inteltdx.fd
+    kbs_client: ../inputs/kbs-client
+    kbs_client_provenance: ../inputs/kbs_client_build.json
+    cpu_model: host
+    quote_generation: {type: vsock, cid: 2, port: 4050}

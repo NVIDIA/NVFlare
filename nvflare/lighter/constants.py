@@ -69,6 +69,7 @@ class PropKey:
     CC_CONFIG = "cc_config"
     CC_CONFIG_DICT = "cc_config_dict"
     CC_ENABLED = "cc_enabled"
+    CVM_VAULT = "cvm_vault"
     USE_AIO = "use_aio"
     CC_ISSUERS = "cc_issuers"
 
@@ -89,6 +90,8 @@ class CtxKey(WorkDir, PropKey):
     PROVISION_MODE = "__provision_model__"
     LOGGER = "__logger__"
     BUILD_ERROR = "__build_error__"
+    PROVISION_SUCCESS = "__provision_success__"
+    CVM_VAULT_RESULTS = "cvm_vault_results"
     LAST_PROD_STAGE = "last_prod_stage"
     SERVER_NAME = "server_name"
     ROOT_CERT = "root_cert"

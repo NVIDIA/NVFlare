@@ -578,14 +578,16 @@ def test_missing_packager_rejected_before_plaintext_release(tmp_path):
     assert ctx.get(CtxKey.BUILD_ERROR)
 
 
-def test_silent_startup_must_be_generated_before_signature_builder(tmp_path):
+def test_silent_startup_is_generated_before_signature_finalization(tmp_path):
     project, _ = setup_project(tmp_path)
-    pipeline = [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), SignatureBuilder(), CCBuilder()]
-    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), pipeline, CoCoPackager("build.sh")).provision(project)
-    assert ctx.get(CtxKey.BUILD_ERROR)
-    assert "CoCoBuilder must run before SignatureBuilder" in str(ctx.get_errors())
-    runner.assert_not_called()
+    pipeline = [WorkspaceBuilder(), SignatureBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder()]
+
+    ctx = Provisioner(str(tmp_path / "workspace"), pipeline).provision(project)
+
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+    kit = tmp_path / "workspace/test_project/prod_00/site-1"
+    assert (kit / ProvFileName.SIGNATURE_JSON).is_file()
+    assert (kit / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE)
 
 
 @pytest.mark.parametrize("role", ["client", "server"])
@@ -599,8 +601,8 @@ def test_packager_rejects_changed_signed_startup_before_build(tmp_path, role, re
         participant = project.get_clients()[0]
 
     class ChangedSignatureBuilder(SignatureBuilder):
-        def build(self, project, ctx):
-            super().build(project, ctx)
+        def finalize(self, project, ctx):
+            super().finalize(project, ctx)
             script = Path(ctx.get_kit_dir(participant)) / "sub_start.sh"
             content = script.read_text()
             if remove_redirection:
