@@ -101,7 +101,12 @@ def test_environment_selection_uses_the_same_client_count(tmp_path):
     assert prod_env.username == "researcher@example.com"
 
 
-def test_default_recipe_forwards_only_application_selection(monkeypatch):
+@pytest.mark.parametrize(
+    "environment_args",
+    [[], ["--env", "poc"], ["--env", "prod", "--startup-kit", "/tmp/admin"]],
+    ids=["sim", "poc", "prod"],
+)
+def test_application_recipe_is_independent_of_environment(monkeypatch, environment_args):
     job_module = _load_job_module()
     calls = []
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
@@ -116,7 +121,7 @@ def test_default_recipe_forwards_only_application_selection(monkeypatch):
         lambda value, tracking_type: calls.append(("tracking", value, tracking_type)),
     )
 
-    result = job_module.create_recipe(job_module.parse_args([]))
+    result = job_module.create_recipe(job_module.parse_args(environment_args))
 
     assert result is recipe
     assert recipe_kwargs["model"] == "model"

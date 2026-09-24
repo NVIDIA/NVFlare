@@ -36,11 +36,12 @@ or editable NVFlare installation.
 | POC | `PocEnv` provisions, starts, and stops a local system for this job. | `python job.py --env poc` |
 | Production | `ProdEnv` connects to an already-running system through an authorized admin startup kit. | `python job.py --env prod --startup-kit <admin-kit> --username <admin-identity>` |
 
-The Recipe, model, client script, data code, and local training loop stay the same across all three stages. With the
-fixed seeds, local runs currently report 75% final accuracy on site-1 and 77% on site-2; these are observations,
-not benchmark claims or exact CI thresholds. Premerge CI checks that simulation and POC produce identical per-site
-final accuracies. Unit tests cover production argument handling, environment construction, and job export; they do
-not connect to a live production federation.
+The Recipe, model, client script, data code, and local training loop stay the same across all three stages. Unit tests
+verify the fixed model and data seeds, serialized model configuration, recipe construction, and client counts.
+Premerge functional tests exercise simulation and POC separately and require both sites to reach at least 60% final
+accuracy. The slower integration suite checks that simulation and POC produce identical per-site final accuracies;
+local runs currently report 75% on site-1 and 77% on site-2. Tests cover production argument handling, environment
+construction, and job export, but do not connect to a live production federation.
 
 ## Run a job-scoped local POC
 
