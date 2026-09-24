@@ -238,6 +238,19 @@ def test_remote_progress_replay_is_opt_in(monkeypatch, capsys, log_mode, expecte
     capsys.readouterr()
 
 
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, pytest.fail.Exception])
+def test_monitoring_interruption_closes_session(error_type):
+    session = MagicMock()
+    session.monitor_job.side_effect = error_type("monitor interrupted")
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    with pytest.raises(error_type, match="monitor interrupted"):
+        manager.get_job_result("job-id")
+
+    session.close.assert_called_once()
+
+
 def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
     from nvflare.recipe.session_mgr import _show_job_progress
 

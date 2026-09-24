@@ -17,6 +17,7 @@ import logging
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from typing import Dict, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
@@ -149,16 +150,25 @@ class SessionManager:
     """Centralized session management for POC and Production environments.
 
     Handles all session operations including job submission, monitoring, and lifecycle management.
-    Implements session caching to avoid multiple login/logout cycles.
+    Each operation owns and closes its session.
     """
 
     def __init__(self, session_params: Dict[str, any]):
         self.session_params = session_params
 
     def _get_session(self):
-        """Context manager that provides a session, with optional caching."""
+        """Create a session for one operation."""
         sess = new_secure_session(**self.session_params)
         return sess
+
+    @contextmanager
+    def _managed_session(self):
+        """Close a session even when an operation is interrupted."""
+        sess = self._get_session()
+        try:
+            yield sess
+        finally:
+            sess.close()
 
     def submit_job(self, job: FedJob) -> str:
         """Submit a job and return job ID."""
@@ -166,52 +176,43 @@ class SessionManager:
             job.export_job(temp_dir)
             warn_on_potential_secrets_in_job_dir(temp_dir, job_name=job.name)
             job_path = os.path.join(temp_dir, job.name)
-            sess = self._get_session()
-            try:
+            with self._managed_session() as sess:
                 job_id = sess.submit_job(job_path)
-            finally:
-                sess.close()
             _print_output(f"Submitted job '{job.name}' with ID: {job_id}")
             return job_id
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get the status of the job."""
-        sess = self._get_session()
-        status = sess.get_job_status(job_id)
-        sess.close()
-        return status
+        with self._managed_session() as sess:
+            return sess.get_job_status(job_id)
 
     def abort_job(self, job_id: str) -> None:
         """Abort the running job."""
-        sess = self._get_session()
-        msg = sess.abort_job(job_id)
-        _print_output(f"Job {job_id} aborted successfully with message: {msg}")
-        sess.close()
+        with self._managed_session() as sess:
+            msg = sess.abort_job(job_id)
+            _print_output(f"Job {job_id} aborted successfully with message: {msg}")
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the job."""
-        sess = self._get_session()
-        cb_run_counter = {"count": 0}
-        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
-            cb_run_counter["progress"] = {"seen": set()}
-        rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
-        if rc == MonitorReturnCode.JOB_FINISHED:
-            _print_output("Downloading job results...", flush=True)
-            result = sess.download_job_result(job_id)
-            if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
-                try:
-                    collect_client_errors(sess, job_id, result)
-                except Exception as ex:
-                    get_module_logger().debug("Could not retrieve client error logs for %s: %s", job_id, ex)
-            sess.close()
-            return result
-        elif rc == MonitorReturnCode.TIMEOUT:
-            _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
-            sess.close()
-            return None
-        elif rc == MonitorReturnCode.ENDED_BY_CB:
-            _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
-            sess.close()
-            return None
-        else:
-            raise RuntimeError(f"Unexpected monitor return code: {rc}")
+        with self._managed_session() as sess:
+            cb_run_counter = {"count": 0}
+            if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
+                cb_run_counter["progress"] = {"seen": set()}
+            rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
+            if rc == MonitorReturnCode.JOB_FINISHED:
+                _print_output("Downloading job results...", flush=True)
+                result = sess.download_job_result(job_id)
+                if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
+                    try:
+                        collect_client_errors(sess, job_id, result)
+                    except Exception as ex:
+                        get_module_logger().debug("Could not retrieve client error logs for %s: %s", job_id, ex)
+                return result
+            elif rc == MonitorReturnCode.TIMEOUT:
+                _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
+                return None
+            elif rc == MonitorReturnCode.ENDED_BY_CB:
+                _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
+                return None
+            else:
+                raise RuntimeError(f"Unexpected monitor return code: {rc}")
