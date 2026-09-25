@@ -1,5 +1,5 @@
 nvflare~=2.9.0rc
-torch==2.6.0
+torch==2.13.0
 torchvision==0.21.0
 transformers==4.57.1
 accelerate==1.7.0
