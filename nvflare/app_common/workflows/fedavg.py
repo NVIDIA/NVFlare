@@ -232,7 +232,7 @@ class FedAvg(BaseFedAvg):
                     task_name=self.task_name,
                     targets=clients,
                     data=model,
-                    callback=aggregate_one_result if not self.aggregator else self._aggregate_one_result,
+                    callback=aggregate_one_result,
                 )
 
                 # Wait for all results to be processed

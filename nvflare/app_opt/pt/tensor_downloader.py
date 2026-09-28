@@ -29,7 +29,7 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
-from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir, _LazyRef, read_safetensors_header
+from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir, _LazyRef, read_safetensors_metadata
 
 _TWO_MB = 2 * 1024 * 1024
 _ACTIVE_DISK_TENSOR_CONSUMERS = weakref.WeakSet()
@@ -209,11 +209,6 @@ def download_tensors(
     return consumer.error, consumer.result
 
 
-def _extract_safetensors_keys(data: bytes) -> list[str]:
-    """Extract tensor key names from safetensors header without deserializing tensors."""
-    return [k for k in read_safetensors_header(data) if k != "__metadata__"]
-
-
 class DiskTensorConsumer(ItemConsumer):
     """Writes raw safetensors bytes to disk without deserializing to tensors."""
 
@@ -223,6 +218,7 @@ class DiskTensorConsumer(ItemConsumer):
         self._cleaned = False
         self._cancel_reason = None
         self._file_counter = 0
+        self.metadata = {}
         self._io_lock = threading.Lock()
         with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
             _ACTIVE_DISK_TENSOR_CONSUMERS.add(self)
@@ -272,18 +268,19 @@ class DiskTensorConsumer(ItemConsumer):
             if self._cleaned:
                 raise RuntimeError("tensor download was cleaned up")
             for item in items:
-                keys = _extract_safetensors_keys(item)
+                metadata = read_safetensors_metadata(item)
                 file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
                 self._file_counter += 1
                 with open(file_path, "wb") as f:
                     f.write(item)
-                for key in keys:
+                for key in metadata:
                     if key in result:
                         raise ValueError(
                             f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
                             "streaming data may be malformed."
                         )
                     result[key] = (file_path, key)
+                self.metadata.update(metadata)
 
         return result
 
@@ -350,4 +347,4 @@ def download_tensors_to_disk(
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}
-    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir, metadata=consumer.metadata)

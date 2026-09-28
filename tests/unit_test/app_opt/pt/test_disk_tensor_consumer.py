@@ -24,8 +24,8 @@ from safetensors.torch import save as save_tensors
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
 import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
-from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
-from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
+from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, read_safetensors_metadata, tensor_metadata
+from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
 from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 
 
@@ -36,41 +36,41 @@ def temp_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-class TestExtractSafetensorsKeys:
+class TestReadSafetensorsMetadata:
     def test_single_key(self):
         data = save_tensors({"weight": torch.randn(3, 3)})
-        keys = _extract_safetensors_keys(data)
-        assert keys == ["weight"]
+        keys = read_safetensors_metadata(data)
+        assert list(keys) == ["weight"]
 
     def test_multiple_keys(self):
         data = save_tensors({"a": torch.randn(2), "b": torch.randn(2)})
-        keys = _extract_safetensors_keys(data)
+        keys = read_safetensors_metadata(data)
         assert set(keys) == {"a", "b"}
 
     def test_invalid_data(self):
         with pytest.raises(ValueError, match="too short"):
-            _extract_safetensors_keys(b"short")
+            read_safetensors_metadata(b"short")
 
     def test_header_size_exceeds_payload(self):
         # Header says 100 bytes of JSON, but payload only has 2.
         data = (100).to_bytes(8, byteorder="little") + b"{}"
         with pytest.raises(ValueError, match="header size exceeds payload length"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_zero_header_size(self):
         data = (0).to_bytes(8, byteorder="little")
         with pytest.raises(ValueError, match="empty header"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_invalid_json_header(self):
         data = (4).to_bytes(8, byteorder="little") + b"nope"
         with pytest.raises(ValueError, match="invalid JSON header"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_non_object_json_header(self):
         data = (2).to_bytes(8, byteorder="little") + b"[]"
         with pytest.raises(ValueError, match="header must be JSON object"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
 
 class TestDiskTensorConsumer:
@@ -184,7 +184,7 @@ class TestDiskTensorConsumer:
         write_entered = threading.Event()
         release_write = threading.Event()
         consume_errors = []
-        original_extract = tensor_downloader._extract_safetensors_keys
+        original_extract = tensor_downloader.read_safetensors_metadata
 
         def blocking_extract(data):
             write_entered.set()
@@ -198,7 +198,7 @@ class TestDiskTensorConsumer:
             except Exception as e:
                 consume_errors.append(e)
 
-        monkeypatch.setattr(tensor_downloader, "_extract_safetensors_keys", blocking_extract)
+        monkeypatch.setattr(tensor_downloader, "read_safetensors_metadata", blocking_extract)
         consume_thread = threading.Thread(target=consume)
         consume_thread.start()
         assert write_entered.wait(timeout=1.0)
@@ -360,10 +360,11 @@ def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkey
 def test_download_tensors_to_disk_uses_scoped_root_dir(monkeypatch, tmp_path):
     root_dir = tmp_path / "nvflare_tensor_offload_root"
     root_dir.mkdir()
+    tensors = {"w": torch.tensor([1.0]), "count": torch.tensor(2), "empty": torch.empty(0, 3)}
 
     def fake_download_object(**kwargs):
         kwargs["consumer"].result = kwargs["consumer"].consume_items(
-            [save_tensors({"w": torch.tensor([1.0])})],
+            [save_tensors({"w": tensors["w"]}), save_tensors({k: v for k, v in tensors.items() if k != "w"})],
             None,
         )
 
@@ -385,3 +386,6 @@ def test_download_tensors_to_disk_uses_scoped_root_dir(monkeypatch, tmp_path):
     shutil.rmtree(root_dir)
 
     assert not root_dir.exists()
+    # Metadata travels with the download: querying a ref must not reopen a chunk.
+    for key, tensor in tensors.items():
+        assert lazy_tensors.make_lazy_ref(key).get_metadata() == tensor_metadata(tensor)

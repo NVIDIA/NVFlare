@@ -1528,9 +1528,9 @@
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -2902,9 +2902,9 @@
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {

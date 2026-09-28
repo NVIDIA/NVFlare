@@ -90,15 +90,17 @@ def _encode_header(metadata: Mapping[str, TensorMetadata]) -> bytes:
     return struct.pack("<Q", len(header_bytes)) + header_bytes
 
 
-def read_safetensors_metadata(file_path: str) -> dict[str, TensorMetadata]:
-    """Metadata of every tensor in a safetensors file, reading only its header."""
-    with open(file_path, "rb") as tensor_file:
-        size_field = tensor_file.read(_HEADER_SIZE_FIELD)
-        header_size = struct.unpack("<Q", size_field)[0] if len(size_field) == _HEADER_SIZE_FIELD else 0
-        # A corrupt size field must not turn into a huge allocation; the parser reports the short read.
-        header = tensor_file.read(min(header_size, os.fstat(tensor_file.fileno()).st_size))
+def read_safetensors_metadata(source: str | bytes) -> dict[str, TensorMetadata]:
+    """Metadata from safetensors bytes or a file, reading only its header."""
+    if not isinstance(source, bytes):
+        with open(source, "rb") as tensor_file:
+            size_field = tensor_file.read(_HEADER_SIZE_FIELD)
+            header_size = struct.unpack("<Q", size_field)[0] if len(size_field) == _HEADER_SIZE_FIELD else 0
+            # A corrupt size field must not turn into a huge allocation; the parser reports the short read.
+            header = tensor_file.read(min(header_size, os.fstat(tensor_file.fileno()).st_size))
+        source = size_field + header
     metadata = {}
-    for key, entry in read_safetensors_header(size_field + header).items():
+    for key, entry in read_safetensors_header(source).items():
         if key != "__metadata__":
             start, end = entry["data_offsets"]
             metadata[key] = TensorMetadata(shape=tuple(entry["shape"]), dtype=entry["dtype"], nbytes=end - start)
@@ -242,9 +244,15 @@ class LazyTensorDict:
     via safetensors safe_open (mmap) on access.
     """
 
-    def __init__(self, key_to_file: dict[str, tuple[str, str]], temp_dir: str):
+    def __init__(
+        self,
+        key_to_file: dict[str, tuple[str, str]],
+        temp_dir: str,
+        metadata: Optional[dict[str, TensorMetadata]] = None,
+    ):
         self._key_to_file = key_to_file
         self._temp_ref = _TempDirRef(temp_dir)
+        self._metadata = metadata or {}
 
     def __getitem__(self, key):
         file_path, st_key = self._key_to_file[key]
@@ -279,7 +287,7 @@ class LazyTensorDict:
 
     def make_lazy_ref(self, key) -> "_LazyRef":
         file_path, st_key = self._key_to_file[key]
-        return _LazyRef(file_path=file_path, key=st_key, temp_ref=self._temp_ref)
+        return _LazyRef(file_path=file_path, key=st_key, temp_ref=self._temp_ref, metadata=self._metadata.get(key))
 
     def cleanup(self):
         self._temp_ref.cleanup()

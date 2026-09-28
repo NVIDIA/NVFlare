@@ -184,7 +184,7 @@ def test_sparse_keys_exclusions_and_per_key_denominator(tmp_path, kind):
 
 
 @pytest.mark.parametrize("bad", ["shape", "dtype", "memory", "mixed"])
-def test_invalid_contribution_fails_round_without_publication(tmp_path, bad):
+def test_invalid_contribution_releases_refs_without_publication(tmp_path, bad):
     saved = tmp_path / disk.SAVED_MODEL
     save_file({"w": torch.full((2,), 9.0)}, saved)
     before = saved.read_bytes()
@@ -194,14 +194,12 @@ def test_invalid_contribution_fails_round_without_publication(tmp_path, bad):
     params = {"w": value} if bad == "memory" else refs(tmp_path, "bad", {"w": value})
     with pytest.raises((ValueError, TypeError)):
         aggr.accept_model(model(params, kind=ParamsType.DIFF if bad == "mixed" else ParamsType.FULL))
-    with pytest.raises(RuntimeError, match="already failed"):
-        aggr.accept_model(model(refs(tmp_path, "late", {"w": torch.ones(2)})))
-    with pytest.raises(RuntimeError, match="refusing to publish"):
-        aggr.aggregate_model()
+    assert len(aggr._contributions) == 1
+    aggr.reset_stats()
     assert saved.read_bytes() == before
     assert not (tmp_path / disk.CURRENT_MODEL).exists()
     assert not (tmp_path / (disk.CURRENT_MODEL + ".next")).exists()
-    assert not any((tmp_path / name).exists() for name in ("one", "bad", "late"))
+    assert not any((tmp_path / name).exists() for name in ("one", "bad"))
 
 
 @pytest.mark.parametrize("dtype", [torch.int64, torch.bool])
@@ -394,8 +392,12 @@ def test_existing_controller_runs_multiple_diff_rounds_and_stopping(tmp_path, st
 
     ctl.send_model = send
     if failed_client:
-        with pytest.raises(RuntimeError, match="refusing to publish"):
+        ctl.get_num_standing_tasks = lambda: 1
+        cancelled = []
+        ctl.cancel_all_tasks = lambda status: cancelled.append(status)
+        with pytest.raises(RuntimeError, match="refusing to update or save"):
             ctl.run()
+        assert cancelled == [TaskCompletionStatus.ERROR]
         assert ctl._received_count == 1
         assert not (tmp_path / disk.SAVED_MODEL).exists()
         assert AppEventType.AFTER_AGGREGATION not in events
@@ -425,6 +427,24 @@ def test_recipe_composes_disk_components_and_preserves_memory_default(tmp_path, 
     normal = recipe_cls(min_clients=2, train_script="train.py", model=torch.nn.Linear(1, 1))
     assert normal.model_storage == "memory"
     assert normal.aggregator is None
+    assert normal.server_expected_format == ExchangeFormat.NUMPY
+
+
+@pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
+@pytest.mark.parametrize("exchange_format", [ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH])
+def test_disk_recipe_respects_explicit_exchange_format(recipe_cls, exchange_format):
+    options = dict(
+        min_clients=1,
+        train_script="train.py",
+        initial_ckpt="/server/model.safetensors",
+        model_storage="disk",
+        server_expected_format=exchange_format,
+    )
+    if exchange_format == ExchangeFormat.NUMPY:
+        with pytest.raises(ValueError, match="PyTorch exchange"):
+            recipe_cls(**options)
+    else:
+        assert recipe_cls(**options).server_expected_format == exchange_format
 
 
 @pytest.mark.parametrize(

@@ -47,7 +47,8 @@ class FedProxRecipe(FedAvgRecipe):
         aggregator_data_kind: Data kind accepted by the aggregator.
         launch_external_process: Whether to launch the client script externally.
         command: Command prepended to the script for external launches as a string or pre-tokenized argv.
-        server_expected_format: Parameter format expected by the server.
+        server_expected_format: Parameter exchange format. Defaults to NumPy for memory
+            storage and PyTorch for disk storage. Disk storage rejects other formats.
         params_transfer_type: Full-model or model-difference transfer.
         model_persistor: Optional custom model persistor.
         model_locator: Optional custom model locator.
@@ -87,7 +88,7 @@ class FedProxRecipe(FedAvgRecipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: Union[str, list[str]] = "python3 -u",
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        server_expected_format: Optional[ExchangeFormat] = None,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,

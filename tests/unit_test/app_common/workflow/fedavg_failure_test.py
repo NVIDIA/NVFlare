@@ -24,6 +24,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows import fedavg as fedavg_module
@@ -38,8 +40,15 @@ def deliver(controller, task, params, name="site"):
     return controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED)
 
 
-def prepare_controller(monkeypatch, model, rounds=1):
-    controller = FedAvg(num_clients=2, num_rounds=rounds, model=model)
+def prepare_controller(monkeypatch, model, rounds=1, custom=False):
+    aggregator = None
+    if custom:
+        helper = WeightedAggregationHelper()
+        aggregator = Mock(spec=ModelAggregator, fl_ctx=None)
+        aggregator.reset_stats.side_effect = helper.reset_stats
+        aggregator.accept_model.side_effect = lambda result: helper.add(result.params, 1.0, "site", 0)
+        aggregator.aggregate_model.side_effect = lambda: FLModel(params=helper.get_result())
+    controller = FedAvg(num_clients=2, num_rounds=rounds, model=model, aggregator=aggregator)
     controller.fl_ctx = FLContext()
     controller.abort_signal = Signal()
     monkeypatch.setattr(controller, "sample_clients", lambda _: ["good", "bad"])
@@ -112,8 +121,9 @@ def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, outstan
 
 
 @pytest.mark.parametrize("abort", [False, True])
-def test_finalization_waits_for_failed_callback(monkeypatch, abort):
-    controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0, "b": 0.0}))
+@pytest.mark.parametrize("custom", [False, True])
+def test_finalization_waits_for_failed_callback(monkeypatch, abort, custom):
+    controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0, "b": 0.0}), custom=custom)
     if abort:
         controller.abort_signal.trigger(True)
         monkeypatch.setattr(controller, "get_num_standing_tasks", lambda: 1)
@@ -178,8 +188,9 @@ def test_finalization_waits_for_failed_callback(monkeypatch, abort):
         assert callbacks[0](FLModel(params={"a": 999.0})) is False
 
 
-def test_closed_round_callback_cannot_change_next_round(monkeypatch):
-    controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0}), rounds=2)
+@pytest.mark.parametrize("custom", [False, True])
+def test_closed_round_callback_cannot_change_next_round(monkeypatch, custom):
+    controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0}), rounds=2, custom=custom)
     callbacks, saved = [], []
     monkeypatch.setattr(controller, "save_model", lambda model: saved.append(dict(model.params)))
 

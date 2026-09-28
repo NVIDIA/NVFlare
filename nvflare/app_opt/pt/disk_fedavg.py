@@ -68,7 +68,7 @@ def _weighted_metadata(item):
 class DiskFedAvgAggregator(ModelAggregator):
     """Weighted FULL/DIFF FedAvg with only one key's tensors live at a time.
 
-    FedAvg serializes result callbacks and completes all tasks before aggregation.
+    FedAvg serializes result callbacks and closes the round before aggregation.
     Contributions must be disk-backed tensor refs. The current global model comes
     from GLOBAL_MODEL in the existing workflow context, not from a persistor API.
     """
@@ -97,18 +97,13 @@ class DiskFedAvgAggregator(ModelAggregator):
         self._metadata = {}
         self._skipped = set()
         self._params_type = None
-        self._failed = False
         self._all_metrics = True
         self._metrics.reset_stats()
 
     def accept_model(self, model):
         try:
-            if self._failed:
-                raise RuntimeError("disk-backed FedAvg round already failed")
             self._accept_model(model)
         except Exception:
-            # The controller catches callback errors; prevent it from publishing a partial round.
-            self._failed = True
             if isinstance(model.params, dict):
                 for ref in model.params.values():
                     if isinstance(ref, _LazyRef):
@@ -182,6 +177,7 @@ class DiskFedAvgAggregator(ModelAggregator):
             del tensor
 
     def _stats(self):
+        # Count contributions separately: contributor names need not be unique.
         counts = Counter(key for params, _, _ in self._contributions for key in params if key in self._metadata)
         fully_matched = sum(count == len(self._contributions) for count in counts.values())
         return {
@@ -199,8 +195,6 @@ class DiskFedAvgAggregator(ModelAggregator):
         current = _model_path(self.fl_ctx, CURRENT_MODEL)
         next_path = current + ".next"
         try:
-            if self._failed:
-                raise RuntimeError("disk-backed FedAvg round failed; refusing to publish a partial aggregate")
             if not self._contributions:
                 raise RuntimeError("no accepted contributions to aggregate")
             base = {}

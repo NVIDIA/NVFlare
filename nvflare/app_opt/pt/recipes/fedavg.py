@@ -62,7 +62,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3 -u".
-        server_expected_format (str): What format to exchange the parameters between server and client.
+        server_expected_format (str): Parameter exchange format. Defaults to NumPy for memory
+            storage and PyTorch for disk storage. Disk storage rejects other formats.
         params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
             calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
@@ -126,7 +127,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: Union[str, list[str]] = "python3 -u",
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        server_expected_format: Optional[ExchangeFormat] = None,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
@@ -159,11 +160,15 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
                 raise ValueError("disk model storage uses fixed current/saved checkpoint filenames")
             if not isinstance(initial_ckpt, str) or not initial_ckpt:
                 raise ValueError("disk model storage requires a safetensors initial_ckpt")
+            if server_expected_format not in (None, ExchangeFormat.PYTORCH):
+                raise ValueError("disk model storage requires PyTorch exchange")
             from nvflare.app_opt.pt.disk_fedavg import DiskFedAvgAggregator
 
             aggregator = DiskFedAvgAggregator(aggregation_weights=aggregation_weights, exclude_vars=exclude_vars)
             server_expected_format = ExchangeFormat.PYTORCH
             enable_tensor_disk_offload = True
+        elif server_expected_format is None:
+            server_expected_format = ExchangeFormat.NUMPY
 
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
