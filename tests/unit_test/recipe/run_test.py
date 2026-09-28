@@ -433,9 +433,45 @@ def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
     assert "cross_val_results.json" in output
 
 
+def test_summary_keeps_round_identity_for_site_only_metrics(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text("{}")
+    (metrics / "round_metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "round": round_num,
+                    "progress_title": "Cyclic training",
+                    "aggregated_metrics": [],
+                    "sites": [{"name": "site-1", "metrics": [{"name": "loss", "value": loss}]}],
+                }
+            )
+            for round_num, loss in enumerate((0.5, 0.4))
+        )
+    )
+
+    output = result_summary(tmp_path)
+
+    assert "Cyclic training · client metrics" in output
+    assert "Round / client" in output
+    assert "1 / site-1" in output
+    assert "2 / site-1" in output
+
+
 @pytest.mark.parametrize(
     "relative_path",
-    ["app_server/global.pt", "app_server/tf_model.weights.h5", "models/server.npy"],
+    [
+        "app_server/global.pt",
+        "app_server/tf_model.weights.h5",
+        "models/server.npy",
+        "app_server/model_param.joblib",
+        "app_server/xgboost_model.json",
+    ],
 )
 def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path, relative_path):
     from nvflare.recipe._run_summary import result_summary
@@ -447,6 +483,28 @@ def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path
     output = result_summary(tmp_path)
 
     assert f"Models    {model_path.parent.relative_to(tmp_path)}/" in output
+
+
+def test_summary_finds_federated_statistics_artifacts(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    statistics_dir = tmp_path / "server" / "simulate_job" / "statistics"
+    statistics_dir.mkdir(parents=True)
+    (statistics_dir / "stats.json").write_text("{}")
+
+    output = result_summary(tmp_path)
+
+    assert "Statistics server/simulate_job/statistics/" in output
+
+
+def test_summary_does_not_treat_application_metadata_as_xgboost_model(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    app_server = tmp_path / "app_server"
+    app_server.mkdir()
+    (app_server / ".__nvfl_sig.json").write_text("{}")
+
+    assert "Models    " not in result_summary(tmp_path)
 
 
 def test_summary_lists_models_once_across_candidate_layouts(tmp_path):

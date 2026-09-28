@@ -140,6 +140,7 @@ Example:
 ```json
 {
   "round": 0,
+  "progress_title": "Training",
   "aggregated_metrics": [
     {
       "name": "auroc",
@@ -161,6 +162,12 @@ Example:
         {
           "name": "auroc",
           "value": 0.7380791446479046
+        }
+      ],
+      "progress_metrics": [
+        {
+          "name": "auroc",
+          "value": 0.7461
         }
       ],
       "weight": 2911,
@@ -202,7 +209,7 @@ Example:
 }
 ```
 
-The `metrics` arrays preserve client-reported metric names and values after safe normalization. `aggregated_metrics` contains official workflow/controller aggregated metrics after safe normalization; it is not recomputed by the writer from site records.
+The `metrics` arrays preserve the client-reported aggregation or evaluation-phase values after safe normalization. Optional `progress_metrics` arrays preserve post-training display values without replacing those aggregation inputs. `aggregated_metrics` contains official workflow/controller aggregated metrics after safe normalization; it is not recomputed by the writer from site records.
 
 ## Event Contract
 
