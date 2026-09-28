@@ -26,6 +26,7 @@ import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 
 
 @pytest.fixture
@@ -154,6 +155,28 @@ class TestDiskTensorConsumer:
             consumer.consume_items([save_tensors({"x": torch.randn(2)})], None)
 
         assert not os.path.exists(temp_dir)
+
+    @pytest.mark.parametrize("first", ["release", "cancel", "failure"])
+    def test_finalization_racing_ownership_transfer(self, temp_dir, first):
+        consumer = DiskTensorConsumer(temp_dir)
+        consumer.consume_items([save_tensors({"x": torch.ones(2)})], None)
+        reason = "workflow finalized before tensor download completed"
+        if first == "release":
+            consumer.release()
+        elif first == "failure":
+            # Even an identical error string is not a local cancellation.
+            consumer.download_failed("ref", reason)
+
+        # A finalizer may have snapshotted the consumer before it was released/failed.
+        consumer.cleanup(cancel_reason=reason)
+        if first == "cancel":
+            consumer.download_failed("ref", "late chunk failed")
+            with pytest.raises(DownloadCancelled, match=reason):
+                consumer.release()
+        else:
+            consumer.release()
+        assert os.path.exists(temp_dir) == (first == "release")
+        assert consumer.error == (None if first == "release" else reason)
 
     def test_cleanup_waits_for_inflight_write_and_removes_completed_chunk(self, temp_dir, monkeypatch):
         consumer = DiskTensorConsumer(temp_dir)

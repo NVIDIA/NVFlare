@@ -25,7 +25,7 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
 from ...fuel.f3.cellnet.cell import Cell
-from .lazy_tensor_dict import LazyTensorDict
+from .lazy_tensor_dict import LazyTensorDict, _LazyRef
 from .tensor_downloader import TensorDownloadable, download_tensors, download_tensors_to_disk
 
 
@@ -42,6 +42,10 @@ class TensorDecomposer(ViaDownloaderDecomposer):
 
     def supported_type(self):
         return torch.Tensor
+
+    def supported_aliases(self):
+        # Disk-backed lazy refs travel the wire as the tensors they stand for.
+        return [_LazyRef]
 
     def get_download_dot(self) -> int:
         return dots.TENSOR_DOWNLOAD
@@ -120,6 +124,8 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         )
 
     def native_decompose(self, target: torch.Tensor, manager: DatumManager = None) -> bytes:
+        if isinstance(target, _LazyRef):
+            raise ValueError("disk-backed tensors require an active Cell and tensor streaming")
         # save the tensor to bytes using safetensors
         dummy = {"t": target}
         return save(dummy)

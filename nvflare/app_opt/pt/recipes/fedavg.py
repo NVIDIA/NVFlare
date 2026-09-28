@@ -49,7 +49,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
-            Note: PyTorch requires model when using initial_ckpt (for architecture).
+            With model_storage="disk", may also be a Hugging Face safetensors index
+            or checkpoint directory. Memory mode requires model for architecture.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -86,6 +87,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
+        model_storage: "disk" selects tensor-at-a-time aggregation and safetensors persistence.
+            Requires initial_ckpt and PyTorch exchange, which the recipe selects automatically.
+            Supports FULL/DIFF, exclusions and early stopping. Custom model components,
+            checkpoint filenames, model locators and historical snapshots are unsupported.
     Example:
         Basic usage with early stopping:
 
@@ -103,9 +108,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         ```
 
     Note:
-        This recipe uses InTime (streaming) aggregation for memory efficiency - each client
-        result is aggregated immediately upon receipt rather than collecting all results first.
-        Memory usage is constant regardless of the number of clients.
+        Memory mode accumulates results as they arrive. Disk mode retains client tensor
+        references and aggregates one key at a time after the round's transfers complete.
     """
 
     def __init__(
@@ -143,7 +147,24 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         enable_tensor_disk_offload: bool = False,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        model_storage: Literal["memory", "disk"] = "memory",
     ):
+        if model_storage not in ("memory", "disk"):
+            raise ValueError("model_storage must be 'memory' or 'disk'")
+        self.model_storage = model_storage
+        if model_storage == "disk":
+            if model is not None or aggregator is not None or model_persistor is not None or model_locator is not None:
+                raise ValueError("disk model storage configures its own model, aggregator and persistor; no locator")
+            if best_model_filename is not None or save_filename is not None:
+                raise ValueError("disk model storage uses fixed current/saved checkpoint filenames")
+            if not isinstance(initial_ckpt, str) or not initial_ckpt:
+                raise ValueError("disk model storage requires a safetensors initial_ckpt")
+            from nvflare.app_opt.pt.disk_fedavg import DiskFedAvgAggregator
+
+            aggregator = DiskFedAvgAggregator(aggregation_weights=aggregation_weights, exclude_vars=exclude_vars)
+            server_expected_format = ExchangeFormat.PYTORCH
+            enable_tensor_disk_offload = True
+
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
 
@@ -184,8 +205,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
-        from nvflare.app_opt.pt.job_config.model import PTModel
         from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt, setup_custom_persistor
+
+        if self.model_storage == "disk":
+            from nvflare.app_opt.pt.disk_fedavg import DiskFedAvgPersistor
+
+            ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+            self.model_persistor = DiskFedAvgPersistor(ckpt_path)
 
         persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
         if persistor_id:
@@ -196,6 +222,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
                     if isinstance(locator_id, str) and locator_id:
                         job.comp_ids["locator_id"] = locator_id
             return persistor_id
+
+        from nvflare.app_opt.pt.job_config.model import PTModel
 
         ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
         if self.model is None and ckpt_path:
@@ -219,3 +247,14 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         if persistor_id and hasattr(job, "comp_ids"):
             job.comp_ids.setdefault("persistor_id", persistor_id)
         return persistor_id
+
+    def _create_client_runner(self, site_config):
+        if self.model_storage == "disk":
+            if (
+                self._site_value(site_config, "server_expected_format", self.server_expected_format)
+                != ExchangeFormat.PYTORCH
+            ):
+                raise ValueError("disk model storage requires PyTorch exchange for every site")
+            if self._site_value(site_config, "framework", self._client_runner_framework) != FrameworkType.PYTORCH:
+                raise ValueError("disk model storage requires the PyTorch client framework")
+        return super()._create_client_runner(site_config)

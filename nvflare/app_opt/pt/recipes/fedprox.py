@@ -70,6 +70,7 @@ class FedProxRecipe(FedAvgRecipe):
         client_memory_gc_rounds: Client garbage-collection interval.
         cuda_empty_cache: Whether clients empty the CUDA cache during cleanup.
         fedprox_mu: Finite positive proximal coefficient. Defaults to 0.01.
+        model_storage: "disk" uses the disk-backed FedAvg aggregation and persistence path.
     """
 
     def __init__(
@@ -107,6 +108,7 @@ class FedProxRecipe(FedAvgRecipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         fedprox_mu: float = 0.01,
+        model_storage: Literal["memory", "disk"] = "memory",
     ):
         # FedAvgRecipe builds the controller through _get_controller_kwargs(), so this must precede super().__init__.
         self.fedprox_mu = validate_fedprox_mu(fedprox_mu)
@@ -142,6 +144,7 @@ class FedProxRecipe(FedAvgRecipe):
             enable_tensor_disk_offload=enable_tensor_disk_offload,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            model_storage=model_storage,
         )
 
     def _get_controller_kwargs(self) -> dict[str, Any]:

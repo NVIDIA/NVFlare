@@ -174,3 +174,18 @@ def test_setup_cleanup_use_run_manager_cell_when_available(tmp_path, monkeypatch
     cleanup_tensor_disk_offload(engine=engine, context=context)
     assert run_cell.ctx["enable_tensor_disk_offload"] is False
     assert parent_cell.update_calls == 0
+
+
+def test_simulator_selects_receiving_job_cell(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    parent = _MockCell(enable_tensor_disk_offload=False)
+    job_cell = _MockCell(enable_tensor_disk_offload=False)
+    engine = _MockEngine(parent, run_manager=_MockRunManager(parent))
+    engine.server = SimpleNamespace(job_cell=job_cell)
+    _patch_mkdtemp(monkeypatch, tmp_path)
+    context = setup_tensor_disk_offload(engine, enabled=True)
+    assert job_cell.ctx["enable_tensor_disk_offload"] is True
+    assert parent.ctx["enable_tensor_disk_offload"] is False
+    cleanup_tensor_disk_offload(engine, context)
+    assert job_cell.ctx["enable_tensor_disk_offload"] is False

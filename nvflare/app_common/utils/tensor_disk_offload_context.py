@@ -35,6 +35,12 @@ def _get_cell(engine):
     if not engine:
         return None
 
+    # The simulator exposes its parent cell through the engine, but receives
+    # this job's tensor payloads on a separate job cell.
+    job_cell = getattr(getattr(engine, "server", None), "job_cell", None)
+    if job_cell is not None:
+        return job_cell
+
     run_manager = getattr(engine, "run_manager", None)
     if run_manager and run_manager.cell:
         return run_manager.cell
