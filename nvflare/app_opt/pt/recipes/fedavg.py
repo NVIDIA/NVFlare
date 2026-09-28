@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
@@ -160,6 +161,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
                 raise ValueError("disk model storage uses fixed current/saved checkpoint filenames")
             if not isinstance(initial_ckpt, str) or not initial_ckpt:
                 raise ValueError("disk model storage requires a safetensors initial_ckpt")
+            if initial_ckpt.endswith(".json") and not os.path.isabs(initial_ckpt):
+                raise ValueError("disk model storage requires an absolute server path for a safetensors index")
             if server_expected_format not in (None, ExchangeFormat.PYTORCH):
                 raise ValueError("disk model storage requires PyTorch exchange")
             from nvflare.app_opt.pt.disk_fedavg import DiskFedAvgAggregator

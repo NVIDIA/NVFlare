@@ -431,6 +431,18 @@ def test_recipe_composes_disk_components_and_preserves_memory_default(tmp_path, 
 
 
 @pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
+def test_disk_recipe_requires_absolute_checkpoint_index(tmp_path, monkeypatch, recipe_cls):
+    monkeypatch.chdir(tmp_path)
+    index = tmp_path / "model.safetensors.index.json"
+    index.write_text(json.dumps({"weight_map": {"w": "part-1.safetensors"}}))
+    options = dict(min_clients=1, train_script="train.py", model_storage="disk")
+    with pytest.raises(ValueError, match="absolute server path"):
+        recipe_cls(initial_ckpt=index.name, **options)
+    recipe = recipe_cls(initial_ckpt=str(index), **options)
+    assert recipe.model_persistor.initial_model_path == str(index)
+
+
+@pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
 @pytest.mark.parametrize("exchange_format", [ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH])
 def test_disk_recipe_respects_explicit_exchange_format(recipe_cls, exchange_format):
     options = dict(
