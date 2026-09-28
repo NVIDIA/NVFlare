@@ -14,6 +14,7 @@
 
 import copy
 import hashlib
+import json
 import os
 import random
 import threading
@@ -927,6 +928,9 @@ class NetAgent:
             ["Memory Usage", str(usage)],
             ["Thread Count", str(threading.active_count())],
         ]
+
+        for status in self.cell.get_credential_status():
+            rows.append(["Endpoint credential", json.dumps(status, sort_keys=True)])
 
         for thread in threading.enumerate():
             rows.append([f"Thread:{thread.ident}", thread.name])

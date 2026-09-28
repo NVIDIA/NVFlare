@@ -60,6 +60,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.certificate_renewal import watch_credentials
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _TOPIC_BULK = "bulk"
@@ -308,6 +309,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         auth_identity: str = None,
         auth_identity_map: dict = None,
         internal_listener_host: str = None,
+        certificate_renewal: bool = False,
     ):
         """
 
@@ -323,6 +325,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             auth_identity: authenticated identity of this cell's local certificate
             auth_identity_map: FQCN prefix to expected certificate identity map for mTLS peers
             internal_listener_host: host for the internal listener to advertise and bind to
+            certificate_renewal: watch same-key certificate files for a server/client parent
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -417,6 +420,15 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if credentials:
             enhance_credential_info(credentials)
             self.update_fobs_context({FOBSContextKey.SEC_CREDS: credentials})
+
+        self.renewable_credentials = []
+        self._renewal_stop = threading.Event()
+        self._renewal_thread = None
+        if certificate_renewal and (not secure or not auth_identity):
+            raise ValueError("certificate_renewal requires secure mode and a configured auth_identity")
+        if certificate_renewal:
+            self.renewable_credentials = watch_credentials(credentials, auth_identity)
+            credentials = dict(credentials, certificate_renewal=True)
 
         local_auth_identity = auth_identity if auth_identity else self._get_auth_identity_from_credentials(credentials)
         prefix_identity_map = dict(auth_identity_map) if auth_identity_map else {}
@@ -543,14 +555,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             counter_names=counter_names,
             scope=self.my_info.fqcn,
         )
-        self.ALL_CELLS[fqcn] = self
-
         self.credential_manager = CredentialManager(
             self.endpoint,
             identity_resolver=self.identity_resolver,
             enforce_identity=is_mtls_config(credentials, secure),
         )
         self.cert_ex = CertificateExchanger(self, self.credential_manager)
+        self.ALL_CELLS[fqcn] = self
 
     @staticmethod
     def _get_auth_identity_from_credentials(credentials: dict):
@@ -955,6 +966,17 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.communicator.start()
         self.running = True
+        if self.renewable_credentials:
+            self._renewal_thread = threading.Thread(target=self._renew_certificates, name="cert_renewal", daemon=True)
+            self._renewal_thread.start()
+
+    def _renew_certificates(self):
+        while not self._renewal_stop.wait(1.0):
+            for credential in self.renewable_credentials:
+                credential.refresh()
+
+    def get_credential_status(self):
+        return [credential.status() for credential in self.renewable_credentials]
 
     def stop(self):
         """
@@ -970,6 +992,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return
 
         self.stopping = True
+        self._renewal_stop.set()
+        if self._renewal_thread:
+            self._renewal_thread.join(timeout=5)
         self.logger.debug(f"{self.my_info.fqcn}: Stopping Cell")
 
         # notify peers that I am gone

@@ -17,7 +17,7 @@ readme_fc: |
   *********************************
   Federated Learning Client package
   *********************************
-  The package includes at least the following files:
+  A standard package includes at least the following files:
   readme.txt
   rootCA.pem
   client.crt
@@ -35,11 +35,13 @@ readme_fc: |
   The client name in your submission to participate this Federated Learning project is embedded in the CN field of client
   certificate, which uniquely identifies the participant.  As such, please safeguard its private key, client.key.
 
+  With external_cert: true, client.crt and client.key must be installed before start.sh is run.
+
 readme_fs: |
   *********************************
   Federated Learning Server package
   *********************************
-  The package includes at least the following files:
+  A standard package includes at least the following files:
   readme.txt
   rootCA.pem
   server.crt
@@ -57,6 +59,9 @@ readme_fs: |
   you will need to modify fed_server.json.  The same applies to the other two files, server.crt and server.key.
 
   Please always safeguard the server.key.
+
+  With external_cert: true, server.crt and server.key must be installed before start.sh is run.
+  With external_job_ca: true, install an approved job_ca.crt chain and job_ca.key before deploying secure jobs.
 
 local_client_resources: |
   {

@@ -54,8 +54,8 @@ def get_grpc_client_credentials(params: dict):
 
 def get_grpc_server_credentials(params: dict):
     root_cert = _read_file(params.get(DriverParams.CA_CERT.value))
-    cert_chain = _read_file(params.get(DriverParams.SERVER_CERT))
-    private_key = _read_file(params.get(DriverParams.SERVER_KEY))
+    cert_file = params.get(DriverParams.SERVER_CERT)
+    key_file = params.get(DriverParams.SERVER_KEY)
 
     conn_security = params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
     require_client_auth = False if conn_security == ConnectionSecurity.TLS else True
@@ -65,8 +65,19 @@ def get_grpc_server_credentials(params: dict):
     else:
         params[DriverParams.IMPLEMENTED_CONN_SEC] = "Server TLS: client auth not required"
 
+    if params.get(DriverParams.CERTIFICATE_RENEWAL):
+
+        def fetch_configuration():
+            return grpc.ssl_server_certificate_configuration(
+                [(_read_file(key_file), _read_file(cert_file))], root_certificates=root_cert
+            )
+
+        return grpc.dynamic_ssl_server_credentials(
+            fetch_configuration(), fetch_configuration, require_client_authentication=require_client_auth
+        )
+
     return grpc.ssl_server_credentials(
-        [(private_key, cert_chain)],
+        [(_read_file(key_file), _read_file(cert_file))],
         root_certificates=root_cert,
         require_client_auth=require_client_auth,
     )

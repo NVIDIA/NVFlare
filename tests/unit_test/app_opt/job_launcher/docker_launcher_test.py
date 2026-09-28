@@ -513,7 +513,14 @@ class TestDockerJobLauncherInit:
 # ---------------------------------------------------------------------------
 
 
-_FAKE_STARTUP_FILES = ("rootCA.pem", "client.crt", "client.key", "fed_client.json")
+_FAKE_STARTUP_FILES = (
+    "rootCA.pem",
+    "client.crt",
+    "client.key",
+    "fed_client.json",
+    "enrollment-token",
+    "issuer-config.json",
+)
 _fake_startup_dir = None
 
 

@@ -14,16 +14,19 @@
 
 import contextlib
 import datetime
+import fnmatch
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.x509.oid import ExtendedKeyUsageOID
 
-from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
+from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, WorkspaceConstants
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.identity import get_cert_common_name
 from nvflare.fuel.sec.cert_uri import (
     CA_URI_KIND,
     CELL_URI_KIND,
@@ -38,10 +41,12 @@ from nvflare.lighter.utils import (
     bounded_validity,
     generate_cert,
     generate_keys,
+    load_crt,
     load_crt_bytes,
     load_private_key_file,
     serialize_cert,
     serialize_pri_key,
+    verify_cert_chain,
     write_pri_key_file,
 )
 
@@ -169,14 +174,37 @@ def apply_job_cert_config(site_config: dict, run_dir: str) -> None:
 
 
 def job_startup_files(startup_dir: str) -> List[str]:
-    """Startup-kit files a job process may see: every regular file except private keys."""
+    """Only runtime configuration, public credentials, and signed HE material enter jobs.
+
+    Enrollment tokens/configuration are not necessarily named *.key. Never copy arbitrary
+    startup files, and keep enrollment secrets out of these files and job-visible mounts.
+    """
+    allowed = {
+        "rootCA.pem",
+        ProvFileName.CUSTOM_CA_CERT_FILE_NAME,
+        "client.crt",
+        "server.crt",
+        ProvFileName.FED_SERVER_JSON,
+        ProvFileName.FED_CLIENT_JSON,
+        ProvFileName.SIGNATURE_JSON,
+        ProvFileName.SERVER_CONTEXT_TENSEAL,
+        ProvFileName.CLIENT_CONTEXT_TENSEAL,
+        WorkspaceConstants.AUTHORIZATION_CONFIG,
+    }
     return sorted(
-        f for f in os.listdir(startup_dir) if not f.endswith(".key") and os.path.isfile(os.path.join(startup_dir, f))
+        f
+        for f in os.listdir(startup_dir)
+        if (
+            f in allowed
+            or fnmatch.fnmatch(f, WorkspaceConstants.RESOURCE_FILE_NAME_PATTERN)
+            or fnmatch.fnmatch(f, WorkspaceConstants.JOB_RESOURCE_FILE_NAME_PATTERN)
+        )
+        and os.path.isfile(os.path.join(startup_dir, f))
     )
 
 
 def stage_job_startup_dir(startup_dir: str, dest_dir: str) -> str:
-    """Copy the startup kit without its private keys to dest_dir, for a launcher to mount into the job."""
+    """Stage only job-visible startup files for a launcher to mount into the job."""
     os.makedirs(dest_dir, mode=0o700, exist_ok=True)
     for fname in job_startup_files(startup_dir):
         shutil.copy2(os.path.join(startup_dir, fname), os.path.join(dest_dir, fname))
@@ -208,11 +236,11 @@ class JobCertIssuer:
     from a startup kit.
     """
 
-    def __init__(self, ca_cert_pem: bytes, ca_key):
+    def __init__(self, ca_cert_pem: bytes, ca_key, trusted_chain=None):
         self.ca_cert_pem = ca_cert_pem
         self.ca_cert = load_crt_bytes(ca_cert_pem)
         self.ca_key = ca_key
-        self.ca_cn = get_cert_common_name(self.ca_cert)
+        self.trusted_chain = trusted_chain or x509.load_pem_x509_certificates(ca_cert_pem)
 
     def issue(
         self, site_name: str, job_id: str, owner_fqcn: str, valid_days: int = JOB_CERT_VALID_DAYS
@@ -230,9 +258,11 @@ class JobCertIssuer:
         """
         pri_key, pub_key = generate_keys()
         not_valid_before, not_valid_after = bounded_validity(self.ca_cert, valid_days, backdate=JOB_CERT_BACKDATE)
+        not_valid_before = max(not_valid_before, *(c.not_valid_before_utc for c in self.trusted_chain))
+        not_valid_after = min(not_valid_after, *(c.not_valid_after_utc for c in self.trusted_chain))
         cert = generate_cert(
             subject=Identity(site_name),
-            issuer=Identity(self.ca_cn),
+            issuer=self.ca_cert.subject,
             signing_pri_key=self.ca_key,
             subject_pub_key=pub_key,
             not_valid_before=not_valid_before,
@@ -257,24 +287,61 @@ class JobCertIssuer:
 def load_job_cert_issuer(startup_dir: str) -> JobCertIssuer:
     """Create a JobCertIssuer from the startup kit's job CA.
 
-    Raises JobCertError when the kit has no job CA (provisioned before this feature or with
-    CertBuilder's enable_job_ca off) or the job CA is about to expire; secure-mode jobs must
-    not run without a per-job credential.
+    Validate provisioned or deployment-installed material before signing. Missing,
+    invalid, or near-expiry credentials block secure jobs without a site-key fallback.
     """
     cert_path = os.path.join(startup_dir, ProvFileName.JOB_CA_CERT)
     key_path = os.path.join(startup_dir, ProvFileName.JOB_CA_KEY)
     if not (os.path.isfile(cert_path) and os.path.isfile(key_path)):
         raise JobCertError(
             f"server startup kit has no job CA ({ProvFileName.JOB_CA_CERT} / {ProvFileName.JOB_CA_KEY}); "
-            "re-provision the project (CertBuilder enable_job_ca) to run jobs in secure mode"
+            "install approved job-CA credentials or re-provision with CertBuilder enable_job_ca to run secure jobs"
         )
 
-    with open(cert_path, "rb") as f:
-        ca_cert_pem = f.read()
-    ca_cert = load_crt_bytes(ca_cert_pem)
-    if ca_cert.not_valid_after_utc <= datetime.datetime.now(datetime.timezone.utc) + JOB_CA_MIN_REMAINING:
+    try:
+        with open(cert_path, "rb") as f:
+            ca_cert_pem = f.read()
+        supplied_chain = x509.load_pem_x509_certificates(ca_cert_pem)
+        ca_cert = supplied_chain[0]
+        key = load_private_key_file(key_path)
+        if not isinstance(key, (rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey)):
+            raise ValueError("job CA requires an RSA or EC signing key")
+        encoding, form = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        if key.public_key().public_bytes(encoding, form) != ca_cert.public_key().public_bytes(encoding, form):
+            raise ValueError("job CA certificate does not match its private key")
+        basic_constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        constraints = basic_constraints.value
+        if not basic_constraints.critical or not constraints.ca or constraints.path_length != 0:
+            raise ValueError("job CA requires critical CA:TRUE/pathlen:0")
+        if not ca_cert.extensions.get_extension_for_class(x509.KeyUsage).value.key_cert_sign:
+            raise ValueError("job CA requires keyCertSign usage")
+        if not has_job_ca_marker(ca_cert):
+            raise ValueError("job CA requires the issuer-signed NVFlare job-CA marker")
+
+        root = load_crt(os.path.join(startup_dir, "rootCA.pem"))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires = min(c.not_valid_after_utc for c in [*supplied_chain, root])
+        if expires <= now + JOB_CA_MIN_REMAINING:
+            raise ValueError(f"job CA chain expires at {expires.isoformat()} (less than {JOB_CA_MIN_REMAINING} left)")
+        chain = verify_cert_chain(ca_cert, supplied_chain[1:], root, now=now)
+        for cert in chain:
+            if cert.not_valid_before_utc > now:
+                raise ValueError("job CA chain is not yet valid")
+            try:
+                eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+            except x509.ExtensionNotFound:
+                continue
+            if not {ExtendedKeyUsageOID.CLIENT_AUTH, ExtendedKeyUsageOID.SERVER_AUTH}.issubset(eku):
+                raise ValueError("job CA chain must permit both clientAuth and serverAuth")
+        # The verifier treats its target as a leaf. Here the target is a CA, so
+        # count it when checking every ancestor's allowance for subordinate CAs.
+        for i, issuer in enumerate(chain[1:], start=1):
+            limit = issuer.extensions.get_extension_for_class(x509.BasicConstraints).value.path_length
+            depth = sum(c.subject != c.issuer for c in chain[:i])
+            if limit is not None and depth > limit:
+                raise ValueError("job CA chain exceeds an ancestor path-length constraint")
+        return JobCertIssuer(b"".join(serialize_cert(c) for c in chain[:-1]), key, trusted_chain=chain)
+    except Exception as ex:
         raise JobCertError(
-            f"job CA expires at {ca_cert.not_valid_after_utc.isoformat()} (less than {JOB_CA_MIN_REMAINING} left); "
-            "re-provision the project to renew it"
-        )
-    return JobCertIssuer(ca_cert_pem, load_private_key_file(key_path))
+            f"invalid job CA: {ex}; install an approved job_ca.crt chain and matching job_ca.key"
+        ) from ex

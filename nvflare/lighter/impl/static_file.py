@@ -240,7 +240,7 @@ class StaticFileBuilder(Builder):
                 "require_signed_jobs_config": self._build_require_signed_jobs_config(),
                 "auth_identity_config": self._build_auth_identity_config(
                     auth_identity=server_auth_identity,
-                    default_identity=server.name,
+                    default_identity=None if server.get_prop(PropKey.EXTERNAL_CERT) else server.name,
                     auth_identity_map=self._build_auth_identity_map(project, ctx),
                     indent=12,
                 ),

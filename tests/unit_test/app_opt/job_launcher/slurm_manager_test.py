@@ -360,7 +360,7 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
 def test_sandbox_gets_keyless_staged_startup_kit(tmp_path):
     startup = tmp_path / "startup"
     startup.mkdir()
-    for name in ("rootCA.pem", "client.crt", "client.key"):
+    for name in ("rootCA.pem", "client.crt", "client.key", "enrollment-token", "issuer-config.json"):
         (startup / name).write_text(name)
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)

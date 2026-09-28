@@ -15,6 +15,7 @@ import threading
 
 from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier
 
@@ -56,6 +57,10 @@ class CredKeeper:
 
     def get_id_asserter(self, fl_ctx: FLContext):
         with self._lock:
+            if self.id_asserter and CommConfigurator().certificate_renewal_enabled():
+                with open(self.id_asserter.cert_file, "rb") as cert:
+                    if cert.read() != self.id_asserter.cert_data:
+                        self.id_asserter = None
             if not self.id_asserter:
                 config = self._get_server_config(fl_ctx)
                 cert_file = config.get(SecureTrainConst.SSL_CERT)
