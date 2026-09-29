@@ -80,9 +80,21 @@ def setup_tensor_disk_offload(
 
 
 def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> None:
-    """Restore the prior FOBS context values and remove any temporary offload root."""
+    """Cancel active downloads, restore the prior FOBS context and remove the offload root."""
     if not context:
         return
+
+    if context.root_dir:
+        # Communicator finalization runs after controller cleanup. Cancel writers
+        # under this root first so late chunks retain the local cancellation reason.
+        try:
+            from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+        except ImportError:
+            pass  # PyTorch is optional; without it there are no disk tensor consumers.
+        else:
+            cleanup_active_disk_tensor_downloads(
+                reason="tensor disk offload ended before download completed", root_dir=context.root_dir
+            )
 
     try:
         if context.applied:

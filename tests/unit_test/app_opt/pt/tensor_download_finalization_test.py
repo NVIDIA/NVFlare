@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -22,7 +25,9 @@ from safetensors.torch import save
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
 from nvflare.fuel.f3.cellnet.cell import Adapter
@@ -42,6 +47,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, 
         "success",
         "finalize_mid",
         "finalize_eof",
+        "fedavg_mid",
         "malformed",
         "disk_full",
         "source_error",
@@ -62,6 +68,7 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
         _TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
     }
     cell.get_fobs_context.side_effect = lambda props=None: {**context, **(props or {})}
+    cell.update_fobs_context.side_effect = context.update
     tensors = {"T0": torch.tensor([1.0]), "T1": torch.tensor([2.0])}
     chunks = [save({key: value}) for key, value in tensors.items()]
     if outcome == "malformed":
@@ -79,6 +86,7 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
     comm = WFCommServer()
     consume = DiskTensorConsumer.consume_items
     consumed = 0
+    first_chunk, resume_download = Event(), Event()
 
     def consume_items(consumer, items, result):
         nonlocal consumed
@@ -88,6 +96,9 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
         consumed += 1
         if outcome in {"finalize_mid", "finalize_network_error"} and consumed == 1:
             comm.finalize_run(FLContext())
+        elif outcome == "fedavg_mid" and consumed == 1:
+            first_chunk.set()
+            assert resume_download.wait(5), "FedAvg cleanup did not finish"
         return result
 
     monkeypatch.setattr(DiskTensorConsumer, "supports_pipelining", pipelining)
@@ -115,6 +126,44 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
             with pytest.raises(SystemExit):
                 adapter.call(future)
             exit_process.assert_called_once_with(1)
+        elif outcome == "fedavg_mid":
+            controller = FedAvg(num_clients=2, num_rounds=1, model=tensors, enable_tensor_disk_offload=True)
+            controller.fl_ctx = FLContext()
+            controller.engine = SimpleNamespace(get_cell=lambda: cell)
+            controller.sample_clients = lambda _: ["good", "retired"]
+            controller.get_num_standing_tasks = lambda: 0  # The slow task retired before decode finished.
+            controller.event = MagicMock()
+            controller.fire_event_with_data = MagicMock()
+            controller.save_model = MagicMock()
+            previous_context = dict(context)
+            other_dir = tmp_path / "other-workflow"
+            other_dir.mkdir()
+            other = DiskTensorConsumer(str(other_dir))
+            pending = []
+            roots = []
+            with ThreadPoolExecutor(max_workers=1) as pool:
+
+                def send_model(**kwargs):
+                    roots.append(Path(context[_TENSOR_DISK_OFFLOAD_ROOT_DIR]))
+                    pending.append(pool.submit(adapter.call, future))
+                    assert first_chunk.wait(5), "first chunk was not written"
+                    kwargs["callback"](FLModel(params=tensors))
+
+                controller.send_model = send_model
+                try:
+                    controller.run()
+                    assert context == previous_context
+                    assert not roots[0].exists()
+                    # Root-scoped cleanup must leave another workflow's download usable.
+                    assert other._cancel_reason is None
+                    assert "T0" in consume(other, [chunks[0]], None)
+                finally:
+                    resume_download.set()
+                    other.cleanup()
+                pending[0].result(timeout=5)
+            exit_process.assert_not_called()
+            # Communicator cleanup happens only after the late chunk has been handled.
+            comm.finalize_run(FLContext())
         else:
             adapter.call(future)
             exit_process.assert_not_called()
