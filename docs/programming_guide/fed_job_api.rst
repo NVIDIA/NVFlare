@@ -162,7 +162,7 @@ job-scoped parameters. With ``FedJob``, supply it through ``meta_props`` using
       },
   )
 
-The exported ``meta.json`` contains:
+The exported ``meta.json`` contains the following ``custom_props`` section:
 
 .. code-block:: json
 
