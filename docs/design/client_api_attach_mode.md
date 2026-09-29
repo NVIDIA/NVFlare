@@ -183,8 +183,8 @@ Typed Attach profiles have `schema_version=1`, `execution_mode="attach"`, an
   "execution_mode": "attach",
   "attach_id": "numpy_trainer",
   "site_name": "site-1",
-  "connect_url": "tcp://site-1.example.com:8004",
-  "connection_security": "clear",
+  "connect_url": "stcp://site-1.example.com:8004",
+  "connection_security": "mtls",
   "secure_mode": true,
   "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
   "job_wait_timeout": null
@@ -205,10 +205,13 @@ differ from defaults:
 }
 ```
 
-`connection_security` must match the CP listener. Bare server-auth-only TLS is
-not supported. A secure transport requires `secure_mode=true`; a clear CP
-transport may still use `secure_mode=true`, which is the normal secure-job
-configuration.
+`connection_security` must match the CP listener. Prepared Docker, Kubernetes,
+and Slurm parents use `stcp` with mTLS by default. Bare server-auth-only TLS is
+not supported. A secure transport requires `secure_mode=true`. To opt out on a
+trusted, isolated network, set `parent.internal_connection_security: clear` for
+Docker/Kubernetes or `job_launcher.internal_connection_security: clear` for
+Slurm, then use `tcp` with `connection_security="clear"`; that clear transport
+may still use `secure_mode=true` for end-to-end Cell message protection.
 
 ### Shared-file profile
 

@@ -1,0 +1,7 @@
+# Project-local metadata created by `npx skills add`.
+**/.agents/
+**/skills-lock.json
+
+# Synthetic datasets created by the statistics examples.
+fedstats-tabular/data/
+fedstats-image/data/

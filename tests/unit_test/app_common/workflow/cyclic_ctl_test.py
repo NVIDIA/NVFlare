@@ -19,13 +19,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController, RelayOrder
 
 SITE_1_ID = uuid.uuid4()
@@ -93,7 +94,12 @@ class TestCyclicController:
 
     def test_control_flow_call_relay_and_wait(self):
 
-        with patch("nvflare.app_common.workflows.cyclic_ctl.CyclicController.relay_and_wait") as mock_method:
+        def complete_relay(task, **kwargs):
+            task.completion_status = TaskCompletionStatus.OK
+
+        with patch(
+            "nvflare.app_common.workflows.cyclic_ctl.CyclicController.relay_and_wait", side_effect=complete_relay
+        ) as mock_method:
             ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
             ctl.shareable_generator = Mock()
             ctl._participating_clients = [
@@ -108,6 +114,7 @@ class TestCyclicController:
             with (
                 patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1,
                 patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2,
+                patch.object(ctl, "fire_event") as fire_event,
             ):
                 mock_method1.return_value = Shareable()
                 mock_method2.return_value = Learnable()
@@ -115,6 +122,27 @@ class TestCyclicController:
                 ctl.control_flow(abort_signal, fl_ctx)
 
                 mock_method.assert_called_once()
+                assert fire_event.call_args_list[0].args[0] == AppEventType.ROUND_STARTED
+                assert fire_event.call_args_list[-1].args[0] == AppEventType.ROUND_DONE
+
+    def test_control_flow_does_not_publish_round_done_after_timeout(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+        ctl.shareable_generator.learnable_to_shareable.return_value = Shareable()
+        ctl._participating_clients = [Client("site-1", SITE_1_ID), Client("site-2", SITE_2_ID)]
+
+        def timeout_relay(task, **kwargs):
+            task.completion_status = TaskCompletionStatus.TIMEOUT
+
+        with (
+            patch.object(ctl, "relay_and_wait", side_effect=timeout_relay),
+            patch.object(ctl, "fire_event") as fire_event,
+        ):
+            ctl.control_flow(Signal(), FLContext())
+
+        events = [call.args[0] for call in fire_event.call_args_list]
+        assert AppEventType.ROUND_STARTED in events
+        assert AppEventType.ROUND_DONE not in events
 
     @pytest.mark.parametrize("return_result", PROCESS_RESULT_TEST_CASES)
     def test_process_result(self, return_result):
@@ -141,6 +169,19 @@ class TestCyclicController:
             ctl._process_result(client_task, fl_ctx)
             mock_method.assert_called_once()
             assert ctl._is_done is True
+
+    def test_process_result_emits_standard_contribution_event(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+        ctl.shareable_generator.shareable_to_learnable.return_value = Learnable()
+        ctl.shareable_generator.learnable_to_shareable.return_value = Shareable()
+        fl_ctx = FLContext()
+
+        with patch.object(ctl, "fire_event") as fire_event:
+            ctl._process_result(make_client_task(Shareable()), fl_ctx)
+
+        fire_event.assert_called_once_with(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
 
     def test_process_result_stops_on_non_ok_rc_without_converting_shareable(self):
         ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
@@ -207,6 +248,7 @@ class TestCyclicController:
             patch.object(ctl, "cancel_task") as mock_cancel,
             patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
             patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+            patch.object(ctl, "fire_event") as fire_event,
         ):
             mock_to_learnable.return_value = learnable
             mock_to_shareable.return_value = next_shareable
@@ -222,6 +264,41 @@ class TestCyclicController:
             assert client_task.task.data.get_header(AppConstants.NUM_ROUNDS) == ctl._num_rounds
             assert client_task.task.data.get_cookie(AppConstants.CONTRIBUTION_ROUND) == ctl._current_round
             assert ctl._is_done is False
+            fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+            assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
+
+    def test_process_result_stops_on_unconvertible_disallowed_early_termination(self):
+        ctl = CyclicController(
+            persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=False
+        )
+        ctl.shareable_generator = Mock()
+        ctl._last_learnable = Learnable()
+        ctl._current_round = 3
+
+        fl_ctx = FLContext()
+        result = gen_shareable(is_early_termination=True)
+        client_task = make_client_task(result)
+        next_shareable = Shareable()
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(
+                ctl.shareable_generator, "learnable_to_shareable", return_value=next_shareable
+            ) as mock_to_shareable,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable", side_effect=ValueError("bad result")),
+            patch.object(ctl, "fire_event") as fire_event,
+        ):
+            ctl._process_result(client_task, fl_ctx)
+
+        mock_cancel.assert_called_once_with(client_task.task)
+        mock_to_shareable.assert_not_called()
+        emitted_events = [
+            call.args[0] if call.args else call.kwargs.get("event_type") for call in fire_event.call_args_list
+        ]
+        assert AppEventType.AFTER_CONTRIBUTION_ACCEPT not in emitted_events
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is None
+        assert client_task.task.data is not next_shareable
+        assert ctl._is_done is True
 
     def test_process_result_converts_ok_result(self):
         ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)

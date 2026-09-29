@@ -53,7 +53,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script as a string or pre-tokenized argv.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging.
@@ -70,6 +70,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Deprecated constructor form. New code should call
             ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
         key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
@@ -115,17 +117,18 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Optional[Literal["min", "max"]] = None,
@@ -163,6 +166,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,

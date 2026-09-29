@@ -97,13 +97,13 @@ def main():
         input_model = flare.receive()
         client_id = flare.get_site_name()
 
-        # Based on different "task" we will do different things
-        # for "train" task (flare.is_train()) we use the received model to do training and/or evaluation
-        # and send back updated model and/or evaluation metrics, if the "train_with_evaluation" is specified as True
-        # in the config_fed_client we will need to do evaluation and include the evaluation metrics
-        # for "evaluate" task (flare.is_evaluate()) we use the received model to do evaluation
-        # and send back the evaluation metrics
-        # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
+        # Handle each Client API task according to its type:
+        # - "train" (flare.is_train()): train and optionally evaluate the received model, then send the updated
+        #   model plus any supplied evaluation metrics. When "train_with_evaluation" is True, framework integrations
+        #   such as Lightning and Hugging Face require evaluation metrics; the raw Client API does not enforce them.
+        #   The flag does not control whether supplied metrics are transmitted.
+        # - "evaluate" (flare.is_evaluate()): evaluate the received model and return the metrics.
+        # - "submit_model" (flare.is_submit_model()): return the requested local model.
         # (5) performing train task on received model
         if flare.is_train():
             print(f"({client_id}) current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")

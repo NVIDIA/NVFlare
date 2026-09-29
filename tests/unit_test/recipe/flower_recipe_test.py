@@ -20,8 +20,6 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.app_opt.flower.recipe import FlowerRecipe
-from nvflare.client.api import ClientAPIType
-from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.job_config.api import FedJob
 from nvflare.recipe import secret_ref
@@ -55,7 +53,7 @@ def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
 
     assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
-    assert kwargs["extra_env"] == {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
+    assert kwargs["extra_env"] is None
 
 
 def test_flower_recipe_forwards_run_config():
@@ -99,7 +97,7 @@ def test_flower_recipe_warns_on_unsupported_secret_refs(parameter):
 
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
-def test_flower_recipe_merges_extra_env(flwr_version):
+def test_flower_recipe_forwards_extra_env_without_client_api_selector(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     user_env = {"MY_VAR": "123"}
 
@@ -109,25 +107,18 @@ def test_flower_recipe_merges_extra_env(flwr_version):
 
     assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
-    assert kwargs["extra_env"]["MY_VAR"] == "123"
-    assert kwargs["extra_env"][CLIENT_API_TYPE_KEY] == ClientAPIType.EX_PROCESS_API.value
+    assert kwargs["extra_env"] == user_env
 
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
-def test_flower_recipe_rejects_extra_env_with_wrong_client_api_type(flwr_version):
-    bad_value = "wrong_api_type"
-    user_env = {CLIENT_API_TYPE_KEY: bad_value, "MY_VAR": "123"}
+def test_flower_recipe_does_not_treat_client_api_type_as_metrics_selector(flwr_version):
+    user_env = {"CLIENT_API_TYPE": "caller-owned-value", "MY_VAR": "123"}
 
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
-        with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(
-                ValueError,
-                match=rf"'extra_env\[{CLIENT_API_TYPE_KEY}\]' must be '"
-                rf"{ClientAPIType.EX_PROCESS_API.value}' for the Flower integration; got '{bad_value}'\.",
-            ):
-                FlowerRecipe(flower_content="mock_flower_content", extra_env=user_env)
+        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=FedJob("test")) as mock_flower_job:
+            FlowerRecipe(flower_content="mock_flower_content", extra_env=user_env)
 
-    mock_flower_job.assert_not_called()
+    assert mock_flower_job.call_args.kwargs["extra_env"] == user_env
 
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])

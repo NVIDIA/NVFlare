@@ -14,7 +14,7 @@ General Usage
 .. code-block::
 
     nvflare preflight-check -p PACKAGE_PATH
-    nvflare preflight-check --package_path PACKAGE_PATH
+    nvflare preflight-check --package-path PACKAGE_PATH
 
 
 This preflight check script should be run on each site's machine. The ``PACKAGE_PATH`` is the path to the folder that contains

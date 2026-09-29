@@ -18,11 +18,10 @@ from bionemo.core.data.load import load
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 from nvflare import FilterType
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
-from nvflare.job_config.script_runner import BaseScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 
 
 def main(args):
@@ -64,15 +63,16 @@ def main(args):
         print(f"Running {args.train_script} with args: {script_args}")
 
         # Define training script runner
-        runner = BaseScriptRunner(
+        runner = ScriptRunner(
             script=args.train_script,
+            script_args=script_args,
             launch_external_process=True,
+            command="python3",
             framework="pytorch",
             server_expected_format="pytorch",
             # bionemo script is launched new at every FL round. Adds a shutdown grace period to make sure bionemo can save the local model
-            launcher=SubprocessLauncher(
-                script=f"python3 custom/{args.train_script} {script_args}", launch_once=False, shutdown_timeout=100.0
-            ),
+            launch_once=False,
+            shutdown_timeout=100.0,
         )
         job.to(runner, client_name)
         job.to(

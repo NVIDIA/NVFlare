@@ -124,8 +124,10 @@ receive validation metrics before local training:
         trainer.train()
 
 The HuggingFace Client API reports the metrics returned by the trainer. Configure
-the server-side recipe or selector with a higher-is-better metric key. If you do
-not want the recipe to select a best model, set ``key_metric=""``:
+the server-side recipe or selector with the metric key to monitor; for
+lower-is-better metrics such as ``eval_loss``, also set ``key_metric_mode="min"``
+so the recipe selects the model with the lowest value. If you do not want the
+recipe to select a best model, set ``key_metric=""``:
 
 .. code-block:: python
 
@@ -207,6 +209,12 @@ NumPy server.
 
 Distributed Training
 ====================
+
+The current HuggingFace Client API supports replicated
+``torch.distributed`` training. It does not support DeepSpeed or FSDP. This is
+a product API limitation that also applies to jobs produced by
+:ref:`Agent Conversion Skills <agent_conversion_skills>`; support for these
+strategies is planned for a future release.
 
 For multi-GPU or multi-node HuggingFace training, launch the script with
 ``torchrun`` or another launcher that initializes ``torch.distributed`` and
@@ -294,7 +302,7 @@ override this selection after validating your environment, set
 Unsupported Configurations
 ==========================
 
-The first HuggingFace Client API implementation intentionally does not support:
+The current HuggingFace Client API does not support:
 
 * DeepSpeed;
 * FSDP;

@@ -92,7 +92,15 @@ class TaskController(FLComponent, ControllerSpec):
         # # first apply privacy-defined filters
         try:
             filter_name = Scope.TASK_DATA_FILTERS_NAME
-            task.data = apply_filters(filter_name, request, fl_ctx, self.task_data_filters, task.name, FilterKey.OUT)
+            task.data = apply_filters(
+                filter_name,
+                request,
+                fl_ctx,
+                self.task_data_filters,
+                task.name,
+                FilterKey.OUT,
+                abort_signal=abort_signal,
+            )
         except Exception as e:
             self.log_exception(
                 fl_ctx,
@@ -160,7 +168,13 @@ class TaskController(FLComponent, ControllerSpec):
                         try:
                             filter_name = Scope.TASK_RESULT_FILTERS_NAME
                             reply = apply_filters(
-                                filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.IN
+                                filter_name,
+                                reply,
+                                fl_ctx,
+                                self.task_result_filters,
+                                task.name,
+                                FilterKey.IN,
+                                abort_signal=abort_signal,
                             )
                         except Exception as e:
                             self.log_exception(

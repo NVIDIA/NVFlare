@@ -14,6 +14,8 @@
 
 import importlib
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -76,6 +78,87 @@ def _resolve_test_config_path(config_dir: str, path: str) -> str:
     if os.path.isabs(path):
         return path
     return os.path.abspath(os.path.join(config_dir, path))
+
+
+def _is_process_group_alive(pgid: int) -> bool:
+    """Return whether a process group still has at least one member."""
+
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_process_groups(processes, timeout: float) -> list:
+    """Wait for process groups to exit and return any that remain alive."""
+
+    deadline = time.monotonic() + timeout
+    remaining = list(processes)
+    while remaining:
+        # Reap direct children before probing the group: a terminated leader
+        # remains a zombie until poll()/wait(), and would otherwise make killpg
+        # report the group as alive even when no descendants remain.
+        for _, process, _ in remaining:
+            process.poll()
+
+        remaining = [item for item in remaining if _is_process_group_alive(item[2])]
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    return remaining
+
+
+def _wait_for_background_processes(processes, timeout: float = 30.0):
+    """Require test-owned background processes to exit cleanly after the job."""
+
+    deadline = time.monotonic() + timeout
+    for command, process, _ in processes:
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            return_code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as ex:
+            raise NVFTestError(f"Background process did not exit after the job: {command}") from ex
+        if return_code != 0:
+            raise NVFTestError(f"Background process exited with code {return_code}: {command}")
+
+    running_groups = _wait_for_process_groups(processes, timeout=max(0.0, deadline - time.monotonic()))
+    if running_groups:
+        commands = ", ".join(command for command, _, _ in running_groups)
+        raise NVFTestError(f"Background process group did not exit after the job: {commands}")
+
+
+def _stop_background_processes(processes, graceful_timeout: float = 10.0, kill_timeout: float = 5.0):
+    """Stop commands launched in their own process groups or report survivors."""
+
+    # Keep the PGID independently of Popen state: the group leader can exit while
+    # a descendant remains alive and still needs cleanup.
+    running_groups = [item for item in processes if _is_process_group_alive(item[2])]
+    for _, _, pgid in running_groups:
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    remaining_groups = _wait_for_process_groups(running_groups, graceful_timeout)
+    for _, _, pgid in remaining_groups:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    surviving_groups = _wait_for_process_groups(remaining_groups, kill_timeout)
+
+    # Reap leaders when they are still children of the test process.
+    for _, process, _ in processes:
+        process.poll()
+
+    if surviving_groups:
+        group_details = ", ".join(
+            f"{command} (pid={process.pid}, pgid={pgid})" for command, process, pgid in surviving_groups
+        )
+        raise NVFTestError(f"Background process group survived SIGKILL: {group_details}")
 
 
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
@@ -142,6 +225,7 @@ def setup_and_teardown_system(request):
                     x["test_name"],
                     x.get("validators"),
                     x.get("setup", []),
+                    x.get("background_processes", []),
                     x.get("teardown", []),
                     x.get("event_sequence", []),
                     x.get("reset_job_info", True),
@@ -192,51 +276,78 @@ class TestSystem:
 
         test_validate_results = []
         for test_data in test_cases:
-            test_name, validators, setup, teardown, event_sequence, reset_job_info = test_data
+            test_name, validators, setup, background_commands, teardown, event_sequence, reset_job_info = test_data
             print(f"Running test {test_name} in {test_yaml_path}")
 
             start_time = time.time()
-            for command in setup:
-                print(f"Running setup command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
+            background_processes = []
+            try:
+                for command in setup:
+                    print(f"Running setup command: {command}")
+                    process = run_command_in_subprocess(command)
+                    process.wait()
 
-            test_driver.run_event_sequence(event_sequence)
+                for command in background_commands:
+                    print(f"Starting background process: {command}")
+                    process = run_command_in_subprocess(command)
+                    # run_command_in_subprocess starts a new session, making its
+                    # PID the process-group ID even if the leader exits later.
+                    background_processes.append((command, process, process.pid))
 
-            # Get the job validator
-            if validators:
-                job_result = None
-                if test_driver.job_id is not None:
-                    job_result = test_driver.get_job_result(test_driver.job_id)
+                test_driver.run_event_sequence(event_sequence)
+                _wait_for_background_processes(background_processes)
+                # A successful wait reaped every leader and confirmed every
+                # process group is gone. Do not retain stale numeric PGIDs for
+                # the finally block, where they could be reused by another
+                # process group while validators are running.
+                background_processes.clear()
 
-                validate_result = True
-                for validator in validators:
-                    validator_module = validator["path"]
-                    validator_args = validator.get("args", {})
-                    # Create validator instance
-                    module_name, class_name = get_module_class_from_full_path(validator_module)
-                    job_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                    job_validator = job_validator_cls(**validator_args)
+                # Get the job validator
+                if validators:
+                    job_result = None
+                    if test_driver.job_id is not None:
+                        job_result = test_driver.get_job_result(test_driver.job_id)
 
-                    job_validate_res = job_validator.validate_results(
-                        job_result=job_result,
-                        client_props=list(site_launcher.client_properties.values()),
-                    )
-                    print(f"Test {test_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}")
-                    if not job_validate_res:
-                        validate_result = False
-                        break
-            else:
-                print("No validators provided so results set to No Validators.")
-                validate_result = "No Validators"
-            test_validate_results.append((test_name, validate_result))
+                    validate_result = True
+                    for validator in validators:
+                        validator_module = validator["path"]
+                        validator_args = validator.get("args", {})
+                        # Create validator instance
+                        module_name, class_name = get_module_class_from_full_path(validator_module)
+                        job_validator_cls = getattr(importlib.import_module(module_name), class_name)
+                        job_validator = job_validator_cls(**validator_args)
+
+                        job_validate_res = job_validator.validate_results(
+                            job_result=job_result,
+                            client_props=list(site_launcher.client_properties.values()),
+                        )
+                        print(
+                            f"Test {test_name}, Validator {job_validator.__class__.__name__}, "
+                            f"Result: {job_validate_res}"
+                        )
+                        if not job_validate_res:
+                            validate_result = False
+                            break
+                else:
+                    print("No validators provided so results set to No Validators.")
+                    validate_result = "No Validators"
+                test_validate_results.append((test_name, validate_result))
+            finally:
+                # Always run the configured teardown and reset the driver, even
+                # when a process group survives forced cleanup and is reported
+                # as an error.
+                try:
+                    _stop_background_processes(background_processes)
+                finally:
+                    try:
+                        for command in teardown:
+                            print(f"Running teardown command: {command}")
+                            process = run_command_in_subprocess(command)
+                            process.wait()
+                    finally:
+                        test_driver.reset_test_info(reset_job_info=reset_job_info)
 
             print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
-            for command in teardown:
-                print(f"Running teardown command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
-            test_driver.reset_test_info(reset_job_info=reset_job_info)
             _print_newlines()
 
         _print_test_report(yaml_path=test_yaml_path, validate_result=test_validate_results)

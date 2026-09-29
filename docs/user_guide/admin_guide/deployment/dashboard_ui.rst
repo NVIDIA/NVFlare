@@ -176,37 +176,22 @@ been set yet.
 Project Configuration
 ---------------------
 Upon the first login, the first page that the Project Admin should be directed to is the Project Configuration page (after the project has been
-frozen, the Project Admin will be directed to the Users Dashboard).
-
-.. figure:: ../../../resources/dashboard_proj_configuration.png
-    :height: 500px
-
-    Project Configuration page.
+made public, the Project Admin will be directed to the Users Dashboard).
 
 On the Project Configuration page, the Project Admin can set:
 
   - Short Name: a short name with a maximum of 16 characters that is shown at the top left of the website and also used in certificates
   - Title: the title of the project displayed on the Project Home Page
   - Description: the description for the project displayed on the Project Home Page
+  - Docker Download Link: the application image location displayed on the Downloads page for ``Org Admin`` and ``Project Admin`` users when configured
   - Start date: the start date for the project
   - End date: the end date for the project
+
+The page also provides a ``Make Project Public`` action. Making the project public enables the Sign Up flow in the Dashboard web interface.
 
 .. tip::
 
    Click ``Save`` after entering the values to save the changes.
-
-.. _dashboard_application_configuration:
-
-Application Configuration
--------------------------
-
-.. figure:: ../../../resources/dashboard_app_config.png
-    :height: 500px
-
-    Application Configuration page.
-
-On the Application Configuration page, the Project Admin can set the docker image download link. This is displayed on the Downloads page for users
-that are of the role ``Org Admin``.
 
 .. _dashboard_server_configuration:
 

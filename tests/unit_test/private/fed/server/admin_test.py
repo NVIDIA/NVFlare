@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.hci.proto import StreamChannel
+from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
-from nvflare.private.fed.server.admin import check_client_replies
+from nvflare.private.fed.server.admin import FedAdminServer, check_client_replies
 from nvflare.private.fed.server.message_send import ClientReply
 
 
@@ -152,3 +157,104 @@ def test_check_client_replies_legacy_does_not_raise_when_prefix_not_at_start():
     result = check_client_replies(replies=replies, client_sites=["C1"], command="start", strict=False)
 
     assert result == []
+
+
+def test_admin_server_registers_hci_command_and_upload_handlers_by_default():
+    cell = MagicMock()
+    cmd_reg = MagicMock()
+    engine = MagicMock()
+    fl_ctx = MagicMock()
+    engine.new_context.return_value = fl_ctx
+
+    with patch("nvflare.fuel.hci.server.hci.FileStreamer.register_stream_processing") as register_stream:
+        server = AdminServer(cell=cell, cmd_reg=cmd_reg, engine=engine)
+
+    cmd_reg.finalize.assert_called_once_with()
+    cell.register_request_cb.assert_called_once_with(
+        channel=CellChannel.HCI,
+        topic="*",
+        cb=server._process_admin_request,
+    )
+    register_stream.assert_called_once_with(
+        fl_ctx=fl_ctx,
+        channel=StreamChannel.UPLOAD,
+        topic="*",
+        stream_done_cb=server._process_upload,
+    )
+
+
+def test_admin_server_disabled_registers_no_hci_command_or_upload_handlers():
+    cell = MagicMock()
+    engine = MagicMock()
+
+    with patch("nvflare.fuel.hci.server.hci.FileStreamer.register_stream_processing") as register_stream:
+        server = AdminServer(cell=cell, cmd_reg=None, engine=engine, enable_hci=False)
+
+    assert server.cmd_reg is None
+    assert server.cred_keeper is None
+    cell.register_request_cb.assert_not_called()
+    engine.new_context.assert_not_called()
+    register_stream.assert_not_called()
+
+    server.start()
+    server.stop()
+
+
+def test_fed_admin_server_disabled_preserves_outbound_helpers_without_admin_components():
+    cell = MagicMock()
+    fed_admin_interface = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.server.admin.new_command_register_with_builtin_module") as new_cmd_reg,
+        patch("nvflare.private.fed.server.admin.SessionManager") as session_manager,
+        patch("nvflare.private.fed.server.admin.LoginModule") as login_module,
+        patch("nvflare.private.fed.server.admin.AuthzFilter") as authz_filter,
+        patch("nvflare.private.fed.server.admin.CommandAudit") as command_audit,
+        patch("nvflare.private.fed.server.admin.AuditService.get_auditor") as get_auditor,
+        patch("nvflare.private.fed.server.admin.NetAgent") as net_agent,
+        patch("nvflare.private.fed.server.admin.NetManager") as net_manager,
+        patch("nvflare.private.fed.server.admin.mpm.add_cleanup_cb") as add_cleanup_cb,
+    ):
+        server = FedAdminServer(
+            cell=cell,
+            fed_admin_interface=fed_admin_interface,
+            cmd_modules=[],
+            file_upload_dir="upload",
+            file_download_dir="download",
+            enable_hci=False,
+        )
+
+    new_cmd_reg.assert_not_called()
+    session_manager.assert_not_called()
+    login_module.assert_not_called()
+    authz_filter.assert_not_called()
+    command_audit.assert_not_called()
+    get_auditor.assert_not_called()
+    net_agent.assert_not_called()
+    net_manager.assert_not_called()
+    add_cleanup_cb.assert_not_called()
+    assert server.sess_mgr is None
+    assert server.net_agent is None
+    assert server.net_mgr is None
+
+    server.client_heartbeat("token", "site-1", "site-1")
+    assert server.get_client_tokens() == ["token"]
+
+    request = Message(topic="request", body="")
+    fl_ctx = MagicMock()
+    with (
+        patch("nvflare.private.fed.server.admin.gen_new_peer_ctx", return_value=MagicMock()),
+        patch("nvflare.private.fed.server.admin.send_requests", return_value=[]) as send_client_requests,
+    ):
+        replies = server.send_requests({"token": request}, fl_ctx)
+
+    assert replies == []
+    fed_admin_interface.fire_event.assert_called_once()
+    send_client_requests.assert_called_once_with(
+        cell=cell,
+        command="admin",
+        requests={"token": request},
+        clients=server.clients,
+        timeout_secs=2.0,
+        optional=False,
+    )

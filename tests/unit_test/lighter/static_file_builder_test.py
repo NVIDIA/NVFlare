@@ -21,7 +21,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
-from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.static_file import StaticFileBuilder, _modify_fed_admin_config
 
 
 class _FakeCtx:
@@ -99,6 +99,43 @@ class TestStaticFileBuilder:
     def test_scheme(self, scheme):
         builder = StaticFileBuilder(scheme=scheme)
         assert builder.scheme == scheme
+
+    def test_admin_cert_provider_config_omits_static_client_cert_material(self):
+        config = _modify_fed_admin_config(
+            json.dumps(
+                {
+                    "admin": {
+                        "username": "admin@example.com",
+                        "client_key": "client.key",
+                        "client_cert": "client.crt",
+                        "ca_cert": "rootCA.pem",
+                    }
+                }
+            ),
+            admin_cert_provider={
+                "provider": "step_ca",
+                "renewal_window": 60,
+                "provider_config": {
+                    "ca_url": "https://step-ca.example.com",
+                    "provisioner": "nvflare-admin-oidc",
+                },
+            },
+        )
+
+        admin = json.loads(config)["admin"]
+        assert "client_key" not in admin
+        assert "client_cert" not in admin
+        assert admin["username"] == ""
+        assert admin["uid_source"] == "cert"
+        assert admin["ca_cert"] == "rootCA.pem"
+        assert admin["admin_cert_provider"] == {
+            "provider": "step_ca",
+            "renewal_window": 60,
+            "provider_config": {
+                "ca_url": "https://step-ca.example.com",
+                "provisioner": "nvflare-admin-oidc",
+            },
+        }
 
     def test_build_server_emits_study_registry_when_studies_exist(self, tmp_path):
         server = Participant(type="server", name="server1", org="org")
@@ -280,6 +317,16 @@ class TestStaticFileBuilder:
         assert sub_start.index(verify_cmd) < sub_start.index('mkdir -p "$WORKSPACE/transfer"')
         assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
 
+    def test_master_template_sub_start_tracks_python_pid(self):
+        """The watchdog must record and reap the FL Python process, not a Bash wrapper."""
+        sub_start = _load_master_template()["sub_start_sh"]
+
+        assert "exec python3 -u -m nvflare.private.fed.app." in sub_start
+        assert "  start_python 2>&1 &\n  pid=$!\n" in sub_start
+        assert 'printf \'%s\\n\' "$pid" > "$WORKSPACE/pid.fl"' in sub_start
+        assert "(start_python 2>&1 & echo $! >&3 )" not in sub_start
+        assert 'wait "$pid" 2> /dev/null' in sub_start
+
     def test_master_template_class_allow_list_is_exact(self):
         """The provisioned allow list must match the curated component list exactly."""
         template = _load_master_template()
@@ -381,11 +428,16 @@ class TestStaticFileBuilder:
         template = _load_master_template()
 
         forbidden_paths = [
+            # ClientAPIExecutor launches a job-controlled command or imports and runs a
+            # job-controlled Python script.
+            "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
             # tf.keras.models.load_model executes code embedded in .keras/.h5/SavedModel files
             # (Lambda layers / custom objects); there is no safe-load flag.
             "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
             # torch.load is pickle-based and runs arbitrary code when load_weights_only=False.
             "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            # joblib.load uses pickle and can execute code from a job-controlled model file.
+            "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
             # ConfigParser importlib-imports a class path read from a config file (plus
             # sys.path.append) -> arbitrary code import.
             "nvflare.edge.simulation.config.ConfigParser",

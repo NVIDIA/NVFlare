@@ -85,6 +85,7 @@ POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
 POC_START_READY_TIMEOUT = 30
+POC_STOP_TIMEOUT = 30
 POC_DEFAULT_FED_LEARN_PORT = 8002
 POC_DEFAULT_ADMIN_PORT = 8003
 POC_LOCAL_HOST = "localhost"
@@ -98,6 +99,8 @@ POC_DOCKER_IMAGE_KEY = "docker_image"
 POC_DOCKER_NETWORK_KEY = "network"
 POC_DOCKER_DEFAULT_NETWORK = "nvflare-network"
 POC_DOCKER_SERVER_ALIAS = "server"
+POC_DOCKER_CONTAINER_NAME_ENV = "NVFLARE_POC_CONTAINER_NAME"
+POC_DOCKER_NETWORK_NAME_ENV = "NVFLARE_POC_NETWORK_NAME"
 POC_DOCKER_DATA_STUDY = "default"
 POC_DOCKER_DATA_DATASET = "poc"
 POC_DOCKER_DATA_MOUNT = f"/data/{POC_DOCKER_DATA_STUDY}/{POC_DOCKER_DATA_DATASET}"
@@ -140,7 +143,12 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 
 
 def get_service_command(
-    cmd_type: str, prod_dir: str, service_dir, service_config: Dict, study: Optional[str] = None
+    cmd_type: str,
+    prod_dir: str,
+    service_dir,
+    service_config: Dict,
+    study: Optional[str] = None,
+    docker_container_name: Optional[str] = None,
 ) -> str:
     cmd = ""
     proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
@@ -166,7 +174,7 @@ def get_service_command(
             if service_dir in admin_dirs:
                 cmd = get_stop_cmd(prod_dir, service_dir)
             else:
-                cmd = f"docker stop {service_dir}"
+                cmd = f"docker stop {docker_container_name or service_dir}"
 
     else:
         raise CLIException(f"unknown cmd_type: {cmd_type}")
@@ -802,6 +810,7 @@ def _is_local_port_available(port: int, host: str = POC_PORT_PREFLIGHT_HOST) -> 
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind((host, port))
     except OSError as e:
         if e.errno == errno.EADDRINUSE:
@@ -1611,7 +1620,7 @@ def start_poc(cmd_args):
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_START_POC),
         "nvflare poc start",
-        ["nvflare poc start", "nvflare poc start -p server"],
+        ["nvflare poc start", "nvflare poc start -p server -p site-1"],
         sys.argv[1:],
         output_modes=["json"],
         streaming=False,
@@ -1711,14 +1720,15 @@ def start_poc(cmd_args):
                     timeout_in_sec=ready_timeout,
                 )
             ready = wait_performed
+        except ValueError as e:
+            output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+            raise SystemExit(4)
         except SystemStartTimeout as e:
             output_error_message(
                 "CONNECTION_FAILED",
-                message="POC system did not become ready before the startup timeout.",
-                hint=(
-                    "Check the POC server/client logs, or use 'nvflare poc start --no-wait' "
-                    "for fire-and-forget startup."
-                ),
+                message="POC readiness could not be confirmed within the startup timeout.",
+                hint="Check 'nvflare system status'. On a slow host, allow more startup time with "
+                "'nvflare poc start --timeout <seconds>', or use '--no-wait' and check status before submitting jobs.",
                 exit_code=2,
                 detail=str(e),
             )
@@ -1808,10 +1818,9 @@ def _wait_for_poc_system_ready(
             second_to_wait=0,
             timeout_in_sec=timeout_in_sec,
             poll_interval=1.0,
-            conn_timeout=1.0,
             expected_clients=expected_clients,
         )
-    except SystemStartTimeout:
+    except (SystemStartTimeout, ValueError):
         raise
     except Exception as e:
         raise SystemStartTimeout(str(e)) from e
@@ -1827,25 +1836,38 @@ def get_gpis(cmd_args):
 
 
 def get_excluded(cmd_args):
-    excluded = None
-    if cmd_args.exclude != "":
-        excluded = [cmd_args.exclude]
-    return excluded
+    excluded = getattr(cmd_args, "exclude", None)
+    if excluded is None:
+        return []
+    if isinstance(excluded, str):
+        return [] if excluded == "" else [excluded]
+    return [participant for participant in excluded if participant != ""]
 
 
 def get_service_list(cmd_args):
-    if cmd_args.service != "all":
-        services_list = [cmd_args.service]
-    else:
-        services_list = []
-    return services_list
+    services = getattr(cmd_args, "service", None)
+    if services is None:
+        return []
+    if isinstance(services, str):
+        return [] if services == "all" else [services]
+    if services == ["all"]:
+        return []
+    return list(services)
 
 
 def _get_server_url(project_config, service_config) -> str:
     return _build_poc_endpoint_info(project_config, service_config)["server_url"]
 
 
-def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None, study: Optional[str] = None):
+def _start_poc(
+    poc_workspace: str,
+    gpu_ids: List[int],
+    excluded=None,
+    services_list=None,
+    study: Optional[str] = None,
+    docker_container_names: Optional[Dict[str, str]] = None,
+    docker_network_name: Optional[str] = None,
+):
     project_config, service_config = setup_service_config(poc_workspace)
     if services_list is None:
         services_list = []
@@ -1868,6 +1890,11 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
     validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config, project_config)
     _ensure_server_running_for_admin_console(project_config, service_config, services_list)
+    docker_args = {}
+    if docker_container_names:
+        docker_args["docker_container_names"] = docker_container_names
+    if docker_network_name:
+        docker_args["docker_network_name"] = docker_network_name
     _run_poc(
         SC.CMD_START,
         poc_workspace,
@@ -1877,10 +1904,16 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
         excluded=excluded,
         services_list=services_list,
         study=study,
+        **docker_args,
     )
 
 
 def validate_services(project_config, services_list: List, excluded: List):
+    if "all" in services_list:
+        raise CLIException(
+            "'-p all' cannot be combined with another -p/--service value. "
+            "Omit -p to select the default server and clients, or list only named participants."
+        )
     participant_names = [p["name"] for p in project_config["participants"]]
     validate_participants(participant_names, services_list)
     validate_participants(participant_names, excluded)
@@ -1929,7 +1962,7 @@ def stop_poc(cmd_args):
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_STOP_POC),
         "nvflare poc stop",
-        ["nvflare poc stop", "nvflare poc stop -p server"],
+        ["nvflare poc stop", "nvflare poc stop -p site-1 -p site-2"],
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
@@ -1988,26 +2021,42 @@ def _stop_poc(
     project_config=None,
     service_config=None,
     wait: bool = True,
+    docker_container_names: Optional[Dict[str, str]] = None,
 ):
     if project_config is None or service_config is None:
         project_config, service_config = setup_service_config(poc_workspace)
 
     if services_list is None:
         services_list = []
-    if excluded is None:
-        excluded = [service_config[SC.FLARE_PROJ_ADMIN]]
-    else:
-        excluded.append(service_config[SC.FLARE_PROJ_ADMIN])
+    user_excluded = list(excluded or [])
+    excluded = list(user_excluded)
+    project_admin = service_config[SC.FLARE_PROJ_ADMIN]
+    if project_admin not in excluded:
+        excluded.append(project_admin)
+    other_admins = list(service_config.get(SC.FLARE_OTHER_ADMINS, []))
+    for admin in other_admins:
+        if admin not in services_list and admin not in excluded:
+            excluded.append(admin)
 
     validate_services(project_config, services_list, excluded)
+    admin_services = {project_admin, *other_admins}
+    selected_admins = [service for service in services_list if service in admin_services]
+    if selected_admins:
+        raise CLIException(
+            f"'nvflare poc stop' cannot stop admin consoles: {', '.join(selected_admins)}. "
+            "Type 'bye' in each admin console instead."
+        )
 
     validate_poc_workspace(poc_workspace, service_config, project_config)
     gpu_ids: List[int] = []
     project_name = project_config.get("name")
     prod_dir = get_prod_dir(poc_workspace, project_name)
 
-    p_size = len(services_list)
-    if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
+    has_service_exclusions = any(service not in admin_services for service in user_excluded)
+    server = service_config[SC.FLARE_SERVER]
+    server_only_selection = bool(services_list) and all(service == server for service in services_list)
+    uses_recipe_docker_names = bool(service_config.get(SC.IS_DOCKER_RUN) and docker_container_names)
+    if not uses_recipe_docker_names and not has_service_exclusions and (not services_list or server_only_selection):
         from nvflare.tool.cli_output import print_human
 
         with _quiet_cli_streams(True):
@@ -2019,8 +2068,9 @@ def _stop_poc(
     else:
         from nvflare.tool.cli_output import print_human
 
-        print_human(f"Starting shutdown of {services_list} using the stop_fl.sh script")
+        print_human(f"Starting local shutdown of {services_list or 'default services'}")
 
+        docker_args = {"docker_container_names": docker_container_names} if docker_container_names else {}
         _run_poc(
             SC.CMD_STOP,
             poc_workspace,
@@ -2029,6 +2079,8 @@ def _stop_poc(
             project_config,
             excluded=excluded,
             services_list=services_list,
+            wait=wait,
+            **docker_args,
         )
         return {"services": services_list}
 
@@ -2052,6 +2104,7 @@ def _build_commands(
     excluded: list,
     services_list=None,
     study: Optional[str] = None,
+    docker_container_names: Optional[Dict[str, str]] = None,
 ) -> list:
     """Builds commands.
 
@@ -2087,7 +2140,14 @@ def _build_commands(
             for service_dir_name in fl_dirs:
                 if service_dir_name not in excluded:
                     if len(services_list) == 0 or service_dir_name in services_list:
-                        cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config, study=study)
+                        cmd = get_service_command(
+                            cmd_type,
+                            prod_dir,
+                            service_dir_name,
+                            service_config,
+                            study=study,
+                            docker_container_name=(docker_container_names or {}).get(service_dir_name),
+                        )
                         if cmd:
                             service_commands.append((service_dir_name, cmd))
     return _sort_service_cmds(cmd_type, service_commands, service_config)
@@ -2102,12 +2162,83 @@ def _env_with_cli_python_path() -> Dict[str, str]:
     return my_env
 
 
-def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
-    my_env = _env_with_cli_python_path()
+def _docker_cli_env() -> Dict[str, str]:
+    """Build an environment that targets the daemon selected by POC Docker startup scripts."""
+    docker_env = _env_with_cli_python_path()
+    socket_override = docker_env.get("NVFL_DOCKER_SOCK")
+    if not socket_override:
+        return docker_env
+
+    # Match start_docker.sh: an active remote context keeps controlling the
+    # outer Docker CLI, while a local context uses the explicit POC socket
+    # override as its endpoint.
+    docker_endpoint = _get_docker_endpoint(docker_env)
+
+    if not docker_endpoint or docker_endpoint.startswith("unix://"):
+        docker_env["DOCKER_HOST"] = f"unix://{socket_override}"
+        # Docker gives DOCKER_CONTEXT precedence over DOCKER_HOST. The POC
+        # startup script uses an explicit --host for this local override, so
+        # remove the context selector to give lifecycle commands the same
+        # endpoint precedence.
+        docker_env.pop("DOCKER_CONTEXT", None)
+    return docker_env
+
+
+def _get_docker_endpoint(docker_env: Optional[Dict[str, str]] = None) -> str:
+    """Return the endpoint selected by DOCKER_HOST or the active Docker context."""
+    if docker_env is None:
+        docker_env = _env_with_cli_python_path()
+    docker_endpoint = docker_env.get("DOCKER_HOST", "")
+    if docker_endpoint:
+        return docker_endpoint
+
+    try:
+        context_result = subprocess.run(
+            ["docker", "context", "show"],
+            env=docker_env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        context_name = context_result.stdout.strip() if context_result.returncode == 0 else ""
+        if not context_name:
+            return ""
+        endpoint_result = subprocess.run(
+            ["docker", "context", "inspect", context_name, "--format", "{{.Endpoints.docker.Host}}"],
+            env=docker_env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if endpoint_result.returncode == 0:
+            return endpoint_result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+def prepare_env(
+    service_name,
+    gpu_ids: Optional[List[int]],
+    service_config: Dict,
+    docker_container_name: Optional[str] = None,
+    docker_network_name: Optional[str] = None,
+):
+    my_env = _docker_cli_env() if service_config.get(SC.IS_DOCKER_RUN) else _env_with_cli_python_path()
     if gpu_ids:
         my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
     if service_config.get(SC.IS_DOCKER_RUN):
+        if docker_container_name:
+            my_env[POC_DOCKER_CONTAINER_NAME_ENV] = docker_container_name
+        else:
+            my_env.pop(POC_DOCKER_CONTAINER_NAME_ENV, None)
+        if docker_network_name:
+            my_env[POC_DOCKER_NETWORK_NAME_ENV] = docker_network_name
+        else:
+            my_env.pop(POC_DOCKER_NETWORK_NAME_ENV, None)
         if gpu_ids:
             my_env["GPU2USE"] = f'--gpus="device={my_env["CUDA_VISIBLE_DEVICES"]}"'
 
@@ -2143,8 +2274,21 @@ def _build_poc_console_logs(
     return logs
 
 
-def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
-    my_env = prepare_env(service_name, gpu_ids, service_config)
+def async_process(
+    service_name,
+    cmd_path,
+    gpu_ids: Optional[List[int]],
+    service_config: Dict,
+    docker_container_name: Optional[str] = None,
+    docker_network_name: Optional[str] = None,
+):
+    my_env = prepare_env(
+        service_name,
+        gpu_ids,
+        service_config,
+        docker_container_name=docker_container_name,
+        docker_network_name=docker_network_name,
+    )
     console_log = _poc_service_console_log(cmd_path)
     os.makedirs(os.path.dirname(console_log), exist_ok=True)
     with open(console_log, "a", buffering=1) as output:
@@ -2162,6 +2306,47 @@ def sync_process(service_name, cmd_path):
         raise PocServiceStartError(f"service '{service_name}' exited with code {completed.returncode}: {cmd_path}")
 
 
+def _run_stop_command(service_name: str, cmd_path: str, timeout: float):
+    try:
+        completed = subprocess.run(
+            cmd_path.split(" "),
+            env=_docker_cli_env(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(f"shutdown command for service '{service_name}' did not finish before the timeout") from e
+
+    if completed.returncode != 0:
+        output = (completed.stderr or completed.stdout or "").strip()
+        detail = f": {output}" if output else ""
+        raise RuntimeError(
+            f"shutdown command for service '{service_name}' exited with code {completed.returncode}{detail}"
+        )
+
+
+def _wait_for_poc_services_stopped(
+    prod_dir: str, service_names: List[str], deadline: float, poll_interval: float = 1.0
+):
+    while True:
+        running_services = []
+        for service_name in service_names:
+            service_dir = os.path.join(prod_dir, service_name)
+            if _is_live_pid_file(os.path.join(service_dir, "pid.fl")) or _is_live_pid_file(
+                os.path.join(service_dir, "daemon_pid.fl")
+            ):
+                running_services.append(service_name)
+
+        if not running_services:
+            return
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"POC services did not stop before the timeout: {', '.join(running_services)}")
+        time.sleep(min(poll_interval, remaining))
+
+
 def _run_poc(
     cmd_type: str,
     poc_workspace: str,
@@ -2171,12 +2356,45 @@ def _run_poc(
     excluded: list,
     services_list=None,
     study: Optional[str] = None,
+    wait: bool = False,
+    docker_container_names: Optional[Dict[str, str]] = None,
+    docker_network_name: Optional[str] = None,
 ):
     if services_list is None:
         services_list = []
+    docker_args = {"docker_container_names": docker_container_names} if docker_container_names else {}
     service_commands = _build_commands(
-        cmd_type, poc_workspace, service_config, project_config, excluded, services_list, study=study
+        cmd_type,
+        poc_workspace,
+        service_config,
+        project_config,
+        excluded,
+        services_list,
+        study=study,
+        **docker_args,
     )
+
+    if cmd_type == SC.CMD_STOP and wait:
+        if service_config.get(SC.IS_DOCKER_RUN):
+            for service_name, cmd_path in service_commands:
+                _run_stop_command(service_name, cmd_path, timeout=POC_STOP_TIMEOUT)
+            return
+
+        deadline = time.monotonic() + POC_STOP_TIMEOUT
+        for service_name, cmd_path in service_commands:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"POC services did not stop before the timeout: {service_name}")
+            _run_stop_command(service_name, cmd_path, timeout=remaining)
+
+        managed_services = {service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])}
+        service_names = [name for name, _ in service_commands if name in managed_services]
+        if service_names:
+            project_name = project_config.get("name")
+            prod_dir = get_prod_dir(poc_workspace, project_name)
+            _wait_for_poc_services_stopped(prod_dir, service_names, deadline=deadline)
+        return
+
     clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
@@ -2186,11 +2404,33 @@ def _run_poc(
                 time.sleep(2)
             sync_process(service_name, cmd_path)
         elif service_name == service_config[SC.FLARE_SERVER]:
-            async_process(service_name, cmd_path, None, service_config)
+            docker_args = {}
+            if docker_container_names:
+                docker_args["docker_container_name"] = docker_container_names.get(service_name)
+            if docker_network_name:
+                docker_args["docker_network_name"] = docker_network_name
+            async_process(
+                service_name,
+                cmd_path,
+                None,
+                service_config,
+                **docker_args,
+            )
         else:
             time.sleep(1)
             client_gpu_ids = gpu_assignments[service_name] if service_name in clients else None
-            async_process(service_name, cmd_path, client_gpu_ids, service_config)
+            docker_args = {}
+            if docker_container_names:
+                docker_args["docker_container_name"] = docker_container_names.get(service_name)
+            if docker_network_name:
+                docker_args["docker_network_name"] = docker_network_name
+            async_process(
+                service_name,
+                cmd_path,
+                client_gpu_ids,
+                service_config,
+                **docker_args,
+            )
 
 
 def clean_poc(cmd_args):
@@ -2492,18 +2732,23 @@ def define_start_parser(poc_parser):
         "-p",
         "--service",
         type=str,
+        action="append",
         nargs="?",
-        default="all",
-        help="participant to start. Default starts server and client services only; admin consoles are excluded unless explicitly selected",
+        default=None,
+        help=(
+            "participant to start; repeat for multiple participants. Default starts server and client services only; "
+            "admin consoles are excluded unless explicitly selected"
+        ),
     )
 
     start_parser.add_argument(
         "-ex",
         "--exclude",
         type=str,
+        action="append",
         nargs="?",
-        default="",
-        help="exclude service directory during 'start', default to " ", i.e. nothing to exclude",
+        default=None,
+        help="participant to exclude from 'start'; repeat for multiple participants",
     )
     start_parser.add_argument(
         "-gpu",
@@ -2543,17 +2788,22 @@ def define_stop_parser(poc_parser):
         "-p",
         "--service",
         type=str,
+        action="append",
         nargs="?",
-        default="all",
-        help="participant to stop. Default stops the running POC system; project admin console is not a default managed service",
+        default=None,
+        help=(
+            "server or client to stop; repeat for multiple services. Default and server-only selections stop the "
+            "running POC system; admin consoles cannot be stopped with this command"
+        ),
     )
     stop_parser.add_argument(
         "-ex",
         "--exclude",
         type=str,
+        action="append",
         nargs="?",
-        default="",
-        help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
+        default=None,
+        help="participant to exclude from 'stop'; repeat for multiple participants",
     )
     stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     stop_parser.add_argument(

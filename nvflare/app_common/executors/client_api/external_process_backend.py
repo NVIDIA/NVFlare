@@ -20,6 +20,7 @@ Client Job (CJ) Cell. Task and result Shareables use Cell/F3 directly, including
 ``nvflare/client/cell/api.py``.
 """
 
+import ipaddress
 import os
 import secrets
 import signal
@@ -29,7 +30,14 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
+from nvflare.apis.fl_constant import (
+    CellMessageAuthHeaderKey,
+    ConnectionSecurity,
+    FLContextKey,
+    FLMetaKey,
+    ReturnCode,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -46,28 +54,34 @@ from nvflare.client.cell.bootstrap import (
     bootstrap_file_name,
     write_bootstrap_config,
 )
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, SESSION_CONTROL_TIMEOUT, MsgKey, Topic
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
-from nvflare.security.logging import secure_format_traceback
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
 # Poll cadence for process-death detection; events wake successful waits immediately.
 _RESULT_POLL_INTERVAL = 0.5
+_RESULT_SOURCE_FAILURE_DELIVERY_WAIT = 14.0
 _HELLO_POLL_INTERVAL = 0.1
 
-_DEFAULT_SHUTDOWN_TIMEOUT = 30.0
+_DEFAULT_SHUTDOWN_TIMEOUT = SESSION_CONTROL_TIMEOUT
 
-# The result reaper retries SHUTDOWN when send() is still settling.
+# The result reaper reserves TERM grace inside each session-scale cleanup budget
+# and makes one final bounded state probe before force-cleaning a live source.
 _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT = 5.0
+_RESULT_REAPER_MAX_TOTAL_TIMEOUT = SESSION_CONTROL_TIMEOUT
+_RESULT_REAPER_FORCE_TERM_GRACE = 5.0
 
 _LOG_THREAD_JOIN_TIMEOUT = 5.0
 
@@ -89,6 +103,10 @@ _SEND_CLOSED = "closed"
 # Accepted lazy results keep their trainer source alive until flare.send() settles.
 _NATURAL_EXIT_REAP_INTERVAL = 0.1
 _SHUTDOWN_RETRY_INTERVAL = 1.0
+
+_TERMINAL_INTENT_ABORT = "abort"
+_TERMINAL_INTENT_FAILURE = "failure"
+_TERMINAL_INTENT_SHUTDOWN = "shutdown"
 
 
 class _TaskReadyCancelSignal(Signal):
@@ -123,8 +141,8 @@ class _TrainerSession(CellSession):
     def __init__(self, token: str, trainer_fqcn: str):
         super().__init__(trainer_fqcn)
         self.token = token
-        # latched when the HELLO of THIS launch's own process is rejected, so the launch
-        # wait fails fast instead of waiting out launch_timeout
+        # Latched when a token-authenticated HELLO is rejected so the launch wait fails
+        # fast instead of waiting out launch_timeout.
         self.reject_reason: Optional[str] = None
         self.bootstrap_path: Optional[str] = None
         self.process: Optional[subprocess.Popen] = None
@@ -136,6 +154,13 @@ class _TrainerSession(CellSession):
         # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
         # it once the trainer has crossed that barrier.
         self.reaper_thread: Optional[threading.Thread] = None
+        self.source_monitor_thread: Optional[threading.Thread] = None
+        self._result_failure_lock = threading.Lock()
+        self.result_source_refs = ()
+        self.result_receiver_ids = ()
+        self.result_failure_notified = False
+        self.result_failure_delivery_done = threading.Event()
+        self.result_failure_delivery_done.set()
         self.shutdown_requested = threading.Event()
         self._shutdown_request_lock = threading.Lock()
         self._next_shutdown_retry = 0.0
@@ -154,16 +179,25 @@ class ExternalProcessBackend(CellBackendBase):
     def __init__(self):
         super().__init__()
         self._connect_url: Optional[str] = None
+        self._run_dir: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
         self._active_launch: Optional[_TrainerSession] = None
         self._launch_lock = threading.Lock()
+        # A per-task launch can keep serving an accepted lazy result after the next
+        # launch becomes active. Keep every owned protocol session addressable until
+        # its process/result source is fully retired.
+        self._protocol_sessions = {}
         # Completed per-task launches can keep serving lazy results and remain owned through END_RUN.
         self._result_reapers = set()
         self._result_reapers_lock = threading.Lock()
         self._launch_seq = 0
         self._abort = False
         self._abort_reason: Optional[str] = None
+        self._run_abort_signal: Optional[Signal] = None
+        self._lifecycle_lock = threading.RLock()
+        self._terminal_intent: Optional[str] = None
+        self._failure_panic_sent = False
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -172,6 +206,7 @@ class ExternalProcessBackend(CellBackendBase):
             raise ValueError("external_process mode requires a non-empty command")
 
         try:
+            self._run_abort_signal = fl_ctx.get_run_abort_signal()
             self._initialize_cell(
                 context,
                 fl_ctx,
@@ -183,20 +218,53 @@ class ExternalProcessBackend(CellBackendBase):
                 delegate_site_auth=True,
             )
             cell = self._cell
+            # A managed trainer may fail immediately after RESULT_READY is accepted,
+            # before this CJ starts consuming a peer's result refs. Register the
+            # source-failure route at job initialization so such a notice is not lost.
+            DownloadService.initialize(cell)
 
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             if workspace is None:
                 raise RuntimeError("workspace/job id not available in fl_ctx")
+            self._run_dir = workspace.get_run_dir(self._job_id)
             self._app_dir = workspace.get_app_dir(self._job_id)
             self._custom_dir = workspace.get_app_custom_dir(self._job_id)
 
-            cell.make_internal_listener()
+            cell.make_internal_listener(
+                scheme="tcp",
+                resources={
+                    DriverParams.HOST.value: "localhost",
+                    DriverParams.LISTEN_HOST.value: "127.0.0.1",
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+                },
+            )
             connect_url = cell.get_internal_listener_url()
             if not connect_url:
                 raise RuntimeError("CJ cell has no internal listener url for the trainer to connect to")
+            listener_params = cell.get_internal_listener_params() or {}
+            connect_scheme = parse_url(connect_url).get(DriverParams.SCHEME.value)
+            listener_scheme = listener_params.get(DriverParams.SCHEME.value)
+            bind_host = listener_params.get(DriverParams.HOST.value)
+            connection_security = listener_params.get(DriverParams.CONNECTION_SECURITY.value)
+            try:
+                loopback_bound = ipaddress.ip_address(bind_host).is_loopback
+            except (TypeError, ValueError):
+                loopback_bound = False
+            if (
+                connect_scheme != "tcp"
+                or listener_scheme != "tcp"
+                or connection_security != ConnectionSecurity.CLEAR
+                or not loopback_bound
+            ):
+                raise RuntimeError(
+                    "external_process trainer requires a clear TCP listener bound to loopback, but the CJ internal "
+                    f"listener is incompatible: connect_scheme={connect_scheme!r}, listener_scheme={listener_scheme!r}, "
+                    f"bind_host={bind_host!r}, connection_security={connection_security!r}"
+                )
             self._connect_url = connect_url
 
             cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
+            cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_READY, cb=self._handle_session_ready)
 
             if context.launch_once:
                 self._launch_trainer(timeout=context.launch_timeout)
@@ -229,6 +297,22 @@ class ExternalProcessBackend(CellBackendBase):
         finally:
             self._execute_gate.release()
 
+    def abort(self, fl_ctx: FLContext) -> None:
+        """Notify the trainer of task cancellation and latch abortive run teardown.
+
+        An accepted lazy result can outlive ``execute()`` while another client
+        downloads it. Explicit run abort therefore carries a context marker so
+        it remains distinguishable from normal END_RUN and CCWF task cancellation.
+        Callers predating the marker retain the original run-abort behavior.
+        """
+        run_abort_requested = fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED, True)
+        if run_abort_requested:
+            self._claim_abort_intent()
+            self._latch_abort("run abort requested")
+        with self._launch_lock:
+            trainer = self._active_launch
+        self._send_abort(trainer, "run aborted" if run_abort_requested else "task aborted")
+
     def _execute_admitted_task(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> Shareable:
@@ -240,8 +324,6 @@ class ExternalProcessBackend(CellBackendBase):
             if context.launch_once:
                 trainer = self._active_launch
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
-                if trainer is not None:
-                    self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
                 self._finish_task_trainer(trainer, launch_once=True)
             return make_reply(ReturnCode.TASK_ABORTED)
 
@@ -281,9 +363,11 @@ class ExternalProcessBackend(CellBackendBase):
             executor.log_error(fl_ctx, secure_format_traceback())
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         finally:
-            self._finish_task_trainer(trainer, launch_once)
+            self._finish_task_trainer(trainer, launch_once, task_aborted=abort_signal.triggered)
 
-    def _finish_task_trainer(self, trainer: Optional[_TrainerSession], launch_once: bool) -> None:
+    def _finish_task_trainer(
+        self, trainer: Optional[_TrainerSession], launch_once: bool, task_aborted: bool = False
+    ) -> None:
         """Retire a per-task trainer, or a persistent trainer after a terminal abort."""
         if trainer is None or (launch_once and not self._abort):
             return
@@ -293,10 +377,14 @@ class ExternalProcessBackend(CellBackendBase):
                 # an abort. Stop it before execute() returns: abort teardown may destroy the
                 # CJ process without delivering END_RUN to this executor.
                 self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
-            elif trainer.result_source_live.is_set():
+            elif trainer.result_accepted.is_set():
                 self._reap_trainer_after_result(trainer)
             else:
-                self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
+                # A task-only cancellation must not latch run-wide abort intent, but
+                # its one-task trainer still cannot be reused and must be stopped
+                # without spending the ordinary natural-exit wait.
+                natural_exit_wait = 0.0 if task_aborted else self._stop_wait_bound()
+                self._stop_trainer(trainer, natural_exit_wait=natural_exit_wait)
         except Exception:
             self.logger.error(secure_format_traceback())
 
@@ -304,9 +392,13 @@ class ExternalProcessBackend(CellBackendBase):
         if self._finalized:
             return
         self._finalized = True
-        # Serialize close with RESULT_READY's acceptance commit.
+        # Serialize close with RESULT_READY's acceptance commit and with the
+        # fatal-source/explicit-abort terminal decision.
         with self._task_lock:
-            self._closed = True
+            with self._lifecycle_lock:
+                if self._terminal_intent is None:
+                    self._terminal_intent = _TERMINAL_INTENT_SHUTDOWN
+                self._closed = True
         # The same gate orders END_RUN against the launch-install-to-Popen window. Keep
         # this ordering bound on abort: a process handle may not have been installed yet.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
@@ -316,7 +408,14 @@ class ExternalProcessBackend(CellBackendBase):
             with self._launch_lock:
                 trainer = self._active_launch
             if trainer is not None:
-                if trainer.result_source_live.is_set():
+                with self._result_reapers_lock:
+                    reaper_owns_exit = trainer in self._result_reapers
+                if reaper_owns_exit and not self._abort:
+                    # A per-task trainer with an accepted result is already owned by
+                    # its natural-exit reaper. Do not race that exit with another
+                    # synchronous SHUTDOWN request during END_RUN.
+                    pass
+                elif trainer.result_source_live.is_set() and not self._abort:
                     # END_RUN must preserve CJ/F3 until the trainer's send barrier settles.
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                     self._reap_trainer_after_result(trainer)
@@ -343,6 +442,7 @@ class ExternalProcessBackend(CellBackendBase):
             trainer_fqcn = FQCN.join([self._cj_fqcn, f"{_TRAINER_LEAF_PREFIX}_{seq}"])
             trainer = _TrainerSession(token, trainer_fqcn)
             self._active_launch = trainer
+            self._protocol_sessions[trainer_fqcn] = trainer
         try:
             bootstrap_path = os.path.join(self._app_dir, bootstrap_file_name(seq))
             trainer.bootstrap_path = bootstrap_path
@@ -353,6 +453,7 @@ class ExternalProcessBackend(CellBackendBase):
                     BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
                     BootstrapKey.CONNECT_URL: self._connect_url,
                     BootstrapKey.CJ_FQCN: self._cj_fqcn,
+                    BootstrapKey.CJ_PID: os.getpid(),
                     BootstrapKey.TRAINER_FQCN: trainer_fqcn,
                     BootstrapKey.LAUNCH_TOKEN: token,
                     BootstrapKey.JOB_ID: self._job_id,
@@ -438,7 +539,12 @@ class ExternalProcessBackend(CellBackendBase):
             if deadline is not None and time.monotonic() >= deadline:
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
-    def _stop_trainer(self, trainer: _TrainerSession, natural_exit_wait: float) -> None:
+    def _stop_trainer(
+        self,
+        trainer: _TrainerSession,
+        natural_exit_wait: float,
+        termination_grace: Optional[float] = None,
+    ) -> None:
         """Stop a trainer gracefully, then terminate its process/group; idempotent and non-raising."""
         with trainer._stop_lock:
             if trainer._cleaned:
@@ -468,18 +574,21 @@ class ExternalProcessBackend(CellBackendBase):
             except Exception:
                 self.logger.error(secure_format_traceback())
             try:
-                self._terminate_process_tree(trainer, grace=self._termination_grace())
+                grace = self._termination_grace() if termination_grace is None else max(0.0, termination_grace)
+                self._terminate_process_tree(trainer, grace=grace)
             except Exception:
                 self.logger.error(secure_format_traceback())
             self._cleanup_trainer(trainer)
 
-    def _request_trainer_shutdown(self, trainer: _TrainerSession, wait_timeout: float) -> None:
-        """Send at most one orderly SHUTDOWN without taking ownership of process death."""
+    def _request_trainer_shutdown(
+        self, trainer: _TrainerSession, wait_timeout: float, force_probe: bool = False
+    ) -> None:
+        """Request orderly SHUTDOWN and sample an accepted result source until it settles."""
         with trainer._shutdown_request_lock:
             if trainer.shutdown_requested.is_set():
                 return
             now = time.monotonic()
-            if now < trainer._next_shutdown_retry:
+            if not force_probe and now < trainer._next_shutdown_retry:
                 return
             trainer._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
             if trainer.session_id is None or not self._process_group_alive(trainer):
@@ -504,8 +613,12 @@ class ExternalProcessBackend(CellBackendBase):
                         source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
                         if source_live is True:
                             trainer.result_source_live.set()
+                            # Keep probing: this acknowledgement describes the current
+                            # transfer barrier and is not a terminal SHUTDOWN acknowledgement.
+                            return
                         elif source_live is False:
                             trainer.result_source_live.clear()
+                            trainer.result_source_task_id = None
                 else:
                     send_errors = self._cell.fire_and_forget(
                         channel=CHANNEL,
@@ -544,38 +657,73 @@ class ExternalProcessBackend(CellBackendBase):
                     raise
 
     def _wait_for_result_reapers(self) -> None:
-        """Wait boundedly for accepted result sends, then force-clean wedged sources."""
-        wait_bound = self._result_reaper_wait_bound()
-        deadline = time.monotonic() + wait_bound
-        while True:
-            with self._result_reapers_lock:
-                trainers = tuple(self._result_reapers)
-            if not trainers:
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            for trainer in trainers:
-                reaper = trainer.reaper_thread
-                if reaper is not None:
-                    reaper.join(timeout=max(0.0, deadline - time.monotonic()))
-
+        """Wait within phase-local bounds without preempting a settled trainer's final work."""
+        started = time.monotonic()
+        settled_wait, settled_term_grace = self._settled_result_reaper_budget()
+        live_wait = max(0.0, self._result_reaper_wait_bound() - settled_term_grace)
+        live_deadline = started if self._abort else started + live_wait
+        settled_deadlines = {}
         with self._result_reapers_lock:
-            wedged = tuple(self._result_reapers)
-        if wedged:
-            self.logger.warning(
-                f"timed out waiting {wait_bound}s for {len(wedged)} accepted result source(s); "
-                "forcing trainer cleanup"
-            )
-        for trainer in wedged:
-            self._stop_trainer(trainer, natural_exit_wait=0.0)
-        for trainer in wedged:
-            reaper = trainer.reaper_thread
-            if reaper is not None:
+            pending = set(self._result_reapers)
+
+        # No new reaper can be admitted after finalize owns _execute_gate. Track
+        # this fixed snapshot locally so an unexpectedly slow daemon cannot make
+        # END_RUN loop forever after its bounded forced cleanup.
+        while pending:
+            for trainer in tuple(pending):
+                reaper = trainer.reaper_thread
+                if reaper is None or not reaper.is_alive():
+                    pending.discard(trainer)
+                    continue
+
+                live = trainer.result_source_live.is_set()
+                if live:
+                    # If a later probe reports the source live again, its next
+                    # settled observation must start a new natural-exit budget.
+                    settled_deadlines.pop(trainer, None)
+                    deadline = live_deadline
+                else:
+                    now = time.monotonic()
+                    deadline = settled_deadlines.setdefault(
+                        trainer,
+                        now if self._abort else now + settled_wait,
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    reaper.join(timeout=min(_NATURAL_EXIT_REAP_INTERVAL, remaining))
+                    continue
+
+                if live and not self._abort:
+                    # Close the polling race at the hard deadline. The trainer publishes
+                    # transfer-barrier completion before waiting for RESULT_SOURCE_SETTLED,
+                    # so this probe can observe a clean source even if that request is queued.
+                    self._request_trainer_shutdown(
+                        trainer,
+                        wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT,
+                        force_probe=True,
+                    )
+                    live = trainer.result_source_live.is_set()
+                    if not live:
+                        settled_deadlines[trainer] = time.monotonic() + settled_wait
+                        continue
+
+                self.logger.warning(
+                    f"timed out waiting for accepted result source {trainer.trainer_fqcn} "
+                    f"(live={live}); forcing trainer cleanup"
+                )
+                # Reserve the capped TERM grace inside the live-source cleanup bound.
+                # A newly settled source instead receives its own natural-exit budget
+                # before the same TERM grace is applied.
+                grace = 0.0 if self._abort else settled_term_grace
+                self._stop_trainer(trainer, natural_exit_wait=0.0, termination_grace=grace)
                 reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
+                if reaper.is_alive():
+                    self.logger.error(f"result-source reaper {reaper.name} did not stop after forced cleanup")
+                pending.discard(trainer)
 
     def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerSession) -> None:
         disconnected_since = None
+        fail_client_job = False
         disconnect_grace = (
             self._context.heartbeat_timeout
             if self._context.heartbeat_timeout > 0
@@ -593,13 +741,31 @@ class ExternalProcessBackend(CellBackendBase):
                     self._stop_trainer(trainer, natural_exit_wait=0.0)
                     return
                 if self._closed:
+                    if self._abort:
+                        # Abort teardown must never enter the normal accepted-source
+                        # SHUTDOWN acknowledgement wait. The receiver cancellation
+                        # may already have settled the source while its notification
+                        # is still crossing the Cell.
+                        self._stop_trainer(trainer, natural_exit_wait=0.0)
+                        return
                     if not trainer.result_source_live.is_set():
-                        self._stop_trainer(trainer, natural_exit_wait=self._result_source_disconnect_grace())
+                        if self._await_group_exit(trainer, self._result_source_disconnect_grace()):
+                            self._cleanup_trainer(trainer)
+                        else:
+                            self._stop_trainer(trainer, natural_exit_wait=0.0)
                         return
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                 time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
+            failure_reason = self._trainer_exit_reason(trainer)
+            fail_client_job = self._fail_accepted_result_source(
+                trainer,
+                trainer.result_source_task_id,
+                failure_reason,
+            )
             self._cleanup_trainer(trainer)
+            if fail_client_job:
+                self._fail_job_for_lost_result_source(failure_reason)
         except BaseException:
             self.logger.error(secure_format_traceback())
         finally:
@@ -610,9 +776,26 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _cleanup_trainer(self, trainer: _TrainerSession) -> None:
         """Release launch-scoped state after the process group is gone. Idempotent."""
+        fail_client_job = False
+        failure_reason = None
+        if trainer.result_source_live.is_set() and not self._process_group_alive(trainer):
+            failure_reason = self._trainer_exit_reason(trainer)
+            fail_client_job = self._fail_accepted_result_source(
+                trainer,
+                trainer.result_source_task_id,
+                failure_reason,
+            )
+        if trainer.result_failure_notified and not trainer.result_failure_delivery_done.is_set():
+            trainer.result_failure_delivery_done.wait(_RESULT_SOURCE_FAILURE_DELIVERY_WAIT)
         with trainer._cleanup_lock:
             if trainer._cleaned:
                 return
+            # A reaped owned process group cannot remain a result source. Keep
+            # this launch-scoped truth consistent even when its final SHUTDOWN
+            # acknowledgement was lost during Cell/F3 teardown.
+            trainer.result_source_live.clear()
+            trainer.result_accepted.clear()
+            trainer.result_source_task_id = None
             trainer._cleaned = True
         try:
             log_thread = trainer.log_thread
@@ -621,15 +804,18 @@ class ExternalProcessBackend(CellBackendBase):
         except Exception:
             self.logger.error(secure_format_traceback())
         trainer.token = ""
-        trainer.session_id = None
         try:
             if trainer.bootstrap_path and os.path.exists(trainer.bootstrap_path):
                 os.remove(trainer.bootstrap_path)
         except Exception as e:
             self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")
         with self._launch_lock:
+            trainer.session_id = None
+            self._protocol_sessions.pop(trainer.trainer_fqcn, None)
             if self._active_launch is trainer:
                 self._active_launch = None
+        if fail_client_job:
+            self._fail_job_for_lost_result_source(failure_reason)
 
     def _disable_task_pass_through(self) -> None:
         self._disable_pass_through()
@@ -662,6 +848,11 @@ class ExternalProcessBackend(CellBackendBase):
             if silent_for is not None and silent_for > heartbeat_timeout:
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
+
+    @staticmethod
+    def _trainer_exit_reason(trainer: _TrainerSession) -> str:
+        rc = trainer.process.poll() if trainer.process else None
+        return f"accepted external result source died before transfer completion (rc={rc})"
 
     def _await_group_exit(self, trainer: _TrainerSession, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
@@ -734,17 +925,38 @@ class ExternalProcessBackend(CellBackendBase):
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _result_reaper_wait_bound(self) -> float:
-        """Return the END_RUN backstop after transfer and disconnect budgets."""
-        disconnect_grace = (
-            self._context.heartbeat_timeout
-            if self._context.heartbeat_timeout > 0
-            else self._result_source_disconnect_grace()
-        )
-        return DEFAULT_STREAMING_IDLE_TIMEOUT + disconnect_grace + _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
+        """Return the session-scale bound used to split live wait and TERM grace.
+
+        A source transaction has its own streaming idle timeout, but END_RUN cannot
+        wait for that independently long timeout: the outer job process may tear down
+        the CJ first and orphan an owned per-task trainer. The live wait reserves TERM
+        grace inside this bound, then makes one final bounded SHUTDOWN probe. This lets
+        completed transfer cleanup settle the source even when its task-correlated
+        settlement request is delayed. The separately configured natural-exit grace
+        starts when the source is first observed settled.
+        """
+        return _RESULT_REAPER_MAX_TOTAL_TIMEOUT
+
+    def _settled_result_reaper_budget(self) -> Tuple[float, float]:
+        """Return natural-exit and TERM budgets for a settled one-task trainer.
+
+        Reserve a small configured TERM grace inside a fixed settled-phase bound.
+        This phase starts when settlement is observed, after any preceding live-source
+        wait, so END_RUN does not cut off normal post-send work at the live deadline.
+        """
+        term_grace = min(max(0.0, self._termination_grace()), _RESULT_REAPER_FORCE_TERM_GRACE)
+        natural_cap = max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - term_grace)
+        # An accepted result source needs a nonzero settlement grace even when the
+        # general trainer shutdown timeout is configured as fire-and-forget (zero).
+        natural_wait = min(self._result_source_disconnect_grace(), natural_cap)
+        return natural_wait, term_grace
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
-        self._closed = True
+        with self._lifecycle_lock:
+            if self._terminal_intent is None:
+                self._terminal_intent = _TERMINAL_INTENT_SHUTDOWN
+            self._closed = True
         try:
             trainer = self._active_launch
             if trainer is not None:
@@ -764,6 +976,7 @@ class ExternalProcessBackend(CellBackendBase):
         launch_once = context.launch_once
 
         task = CellTask(task_id=uuid.uuid4().hex)
+        task.result_receiver_ids = self._get_result_receiver_ids(shareable, fl_ctx)
 
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
@@ -781,7 +994,6 @@ class ExternalProcessBackend(CellBackendBase):
             send_status, reply = self._send_task_ready(trainer, task_message, abort_signal)
             if send_status == _SEND_ABORTED:
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
-                self._latch_abort(f"task '{task_name}' aborted during TASK_READY")
                 return make_reply(ReturnCode.TASK_ABORTED)
             if send_status == _SEND_PROCESS_DEAD:
                 reason = "trainer process exited while TASK_READY was pending"
@@ -808,7 +1020,6 @@ class ExternalProcessBackend(CellBackendBase):
             while True:
                 if abort_signal.triggered or (launch_once and self._abort):
                     self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
-                    self._latch_abort(f"task '{task_name}' aborted")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
                 if task.result_ready.is_set():
@@ -852,6 +1063,212 @@ class ExternalProcessBackend(CellBackendBase):
             with self._task_lock:
                 if self._current_task is task:
                     self._current_task = None
+
+    @staticmethod
+    def _get_result_receiver_ids(shareable: Shareable, fl_ctx: FLContext) -> tuple[str, ...]:
+        receiver_ids = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
+        if isinstance(receiver_ids, str):
+            receiver_ids = (receiver_ids,)
+        if isinstance(receiver_ids, (list, tuple)):
+            valid = tuple(dict.fromkeys(r for r in receiver_ids if isinstance(r, str) and not FQCN.validate(r)))
+            if valid:
+                return valid
+        job_id = fl_ctx.get_job_id()
+        return (FQCN.join([FQCN.ROOT_SERVER, job_id]),) if isinstance(job_id, str) and job_id else ()
+
+    def _on_result_accepted(self, session: CellSession, task: CellTask, result: Shareable) -> None:
+        if not isinstance(session, _TrainerSession):
+            return
+        try:
+            refs = tuple(sorted(self._collect_result_source_refs(result, session.trainer_fqcn)))
+        except BaseException:
+            self.logger.error(secure_format_traceback())
+            return
+        if not refs or not task.result_receiver_ids:
+            return
+        with session._result_failure_lock:
+            session.result_source_refs = refs
+            session.result_receiver_ids = task.result_receiver_ids
+            session.result_failure_notified = False
+            session.result_failure_delivery_done.set()
+            task_id = task.task_id
+            monitor = threading.Thread(
+                target=self._monitor_accepted_result_source,
+                args=(session, task_id),
+                name=f"client_api_result_source_{session.trainer_fqcn.rsplit('.', 1)[-1]}",
+                daemon=True,
+            )
+            session.source_monitor_thread = monitor
+            try:
+                monitor.start()
+            except BaseException:
+                session.source_monitor_thread = None
+                self.logger.error(secure_format_traceback())
+
+    def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
+        if not isinstance(session, _TrainerSession):
+            return
+        with session._result_failure_lock:
+            session.result_source_refs = ()
+            session.result_receiver_ids = ()
+
+    @staticmethod
+    def _collect_result_source_refs(value, source_fqcn: str, visited=None) -> set[str]:
+        if isinstance(value, LazyDownloadRef):
+            return {value.ref_id} if value.fqcn == source_fqcn and value.ref_id else set()
+        if not isinstance(value, (dict, list, tuple, set)):
+            return set()
+        if visited is None:
+            visited = set()
+        value_id = id(value)
+        if value_id in visited:
+            return set()
+        visited.add(value_id)
+        items = (*value.keys(), *value.values()) if isinstance(value, dict) else value
+        refs = set()
+        for item in items:
+            refs.update(ExternalProcessBackend._collect_result_source_refs(item, source_fqcn, visited))
+        return refs
+
+    def _monitor_accepted_result_source(self, trainer: _TrainerSession, task_id: str) -> None:
+        disconnected_since = None
+        try:
+            while True:
+                with trainer._result_failure_lock:
+                    active = (
+                        not trainer._cleaned
+                        and trainer.result_source_live.is_set()
+                        and trainer.result_source_task_id == task_id
+                    )
+                if not active:
+                    return
+                if not self._process_group_alive(trainer):
+                    reason = self._trainer_exit_reason(trainer)
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
+                    self._cleanup_trainer(trainer)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
+                    return
+                heartbeat_timeout = self._context.heartbeat_timeout
+                silent_for = trainer.peer_silent_for() if heartbeat_timeout > 0 else None
+                if silent_for is not None and silent_for > heartbeat_timeout:
+                    reason = (
+                        f"accepted external result source heartbeat timed out after {silent_for:.1f}s "
+                        f"(timeout={heartbeat_timeout}s)"
+                    )
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
+                    self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
+                    return
+                if self._cell.is_cell_connected(trainer.trainer_fqcn):
+                    disconnected_since = None
+                elif disconnected_since is None:
+                    disconnected_since = time.monotonic()
+                elif time.monotonic() - disconnected_since >= self._result_source_disconnect_grace():
+                    reason = "accepted external result source disconnected before transfer completion"
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
+                    self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
+                    return
+                time.sleep(_RESULT_POLL_INTERVAL)
+        except BaseException:
+            self.logger.error(secure_format_traceback())
+
+    def _fail_accepted_result_source(self, trainer: _TrainerSession, task_id: Optional[str], reason: str) -> bool:
+        if not task_id:
+            return False
+        with trainer._result_failure_lock:
+            if (
+                trainer.result_failure_notified
+                or not trainer.result_source_live.is_set()
+                or trainer.result_source_task_id != task_id
+            ):
+                return False
+            refs = trainer.result_source_refs
+            receivers = trainer.result_receiver_ids
+            if not refs or not receivers:
+                return False
+            fail_client_job = self._claim_result_source_failure()
+            trainer.result_failure_notified = True
+            trainer.result_failure_delivery_done.clear()
+            trainer.result_source_live.clear()
+            trainer.result_source_task_id = None
+        self.logger.warning(
+            f"notifying {len(receivers)} receiver(s) that accepted result source "
+            f"{trainer.trainer_fqcn} failed for task {task_id}: {reason}"
+        )
+        try:
+            errors = DownloadService.notify_source_failure(
+                cell=self._cell,
+                targets=receivers,
+                source_fqcn=trainer.trainer_fqcn,
+                ref_ids=refs,
+                reason=reason,
+                secure=self._secure_mode,
+            )
+            if isinstance(errors, dict):
+                for target, error in errors.items():
+                    if error:
+                        self.logger.warning(f"failed to notify result receiver {target}: {error}")
+        except Exception:
+            self.logger.error(secure_format_traceback())
+        finally:
+            trainer.result_failure_delivery_done.set()
+        return fail_client_job
+
+    def _claim_abort_intent(self) -> bool:
+        """Atomically let explicit abort win over a not-yet-classified source failure."""
+        with self._lifecycle_lock:
+            if self._terminal_intent is None:
+                self._terminal_intent = _TERMINAL_INTENT_ABORT
+            return self._terminal_intent == _TERMINAL_INTENT_ABORT
+
+    def _claim_result_source_failure(self) -> bool:
+        """Atomically classify source loss as fatal unless abort/shutdown already won."""
+        with self._lifecycle_lock:
+            if self._terminal_intent is not None or self._closed:
+                return False
+            abort_signal = self._run_abort_signal
+            if abort_signal is not None and abort_signal.triggered:
+                self._terminal_intent = _TERMINAL_INTENT_ABORT
+                return False
+            self._terminal_intent = _TERMINAL_INTENT_FAILURE
+            return True
+
+    def _fail_job_for_lost_result_source(self, reason: str) -> None:
+        """Fail the run through normal CJ teardown with a reportable process code."""
+        with self._lifecycle_lock:
+            if self._terminal_intent != _TERMINAL_INTENT_FAILURE or self._failure_panic_sent:
+                return
+            self._failure_panic_sent = True
+        self._latch_abort(reason)
+        self.logger.critical(f"{reason}; failing the client job because the lazy result cannot be recovered")
+        self._write_process_exit_code(ProcessExitCode.EXCEPTION)
+        run_abort_signal = self._run_abort_signal
+        if run_abort_signal is not None and not run_abort_signal.triggered:
+            run_abort_signal.trigger(reason)
+        try:
+            with self._engine.new_context() as fl_ctx:
+                self._context.executor.system_panic(reason, fl_ctx)
+        except Exception:
+            # The run signal above still releases ClientRunner so its finally path
+            # can archive workspace results and preserve the reportable RC file.
+            self.logger.error(f"failed to publish fatal result-source event: {secure_format_traceback()}")
+
+    def _write_process_exit_code(self, return_code: int) -> None:
+        """Preserve a reportable code across launchers that normalize nonzero child exits."""
+        run_dir = self._run_dir
+        if not run_dir:
+            self.logger.error("cannot record client job failure: run directory is unavailable")
+            return
+        rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+        try:
+            with open(rc_file, "w", encoding="utf-8") as f:
+                f.write(str(return_code))
+        except Exception as e:
+            self.logger.error(f"cannot record client job failure in {rc_file}: {secure_format_exception(e)}")
 
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY until reply, cancelling on abort, closure, process death, or deadline."""
@@ -939,8 +1356,11 @@ class ExternalProcessBackend(CellBackendBase):
 
     # ------------------------------------------------------------------ control-plane handlers
 
-    def _get_protocol_session(self) -> Optional[_TrainerSession]:
-        return self._active_launch
+    def _get_protocol_session(self, origin: Optional[str] = None) -> Optional[_TrainerSession]:
+        with self._launch_lock:
+            if origin:
+                return self._protocol_sessions.get(origin)
+            return self._active_launch
 
     def _handle_hello(self, request):
         """Validates HELLO per the V1 trusted-host proof: plain launch-token match, plus
@@ -973,7 +1393,8 @@ class ExternalProcessBackend(CellBackendBase):
             or not trainer.token
             or not secrets.compare_digest(proof.encode("utf-8"), trainer.token.encode("utf-8"))
         ):
-            return self._hello_reject(trainer, origin, "launch token mismatch", latch=True)
+            # Clear loopback transport cannot prove that an invalid-token sender is the launched trainer.
+            return self._hello_reject(trainer, origin, "launch token mismatch", latch=False)
 
         if payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION:
             return self._hello_reject(
@@ -999,17 +1420,22 @@ class ExternalProcessBackend(CellBackendBase):
         if str(rank) != "0":
             return self._hello_reject(trainer, origin, f"only rank 0 may connect (got rank {rank!r})", latch=False)
 
-        # Concurrent duplicate HELLOs must receive the same session id.
+        # Concurrent duplicate HELLOs must receive the same session id. Do not
+        # expose the trainer as ready yet: the reply carries delegated site
+        # authentication, and only SESSION_READY proves that the trainer has
+        # processed it and installed the outgoing auth-header filters.
         with self._launch_lock:
-            if not trainer.ready.is_set():
+            if trainer.session_id is None:
                 trainer.session_id = uuid.uuid4().hex
-                trainer.ready.set()
-                self.logger.info(f"HELLO accepted from {origin} (session_id={trainer.session_id})")
+                self.logger.info(
+                    f"HELLO accepted from {origin} (session_id={trainer.session_id}); awaiting SESSION_READY"
+                )
             trainer.touch_peer_activity()
+            session_id = trainer.session_id
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
             **{
-                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.SESSION_ID: session_id,
                 MsgKey.JOB_ID: self._job_id,
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
@@ -1018,13 +1444,61 @@ class ExternalProcessBackend(CellBackendBase):
             },
         )
 
+    def _handle_session_ready(self, request):
+        """Complete HELLO only after the trainer has installed delegated authentication."""
+        if self._closed:
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: "backend is closed"})
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="SESSION_READY payload must be a dict")
+
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session_id = None
+        with self._launch_lock:
+            trainer = self._active_launch
+            if trainer is None or trainer.session_id is None:
+                reason = "no accepted trainer session"
+            elif origin != trainer.trainer_fqcn:
+                reason = f"unexpected origin {origin!r}"
+            elif payload.get(MsgKey.SESSION_ID) != trainer.session_id:
+                reason = "stale or unknown session id"
+            elif self._secure_mode and not self._delegated_auth_headers_match(request):
+                reason = "delegated site authentication headers are not installed"
+            else:
+                reason = None
+                session_id = trainer.session_id
+                trainer.touch_peer_activity()
+                if not trainer.ready.is_set():
+                    trainer.ready.set()
+                    self.logger.info(f"trainer readiness confirmed from {origin} (session_id={session_id})")
+
+        if reason:
+            self.logger.warning(f"rejecting SESSION_READY: {reason}")
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reason})
+        return self._protocol_reply(Topic.SESSION_READY, **{MsgKey.SESSION_ID: session_id})
+
+    def _delegated_auth_headers_match(self, request) -> bool:
+        expected = (
+            (CellMessageAuthHeaderKey.CLIENT_NAME, self._site_name),
+            (CellMessageAuthHeaderKey.TOKEN, self._site_auth_token),
+            (CellMessageAuthHeaderKey.TOKEN_SIGNATURE, self._site_auth_token_signature),
+        )
+        for key, value in expected:
+            actual = request.get_header(key)
+            if not isinstance(actual, str) or not isinstance(value, str):
+                return False
+            if not secrets.compare_digest(actual.encode("utf-8"), value.encode("utf-8")):
+                return False
+        return True
+
     def _hello_reject(self, trainer: Optional[_TrainerSession], origin: str, reason: str, latch: bool):
         self.logger.warning(f"rejecting HELLO from {origin!r}: {reason}")
-        if latch and trainer is not None and not trainer.ready.is_set() and trainer.reject_reason is None:
+        if latch and trainer is not None and trainer.session_id is None and trainer.reject_reason is None:
             trainer.reject_reason = reason
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 
     def _latch_abort(self, reason: str) -> None:
-        self._abort = True
-        if self._abort_reason is None:
-            self._abort_reason = reason
+        with self._lifecycle_lock:
+            self._abort = True
+            if self._abort_reason is None:
+                self._abort_reason = reason

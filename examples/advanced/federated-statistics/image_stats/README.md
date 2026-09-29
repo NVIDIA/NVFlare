@@ -12,6 +12,7 @@ git clone https://github.com/NVIDIA/NVFlare.git
 Then navigate to the federated-statistics directory:
 
 ```
+cd NVFlare
 git switch <release branch>
 cd examples/advanced/federated-statistics/image_stats
 
@@ -37,8 +38,6 @@ Let's first install required packages.
 
 ```
 pip install --upgrade pip
-
-cd NVFlare/examples/advanced/federated-statistics/image_stats
 
 pip install -r requirements.txt
 ```

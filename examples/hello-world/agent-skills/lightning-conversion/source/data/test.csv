@@ -1,0 +1,17 @@
+record_id,smiles,label
+test-000,CCCCOC,0
+test-001,CCNCCC,1
+test-002,COC(=O)CC,0
+test-003,C1CCCOC1,0
+test-004,CC(C)CCO,0
+test-005,O=C(O)CCCO,0
+test-006,NC(=O)CCC,1
+test-007,CCOC1CCCCC1,0
+test-008,CCCN=NC,1
+test-009,CCCCNN=C=O,1
+test-010,O=N(=O)CC1=CC=CC=C1,0
+test-011,CC#CCCN(=O)=O,1
+test-012,OC1=CN=CC=C1N(=O)=O,1
+test-013,CN=NCCCN(=O)=O,1
+test-014,ClC1=CC=CC=C1N(=O)=O,0
+test-015,BrC1=CC=CC=C1N(=O)=O,1

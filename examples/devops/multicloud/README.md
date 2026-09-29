@@ -3,6 +3,19 @@
 YAML-driven deploy of one NVFlare server + N clients across existing
 Kubernetes clusters.
 
+Download the complete example layout without cloning NVFlare:
+
+```bash
+nvflare examples get devops-multicloud
+cd devops-multicloud
+```
+
+The downloaded directory preserves `examples/devops/multicloud`. Commands in
+this guide therefore work from its root exactly as shown. When
+`build_and_push.py` does not find repository package sources, it reads the
+download provenance and prepares the exact source revision in a temporary
+directory for the image build.
+
 ## Audience And Scope
 
 This example is for NVFlare developers and users who want a simple Kubernetes
@@ -82,7 +95,10 @@ The server cloud means the cloud where the FLARE server participant is
 deployed. For GCP, the server IP is a regional compute address; for AWS, it is
 an Elastic IP; for Azure, it is a Public IP in the configured resource group.
 When AWS is the server cloud, the deployer also needs permission to describe
-the EKS cluster and public subnets. When Azure is the server cloud,
+the EKS cluster and public subnets, plus read access to cluster-scoped
+PersistentVolumes (`kubectl get pv`) on the server cluster: on repeated `up`
+runs the tool reads the bound workspace volume's Availability Zone so the NLB
+subnet, server pod, and existing EBS volume stay co-located. When Azure is the server cloud,
 `clouds.azure.resource_group` and `clouds.azure.location` must identify where
 the Public IP is managed.
 

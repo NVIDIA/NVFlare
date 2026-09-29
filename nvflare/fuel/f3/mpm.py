@@ -184,8 +184,16 @@ class MainProcessMonitor:
             # as RC=1.
             rc_to_write = rc if isinstance(rc, int) else 0
             try:
-                with open(rc_file, "w") as outfile:
+                # A component may have already recorded an authoritative in-run
+                # failure before main_func returned (for example, a panic raised by
+                # an accepted external result source dying). Never replace that
+                # result with main_func's later implicit success value.
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                fd = os.open(rc_file, flags, 0o600)
+                with os.fdopen(fd, "w") as outfile:
                     outfile.write(f"{rc_to_write}")
+            except FileExistsError:
+                logger.debug(f"Preserving process return code already recorded in {rc_file}")
             except Exception as ex:
                 logger.debug(f"Failed to write process return code to {rc_file}: {secure_format_exception(ex)}")
             os._exit(rc_to_write)

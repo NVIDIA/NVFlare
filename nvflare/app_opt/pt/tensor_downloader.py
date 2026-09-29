@@ -37,13 +37,19 @@ _ACTIVE_DISK_TENSOR_CONSUMERS = weakref.WeakSet()
 _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK = threading.Lock()
 
 
-def cleanup_active_disk_tensor_downloads(reason: str = "download aborted") -> None:
-    """Clean partial tensor offload dirs still owned by active disk consumers."""
+def cleanup_active_disk_tensor_downloads(reason: str = "download aborted", root_dir: Optional[str] = None) -> None:
+    """Clean partial tensor offload dirs still owned by active disk consumers.
+
+    Args:
+        reason: failure recorded on each selected consumer.
+        root_dir: when set, only clean consumers writing below this root.
+    """
     with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
         consumers = list(_ACTIVE_DISK_TENSOR_CONSUMERS)
 
     for consumer in consumers:
-        consumer.download_failed("active_disk_tensor_download", reason)
+        if root_dir is None or consumer.is_under_root(root_dir):
+            consumer.download_failed("active_disk_tensor_download", reason)
 
 
 class TensorDownloadable(CacheableObject):
@@ -233,6 +239,14 @@ class DiskTensorConsumer(ItemConsumer):
             _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
             self._cleaned = True
 
+    def is_under_root(self, root_dir: str) -> bool:
+        try:
+            return os.path.commonpath(
+                (os.path.realpath(self._temp_dir), os.path.realpath(root_dir))
+            ) == os.path.realpath(root_dir)
+        except (TypeError, ValueError):
+            return False
+
     def cleanup(self) -> None:
         # Pipelined downloads can have a chunk write in progress while workflow
         # finalization aborts active consumers. Wait for that write to finish so
@@ -253,6 +267,8 @@ class DiskTensorConsumer(ItemConsumer):
             result = {}
 
         with self._io_lock:
+            if self._cleaned:
+                raise RuntimeError("tensor download was cleaned up")
             for item in items:
                 keys = _extract_safetensors_keys(item)
                 file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")

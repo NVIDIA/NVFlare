@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "execution_mode": "attach",
+  "attach_id": "ccwf_trainer",
+  "site_name": "site-2",
+  "connect_url": "tcp://localhost:8105",
+  "connection_security": "clear",
+  "secure_mode": true,
+  "ca_cert": "ci_workspace/client_api_attach_ccwf_test/prod_00/site-2/startup/rootCA.pem",
+  "job_wait_timeout": 120.0
+}

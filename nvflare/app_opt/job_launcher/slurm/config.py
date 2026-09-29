@@ -44,7 +44,7 @@ JOB_SPEC_ADDITIONAL_NODE_COMMAND = "additional_node_command"
 DEFAULT_MULTINODE_PORT_RANGE = (29400, 30399)
 
 SQUEUE_FORMAT = "%i|%T|%U|%k|%j"
-SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32"
+SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32,DerivedExitCode%32"
 
 _MAX_STDOUT_BYTES = 16 * 1024 * 1024
 _MAX_STDERR_BYTES = 64 * 1024
@@ -153,6 +153,7 @@ class SlurmRecord:
     state: str
     exit_status: int = 0
     exit_signal: int = 0
+    derived_exit_status: int = 0
 
 
 @dataclass(frozen=True)

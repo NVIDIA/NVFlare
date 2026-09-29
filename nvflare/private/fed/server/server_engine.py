@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import json
 import os
 import re
 import shutil
@@ -23,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
@@ -232,7 +234,24 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
-        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job.job_id
+        meta_file = workspace_obj.get_job_meta_path(job_id)
+        if not os.path.exists(meta_file):
+            raise RuntimeError(f"missing deployed job metadata file for server job '{job_id}': {meta_file}")
+        with open(meta_file) as f:
+            deployed_job_meta = json.load(f)
+
+        # AppDeployer records the site-local authorization decision only in the
+        # deployed metadata. Keep the persisted job-store metadata immutable and
+        # pass the locally derived BYOC marker to launcher selection and launch.
+        job_meta = copy.deepcopy(job.meta)
+        if deployed_job_meta.get(AppValidationKey.BYOC) is True:
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
+
+        job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
@@ -248,12 +267,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         #
         # Each arg is a tuple of (arg_option, arg_value).
         # Note that the arg_option is fixed for each arg, and is not launcher specific!
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-
         # use a copy of args; otherwise the args will keep adding command options!
         args = copy.deepcopy(fl_ctx.get_prop(FLContextKey.ARGS))
         server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = job.job_id
         app_root = workspace_obj.get_app_dir(job_id)
         cell = server.cell
         server_state = server.server_state
@@ -296,7 +312,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
         if not job_clients:

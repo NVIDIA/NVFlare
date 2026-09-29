@@ -26,10 +26,22 @@ PYTHON_BIN="${PYTHON:-python}"
 "$PYTHON_BIN" -m pip install -U pip
 
 echo "==> Installing PyTorch first (required for building flash_attn)..."
-"$PYTHON_BIN" -m pip install torch==2.8.0 torchvision==0.23.0
+"$PYTHON_BIN" -m pip install torch==2.12.1 torchvision==0.27.1 torchcodec==0.16 \
+    --index-url https://download.pytorch.org/whl/cu126
 
 echo "==> Installing build-time deps for flash_attn (e.g. psutil)..."
 "$PYTHON_BIN" -m pip install psutil packaging ninja
+
+# CUDA 12.x does not support GCC 13, so prefer the newest compatible versioned compiler when available.
+if [[ -z "${CC:-}" && -z "${CXX:-}" ]]; then
+    for COMPILER_VERSION in 12 11 10; do
+        if command -v "gcc-$COMPILER_VERSION" >/dev/null && command -v "g++-$COMPILER_VERSION" >/dev/null; then
+            export CC="gcc-$COMPILER_VERSION"
+            export CXX="g++-$COMPILER_VERSION"
+            break
+        fi
+    done
+fi
 
 echo "==> Installing remaining requirements (flash_attn built with --no-build-isolation)..."
 "$PYTHON_BIN" -m pip install --no-build-isolation -r "$REQUIREMENTS_FILE"

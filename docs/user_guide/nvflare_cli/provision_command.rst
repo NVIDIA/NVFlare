@@ -63,6 +63,28 @@ normal 360-day validity unless the root expires sooner.
 Changing an established root requires a separate multi-root rollover;
 ``root_valid_days`` never extends or replaces it.
 
+Job CA
+======
+
+Provisioning also creates a job-signing intermediate CA, ``job_ca.crt`` /
+``job_ca.key``, in the **server** startup kit only. The server uses it to issue
+a short-lived certificate to every job process (see
+:ref:`per_job_certificates`); in secure mode jobs cannot run without it. It is
+on by default and can be turned off:
+
+.. code-block:: yaml
+
+   builders:
+     - path: nvflare.lighter.impl.cert.CertBuilder
+       args:
+         enable_job_ca: false
+
+Like the participant certificates, the job CA is kept in the workspace's
+``state`` directory and reused on later provisioning runs; an expired one is
+regenerated. Running ``nvflare provision`` again on a workspace created before
+this feature adds the job CA to the server kit without changing any other
+certificate.
+
 Certificate Identity Overrides
 ==============================
 

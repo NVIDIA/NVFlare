@@ -52,7 +52,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script as a string or pre-tokenized argv.
         aggregator: Aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
         aggregator_data_kind: Data kind to use for the aggregator. When a custom aggregator
@@ -69,11 +69,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
             contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            server_expected_format, params_transfer_type, launch_once, launch_timeout, shutdown_timeout.
             Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
@@ -117,17 +119,18 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         framework: FrameworkType = FrameworkType.TENSORFLOW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Literal["min", "max"] = "max",
@@ -155,6 +158,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,

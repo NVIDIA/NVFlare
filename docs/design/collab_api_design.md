@@ -82,7 +82,6 @@ The top-level `nvflare.collab` package exports:
 - `collab`: decorators, context accessors, proxies, and application properties.
 - `CollabCallError`: structured site/function/cause details for failed calls.
 - `CollabRecipe`: creates the normal NVFlare job.
-- `simple_logging`: convenience logging setup for examples.
 
 Execution environments come from `nvflare.recipe`, not `nvflare.collab`:
 

@@ -11,9 +11,8 @@ The default behavior should be:
 ## Scope Relative To `ExternalProcessBackend`
 
 The sections below that name `TaskExchanger`, `FlareAgent`, `Pipe`, or the
-`_STREAM_PROGRESS_` topic describe progress-aware protection for the legacy subprocess
-path. That path remains available during the `ClientAPIExecutor` migration, so those
-requirements are still relevant to it.
+`_STREAM_PROGRESS_` topic are retained only as historical design context for the
+removed legacy subprocess path. They are not part of the current runtime.
 
 The new `ClientAPIExecutor(execution_mode="external_process")` path does not carry a
 Client-API-specific payload wrapper or progress event over Pipe. Task and result

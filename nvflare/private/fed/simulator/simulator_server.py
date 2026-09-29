@@ -161,7 +161,7 @@ class SimulatorServer(FederatedServer):
         return SimulatorIdentityAsserter("private_key_file", "cert_file")
 
     def deploy(self, args, grpc_args=None, secure_train=False):
-        super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        super(FederatedServer, self).deploy(args, grpc_args, secure_train, enable_admin_listener=False)
         os.makedirs(os.path.join(args.workspace, "local"), exist_ok=True)
         os.makedirs(os.path.join(args.workspace, "startup"), exist_ok=True)
         workspace = Workspace(args.workspace, "server", args.config_folder)

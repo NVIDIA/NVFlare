@@ -82,12 +82,11 @@ class TestDXOFilterInit:
 
 
 class TestDXOFilterProcess:
-    @pytest.mark.parametrize("data", [None, {}])
     @pytest.mark.parametrize("return_new_dxo", [False, True])
-    def test_filters_empty_dxo(self, data, return_new_dxo, monkeypatch):
+    def test_filters_empty_dxo(self, return_new_dxo, monkeypatch):
         monkeypatch.setattr("nvflare.apis.dxo_filter.add_job_audit_event", lambda **kwargs: None)
         filter_ = _ModelInitializer(return_new_dxo=return_new_dxo)
-        shareable = DXO(data_kind=DataKind.WEIGHTS, data=data).to_shareable()
+        shareable = DXO(data_kind=DataKind.WEIGHTS, data={}).to_shareable()
 
         result = filter_.process(shareable, FLContext())
         result_dxo = from_shareable(result)

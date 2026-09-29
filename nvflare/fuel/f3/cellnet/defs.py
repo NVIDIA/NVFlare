@@ -45,12 +45,16 @@ class MessageHeaderKey:
     CLEAR_PAYLOAD_LEN = CELLNET_PREFIX + "clear_payload_len"
     ENCRYPTED = CELLNET_PREFIX + "encrypted"
     OPTIONAL = CELLNET_PREFIX + "optional"
+    # Authenticated traffic between different client families must cross the
+    # server trust boundary even when an ad-hoc peer connection is available.
+    SERVER_TRANSIT_REQUIRED = CELLNET_PREFIX + "server_transit_required"
     MSG_ROOT_ID = CELLNET_PREFIX + "msg_root_id"
     MSG_ROOT_TTL = CELLNET_PREFIX + "msg_root_ttl"
     # When True on an incoming cell message, Adapter.call() builds a per-call
     # FOBS decode context with FOBSContextKey.PASS_THROUGH=True so that tensors
     # in that message arrive as LazyDownloadRef placeholders rather than being
-    # downloaded inline.  Set by CellPipe.send() when pass_through_on_send=True.
+    # downloaded inline. Set by a sender that wants the receiver to preserve
+    # lazy payload references for another hop.
     PASS_THROUGH = CELLNET_PREFIX + "pass_through"
 
 

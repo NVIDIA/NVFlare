@@ -6,14 +6,39 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 ## Prerequisites
 
 - Docker with a working daemon
-- NVFlare installed (development install from repo root: `pip install -e .[dev,PT]`)
+- NVFlare installed with the required extras
 - Run all commands from the `examples/docker` directory unless noted otherwise
+
+Download the example without cloning NVFlare:
+
+```bash
+nvflare examples get docker-runtime
+cd docker-runtime/examples/docker
+```
+
+From a source checkout, use `cd examples/docker` instead.
 
 ## Step 0: Build Docker images
 
 ```bash
 bash build_docker.sh
 ```
+
+The build script uses the current checkout when one is present. For an example
+download, it reads the exact revision from `.nvflare-example.json` and prepares
+a temporary shallow checkout automatically. The checkout is deleted when the
+build finishes, so the resulting images contain the same NVFlare source that
+supplied the example.
+
+If version metadata is unavailable, provide `NVFL_BASE_VERSION` as an advanced
+override:
+
+```bash
+NVFL_BASE_VERSION=2.9.0 bash build_docker.sh
+```
+
+Use only the base release number, such as `2.9.0`; the package build adds its
+development suffix when Git metadata is unavailable.
 
 This builds two images:
 - `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`),
@@ -131,8 +156,10 @@ Available jobs:
   Every site configured with a Docker job launcher needs either a site-specific `docker`
   entry or a `launcher_spec.default.docker` entry that supplies the job image.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
-  `default_job_container_kwargs` in `resources.json` — job-level
-  `launcher_spec[site][docker]` takes precedence on conflict.
+  `job_launcher.default_job_container_kwargs` in `docker.yaml`; `nvflare deploy prepare`
+  writes them to `resources.json`. This example configures `ipc_mode: host` there because
+  host-isolation options are site-owned and cannot be supplied by job metadata. Job-level
+  `launcher_spec[site][docker]` takes precedence for supported options.
 - Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json

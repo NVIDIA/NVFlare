@@ -1713,21 +1713,26 @@ class TestCertSign:
         eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
         assert list(eku) == [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
 
-    def test_sign_server_cert_sets_server_auth_eku(self, tmp_path):
+    @pytest.mark.parametrize("cert_type", ["client", "server"])
+    def test_sign_participant_cert_sets_dual_use_eku(self, tmp_path, cert_type):
         ca_dir = _setup_ca(tmp_path)
-        csr_dir = str(tmp_path / "csr-server")
+        csr_dir = str(tmp_path / f"csr-{cert_type}")
         os.makedirs(csr_dir, exist_ok=True)
-        args = _csr_args(name="fl-server", output_dir=csr_dir, cert_type="server")
+        name = f"fl-{cert_type}"
+        args = _csr_args(name=name, output_dir=csr_dir, cert_type=cert_type)
         handle_cert_csr(args)
-        csr_path = os.path.join(csr_dir, "fl-server.csr")
+        csr_path = os.path.join(csr_dir, f"{name}.csr")
 
-        out_dir = str(tmp_path / "signed-server")
-        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="server")
+        out_dir = str(tmp_path / f"signed-{cert_type}")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type=cert_type)
         handle_cert_sign(sign_args)
 
-        cert = load_crt(os.path.join(out_dir, "fl-server.crt"))
+        cert = load_crt(os.path.join(out_dir, f"{name}.crt"))
         eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-        assert list(eku) == [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
+        assert list(eku) == [
+            x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+            x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
+        ]
 
     def test_sign_uses_centralized_cert_generation_for_common_x509_content(self, tmp_path):
         from nvflare.lighter.utils import Identity

@@ -1,0 +1,26 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "swarm_controller",
+      "path": "nvflare.app_common.ccwf.SwarmServerController",
+      "args": {
+        "num_rounds": 3
+      }
+    },
+    {
+      "id": "cross_site_eval",
+      "path": "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+      "args": {}
+    }
+  ]
+}

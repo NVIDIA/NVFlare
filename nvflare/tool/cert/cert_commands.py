@@ -1203,11 +1203,8 @@ def _build_signed_cert(
             decipher_only=False,
         )
         eku_oids = [
-            (
-                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH
-                if cert_type == "server"
-                else x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH
-            )
+            x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+            x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
         ]
 
     # Rebuild subject from safe OIDs only; do NOT copy CSR subject verbatim.

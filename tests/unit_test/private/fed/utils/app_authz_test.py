@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.private.fed.utils.app_authz import AppAuthzService
@@ -41,7 +42,40 @@ def setup_authz():
 
 
 class TestAppAuthzService:
-    """Test AppAuthzService authorization logic for Flower predeployed mode."""
+    """Test AppAuthzService authorization and local BYOC derivation."""
+
+    @pytest.mark.parametrize("site_name", ["site-1", "server"])
+    @pytest.mark.parametrize(
+        "source,slurm_spec,expected_byoc",
+        [
+            ("default", {"additional_node_command": "python train.py"}, True),
+            ("site", {"additional_node_command": "python train.py"}, True),
+            ("default", {"additional_node_command": None}, False),
+            ("site", {"additional_node_command": None}, False),
+            ("default", {}, False),
+            ("site", {}, False),
+        ],
+    )
+    def test_derive_local_app_info_for_additional_node_command(self, site_name, source, slurm_spec, expected_byoc):
+        launcher_key = "default" if source == "default" else site_name
+        job_meta = {JobMetaKey.JOB_LAUNCHER_SPEC.value: {launcher_key: {"slurm": slurm_spec}}}
+
+        app_info = AppAuthzService.derive_local_app_info({}, job_meta, site_name)
+
+        assert app_info.get(AppValidationKey.BYOC, False) is expected_byoc
+
+    @pytest.mark.parametrize("site_name", ["site-1", "server"])
+    def test_derive_local_app_info_honors_null_site_override(self, site_name):
+        job_meta = {
+            JobMetaKey.JOB_LAUNCHER_SPEC.value: {
+                "default": {"slurm": {"additional_node_command": "python train.py"}},
+                site_name: {"slurm": {"additional_node_command": None}},
+            }
+        }
+
+        app_info = AppAuthzService.derive_local_app_info({}, job_meta, site_name)
+
+        assert app_info.get(AppValidationKey.BYOC, False) is False
 
     def test_authorize_flower_predeployed_granted(self, tmp_path):
         """Predeployed mode with granted right -> succeeds."""

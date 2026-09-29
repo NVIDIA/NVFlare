@@ -316,18 +316,21 @@ class TestScatterLazyRefHandling(unittest.TestCase):
 
         self.assertEqual(resolve_calls, [])
 
-    def test_offload_marks_only_remote_learn_task_for_pass_through(self):
-        ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
-        ctl.enable_tensor_disk_offload = True
-        fl_ctx = MagicMock()
+    def test_remote_learn_task_is_marked_pass_through_regardless_of_offload(self):
+        """PASS_THROUGH is a forwarding-hop decision, decoupled from disk offload."""
+        for offload in (False, True):
+            with self.subTest(enable_tensor_disk_offload=offload):
+                ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
+                ctl.enable_tensor_disk_offload = offload
+                fl_ctx = MagicMock()
 
-        task_data = _make_shareable_with_real_arrays()
-        ctl._scatter(task_data, for_round=0, fl_ctx=fl_ctx)
+                task_data = _make_shareable_with_real_arrays()
+                ctl._scatter(task_data, for_round=0, fl_ctx=fl_ctx)
 
-        remote_data = ctl.send_learn_task.call_args.kwargs["request"]
-        local_data = ctl.set_learn_task.call_args.kwargs["task_data"]
-        self.assertTrue(remote_data.get_header(ReservedHeaderKey.PASS_THROUGH))
-        self.assertIsNone(local_data.get_header(ReservedHeaderKey.PASS_THROUGH))
+                remote_data = ctl.send_learn_task.call_args.kwargs["request"]
+                local_data = ctl.set_learn_task.call_args.kwargs["task_data"]
+                self.assertTrue(remote_data.get_header(ReservedHeaderKey.PASS_THROUGH))
+                self.assertIsNone(local_data.get_header(ReservedHeaderKey.PASS_THROUGH))
 
 
 if __name__ == "__main__":

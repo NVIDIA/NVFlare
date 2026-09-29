@@ -152,6 +152,7 @@ class FedAdminServer(AdminServer):
         file_download_dir,
         download_job_url="",
         timeout: float = 10.0,
+        enable_hci: bool = True,
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -162,54 +163,61 @@ class FedAdminServer(AdminServer):
             file_download_dir: the directory for files to be downloaded
             download_job_url: download job url
             timeout: admin command timeouts
+            enable_hci: whether to construct and register inbound admin services
         """
-        cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
         self.cell = cell
         self.client_lock = threading.Lock()
-
-        sess_mgr = SessionManager(cell)
-        self.sess_mgr = sess_mgr
-        login_module = LoginModule(sess_mgr)
-        cmd_reg.register_module(login_module)
-
-        # register filters - order is important!
-        # login_module is also a filter that determines if user is authenticated
-        cmd_reg.add_filter(login_module)
-
-        # next is the authorization filter and command module
-        authz_filter = AuthzFilter()
-        cmd_reg.add_filter(authz_filter)
-
-        # audit filter records commands to audit trail
-        auditor = AuditService.get_auditor()
-        # TODO:: clean this up
-        if not isinstance(auditor, Auditor):
-            raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
-        audit_filter = CommandAudit(auditor)
-        cmd_reg.add_filter(audit_filter)
-
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
+        self.sess_mgr = None
+        self.net_agent = None
+        self.net_mgr = None
 
-        cmd_reg.register_module(sess_mgr)
-        # mpm.add_cleanup_cb(sess_mgr.shutdown)
+        cmd_reg = None
+        # When disabled, retain only client bookkeeping, storage paths, and outbound helpers.
+        if enable_hci:
+            cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
+            self.sess_mgr = SessionManager(cell)
+            login_module = LoginModule(self.sess_mgr)
+            cmd_reg.register_module(login_module)
 
-        agent = NetAgent(self.cell)
-        net_mgr = NetManager(agent)
-        cmd_reg.register_module(net_mgr)
+            # register filters - order is important!
+            # login_module is also a filter that determines if user is authenticated
+            cmd_reg.add_filter(login_module)
 
-        mpm.add_cleanup_cb(net_mgr.close)
-        mpm.add_cleanup_cb(agent.close)
+            # next is the authorization filter and command module
+            authz_filter = AuthzFilter()
+            cmd_reg.add_filter(authz_filter)
 
-        if cmd_modules:
-            if not isinstance(cmd_modules, list):
-                raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
+            # audit filter records commands to audit trail
+            auditor = AuditService.get_auditor()
+            # TODO:: clean this up
+            if not isinstance(auditor, Auditor):
+                raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
+            audit_filter = CommandAudit(auditor)
+            cmd_reg.add_filter(audit_filter)
 
-            for m in cmd_modules:
-                if not isinstance(m, CommandModule):
-                    raise TypeError("cmd_modules must contain CommandModule but got element of type {}".format(type(m)))
-                cmd_reg.register_module(m)
+            cmd_reg.register_module(self.sess_mgr)
+            # mpm.add_cleanup_cb(self.sess_mgr.shutdown)
+
+            self.net_agent = NetAgent(self.cell)
+            self.net_mgr = NetManager(self.net_agent)
+            cmd_reg.register_module(self.net_mgr)
+
+            mpm.add_cleanup_cb(self.net_mgr.close)
+            mpm.add_cleanup_cb(self.net_agent.close)
+
+            if cmd_modules:
+                if not isinstance(cmd_modules, list):
+                    raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
+
+                for m in cmd_modules:
+                    if not isinstance(m, CommandModule):
+                        raise TypeError(
+                            "cmd_modules must contain CommandModule but got element of type {}".format(type(m))
+                        )
+                    cmd_reg.register_module(m)
 
         AdminServer.__init__(
             self,
@@ -222,6 +230,7 @@ class FedAdminServer(AdminServer):
                 ConnProps.UPLOAD_DIR: file_upload_dir,
                 ConnProps.DOWNLOAD_JOB_URL: download_job_url,
             },
+            enable_hci=enable_hci,
         )
 
         self.clients = {}  # token => _Client

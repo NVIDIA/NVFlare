@@ -225,6 +225,11 @@ class ClientAppRunner(Runner):
         if self.command_agent:
             self.command_agent.shutdown()
 
+    def wait_for_command_callbacks(self, timeout: float) -> bool:
+        if not self.command_agent:
+            return True
+        return self.command_agent.wait_for_callbacks(timeout)
+
     def stop(self):
         if self.client_runner:
             self.client_runner.abort()

@@ -5,7 +5,7 @@
     description = "Client Controller FedAvg with scatter & gather workflow and cross-site evaluation with PyTorch"
     class_name  =  "ClientControllerExecutor"
     controller_type = "client"
-    executor_type = "launcher_executor"
+    executor_type = "client_api_executor"
     contributor = "NVIDIA"
     init_publish_date = "2024-04-25"
     last_updated_date = "2024-04-25"

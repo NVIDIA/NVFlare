@@ -15,11 +15,15 @@
 import os
 import shlex
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.app_opt.flower.applet import FlowerServerApplet
+from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV
+from nvflare.app_opt.flower.applet import FlowerClientApplet, FlowerServerApplet
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 
 
@@ -136,3 +140,34 @@ def test_run_flower_command_sets_flwr_home_and_cwd(mock_run_command):
     cmd_desc = mock_run_command.call_args.args[0]
     assert cmd_desc.cwd == applet.flower_app_dir
     assert cmd_desc.env["FLWR_HOME"] == applet.flwr_home_dir
+
+
+@patch("nvflare.app_opt.flower.applet._validate_flower_executable")
+def test_client_applet_passes_exact_metrics_bootstrap_without_credentials(_validate_executable):
+    workspace = MagicMock(spec=Workspace)
+    workspace.get_app_dir.return_value = "/workspace/run_job/app_site-1"
+    workspace.get_app_config_dir.return_value = "/workspace/run_job/app_site-1/config"
+    engine = MagicMock()
+    engine.get_workspace.return_value = workspace
+    engine.get_clients.return_value = [MagicMock(name="site-1")]
+    engine.get_clients.return_value[0].name = "site-1"
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.set_prop(ReservedKey.RUN_NUM, "job", private=True, sticky=False)
+    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+    applet = FlowerClientApplet(
+        extra_env={"MY_VAR": "value"},
+    )
+
+    cmd_desc = applet.get_command(
+        {
+            FlowerConstant.APP_CTX_SUPERLINK_ADDR: "127.0.0.1:9092",
+            FlowerConstant.APP_CTX_CLIENTAPP_API_ADDR: "127.0.0.1:9094",
+            FlowerConstant.APP_CTX_FL_CONTEXT: fl_ctx,
+        }
+    )
+
+    assert cmd_desc.env[ANALYTICS_BOOTSTRAP_ENV] == "/workspace/run_job/app_site-1/config/analytics_bootstrap.json"
+    assert cmd_desc.env["MY_VAR"] == "value"
+    assert "auth_token" not in repr(cmd_desc.env).lower()
+    assert "bearer" not in repr(cmd_desc.env).lower()

@@ -14,7 +14,7 @@
 
 """in_process backend for ClientAPIExecutor.
 
-Ports InProcessClientAPIExecutor's DataBus machinery behind the frozen
+Implements the in-process Client API DataBus machinery behind the frozen
 ClientAPIBackendSpec surface, with the behavior-parity bar "nothing user-visible":
 the trainer script still runs on a thread inside the CJ process, finds its
 InProcessClientAPI via the DataBus CLIENT_API_KEY entry, receives tasks over

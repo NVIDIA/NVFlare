@@ -24,7 +24,7 @@ from dev_tools.agent.skills.checks.device_selection import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-EVAL_ROOT = REPO_ROOT / "dev_tools" / "agent" / "skill_evals"
+SKILLS_ROOT = REPO_ROOT / "skills"
 
 PYTORCH_SOURCE = """
 import torch
@@ -51,7 +51,7 @@ def test_convert_eval_declarations_use_device_selection_behavior_id():
         ("nvflare-convert-pytorch", "pytorch-convert-basic"),
         ("nvflare-convert-lightning", "lightning-convert-basic"),
     ]:
-        evals_path = EVAL_ROOT / skill_name / "evals.json"
+        evals_path = SKILLS_ROOT / skill_name / "evals" / "evals.json"
         data = json.loads(evals_path.read_text(encoding="utf-8"))
         case = next(item for item in data["evals"] if item["id"] == case_id)
         behavior_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"] if isinstance(item, dict)}

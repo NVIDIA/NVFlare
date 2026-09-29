@@ -611,6 +611,9 @@ class TestSensitiveOutputRedaction:
                 '{"Authorization": "Bearer sk-live-abc123"}',
                 '{"Authorization": "Bearer <redacted>"}',
             ),
+            ("Invalid header value: Bearer ghp_exampleSecret123", "Invalid header value: Bearer <redacted>"),
+            ("GitHub rejected github_pat_exampleSecret123", "GitHub rejected <redacted>"),
+            ("GitHub rejected gho_exampleSecret123", "GitHub rejected <redacted>"),
             ('password="sample secret fragment\nsafe diagnostic', 'password="<redacted>\nsafe diagnostic'),
         ],
     )

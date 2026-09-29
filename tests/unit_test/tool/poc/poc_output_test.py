@@ -15,6 +15,7 @@
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1060,7 +1061,8 @@ class TestPocOutput:
         assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
         assert captured.err == ""
 
-    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
+    @pytest.mark.parametrize("failure", ["readiness", "args"])
+    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path, failure):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import start_poc
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -1072,7 +1074,10 @@ class TestPocOutput:
         args.study = None
         args.no_wait = False
 
-        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        project_config = {
+            "name": "example",
+            "participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}],
+        }
         service_config = {
             SC.FLARE_SERVER: "server",
             SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
@@ -1089,17 +1094,29 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch(
                 "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
-                side_effect=SystemStartTimeout("cannot connect to server with 1 clients within 30 sec"),
+                side_effect={
+                    "readiness": SystemStartTimeout("Could not confirm readiness within 30 seconds."),
+                    "args": ValueError("conn_timeout must be a finite positive number of seconds"),
+                }[failure],
             ),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 start_poc(args)
 
-        assert exc_info.value.code == 2
         data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "CONNECTION_FAILED"
-        assert data["exit_code"] == 2
-        assert "--no-wait" in data["hint"]
+        if failure == "args":
+            assert exc_info.value.code == 4
+            assert data["error_code"] == "INVALID_ARGS"
+            assert "conn_timeout" in data["message"]
+        else:
+            assert exc_info.value.code == 2
+            assert data["error_code"] == "CONNECTION_FAILED"
+            assert data["exit_code"] == 2
+            assert "nvflare system status" in data["hint"]
+            assert "server/client logs" not in data["hint"]
+            assert "--timeout <seconds>" in data["hint"]
+            assert "--no-wait" in data["hint"]
+            assert "closing the admin session" not in data["message"]
 
     def test_start_poc_service_failure_exits_service_failed(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import PocServiceStartError, start_poc
@@ -1141,7 +1158,8 @@ class TestPocOutput:
         assert "nvflare poc start" in data["hint"]
         assert "admin@nvidia.com" in data["message"]
 
-    def test_wait_for_poc_system_ready_wraps_unexpected_wait_errors(self, tmp_path):
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    def test_wait_for_poc_system_ready_wraps_only_unexpected_wait_errors(self, tmp_path, error_type):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -1153,8 +1171,9 @@ class TestPocOutput:
             SC.FLARE_CLIENTS: ["site-1"],
         }
 
-        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=RuntimeError("boom")):
-            with pytest.raises(SystemStartTimeout, match="boom"):
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=error_type("boom")):
+            expected_error = ValueError if error_type is ValueError else SystemStartTimeout
+            with pytest.raises(expected_error, match="boom"):
                 _wait_for_poc_system_ready(
                     str(tmp_path),
                     project_config,
@@ -1163,6 +1182,29 @@ class TestPocOutput:
                     excluded=[],
                     timeout_in_sec=1,
                 )
+
+    def test_wait_for_poc_system_ready_uses_default_admin_connection_timeout(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {"name": "test_project"}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start") as wait_for_start:
+            assert _wait_for_poc_system_ready(
+                str(tmp_path),
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[],
+                timeout_in_sec=30,
+            )
+
+        assert "conn_timeout" not in wait_for_start.call_args.kwargs
 
     # ------------------------------------------------------------------ poc prepare parsers
 
@@ -1217,6 +1259,315 @@ class TestPocOutput:
 
         args = root.parse_args(["poc", "stop", "--no-wait"])
         assert args.no_wait is True
+
+    @pytest.mark.parametrize("subcommand", ["start", "stop"])
+    def test_poc_parser_preserves_repeated_participant_options(self, subcommand):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser, get_excluded, get_service_list, validate_services
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(
+            [
+                "poc",
+                subcommand,
+                "-p",
+                "site-1",
+                "--service",
+                "site-2",
+                "-ex",
+                "site-3",
+                "--exclude",
+                "site-4",
+            ]
+        )
+        assert get_service_list(args) == ["site-1", "site-2"]
+        assert get_excluded(args) == ["site-3", "site-4"]
+
+        default_args = root.parse_args(["poc", subcommand])
+        assert get_service_list(default_args) == []
+        assert get_excluded(default_args) == []
+
+        all_args = root.parse_args(["poc", subcommand, "-p", "all"])
+        assert get_service_list(all_args) == []
+
+        for mixed_args in (
+            ["poc", subcommand, "-p", "all", "-p", "site-1"],
+            ["poc", subcommand, "-p", "site-1", "-p", "all"],
+        ):
+            args = root.parse_args(mixed_args)
+            with pytest.raises(CLIException, match="'-p all' cannot be combined"):
+                validate_services({"participants": [{"name": "site-1"}]}, get_service_list(args), [])
+
+    @pytest.mark.parametrize(
+        "excluded, services_list, coordinated, expected_excluded",
+        [
+            (["site-1", "site-2"], [], False, ["site-1", "site-2", "admin@nvidia.com"]),
+            (["site-1", "site-2"], ["server", "site-1"], False, ["site-1", "site-2", "admin@nvidia.com"]),
+            ([], ["server", "site-1"], False, ["admin@nvidia.com"]),
+            ([], ["server"], True, None),
+            (["admin@nvidia.com"], [], True, None),
+        ],
+    )
+    def test_stop_poc_honors_service_exclusions(self, excluded, services_list, coordinated, expected_excluded):
+        from nvflare.tool.poc.poc_commands import _stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server"},
+                {"name": "site-1"},
+                {"name": "site-2"},
+                {"name": "admin@nvidia.com"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1", "site-2"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+        }
+        original_excluded = list(excluded)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.validate_poc_workspace"),
+            patch("nvflare.tool.poc.poc_commands.shutdown_system", return_value={}) as shutdown_system,
+            patch("nvflare.tool.poc.poc_commands._run_poc") as run_poc,
+            patch("nvflare.tool.cli_output.print_human"),
+        ):
+            _stop_poc(
+                "/tmp/poc",
+                excluded=excluded,
+                services_list=services_list,
+                project_config=project_config,
+                service_config=service_config,
+            )
+
+        assert excluded == original_excluded
+        if coordinated:
+            shutdown_system.assert_called_once()
+            run_poc.assert_not_called()
+        else:
+            shutdown_system.assert_not_called()
+            run_poc.assert_called_once_with(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                service_config,
+                project_config,
+                excluded=expected_excluded,
+                services_list=services_list,
+                wait=True,
+            )
+
+    def test_run_poc_honors_wait_for_mixed_local_stop(self):
+        from nvflare.tool.poc.poc_commands import _run_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.IS_DOCKER_RUN: False,
+        }
+        service_commands = [
+            ("site-1", "touch /tmp/prod/site-1/shutdown.fl"),
+            ("server", "touch /tmp/prod/server/shutdown.fl"),
+        ]
+
+        with (
+            patch("nvflare.tool.poc.poc_commands._build_commands", return_value=service_commands),
+            patch("nvflare.tool.poc.poc_commands._run_stop_command") as run_stop_command,
+            patch("nvflare.tool.poc.poc_commands.async_process") as async_process,
+            patch("nvflare.tool.poc.poc_commands.get_prod_dir", return_value="/tmp/prod"),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_services_stopped") as wait_for_stopped,
+            patch("nvflare.tool.poc.poc_commands.time.sleep"),
+        ):
+            _run_poc(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                service_config,
+                {"name": "example_project"},
+                excluded=["admin@nvidia.com"],
+                services_list=["server", "site-1"],
+                wait=True,
+            )
+
+            assert [call.args[:2] for call in run_stop_command.call_args_list] == service_commands
+            async_process.assert_not_called()
+            assert wait_for_stopped.call_args.args == ("/tmp/prod", ["site-1", "server"])
+            assert wait_for_stopped.call_args.kwargs["deadline"] > 0
+
+            run_stop_command.reset_mock()
+            wait_for_stopped.reset_mock()
+            _run_poc(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                service_config,
+                {"name": "example_project"},
+                excluded=["admin@nvidia.com"],
+                services_list=["server", "site-1"],
+                wait=False,
+            )
+
+            run_stop_command.assert_not_called()
+            assert [call.args[:2] for call in async_process.call_args_list] == service_commands
+            wait_for_stopped.assert_not_called()
+
+    def test_run_poc_gives_each_docker_stop_its_full_timeout(self):
+        from nvflare.tool.poc.poc_commands import POC_STOP_TIMEOUT, _run_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        service_commands = [
+            ("site-1", "docker stop site-1"),
+            ("server", "docker stop server"),
+        ]
+
+        with (
+            patch("nvflare.tool.poc.poc_commands._build_commands", return_value=service_commands),
+            patch("nvflare.tool.poc.poc_commands._run_stop_command") as run_stop_command,
+            patch("nvflare.tool.poc.poc_commands.time.monotonic", side_effect=[0, 10, 25]),
+        ):
+            _run_poc(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                {SC.IS_DOCKER_RUN: True},
+                {"name": "example_project"},
+                excluded=[],
+                services_list=["site-1", "server"],
+                wait=True,
+            )
+
+        assert [call.args[:2] for call in run_stop_command.call_args_list] == service_commands
+        assert [call.kwargs["timeout"] for call in run_stop_command.call_args_list] == [POC_STOP_TIMEOUT] * 2
+
+    def test_docker_stop_honors_poc_socket_override(self, monkeypatch):
+        from nvflare.tool.poc.poc_commands import _run_stop_command
+
+        monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+        monkeypatch.setenv("DOCKER_CONTEXT", "remote-context")
+        monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("nvflare.tool.poc.poc_commands.subprocess.run", return_value=completed) as run_command:
+            _run_stop_command("site-1", "docker stop site-1", timeout=30)
+
+        assert run_command.call_args.args[0] == ["docker", "stop", "site-1"]
+        assert run_command.call_args.kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+        assert "DOCKER_CONTEXT" not in run_command.call_args.kwargs["env"]
+
+    def test_docker_process_env_honors_poc_socket_override(self, monkeypatch):
+        from nvflare.tool.poc.poc_commands import prepare_env
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+        monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+
+        process_env = prepare_env("site-1", None, {SC.IS_DOCKER_RUN: True})
+
+        assert process_env["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+
+    def test_wait_for_poc_services_stopped_reports_lingering_services(self):
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_services_stopped
+
+        with (
+            patch("nvflare.tool.poc.poc_commands._is_live_pid_file", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.time.monotonic", return_value=1.0),
+        ):
+            with pytest.raises(TimeoutError, match="site-1"):
+                _wait_for_poc_services_stopped("/tmp/prod", ["site-1"], deadline=0.0)
+
+    def test_stop_poc_exclusion_preserves_unselected_secondary_admins(self):
+        from nvflare.tool.poc.poc_commands import _stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server"},
+                {"name": "site-1"},
+                {"name": "site-2"},
+                {"name": "admin@nvidia.com"},
+                {"name": "bob@nvidia.com"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1", "site-2"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: ["bob@nvidia.com"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.validate_poc_workspace"),
+            patch("nvflare.tool.poc.poc_commands.shutdown_system", return_value={}) as shutdown_system,
+            patch("nvflare.tool.poc.poc_commands._run_poc") as run_poc,
+            patch("nvflare.tool.cli_output.print_human"),
+        ):
+            _stop_poc(
+                "/tmp/poc",
+                excluded=["site-2"],
+                services_list=[],
+                project_config=project_config,
+                service_config=service_config,
+            )
+
+        shutdown_system.assert_not_called()
+        run_poc.assert_called_once_with(
+            SC.CMD_STOP,
+            "/tmp/poc",
+            [],
+            service_config,
+            project_config,
+            excluded=["site-2", "admin@nvidia.com", "bob@nvidia.com"],
+            services_list=[],
+            wait=True,
+        )
+
+    @pytest.mark.parametrize("selected_admin", ["admin@nvidia.com", "bob@nvidia.com"])
+    def test_stop_poc_rejects_selected_admin_consoles(self, selected_admin):
+        from nvflare.tool.poc.poc_commands import _stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server"},
+                {"name": "site-1"},
+                {"name": "admin@nvidia.com"},
+                {"name": "bob@nvidia.com"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: ["bob@nvidia.com"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.shutdown_system") as shutdown_system,
+            patch("nvflare.tool.poc.poc_commands._run_poc") as run_poc,
+        ):
+            with pytest.raises(CLIException, match="cannot stop admin consoles"):
+                _stop_poc(
+                    "/tmp/poc",
+                    excluded=[],
+                    services_list=["site-1", selected_admin],
+                    project_config=project_config,
+                    service_config=service_config,
+                )
+
+        shutdown_system.assert_not_called()
+        run_poc.assert_not_called()
 
     def test_stop_poc_invalid_service_name_exits_4(self, capsys, tmp_path):
         """stop_poc with an unknown -p/--service name exits 4 (structured error), not 1."""

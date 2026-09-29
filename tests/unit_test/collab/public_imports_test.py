@@ -23,13 +23,12 @@ import sys
 
 
 def test_top_level_exports():
-    from nvflare.collab import CollabCallError, CollabRecipe, collab, simple_logging
+    from nvflare.collab import CollabCallError, CollabRecipe, collab
 
     for export in (
         collab,
         CollabCallError,
         CollabRecipe,
-        simple_logging,
     ):
         assert export is not None
 
@@ -126,7 +125,7 @@ def test_collab_public_surface_does_not_require_torch():
         "from nvflare.collab.api import Context, GroupCallContext\n"
         "import nvflare.collab.runtime.controller\n"
         "import nvflare.collab.runtime.executor\n"
-        "from nvflare.collab import CollabRecipe, simple_logging\n"
+        "from nvflare.collab import CollabRecipe\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
 

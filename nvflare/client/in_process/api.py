@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
@@ -22,7 +23,6 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
@@ -39,6 +39,13 @@ TOPIC_STOP = "STOP"
 TOPIC_ABORT = "ABORT"
 TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
 TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
+_END_RUN_STOP_REASON = "END_RUN received"
+_API_SHUTDOWN_STOP_REASON = "API shutdown called."
+_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON}
+
+
+def _stop_log_level(reason):
+    return logging.INFO if reason in _EXPECTED_STOP_REASONS else logging.WARNING
 
 
 class InProcessClientAPI(APISpec):
@@ -46,16 +53,12 @@ class InProcessClientAPI(APISpec):
         self,
         task_metadata: dict,
         result_check_interval: float = 2.0,
-        from_nvflare_converter: Optional[ParamsConverter] = None,
-        to_nvflare_converter: Optional[ParamsConverter] = None,
     ):
         """Initializes the InProcessClientAPI.
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
-            from_nvflare_converter: optional custom converter applied when receiving a task.
-            to_nvflare_converter: optional custom converter applied before publishing a result.
         """
         super().__init__()  # Initialize memory management from base class
 
@@ -79,9 +82,6 @@ class InProcessClientAPI(APISpec):
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
-        self._from_nvflare_converter = from_nvflare_converter
-        self._to_nvflare_converter = to_nvflare_converter
-        self._converter_fl_ctx: Optional[FLContext] = None
         self._receive_error: Optional[Exception] = None
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
@@ -119,7 +119,6 @@ class InProcessClientAPI(APISpec):
 
     def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
-        self._converter_fl_ctx = fl_ctx
         self._receive_error = None
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
@@ -201,17 +200,14 @@ class InProcessClientAPI(APISpec):
         # DIFF is computed above in the trainer-native representation. Adapt only the
         # shallow wire model so clear_cache=False leaves the user's FLModel native.
         wire_model = copy.copy(model)
-        if self._to_nvflare_converter is None:
-            wire_model.params = convert_params(
-                model.params,
-                self.client_config.get_exchange_format() or ExchangeFormat.RAW,
-                self.client_config.get_server_expected_format(),
-                self._params_conversion_state,
-                self.logger,
-            )
+        wire_model.params = convert_params(
+            model.params,
+            self.client_config.get_exchange_format() or ExchangeFormat.RAW,
+            self.client_config.get_server_expected_format(),
+            self._params_conversion_state,
+            self.logger,
+        )
         shareable = FLModelUtils.to_shareable(wire_model)
-        if self._to_nvflare_converter is not None:
-            shareable = self._apply_converter(self._to_nvflare_converter, shareable)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
@@ -307,11 +303,6 @@ class InProcessClientAPI(APISpec):
 
         return model
 
-    def _apply_converter(self, converter: ParamsConverter, shareable: Shareable) -> Shareable:
-        if self._converter_fl_ctx is None:
-            raise RuntimeError("custom ParamsConverter requires the current task FLContext")
-        return converter.process(self.meta.get(ConfigKey.TASK_NAME), shareable, self._converter_fl_ctx)
-
     def _raise_receive_error(self) -> None:
         if self._receive_error is not None:
             raise RuntimeError(f"failed to receive task: {self._receive_error}") from self._receive_error
@@ -321,19 +312,15 @@ class InProcessClientAPI(APISpec):
             if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
                 raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
 
-            if self._from_nvflare_converter is not None:
-                data = self._apply_converter(self._from_nvflare_converter, data)
-                fl_model = FLModelUtils.from_shareable(data)
-            else:
-                fl_model = FLModelUtils.from_shareable(data)
-                exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
-                fl_model.params = convert_params(
-                    fl_model.params,
-                    self.client_config.get_server_expected_format(),
-                    exchange,
-                    self._params_conversion_state,
-                    self.logger,
-                )
+            fl_model = FLModelUtils.from_shareable(data)
+            exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+            fl_model.params = convert_params(
+                fl_model.params,
+                self.client_config.get_server_expected_format(),
+                exchange,
+                self._params_conversion_state,
+                self.logger,
+            )
             self.fl_model = fl_model
         except Exception as e:
             # DataBus callbacks run in a worker and publish() does not propagate their
@@ -348,13 +335,13 @@ class InProcessClientAPI(APISpec):
         elif topic == TOPIC_STOP:
             self.stop = True
             self.stop_reason = msg
-            self.logger.warning(f"ask to stop job: reason: {msg}")
+            self.logger.log(_stop_log_level(msg), f"ask to stop job: reason: {msg}")
 
     def __continue_job(self) -> bool:
         if self.abort:
             raise RuntimeError(f"request to abort the job for reason {self.abort_reason}")
         if self.stop:
-            self.logger.warning(f"request to stop the job for reason {self.stop_reason}")
+            self.logger.log(_stop_log_level(self.stop_reason), f"request to stop the job for reason {self.stop_reason}")
             self.fl_model = None
             return False
 
@@ -362,8 +349,8 @@ class InProcessClientAPI(APISpec):
 
     def shutdown(self):
         self.stop = True
-        self.event_manager.fire_event(TOPIC_STOP)
-        self.stop_reason = "API shutdown called."
+        self.stop_reason = _API_SHUTDOWN_STOP_REASON
+        self.event_manager.fire_event(TOPIC_STOP, _API_SHUTDOWN_STOP_REASON)
 
     def close(self):
         """Detaches this API instance from the singleton DataBus, in both directions.
@@ -374,7 +361,6 @@ class InProcessClientAPI(APISpec):
         executor/backend at teardown; idempotent.
         """
         self.closed = True
-        self._converter_fl_ctx = None
         self._receive_error = None
         self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
         self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)

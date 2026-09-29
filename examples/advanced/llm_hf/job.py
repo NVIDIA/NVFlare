@@ -20,11 +20,12 @@ import argparse
 import os
 from typing import Dict
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking, set_per_site_config
+from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking, set_per_site_config, set_recipe_meta
 
 
 def define_parser():
@@ -58,7 +59,18 @@ def define_parser():
         help="GPU assignments for simulated clients, comma separated, default single GPU",
     )
     parser.add_argument("--ports", nargs="+", default=["7777"], help="Ports for clients, default to 7777")
-    parser.add_argument("--multi_node", action="store_true", help="Enable multi-node training")
+    parser.add_argument(
+        "--slurm_nodes",
+        type=int,
+        default=None,
+        help="Number of Slurm nodes per client site. Must be used with --slurm_gpus_per_node.",
+    )
+    parser.add_argument(
+        "--slurm_gpus_per_node",
+        type=int,
+        default=None,
+        help="Number of GPUs on each Slurm node. Must be used with --slurm_nodes.",
+    )
     parser.add_argument("--startup_kit_location", type=str, default=None, help="Startup kit location")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Username for production mode")
     parser.add_argument(
@@ -80,14 +92,25 @@ def main():
     if not client_ids:
         raise ValueError("client_ids cannot be empty. Please specify at least one client ID.")
     num_clients = len(client_ids)
-    gpus = split_gpus(args.gpu)
-    gpus = [g.split(",") for g in gpus]
-    ports = args.ports if isinstance(args.ports, list) else [args.ports]
+
+    slurm_requested = args.slurm_nodes is not None or args.slurm_gpus_per_node is not None
+    if slurm_requested:
+        if args.slurm_nodes is None or args.slurm_gpus_per_node is None:
+            raise ValueError("--slurm_nodes and --slurm_gpus_per_node must be specified together.")
+        if args.slurm_nodes < 1 or args.slurm_gpus_per_node < 1:
+            raise ValueError("--slurm_nodes and --slurm_gpus_per_node must be positive integers.")
+        # Slurm owns GPU placement, so the simulator-only --gpu/--ports values
+        # are not used to construct the client launch command.
+        gpus = [[] for _ in client_ids]
+        ports = []
+    else:
+        gpus = [g.split(",") for g in split_gpus(args.gpu)]
+        ports = args.ports if isinstance(args.ports, list) else [args.ports]
 
     print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
-    if len(gpus) != num_clients:
+    if not slurm_requested and len(gpus) != num_clients:
         raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
-    if len(ports) < num_clients:
+    if not slurm_requested and len(ports) < num_clients:
         raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
 
     num_threads = args.threads if args.threads else num_clients
@@ -99,6 +122,7 @@ def main():
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
         model = {"class_path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
+        model_file = "hf_sft_model.py"
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
@@ -106,6 +130,7 @@ def main():
             "class_path": "hf_peft_model.CausalLMPEFTModel",
             "args": {"model_name_or_path": args.model_name_or_path},
         }
+        model_file = "hf_peft_model.py"
         job_name = "llm_hf_peft"
         output_path = "peft"
     else:
@@ -138,7 +163,6 @@ def main():
             f"--data_path_valid {data_path_valid} "
             f"--output_path {output_path} "
             f"--train_mode {train_mode} "
-            f"--message_mode {message_mode} "
             f"--num_rounds {args.num_rounds} "
             f"--local_epoch {args.local_epoch} "
             f"--lr_scheduler {args.lr_scheduler}"
@@ -147,11 +171,13 @@ def main():
         # Add WandB arguments (will be enabled if WANDB_API_KEY is set)
         script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {args.wandb_run_name}"
 
-        # Determine command for multi-GPU or multi-node
+        # Determine command for local multi-GPU or launcher-owned Slurm runs.
         site_config = {"train_args": script_args}
 
-        if args.multi_node:
-            site_config["command"] = "bash custom/client_wrapper.sh"
+        if slurm_requested:
+            site_config["command"] = (
+                f"python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node={args.slurm_gpus_per_node}"
+            )
         elif len(site_gpus) > 1:
             site_config["command"] = (
                 f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(site_gpus)} "
@@ -169,16 +195,28 @@ def main():
         train_script="client.py",
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
-        key_metric="neg_eval_loss",
+        key_metric="model_score",
     )
     set_per_site_config(recipe, per_site_config)
+    recipe.add_server_file(model_file)
+
+    if slurm_requested:
+        # The Slurm launcher starts one task on each node. During export,
+        # ScriptRunner derives additional_node_command from each site's command
+        # so non-master nodes join the same torchrun rendezvous without a wrapper.
+        launcher_spec = {
+            site_name: {
+                "slurm": {
+                    "nodes": args.slurm_nodes,
+                    "gpus_per_node": args.slurm_gpus_per_node,
+                }
+            }
+            for site_name in client_names
+        }
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
 
     # Add client params to reduce timeout failures for longer LLM runs
     recipe.add_client_config({"get_task_timeout": 300, "submit_task_result_timeout": 300})
-
-    # Add client_wrapper.sh for multi-node training
-    if args.multi_node:
-        recipe.add_client_file("client_wrapper.sh")
 
     # Add quantization filters if specified
     if args.quantize_mode:

@@ -14,8 +14,10 @@
 
 import os
 import time
+from threading import Lock
 from typing import Any, Dict, Optional, Set, Union
 
+from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
@@ -211,21 +213,45 @@ class FedAvg(BaseFedAvg):
                 self._params_type = None
                 self._site_metric_weights = {}
 
+                # Keep a completed/failed round from publishing partial callback mutations.
+                round_state = {"lock": Lock(), "failed": False, "closed": False}
+
+                def aggregate_one_result(result, state=round_state):
+                    with state["lock"]:
+                        if state["closed"] or state["failed"]:
+                            return False
+                        try:
+                            return self._aggregate_one_result(result)
+                        except Exception:
+                            state["failed"] = True
+                            raise
+
                 # Non-blocking send with callback for streaming aggregation
                 set_fedprox_metadata(model, self.fedprox_mu)
                 self.send_model(
                     task_name=self.task_name,
                     targets=clients,
                     data=model,
-                    callback=self._aggregate_one_result,
+                    callback=aggregate_one_result if not self.aggregator else self._aggregate_one_result,
                 )
 
                 # Wait for all results to be processed
                 while self.get_num_standing_tasks():
+                    if round_state["failed"]:
+                        self.cancel_all_tasks(TaskCompletionStatus.ERROR)
+                        break
                     if self.abort_signal.triggered:
+                        with round_state["lock"]:
+                            round_state["closed"] = True
                         self.info("Abort signal triggered. Finishing FedAvg.")
                         return
                     time.sleep(self._task_check_period)
+
+                # Task retirement can precede callback completion: wait for the consumer.
+                with round_state["lock"]:
+                    round_state["closed"] = True
+                    if round_state["failed"]:
+                        raise RuntimeError("FedAvg aggregation failed; refusing to update or save the model")
 
                 self.event(AppEventType.BEFORE_AGGREGATION)
 

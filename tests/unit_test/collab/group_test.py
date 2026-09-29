@@ -96,3 +96,26 @@ def test_nonblocking_group_returns_before_bounded_dispatch_completes():
 
     assert second_dispatched.wait(timeout=1.0)
     assert sorted(returned["results"]) == [("site-1", "first"), ("site-2", "second")]
+    assert list(returned["results"]) == []
+
+
+def test_blocking_group_results_are_reiterable():
+    app = ClientApp(object())
+
+    def dispatch(gcc, *_args, **_kwargs):
+        gcc.set_result(f"result-{gcc.target_name}")
+        gcc.call_completed()
+
+    proxies = [
+        _proxy(app, "site-1", {"train": []}, MagicMock(call_target_in_group=MagicMock(side_effect=dispatch))),
+        _proxy(app, "site-2", {"train": []}, MagicMock(call_target_in_group=MagicMock(side_effect=dispatch))),
+    ]
+
+    results = Group(app, Signal(), proxies).train()
+
+    expected = [("site-1", "result-site-1"), ("site-2", "result-site-2")]
+    assert list(results) == expected
+    assert list(results) == expected
+    expected_by_site = dict(expected)
+    assert dict(results) == expected_by_site
+    assert dict(results) == expected_by_site

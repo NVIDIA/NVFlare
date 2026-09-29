@@ -68,6 +68,10 @@ class CausalLMPEFTModel(torch.nn.Module):
                                  bias="none", task_type="CAUSAL_LM")
         full_model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
         self.model = get_peft_model(full_model, peft_config)
+
+    def state_dict(self, *args, **kwargs):
+        adapter_state = get_peft_model_state_dict(self.model)
+        return {f"model.{key}": value for key, value in adapter_state.items()}
 ```
 
 ### Client-Side Code
@@ -75,24 +79,27 @@ class CausalLMPEFTModel(torch.nn.Module):
 
 Key features:
 - **Multi-GPU Support**: Automatic DDP setup via `torch.distributed`
-- **Rank Management**: Only rank 0 communicates with NVFlare server
-- **Model Synchronization**: Broadcasts global model from rank 0 to all ranks
-- **Federated Training Loop**: Integrates with NVFlare using numbered steps:
-  1. Import nvflare client API
-  2. Initialize NVFlare client API (`flare.init()`)
-  3. Federated training rounds loop (`while flare.is_running()`)
-  4. Receive global model from NVFlare (`flare.receive()`)
-  5. Load global model state dict
-  6. Evaluate global model for server-side model selection
-  7. Train locally using SFTTrainer
-  8. Compose output model parameters
-  9. Construct trained FL model with metrics
-  10. Send model back to NVFlare (`flare.send()`)
+- **Hugging Face Client API**: `flare.patch(trainer)` owns FL task exchange, local-round budgets, and checkpoint state
+- **Rank Management**: Only global rank 0 communicates with NVFlare; the patched API broadcasts task and model state
+- **Parameter Scope**: Full-model parameters are exchanged for SFT and adapter-only parameters for PEFT
+- **Federated Training Loop**: All ranks execute the same standard Trainer calls:
+  ```python
+  flare.patch(
+      trainer,
+      params_scope="auto",
+      server_key_prefix="model.",
+      local_epochs=args.local_epoch,
+  )
+
+  while flare.is_running():
+      trainer.evaluate()
+      trainer.train()
+  ```
 
 **Launch Modes:**
 - Single GPU: `python client.py [args]`
 - Multi-GPU: `python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]`
-- Multi-node: via `client_wrapper.sh`
+- Multi-node Slurm: launcher-owned execution via `nvflare.app_opt.pt.torchrun_node`
 
 ### Server-Side Code / Job Recipe
 **`job.py`** - Job configuration using NVFlare's `FedAvgRecipe` pattern
@@ -112,7 +119,7 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
-    key_metric="neg_eval_loss",
+    key_metric="model_score",
 )
 ```
 
@@ -171,6 +178,21 @@ python job.py \
     --username admin@nvidia.com
 ```
 
+For a Slurm client site, add the topology requested for each client allocation:
+
+```bash
+python job.py \
+    --client_ids dolly \
+    --data_path /shared/dataset \
+    --startup_kit_location /path/to/admin/startup_kit \
+    --slurm_nodes 2 \
+    --slurm_gpus_per_node 8
+```
+
+The recipe writes this topology to the job's `launcher_spec`; the NVFlare Slurm
+launcher owns node allocation and starts `torchrun_node` on every node. See
+[Multi-node Slurm Training](MULTINODE.md) for deployment and execution details.
+
 **Key Job Arguments:**
 - `--client_ids`: Client/site names (space-separated). Used directly as site names (e.g., `dolly`, `hospital-1`)
 - `--data_path`: Root directory containing client datasets
@@ -179,6 +201,8 @@ python job.py \
 - `--quantize_mode`: Optional quantization (`float16`, `blockwise8`, `float4`, `normfloat4`)
 - `--gpu`: GPU assignments, e.g., `"[0,1],[2,3]"` for two clients with 2 GPUs each
 - `--ports`: Master ports for DDP, e.g., `7777 8888`
+- `--slurm_nodes`: Number of Slurm nodes allocated to each client site
+- `--slurm_gpus_per_node`: Number of GPUs requested on each Slurm node
 - `--num_rounds`: Number of federated learning rounds
 - `--use_tracking`: Enable TensorBoard experiment tracking
 
@@ -188,11 +212,9 @@ Below, we illustrate how to adapt a standard HuggingFace SFT/PEFT training scrip
 The original HuggingFace training script is located at `utils/hf_sft_peft.py`, which is a modified version of [HuggingFace SFT Trainer](https://huggingface.co/docs/trl/sft_trainer).
 To illustrate the adaptation process, we use a single dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k).
 
-Unlike a basic iterative pytorch-based training script, HuggingFace training is usually a single call to `trainer.train()`, which is not suitable for federated training.
+HuggingFace training is usually a single call to `trainer.train()`. NVFlare's Hugging Face Client API patches that call with federated task handling, so applications do not need to implement `flare.receive()`, `flare.send()`, or distributed model broadcasts themselves.
 
-Therefore, we will perform the adaptation process in two steps:
-1. Adapt the one-call training script to iterative training by breaking the single `.train()` call to several iterations, which is a prerequisite for federated training.
-2. Adapt the iterative training script to federated training with NVFlare.
+The centralized iterative scripts below remain useful for understanding scheduler and checkpoint behavior. The federated client then uses `flare.patch(trainer)` to apply the same round boundaries through the supported Hugging Face integration.
 
 During the process, we will examine three training modes:
 1. Centralized one-call training (baseline) without NVFlare
@@ -276,13 +298,24 @@ We can see the three curves align well.
 ![sft](./figs/callback_multigpu.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using the [Client API](../../../docs/programming_guide/execution_api_type/client_api.rst).
+Construct the same `SFTTrainer`, then patch it with the [Hugging Face Client API](../../../docs/user_guide/data_scientist_guide/hf_client_api.rst):
 
-The major code modifications are for replacing the fixed model reloading processing with 
-receiving and returning the global model, as shown below:
+```python
+import nvflare.client.hf as flare
 
-![diff](./figs/diff_fl_1.png)
-![diff](./figs/diff_fl_2.png)
+flare.patch(
+    trainer,
+    params_scope="auto",
+    server_key_prefix="model.",
+    local_epochs=args.local_epoch,
+)
+
+while flare.is_running():
+    trainer.evaluate()
+    trainer.train()
+```
+
+The patched API receives and loads the global model, synchronizes distributed ranks, preserves Trainer checkpoint and scheduler state, applies the per-round epoch budget, and sends parameters and metrics from rank 0. `params_scope="auto"` selects full-model exchange for SFT and adapter-only exchange for PEFT. The PEFT server wrapper exposes the same adapter-only state used by the client.
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
@@ -388,4 +421,7 @@ Oasst1:
 ![peft](./figs/peft_oasst1.png)
 
 ## Multi-node Training
-The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).
+The NVFlare client can also train across multiple Slurm nodes. The example uses
+NVFlare's Slurm Job Launcher directly; it does not require a custom wrapper,
+nested `srun`, or rewriting `client_api_config.json`. See
+[MULTINODE.md](MULTINODE.md).

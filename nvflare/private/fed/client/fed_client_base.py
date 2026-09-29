@@ -34,6 +34,7 @@ from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
+from .upgrade import DEFAULT_UPGRADE_PROBE_INTERVAL, wait_for_server
 
 
 class FederatedClientBase:
@@ -94,6 +95,7 @@ class FederatedClientBase:
             timeout=client_args.get("communication_timeout", 300.0),
             maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
+        self._shutdown_lock = threading.Lock()
 
         self.secure_train = secure_train
         self.handlers = handlers
@@ -209,6 +211,12 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
+            if self.args.job_id:
+                # the CJ's ssl_cert is its job credential; pin the server-role credential to it
+                # too: otherwise, on listener-enabled sites, the site's server cert gets
+                # back-filled from the startup kit and message crypto prefers it over CLIENT_CERT
+                credentials[DriverParams.SERVER_CERT.value] = ssl_cert
+                credentials[DriverParams.SERVER_KEY.value] = private_key
         else:
             credentials = {}
 
@@ -217,6 +225,19 @@ class FederatedClientBase:
             credentials[DriverParams.CONNECTION_SECURITY.value] = root_conn_security
 
         self.logger.debug(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
+        if not self.args.job_id:
+            wait_for_server(
+                fqcn=my_fqcn,
+                peer_fqcn=relay_fqcn or FQCN.ROOT_SERVER,
+                url=parent_url or root_url,
+                secure=self.secure_train,
+                credentials=credentials,
+                resources=parent_resources,
+                identity_map=auth_identity_map,
+                abort_signal=self.abort_signal,
+                retry_interval=self.client_args.get("upgrade_probe_interval", DEFAULT_UPGRADE_PROBE_INTERVAL),
+            )
+
         self.cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
@@ -419,16 +440,27 @@ class FederatedClientBase:
         if self.communicator.cell:
             self.communicator.cell.stop()
 
+    def send_request_before_shutdown(self, **kwargs):
+        """Send an authenticated request unless client shutdown has started."""
+        with self._shutdown_lock:
+            if self.communicator.heartbeat_done:
+                return None
+            return self.cell.send_request(**kwargs)
+
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.terminate()
+        with self._shutdown_lock:
+            # Serialize token retirement/logout after any in-flight terminal
+            # report that still uses this authenticated client session.
+            self.communicator.heartbeat_done = True
+            self.terminate()
 
-        if self.engine:
-            fl_ctx = self.engine.new_context()
-        else:
-            fl_ctx = FLContext()
-        self.logout_client(fl_ctx)
-        self.logger.info(f"Logout client: {self.client_name} from server.")
+            if self.engine:
+                fl_ctx = self.engine.new_context()
+            else:
+                fl_ctx = FLContext()
+            self.logout_client(fl_ctx)
+            self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
 

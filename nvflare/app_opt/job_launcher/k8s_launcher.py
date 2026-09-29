@@ -28,7 +28,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobProcessEnv,
+    JobReturnCode,
+    add_launcher,
+)
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -45,10 +52,12 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
 )
 
@@ -124,9 +133,10 @@ _PENDING_FAILURE_EVENT_REASONS = {
     "NetworkNotReady",
 }
 # Files actually read from startup/ by the job pod at runtime. Others in
-# startup/ are dropped to shrink the Secret. local/ is bundled whole with each
-# job workspace so job resource files and local custom code keep working.
-_STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
+# startup/ are dropped to shrink the Secret (job_startup_files() already withholds
+# private keys). local/ is bundled whole with each job workspace so job resource
+# files and local custom code keep working.
+_STARTUP_KEEP_SUFFIXES = (".crt", ".pem", ".json")
 
 
 def _keep_startup_file(fname: str) -> bool:
@@ -962,13 +972,11 @@ class K8sJobLauncher(JobLauncherSpec):
         """
         data = {}
         if os.path.isdir(startup_dir):
-            for fname in os.listdir(startup_dir):
+            for fname in job_startup_files(startup_dir):
                 if not _keep_startup_file(fname):
                     continue
-                fpath = os.path.join(startup_dir, fname)
-                if os.path.isfile(fpath):
-                    with open(fpath, "rb") as f:
-                        data[fname] = base64.b64encode(f.read()).decode()
+                with open(os.path.join(startup_dir, fname), "rb") as f:
+                    data[fname] = base64.b64encode(f.read()).decode()
 
         return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
 
@@ -1052,6 +1060,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if args is None:
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        portable_spec = get_portable_resource_spec(job_meta, site_name)
         job_pending_timeout = k8s_spec["pending_timeout"] if "pending_timeout" in k8s_spec else self.pending_timeout
         try:
             job_pending_timeout = _normalize_pending_timeout(
@@ -1092,13 +1101,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 data_mounts = resolve_study_dataset_mounts(
                     self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
                 )
-        site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
-        flat_gpu_count = (
-            0
-            if any(k in site_resources for k in ("process", "docker", "k8s"))
-            else site_resources.get("num_of_gpus", 0)
-        )
-        job_resource = k8s_spec["num_of_gpus"] if "num_of_gpus" in k8s_spec else flat_gpu_count
+        job_resource = k8s_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -1119,6 +1122,8 @@ class K8sJobLauncher(JobLauncherSpec):
             )
 
         startup_dir = workspace_obj.get_startup_kit_dir()
+        run_dir = workspace_obj.get_run_dir(raw_job_id)
+        job_cert = read_job_cert(run_dir) if require_job_cert(fl_ctx, run_dir) else None
         engine = fl_ctx.get_engine()
         owner_cell = getattr(engine, "cell", None) if engine else None
         if owner_cell is None:
@@ -1135,6 +1140,10 @@ class K8sJobLauncher(JobLauncherSpec):
             # would be readable in the pod object by anyone with pods/get.
             credential_env = get_credential_env(job_args)
             credential_env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+            if job_cert is not None:
+                # the pod's bootstrap cell needs the credential before the run dir is downloaded
+                credential_env[JobProcessEnv.JOB_CERT] = job_cert[0].decode("ascii")
+                credential_env[JobProcessEnv.JOB_KEY] = job_cert[1].decode("ascii")
             credential_secret_name = self._ensure_job_credential_secret(pod_name, credential_env)
 
             env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
@@ -1210,6 +1219,13 @@ class K8sJobLauncher(JobLauncherSpec):
                     resources["limits"][key] = limit_val
                 if request_val:
                     resources["requests"][key] = request_val
+            if "num_of_cpus" in portable_spec:
+                cpu_quantity = str(portable_spec["num_of_cpus"])
+                resources["limits"]["cpu"] = cpu_quantity
+                resources["requests"]["cpu"] = cpu_quantity
+            if "memory" in portable_spec:
+                resources["limits"]["memory"] = portable_spec["memory"]
+                resources["requests"]["memory"] = portable_spec["memory"]
             if job_resource:
                 resources["limits"]["nvidia.com/gpu"] = job_resource
                 resources["requests"]["nvidia.com/gpu"] = job_resource

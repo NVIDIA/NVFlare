@@ -116,7 +116,8 @@ best round from metric values.
 -----------------------
 
 ``round_metrics.jsonl`` contains one JSON object per completed metrics round.
-Each line records official aggregated metrics, per-site client metrics, optional
+Each line records the workflow progress title, official aggregated metrics,
+per-site client metrics, optional post-training progress metrics, optional
 aggregation metadata, and skipped metric values.
 
 Example line:
@@ -125,6 +126,7 @@ Example line:
 
    {
      "round": 0,
+     "progress_title": "Training",
      "aggregated_metrics": [
        {
          "name": "auroc",
@@ -146,6 +148,12 @@ Example line:
            {
              "name": "auroc",
              "value": 0.7380791446479046
+           }
+         ],
+         "progress_metrics": [
+           {
+             "name": "auroc",
+             "value": 0.7461
            }
          ],
          "weight": 2911,
@@ -184,6 +192,12 @@ Example line:
 Dynamic metric names are stored as ``name`` values in arrays rather than as JSON
 object keys. This avoids treating client-provided names as object structure in
 downstream tools.
+
+The per-site ``metrics`` arrays retain the values used for aggregation or the
+workflow's evaluation phase. When an executor publishes
+``AppConstants.PROGRESS_METRICS``, the writer stores those post-training display
+values separately in ``progress_metrics`` so they are not confused with the
+values that produced ``aggregated_metrics``.
 
 Safe Metric Values
 ------------------

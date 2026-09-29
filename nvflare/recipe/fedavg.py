@@ -16,7 +16,7 @@ import operator
 import warnings
 from typing import Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ValidationInfo, field_validator, model_validator
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -30,6 +30,7 @@ from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
+from nvflare.utils.argv_utils import normalize_argv
 
 _KEY_METRIC_MODE_BY_STOP_OPERATOR = {
     operator.gt: "max",
@@ -49,19 +50,20 @@ class _FedAvgValidator(BaseModel):
     min_clients: int
     num_rounds: int
     train_script: str
-    train_args: str
+    train_args: Union[str, list[str]]
     # Legacy parameters for backward compatibility (not used by new FedAvg)
     aggregator: Optional[Aggregator] = None
     aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS
     # Core parameters
     launch_external_process: bool
-    command: str
+    command: Union[str, list[str]]
     framework: FrameworkType
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor] = None
     per_site_config: Optional[Dict[str, Dict]] = None
     launch_once: bool = True
+    launch_timeout: Optional[float] = 300.0
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
     key_metric_mode: Optional[Literal["min", "max"]] = None
@@ -77,6 +79,11 @@ class _FedAvgValidator(BaseModel):
     enable_tensor_disk_offload: bool = False
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+
+    @field_validator("train_args", "command", mode="before")
+    @classmethod
+    def validate_argv_fields(cls, value, info: ValidationInfo):
+        return normalize_argv(value, info.field_name)
 
     @model_validator(mode="after")
     def resolve_key_metric_mode(self):
@@ -123,8 +130,9 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script. Written in clear
-            text into the generated job config, so it must never contain actual secret values
+        train_args: Command line arguments to pass to the training script, either as a legacy
+            string or pre-tokenized argv. Use argv when values contain whitespace or quotes.
+            Values are written in clear text into the generated job config, so they must never contain actual secrets
             (a PotentialSecretWarning is emitted if it looks like it does). To pass a secret,
             use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
             :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
@@ -136,8 +144,8 @@ class FedAvgRecipe(Recipe):
             When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
-        command: If launch_external_process=True, command to run script (prepended to script).
-            Defaults to "python3 -u".
+        command: If launch_external_process=True, command to run script (prepended to script),
+            either as a string or pre-tokenized argv. Defaults to "python3 -u".
         framework: The framework type. One of:
             - FrameworkType.PYTORCH (default)
             - FrameworkType.TENSORFLOW
@@ -154,13 +162,14 @@ class FedAvgRecipe(Recipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
             contain optional overrides:
             - train_script (str): Training script path
-            - train_args (str): Script arguments
+            - train_args (str or list[str]): Script arguments
             - launch_external_process (bool): Whether to launch external process
-            - command (str): Command prefix for external process
+            - command (str or list[str]): Command prefix for external process
             - framework (FrameworkType): Framework type
             - server_expected_format (ExchangeFormat): Exchange format
             - params_transfer_type (TransferType): Parameter transfer type
             - launch_once (bool): Whether to launch external process once or per task
+            - launch_timeout (float or None): Seconds to wait for a launched process to establish its session
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
             Like train_args, per-site values are written in clear text into the generated job
@@ -168,6 +177,8 @@ class FedAvgRecipe(Recipe):
             :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
@@ -211,19 +222,20 @@ class FedAvgRecipe(Recipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         # Legacy parameters for backward compatibility
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         # Core parameters
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         per_site_config: Optional[Dict[str, Dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Optional[Literal["min", "max"]] = None,
@@ -274,6 +286,7 @@ class FedAvgRecipe(Recipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
@@ -320,6 +333,7 @@ class FedAvgRecipe(Recipe):
         self.per_site_config = None
         self._validate_aggregator_data_kind()
         self.launch_once = v.launch_once
+        self.launch_timeout = v.launch_timeout
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
         self.key_metric_mode = v.key_metric_mode
@@ -409,6 +423,7 @@ class FedAvgRecipe(Recipe):
             server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
             params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
             launch_once=self._site_value(site_config, "launch_once", self.launch_once),
+            launch_timeout=site_config.get("launch_timeout", self.launch_timeout),
             shutdown_timeout=self._site_value(site_config, "shutdown_timeout", self.shutdown_timeout),
             memory_gc_rounds=self.client_memory_gc_rounds,
             cuda_empty_cache=self.cuda_empty_cache,
@@ -419,6 +434,11 @@ class FedAvgRecipe(Recipe):
         # Validate every runner override while set_per_site_config() is still
         # recoverable; actual client apps are materialized later.
         for site_config in config.values():
+            # Preserve the caller-mutation guarantee for mutable argv overrides.
+            if site_config.get("train_args") is not None:
+                site_config["train_args"] = normalize_argv(site_config["train_args"], "train_args")
+            if site_config.get("command") is not None:
+                site_config["command"] = normalize_argv(site_config["command"], "command")
             self._create_client_runner(site_config)
         self.per_site_config = config
 

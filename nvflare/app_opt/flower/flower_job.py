@@ -15,10 +15,9 @@
 import os.path
 from typing import List, Optional
 
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
+from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
@@ -78,6 +77,12 @@ class FlowerJob(FedJob):
             if not os.path.isdir(flower_content):
                 raise ValueError(f"{flower_content} is not a valid directory")
 
+        flower_env = extra_env.copy() if extra_env is not None else None
+        if flower_env is not None and ANALYTICS_BOOTSTRAP_ENV in flower_env:
+            raise ValueError(
+                f"extra_env key {ANALYTICS_BOOTSTRAP_ENV!r} is reserved; FlowerJob passes its analytics bootstrap"
+            )
+
         # Validate flower_app_path format and security
         if flower_app_path:
             validate_flower_app_path(flower_app_path)
@@ -109,37 +114,14 @@ class FlowerJob(FedJob):
         if flower_content:
             self.to_server(obj=flower_content)
 
+        self.to_clients(MetricRelay(), "metric_relay")
         executor = FlowerExecutor(
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
-            extra_env=extra_env,
+            extra_env=flower_env,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
         self.to_clients(executor)
         if flower_content:
             self.to_clients(obj=flower_content)
-
-        # client side
-        # cell pipe to support streaming metrics
-        cell_pipe = CellPipe(
-            mode="PASSIVE",
-            site_name="{SITE_NAME}",
-            token="{JOB_ID}",
-            root_url="{CP_URL}",
-            secure_mode="{SECURE_MODE}",
-            workspace_dir="{WORKSPACE}",
-        )
-        pipe_id = self.to_clients(cell_pipe, "metrics_pipe")
-
-        metric_relay = MetricRelay(
-            pipe_id=pipe_id,
-            event_type="fed.analytix_log_stats",
-            read_interval=0.1,
-            heartbeat_timeout=0,
-            fed_event=True,
-        )
-
-        relay_id = self.to_clients(metric_relay, "metric_relay")
-        conf = ExternalConfigurator(component_ids=[relay_id])
-        self.to_clients(conf, "client_api_config_preparer")

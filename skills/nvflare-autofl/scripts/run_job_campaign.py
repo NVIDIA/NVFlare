@@ -15,6 +15,19 @@
 
 """Manage agent-authored Auto-FL candidates for an existing NVFlare job.py.
 
+Usage:
+    ``python run_job_campaign.py ACTION JOB [options]``
+Arguments:
+    ``ACTION`` selects the lifecycle operation; ``JOB`` is the existing
+    NVFLARE ``job.py``; remaining options are action-specific.
+Output:
+    Writes campaign configuration, state, ledger, candidate, plot, and report
+    artifacts and prints a machine-readable JSON action envelope.
+Exit codes:
+    0 for success, 1 when an execution completes without a score, 2 for a
+    rejected contract or invalid request, and 75 when simulation needs the
+    existing human-approved execution scope.
+
 The coding agent owns hypotheses and source edits. This helper snapshots the
 current best source, validates and evaluates candidate manifests, restores
 discarded candidates, and records reproducible campaign state and artifacts.
@@ -46,7 +59,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 try:
     import fcntl
@@ -91,6 +104,7 @@ SERVER_BEST_GLOBAL_MODEL_KEY_MARKER = "best_FL_global_model"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
 CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
 CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
+METRIC_DIRECTION_CONTRACT_VERSION = 1
 CAMPAIGN_METADATA_PATH = ".nvflare/autofl/campaign.json"
 CANDIDATE_ROOT = ".nvflare/autofl/candidates"
 BEST_SNAPSHOT_ROOT = ".nvflare/autofl/snapshots/best"
@@ -109,6 +123,10 @@ RESERVED_CANDIDATE_PATH_PARTS = {
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
+ACCOUNTING_INSTRUCTION = (
+    "Run every candidate training, parameter update, or metric-based screening through this runner. "
+    "Real candidate crashes and crash replays count; expanding the candidate cap requires explicit user approval."
+)
 SIMULATOR_STALL_EXIT_CODE = 125
 SIMULATOR_STALL_PATTERNS = (
     "Failed to create connection to the child process in SimulatorClientRunner",
@@ -265,7 +283,7 @@ def env_float(name: str, default: float) -> float:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     guard = load_campaign_guard()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "action",
         choices=["initialize", "prepare", "evaluate", "abandon", "suggest", "record", "status"],
@@ -359,6 +377,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--failure-reason", default="", help="external execution failure")
     parser.add_argument("--baseline", action="store_true", help="record an externally executed baseline")
     parser.add_argument("--literature", action="store_true", help="record a literature-review checkpoint")
+    parser.add_argument(
+        "--confirm-user-approved-cap-change",
+        action="store_true",
+        help="confirm that the user explicitly approved increasing the candidate cap or making it uncapped",
+    )
     parser.add_argument("--limit", type=int, default=10, help="maximum fallback suggestions")
     args = parser.parse_args(argv)
     tokens = list(argv) if argv is not None else sys.argv[1:]
@@ -372,8 +395,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.uncapped:
         args.max_candidates = None
         args._explicit_settings.add("max_candidates")
-    # No CLI surface: campaigns always maximize. The constant keeps the persisted
-    # settings/state schema stable and lets the legacy-campaign gate compare against it.
+    # Objective direction has no runner CLI surface; initialize imports it from job.py,
+    # while later actions restore the persisted campaign contract.
     args.mode = "max"
     return args
 
@@ -690,16 +713,57 @@ def simulator_partial_aggregation_signature_for_roots(simulator_stall_roots: Seq
     return "\n".join(markers)
 
 
-def run(
-    argv: Sequence[str],
+def resolve_python_interpreter(python: str, env: Mapping[str, str], *, cwd: Path) -> str:
+    """Resolve the configured Python interpreter without dereferencing virtual-environment symlinks."""
+    if not isinstance(python, str) or not python or "\x00" in python:
+        raise ValueError("python interpreter must be a non-empty string without NUL characters")
+
+    absolute_cwd = os.path.abspath(os.fspath(cwd))
+    expanded = os.path.expanduser(python)
+    if os.path.dirname(expanded) or os.path.isabs(expanded):
+        resolved = os.path.abspath(expanded if os.path.isabs(expanded) else os.path.join(absolute_cwd, expanded))
+    else:
+        search_entries = []
+        for entry in env.get("PATH", os.defpath).split(os.pathsep):
+            search_entries.append(entry if os.path.isabs(entry) else os.path.join(absolute_cwd, entry or os.curdir))
+        resolved = shutil.which(expanded, path=os.pathsep.join(search_entries)) or ""
+        if resolved:
+            resolved = os.path.abspath(resolved)
+    if not resolved or not Path(resolved).is_file():
+        raise ValueError(f"python interpreter does not exist: {python}")
+    if os.name != "nt" and not os.access(resolved, os.X_OK):
+        raise ValueError(f"python interpreter is not executable: {python}")
+    return resolved
+
+
+def python_command(python: str, arguments: Sequence[str], env: Mapping[str, str], *, cwd: Path) -> List[str]:
+    """Build a validated Python argv list; argument values are never interpreted by a shell."""
+    if not arguments:
+        raise ValueError("python command requires at least one argument")
+    validated_arguments = []
+    for argument in arguments:
+        if not isinstance(argument, str):
+            raise ValueError("python command arguments must be strings")
+        if "\x00" in argument:
+            raise ValueError("python command arguments must not contain NUL characters")
+        validated_arguments.append(argument)
+    return [resolve_python_interpreter(python, env, cwd=cwd), *validated_arguments]
+
+
+def run_python(
+    python: str,
+    arguments: Sequence[str],
+    *,
     cwd: Path,
     timeout: int,
     log_path: Path,
+    env: Mapping[str, str],
     simulator_stall_roots: Sequence[Path] = (),
     stall_check_interval: float = 5.0,
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
-    env: Optional[Dict[str, str]] = None,
-) -> Tuple[int, str, float]:
+) -> Tuple[int, str, float, List[str]]:
+    """Run a validated Python child and return its exit status, output tail, runtime, and exact argv."""
+    argv = python_command(python, arguments, env, cwd=cwd)
     ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
@@ -710,7 +774,7 @@ def run(
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_tail = ""
-    run_env = dict(env) if env is not None else dict(os.environ)
+    run_env = dict(env)
     trial_token = uuid.uuid4().hex
     run_env[TRIAL_PROCESS_TOKEN_ENV_VAR] = trial_token
     with log_path.open("w", encoding="utf-8") as log_file:
@@ -723,6 +787,7 @@ def run(
             bufsize=0,
             start_new_session=os.name != "nt",
             env=run_env,
+            shell=False,
         )
         process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
@@ -831,14 +896,14 @@ def run(
                 output_tail = append_output_tail(output_tail, timeout_msg)
                 log_file.write(timeout_msg)
                 log_file.flush()
-                return 124, output_tail, time.monotonic() - started
+                return 124, output_tail, time.monotonic() - started, argv
             if stall_message:
                 stall_text = f"\nSIMULATOR_STALL: {stall_message}\n"
                 output_tail = append_output_tail(output_tail, stall_text)
                 log_file.write(stall_text)
                 log_file.flush()
-                return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
-            return process.returncode or 0, output_tail, time.monotonic() - started
+                return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started, argv
+            return process.returncode or 0, output_tail, time.monotonic() - started, argv
         finally:
             terminate_process(process, process_group_id, trial_token)
             reader_deadline = time.monotonic() + 10
@@ -953,6 +1018,16 @@ def allowed_create_patterns(config: Dict[str, Any]) -> List[str]:
     if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
         raise ValueError("autofl.yaml trust_contract.allowed_create_patterns must be a list of patterns")
     return list(dict.fromkeys(values))
+
+
+def admitted_source_hashes(config: Dict[str, Any], workspace: Path) -> Dict[str, Optional[str]]:
+    hashes = {}
+    for relative in allowed_edit_paths(config, workspace):
+        path = workspace / relative
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ValueError(f"campaign source path is not a regular file: {path}")
+        hashes[relative] = sha256_bytes(path.read_bytes()) if path.is_file() else None
+    return hashes
 
 
 def is_allowed_new_source(path: str, patterns: Sequence[str]) -> bool:
@@ -1259,6 +1334,16 @@ def load_campaign_metadata(workspace: Path, job: Path) -> Dict[str, Any]:
         raise ValueError("unsupported Auto-FL campaign metadata schema")
     if Path(str(metadata.get("job") or "")).resolve() != job.resolve():
         raise ValueError("campaign metadata belongs to a different job.py")
+    settings = metadata.get("settings")
+    if isinstance(settings, dict):
+        persisted_mode = settings.get("mode", "max")
+        legacy_min = (
+            persisted_mode == "min"
+            and metadata.get("metric_direction_contract_version") != METRIC_DIRECTION_CONTRACT_VERSION
+        )
+        if not legacy_min:
+            config_path = resolve_output_path(workspace, str(settings.get("autofl_yaml") or "autofl.yaml"))
+            campaign_contract_mode(metadata, read_yaml(config_path), settings.get("metric"))
     return metadata
 
 
@@ -1472,30 +1557,70 @@ def objective_contract(config: Dict[str, Any], requested_metric: Optional[str]) 
     extraction_order = [str(item) for item in extraction_order if item]
     if optimization not in extraction_order:
         extraction_order.insert(0, optimization)
+    mode = str(objective.get("mode") or "max").strip().lower()
+    if mode not in {"min", "max"}:
+        raise ValueError(f"objective.mode must be 'min' or 'max', but got {mode!r}")
     return {
         **objective,
         "metric": metric,
         "requested_metric": requested,
         "optimization_metric": optimization,
         "metric_extraction_order": extraction_order,
+        "mode": mode,
     }
+
+
+def job_key_metric_is_resolved(objective: Dict[str, Any]) -> bool:
+    """Return whether the job key metric has a trustworthy static identity."""
+
+    return objective.get("job_key_metric_source") != "default"
+
+
+def requested_metric_differs_from_job(objective: Dict[str, Any]) -> bool:
+    job_metric = objective.get("job_key_metric") or objective.get("metric")
+    requested_metric = objective.get("requested_metric") or objective.get("metric")
+    if not job_metric or not requested_metric:
+        return True
+    return not job_key_metric_is_resolved(objective) or str(requested_metric) != str(job_metric)
 
 
 def apply_metric_contract(
     config: Dict[str, Any], requested_metric: Optional[str], schema: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     objective = objective_contract(config, requested_metric)
+    requested_differs = requested_metric_differs_from_job(objective)
+    if requested_differs:
+        # Direction belongs to the requested metric. A different job key metric
+        # cannot supply it, so begin with NVFlare's default until the bridge says otherwise.
+        objective["mode"] = "max"
+        objective["mode_contract_source"] = "core_default"
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
-        schema_mode = schema_objective.get("mode")
-        # Deliberate leniency: an explicit `mode: null` is tolerated and treated as max.
-        if schema_mode is not None and schema_mode != "max":
-            raise ValueError(
-                f"mutation_schema.yaml declares objective.mode={schema_mode!r}, which is not supported. "
-                f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE}"
-            )
         schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
-        if not schema_requested or schema_requested == objective["requested_metric"]:
+        schema_applies = schema_requested == objective["requested_metric"] or (
+            not schema_requested and not requested_differs
+        )
+        if schema_applies:
+            schema_mode = schema_objective.get("mode")
+            if schema_mode is not None:
+                schema_mode = str(schema_mode).strip().lower()
+                if schema_mode not in {"min", "max"}:
+                    raise ValueError(
+                        f"mutation_schema.yaml objective.mode must be 'min' or 'max', but got {schema_mode!r}"
+                    )
+                if not requested_differs and schema_mode != objective["mode"]:
+                    if objective.get("mode_contract_source") == "core_default":
+                        raise ValueError(
+                            "mutation_schema.yaml objective.mode conflicts with NVFlare's implicit 'max' default for "
+                            f"the job key metric; set key_metric_mode={schema_mode!r} in job.py and initialize again"
+                        )
+                    raise ValueError(
+                        "mutation_schema.yaml objective.mode conflicts with job.py key_metric_mode; "
+                        "job.py is authoritative for its key metric"
+                    )
+                if requested_differs:
+                    objective["mode"] = schema_mode
+                    objective["mode_contract_source"] = "mutation_schema"
             for key in ("optimization_metric", "metric_extraction_order", "metric_source"):
                 if key in schema_objective:
                     objective[key] = schema_objective[key]
@@ -1509,6 +1634,29 @@ def metric_extraction_order(config: Dict[str, Any], requested_metric: Optional[s
 
 def optimization_metric(config: Dict[str, Any], requested_metric: Optional[str]) -> str:
     return str(objective_contract(config, requested_metric)["optimization_metric"])
+
+
+def objective_mode(config: Dict[str, Any], requested_metric: Optional[str] = None) -> str:
+    return str(objective_contract(config, requested_metric)["mode"])
+
+
+def campaign_contract_mode(
+    metadata: Dict[str, Any], config: Dict[str, Any], requested_metric: Optional[str] = None
+) -> str:
+    settings = metadata.get("settings")
+    if not isinstance(settings, dict):
+        raise ValueError("campaign metadata is missing settings")
+    persisted_mode = settings.get("mode", "max")
+    if persisted_mode not in {"min", "max"}:
+        raise ValueError(f"campaign metadata has invalid objective mode {persisted_mode!r}")
+    config_mode = objective_mode(config, requested_metric)
+    if persisted_mode != config_mode:
+        raise ValueError(
+            "campaign metric direction disagrees between campaign.json settings.mode "
+            f"({persisted_mode!r}) and autofl.yaml objective.mode ({config_mode!r}); "
+            "restore the admitted campaign artifacts before continuing"
+        )
+    return config_mode
 
 
 def metric_source(config: Dict[str, Any]) -> str:
@@ -1965,12 +2113,166 @@ def build_fixed_args(config: Dict[str, Any], help_text: str, schema: Dict[str, A
     return args
 
 
-def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, Any]) -> List[str]:
-    base = shlex.split(args.base_args)
+def normalize_budget_flag_name(token: str) -> str:
+    return token.lstrip("-").replace("-", "_")
+
+
+def _injected_budget_arg_values(injected: Sequence[str]) -> Dict[str, Optional[str]]:
+    values: Dict[str, Optional[str]] = {}
+    index = 0
+    while index < len(injected):
+        name = normalize_budget_flag_name(injected[index])
+        if index + 1 < len(injected) and not injected[index + 1].startswith("--"):
+            values[name] = injected[index + 1]
+            index += 2
+        else:
+            values[name] = None
+            index += 1
+    return values
+
+
+def pinned_flag_spellings(
+    pinned: Dict[str, Tuple[Optional[str], str]], injected: Sequence[str], alias_groups: Sequence[Sequence[str]]
+) -> Dict[str, str]:
+    """Map each parser-defined spelling (long, short, alias) of a pinned budget option to its pinned name."""
+    spellings = {token: normalize_budget_flag_name(token) for token in injected if token.startswith("--")}
+    for group in alias_groups:
+        names = {normalize_budget_flag_name(flag) for flag in group if flag.startswith("--")}
+        matched = names.intersection(pinned)
+        if len(matched) == 1:
+            name = next(iter(matched))
+            for flag in group:
+                spellings[flag] = name
+    return spellings
+
+
+# argparse's _negative_number_matcher: option-like tokens are not consumed as values unless they are numbers.
+_NEGATIVE_NUMBER_MATCHER = re.compile(r"^-\d+$|^-\d*\.\d+$")
+
+
+def _consumable_cli_value(token: str) -> bool:
+    # Mirrors argparse's option classifier: lone "-" and tokens containing a space are values too.
+    return not token.startswith("-") or token == "-" or " " in token or bool(_NEGATIVE_NUMBER_MATCHER.match(token))
+
+
+def merge_base_budget_args(
+    base_tokens: Sequence[str],
+    pinned: Dict[str, Tuple[Optional[str], str]],
+    spellings: Dict[str, str],
+    defined_flags: set,
+) -> Tuple[List[str], set[str]]:
+    """Drop --base-args duplicates of runner-injected budget flags; reject conflicts and pinned-flag abbreviations.
+
+    Tokens are matched by the exact flag spellings the job's parser defines, mirroring argparse: a spelling
+    the parser would not accept passes through verbatim so the job still reports it as unrecognized. Returns
+    the merged tokens plus the pinned names a kept token already sets (short-option clusters), whose
+    runner-injected copies must be omitted to keep each budget option emitted exactly once.
+    """
+    merged: List[str] = []
+    satisfied: set[str] = set()
+    index = 0
+    while index < len(base_tokens):
+        token = base_tokens[index]
+        index += 1
+        if not token.startswith("-") or token in ("-", "--"):
+            merged.append(token)
+            continue
+        option, separator, inline_value = token.partition("=")
+        name = spellings.get(option)
+        supplied: Optional[str] = None
+        if name is not None:
+            if separator:
+                supplied = inline_value
+            # A zero-argument pinned flag never consumes the next token (argparse binds it to positionals),
+            # and a valued flag never consumes an option-like token (argparse raises "expected one argument"),
+            # with argparse's negative-number exception.
+            elif pinned[name][0] is not None and index < len(base_tokens) and _consumable_cli_value(base_tokens[index]):
+                supplied = base_tokens[index]
+                index += 1
+        elif not separator and not token.startswith("--") and token not in defined_flags:
+            # Attached short-option value, e.g. -r3 for a pinned -r/--num_rounds (argparse's own semantics).
+            short = next((s for s in spellings if len(s) == 2 and not s.startswith("--") and token.startswith(s)), None)
+            if short is not None:
+                if pinned[spellings[short]][0] is None:
+                    # A zero-argument pin has no attached value: argparse reads -xv as the cluster -x -v,
+                    # which sets the pinned flag itself. One letter cannot be dropped from a user's cluster,
+                    # so keep the cluster and omit the runner's copy of the flag instead.
+                    satisfied.add(spellings[short])
+                    merged.append(token)
+                    continue
+                name = spellings[short]
+                supplied = token[2:]
+            else:
+                # Beyond the leading position the token is ambiguous without the other flags' arity:
+                # -vx is -v -x for a boolean -v (setting the pinned flag again) but -v with value x
+                # otherwise. Fail closed so no cluster can supply a pinned budget option a second time.
+                involved = next(
+                    (s for s in spellings if len(s) == 2 and not s.startswith("--") and s[1] in token[1:]), None
+                )
+                if involved is not None:
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: cannot determine whether short-option token {token} "
+                        f"involves {involved} (--{spellings[involved]}); write the options as separate tokens"
+                    )
+        if name is None:
+            if token.startswith("--") and option not in defined_flags:
+                # An exactly-defined job flag is never an abbreviation: argparse gives exact matches precedence.
+                ambiguous = sorted(s for s in spellings if s.startswith("--") and s.startswith(option) and s != option)
+                if ambiguous:
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --base-args option {option} abbreviates pinned "
+                        f"budget option(s) {', '.join(ambiguous)}; spell the full flag"
+                    )
+            merged.append(token)
+            continue
+        pinned_value, source = pinned[name]
+        if supplied == pinned_value:
+            continue
+        raise ValueError(
+            f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --{name} is set to "
+            f"{'no value' if pinned_value is None else repr(pinned_value)} by {source} but --base-args ({token}) "
+            f"supplies {'no value' if supplied is None else repr(supplied)}; "
+            "remove the flag from --base-args or align the values"
+        )
+    return merged, satisfied
+
+
+def build_campaign_args(
+    config: Dict[str, Any],
+    args: argparse.Namespace,
+    help_text: str,
+    schema: Dict[str, Any],
+    alias_groups: Optional[Sequence[Sequence[str]]] = None,
+) -> Tuple[List[str], List[str]]:
+    """Resolve run arguments so each budget option is emitted exactly once.
+
+    Explicit --base-args duplicates of a runner-injected budget argument are dropped when the values are
+    identical and rejected with an actionable error when they conflict. Duplicates are matched by the exact
+    flag spellings the job's parser defines (including short aliases), so misspellings keep argparse's error.
+    """
+    fixed_args = build_fixed_args(config, help_text, schema)
     budget_args = build_comparison_budget_args(schema, help_text)
-    if budget_args:
-        base.extend(budget_args)
-    return base
+    pinned: Dict[str, Tuple[Optional[str], str]] = {}
+    for name, value in _injected_budget_arg_values(budget_args).items():
+        pinned[name] = (value, "the mutation-schema comparison budget")
+    for name, value in _injected_budget_arg_values(fixed_args).items():
+        pinned[name] = (value, "the imported fixed training budget")
+    groups = list(alias_groups or [])
+    spellings = pinned_flag_spellings(pinned, [*fixed_args, *budget_args], groups)
+    defined_flags = supported_long_flags(help_text)
+    defined_flags.update(flag for group in groups for flag in group)
+    base_args, satisfied = merge_base_budget_args(shlex.split(args.base_args), pinned, spellings, defined_flags)
+    if satisfied:
+        fixed_args = [t for t in fixed_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
+        budget_args = [t for t in budget_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
+    return fixed_args, [*base_args, *budget_args]
+
+
+def job_flag_alias_groups(job: Path) -> List[List[str]]:
+    try:
+        return load_job_importer().inspect_job_cli_flag_aliases(str(job))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"cannot inspect job CLI flag aliases in {job}: {e}") from e
 
 
 def suggested_arg_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -2335,11 +2637,12 @@ def probe_simulator_workspace_override_support(
     )
     try:
         with tempfile.TemporaryDirectory(prefix="nvflare-autofl-probe-") as probe_dir:
-            rc, stdout, _runtime = run(
-                [python, "-c", script],
-                cwd,
-                timeout,
-                Path(probe_dir) / "probe.log",
+            rc, stdout, _runtime, _command = run_python(
+                python,
+                ["-c", script],
+                cwd=cwd,
+                timeout=timeout,
+                log_path=Path(probe_dir) / "probe.log",
                 env=simulator_child_env(Path(probe_dir)),
                 simulator_no_progress_timeout=0,
             )
@@ -2445,8 +2748,7 @@ def run_job(
     log_path = output_root / run_def.name / "run.log"
     run_name = simulator_run_name(run_def.name, cwd)
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
-    command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
-    run_def.command = command
+    arguments = [str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     with tempfile.TemporaryDirectory(prefix="nvflare-autofl-sim-") as trial_workspace:
         simulator_base = Path(trial_workspace).resolve()
         simulator_roots = expected_simulator_roots(
@@ -2454,15 +2756,17 @@ def run_job(
         )
         run_env = simulator_child_env(simulator_base, simulator_env_passthrough_names(config))
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
-        rc, stdout, runtime = run(
-            command,
-            cwd,
-            timeout,
-            log_path,
+        rc, stdout, runtime, command = run_python(
+            python,
+            arguments,
+            cwd=cwd,
+            timeout=timeout,
+            log_path=log_path,
             env=run_env,
             simulator_stall_roots=simulator_roots,
             simulator_no_progress_timeout=simulator_no_progress_timeout,
         )
+        run_def.command = command
         run_def.runtime_seconds = runtime
         printed_result_dir, sandbox_socket_failure = scan_run_log(log_path, cwd)
         existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
@@ -2595,8 +2899,7 @@ def load_results(path: Path) -> List[RunRecord]:
     return records
 
 
-def better(new_score: Optional[float], old_score: Optional[float]) -> bool:
-    return load_campaign_guard().better(new_score, old_score)
+better = load_campaign_guard().better
 
 
 def write_state(
@@ -2605,6 +2908,7 @@ def write_state(
     records: List[RunRecord],
     max_candidates: Optional[int],
     *,
+    mode: str = "max",
     stop_files: Optional[List[str]] = None,
     plateau_threshold: Optional[int] = None,
     plateau_min_delta: Optional[float] = None,
@@ -2630,12 +2934,14 @@ def write_state(
         plateau_threshold=plateau_threshold,
         min_delta=plateau_min_delta,
         hard_crash_threshold=hard_crash_threshold,
+        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
     )
     # Abandoned manifests are workspace-derived; the ledger-only guard cannot count them.
     state["abandoned_candidates"] = abandoned_candidate_count
+    state["accounting_instruction"] = ACCOUNTING_INSTRUCTION
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         attempts = len(
             [
@@ -2678,7 +2984,7 @@ def load_progress_plotter():
     return load_sibling_module("plot_progress.py", "nvflare_autofl_plot_progress")
 
 
-def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str) -> None:
+def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str, mode: str = "max") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -2718,7 +3024,7 @@ def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: 
             color = (40, 160, 90) if record.status in {"baseline", "keep"} else (150, 150, 150)
             draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color, outline="black")
             draw.text((x + 6, y - 14), f"{record.name}: {record.score:.3f}", fill=color, font=font)
-            if better(record.score, running_best):
+            if better(record.score, running_best, mode):
                 running_best = record.score
             if running_best == record.score:
                 if last_point:
@@ -2727,19 +3033,20 @@ def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: 
     image.save(path)
 
 
-def write_progress(path: Path, records: List[RunRecord], metric_label: str) -> None:
+def write_progress(path: Path, records: List[RunRecord], metric_label: str, mode: str = "max") -> None:
     plotter = load_progress_plotter()
     try:
-        plotter.plot_progress(records, path, metric_label)
+        plotter.plot_progress(records, path, metric_label, mode=mode)
     except (plotter.NoScoredResultsError, plotter.PlotDependencyError):
-        write_progress_fallback(path, records, metric_label)
+        write_progress_fallback(path, records, metric_label, mode)
 
 
 def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    mode = objective_mode(config, args.metric)
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
             best = record
     candidate_budget = (
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
@@ -2748,7 +3055,7 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
     lines = [
         "# Auto-FL Report",
         "",
-        f"Objective: optimize `{objective['optimization_metric']}` in `{args.target_env}`.",
+        f"Objective: optimize `{objective['optimization_metric']}` ({mode}) in `{args.target_env}`.",
         f"Requested metric: `{objective['requested_metric']}`.",
         f"Metric source: `{metric_source(config)}`.",
         f"Metric extraction order: `{', '.join(objective['metric_extraction_order'])}`.",
@@ -2893,6 +3200,10 @@ def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
     return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
 
 
+def cap_change_requires_approval(previous: Optional[int], requested: Optional[int]) -> bool:
+    return previous is not None and (requested is None or requested > previous)
+
+
 def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> bool:
     """Restore persisted settings onto args; persist explicit mutable changes.
 
@@ -2913,15 +3224,19 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             file=sys.stderr,
         )
     persisted_mode = settings.get("mode", "max")
-    if persisted_mode != "max":
+    if persisted_mode not in {"min", "max"}:
+        raise ValueError(f"campaign metadata has invalid objective mode {persisted_mode!r}")
+    if (
+        persisted_mode == "min"
+        and metadata.get("metric_direction_contract_version") != METRIC_DIRECTION_CONTRACT_VERSION
+    ):
         raise ValueError(
-            f"campaign was initialized with mode={persisted_mode!r}, which is no longer supported. "
-            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Delete the campaign's .nvflare/autofl "
-            "directory (or start in a fresh workspace) and initialize again with a metric whose "
-            "higher values are better."
+            "campaign was initialized with legacy mode='min' without native metric-direction provenance. "
+            "Delete the campaign's .nvflare/autofl directory or start in a fresh workspace, then initialize again."
         )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
+    cap_confirmation_valid = False
     for name in CAMPAIGN_SETTING_NAMES:
         if name not in settings:
             continue
@@ -2930,17 +3245,34 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             if name in MUTABLE_CAMPAIGN_SETTING_NAMES:
                 if settings.get(name) != requested:
                     if name == "max_candidates":
+                        previous = settings.get(name)
+                        approval_required = cap_change_requires_approval(previous, requested)
+                        if approval_required and not args.confirm_user_approved_cap_change:
+                            raise ValueError(
+                                "increasing the candidate cap or making a finite campaign uncapped requires "
+                                "explicit user approval and --confirm-user-approved-cap-change"
+                            )
+                        if args.confirm_user_approved_cap_change and not approval_required:
+                            raise ValueError(
+                                "--confirm-user-approved-cap-change is only valid for a candidate-cap increase "
+                                "or a finite-to-uncapped change"
+                            )
+                        cap_confirmation_valid = approval_required
                         # Audit trail: mid-campaign budget changes must stay detectable by external judges.
                         metadata.setdefault("cap_changes", []).append(
                             {
                                 "changed_at": utc_now(),
-                                "old": settings.get(name),
+                                "old": previous,
                                 "new": requested,
                                 "source": "uncapped" if requested is None else "explicit",
+                                "user_approved": approval_required,
                             }
                         )
                     settings[name] = requested
                     changed = True
+                elif name == "max_candidates" and args.confirm_user_approved_cap_change:
+                    # Retrying an already-applied approved command is an idempotent success.
+                    cap_confirmation_valid = True
                 continue
             if requested != settings[name]:
                 raise ValueError(
@@ -2948,6 +3280,11 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                     f"configured={settings[name]!r}, requested={requested!r}"
                 )
         setattr(args, name, settings[name])
+    if args.confirm_user_approved_cap_change and not cap_confirmation_valid:
+        raise ValueError(
+            "--confirm-user-approved-cap-change requires an explicit candidate-cap increase or finite-to-uncapped "
+            "change"
+        )
     if changed:
         metadata["updated_at"] = utc_now()
         workspace_value = metadata.get("workspace_root")
@@ -2991,6 +3328,8 @@ def import_job_config(
     output: Path,
     log_path: Path,
     timeout: int,
+    *,
+    persist: bool = True,
 ) -> Dict[str, Any]:
     del timeout
     importer = load_job_importer()
@@ -3002,6 +3341,13 @@ def import_job_config(
         max_candidates=args.max_candidates,
         job_args=shlex.split(args.base_args),
     )
+    if persist:
+        write_import_artifacts(config, job, output, log_path)
+    return config
+
+
+def write_import_artifacts(config: Dict[str, Any], job: Path, output: Path, log_path: Path) -> None:
+    importer = load_job_importer()
     atomic_write_bytes(output, importer.dump_autofl_yaml(config).encode("utf-8"))
     atomic_write_bytes(
         log_path,
@@ -3019,10 +3365,20 @@ def import_job_config(
             + "\n"
         ).encode("utf-8"),
     )
-    return config
 
 
-def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
+def mutation_schema_declares_metric_bridge(config: Dict[str, Any], schema: Dict[str, Any]) -> bool:
+    objective = objective_contract(config, None)
+    if not requested_metric_differs_from_job(objective):
+        return True
+    schema_objective = schema.get("objective")
+    if not isinstance(schema_objective, dict):
+        return False
+    schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
+    return schema_requested == objective["requested_metric"] and bool(schema_objective.get("optimization_metric"))
+
+
+def campaign_admission_errors(config: Dict[str, Any], schema: Optional[Dict[str, Any]] = None) -> List[str]:
     errors = []
     support = config.get("import", {}).get("support", {})
     if not isinstance(support, dict) or support.get("status") != "supported":
@@ -3033,20 +3389,52 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
         errors.append("fixed comparison budget is unresolved")
     unresolved = config.get("unresolved", [])
     if isinstance(unresolved, list):
-        critical_fields = []
+        critical_issues: Dict[str, List[str]] = {}
         for item in unresolved:
             field = item.get("field", "") if isinstance(item, dict) else ""
-            if field == "objective.metric" or field.startswith("budget.fixed_training_budget"):
-                critical_fields.append(field)
-        if critical_fields:
-            errors.append(f"safety-critical fields are unresolved: {', '.join(sorted(set(critical_fields)))}")
+            if field in {"objective.metric", "objective.job_key_metric", "objective.mode"} or field.startswith(
+                "budget.fixed_training_budget"
+            ):
+                reasons = critical_issues.setdefault(field, [])
+                reason = item.get("reason", "") if isinstance(item, dict) else ""
+                if reason:
+                    reasons.append(reason)
+        if critical_issues:
+            details = []
+            for field, reasons in sorted(critical_issues.items()):
+                unique_reasons = sorted(set(reasons))
+                details.append(f"{field} ({'; '.join(unique_reasons)})" if unique_reasons else field)
+            errors.append(f"safety-critical fields are unresolved: {', '.join(details)}")
+    objective = objective_contract(config, None)
+    schema = schema or {}
+    if not mutation_schema_declares_metric_bridge(config, schema):
+        errors.append(
+            "AUTOFL_METRIC_NOT_DECLARED: the requested metric differs from job.py key_metric; "
+            "declare the requested and optimization metrics in mutation_schema.yaml"
+        )
+    importer = load_job_importer()
+    if (
+        objective["mode"] == "max"
+        and objective.get("mode_contract_source") == "core_default"
+        and importer.likely_lower_is_better_metric(objective["optimization_metric"])
+    ):
+        guidance = (
+            "declare objective.mode='min' in the mutation_schema.yaml metric bridge"
+            if requested_metric_differs_from_job(objective)
+            else "set key_metric_mode='min' in job.py"
+        )
+        errors.append(
+            "AUTOFL_METRIC_DIRECTION_CONFLICT: the lower-is-better metric "
+            f"{objective['optimization_metric']!r} would use NVFlare's implicit 'max' default; "
+            f"{guidance} and initialize again"
+        )
     return errors
 
 
-def best_retained_record(records: Sequence[RunRecord]) -> Optional[RunRecord]:
+def best_retained_record(records: Sequence[RunRecord], mode: str = "max") -> Optional[RunRecord]:
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
             best = record
     return best
 
@@ -3066,11 +3454,13 @@ def refresh_campaign_artifacts(
     if pending_manifest is not None and pending_manifest not in pending_manifests:
         pending_manifests.append(pending_manifest)
     write_results(paths["results"], records)
+    mode = objective_mode(config, args.metric)
     state = write_state(
         paths["state"],
         paths["results"],
         records,
         args.max_candidates,
+        mode=mode,
         stop_files=resolve_stop_files(paths["workspace"], args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3103,7 +3493,7 @@ def refresh_campaign_artifacts(
         }
     )
     write_json(paths["state"], state)
-    write_progress(paths["progress"], records, optimization_metric(config, args.metric))
+    write_progress(paths["progress"], records, optimization_metric(config, args.metric), mode)
     write_report(paths["report"], config, records, args)
     return state
 
@@ -3134,20 +3524,71 @@ def execute_sim_baseline(
 ) -> RunRecord:
     timeout, no_progress_timeout = campaign_timeout(args, schema)
     help_text = job_help(args.python, job, job.parent)
+    fixed_args, base_args = build_campaign_args(
+        config, args, help_text, schema, alias_groups=job_flag_alias_groups(job)
+    )
     return run_job(
         JobRun(name=name, args=[], description="baseline", status="baseline"),
         python=args.python,
         job=job,
         cwd=job.parent,
         help_text=help_text,
-        fixed_args=build_fixed_args(config, help_text, schema),
-        base_args=build_base_args(args, help_text, schema),
+        fixed_args=fixed_args,
+        base_args=base_args,
         output_root=paths["output_root"],
         timeout=timeout,
         simulator_no_progress_timeout=no_progress_timeout,
         metrics=metric_extraction_order(config, args.metric),
         config=config,
     )
+
+
+def prepare_initial_campaign(args: argparse.Namespace, job: Path) -> None:
+    """Build and admit a new campaign contract without writing campaign artifacts."""
+
+    if args.confirm_user_approved_cap_change:
+        raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
+    paths = campaign_paths(args, job)
+    schema = load_mutation_schema(job.parent)
+    timeout, _ = campaign_timeout(args, schema)
+    config = import_job_config(
+        args,
+        job,
+        paths["autofl_yaml"],
+        paths["output_root"] / "import.log",
+        timeout,
+        persist=False,
+    )
+    config = apply_metric_contract(config, args.metric, schema)
+    args.metric = str(config.get("objective", {}).get("requested_metric") or config["objective"]["metric"])
+    args.mode = objective_mode(config, args.metric)
+    config = apply_mutation_schema_contract(config, schema, job.parent)
+    config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
+    admission_errors = campaign_admission_errors(config, schema)
+    if admission_errors:
+        raise ValueError(
+            "baseline execution is unsafe: "
+            f"{'; '.join(admission_errors)}. Repair the job metric contract and initialize again."
+        )
+    # Surface --base-args conflicts with the admitted budget before any campaign file is written.
+    build_campaign_args(
+        config, args, job_help(args.python, job, job.parent), schema, alias_groups=job_flag_alias_groups(job)
+    )
+    args._initial_config = config
+    args._initial_source_hashes = admitted_source_hashes(config, job.parent)
+    args._initial_schema_sha256 = sha256_json(schema)
+
+
+def admitted_initial_campaign(args: argparse.Namespace, job: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    config = getattr(args, "_initial_config", None)
+    if not isinstance(config, dict):
+        raise ValueError("new campaign initialization was not admitted before acquiring the workspace lock")
+    if getattr(args, "_initial_source_hashes", None) != admitted_source_hashes(config, job.parent):
+        raise ValueError("campaign source changed after metric-contract admission; retry initialization")
+    schema = load_mutation_schema(job.parent)
+    if getattr(args, "_initial_schema_sha256", None) != sha256_json(schema):
+        raise ValueError("mutation_schema.yaml changed after metric-contract admission; retry initialization")
+    return config, schema
 
 
 def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
@@ -3197,21 +3638,9 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         return 0
 
     paths = campaign_paths(args, job)
+    config, schema = admitted_initial_campaign(args, job)
     paths["output_root"].mkdir(parents=True, exist_ok=True)
-    schema = load_mutation_schema(workspace)
-    timeout, _ = campaign_timeout(args, schema)
-    config = import_job_config(args, job, paths["autofl_yaml"], paths["output_root"] / "import.log", timeout)
-    config = apply_metric_contract(config, args.metric, schema)
-    args.metric = str(config.get("objective", {}).get("requested_metric") or config["objective"]["metric"])
-    config = apply_mutation_schema_contract(config, schema, workspace)
-    config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
-    write_yaml(paths["autofl_yaml"], config)
-    admission_errors = campaign_admission_errors(config)
-    if admission_errors:
-        raise ValueError(
-            f"autofl.yaml was generated at {paths['autofl_yaml']}, but baseline execution is unsafe: "
-            f"{'; '.join(admission_errors)}. Resolve these fields and initialize again."
-        )
+    write_import_artifacts(config, job, paths["autofl_yaml"], paths["output_root"] / "import.log")
     snapshot_files = create_best_snapshot(workspace, config, paths["snapshot_root"])
     metadata = {
         "schema_version": CAMPAIGN_METADATA_SCHEMA_VERSION,
@@ -3224,6 +3653,7 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         "best_score": None,
         "best_source_sha256": source_hash(snapshot_files),
         "fixed_budget_sha256": fixed_budget_hash(config),
+        "metric_direction_contract_version": METRIC_DIRECTION_CONTRACT_VERSION,
     }
     write_json(metadata_path, metadata)
 
@@ -3286,11 +3716,13 @@ def refresh_campaign_state(
     """Recompute and persist campaign_state.json under the current effective settings without running a job."""
     records = load_results(paths["results"])
     pending = pending_candidate_manifests(job.parent)
+    mode = campaign_contract_mode(metadata, read_yaml(paths["autofl_yaml"]), args.metric)
     state = write_state(
         paths["state"],
         paths["results"],
         records,
         args.max_candidates,
+        mode=mode,
         stop_files=resolve_stop_files(job.parent, args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3351,6 +3783,8 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
 
     draft_source = candidate_dir / "source"
     shutil.copytree(best_source, draft_source)
+    config = read_yaml(paths["autofl_yaml"])
+    objective = objective_contract(config, args.metric)
     manifest = {
         "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
         "candidate_id": candidate_id,
@@ -3365,8 +3799,7 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "base_candidate": metadata.get("best_candidate"),
         "base_source_sha256": source_hash(best_files),
         "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
-        # mode is a constant for schema stability: campaigns always maximize the metric.
-        "objective": {"metric": args.metric, "mode": "max"},
+        "objective": {"metric": objective["optimization_metric"], "mode": objective["mode"]},
         "environment": args.target_env,
         "run_args": shlex.split(args.run_args),
         "changed_files": [],
@@ -3381,7 +3814,6 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "result": {},
     }
     write_json(manifest_path, manifest)
-    config = read_yaml(paths["autofl_yaml"])
     state = refresh_campaign_artifacts(
         args,
         paths,
@@ -3444,6 +3876,55 @@ def validate_candidate_for_evaluation(
     return manifest, config, best_source, best_files, changed, created, patch
 
 
+def candidate_execution_fingerprint(manifest: Dict[str, Any], patch_sha256: str) -> str:
+    run_args = manifest.get("run_args")
+    if not isinstance(run_args, list) or not all(isinstance(item, str) for item in run_args):
+        raise ValueError("candidate manifest run_args must be a list of strings")
+    fields = {
+        "base_source_sha256": str(manifest.get("base_source_sha256") or ""),
+        "fixed_budget_sha256": str(manifest.get("fixed_budget_sha256") or ""),
+        "patch_sha256": patch_sha256,
+        "run_args": run_args,
+    }
+    if not all(fields[name] for name in ("base_source_sha256", "fixed_budget_sha256", "patch_sha256")):
+        raise ValueError("candidate manifest is missing execution fingerprint provenance")
+    return sha256_json(fields)
+
+
+def matching_crashed_candidate(
+    workspace: Path, fingerprint: str, current_manifest_path: Path
+) -> Optional[Tuple[Path, Dict[str, Any]]]:
+    root = workspace / CANDIDATE_ROOT
+    if not root.exists():
+        return None
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        if path.resolve() == current_manifest_path.resolve():
+            continue
+        try:
+            manifest = read_json(path)
+            validate_candidate_manifest_identity(path, manifest)
+            if manifest.get("status") != "crash":
+                continue
+            patch_sha256 = str(manifest.get("patch_sha256") or "")
+            if patch_sha256 and candidate_execution_fingerprint(manifest, patch_sha256) == fingerprint:
+                return path, manifest
+        except (OSError, ValueError) as error:
+            print(f"Warning: ignoring invalid sibling candidate manifest {path}: {error}", file=sys.stderr)
+    return None
+
+
+def crash_replay_provenance(workspace: Path, fingerprint: str, current_manifest_path: Path) -> Optional[Dict[str, Any]]:
+    prior_crash = matching_crashed_candidate(workspace, fingerprint, current_manifest_path)
+    if prior_crash is None:
+        return None
+    prior_path, prior_manifest = prior_crash
+    return {
+        "execution_fingerprint": fingerprint,
+        "prior_candidate": prior_manifest.get("candidate_id"),
+        "prior_manifest": str(prior_path.resolve()),
+    }
+
+
 def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str]) -> None:
     if not created:
         return
@@ -3453,10 +3934,58 @@ def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str
             trust_paths.append(relative)
 
 
+def assumed_job_key_metric_mode(recorded_objective: Dict[str, Any], current_objective: Dict[str, Any]) -> str:
+    """Backfill a missing job-key mode without fabricating metric identity.
+
+    Campaigns from the max-only era used ``max``. Intermediate native-direction
+    campaigns may omit the field but can reuse their recorded mode when job
+    provenance proves the requested metric was the resolved job key metric.
+    """
+
+    directly_imported_mode = str(recorded_objective.get("mode_contract_source") or "").startswith("job:")
+    if directly_imported_mode and not requested_metric_differs_from_job(recorded_objective):
+        return current_objective["mode"]
+    return "max"
+
+
 def candidate_campaign_config(
     candidate_config: Dict[str, Any], current_config: Dict[str, Any], args: argparse.Namespace, schema: Dict[str, Any]
 ) -> Dict[str, Any]:
     candidate_config = apply_metric_contract(candidate_config, args.metric, schema)
+    candidate_errors = campaign_admission_errors(candidate_config, schema)
+    if candidate_errors:
+        raise ValueError(f"candidate changes the admitted metric contract: {'; '.join(candidate_errors)}")
+    candidate_objective = objective_contract(candidate_config, args.metric)
+    current_objective = objective_contract(current_config, args.metric)
+    invariant_fields = (
+        "requested_metric",
+        "optimization_metric",
+        "metric_extraction_order",
+        "metric_source",
+        "mode",
+        "job_key_metric",
+        "job_key_metric_mode",
+    )
+    recorded_objective = current_config.get("objective", {})
+    if not isinstance(recorded_objective, dict):
+        recorded_objective = {}
+    drift = []
+    for invariant_field in invariant_fields:
+        if invariant_field == "job_key_metric" and invariant_field not in recorded_objective:
+            continue
+        current_value = current_objective.get(invariant_field)
+        if invariant_field == "job_key_metric_mode" and invariant_field not in recorded_objective:
+            current_value = assumed_job_key_metric_mode(recorded_objective, current_objective)
+        if candidate_objective.get(invariant_field) != current_value:
+            drift.append(invariant_field)
+    if drift:
+        message = f"candidate changes objective metric invariants: {', '.join(drift)}"
+        if {"mode", "job_key_metric_mode"} & set(drift):
+            message += (
+                "; the direction contract changed, so delete the campaign's .nvflare/autofl directory "
+                "(or start in a fresh workspace) and initialize again"
+            )
+        raise ValueError(message)
     candidate_config["objective"] = dict(current_config.get("objective", {}))
     current_paths = current_config.get("trust_contract", {}).get("allowed_edit_paths", []) or []
     trust_paths = candidate_config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])
@@ -3481,16 +4010,18 @@ def finalize_candidate_result(
     created: List[str],
     patch: str,
     record: RunRecord,
+    crash_replay: Optional[Dict[str, Any]],
 ) -> Tuple[List[RunRecord], Dict[str, Any]]:
     rollback_files: Dict[Path, Optional[bytes]] = {}
     staged_snapshot = None
     previous_snapshot = None
     try:
         records = load_results(paths["results"])
-        previous_best = best_retained_record(records)
+        mode = objective_mode(config, args.metric)
+        previous_best = best_retained_record(records, mode)
         if record.status == "candidate":
             record.status = (
-                "keep" if better(record.score, previous_best.score if previous_best else None) else "discard"
+                "keep" if better(record.score, previous_best.score if previous_best else None, mode) else "discard"
             )
         patch_path = manifest_path.parent / "candidate.patch"
         rollback_files = capture_file_versions(
@@ -3553,6 +4084,13 @@ def finalize_candidate_result(
                 },
             }
         )
+        manifest.pop("crash_replay", None)
+        if crash_replay:
+            manifest["crash_replay"] = {
+                **crash_replay,
+                "recorded_at": utc_now(),
+                "outcome_status": record.status,
+            }
         write_json(manifest_path, manifest)
         write_json(campaign_metadata_path(job.parent), metadata)
         records.append(record)
@@ -3600,13 +4138,18 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     managed_paths = [path.relative_to(workspace).as_posix() for path in managed_versions]
     patch_path = manifest_path.parent / "candidate.patch"
     atomic_write_text(patch_path, patch)
+    patch_sha256 = sha256_bytes(patch.encode("utf-8"))
+    execution_fingerprint = candidate_execution_fingerprint(manifest, patch_sha256)
+    crash_replay = crash_replay_provenance(workspace, execution_fingerprint, manifest_path)
+    manifest.pop("crash_replay", None)
     manifest.update(
         {
             "updated_at": utc_now(),
             "changed_files": changed,
             "created_files": created,
-            "patch_sha256": sha256_bytes(patch.encode("utf-8")),
+            "patch_sha256": patch_sha256,
             "candidate_source_sha256": source_hash(file_map(manifest_path.parent / "source")),
+            "execution_fingerprint": execution_fingerprint,
         }
     )
     write_json(manifest_path, manifest)
@@ -3662,6 +4205,9 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
 
     try:
         help_text = job_help(args.python, job, workspace)
+        fixed_args, base_args = build_campaign_args(
+            config, args, help_text, schema, alias_groups=job_flag_alias_groups(job)
+        )
         run_record = run_job(
             JobRun(
                 name=str(manifest["candidate_id"]),
@@ -3672,8 +4218,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             job=job,
             cwd=workspace,
             help_text=help_text,
-            fixed_args=build_fixed_args(config, help_text, schema),
-            base_args=build_base_args(args, help_text, schema),
+            fixed_args=fixed_args,
+            base_args=base_args,
             output_root=paths["output_root"],
             timeout=timeout,
             simulator_no_progress_timeout=no_progress_timeout,
@@ -3742,6 +4288,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         run_record,
+        crash_replay,
     )
     print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
     return 0
@@ -3958,6 +4505,10 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
     )
+    execution_fingerprint = str(manifest.get("execution_fingerprint") or "")
+    crash_replay = (
+        crash_replay_provenance(workspace, execution_fingerprint, manifest_path) if execution_fingerprint else None
+    )
     records, state = finalize_candidate_result(
         args,
         job,
@@ -3972,6 +4523,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         record,
+        crash_replay,
     )
     updated_manifest = read_json(manifest_path)
     updated_manifest.setdefault("artifacts", {})["job_id"] = args.job_id
@@ -4020,6 +4572,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "record": record_external_result,
             "status": show_campaign_status,
         }
+        if args.action == "initialize" and not campaign_metadata_path(job.parent).exists():
+            prepare_initial_campaign(args, job)
         with locked_campaign_workspace(job.parent, args.action):
             return actions[args.action](args, job)
     except (OSError, RuntimeError, ValueError) as e:

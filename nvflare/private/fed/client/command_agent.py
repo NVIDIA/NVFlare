@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.fed.app.callback_admission import CallbackAdmission
 
 from .admin_commands import AdminCommands
 
@@ -34,6 +35,7 @@ class CommandAgent(object):
         self.federated_client = federated_client
         self.thread = None
         self.asked_to_stop = False
+        self._callback_admission = CallbackAdmission()
 
         self.commands = AdminCommands.commands
         self.logger = get_obj_logger(self)
@@ -57,6 +59,14 @@ class CommandAgent(object):
     def execute_command(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        if not self._callback_admission.enter():
+            return make_cellnet_reply(ReturnCode.SERVICE_UNAVAILABLE)
+        try:
+            return self._execute_command(request)
+        finally:
+            self._callback_admission.leave()
+
+    def _execute_command(self, request: CellMessage) -> CellMessage:
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload
@@ -76,6 +86,14 @@ class CommandAgent(object):
     def aux_communication(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        if not self._callback_admission.enter():
+            return make_cellnet_reply(ReturnCode.SERVICE_UNAVAILABLE)
+        try:
+            return self._aux_communication(request)
+        finally:
+            self._callback_admission.leave()
+
+    def _aux_communication(self, request: CellMessage) -> CellMessage:
         shareable = request.payload
 
         with self.engine.new_context() as fl_ctx:
@@ -94,3 +112,7 @@ class CommandAgent(object):
 
     def shutdown(self):
         self.asked_to_stop = True
+        self._callback_admission.close()
+
+    def wait_for_callbacks(self, timeout: float) -> bool:
+        return self._callback_admission.wait(timeout)

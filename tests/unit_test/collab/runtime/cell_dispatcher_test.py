@@ -23,7 +23,7 @@ from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext, ResultWaiter
 from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
-from nvflare.collab.runtime.defs import CallReplyKey
+from nvflare.collab.runtime.defs import CALL_PROTOCOL_VERSION, CallHeaderKey, CallReplyKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
@@ -168,6 +168,11 @@ def test_remote_error_preserves_type_and_traceback():
     assert error.cause_type == "ValueError"
     assert error.remote_traceback == "remote traceback"
     assert str(error) == "call to site-1.trainer.train failed: ValueError: invalid input"
+    request = cell.send_request.call_args.kwargs["request"]
+    assert request.get_header(CallHeaderKey.PROTOCOL_VERSION) == CALL_PROTOCOL_VERSION
+    assert request.get_header(CallHeaderKey.TARGET_NAME) == "site-1.trainer"
+    assert request.get_header(CallHeaderKey.METHOD_NAME) == "train"
+    assert request.get_header(CallHeaderKey.AUTHENTICATED_CALLER) is None
 
 
 def test_fire_and_forget_secure_call_fails_before_executor_submission_when_cell_is_not_secure():

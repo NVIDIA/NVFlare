@@ -30,12 +30,13 @@ _ATTR_ENV = {
 _CJ_ARGV = [
     "worker_process.py", "--workspace", "/ws", "--startup", "/ws/startup", "--job_id", "job-1",
     "--client_name", "site-1", "--sp_target", "server:8002", "--sp_scheme", "grpc",
-    "--parent_url", "tcp://localhost:8004", "--fed_client", "fed_client.json",
+    "--parent_url", "stcp://site-1:8004", "--parent_conn_sec", "mtls", "--fed_client", "fed_client.json",
 ]
 _SJ_ARGV = [
     "runner_process.py", "--workspace", "/ws", "--fed_server", "fed_server.json",
     "--app_root", "/ws/job-1/app_server", "--job_id", "job-1", "--root_url", "grpc://server:8002",
-    "--host", "server", "--port", "8003", "--parent_url", "tcp://localhost:8004",
+    "--host", "server", "--port", "8003", "--parent_url", "stcp://nvflare-server:8004",
+    "--parent_conn_sec", "mtls",
 ]
 # fmt: on
 
@@ -56,6 +57,8 @@ class TestJobProcessCredentialParsing:
 
         for attr in cred_attrs:
             assert getattr(args, attr) == f"env-{attr}"
+        assert args.parent_url.startswith("stcp://")
+        assert args.parent_conn_sec == "mtls"
         # all three env vars removed (SJ pops the unused AUTH_TOKEN too) so children never inherit
         assert not set(_ATTR_ENV.values()) & set(os.environ)
 

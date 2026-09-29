@@ -100,16 +100,33 @@ recipe = FedAvgRecipe(
 ### Deep Learning Frameworks
 
 #### [Hello PyTorch](./hello-pt/)
-Train an image classifier on CIFAR-10 using PyTorch and FedAvg.
+Train an image classifier on deterministic, independently generated synthetic data using PyTorch and FedAvg.
 
 **What you'll learn:**
 - Using the PyTorch FedAvg Recipe
 - Client API for PyTorch models
-- TensorBoard integration
+- Final global-model evaluation with a measurable learning signal
 
 **Run it:**
 ```bash
 cd hello-pt
+pip install -r requirements.txt
+python job.py
+```
+
+#### [Hello FedAvg with the Collab API](./hello-collab/)
+Implement a custom FedAvg workflow with ordinary Python function calls and a
+small synthetic PyTorch model.
+
+**What you'll learn:**
+- Defining a custom server workflow with `@collab.main`
+- Publishing client training code with `@collab.publish`
+- Passing PyTorch state dictionaries and scalar losses directly
+- Configuring client-specific local epochs
+
+**Run it:**
+```bash
+cd hello-collab
 pip install -r requirements.txt
 python job.py
 ```
@@ -211,20 +228,6 @@ pip install -r requirements.txt
 python job.py
 ```
 
-#### [Hello NumPy Collab](./hello-collab/)
-Implement the same NumPy workflow with ordinary Python function calls.
-
-**What you'll learn:**
-- Defining a custom server workflow with `@collab.main`
-- Publishing client training code with `@collab.publish`
-- Passing NumPy arrays and tuples directly between server and clients
-
-**Run it:**
-```bash
-cd hello-collab
-python job.py
-```
-
 ### Framework Integration
 
 #### [Hello Flower](./hello-flower/)
@@ -254,8 +257,8 @@ hello-<framework>/
 └── requirements.txt  # Dependencies
 ```
 
-The self-contained [Hello NumPy Collab](./hello-collab/) example keeps its
-published client function, server workflow, recipe, and launcher in one file.
+The self-contained [Hello FedAvg Collab](./hello-collab/) example keeps its
+published client method, server workflow, recipe, and launcher in one file.
 
 ### Client Code (`client.py`)
 

@@ -183,7 +183,10 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def clone_job(self, job_id: str) -> str:
-        """Create a new job by cloning a specified job
+        """Create a new job by cloning a specified job.
+
+        .. deprecated:: 2.10.0
+           Use ``nvflare job submit -j JOB_FOLDER`` with the original local job folder.
 
         Args:
             job_id: job to be cloned
@@ -314,6 +317,8 @@ class SessionSpec(ABC):
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
         log_file_name: str = "log.txt",
+        *,
+        max_bytes: Optional[int] = None,
     ) -> dict:
         """Retrieve logs for the specified job.
 
@@ -323,6 +328,9 @@ class SessionSpec(ABC):
             tail_lines: deprecated compatibility option to return the last N lines
             grep_pattern: deprecated compatibility option to return matching lines
             log_file_name: internal log file selector. Defaults to ``log.txt``.
+            max_bytes: positive UTF-8 log-byte limit per site, enforced on the server before
+                transfer and capped by its 5 MiB limit. None uses the server default.
+                Servers that do not support the option must not be retried without the limit.
 
         Returns: dict with ``logs`` mapping site names to log content, and
             optional ``unavailable`` mapping site names to reasons.
@@ -336,7 +344,7 @@ class SessionSpec(ABC):
 
         Args:
             job_id: ID of the running job
-            config: log level, log mode, file path, or dictConfig payload
+            config: log level or built-in log mode
             target: ``all``, ``server``, or a client site name
 
         Returns: None

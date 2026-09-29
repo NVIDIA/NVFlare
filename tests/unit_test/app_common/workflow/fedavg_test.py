@@ -990,7 +990,7 @@ class TestFedAvgDownloadToDiskContext:
         cell = _MockCell(enable_tensor_disk_offload=False)
         root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1036,7 +1036,7 @@ class TestFedAvgDownloadToDiskContext:
         controller.sample_clients = lambda _: ["site-1"]
         root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1070,7 +1070,7 @@ class TestScatterAndGatherDownloadToDiskContext:
         root_dir = tmp_path / "nvflare_tensor_offload_root"
         observed = {}
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1107,7 +1107,7 @@ class TestScaffoldDownloadToDiskContext:
         root_dir = tmp_path / "nvflare_tensor_offload_root"
         observed = {}
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 

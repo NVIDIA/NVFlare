@@ -88,6 +88,19 @@ class TestMainProcessMonitorReturnCode:
         content = self._run_and_read_rc(tmp_path, _fail_publication)
         assert int(content) == ProcessExitCode.EXCEPTION
 
+    def test_implicit_return_does_not_overwrite_authoritative_in_run_failure(self, tmp_path):
+        rc_file = os.path.join(str(tmp_path), FLMetaKey.PROCESS_RC_FILE)
+
+        def _record_failure_then_return():
+            with open(rc_file, "w") as outfile:
+                outfile.write(f"{ProcessExitCode.EXCEPTION}")
+
+        force_exit = self._run(tmp_path, _record_failure_then_return)
+
+        with open(rc_file) as infile:
+            assert int(infile.read().strip()) == ProcessExitCode.EXCEPTION
+        force_exit.assert_called_once_with(0)
+
     def test_force_exit_does_not_depend_on_rc_file(self, tmp_path):
         def _fail_publication():
             raise RuntimeError("result publication failed")

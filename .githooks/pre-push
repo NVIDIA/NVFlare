@@ -5,8 +5,8 @@
 # Enable once per clone:
 #     git config core.hooksPath .githooks
 #
-# The lint is fast and dependency-light; it covers skills/ and the eval suites
-# under dev_tools/agent/skill_evals/. The same check runs in `./runtest.sh -s`
+# The lint is fast and dependency-light; it covers skills/ and each skill's
+# co-located evals/ suite. The same check runs in `./runtest.sh -s`
 # and in CI. Bypass in an emergency with `git push --no-verify`.
 set -euo pipefail
 

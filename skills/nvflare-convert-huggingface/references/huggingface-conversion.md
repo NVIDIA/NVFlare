@@ -42,10 +42,15 @@ default selector. See the Best-Model Metric section of
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
 so every `flare.*` call below resolves to `nvflare.client.hf`.
 
-Call `flare.init(rank=rank)` explicitly before `flare.get_site_name()`,
-`flare.get_config()`, or other Client API context access that occurs before
-`patch()`. The patch initializes the Client API when no earlier context access
-is needed.
+Follow the framework-neutral Client API initialization and rank contract in
+`../../nvflare-shared/references/conversion-common.md`. The standard
+asset always calls rankless `nvflare.client.hf.init()`. The product resolves an
+initialized process-group rank or global `RANK` and rejects an unresolved
+multi-process launch before creating a Client API context; do not reimplement
+that logic in generated code. For a preserved multi-GPU launch, load
+`huggingface-state-and-distributed.md`. Initialize before
+`flare.get_site_name()`, `flare.get_config()`, or other Client API context access
+that occurs before `patch()`.
 
 Do not add manual model loading from `flare.receive()` or model sending through
 `flare.send()`. The patch wraps `train()` and `evaluate()`, loads the received
@@ -117,6 +122,12 @@ NVFLARE rejects parent-traversal external-script paths. For an exceptional
 non-co-located module, pass its existing resolved absolute source path to the
 packaging API.
 
+`SOURCE_DIR` identifies the generated-file directory for packaging; it is the
+source-project root only in the colocated case. If a read-only source root puts
+generated files elsewhere, pass the inspected original root explicitly to
+`resolve_source_local_path(..., source_root=...)` for source-relative data. Do
+not resolve those data paths against the writable generated-file directory.
+
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
 the FedAvg constructor shape to another recipe. When sites genuinely need
@@ -130,6 +141,11 @@ Every site uses the same packaged `client.py`; do not include `train_script` in
 the per-site mapping. The asset rejects both relative and absolute site-specific
 script overrides because it cannot package them while preserving one portable
 app-local runtime path.
+Pass that same mapping to the asset's `build_sim_env(...)`, which implements the
+single-topology-owner rule from
+`../../nvflare-shared/references/conversion-common.md`. Leave the mapping unset
+for ordinary generated partitions, and derive their indices from the initialized
+`site-N` name.
 Follow the shared construction reference's client-argument transport rule.
 `train_args` is not necessarily shell parsed: use unquoted whitespace-free
 tokens for the default in-process executor, and use shell quoting only for a
@@ -140,11 +156,14 @@ internal command-splitting helpers.
 `train_script` names the primary client entry point in the runtime config; it
 does not provide a separate source root for caller-cwd-independent packaging.
 Use its portable app-local name in the constructor and add the resolved source
-once with `recipe.add_client_file(...)`. Export and inspect the job before
-simulation. Reject absolute `task_script_path` values in generated configs
-because exported apps must launch their packaged client script portably.
+once with `recipe.add_client_file(...)`. For an exported-artifact target, export
+and inspect that job before running it with the simulator CLI. For a local
+`python job.py` target, do not export; after the run, inspect the materialized
+simulation workspace for the same config and packaging evidence. Reject
+absolute `task_script_path` values in generated configs because runtime apps
+must launch their packaged client script portably.
 
-Exported app layout is owned by
+For an exported-artifact target, exported app layout is owned by
 `../../nvflare-shared/references/conversion-workflow.md`: inspect the exported
 job root and enumerate the app directories it actually contains before asserting
 any path.
@@ -161,10 +180,11 @@ import/preflight checks.
 
 ## Data And Model Selection
 
-Follow the "Site Data Partitioning" rule in
-`../../nvflare-shared/references/conversion-common.md`. Pass data roots through
-client arguments or per-site configuration; never copy private site data into
-the job.
+Follow `../../nvflare-shared/references/site-data-and-paths.md` when generated
+site partitions, relative-path resolution, or per-site data locations are
+involved. Pass data roots through client arguments or per-site configuration —
+never a path hardcoded in the generated client, and never copy private site data
+into the job.
 
 Prefer preserving source metric names in the client metrics output. If the
 generated evaluation call emits `accuracy`, configure `key_metric="accuracy"`.

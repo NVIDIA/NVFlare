@@ -92,6 +92,9 @@ def make_isolated_download_service():
         _logger = Mock()
         _tx_lock = threading.Lock()
         _initialized_cells = weakref.WeakKeyDictionary()
+        _source_failure_lock = threading.Lock()
+        _source_failures = {}
+        _active_source_downloads = {}
 
     return IsolatedDownloadService
 
@@ -123,6 +126,14 @@ def confirm_request(rid, requester, status, nonce=None):
     if nonce is not None:
         payload[_PropKey.CONFIRM_NONCE] = nonce
     return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
+
+
+def cancel_request(rid, requester):
+    """Builds one mid-stream receiver-cancellation message as it appears on the wire."""
+    return new_cell_message(
+        headers={MessageHeaderKey.ORIGIN: requester},
+        payload={_PropKey.REF_ID: rid, _PropKey.CANCEL: True},
+    )
 
 
 def serve_nonce(terminal_reply):

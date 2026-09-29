@@ -19,6 +19,7 @@ import shutil
 
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter import utils
+from nvflare.lighter.admin_cert_provider import get_admin_cert_provider_config
 from nvflare.lighter.constants import (
     CommConfigArg,
     ConnSecurity,
@@ -660,7 +661,8 @@ class StaticFileBuilder(Builder):
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
-        uid_source = "user_input"
+        admin_cert_provider = get_admin_cert_provider_config(admin)
+        uid_source = "cert" if admin_cert_provider else "user_input"
         provision_mode = ctx.get_provision_mode()
         if provision_mode == ProvisionMode.POC:
             uid_source = "cert"
@@ -671,7 +673,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
-            "username": "" if provision_mode == ProvisionMode.POC else admin.name,
+            "username": "" if provision_mode == ProvisionMode.POC or admin_cert_provider else admin.name,
             "server_identity": self._get_auth_identity(server),
             "scheme": self.scheme,
             "conn_sec": conn_sec,
@@ -684,6 +686,8 @@ class StaticFileBuilder(Builder):
             temp_section=TemplateSectionKey.FED_ADMIN,
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
+            content_modify_cb=_modify_fed_admin_config,
+            admin_cert_provider=admin_cert_provider,
         )
 
         # create default resources in local
@@ -1060,6 +1064,20 @@ def _remove_undefined_port(section: str) -> str:
     else:
         # no change
         return section
+
+
+def _modify_fed_admin_config(section: str, admin_cert_provider=None) -> str:
+    if not admin_cert_provider:
+        return section
+
+    admin_config = json.loads(section)
+    admin = admin_config.get("admin", {})
+    admin.pop("client_key", None)
+    admin.pop("client_cert", None)
+    admin["username"] = ""
+    admin["uid_source"] = "cert"
+    admin[PropKey.ADMIN_CERT_PROVIDER] = dict(admin_cert_provider)
+    return json.dumps(admin_config, indent=2)
 
 
 def check_parent(c: Participant, path: list):

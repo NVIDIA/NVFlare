@@ -122,3 +122,135 @@ def test_swarm_export_short_circuit_preserves_existing_workspace(monkeypatch, tm
         module.main()
 
     assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_llm_hf_combines_slurm_launcher_with_all_client_and_server_filters(monkeypatch):
+    class FakeQuantizer:
+        def __init__(self, quantization_type):
+            self.quantization_type = quantization_type
+
+    class FakeDequantizer:
+        pass
+
+    class FakeRun:
+        @staticmethod
+        def get_status():
+            return "DONE"
+
+        @staticmethod
+        def get_result():
+            return "/tmp/result"
+
+    class FakeEnv:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeRecipe:
+        instance = None
+
+        def __init__(self, **kwargs):
+            FakeRecipe.instance = self
+            self.kwargs = kwargs
+            self.per_site_config = None
+            self.meta = {}
+            self.server_files = []
+            self.client_configs = []
+            self.server_output_filters = []
+            self.server_input_filters = []
+            self.client_output_filters = []
+            self.client_input_filters = []
+            self.env = None
+
+        def add_server_file(self, path):
+            self.server_files.append(path)
+
+        def add_client_config(self, config):
+            self.client_configs.append(config)
+
+        def add_server_output_filter(self, task_filter, tasks):
+            self.server_output_filters.append((task_filter, tasks))
+
+        def add_server_input_filter(self, task_filter, tasks):
+            self.server_input_filters.append((task_filter, tasks))
+
+        def add_client_output_filter(self, task_filter, tasks):
+            self.client_output_filters.append((task_filter, tasks))
+
+        def add_client_input_filter(self, task_filter, tasks):
+            self.client_input_filters.append((task_filter, tasks))
+
+        def execute(self, env):
+            self.env = env
+            return FakeRun()
+
+    quantizer_module = types.ModuleType("nvflare.app_opt.pt.quantization.quantizer")
+    quantizer_module.ModelQuantizer = FakeQuantizer
+    dequantizer_module = types.ModuleType("nvflare.app_opt.pt.quantization.dequantizer")
+    dequantizer_module.ModelDequantizer = FakeDequantizer
+    fedavg_module = types.ModuleType("nvflare.app_opt.pt.recipes.fedavg")
+    fedavg_module.FedAvgRecipe = FakeRecipe
+    recipe_module = types.ModuleType("nvflare.recipe")
+    recipe_module.ProdEnv = FakeEnv
+    recipe_module.SimEnv = FakeEnv
+    recipe_module.add_experiment_tracking = lambda *_args, **_kwargs: None
+    recipe_module.set_per_site_config = lambda recipe, config: setattr(recipe, "per_site_config", config)
+    recipe_module.set_recipe_meta = lambda recipe, key, value: recipe.meta.update({key: value})
+
+    monkeypatch.setitem(sys.modules, quantizer_module.__name__, quantizer_module)
+    monkeypatch.setitem(sys.modules, dequantizer_module.__name__, dequantizer_module)
+    monkeypatch.setitem(sys.modules, fedavg_module.__name__, fedavg_module)
+    monkeypatch.setitem(sys.modules, recipe_module.__name__, recipe_module)
+
+    job_path = _REPO_ROOT / "examples/advanced/llm_hf/job.py"
+    spec = importlib.util.spec_from_file_location("llm_hf_slurm_filter_job_test", job_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(job_path),
+            "--client_ids",
+            "site-1",
+            "site-2",
+            "--num_rounds",
+            "2",
+            "--quantize_mode",
+            "float16",
+            "--slurm_nodes",
+            "2",
+            "--slurm_gpus_per_node",
+            "8",
+        ],
+    )
+
+    module.main()
+
+    recipe = FakeRecipe.instance
+    assert recipe.kwargs["launch_external_process"] is True
+    assert recipe.kwargs["min_clients"] == 2
+    assert recipe.per_site_config["site-1"]["command"] == (
+        "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8"
+    )
+    assert recipe.per_site_config["site-2"]["command"] == (
+        "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8"
+    )
+
+    from nvflare.apis.job_def import JobMetaKey
+
+    assert recipe.meta[JobMetaKey.JOB_LAUNCHER_SPEC] == {
+        "site-1": {"slurm": {"nodes": 2, "gpus_per_node": 8}},
+        "site-2": {"slurm": {"nodes": 2, "gpus_per_node": 8}},
+    }
+    from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
+    from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
+
+    quantizer = recipe.server_output_filters[0][0]
+    dequantizer = recipe.server_input_filters[0][0]
+    assert isinstance(quantizer, ModelQuantizer)
+    assert isinstance(dequantizer, ModelDequantizer)
+    assert quantizer.quantization_type == "float16"
+    assert recipe.server_output_filters == [(quantizer, ["train"])]
+    assert recipe.server_input_filters == [(dequantizer, ["train"])]
+    assert recipe.client_output_filters == [(quantizer, ["train"])]
+    assert recipe.client_input_filters == [(dequantizer, ["train"])]

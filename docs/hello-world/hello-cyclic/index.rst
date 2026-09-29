@@ -49,6 +49,7 @@ Get the example code from GitHub:
 .. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-cyclic
 

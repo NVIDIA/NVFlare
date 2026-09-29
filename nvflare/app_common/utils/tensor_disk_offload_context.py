@@ -41,13 +41,16 @@ def _get_cell(engine):
     return engine.get_cell()
 
 
-def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> TensorDiskOffloadContext:
+def setup_tensor_disk_offload(
+    engine, enabled: bool, job_id: str = "job", root_dir: Optional[str] = None
+) -> TensorDiskOffloadContext:
     """Enable tensor disk offload in the active cell FOBS context.
 
     Args:
         engine: engine that owns the active Cell.
         enabled: whether to prepare disk-backed tensor downloads.
         job_id: identifier used to name the temporary offload root.
+        root_dir: optional existing parent directory for the temporary root.
 
     Returns:
       Context needed to restore the prior setting and cleanup temporary files.
@@ -62,16 +65,16 @@ def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> Ten
     fobs_ctx = cell.get_fobs_context()
     previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
-    root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+    offload_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_", dir=root_dir)
     try:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: root_dir})
+        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: offload_dir})
     except Exception:
-        shutil.rmtree(root_dir, ignore_errors=True)
+        shutil.rmtree(offload_dir, ignore_errors=True)
         raise
     return TensorDiskOffloadContext(
         previous_value=previous_value,
         previous_root_dir=previous_root_dir,
-        root_dir=root_dir,
+        root_dir=offload_dir,
         applied=True,
     )
 

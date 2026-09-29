@@ -6,8 +6,8 @@ Multi-Study Support
 Overview
 ========
 
-Studies provide multi-tenant isolation within a single NVFlare deployment. Each study defines which
-sites participate and what role each admin user has. Study-aware job and client-targeted operations
+Studies provide logical separation within a shared-trust NVFlare deployment. Each study defines which
+sites participate and which admins are members. Study-aware job and client-targeted operations
 are scoped to the active study. The default study (``"default"``) is the fallback session context:
 it uses the certificate-based role and scopes visibility to jobs in the default study.
 
@@ -48,45 +48,80 @@ Multi-study requires ``api_version: 4`` in your ``project.yml``. Studies are def
       - name: lead@nvidia.com
         type: admin
         org: nvidia
-        role: org_admin
+        role: lead
 
     studies:
       cancer-research:
-        sites: [site-1, site-2]
+        site_orgs:
+          nvidia: [site-1, site-2]
         admins:
-          admin@nvidia.com: project_admin
-          lead@nvidia.com: lead
+          - admin@nvidia.com
+          - lead@nvidia.com
       drug-discovery:
-        sites: [site-2, site-3]
+        site_orgs:
+          nvidia: [site-2, site-3]
         admins:
-          admin@nvidia.com: project_admin
+          - admin@nvidia.com
 
 Validation rules:
 
-- Sites listed in a study must reference existing client participants.
+- Sites listed under ``site_orgs`` must reference existing client participants in the specified organization.
 - Admins listed in a study must reference existing admin participants.
 - Study names use lowercase alphanumeric characters plus hyphens or underscores, 1-63 characters, and must start and end with an alphanumeric character.
 - ``"default"`` is reserved and cannot be used as a study name.
 - Provisioning generates ``study_registry.json`` in the server's ``local/`` folder, which seeds the
   runtime registry on first server start (see :ref:`updating_studies`).
 
-Per-Study Role Resolution
-=========================
+Study Membership and Roles
+==========================
 
-When a user logs in to a named study, their role is looked up from that study's ``admins`` mapping
-instead of using the certificate-based role. This resolved role is used for study-scoped
-authorization decisions during that session. If the user is not listed in the study's ``admins``
-mapping, login is rejected.
+When a user logs in to a named study, the server requires the study to exist in its
+registry. The user must either appear in that study's ``admins`` list or have a
+validated certificate that authorizes the study. If neither source authorizes
+membership, login is rejected. The registry remains authoritative for study
+existence and site enrollment.
 
-.. note::
+The user's role always comes from the certificate's ``unstructuredName`` field.
+Study membership does not assign or override that role. For example, a ``lead``
+certificate uses the ``lead`` role in every study the user can access.
 
-   If a study maps a user to ``project_admin``, that means the user has full authority for
-   study-scoped operations in that study. It does **not** make the user a deployment-wide project
-   admin for server-only or other global operations. Those continue to use the certificate-based
-   role from the admin participant definition in ``project.yml``.
+The ``default`` study requires successful certificate authentication but no named-study
+membership. Default sessions still only see default-study jobs.
 
-The ``default`` study always uses the certificate-based role. In a multi-study deployment, default
-sessions still only see default-study jobs.
+.. _certificate_study_entitlements:
+
+Certificate-Derived Study Membership
+----------------------------------------
+
+An admin certificate can name up to 64 unique studies using one URI SAN per study:
+
+.. code-block:: text
+
+    https://nvidia.com/nvflare/v1/project/demo/study/cancer-research
+
+The project label is one UTF-8 percent-encoded path segment, leaving RFC 3986
+unreserved characters unescaped. It is informational: FLARE does not compare it
+with the running project name. Any federation trusting the issuing CA can honor
+the certificate's matching study names.
+
+Names must follow the study naming rules above; ``default`` and wildcards are
+not allowed. Unrelated URI SANs are ignored, but malformed or unsupported URIs
+under ``https://nvidia.com/nvflare/`` reject all certificate logins, including
+``default``. Without study SANs, existing registry-based access is unchanged.
+
+See :ref:`step_ca_study_entitlements` for mapping issuer-validated claims to
+these SANs and a downloadable template.
+
+Membership is visible in the certificate and server-signed session token,
+which preserves study discovery after session reconstruction.
+
+Removing IdP entitlements or registry membership does not revoke existing
+certificate-derived access; it lasts until certificate expiry. There is no
+local denylist. Do not reuse a study name for a different study.
+
+Certificate-authorized administrators can make role-permitted registry changes,
+including membership grants that persist until explicitly removed, independently
+of certificate expiry or IdP entitlement removal.
 
 Using Studies
 =============

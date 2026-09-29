@@ -159,6 +159,8 @@ class GPUResourceManager(AutoCleanResourceManager):
         is_resource_enough = False
         num_gpu = resource_requirement[self.num_gpu_key]
         gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
+        if num_gpu == 0:
+            return True
 
         satisfied = 0
         for k in self.resources:
@@ -180,6 +182,9 @@ class GPUResourceManager(AutoCleanResourceManager):
         reserved_resources = {}
         num_gpu = resource_requirement[self.num_gpu_key]
         gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
+        if num_gpu == 0:
+            return reserved_resources
+
         reserved = 0
         for k in self.resources:
             r: GPUResource = self.resources[k]

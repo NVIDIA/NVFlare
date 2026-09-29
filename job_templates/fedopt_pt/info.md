@@ -5,7 +5,7 @@
     description = "FedOpt using pytorch with in_process Client API"
     class_name  =  "FedOpt"
     controller_type = "server"
-    executor_type = "in_process_client_api_executor"
+    executor_type = "client_api_executor"
     contributor = "NVIDIA"
     init_publish_date = "2024-05-01"
     last_updated_date = "2024-05-01" # yyyy-mm-dd

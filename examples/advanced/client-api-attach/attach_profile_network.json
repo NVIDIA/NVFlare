@@ -3,8 +3,8 @@
   "execution_mode": "attach",
   "attach_id": "numpy_trainer",
   "site_name": "site-1",
-  "connect_url": "tcp://site-1.example.com:8004",
-  "connection_security": "clear",
+  "connect_url": "stcp://site-1.example.com:8004",
+  "connection_security": "mtls",
   "secure_mode": true,
   "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
   "job_wait_timeout": null

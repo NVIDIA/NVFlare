@@ -51,7 +51,7 @@ class _MockRunManager:
 def _patch_mkdtemp(monkeypatch, tmp_path):
     root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-    def fake_mkdtemp(prefix):
+    def fake_mkdtemp(prefix, dir=None):
         root_dir.mkdir()
         return str(root_dir)
 
@@ -74,6 +74,28 @@ def test_setup_records_previous_and_updates(tmp_path, monkeypatch):
     assert cell.update_calls == 1
 
 
+def test_setup_uses_requested_parent_dir(tmp_path, monkeypatch):
+    cell = _MockCell(enable_tensor_disk_offload=False)
+    requested_parent = tmp_path / "offload_parent"
+    requested_parent.mkdir()
+    observed = {}
+
+    def fake_mkdtemp(prefix, dir=None):
+        observed["dir"] = dir
+        root_dir = requested_parent / f"{prefix}test"
+        root_dir.mkdir()
+        return str(root_dir)
+
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fake_mkdtemp)
+
+    context = setup_tensor_disk_offload(
+        engine=_MockEngine(cell), enabled=True, job_id="job", root_dir=str(requested_parent)
+    )
+
+    assert observed["dir"] == str(requested_parent)
+    assert context.root_dir.startswith(str(requested_parent))
+
+
 def test_setup_disabled_does_not_touch_cell():
     cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
 
@@ -86,7 +108,7 @@ def test_setup_disabled_does_not_touch_cell():
 
 
 def test_setup_enabled_without_cell_does_not_create_temp_dir(monkeypatch):
-    def fail_mkdtemp(prefix):
+    def fail_mkdtemp(prefix, dir=None):
         raise AssertionError("mkdtemp should not be called without an active cell")
 
     monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fail_mkdtemp)

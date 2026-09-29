@@ -23,7 +23,7 @@ from typing import Mapping, Optional
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client import api as flare_api
 from nvflare.client.config import ConfigKey, ExchangeFormat
-from nvflare.client.flare_agent import AgentClosed
+from nvflare.client.rank import environment_declares_multirank, environment_declares_single_client_api_process
 from nvflare.fuel.utils import fobs
 
 from . import utils
@@ -144,9 +144,9 @@ def patch(
     if args is None:
         raise ValueError("trainer.args is required")
     if getattr(args, "deepspeed", None):
-        raise ValueError("DeepSpeed is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("DeepSpeed is not currently supported by the HuggingFace Client API")
     if getattr(args, "fsdp", None):
-        raise ValueError("FSDP is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("FSDP is not currently supported by the HuggingFace Client API")
     if restore_state and bool(getattr(args, "save_only_model", False)):
         raise ValueError("save_only_model=True is incompatible with restore_state=True")
     if bool(getattr(args, "load_best_model_at_end", False)):
@@ -162,10 +162,10 @@ def patch(
     resolved_rank = _resolve_rank(trainer)
     dist = _torch_dist()
     if dist is None:
-        if _env_declares_multirank():
+        if environment_declares_multirank():
             raise RuntimeError(
-                "HuggingFace Client API detected WORLD_SIZE or LOCAL_WORLD_SIZE > 1, but torch.distributed is not "
-                "initialized. Initialize the distributed process group before flare.patch(trainer)."
+                "HuggingFace Client API detected a multi-process launch, but torch.distributed is not initialized. "
+                "Initialize the distributed process group before flare.patch(trainer)."
             )
         if resolved_rank > 0:
             raise RuntimeError(
@@ -245,6 +245,18 @@ def _validate_repatch_settings(
 
 
 def _resolve_rank(trainer) -> int:
+    if environment_declares_single_client_api_process():
+        dist = _torch_dist()
+        if dist is not None:
+            torch_rank = int(dist.get_rank())
+            if torch_rank != 0:
+                raise RuntimeError(
+                    "HuggingFace Client API single-process marker designates this process as Client API rank 0, "
+                    f"but torch.distributed initialized it as Torch rank {torch_rank}. Set the marker only for "
+                    "Torch rank 0 or remove it from the distributed trainer environment."
+                )
+        return 0
+
     dist = _torch_dist()
     if dist is not None:
         return int(dist.get_rank())
@@ -275,16 +287,6 @@ def _world_size() -> int:
     if dist is None:
         return 1
     return int(dist.get_world_size())
-
-
-def _env_declares_multirank() -> bool:
-    for name in ("WORLD_SIZE", "LOCAL_WORLD_SIZE"):
-        try:
-            if int(os.environ.get(name, "1") or 1) > 1:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
 
 
 def _transformers_version_is_verified() -> bool:
@@ -462,7 +464,7 @@ def _reject_unsupported_launch_once_false(restore_state: bool):
     if not _as_bool(task_exchange.get(ConfigKey.LAUNCH_ONCE)):
         raise RuntimeError(
             "HuggingFace Client API restore_state=True requires a single trainer process lifecycle in Phase 1. "
-            "Set ClientAPILauncherExecutor launch_once=True, or use restore_state=False for per-task trainer launches."
+            "Set ClientAPIExecutor launch_once=True, or use restore_state=False for per-task trainer launches."
         )
 
 
@@ -789,7 +791,7 @@ class _HFTaskState:
         if self.task_kind != TASK_TRAIN or not self.pending:
             return
         if self.train_with_evaluation and self.pre_train_metrics is None:
-            raise RuntimeError("train with evaluation missing training metrics, please remember to call evaluate.")
+            raise RuntimeError("train with evaluation requires evaluation metrics; call evaluate before train.")
 
         end_global_step = int(getattr(hf_train_state, "global_step", 0) or 0)
         end_tokens = _optional_int(getattr(hf_train_state, "num_input_tokens_seen", None))
@@ -847,9 +849,6 @@ class _HFTaskState:
                         "current_round": fl_model.current_round,
                         "total_rounds": fl_model.total_rounds,
                     }
-            except AgentClosed:
-                self.logger.info("Skipping trainer.%s() because NVFlare job has ended", call_name)
-                payload = {"task_kind": TASK_STOP, "call_name": call_name}
             except Exception as e:
                 if self.world_size <= 1:
                     raise

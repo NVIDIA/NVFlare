@@ -133,6 +133,7 @@ def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):
     second_client.name = "site-2"
     monkeypatch.setattr(executor_module, "from_dict", lambda client: client)
     monkeypatch.setattr(executor_module, "prepare_for_remote_call", MagicMock())
+    monkeypatch.setattr(executor_module, "make_participant_map", MagicMock(return_value={}))
 
     executor = CollabExecutor(client_obj_id="client")
     executor.client_app = MagicMock()
@@ -208,6 +209,7 @@ def test_setup_returns_error_without_publishing_context_when_client_setup_fails(
     client.name = "site-1"
     monkeypatch.setattr(executor_module, "from_dict", lambda client: client)
     monkeypatch.setattr(executor_module, "prepare_for_remote_call", MagicMock())
+    monkeypatch.setattr(executor_module, "make_participant_map", MagicMock(return_value={}))
 
     executor = CollabExecutor(client_obj_id="client")
     executor.client_app = MagicMock()

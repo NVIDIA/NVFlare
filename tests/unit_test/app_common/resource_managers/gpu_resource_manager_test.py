@@ -194,6 +194,22 @@ class TestGPUResourceManager:
         if expected_check_result:
             assert expected_reserved_resources == gpu_resource_manager.reserved_resources[token][0]
 
+    @pytest.mark.parametrize("managed_gpus", [0, 2])
+    def test_zero_gpu_requirement_reserves_nothing(self, managed_gpus):
+        engine = MockEngine()
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=managed_gpus, mem_per_gpu_in_GiB=16, ignore_host=True)
+        resource_requirement = _gen_requirement(0, 8)
+
+        with engine.new_context() as fl_ctx:
+            check_result, token = gpu_resource_manager.check_resources(resource_requirement, fl_ctx)
+
+        assert check_result
+        assert gpu_resource_manager.reserved_resources[token][0] == {}
+        assert all(resource.memory == 16 for resource in gpu_resource_manager.resources.values())
+        with engine.new_context() as fl_ctx:
+            assert gpu_resource_manager.allocate_resources(resource_requirement, token, fl_ctx) == {}
+        assert all(resource.memory == 16 for resource in gpu_resource_manager.resources.values())
+
     @pytest.mark.parametrize("gpus, gpu_mem, resource_requirement, expected_reserved_resources", TEST_CASES)
     def test_cancel_resource(
         self, mock_get_host_gpu_ids, gpus, gpu_mem, resource_requirement, expected_reserved_resources

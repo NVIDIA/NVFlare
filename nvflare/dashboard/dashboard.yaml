@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
 servers:
-  - url: http://localhost:8443/api/v1
+  - url: http://localhost:8443/nvflare-dashboard/api/v1
 paths:
   /login:
     post:
@@ -367,7 +367,7 @@ paths:
   /users:
     post:
       summary: "Create user"
-      description: "This can only be done by the logged in user."
+      description: "Create a user registration."
       operationId: "create_user"
       requestBody:
         required: true

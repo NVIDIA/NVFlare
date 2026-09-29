@@ -33,7 +33,7 @@ from nvflare.security.logging import secure_format_exception
 
 from .adaptor import CollabAdaptor
 from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
-from .dispatch import prepare_for_remote_call
+from .dispatch import make_participant_map, prepare_for_remote_call
 
 
 class CollabExecutor(Executor, CollabAdaptor):
@@ -213,20 +213,26 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
-        client_name = fl_ctx.get_identity_name()
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
+
+        job_id = fl_ctx.get_job_id()
+        participants = make_participant_map(
+            server_fqcn=server_fqcn,
+            job_id=job_id,
+            clients=all_clients,
+        )
 
         prepare_for_remote_call(
             cell=cell,
             app=self.client_app,
             logger=self.logger,
             executor=self.inbound_executor,
+            participants=participants,
         )
 
         # build proxies
-        job_id = fl_ctx.get_job_id()
         server_proxy = self._prepare_server_proxy(server_fqcn, cell, server_collab_interface, abort_signal, fl_ctx)
 
         client_proxies = []

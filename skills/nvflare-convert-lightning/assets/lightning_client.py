@@ -11,15 +11,18 @@ stays inside Lightning (``validation_step`` / ``self.log`` /
 
 ``validate_global_model`` is factored out so a generated conversion can be
 validated against a toy ``LightningModule`` and dataloader without a running
-FLARE server. It also preserves the validation result on the patched
-LightningModule's supported metadata channel. This is required for training
-recipes whose executor does not attach callback metrics to the outgoing model.
+FLARE server. Except for Cyclic, the patched callback captures metrics from this
+explicit pre-fit validation and attaches them to the outgoing training result.
+Do not duplicate them under ``model.__fl_meta__[MetaKey.INITIAL_METRICS]``.
 """
 
 import math
 
 import nvflare.client.lightning as flare
-from nvflare.app_common.abstract.fl_model import MetaKey
+
+SUPPORTED_RECIPE_ALGORITHMS = frozenset(
+    {"cyclic", "fedavg", "fedce", "fedeval", "fedopt", "fedprox", "scaffold", "swarm"}
+)
 
 
 def _scalar_validation_metrics(validation_results):
@@ -49,78 +52,58 @@ def _scalar_validation_metrics(validation_results):
     return metrics
 
 
-def add_higher_is_better_metrics(metrics, make_higher_is_better):
-    """Derive a higher-is-better ``neg_<key>`` companion for each named metric.
-
-    ``key_metric`` selects on higher-is-better values only, so what the client
-    delivers and the recipe selects must be a higher-is-better value. Name the
-    source metrics whose direction must be flipped — typically a loss — and this
-    returns them alongside a negated companion that *is* higher-is-better:
-    ``("val_loss",)`` produces ``neg_val_loss``, selected as
-    ``key_metric="neg_val_loss"``.
-
-    This is the Lightning counterpart of the framework-neutral rule in
-    ``../../nvflare-shared/references/pytorch-family-recipe-construction.md``.
-
-    Pass only source-backed keys whose direction the source establishes. Returns
-    a new dict; the original metric is preserved alongside the companion and the
-    input mapping is left unchanged.
-    """
-    result = dict(metrics)
-    for key in make_higher_is_better:
-        if key not in result:
-            raise RuntimeError(f"metric {key!r} is not in the validation results")
-        companion = f"neg_{key}"
-        if companion in result:
-            raise RuntimeError(f"higher-is-better companion {companion!r} already exists")
-        result[companion] = -result[key]
-    return result
-
-
-def validate_global_model(trainer, model, datamodule=None, dataloaders=None, make_higher_is_better=()):
+def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
     """Validate the received global model and return the trainer callback metrics.
 
     Call this before ``trainer.fit`` inside the round loop. Metrics come from
-    the ``LightningModule``'s ``self.log(...)`` calls. Preserve them under
-    ``MetaKey.INITIAL_METRICS`` so the patched callback sends them with the
-    training result even when the selected executor leaves
-    ``train_with_evaluation`` disabled.
-
-    Pass ``make_higher_is_better`` for source metrics whose direction must be
-    flipped before selection, such as ``("val_loss",)``. Each gains a ``neg_``
-    companion that is higher-is-better; select that companion with
-    ``key_metric``, never the original.
+    the ``LightningModule``'s ``self.log(...)`` calls. The patched callback
+    sends them with the training result even when the selected executor leaves
+    ``train_with_evaluation`` disabled. Log the source metric under the exact
+    key selected by the recipe; set ``key_metric_mode`` on recipes that support
+    lower-is-better metrics.
     """
     if datamodule is not None:
         validation_results = trainer.validate(model, datamodule=datamodule)
     else:
         validation_results = trainer.validate(model, dataloaders=dataloaders)
 
-    metrics = _scalar_validation_metrics(validation_results)
-    if make_higher_is_better:
-        metrics = add_higher_is_better_metrics(metrics, make_higher_is_better)
-    fl_meta = getattr(model, "__fl_meta__", {})
-    if not isinstance(fl_meta, dict):
-        raise RuntimeError("LightningModule.__fl_meta__ must be a dictionary")
-    model.__fl_meta__ = dict(fl_meta)
-    model.__fl_meta__[MetaKey.INITIAL_METRICS] = metrics
-    return metrics
+    return _scalar_validation_metrics(validation_results)
 
 
-def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is_better=()):
+def should_evaluate_before_train(recipe_algorithm):
+    """Return whether the selected recipe evaluates the received model before training.
+
+    Cyclic intentionally persists its final sequential model and has no
+    best-model selection. Every other supported Lightning recipe evaluates the
+    received model for its server metric contract.
+    """
+    if not isinstance(recipe_algorithm, str) or recipe_algorithm not in SUPPORTED_RECIPE_ALGORITHMS:
+        supported = ", ".join(sorted(SUPPORTED_RECIPE_ALGORITHMS))
+        raise ValueError(f"recipe_algorithm must be one of: {supported}")
+    return recipe_algorithm != "cyclic"
+
+
+def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False):
     """Lightning Client API round loop with validate-before-fit.
 
-    ``trainer_factory`` constructs the source project's ``Trainer``. Set
-    ``evaluate_only=True`` for FedEval / evaluation-only conversions: the round
-    runs ``trainer.validate`` so the patched trainer sends validation metrics,
-    and skips local training. Do not call ``trainer.fit`` in that mode.
+    ``trainer_factory`` constructs the source project's ``Trainer``. Pass the
+    normalized ``algorithm`` value returned by ``nvflare recipe show`` as
+    ``recipe_algorithm``; only ``cyclic`` training skips pre-fit validation.
+    Set ``evaluate_only=True`` only for FedEval / evaluation-only conversions:
+    the round runs ``trainer.validate`` so the patched trainer sends validation
+    metrics, and skips local training. Leave the default ``False`` for every
+    training recipe so its training task completes through ``trainer.fit``.
 
-    Pass ``make_higher_is_better`` when best-model selection uses a source
-    metric whose direction must be flipped, for example ``("val_loss",)``. Each
-    named metric gains a higher-is-better ``neg_`` companion that the recipe
-    selects with ``key_metric``; keep this threaded through when adapting the
-    loop, or the higher-is-better key never reaches the server.
+    Preserve the established positional order: ``recipe_algorithm`` is fourth
+    and ``evaluate_only`` is fifth. The algorithm must be a supported,
+    normalized lowercase value; unknown values fail closed.
     """
+    evaluate_before_train = should_evaluate_before_train(recipe_algorithm)
+    if evaluate_only and recipe_algorithm != "fedeval":
+        raise ValueError("evaluate_only=True is supported only with FedEval; leave it False for training recipes")
+    if recipe_algorithm == "fedeval" and not evaluate_only:
+        raise ValueError("FedEval requires evaluate_only=True")
+
     trainer = trainer_factory()
     flare.patch(trainer)
 
@@ -128,12 +111,8 @@ def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is
         # receive() is optional metadata/task-progression access only; the
         # patched trainer loads the global model internally.
         flare.receive()
-        validate_global_model(
-            trainer,
-            model,
-            datamodule=datamodule,
-            make_higher_is_better=make_higher_is_better,
-        )
+        if evaluate_only or evaluate_before_train:
+            validate_global_model(trainer, model, datamodule=datamodule)
         if evaluate_only:
             continue
         trainer.fit(model, datamodule=datamodule)

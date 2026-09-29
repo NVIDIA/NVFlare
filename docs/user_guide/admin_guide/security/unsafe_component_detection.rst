@@ -75,8 +75,9 @@ When BYOC is disabled, NVFLARE runs a built-in component path authorization chec
 configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The policy
 allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
 ``resources.json.default``. Standard provisioning installs a curated list of built-in components. If
-``class_allow_list`` is not configured, NVFLARE uses the curated built-in default shown below and records an audit
-event for the implicit policy decision. An explicitly configured list replaces that default.
+``class_allow_list`` is not configured, NVFLARE uses the curated built-in default defined in
+``nvflare/app_common/default_component_policy.py`` and records an audit event for the implicit policy decision. An
+explicitly configured list replaces that default.
 
 ``SimEnv`` also installs this curated list in new simulation workspaces without changing POC or production authorization.
 
@@ -116,9 +117,11 @@ checks without repeating the wildcard warning. Simulator runs use warning logs b
 
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
-top-level ``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
-``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load.
+When provisioning generates startup kits, the server and client ``resources.json.default`` files include a top-level
+``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
+``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load. The JSON
+below is an intentionally partial example of the generated configuration, not the complete default. The
+``DEFAULT_CLASS_ALLOW_LIST`` in ``nvflare/app_common/default_component_policy.py`` is the source of truth.
 
 Every class in ``DEFAULT_CLASS_ALLOW_LIST`` must remain safe to import and construct with untrusted, job-controlled
 arguments. Future additions to the default list require review under this security bar, including constructor side effects
@@ -130,15 +133,19 @@ and any argument values that could trigger file, process, network, deserializati
         "format_version": 2,
         "class_list_enforcement_mode": "enforce",
         "class_allow_list": [
+            "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggregator",
             "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
             "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+            "nvflare.app_common.ccwf.client_controller_executor.ClientControllerExecutor",
             "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
             "nvflare.app_common.ccwf.cse_client_ctl.CrossSiteEvalClientController",
             "nvflare.app_common.ccwf.cse_server_ctl.CrossSiteEvalServerController",
             "nvflare.app_common.ccwf.cyclic_client_ctl.CyclicClientController",
             "nvflare.app_common.ccwf.cyclic_server_ctl.CyclicServerController",
+            "nvflare.app_common.ccwf.server_ctl.ServerSideController",
             "nvflare.app_common.ccwf.swarm_client_ctl.SwarmClientController",
             "nvflare.app_common.ccwf.swarm_server_ctl.SwarmServerController",
+            "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
             "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
             "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
             "nvflare.app_common.logging.job_log_receiver.JobLogReceiver",
@@ -154,6 +161,7 @@ and any argument values that could trigger file, process, network, deserializati
             "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
             "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
             "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+            "nvflare.app_common.utils.json_utils.ObjectEncoder",
             "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
             "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
             "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
@@ -173,6 +181,7 @@ and any argument values that could trigger file, process, network, deserializati
             "nvflare.app_opt.he.model_shareable_generator.HEModelShareableGenerator",
             "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler",
             "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
+            "nvflare.app_opt.pt.fedopt_ctl.FedOpt",
             "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
             "nvflare.app_opt.pt.recipes.fedeval.EvalController",
             "nvflare.app_opt.sklearn.kmeans_assembler.KMeansAssembler",
@@ -201,6 +210,11 @@ not match any entry in ``class_allow_list``. The same rule applies to ``"class_p
 The provisioned list intentionally excludes framework optimizer, scheduler, and model classes. If a job configures those
 classes, each site must add the reviewed class paths or package prefixes to
 ``class_allow_list`` before running the job with BYOC disabled.
+
+The default also excludes components that can execute job-controlled code or deserialize executable model formats,
+including ``ClientAPIExecutor``, ``PTFileModelPersistor``, ``TFModelPersistor``, and
+``JoblibModelParamPersistor``. Templates that invoke training code from ``custom/`` are BYOC jobs once that required code
+is added. Do not allow-list these components merely to submit an incomplete template without its required custom code.
 
 This is an allow-list baseline. It is not a replacement for secure job review, least-privilege runtime environments, container or
 process sandboxing, and other controls appropriate to your deployment.

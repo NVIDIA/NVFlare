@@ -1,0 +1,2 @@
+-r ../../examples/advanced/qwen3-vl/requirements.txt
+numpy>=1.24

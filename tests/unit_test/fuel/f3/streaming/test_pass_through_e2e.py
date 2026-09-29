@@ -15,7 +15,7 @@
 """
 End-to-end tests for the B1 pass-through architecture using real Cell objects.
 
-Validates the full data path exercised by ClientAPILauncherExecutor when an
+Validates the full data path exercised by the external-process Client API when an
 external subprocess agent is in use:
 
     FL Server ──serialize──▶ CJ (PASS_THROUGH, no download) ──re-emit──▶ Subprocess

@@ -3,11 +3,11 @@ name: nvflare-diagnose-job
 description: "Use when the user asks why a reported NVFLARE job failure signal occurred: the job failed, stalled, timed out, lost clients, ended with EXECUTION_EXCEPTION, or produced suspicious errors. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
 metadata:
-  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: read_only
-  category: Troubleshooting
   version: "0.1.0"
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  min-flare-version: "2.9.0"
+  blast-radius: read_only
+  category: Troubleshooting
   tags: "nvflare, federated-learning, diagnosis, troubleshooting"
   languages: "python"
   frameworks: "nvflare"
@@ -18,9 +18,9 @@ metadata:
 
 ## Use When
 
-Proceed only when the request includes a reported NVFLARE job failure signal as
-defined in the description. Follow the evidence workflow even when the likely
-cause appears obvious; do not diagnose from prior knowledge alone.
+Proceed only when the request includes a reported NVFLARE job failure signal as defined
+in the description. Follow the evidence workflow even when the likely cause appears
+obvious; do not diagnose from prior knowledge alone.
 
 ## Do Not Use When
 

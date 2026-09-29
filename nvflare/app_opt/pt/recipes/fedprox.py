@@ -42,17 +42,18 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds. Defaults to 2.
         train_script: Client training script path.
-        train_args: Command-line arguments passed to the client training script.
+        train_args: Command-line arguments passed to the client training script as a string or pre-tokenized argv.
         aggregator: Optional custom model aggregator.
         aggregator_data_kind: Data kind accepted by the aggregator.
         launch_external_process: Whether to launch the client script externally.
-        command: Command prepended to the script for external launches.
+        command: Command prepended to the script for external launches as a string or pre-tokenized argv.
         server_expected_format: Parameter format expected by the server.
         params_transfer_type: Full-model or model-difference transfer.
         model_persistor: Optional custom model persistor.
         model_locator: Optional custom model locator.
         per_site_config: Deprecated per-site constructor configuration.
         launch_once: Whether an external client process is launched once.
+        launch_timeout: Seconds to wait for an external client process to connect.
         shutdown_timeout: Seconds to wait for client shutdown.
         key_metric: Metric used for best-model selection.
         key_metric_mode: Whether the key metric should be minimized ("min") or maximized ("max").
@@ -80,17 +81,18 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Optional[Literal["min", "max"]] = None,
@@ -126,6 +128,7 @@ class FedProxRecipe(FedAvgRecipe):
             model_locator=model_locator,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
