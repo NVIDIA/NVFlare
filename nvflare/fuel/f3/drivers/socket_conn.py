@@ -230,7 +230,8 @@ class ConnectionHandler(BaseRequestHandler):
         if self.server.ssl_context:
             try:
                 # Honor the connector timeout; default to asyncio's TLS handshake budget.
-                self.request.settimeout(self.server.connector.params.get(DriverParams.CONNECT_TIMEOUT, 60.0))
+                timeout = self.server.connector.params.get(DriverParams.CONNECT_TIMEOUT, 60.0)
+                self.request.settimeout(float(timeout) if timeout is not None else None)
                 self.request.do_handshake()
                 self.request.settimeout(None)
             except OSError as ex:

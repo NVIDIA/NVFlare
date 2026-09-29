@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
-from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
+from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, parse_url
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver, TcpStreamServer
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -105,9 +105,9 @@ def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
                 assert secured_peer.recv(1) == b""
 
 
-def test_tls_handshake_honors_longer_connection_timeout(tls_listener):
+def test_tls_handshake_honors_longer_url_connection_timeout(tls_listener):
     driver, connector = tls_listener
-    connector.params["connect_timeout"] = 10.0
+    connector.params.update(parse_url("stcp://localhost:0?connect_timeout=10"))
     context = get_ssl_context(connector.params, ssl_server=False)
     with socket.create_connection(driver.server.server_address, timeout=2) as peer:
         time.sleep(5.2)  # A legitimate handshake can exceed the former fixed five-second limit.
