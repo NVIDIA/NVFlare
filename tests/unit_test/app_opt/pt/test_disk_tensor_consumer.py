@@ -16,6 +16,9 @@ import os
 import shutil
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -23,7 +26,11 @@ from safetensors.torch import save as save_tensors
 
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
 import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
+)
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, read_safetensors_metadata, tensor_metadata
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
 from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
@@ -34,6 +41,64 @@ def temp_dir():
     d = tempfile.mkdtemp(prefix="nvflare_test_disk_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
+
+
+def test_root_close_waits_for_consumer_registration(tmp_path, monkeypatch):
+    cell = Mock()
+    props = {}
+    cell.get_fobs_context.side_effect = lambda: dict(props)
+    cell.update_fobs_context.side_effect = props.update
+    engine = SimpleNamespace(get_cell=lambda: cell)
+    context = setup_tensor_disk_offload(engine, enabled=True, root_dir=str(tmp_path))
+    created, register, closing, closed = (threading.Event() for _ in range(4))
+    lock = context.lock
+
+    class ObservedGate:
+        def __enter__(self):
+            if threading.current_thread().name.startswith("closer"):
+                closing.set()
+            lock.acquire()
+
+        def __exit__(self, *args):
+            lock.release()
+
+    context.lock = ObservedGate()
+    initialize = DiskTensorConsumer.__init__
+
+    def delayed_registration(consumer, directory):
+        assert os.path.isdir(directory)
+        created.set()
+        assert register.wait(5), "test did not release registration"
+        initialize(consumer, directory)
+
+    def download_object(**kwargs):
+        assert closed.wait(5), "root cleanup did not finish"
+        kwargs["consumer"].consume_items([save_tensors({"w": torch.ones(1)})], None)
+
+    monkeypatch.setattr(DiskTensorConsumer, "__init__", delayed_registration)
+    monkeypatch.setattr(tensor_downloader, "download_object", download_object)
+    try:
+        with ThreadPoolExecutor(1) as downloads, ThreadPoolExecutor(1, thread_name_prefix="closer") as closers:
+            download = downloads.submit(tensor_downloader.download_tensors_to_disk, "site", "ref", 1.0, cell)
+            assert created.wait(5)
+            cleanup = closers.submit(cleanup_tensor_disk_offload, engine, context)
+            try:
+                assert closing.wait(5)
+                assert not cleanup.done(), "cleanup overtook an unregistered consumer"
+                assert os.path.isdir(context.root_dir)
+            finally:
+                register.set()
+            try:
+                cleanup.result(timeout=5)
+            finally:
+                closed.set()
+            with pytest.raises(DownloadCancelled):
+                download.result(timeout=5)
+        assert not os.path.exists(context.root_dir)
+    finally:
+        register.set()
+        closed.set()
+        cleanup_tensor_disk_offload(engine, context)
 
 
 class TestReadSafetensorsMetadata:

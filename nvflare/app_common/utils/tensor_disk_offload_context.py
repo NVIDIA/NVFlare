@@ -14,13 +14,15 @@
 
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, Optional
 
 from nvflare.fuel.utils.fobs import FOBSContextKey
 
 _ENABLE_TENSOR_DISK_OFFLOAD = FOBSContextKey.TENSOR_DISK_OFFLOAD
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
+_TENSOR_DISK_OFFLOAD_CONTEXT = "tensor_disk_offload_context"
 
 
 @dataclass
@@ -29,6 +31,9 @@ class TensorDiskOffloadContext:
     previous_root_dir: Optional[str] = None
     root_dir: Optional[str] = None
     applied: bool = False
+    previous_context: Optional["TensorDiskOffloadContext"] = None
+    lock: Any = field(default_factory=Lock, repr=False)
+    closed: bool = False
 
 
 def _get_cell(engine):
@@ -66,17 +71,25 @@ def setup_tensor_disk_offload(
     previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
     offload_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_", dir=root_dir)
-    try:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: offload_dir})
-    except Exception:
-        shutil.rmtree(offload_dir, ignore_errors=True)
-        raise
-    return TensorDiskOffloadContext(
+    context = TensorDiskOffloadContext(
         previous_value=previous_value,
         previous_root_dir=previous_root_dir,
         root_dir=offload_dir,
         applied=True,
+        previous_context=fobs_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT),
     )
+    try:
+        cell.update_fobs_context(
+            {
+                _ENABLE_TENSOR_DISK_OFFLOAD: True,
+                _TENSOR_DISK_OFFLOAD_ROOT_DIR: offload_dir,
+                _TENSOR_DISK_OFFLOAD_CONTEXT: context,
+            }
+        )
+    except Exception:
+        shutil.rmtree(offload_dir, ignore_errors=True)
+        raise
+    return context
 
 
 def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> None:
@@ -85,8 +98,10 @@ def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> No
         return
 
     if context.root_dir:
-        # Communicator finalization runs after controller cleanup. Cancel writers
-        # under this root first so late chunks retain the local cancellation reason.
+        # Copies of the decode context share this guard. Close admission before
+        # snapshotting consumers, including downloads paused before registration.
+        with context.lock:
+            context.closed = True
         try:
             from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
         except ImportError:
@@ -104,6 +119,7 @@ def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> No
                     {
                         _ENABLE_TENSOR_DISK_OFFLOAD: context.previous_value,
                         _TENSOR_DISK_OFFLOAD_ROOT_DIR: context.previous_root_dir,
+                        _TENSOR_DISK_OFFLOAD_CONTEXT: context.previous_context,
                     }
                 )
     finally:

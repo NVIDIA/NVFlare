@@ -247,7 +247,7 @@ class FedAvg(BaseFedAvg):
                         return
                     time.sleep(self._task_check_period)
 
-                # Task retirement can precede callback completion: wait for the consumer.
+                # Propagate callback failures before publishing or saving the aggregate.
                 with round_state["lock"]:
                     round_state["closed"] = True
                     if round_state["failed"]:

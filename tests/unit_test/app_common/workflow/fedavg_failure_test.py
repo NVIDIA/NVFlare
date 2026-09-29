@@ -22,6 +22,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, TaskCompletionStatus
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
@@ -122,7 +123,8 @@ def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, outstan
 
 @pytest.mark.parametrize("abort", [False, True])
 @pytest.mark.parametrize("custom", [False, True])
-def test_finalization_waits_for_failed_callback(monkeypatch, abort, custom):
+def test_defensive_finalization_waits_for_failed_callback(monkeypatch, abort, custom):
+    """Force early closure to test the guard, not normal communicator retirement ordering."""
     controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0, "b": 0.0}), custom=custom)
     if abort:
         controller.abort_signal.trigger(True)
@@ -134,7 +136,7 @@ def test_finalization_waits_for_failed_callback(monkeypatch, abort, custom):
     original_get = controller._get_aggregated_result
 
     def get_result():
-        # Baseline code has no round lock: expose its premature finalization deterministically.
+        # Deliberately request finalization while a callback is still blocked.
         finalizing.set()
         return original_get()
 
@@ -204,3 +206,43 @@ def test_closed_round_callback_cannot_change_next_round(monkeypatch, custom):
     monkeypatch.setattr(controller, "broadcast", broadcast)
     controller.run()
     assert saved == [{"a": 2.0}, {"a": 2.0}]
+
+
+def test_custom_callback_failure_through_communicator_prevents_publication(monkeypatch):
+    controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0}), custom=True)
+    comm = WFCommServer()
+    comm.controller = controller
+    comm._engine = Mock()
+    comm._engine.new_context.side_effect = lambda: controller.fl_ctx
+    monkeypatch.setattr(controller, "get_num_standing_tasks", comm.get_num_standing_tasks)
+    monkeypatch.setattr(controller, "cancel_all_tasks", comm.cancel_all_tasks)
+    update, save = Mock(), Mock()
+    monkeypatch.setattr(controller, "update_model", update)
+    monkeypatch.setattr(controller, "save_model", save)
+    accept = controller.aggregator.accept_model.side_effect
+
+    def fail_after_mutation(result):
+        accept(result)
+        if result.meta["client_name"] == "bad":
+            raise RuntimeError("aggregator failed after changing its state")
+
+    controller.aggregator.accept_model.side_effect = fail_after_mutation
+
+    def broadcast(task, **kwargs):
+        comm.broadcast(task, controller.fl_ctx, targets=["good", "bad"])
+        for name, value in (("good", 1.0), ("bad", 9.0)):
+            client = Client(name, name)
+            task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+            result = FLModelUtils.to_shareable(FLModel(params={"a": value}))
+            comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
+        # Actual task retirement follows callback completion under the communicator lock.
+        comm.check_tasks()
+        assert comm.get_num_standing_tasks() == 0
+
+    monkeypatch.setattr(controller, "broadcast", broadcast)
+    with pytest.raises(RuntimeError, match="refusing to update or save"):
+        controller.run()
+    assert controller.aggregator.aggregate_model.side_effect().params == {"a": 5.0}
+    controller.aggregator.aggregate_model.assert_not_called()
+    update.assert_not_called()
+    save.assert_not_called()

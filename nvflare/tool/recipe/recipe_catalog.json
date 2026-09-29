@@ -1647,9 +1647,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -1667,10 +1667,10 @@
             "kind": "keyword_only"
           },
           {
-            "name": "model_storage",
-            "type": "Literal['memory', 'disk']",
+            "name": "enable_disk_aggregation",
+            "type": "bool",
             "required": false,
-            "default": "memory",
+            "default": false,
             "kind": "keyword_only"
           }
         ],
@@ -3021,9 +3021,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3048,10 +3048,10 @@
             "kind": "keyword_only"
           },
           {
-            "name": "model_storage",
-            "type": "Literal['memory', 'disk']",
+            "name": "enable_disk_aggregation",
+            "type": "bool",
             "required": false,
-            "default": "memory",
+            "default": false,
             "kind": "keyword_only"
           }
         ],

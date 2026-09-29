@@ -18,12 +18,13 @@ import json
 import weakref
 from contextlib import contextmanager
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 import torch
-from safetensors.torch import load_file, save_file
+from safetensors.torch import load_file, save, save_file
 
-import nvflare.app_opt.pt.disk_fedavg as disk
+import nvflare.app_opt.pt.disk_fedavg_components as disk
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
@@ -42,9 +43,14 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.lazy_tensor_dict import _TempDirRef, safetensors_refs
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedprox import FedProxRecipe
-from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
+from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable, download_tensors_to_disk
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.converter_utils import convert_params
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply
+from nvflare.fuel.f3.streaming.download_service import ProduceRC
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.fuel.utils.fobs import FOBSContextKey
 
 
@@ -416,7 +422,7 @@ def test_existing_controller_runs_multiple_diff_rounds_and_stopping(tmp_path, st
 def test_recipe_composes_disk_components_and_preserves_memory_default(tmp_path, recipe_cls):
     initial = str(tmp_path / "initial.safetensors")
     save_file({"w": torch.ones(1)}, initial)
-    recipe = recipe_cls(min_clients=2, train_script="train.py", initial_ckpt=initial, model_storage="disk")
+    recipe = recipe_cls(min_clients=2, train_script="train.py", initial_ckpt=initial, enable_disk_aggregation=True)
     assert isinstance(recipe.aggregator, disk.DiskFedAvgAggregator)
     assert isinstance(recipe.model_persistor, disk.DiskFedAvgPersistor)
     assert recipe.server_expected_format == ExchangeFormat.PYTORCH
@@ -425,9 +431,64 @@ def test_recipe_composes_disk_components_and_preserves_memory_default(tmp_path, 
     with pytest.raises(ValueError, match="PyTorch exchange"):
         recipe._create_client_runner({"server_expected_format": ExchangeFormat.NUMPY})
     normal = recipe_cls(min_clients=2, train_script="train.py", model=torch.nn.Linear(1, 1))
-    assert normal.model_storage == "memory"
+    assert normal.enable_disk_aggregation is False
     assert normal.aggregator is None
     assert normal.server_expected_format == ExchangeFormat.NUMPY
+    assert normal.enable_tensor_disk_offload is False
+
+
+@pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
+@pytest.mark.parametrize("disk_aggregation", [False, True])
+@pytest.mark.parametrize("offload", [None, False, True])
+def test_recipe_disk_option_combinations(recipe_cls, disk_aggregation, offload):
+    options = dict(
+        min_clients=1,
+        train_script="train.py",
+        enable_disk_aggregation=disk_aggregation,
+        enable_tensor_disk_offload=offload,
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    options.update(
+        {"initial_ckpt": "/server/model.safetensors"} if disk_aggregation else {"model": torch.nn.Linear(1, 1)}
+    )
+    if disk_aggregation and offload is False:
+        with pytest.raises(ValueError, match="requires enable_tensor_disk_offload=True"):
+            recipe_cls(**options)
+    else:
+        recipe = recipe_cls(**options)
+        assert recipe.enable_tensor_disk_offload is (disk_aggregation if offload is None else offload)
+        assert isinstance(recipe.aggregator, disk.DiskFedAvgAggregator) is disk_aggregation
+
+
+@pytest.mark.parametrize("kind", [ParamsType.FULL, ParamsType.DIFF])
+def test_numpy_client_updates_use_pytorch_exchange_and_disk_aggregation(tmp_path, kind):
+    recipe = FedAvgRecipe(
+        min_clients=1, train_script="train.py", initial_ckpt="/server/model.safetensors", enable_disk_aggregation=True
+    )
+    runner = recipe._create_client_runner({"framework": FrameworkType.NUMPY})
+    assert runner._params_exchange_format == ExchangeFormat.NUMPY
+    assert runner._server_expected_format == ExchangeFormat.PYTORCH
+    base = {"w": torch.tensor([10.0, 20.0]), "b": torch.tensor([1.0])}
+    state = {}
+    native = convert_params(base, ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY, state)
+    update = {key: value + 2.0 for key, value in native.items()}
+    if kind == ParamsType.DIFF:
+        update = {key: value - native[key] for key, value in update.items()}
+    wire = convert_params(update, ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH, state)
+    cell = MagicMock()
+    cell.get_fobs_context.return_value = {}
+    cell.send_request.side_effect = [
+        make_reply(ReturnCode.OK, body={"status": ProduceRC.OK, "state": {}, "data": [save({key: value})]})
+        for key, value in wire.items()
+    ] + [make_reply(ReturnCode.OK, body={"status": ProduceRC.EOF})]
+    error, received = download_tensors_to_disk("site-1", "update", 1.0, cell, root_dir=str(tmp_path))
+    assert error is None
+    aggr = aggregator(tmp_path)
+    aggr.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, make_model_learnable(refs(tmp_path, "base", base), {}))
+    aggr.accept_model(model({key: received.make_lazy_ref(key) for key in received.keys()}, kind=kind))
+    result = aggr.aggregate_model()
+    for key in base:
+        assert torch.equal(result.params[key].materialize(), base[key] + 2.0)
 
 
 @pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
@@ -435,7 +496,7 @@ def test_disk_recipe_requires_absolute_checkpoint_index(tmp_path, monkeypatch, r
     monkeypatch.chdir(tmp_path)
     index = tmp_path / "model.safetensors.index.json"
     index.write_text(json.dumps({"weight_map": {"w": "part-1.safetensors"}}))
-    options = dict(min_clients=1, train_script="train.py", model_storage="disk")
+    options = dict(min_clients=1, train_script="train.py", enable_disk_aggregation=True)
     with pytest.raises(ValueError, match="absolute server path"):
         recipe_cls(initial_ckpt=index.name, **options)
     recipe = recipe_cls(initial_ckpt=str(index), **options)
@@ -449,7 +510,7 @@ def test_disk_recipe_respects_explicit_exchange_format(recipe_cls, exchange_form
         min_clients=1,
         train_script="train.py",
         initial_ckpt="/server/model.safetensors",
-        model_storage="disk",
+        enable_disk_aggregation=True,
         server_expected_format=exchange_format,
     )
     if exchange_format == ExchangeFormat.NUMPY:
@@ -473,7 +534,7 @@ def test_disk_recipe_respects_explicit_exchange_format(recipe_cls, exchange_form
 def test_disk_recipe_rejects_incompatible_components(tmp_path, kwargs):
     options = {"initial_ckpt": str(tmp_path / "model.safetensors"), **kwargs}
     with pytest.raises(ValueError):
-        FedAvgRecipe(min_clients=1, train_script="train.py", model_storage="disk", **options)
+        FedAvgRecipe(min_clients=1, train_script="train.py", enable_disk_aggregation=True, **options)
 
 
 def test_disk_recipe_exports_reconstructable_diff_and_exclusions(tmp_path):
@@ -484,7 +545,7 @@ def test_disk_recipe_exports_reconstructable_diff_and_exclusions(tmp_path):
         min_clients=1,
         train_script=str(script),
         initial_ckpt=str(tmp_path / "model.safetensors"),
-        model_storage="disk",
+        enable_disk_aggregation=True,
         params_transfer_type=TransferType.DIFF,
         exclude_vars="skip",
         stop_cond="loss < 0.1",

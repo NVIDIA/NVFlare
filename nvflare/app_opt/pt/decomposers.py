@@ -18,7 +18,11 @@ import torch
 from safetensors.torch import load, save
 
 import nvflare.fuel.utils.fobs.dots as dots
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_CONTEXT,
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    TensorDiskOffloadContext,
+)
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.datum import DatumManager
@@ -81,6 +85,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
                 _TENSOR_DISK_OFFLOAD_ROOT_DIR,
                 cell_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
             ),
+            offload_context=fobs_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT, cell_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT)),
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
@@ -99,6 +104,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        offload_context: Optional[TensorDiskOffloadContext] = None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
         if use_disk:
             return download_tensors_to_disk(
@@ -107,6 +113,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
                 per_request_timeout=per_request_timeout,
                 cell=cell,
                 root_dir=root_dir,
+                offload_context=offload_context,
                 secure=secure,
                 optional=optional,
                 abort_signal=abort_signal,

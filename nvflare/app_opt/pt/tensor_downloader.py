@@ -15,13 +15,18 @@ import os
 import tempfile
 import threading
 import weakref
+from contextlib import nullcontext
 from typing import Any, List, Optional, Tuple
 
 import torch
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_CONTEXT,
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    TensorDiskOffloadContext,
+)
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
@@ -305,24 +310,34 @@ def download_tensors_to_disk(
     abort_signal=None,
     progress_cb=None,
     root_dir: Optional[str] = None,
+    offload_context: Optional[TensorDiskOffloadContext] = None,
 ) -> Tuple[str, Optional[LazyTensorDict]]:
     """Download tensors to disk instead of memory.
 
     Args:
         root_dir: optional call-scoped destination root. When omitted, use the
             root configured on the Cell for backward compatibility.
+        offload_context: lifecycle guard captured by this decode operation.
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
 
     Raises: DownloadCancelled if workflow cleanup cancelled this download.
     """
+    cell_ctx = cell.get_fobs_context()
     if root_dir is None:
-        root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+        root_dir = cell_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
     if not root_dir:
         raise RuntimeError(f"{_TENSOR_DISK_OFFLOAD_ROOT_DIR} is not set in FOBS context")
-    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)
-
-    consumer = DiskTensorConsumer(temp_dir)
+    if offload_context is None:
+        offload_context = cell_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT)
+    # An explicit call-scoped root (for example Swarm) can differ from the cell's root.
+    if offload_context is not None and offload_context.root_dir != root_dir:
+        offload_context = None
+    with offload_context.lock if offload_context is not None else nullcontext():
+        if offload_context is not None and offload_context.closed:
+            raise DownloadCancelled("tensor disk offload ended before download started")
+        temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)
+        consumer = DiskTensorConsumer(temp_dir)
     try:
         download_object(
             from_fqcn=from_fqcn,

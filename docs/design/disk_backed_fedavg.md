@@ -8,7 +8,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
-    model_storage="disk",
+    enable_disk_aggregation=True,
     initial_ckpt="/models/checkpoint",  # safetensors file or Hugging Face directory/index
 )
 ```
@@ -23,7 +23,24 @@ The recipe selects PyTorch exchange, incoming tensor offload, and these componen
 | Existing tensor transport | Concurrent downloads and outgoing tensor serialization |
 
 Both new components use existing interfaces. Generic FedAvg is unchanged. FedProx
-also accepts this option; enable_tensor_disk_offload alone only selects incoming offload.
+also accepts `enable_disk_aggregation`. The separate `enable_tensor_disk_offload`
+option controls incoming streamed tensors only:
+
+| `enable_disk_aggregation` | `enable_tensor_disk_offload` | Behavior |
+|---|---|---|
+| `False` (default) | Omitted, `None`, or `False` | In-memory aggregation and global model |
+| `False` | `True` | Incoming tensors on disk; aggregation and global model in memory |
+| `True` | Omitted, `None`, or `True` | Disk-backed aggregation and safetensors model persistence |
+| `True` | `False` | Configuration error |
+
+Incoming offload requires streamed PyTorch exchange. When enabling incoming offload
+alone, also set `server_expected_format=ExchangeFormat.PYTORCH`. Disk aggregation
+selects that format automatically and rejects incompatible formats.
+
+Clients may train with NumPy while exchanging PyTorch tensors through the existing
+Client API converters. Set their per-site `framework` to `FrameworkType.NUMPY` and
+retain PyTorch server exchange. The client runtime needs PyTorch for conversion;
+parameters must have compatible shapes and NumPy-supported dtypes.
 
 FULL/DIFF, partial keys, exclusions, scalar metrics/statistics and early stopping are
 supported. Weights combine site weight and NUM_STEPS_CURRENT_ROUND. Shared keys must

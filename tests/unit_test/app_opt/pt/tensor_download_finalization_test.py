@@ -26,7 +26,10 @@ from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_CONTEXT,
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+)
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
@@ -48,6 +51,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, 
         "finalize_mid",
         "finalize_eof",
         "fedavg_mid",
+        "fedavg_before_start",
         "malformed",
         "disk_full",
         "source_error",
@@ -66,6 +70,7 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
         FOBSContextKey.CELL: cell,
         FOBSContextKey.TENSOR_DISK_OFFLOAD: True,
         _TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+        _TENSOR_DISK_OFFLOAD_CONTEXT: None,
     }
     cell.get_fobs_context.side_effect = lambda props=None: {**context, **(props or {})}
     cell.update_fobs_context.side_effect = context.update
@@ -87,6 +92,17 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
     consume = DiskTensorConsumer.consume_items
     consumed = 0
     first_chunk, resume_download = Event(), Event()
+
+    if outcome == "fedavg_before_start":
+        download = TensorDecomposer.download
+
+        def delayed_download(self, *args, **kwargs):
+            # Adapter already captured the root's enabled decode context.
+            first_chunk.set()
+            assert resume_download.wait(5), "FedAvg cleanup did not finish"
+            return download(self, *args, **kwargs)
+
+        monkeypatch.setattr(TensorDecomposer, "download", delayed_download)
 
     def consume_items(consumer, items, result):
         nonlocal consumed
@@ -126,7 +142,7 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
             with pytest.raises(SystemExit):
                 adapter.call(future)
             exit_process.assert_called_once_with(1)
-        elif outcome == "fedavg_mid":
+        elif outcome in {"fedavg_mid", "fedavg_before_start"}:
             controller = FedAvg(num_clients=2, num_rounds=1, model=tensors, enable_tensor_disk_offload=True)
             controller.fl_ctx = FLContext()
             controller.engine = SimpleNamespace(get_cell=lambda: cell)
@@ -146,7 +162,7 @@ def test_streamed_update_finalization(tmp_path, monkeypatch, outcome, pipelining
                 def send_model(**kwargs):
                     roots.append(Path(context[_TENSOR_DISK_OFFLOAD_ROOT_DIR]))
                     pending.append(pool.submit(adapter.call, future))
-                    assert first_chunk.wait(5), "first chunk was not written"
+                    assert first_chunk.wait(5), "download did not reach the pause point"
                     kwargs["callback"](FLModel(params=tensors))
 
                 controller.send_model = send_model
