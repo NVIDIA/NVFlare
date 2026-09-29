@@ -94,6 +94,10 @@ class Decomposer(ABC):
         """
         pass
 
+    def supported_aliases(self) -> Optional[List[Type]]:
+        """Return local types decomposed by this decomposer that travel the wire as its supported type."""
+        pass
+
     def process_datum(self, datum: Datum, manager: DatumManager):
         """This method will be called during message deserialization to process the specified datum.
 

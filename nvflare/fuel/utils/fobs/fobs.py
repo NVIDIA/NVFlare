@@ -95,6 +95,14 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         return
 
     _decomposers[name] = instance
+    for alias_type in instance.supported_aliases() or []:
+        alias_name = get_class_name(alias_type)
+        existing = _decomposers.get(alias_name)
+        if existing is not None and existing is not instance:
+            log.error(f"Duplicate registration for type {alias_name}: {type(existing)} and {type(instance)}")
+            continue
+        _decomposers[alias_name] = instance
+
     supported_dots = instance.supported_dots()
     if supported_dots:
         for d in supported_dots:
@@ -153,7 +161,11 @@ class Packer:
             externalizer = Externalizer(self.manager)
             decomposed = externalizer.externalize(decomposed)
 
-        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: get_class_name(type(decomposer))}
+        return {
+            FOBS_TYPE: get_class_name(decomposer.supported_type()),
+            FOBS_DATA: decomposed,
+            FOBS_DECOMPOSER: get_class_name(type(decomposer)),
+        }
 
     def unpack(self, obj: Any) -> Any:
 
