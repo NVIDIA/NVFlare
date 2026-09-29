@@ -177,10 +177,17 @@ directory on `admin`. It is never pushed to the registry.
 ```
 
 This uses Kata `3.29.0` `genpolicy`, pinned rules/settings, the immutable encrypted
-image digest, the exact command vector, UID/GID, one confidential GPU, and a
-default-deny image signature policy. It embeds the compressed init-data into the
-Pod and checks that `ExecProcessRequest`, stream requests, and policy replacement
-remain default-denied.
+image digest, the exact command vector, UID/GID, the approved target's resources,
+and a default-deny image signature policy. CPU-only targets allocate no GPU;
+GPU targets require exactly one `nvidia.com/pgpu`. The selected SNP/TDX runtime
+must match the authenticated launch contract. It embeds the compressed init-data
+into the Pod and checks that `ExecProcessRequest`, stream requests, and policy
+replacement remain default-denied.
+
+`genpolicy` generates the workload's execution policy and InitData, not its CPU
+launch measurement. Secure services must separately approve the trusted-system
+SNP references or complete TDX reference profile before workload key release.
+Do not derive those approvals from an adversarial cluster.
 
 ### Executable inventory for stages 20 and 30
 
@@ -225,8 +232,10 @@ Review these files under
 - `image-security-policy.json` — default-deny signature policy;
 - `release-authorization.json` — exact service-side authorization values;
 - `resource-policy-fragment.rego` — fragment for the service's global policy;
-- `expected-initdata-sha256.hex` — lowercase hex expected from the pinned
-  post-v0.21 Trustee SNP evidence format.
+- `expected-initdata-sha256.hex` — the 32-byte SHA-256 of exact final InitData,
+  encoded as 64 lowercase hex characters for every target. The generated
+  authorization uses this directly for SNP; for TDX it requires the digest
+  followed by 16 zero bytes (96 hex characters), also matching quoted MRCONFIGID.
 
 The init-data is integrity protected, not confidential. The cluster owner can
 read the embedded agent policy, endpoints, and public certificates.
@@ -261,15 +270,17 @@ an authenticated confidential channel. They must:
 1. verify `SHA256SUMS`;
 2. install `image_key`, `cosign.pub`, and `image-security-policy.json` at the
    three paths in `release-authorization.json`;
-3. independently review the image, command, lowercase-hex init-data value, and
-   CPU/GPU requirements;
+3. independently review the image, command, target-specific lowercase-hex
+   init-data claim, CPU type, and GPU requirement in the authorization;
 4. merge the uniquely named Rego fragment into the existing global KBS resource
    policy;
 5. preserve the platform-owned CPU/GPU attestation policies and trusted RVPS
    reference values;
 6. test the complete merged policy and confirm the new three resources are
-   releasable only when the EAR contains exactly `cpu0` and `gpu0`, each with
-   the complete approved signed trust vector recorded in the authorization.
+   releasable only when the EAR contains exactly `cpu0` for a CPU-only release,
+   or exactly `cpu0` and `gpu0` for a GPU release, each with the complete approved
+   signed trust vector recorded in the authorization. A CPU-only EAR must not
+   satisfy a GPU release, and a failed GPU appraisal must not fall back to CPU-only.
 
 `set-resource-policy` replaces the global policy. The service administrator
 must never upload the fragment by itself or let a workload user replace global

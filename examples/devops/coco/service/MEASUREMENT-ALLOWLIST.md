@@ -17,9 +17,9 @@ executables := 3 if {
 
 RVPS stores one array under `snp_launch_measurement`. Matching any entry passes
 this measurement check. The four shared minimum reported-TCB checks, debug
-and migration restrictions, GPU appraisal, and KBS workload/resource-path
-authorization still have to pass. No AS or KBS policy change is needed for a
-measurement-only update through stage 02.
+and migration restrictions, GPU appraisal for GPU-required workloads, and KBS
+workload/resource-path authorization still have to pass. No AS or KBS policy
+change is needed for a measurement-only update through stage 02.
 
 ## 1. Prepare the complete approved file
 
@@ -123,8 +123,9 @@ bash ./11-verify-service.sh
 Require all five reference checks to pass again. For end-to-end acceptance,
 rehearse an authorized workload under each approved launch profile; an
 unlisted measurement must fail the measurement appraisal. A listed measurement
-with inadequate TCB, failed GPU appraisal or mismatched workload identity must
-still be denied. Readback and unit tests are not proof of live key-release behavior.
+with inadequate TCB, failed required GPU appraisal or mismatched workload
+identity must still be denied. Readback and unit tests are not proof of live
+key-release behavior.
 
 Five-key updates are not transactional. Coordinate writers and pause new
 workload launches. The installers' lock covers only this service-kit directory;

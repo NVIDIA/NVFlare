@@ -7,6 +7,14 @@ secret. Obtain the expected SHA-256 through a separate authenticated channel.
 Do not edit the manifest. If anything must change, return the request to the
 workload owner; they must generate a new immutable release.
 
+This handoff supports SNP or TDX, with or without one confidential NVIDIA GPU.
+CoCo IT first installs the matching runtime using the
+[cluster guide](../coco/README.md). CPU-only releases use `kata-qemu-snp` or
+`kata-qemu-tdx`, allocate no GPU, and do not require NVIDIA hardware or GPU
+Operator. GPU releases use the corresponding `kata-qemu-nvidia-gpu-*` runtime
+and require one confidential pGPU. Never change a received manifest's runtime
+or GPU allocation; those settings are bound to its approved profile and policy.
+
 ## Inspect, launch, and verify
 
 Run these from the `coco` kit on the CoCo cluster machine, not from `admin`:
@@ -25,7 +33,8 @@ digest, or an embedded policy that permits exec/streaming or policy
 replacement by default; it performs a dry run and requires explicit
 confirmation before applying. The service independently refuses the image key
 unless attestation and release policy match the authorized image digest,
-command vector, init-data digest, CPU/GPU claims, and resource paths.
+command vector, init-data digest, selected CPU claims (plus GPU claims for a GPU
+release), and resource paths.
 
 `70-verify-running-workload.sh` re-checks the live Pod against the same
 authenticated manifest: runtime class, image digest, command, and init-data

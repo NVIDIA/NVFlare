@@ -472,13 +472,21 @@ the approved workload identity and resource paths may release keys. OPA is a
 required local syntax and authorization-test CLI installed by stage 01; no
 standalone OPA server is needed. KBS performs final policy validation.
 
-After CoCo IT launches the unchanged workload-owner Pod YAML, verify CPU/GPU
-attestation and the three attested resource requests on **secure services**:
+After CoCo IT launches the unchanged workload-owner Pod YAML, verify the
+selected CPU attestation, NVIDIA appraisal if the workload requires a GPU, and
+the three attested resource requests on **secure services**:
 
 ```bash
 cd /home/service_operator/coco-service-admin
-bash ./13-verify-workload-release.sh RELEASE 30m
+bash ./13-verify-workload-release.sh RELEASE 30m \
+  /home/service_operator/incoming/RELEASE/release-authorization.json
 ```
+
+The third argument must be the reviewed authorization from the authenticated
+workload-owner handoff retained during stage 12. It selects SNP/TDX and
+CPU-only/CPU+GPU checks. Without it, the verifier defaults to SNP+GPU, which is
+not an appropriate check for CPU-only or TDX releases. Do not obtain a replacement
+authorization from the adversarial cluster owner.
 
 A running container or an HTTPS health check is not proof of successful
 attestation-gated key release. Retain this verification evidence securely.

@@ -268,7 +268,7 @@ unique prefix derived from `RELEASE_NAME` and checks all of the following:
 | Submodules | Exactly `cpu0` for CPU-only; exactly `cpu0` and `gpu0` for GPU |
 | CPU evidence type | Exactly the approved signed `snp` or `tdx` evidence, never an unsigned runtime hint |
 | Trust vectors | SNP CPU `(3,2,3)`, TDX CPU `(3,2,2)`, NVIDIA GPU `(3,2,3)` for executables/hardware/configuration; all other fields zero |
-| GPU type | Required GPU submodule contains nonempty NVIDIA evidence |
+| GPU type | GPU releases require nonempty NVIDIA evidence in `gpu0`; CPU-only releases require `gpu0` to be absent |
 | InitData | Exact SHA-256 claim for SNP; exact 48-byte zero-padded claim and matching quoted MRCONFIGID for TDX |
 | Image | Immutable encrypted digest appears in the validated image identifiers and the approved container OCI annotations |
 | Command | Exact approved OCI process argument vector |

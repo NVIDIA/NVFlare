@@ -46,7 +46,9 @@ bash trusted_system/04-install-rehearsal-runtime.sh "$CONFIG"
 ```
 
 Stages 03/04 retain immutable runtime/chart pins, derive the token/evidence API
-configuration, and select the target TOML. GPU Operator is skipped for CPU-only.
+configuration, and select the target TOML. GPU Operator and GPU readiness checks
+are skipped for CPU-only; no NVIDIA hardware is required. Do not reuse TDX+GPU
+reference evidence for TDX CPU-only: collect and approve each selected profile.
 Host readiness or an available QGS socket is not proof of successful attestation.
 
 ## 2. Approve launch inputs and the verification baseline
@@ -103,8 +105,9 @@ new collection rather than overwriting or mixing runs.
 
 The candidate includes kernel and kernel-parameter event digests as well as
 MRTD/RTMR/XFAM. Approve the entire tuple; do not cherry-pick lower or convenient
-values from a different report. GPU allocation/readiness during collection
-does not replace NVIDIA remote appraisal of the eventual encrypted workload.
+values from a different report. For TDX+GPU, GPU allocation/readiness during
+collection does not replace NVIDIA remote appraisal of the eventual encrypted
+workload. CPU-only requires neither GPU collection nor NVIDIA appraisal.
 
 ## 4. Finalize and export both handoffs
 

@@ -46,9 +46,11 @@ preparing and installing a multiple-measurement file.
 
 AS requires an exact match to **any one** measurement in the list and uses the four
 floors for numeric `reported_tcb_* >= minimum` checks. These are CPU platform
-references, not GPU reference values. Existing GPU verification and the KBS
-requirement for acceptable CPU **and** GPU results remain in place; installing
-these values alone does not authorize any workload's resource paths or keys.
+references, not GPU reference values. The workload's KBS authorization requires
+acceptable CPU results for CPU-only workloads, or acceptable CPU **and** GPU
+results for GPU-required workloads. Existing GPU verification remains enabled;
+installing these values does not change the workload's GPU requirement or
+authorize any workload's resource paths or keys.
 Do not lower a floor merely to make a failing cluster pass; a reduction requires
 an explicitly reviewed security exception.
 All measurements use the **same four floors**. This is not a set of

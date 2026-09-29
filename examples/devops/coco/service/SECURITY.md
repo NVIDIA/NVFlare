@@ -10,7 +10,7 @@ init-data, immutable encrypted-image digest, process arguments, and platform
 claims. The encrypted image remains ciphertext in the registry, on CoCo storage,
 and to host-level inspection; decryption occurs inside the confidential guest.
 
-CPU appraisal requires the exact SNP launch measurement extracted from the
+For SNP, CPU appraisal requires the exact launch measurement extracted from the
 trusted rehearsal system's challenge-bound AMD-signed report,
 debug and migration disabled, and each signed `reported_tcb_*` SVN at or above
 its independently approved numeric floor. Missing or nonnumeric RVPS floor data
@@ -25,6 +25,13 @@ per-field allowlists must not approve mixed profiles. Each workload's KBS rule
 also pins the CPU TEE, expected CPU-only or CPU+GPU submodules, and exact
 InitData (zero-padded MRCONFIGID for TDX). CPU-only approval cannot bypass a
 GPU-required release policy. See [TDX approval](TDX-REFERENCE-VALUES.md).
+
+CPU-only releases require the approved CPU appraisal and exactly the `cpu0`
+submodule; GPU-required releases require both `cpu0` and `gpu0` to pass. Installing
+the GPU verifier does not make a GPU mandatory for every workload. Neither the
+cluster owner nor the received token can downgrade a GPU-required workload to
+CPU-only: the service administrator installs the workload owner's reviewed
+target-specific release authorization.
 
 This architecture protects confidentiality and launch integrity, not
 availability. The CoCo owner can refuse to schedule, kill the Pod, block the

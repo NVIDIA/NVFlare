@@ -127,21 +127,25 @@ corresponding workload authorization; there is no trust-on-first-use fallback.
 
 The approved guest runtime must expose the [guest-components token API](https://github.com/confidential-containers/guest-components/blob/main/api-server-rest/README.md)
 at `http://127.0.0.1:8006/aa/token?token_type=kbs` **inside the container's guest
-network**, with KBS configured and both CPU/GPU evidence enabled. Its response
+network**, with KBS configured and evidence for the selected target enabled:
+SNP or TDX CPU evidence for every protected participant, and NVIDIA GPU evidence
+only for a GPU target. A CPU-only deployment does not require a GPU or `gpu0`
+appraisal. A GPU release still requires both successful `cpu0` and `gpu0`
+appraisals before KBS releases its image key. Its response
 contains a signed token and a TEE private key. Never print it, save it, put it in
 Pod logs, or expose this API through a Kubernetes Service, host port, proxy, or
 ingress. No Kubernetes volume or hostPath is needed by the authorizer.
 
-A runtime supporting GPU/SNP does not by itself prove this API is built,
-enabled, reachable from the workload, or returns the required claims. Verify
+A runtime supporting SNP or TDX, with or without a GPU, does not by itself prove
+this API is built, enabled, reachable from the workload, or returns the required claims. Verify
 those properties in a trusted rehearsal of the actual NVFlare image. If enabling
 the API requires changes to the guest image or kernel command line, those are
 measured launch inputs: repeat the trusted measurement workflow and approve the
 new platform references before using it. These provisioning changes deliberately
 do not alter a cluster runtime or reuse an old measurement after such changes.
 
-In the tested pinned Kata 3.29.0 guest, the default REST feature exposed resource
-routes but not `/aa/token`. The historical diagnostic used a per-Pod kernel
+In the historically tested pinned Kata 3.29.0 SNP+GPU guest, the default REST
+feature exposed resource routes but not `/aa/token`. The historical diagnostic used a per-Pod kernel
 override; that is not supported by the packaged workload's approved profile.
 The packaged workflow now derives and installs a runtime-level configuration
 with `agent.guest_components_rest_api=all`, preserving all other parameters,

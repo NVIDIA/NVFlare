@@ -9,7 +9,10 @@ configuration and does not reuse its old launch measurement.
 
 ## Trusted system
 
-Use a new `PLATFORM_PROFILE` and follow the existing [stages 03–10](trusted_system/SEC-SYS-LAUNCH-PROFILE.md).
+Select the approved runtime from [the four-target guide](RUNTIME-VARIANTS.md),
+use a new `PLATFORM_PROFILE`, and follow stages 03–10 in the
+[SNP rehearsal](trusted_system/SEC-SYS-LAUNCH-PROFILE.md) or
+[TDX rehearsal](trusted_system/TDX-LAUNCH-PROFILE.md), as applicable.
 Stage 03 preserves the extracted upstream configuration and artifact hashes. It
 creates two additional private profile files:
 
@@ -60,10 +63,12 @@ other targets need a newly approved v4 contract. See the
 ## Secure services and provisioning node
 
 The provisioning node coordinates delivery as before. The secure-services owner
-reviews and installs the newly collected measurement using the existing
-[reference installer](service/PLATFORM-REFERENCE-VALUES-HANDOFF.md). Do not silently
+reviews and installs the newly collected references using the
+[SNP reference procedure](service/PLATFORM-REFERENCE-VALUES-HANDOFF.md) or
+[TDX reference procedure](service/TDX-REFERENCE-VALUES.md). Do not silently
 authorize both old and new measurements; choose the reviewed measurement set.
-CPU/GPU appraisal and workload-specific resource-release rules remain required.
+CPU appraisal and workload-specific resource-release rules remain required for
+every target; GPU appraisal is additionally mandatory for GPU releases.
 
 The provisioning node authenticates and installs the new admin contract and its
 SHA-256 pin, then regenerates the workload release and handoffs. Stage 30 rejects
@@ -77,17 +82,25 @@ Use an updated assembled CoCo kit. The normal stage 30 bootstrap and stage 35
 re-pinning apply the same reviewed option after Kata deployment. Stage 60 checks
 both the configuration file and the effective parameters reported by `kata-env`.
 These paths use the same in-tree symlink handling and preserve Kata's header.
-The normal host configuration is:
+The selected installed configuration is under
+`/opt/kata/share/defaults/kata-containers/`:
 
-```text
-/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml
-```
+| Approved RuntimeClass | Configuration basename |
+| --- | --- |
+| `kata-qemu-snp` | `configuration-qemu-snp.toml` |
+| `kata-qemu-nvidia-gpu-snp` | `configuration-qemu-nvidia-gpu-snp.toml` |
+| `kata-qemu-tdx` | `configuration-qemu-tdx.toml` |
+| `kata-qemu-nvidia-gpu-tdx` | `configuration-qemu-nvidia-gpu-tdx.toml` |
 
-For a read-only configuration check from the CoCo kit:
+For a read-only configuration check from the CoCo kit, select the RuntimeClass
+already approved in its `platform.env` and bootstrap `config.env`:
 
 ```bash
-sudo python3 lib/kata-runtime-profile.py check \
-  /opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml \
+RUNTIME_CLASS=kata-qemu-tdx  # Example: CPU-only TDX; use your approved target.
+config_name="$(python3 lib/kata-runtime-profile.py target "$RUNTIME_CLASS" --field config_name)"
+runtime_config="/opt/kata/share/defaults/kata-containers/$config_name"
+sudo python3 lib/kata-runtime-profile.py check-target "$RUNTIME_CLASS" "$runtime_config"
+sudo python3 lib/kata-runtime-profile.py check "$runtime_config" \
   --runtime /opt/kata/bin/kata-runtime
 ```
 

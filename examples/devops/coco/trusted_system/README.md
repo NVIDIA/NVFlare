@@ -59,13 +59,16 @@ use a fresh profile rather than deleting individual conflicting files. See the
 
 ## Optional GPU availability check
 
-After a successful rehearsal, run the following from the package root:
+For an SNP+GPU or TDX+GPU profile only, after a successful rehearsal, run the
+following from the package root:
 
 ```bash
 python3 trusted_system/verify-gpu-in-pod.py "$PROFILE"
 ```
 
-See
+Skip this diagnostic for `kata-qemu-snp` and `kata-qemu-tdx` CPU-only profiles;
+no GPU or GPU Operator is required for those deployments. The helper rejects
+CPU-only profiles before creating diagnostic artifacts or launching a Pod. See
 [GPU-VERIFICATION.md](GPU-VERIFICATION.md). This diagnostic is not an additional
 numbered JSON-export stage and does not modify the approved values.
 
@@ -98,8 +101,8 @@ or policies in this handoff. Follow
 
 Retain launch profiles, reports, certificates and verification records on the
 trusted side. Verified evidence and explicit platform-owner approval are
-required; the offline SNP model is diagnostic only. Workload identity and GPU attestation remain separate
-release-policy checks.
+required; the offline SNP model is diagnostic only. Workload identity and, for
+GPU-required workloads, GPU attestation remain separate release-policy checks.
 
 To check a complete local package after transfer, run from the package root:
 

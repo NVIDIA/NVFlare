@@ -17,6 +17,26 @@ on the intended platform; unit/static tests do not establish that result.
 YAML null and unknown mechanisms fail closed. Do not reuse the SNP+GPU
 measurements or launch contract for a different row.
 
+### CPU-only deployments
+
+CPU-only is an explicit supported target for both protected clients and servers,
+not a fallback when GPU attestation fails. Select `cc_gpu: none` in each
+participant's CC YAML and use `kata-qemu-snp` or `kata-qemu-tdx` consistently in
+the trusted rehearsal, provisioning-node platform configuration and CoCo kit.
+Set `GPU_COUNT=0` in the host bootstrap configuration. The source workload Pod
+must omit GPU requests/limits; the generated release must not allocate
+`nvidia.com/pgpu`.
+
+No NVIDIA GPU, GPU Operator, CUDA userspace libraries or GPU smoke test is
+required by this deployment path. Application-specific dependencies remain the
+workload owner's responsibility. Skip the optional
+[GPU availability diagnostic](trusted_system/GPU-VERIFICATION.md) for CPU-only
+profiles. CPU quote/report verification, TCB approval, image signing/encryption,
+InitData binding and workload-specific key authorization remain mandatory.
+The generated CPU-only KBS policy requires exactly `cpu0`; GPU releases still
+require both `cpu0` and `gpu0`. Changing between these modes requires a new
+approved launch profile and workload release, not editing an existing Pod YAML.
+
 ## 1. Prepare the trusted and untrusted hosts
 
 Use the pinned role kits and [configuration procedure](CONFIGURATION.md).

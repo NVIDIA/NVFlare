@@ -25,8 +25,9 @@ using relative CC-config paths, or provide absolute paths themselves.
    values from CoCo IT.
 3. Prepare an application Dockerfile containing the same NVFlare version used
    for provisioning, Python 3.11+, bash, standard coreutils, and all reviewed
-   application code and dependencies (including required NVIDIA userspace
-   libraries). The supplied [client Dockerfile](site-1/Dockerfile) and
+   application code and dependencies (including NVIDIA userspace libraries only
+   when the application requires a GPU). CPU-only workloads need neither CUDA
+   nor a GPU base image. The supplied [client Dockerfile](site-1/Dockerfile) and
    [server Dockerfile](server/Dockerfile) deliberately have non-runnable
    placeholder bases. Replace each selected base with your reviewed application
    image pinned by digest, or replace its Dockerfile entirely. Include the
@@ -128,6 +129,25 @@ Changing the two CC YAML fields is not itself platform approval. A runner that
 returns the wrong runtime or GPU allocation is rejected before its Pod becomes
 a public handoff. Complete the hardware acceptance checks before relying on a
 new target; offline provisioning tests do not prove TDX quote or key release.
+
+For example, a CPU-only TDX client uses these fields in its own CC YAML:
+
+```yaml
+compute_env: confidential_containers
+cc_cpu_mechanism: intel_tdx
+cc_gpu: none
+role: client
+platform_config: ../admin-tdx-cpu/platform.env
+```
+
+Keep its issuer, image-build and release settings from the full example above.
+Set that admin kit's `RUNTIME_CLASS=kata-qemu-tdx` and install the authenticated
+CPU-only TDX v4 launch contract before running `nvflare provision -p project.yaml`.
+For CPU-only SNP, instead use `cc_cpu_mechanism: amd_sev_snp`, retain `cc_gpu: none`,
+and select an independently approved `kata-qemu-snp` admin kit/profile. CPU-only
+mode is selected during trusted provisioning, not by deleting GPU resources from
+an already generated Pod. The protected server uses the same target choices
+with `role: server` in its own CC YAML.
 
 `cc_config` is relative to `project.yaml`. Context, platform configuration, and
 `build_image_cmd` paths are relative to the participant's CC YAML. The Dockerfile

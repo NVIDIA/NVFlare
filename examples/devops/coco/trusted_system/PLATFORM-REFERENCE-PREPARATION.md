@@ -4,6 +4,13 @@ This document covers the SNP backend. The same numbered entry points dispatch
 to TDX for a TDX runtime, but AMD tooling and the five-field export do not apply.
 Use [TDX-LAUNCH-PROFILE.md](TDX-LAUNCH-PROFILE.md) for that procedure.
 
+Both SNP targets are supported: `kata-qemu-snp` for CPU-only and
+`kata-qemu-nvidia-gpu-snp` for one confidential NVIDIA GPU. Follow the target
+selection in [the SNP launch-profile procedure](SEC-SYS-LAUNCH-PROFILE.md).
+The paths below illustrate an SNP+GPU profile; substitute the new profile path
+selected in your private configuration for CPU-only. Do not reuse another
+target's evidence. CPU-only does not require a GPU or GPU Operator.
+
 This procedure covers trusted artifact preparation, verified report collection,
 and five-value JSON export. Run it only on the trusted platform system.
 
@@ -36,8 +43,9 @@ key or authority-key directory is created or needed.
 ## Stage 07: launch the fail-closed in-cluster rehearsal
 
 Users do not create or manage a separate SEV-SNP VM. The trusted system must
-already have Kubernetes and the approved `kata-qemu-nvidia-gpu-snp`
-RuntimeClass installed. Stage 07 creates a random 64-byte challenge, builds a
+already have Kubernetes and the approved selected SNP RuntimeClass installed
+(`kata-qemu-snp` or `kata-qemu-nvidia-gpu-snp`). Stage 07 creates a random
+64-byte challenge, builds a
 checksum-pinned collector, publishes it by immutable digest to a short-lived TLS
 registry on the trusted host, and launches it as a short-lived Pod with that
 RuntimeClass. The registry's two-day private CA is embedded in measured

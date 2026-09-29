@@ -149,8 +149,8 @@ Pod-level security-context overrides, and safe-but-unapproved ID/rootfs changes
 are rejected. Empty `capabilities.add` is canonicalized to absence.
 
 For the static example approve `readOnlyRootFilesystem: true`. For provisioned
-NVFlare clients approve `false` with UID/GID 65532: the current packager needs
-writable guest-local logs and job state. Set this in the reviewed source YAML
+NVFlare clients and protected servers approve `false` with UID/GID 65532: the
+current packager needs writable guest-local logs and job state. Set this in the reviewed source YAML
 before stage 05; do not silently widen an existing read-only approval to support
 NVFlare. Stage 30 compares the generated context to the authenticated contract,
 before running genpolicy and after constructing the final Pod. Stage 40 repeats

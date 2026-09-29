@@ -164,14 +164,19 @@ restore authorization by **one** of these methods:
    review and do not establish that the saved rules should still be trusted.
 
 Finally, check service health, have CoCo IT launch a fresh authorized Pod, and
-verify the new CPU/GPU appraisal and all three resource releases:
+verify the selected CPU appraisal, NVIDIA appraisal only for a GPU-required
+release, and all three resource releases:
 
 ```bash
 bash ./11-verify-service.sh
 # After CoCo IT launches a fresh Pod for the restored release:
-bash ./13-verify-workload-release.sh RELEASE 5m
+bash ./13-verify-workload-release.sh RELEASE 5m \
+  "$HOME/incoming/RELEASE/release-authorization.json"
 ```
 
+Use the reviewed authorization retained from the authenticated workload-owner
+handoff, not a replacement from CoCo IT. The third argument selects SNP/TDX and
+CPU-only/CPU+GPU expectations; omitting it retains the legacy SNP+GPU default.
 Choose a log window containing that fresh launch, not an earlier successful run;
 repeat the release check for each restored workload. Existing running Pods and a
 passing health check alone do not prove that new key requests are authorized.
