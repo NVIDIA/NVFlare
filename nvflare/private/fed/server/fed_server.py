@@ -1127,7 +1127,6 @@ class FederatedServer(BaseServer):
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
         self.engine.asked_to_stop = False
-        self.run_manager.cell = self.cell
 
         fed_event_runner = ServerFedEventRunner()
         self.run_manager.add_handler(fed_event_runner)
