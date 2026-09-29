@@ -204,5 +204,5 @@ class AioHttpDriver(BaseDriver):
             await self.app.cleanup()
             self.app = None
 
-        if self.stop_event:
+        if self.stop_event and not self.stop_event.done():
             self.stop_event.set_result(None)

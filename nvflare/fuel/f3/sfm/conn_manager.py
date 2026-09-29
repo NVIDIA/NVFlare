@@ -134,12 +134,12 @@ class ConnManager(ConnMonitor):
     def remove_connector(self, handle: str):
         with self.lock:
             connector = self.connectors.pop(handle, None)
-            if connector:
-                connector.stopped.set()
-                connector.driver.shutdown()
-                log.debug(f"Connector {connector} is removed")
-            else:
-                log.error(f"Unknown connector handle: {handle}")
+        if connector:
+            connector.stopped.set()
+            connector.driver.shutdown()
+            log.debug(f"Connector {connector} is removed")
+        else:
+            log.error(f"Unknown connector handle: {handle}")
 
     def start(self):
         with self.lock:
@@ -155,14 +155,13 @@ class ConnManager(ConnMonitor):
     def stop(self):
 
         self.heartbeat_monitor.stop()
+        self.stopped = True
 
         with self.lock:
-            for handle in sorted(self.connectors.keys()):
-                connector = self.connectors[handle]
-                connector.stopped.set()
-                connector.driver.shutdown()
-
-        self.stopped = True
+            connectors = list(self.connectors.values())
+        for connector in connectors:
+            connector.stopped.set()
+            connector.driver.shutdown()
 
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)

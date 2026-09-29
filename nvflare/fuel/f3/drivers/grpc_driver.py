@@ -189,7 +189,8 @@ class Server:
                 self.logger.info(f"added insecure port at {addr}")
         except Exception as ex:
             error = f"cannot listen on {addr}: {type(ex)}: {secure_format_exception(ex)}"
-            self.logger.debug(error)
+            self.grpc_server.stop(grace=0)
+            raise CommError(CommError.ERROR, error) from ex
 
     def start(self):
         self.grpc_server.start()
@@ -197,7 +198,6 @@ class Server:
 
     def shutdown(self):
         self.grpc_server.stop(grace=0.5)
-        self.grpc_server = None
 
 
 class GrpcDriver(BaseDriver):

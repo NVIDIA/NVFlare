@@ -47,6 +47,11 @@ class AioConnection(Connection):
         return self.conn_props
 
     def close(self):
+        self.aio_ctx.get_event_loop().call_soon_threadsafe(self._close)
+
+    def _close(self):
+        if self.closing:
+            return
         self.closing = True
 
         if not self.writer:

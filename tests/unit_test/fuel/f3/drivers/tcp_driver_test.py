@@ -13,14 +13,16 @@
 # limitations under the License.
 
 import socket
+import time
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
-from unittest.mock import MagicMock
+from threading import Event, Thread
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
-from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
+from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver, TcpStreamServer
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
 @pytest.mark.timeout(10)
@@ -49,3 +51,41 @@ def test_connect_finishing_after_shutdown_closes_socket(monkeypatch):
             connection.settimeout(1)
             assert connection.recv(1) == b""
         assert not driver.connections
+
+
+def test_idle_tls_peer_cannot_pin_listener_shutdown(tmp_path):
+    key, public_key = generate_keys()
+    cert = generate_cert(Identity("localhost"), Identity("localhost"), key, public_key, ca=True)
+    cert_file, key_file = tmp_path / "cert.pem", tmp_path / "key.pem"
+    cert_file.write_bytes(serialize_cert(cert))
+    key_file.write_bytes(serialize_pri_key(key))
+    params = {"ca_cert": str(cert_file), "server_cert": str(cert_file), "server_key": str(key_file)}
+    connector = MagicMock(params=dict(params, host="127.0.0.1", port=0, scheme="stcp"), stopped=Event())
+    driver = TcpDriver()
+    driver.register_conn_monitor(MagicMock())
+    listening = Event()
+    serve = TcpStreamServer.serve_forever
+
+    def serve_and_signal(server):
+        listening.set()
+        serve(server, poll_interval=0.05)
+
+    listener = Thread(target=driver.listen, args=(connector,), daemon=True)
+    shutdown = Thread(target=driver.shutdown, daemon=True)
+    peer = None
+    try:
+        with patch.object(TcpStreamServer, "serve_forever", serve_and_signal):
+            listener.start()
+            assert listening.wait(2)
+            peer = socket.create_connection(driver.server.server_address, timeout=2)
+            time.sleep(0.1)  # leave the peer in the TLS handshake, sending no bytes
+            shutdown.start()
+            shutdown.join(2)
+            assert not shutdown.is_alive(), "an idle TLS handshake blocked shutdown"
+    finally:
+        if peer:
+            peer.close()
+        shutdown.join(3)
+        listener.join(3)
+        if driver.server:
+            driver.server.server_close()

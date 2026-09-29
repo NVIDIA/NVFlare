@@ -268,7 +268,6 @@ class Server:
             # Without this, we may run into "excepthook" error at the end of the program since the GRPC server isn't
             # properly shutdown.
             await asyncio.sleep(self.grpc_server_stop_grace)
-            self.grpc_server = None
             self.logger.debug("GRPC Server is stopped!")
         except Exception as ex:
             self.logger.debug(f"exception shutdown server: {secure_format_exception(ex)}")

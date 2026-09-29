@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 class TcpStreamServer(ThreadingTCPServer):
 
     TCPServer.allow_reuse_address = True
+    daemon_threads = True
 
     def __init__(self, driver: Driver, connector: ConnectorInfo):
         self.driver = driver
@@ -45,9 +46,6 @@ class TcpStreamServer(ThreadingTCPServer):
 
         TCPServer.__init__(self, (host, port), ConnectionHandler, False)
 
-        if self.ssl_context:
-            self.socket = self.ssl_context.wrap_socket(self.socket, server_side=True)
-
         try:
             self.server_bind()
             self.server_activate()
@@ -55,6 +53,16 @@ class TcpStreamServer(ThreadingTCPServer):
             log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {secure_format_exception(ex)}")
             self.server_close()
             raise
+
+    def get_request(self):
+        sock, address = super().get_request()
+        if self.ssl_context:
+            try:
+                sock = self.ssl_context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False)
+            except Exception:
+                sock.close()
+                raise
+        return sock, address
 
 
 class TcpDriver(BaseDriver):
@@ -102,9 +110,11 @@ class TcpDriver(BaseDriver):
         self.close_connection(connection)
 
     def shutdown(self):
-        self.close_all()
         if self.server:
             self.server.shutdown()
+        self.close_all()
+        if self.server:
+            self.server.server_close()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

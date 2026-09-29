@@ -13,7 +13,11 @@
 # limitations under the License.
 
 import threading
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nvflare.fuel.f3.drivers.aio_conn import AioConnection
 from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 
@@ -53,3 +57,24 @@ def test_shutdown_runs_on_aio_loop_and_is_idempotent(monkeypatch):
         ("close_all", loop_thread.ident),
     ]
     assert driver.server is None
+
+
+@pytest.mark.parametrize("target", ["connection", "listener"])
+def test_shutdown_schedules_transport_close_on_owning_event_loop(target):
+    context = MagicMock()
+    if target == "connection":
+        connection = AioConnection(MagicMock(), context, MagicMock(), None)
+        connection.writer = transport = MagicMock()
+        close = connection.close
+    else:
+        with patch("nvflare.fuel.f3.drivers.aio_tcp_driver.AioContext.get_global_context", return_value=context):
+            driver = AioTcpDriver()
+        driver.server = transport = MagicMock()
+        close = driver.shutdown
+
+    close()
+    transport.close.assert_not_called()
+    loop = context.get_event_loop.return_value
+    loop.call_soon_threadsafe.assert_called_once()
+    loop.call_soon_threadsafe.call_args.args[0]()
+    transport.close.assert_called_once()
