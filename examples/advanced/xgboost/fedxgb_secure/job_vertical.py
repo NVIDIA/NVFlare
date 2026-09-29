@@ -119,7 +119,8 @@ def main():
         workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
     )
     recipe.export("/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs", env=env)
-    recipe.execute(env)
+    run = recipe.execute(env)
+    run.get_result()
 
     print("\n" + "=" * 80)
     print("Training Complete!")

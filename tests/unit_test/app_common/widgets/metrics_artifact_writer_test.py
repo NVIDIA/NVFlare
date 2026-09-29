@@ -143,11 +143,14 @@ def _record_shareable_round(writer, fl_ctx, round_num, metrics):
         fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
 
 
-def _record_contribution(writer, fl_ctx, round_num, site_name, metrics, weight=1):
+def _record_contribution(writer, fl_ctx, round_num, site_name, metrics, weight=1, progress_metrics=None):
+    meta = {FLMetaKey.SITE_NAME: site_name, FLMetaKey.NUM_STEPS_CURRENT_ROUND: weight}
+    if progress_metrics is not None:
+        meta[AppConstants.PROGRESS_METRICS] = progress_metrics
     result = FLModel(
         metrics=metrics,
         current_round=round_num,
-        meta={FLMetaKey.SITE_NAME: site_name, FLMetaKey.NUM_STEPS_CURRENT_ROUND: weight},
+        meta=meta,
     )
     shareable = FLModelUtils.to_shareable(result)
     try:
@@ -214,6 +217,50 @@ def _collect_metric_names(value):
 
 
 class TestMetricsArtifactWriterAggregationEvents:
+    def test_progress_metrics_do_not_replace_or_look_aggregated_with_model_selection_metrics(self, tmp_path, caplog):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        with caplog.at_level("INFO"):
+            writer.handle_event(EventType.START_RUN, fl_ctx)
+            _record_contribution(
+                writer,
+                fl_ctx,
+                1,
+                "site-1",
+                metrics={"accuracy": 0.2},
+                progress_metrics={"accuracy": 0.8},
+            )
+            _record_contribution(
+                writer,
+                fl_ctx,
+                1,
+                "site-2",
+                metrics={"accuracy": 0.4},
+                progress_metrics={"accuracy": 0.9},
+            )
+            _record_round(writer, fl_ctx, 1, {"accuracy": 0.3})
+
+        rounds = _read_rounds(run_dir)
+        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"accuracy": 0.3}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"accuracy": 0.2}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["progress_metrics"]) == {"accuracy": 0.8}
+
+        output = "\n".join(
+            record.message
+            for record in caplog.records
+            if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+        )
+        incoming, post_training = output.split("Post-training client metrics")
+        incoming = incoming.split("Incoming-model client metrics", maxsplit=1)[1]
+        assert "0.2" in incoming and "0.4" in incoming
+        assert "Aggregated" in incoming and "0.3" in incoming
+        assert "0.8" not in incoming and "0.9" not in incoming
+        post_training = post_training.split("✓ Aggregated", maxsplit=1)[0]
+        assert "0.8" in post_training and "0.9" in post_training
+        assert "Aggregated" not in post_training
+
     def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"
@@ -932,6 +979,79 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
     assert duration_line.index("2.0s") == 64
     assert _read_rounds(tmp_path)[0]["round"] == 5
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
+
+
+def test_progress_owner_suppresses_non_aggregation_client_round(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.get_identity_name = Mock(return_value="site-2")
+    fl_ctx.set_prop(AppConstants.PROGRESS_OWNER, "site-1", private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 2, private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+
+    assert not [r for r in caplog.records if r.name == "nvflare.app_common.widgets.metrics_artifact_writer"]
+
+
+def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
+    from nvflare.recipe._run_summary import result_summary
+
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 2, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.PROGRESS_TITLE, "Model evaluation", private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8, "loss": 0.2, "samples": 10})
+        writer.handle_event(AppEventType.ROUND_DONE, fl_ctx)
+        writer.handle_event(EventType.END_RUN, fl_ctx)
+
+    output = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert "ROUND 1 / 2" in output
+    assert "site-1" in output and "auc" in output and "0.8" in output
+    assert "Additional metric results are available in the saved metrics artifacts." in output
+    assert "Processed 1 client update" in output
+    rounds = _read_rounds(tmp_path)
+    assert len(rounds) == 1
+    assert rounds[0]["round"] == 0
+    assert rounds[0]["aggregated_metrics"] == []
+    assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.8, "loss": 0.2, "samples": 10}
+    summary = _read_summary(tmp_path)
+    assert summary["status"] == "metrics_reported"
+    assert summary["final_round"] == 0
+    assert summary["final_aggregated_metrics"] == []
+    rendered_summary = result_summary(tmp_path)
+    assert "Model evaluation · client metrics" in rendered_summary
+    assert "site-1" in rendered_summary
+    assert "0.8" in rendered_summary
+    assert "aggregated client metrics" not in rendered_summary
+
+
+def test_progress_only_writer_does_not_publish_partial_artifacts(tmp_path, caplog):
+    writer = MetricsArtifactWriter(write_artifacts=False)
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8, "loss": 0.2, "samples": 10})
+        writer.handle_event(AppEventType.ROUND_DONE, fl_ctx)
+        writer.handle_event(EventType.END_RUN, fl_ctx)
+
+    output = "\n".join(record.message for record in caplog.records)
+    assert "Additional metric results were omitted from the progress display." in output
+    assert "saved metrics artifacts" not in output
+    assert not (tmp_path / _METRICS_DIR).exists()
 
 
 def test_scaffold_aggregation_resets_contribution_count_without_round_started(tmp_path, caplog):

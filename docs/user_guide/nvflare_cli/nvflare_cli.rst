@@ -21,7 +21,8 @@ Global options
 - ``--format {txt,json,jsonl}``: select human-readable output or a JSON
   envelope. JSON Lines output is supported only by the streaming
   ``nvflare job monitor`` command; other commands reject ``jsonl``.
-- ``--connect-timeout``: control server connection timeout for remote commands
+- ``--connect-timeout``: control the connection timeout for remote commands;
+  the value must be a finite positive number
 
 Human-readable argument errors print command help first, then the specific
 message and hint. ``--format json`` prints only the JSON response or JSON

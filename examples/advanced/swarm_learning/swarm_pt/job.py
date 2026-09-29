@@ -143,7 +143,8 @@ def main():
     )
 
     env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
-    recipe.execute(env)
+    run = recipe.execute(env)
+    run.get_result()
     print(f"Simulation completed. Workspace: {args.workspace}")
 
 

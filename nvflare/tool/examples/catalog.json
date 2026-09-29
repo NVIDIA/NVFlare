@@ -145,6 +145,13 @@
     "source_path": "examples/advanced/experiment-tracking",
     "category": "advanced"
   },
+  "hello-pt-environments": {
+    "source_path": "examples/advanced/hello-pt-environments",
+    "category": "advanced",
+    "dependencies": [
+      "hello-pt"
+    ]
+  },
   "feature-election": {
     "source_path": "examples/advanced/feature_election",
     "category": "advanced"

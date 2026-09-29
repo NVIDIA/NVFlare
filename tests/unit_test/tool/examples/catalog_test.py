@@ -26,7 +26,16 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 def test_catalog_entries_have_category_and_source_path_and_exist():
     catalog = load_catalog()
     for entry in catalog.values():
-        assert {"category", "source_path"} <= set(entry) <= {"category", "source_path", "destination_path"}
+        assert (
+            {"category", "source_path"}
+            <= set(entry)
+            <= {
+                "category",
+                "dependencies",
+                "source_path",
+                "destination_path",
+            }
+        )
         assert not entry["source_path"].startswith("examples/tutorials/")
         source = REPO_ROOT / entry["source_path"]
         assert source.is_dir()
@@ -65,7 +74,6 @@ def test_catalog_covers_every_maintained_example_collection():
     excluded = {
         Path("examples/advanced/finance"),
         Path("examples/advanced/finance-end-to-end"),
-        Path("examples/advanced/hello-pt-environments"),
         Path("examples/advanced/nlp-ner"),
     }
     assert excluded <= tracked_readme_dirs
@@ -110,6 +118,9 @@ def test_catalog_covers_every_maintained_example_collection():
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "demo/"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "de\x00mo"}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "dependencies": []}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "dependencies": ["Bad Name"]}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "dependencies": ["good", "good"]}},
         {
             "demo": {
                 "category": "test",
@@ -170,4 +181,96 @@ def test_duplicate_entry_key_rejects_catalog(tmp_path):
     )
 
     with pytest.raises(ValueError, match="contains duplicate key source_path"):
+        load_catalog(path)
+
+
+def test_catalog_dependencies_are_validated(tmp_path):
+    path = tmp_path / "catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "base": {"category": "test", "source_path": "examples/base"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/child",
+                    "dependencies": ["missing"],
+                },
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="depends on unknown example 'missing'"):
+        load_catalog(path)
+
+    path.write_text(
+        json.dumps(
+            {
+                "one": {"category": "test", "source_path": "examples/one", "dependencies": ["two"]},
+                "two": {"category": "test", "source_path": "examples/two", "dependencies": ["one"]},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="catalog dependency cycle"):
+        load_catalog(path)
+
+
+@pytest.mark.parametrize(
+    "definitions,match",
+    [
+        (
+            {
+                "base": {
+                    "category": "test",
+                    "source_path": "examples/base",
+                    "destination_path": "package/base",
+                },
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/child",
+                    "dependencies": ["base"],
+                },
+            },
+            "cannot include destination_path on 'base'",
+        ),
+        (
+            {
+                "base": {"category": "test", "source_path": "examples/group"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/group/child",
+                    "dependencies": ["base"],
+                },
+            },
+            "contains overlapping source paths for 'base' and 'child'",
+        ),
+        (
+            {
+                "base": {"category": "test", "source_path": "examples/Group/Example"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/group/example",
+                    "dependencies": ["base"],
+                },
+            },
+            "contains overlapping source paths",
+        ),
+        (
+            {
+                "base": {"category": "test", "source_path": "examples/group/base"},
+                "sibling": {"category": "test", "source_path": "examples/group/sibling"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/child",
+                    "dependencies": ["base", "sibling"],
+                    "destination_path": "package/child",
+                },
+            },
+            "cannot include destination_path on 'child'",
+        ),
+    ],
+)
+def test_dependency_groups_require_independent_source_layouts(tmp_path, definitions, match):
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(definitions))
+
+    with pytest.raises(ValueError, match=match):
         load_catalog(path)

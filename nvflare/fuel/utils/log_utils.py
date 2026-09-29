@@ -439,6 +439,15 @@ def log_progress(logger: logging.Logger, message: str) -> None:
     logger.info(message, extra={"nvflare_progress": True})
 
 
+def log_progress_round(logger: logging.Logger, ordinal: int, total: int, title: str, rows=None, label="Client") -> None:
+    """Emit the shared bounded round presentation used by federated workflows."""
+    heading = f" ROUND {ordinal} / {total} ".center(72, "=")
+    message = f"\n{heading}\n\n  {title}"
+    if rows:
+        message += "\n\n" + format_metric_table(rows, label=label, label_width=24, include_notice=False)
+    log_progress(logger, message + "\n")
+
+
 class ConciseLogFilter(LoggerNameFilter):
     """Show all non-NVFlare logs while suppressing non-application NVFlare INFO logs."""
 

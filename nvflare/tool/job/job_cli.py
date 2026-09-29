@@ -1029,9 +1029,9 @@ def create_app_dir(job_folder, app_name: str = "app"):
 
 def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
     """Create a secure session using command selectors, env, or active startup kit."""
-    from nvflare.tool.cli_output import get_connect_timeout, output_error
+    from nvflare.tool.cli_output import get_validated_connect_timeout, output_error
 
-    timeout = get_connect_timeout()
+    timeout = get_validated_connect_timeout()
 
     if admin_user_dir is None and username is None:
         try:

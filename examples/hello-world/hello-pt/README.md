@@ -258,20 +258,18 @@ deterministic quickstart and its tested defaults are defined by `job.py`.
 
 ## Continue to POC and Production
 
-The advanced environment-continuity example reuses files from this example, so
-it must run from a full NVFlare checkout. If you are already using a source
-checkout, continue in `examples/advanced/hello-pt-environments`.
+The advanced environment-continuity example reuses files from this example. If
+you are already using a source checkout, continue in
+`examples/advanced/hello-pt-environments`.
 
-If you downloaded this standalone directory with `nvflare examples get`, use
-its recorded revision to retrieve the matching source layout:
+If you downloaded this standalone directory with `nvflare examples get`, move
+to its parent and retrieve the advanced example with its revision-matched
+Hello PyTorch dependency:
 
 ```bash
-NVFLARE_REVISION=$(nvflare examples revision)
-printf 'Guide: https://github.com/NVIDIA/NVFlare/tree/%s/examples/advanced/hello-pt-environments\n' \
-  "$NVFLARE_REVISION"
-git clone https://github.com/NVIDIA/NVFlare.git ../nvflare-source
-git -C ../nvflare-source checkout "$NVFLARE_REVISION"
-cd ../nvflare-source/examples/advanced/hello-pt-environments
+cd ..
+nvflare examples get hello-pt-environments
+cd hello-pt-environments/advanced/hello-pt-environments
 ```
 
 Keep using the same revision-matched NVFlare installation and `PT` extra from
