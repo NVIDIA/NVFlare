@@ -62,6 +62,33 @@ def test_connector_shutdown_does_not_hold_manager_lock(operation):
         manager.frame_mgr_executor.shutdown()
 
 
+def test_connector_added_during_stop_is_rejected():
+    manager = ConnManager(Endpoint("test"))
+    driver = TcpDriver()
+    params = {"scheme": "tcp", "url": "tcp://localhost:1234"}
+    handle = manager.add_connector(driver, params, Mode.PASSIVE)
+    manager.started = True
+    late_driver = MagicMock()
+
+    def shutdown():
+        # stop() has taken its snapshot but has not shut down the executor yet.
+        with pytest.raises(CommError, match="stopped") as exc:
+            manager.add_connector(late_driver, params, Mode.ACTIVE)
+        assert exc.value.code == CommError.CLOSED
+
+    try:
+        with patch.object(driver, "shutdown", side_effect=shutdown):
+            manager.stop()
+        assert list(manager.connectors) == [handle]
+        late_driver.connect.assert_not_called()
+    finally:
+        # Release the retry loop if the regression permits the late connector.
+        for connector in manager.connectors.values():
+            connector.stopped.set()
+        manager.conn_mgr_executor.shutdown()
+        manager.frame_mgr_executor.shutdown()
+
+
 def test_grpc_bind_failure_stops_server_and_propagates():
     connector = MagicMock(params={"scheme": "grpc", "host": "localhost", "port": 1234})
     with patch.object(grpc_driver.grpc, "server") as create:

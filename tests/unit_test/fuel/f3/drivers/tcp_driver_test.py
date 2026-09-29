@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import socket
+import ssl
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
@@ -21,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
+from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver, TcpStreamServer
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -53,39 +55,68 @@ def test_connect_finishing_after_shutdown_closes_socket(monkeypatch):
         assert not driver.connections
 
 
-def test_idle_tls_peer_cannot_pin_listener_shutdown(tmp_path):
+@pytest.fixture
+def tls_listener(tmp_path):
     key, public_key = generate_keys()
     cert = generate_cert(Identity("localhost"), Identity("localhost"), key, public_key, ca=True)
     cert_file, key_file = tmp_path / "cert.pem", tmp_path / "key.pem"
     cert_file.write_bytes(serialize_cert(cert))
     key_file.write_bytes(serialize_pri_key(key))
     params = {"ca_cert": str(cert_file), "server_cert": str(cert_file), "server_key": str(key_file)}
-    connector = MagicMock(params=dict(params, host="127.0.0.1", port=0, scheme="stcp"), stopped=Event())
     driver = TcpDriver()
+    connector = ConnectorInfo(
+        "test", driver, dict(params, host="127.0.0.1", port=0, scheme="stcp"), Mode.PASSIVE, 0, 0, False, Event()
+    )
     driver.register_conn_monitor(MagicMock())
-    listening = Event()
-    serve = TcpStreamServer.serve_forever
-
-    def serve_and_signal(server):
-        listening.set()
-        serve(server, poll_interval=0.05)
-
-    listener = Thread(target=driver.listen, args=(connector,), daemon=True)
-    shutdown = Thread(target=driver.shutdown, daemon=True)
-    peer = None
+    driver.server = TcpStreamServer(driver, connector)
+    listener = Thread(target=driver.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    listener.start()
     try:
-        with patch.object(TcpStreamServer, "serve_forever", serve_and_signal):
-            listener.start()
-            assert listening.wait(2)
-            peer = socket.create_connection(driver.server.server_address, timeout=2)
-            time.sleep(0.1)  # leave the peer in the TLS handshake, sending no bytes
+        yield driver, connector
+    finally:
+        connector.stopped.set()
+        driver.shutdown()
+        listener.join(3)
+        assert not listener.is_alive()
+
+
+def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
+    driver, connector = tls_listener
+    handshaking = Event()
+    do_handshake = ssl.SSLSocket.do_handshake
+
+    def handshake_and_signal(sock, *args, **kwargs):
+        if sock.server_side:
+            handshaking.set()
+        return do_handshake(sock, *args, **kwargs)
+
+    shutdown = Thread(target=driver.shutdown, daemon=True)
+    with patch.object(ssl.SSLSocket, "do_handshake", handshake_and_signal):
+        with socket.create_connection(driver.server.server_address, timeout=2) as peer:
+            assert handshaking.wait(2)
+            connector.stopped.set()
             shutdown.start()
             shutdown.join(2)
             assert not shutdown.is_alive(), "an idle TLS handshake blocked shutdown"
-    finally:
-        if peer:
-            peer.close()
-        shutdown.join(3)
-        listener.join(3)
-        if driver.server:
-            driver.server.server_close()
+            assert driver.server.socket.fileno() == -1
+            # The accepted socket can still complete TLS after the shutdown snapshot.
+            context = get_ssl_context(connector.params, ssl_server=False)
+            with context.wrap_socket(peer) as secured_peer:
+                assert secured_peer.recv(1) == b""
+
+
+def test_tls_handshake_honors_longer_connection_timeout(tls_listener):
+    driver, connector = tls_listener
+    connector.params["connect_timeout"] = 10.0
+    context = get_ssl_context(connector.params, ssl_server=False)
+    with socket.create_connection(driver.server.server_address, timeout=2) as peer:
+        time.sleep(5.2)  # A legitimate handshake can exceed the former fixed five-second limit.
+        with context.wrap_socket(peer) as secured_peer:
+            secured_peer.sendall(b"x")
+
+
+def test_idle_tls_peer_is_closed_at_configured_timeout(tls_listener):
+    driver, connector = tls_listener
+    connector.params["connect_timeout"] = 0.1
+    with socket.create_connection(driver.server.server_address, timeout=2) as peer:
+        assert peer.recv(1) == b""

@@ -229,7 +229,8 @@ class ConnectionHandler(BaseRequestHandler):
         # A silent TLS peer must not block the listener's accept/shutdown loop.
         if self.server.ssl_context:
             try:
-                self.request.settimeout(5.0)
+                # Honor the connector timeout; default to asyncio's TLS handshake budget.
+                self.request.settimeout(self.server.connector.params.get(DriverParams.CONNECT_TIMEOUT, 60.0))
                 self.request.do_handshake()
                 self.request.settimeout(None)
             except OSError as ex:
@@ -242,5 +243,8 @@ class ConnectionHandler(BaseRequestHandler):
         driver = self.server.driver
 
         driver.add_connection(connection)
+        # Shutdown may have taken its snapshot while this peer was still handshaking.
+        if self.server.connector.stopped.is_set():
+            connection.close()
         connection.read_loop()
         driver.close_connection(connection)

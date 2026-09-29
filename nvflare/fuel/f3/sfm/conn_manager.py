@@ -122,6 +122,8 @@ class ConnManager(ConnMonitor):
         connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, threading.Event())
         driver.register_conn_monitor(self)
         with self.lock:
+            if self.stopped:
+                raise CommError(CommError.CLOSED, "Connection manager is stopped")
             self.connectors[handle] = connector
 
         log.debug(f"Connector {connector} is created")
@@ -155,9 +157,9 @@ class ConnManager(ConnMonitor):
     def stop(self):
 
         self.heartbeat_monitor.stop()
-        self.stopped = True
 
         with self.lock:
+            self.stopped = True
             connectors = list(self.connectors.values())
         for connector in connectors:
             connector.stopped.set()
