@@ -35,10 +35,6 @@ SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
 SCHEDULE_RESULT_BLOCK = 2  # job is to be blocked from scheduled again due to fatal error
 
 
-class _UnsafeAdmissionError(RuntimeError):
-    """Raised when a scheduler pass cannot safely continue after an admission error."""
-
-
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
@@ -214,14 +210,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
-        try:
-            resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
-        except Exception as e:
-            # A resource check can fail after a remote site has reserved resources but before the server receives
-            # the reservation token. Without the complete results, cleanup cannot be guaranteed.
-            raise _UnsafeAdmissionError(
-                f"resource check for job {job.job_id} failed before reservation results were available"
-            ) from e
+        resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
 
         keep_resources = False
         try:
@@ -229,30 +218,16 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
             if not resource_check_results:
-                if resource_reqs:
-                    raise _UnsafeAdmissionError(f"resource check for job {job.job_id} returned no results")
                 self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
                 return SCHEDULE_RESULT_NO_RESOURCE, None, "error checking resources"
 
             if not isinstance(resource_check_results, dict):
-                raise _UnsafeAdmissionError(
+                self.log_error(
+                    fl_ctx,
                     f"resource check for job {job.job_id} returned invalid results of type "
-                    f"{type(resource_check_results).__name__}"
+                    f"{type(resource_check_results).__name__}",
                 )
-
-            expected_sites = set(resource_reqs)
-            result_sites = set(resource_check_results)
-            if result_sites != expected_sites:
-                missing_sites = sorted(expected_sites - result_sites)
-                unexpected_sites = sorted(result_sites - expected_sites)
-                details = []
-                if missing_sites:
-                    details.append(f"missing sites: {missing_sites}")
-                if unexpected_sites:
-                    details.append(f"unexpected sites: {unexpected_sites}")
-                raise _UnsafeAdmissionError(
-                    f"resource check for job {job.job_id} returned incomplete results ({'; '.join(details)})"
-                )
+                return SCHEDULE_RESULT_NO_RESOURCE, None, "invalid resource check results"
 
             required_sites_not_enough_resource = list(required_sites)
             num_sites_ok = 0
@@ -303,15 +278,15 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             keep_resources = True
             return SCHEDULE_RESULT_OK, sites_dispatch_info, ""
         finally:
-            if resource_check_results and not keep_resources:
+            if isinstance(resource_check_results, dict) and resource_check_results and not keep_resources:
                 try:
                     self._cancel_resources(
                         resource_reqs=resource_reqs,
                         resource_check_results=resource_check_results,
                         fl_ctx=fl_ctx,
                     )
-                except Exception as e:
-                    raise _UnsafeAdmissionError(f"failed to cancel resources for job {job.job_id}") from e
+                except Exception:
+                    self.log_exception(fl_ctx, f"failed to cancel resources for job {job.job_id}")
 
     def _exceed_max_jobs(self, fl_ctx: FLContext) -> bool:
         exceed_limit = False
@@ -417,35 +392,31 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             with engine.new_context() as ctx:
                 rc = None
                 sites_dispatch_info = None
-                attempt_recorded = False
                 try:
                     rc, sites_dispatch_info, result = self._try_job(job, ctx)
                     self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {rc}, {sites_dispatch_info}.")
                     if not result:
                         result = "scheduled"
                     self._update_schedule_history(job, result, ctx)
-                    attempt_recorded = True
                 except Exception as e:
-                    admission_error = e
-                    cancellation_error = None
-                    if rc == SCHEDULE_RESULT_OK and sites_dispatch_info:
+                    self.log_exception(ctx, f"unexpected error admitting job {job.job_id}")
+                    if sites_dispatch_info:
                         try:
                             self._cancel_dispatch_resources(sites_dispatch_info, ctx)
-                        except Exception as cancel_error:
-                            cancellation_error = cancel_error
-                            admission_error = _UnsafeAdmissionError(
-                                f"failed to cancel resources after admitting job {job.job_id}"
-                            )
+                        except Exception:
+                            self.log_exception(ctx, f"failed to cancel resources after admitting job {job.job_id}")
 
-                    self.log_exception(ctx, f"unexpected error admitting job {job.job_id}")
                     failed_jobs.append(job)
-                    if not attempt_recorded:
-                        result = f"unexpected admission error: {secure_format_exception(admission_error)}"
-                        self._update_schedule_history(job, result, ctx)
-                    if isinstance(admission_error, _UnsafeAdmissionError):
-                        if cancellation_error:
-                            raise admission_error from cancellation_error
-                        raise
+                    result = f"unexpected admission error: {secure_format_exception(e)}"
+                    if job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0) == schedule_count:
+                        try:
+                            self._update_schedule_history(job, result, ctx)
+                        except Exception:
+                            self.log_exception(ctx, f"failed to record schedule history for job {job.job_id}")
+                            # Preserve retry backoff even when history metadata cannot be written.
+                            if job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0) == schedule_count:
+                                job.meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count + 1
+                                job.meta[JobMetaKey.LAST_SCHEDULE_TIME.value] = time.time()
                     continue
                 if rc == SCHEDULE_RESULT_OK:
                     return job, sites_dispatch_info

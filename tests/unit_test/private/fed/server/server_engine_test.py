@@ -120,6 +120,7 @@ def _make_cancel_resource_engine(replies):
     engine = ServerEngine.__new__(ServerEngine)
     engine.get_client_from_name = MagicMock(return_value=SimpleNamespace(token="client-token"))
     engine._send_admin_requests = MagicMock(return_value=replies)
+    engine.logger = MagicMock()
     return engine
 
 
@@ -136,28 +137,45 @@ def test_cancel_client_resources_accepts_successful_acknowledgement():
     engine._send_admin_requests.assert_called_once()
 
 
-@pytest.mark.parametrize("failure_mode", ["missing", "timeout", "message-error", "cancellation-error"])
-def test_cancel_client_resources_rejects_missing_or_failed_acknowledgement(failure_mode):
+@pytest.mark.parametrize("failure_mode", ["missing", "timeout", "message-error", "invalid-body", "cancellation-error"])
+def test_cancel_client_resources_logs_missing_or_failed_acknowledgement(failure_mode):
     if failure_mode == "missing":
         replies = []
     elif failure_mode == "timeout":
         replies = [_make_cancel_resource_reply()]
     else:
-        body = Shareable()
+        body = "invalid" if failure_mode == "invalid-body" else Shareable()
         reply = Message(topic="reply_cancel_resource", body=body)
         if failure_mode == "message-error":
             reply.set_header(MsgHeader.RETURN_CODE, AdminReturnCode.ERROR)
-        else:
+        elif failure_mode == "cancellation-error":
             body.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
         replies = [_make_cancel_resource_reply(reply)]
     engine = _make_cancel_resource_engine(replies)
 
-    with pytest.raises(RuntimeError, match="resource cancellation was not acknowledged.*site-1"):
-        engine.cancel_client_resources(
-            resource_check_results={"site-1": (True, "reservation-token")},
-            resource_reqs={"site-1": {"gpu": 1}},
-            fl_ctx=FLContext(),
-        )
+    engine.cancel_client_resources(
+        resource_check_results={"site-1": (True, "reservation-token")},
+        resource_reqs={"site-1": {"gpu": 1}},
+        fl_ctx=FLContext(),
+    )
+
+    engine.logger.error.assert_called_once()
+    assert "site-1" in engine.logger.error.call_args.args[0]
+
+
+def test_cancel_client_resources_logs_disconnected_client():
+    engine = _make_cancel_resource_engine([])
+    engine.get_client_from_name.return_value = None
+
+    engine.cancel_client_resources(
+        resource_check_results={"site-1": (True, "reservation-token")},
+        resource_reqs={"site-1": {"gpu": 1}},
+        fl_ctx=FLContext(),
+    )
+
+    engine._send_admin_requests.assert_not_called()
+    engine.logger.error.assert_called_once()
+    assert "site-1" in engine.logger.error.call_args.args[0]
 
 
 class _FakeClientManager:
