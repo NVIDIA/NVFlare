@@ -8,7 +8,9 @@ WORKDIR /opt/NVFlare
 # re-download on every source edit.
 COPY setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
-RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]"
+# Pin a matching PyTorch pair with Linux ARM64 wheels. Newer ARM64 releases
+# pull CUDA libraries even for this CPU example, which are unused in Colima.
+RUN pip install -U pip && pip install -e ".[PT]" "torch==2.5.1" "torchvision==0.20.1" tensorboard
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare

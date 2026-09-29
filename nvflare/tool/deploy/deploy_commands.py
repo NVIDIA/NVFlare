@@ -716,15 +716,21 @@ fi
 
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
-SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || echo "")
-GROUP_ADD_ARG=""
-if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
-    GROUP_ADD_ARG="--group-add $SOCK_GID"
+# Inspect the socket after Docker mounts it. On macOS, the host path can be a
+# symlink whose group differs from the socket group inside the Linux VM.
+if ! SOCK_GID=$(docker run --rm --user 0:0 --entrypoint stat \\
+    -v /var/run/docker.sock:/var/run/docker.sock "$DOCKER_IMAGE" \\
+    -c '%g' /var/run/docker.sock); then
+    echo "ERROR: cannot inspect the Docker socket inside $DOCKER_IMAGE."
+    exit 1
 fi
+case "$SOCK_GID" in
+    ''|*[!0-9]*) echo "ERROR: invalid Docker socket group: $SOCK_GID"; exit 1 ;;
+esac
 
 docker run --name {shlex.quote(kit_info.name)} \\
     --user "$(id -u):$(id -g)" \\
-    $GROUP_ADD_ARG \\
+    --group-add "$SOCK_GID" \\
     --network "$NETWORK_NAME" \\
 {network_alias}    -v "$HOST_WORKSPACE":{WORKSPACE_MOUNT_PATH} \\
     -v /var/run/docker.sock:/var/run/docker.sock \\
