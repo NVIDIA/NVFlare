@@ -51,17 +51,29 @@ configuration. A guest-supplied measurement or successful Kubernetes status
 does not satisfy those checks.
 
 The TDX handoff is `coco-platform-reference-values/v2`, with `tee: tdx` and
-`profiles`. Each profile is a complete tuple: `mr_td`, `rtmr_1`, `rtmr_2`,
-`xfam`, `tdvfkernel`, and `tdvfkernelparams`, plus an identifier. Secure services
-registers the tuple set under one RVPS reference, `coco_tdx_profiles_v2`.
+`profiles`. Each profile is a complete tuple: `mr_td`, `rtmr_0`, `rtmr_1`,
+`rtmr_2`, `rtmr_3`, `xfam`, `tdvfkernel`, and `tdvfkernelparams`, plus an
+identifier. Secure services registers the tuple set under one RVPS reference,
+`coco_tdx_profiles_v2`.
 The AS policy requires a complete tuple match. It must not construct an
 approved configuration by choosing individual values from different profiles.
+Quote verification and event-log replay establish integrity; they do not approve
+the measured values. All four RTMRs must also match that approved tuple.
 The SNP five-field schema remains unchanged and separate.
+
+Reference collection, repeat rehearsal and workload appraisal must use an
+approved, stable attestation phase, including RTMR3. If runtime events change
+RTMR3, require explicitly reviewed profiles for the intended states or redesign
+the measurement/attestation sequence. Wildcards, blanket zero assumptions and
+fallback acceptance are not supported.
 
 The service administrator installs the reviewed AS policy first and then
 approved references. A reference-only update does not replace AS or KBS policy
 and refuses a mismatched active CPU policy. The trusted system sends no AS
 policy, signing key or private report to secure services in this handoff.
+This correction retains the unreleased v2 schema and RVPS key; older six-field
+TDX profiles fail closed with the updated validator and policy. Recollect and
+reapprove complete profiles, and install the updated AS policy before use.
 
 ## Workload authorization and InitData
 

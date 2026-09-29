@@ -6,6 +6,7 @@ umask 077
 [[ $# == 2 ]] || { printf 'Usage: %s INPUT_ASC OUTPUT_GPG\n' "$0" >&2; exit 2; }
 [[ -f $1 && -s $1 && ! -e $2 ]] || { printf 'Invalid key input/output\n' >&2; exit 1; }
 KEY_HOME="$(mktemp -d /tmp/coco-intel-key.XXXXXX)"
+trap 'key_status=$?; rm -rf -- "${KEY_HOME}" || :; exit "${key_status}"' EXIT
 FINGERPRINT='150434D1488BF80308B69398E5C7F0FA1C6C6C3C'
 # No ambient gpg.conf, keyring, ownertrust or configured keyserver is consulted.
 # Inspect every primary key, not just the first fingerprint in a key bundle.

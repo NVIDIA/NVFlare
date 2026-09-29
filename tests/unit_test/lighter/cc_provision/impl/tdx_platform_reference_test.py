@@ -50,6 +50,39 @@ def test_complete_profile_replacement_uses_one_fixed_reference():
     assert message["type"] == "sample"
 
 
+def test_reference_schema_requires_all_four_rtmrs():
+    assert set(INSTALLER._schema.TDX_FIELDS) == {
+        "mr_td",
+        "rtmr_0",
+        "rtmr_1",
+        "rtmr_2",
+        "rtmr_3",
+        "xfam",
+        "tdvfkernel",
+        "tdvfkernelparams",
+    }
+
+
+def test_previous_six_field_profile_cannot_be_installed(monkeypatch):
+    values = tdx_values()
+    del values["profiles"][0]["rtmr_0"]
+    del values["profiles"][0]["rtmr_3"]
+    requests = []
+    monkeypatch.setattr(INSTALLER, "post_reference", lambda message, *_: requests.append(message))
+    with pytest.raises(ValueError, match="all eight measurement fields"):
+        INSTALLER.install_references(values, "https://example.com", "ca", "token")
+    assert not requests
+
+
+@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
+def test_distinct_profiles_may_differ_only_in_one_rtmr(field):
+    first = profile("first")
+    second = profile("second")
+    second[field] = "b" * 96
+    values = tdx_values(first, second)
+    assert INSTALLER.reference_payload(values) == {"coco_tdx_profiles_v2": [first, second]}
+
+
 def test_existing_versioned_platform_profile_identifier_is_valid():
     values = tdx_values(profile("kata-3.29.0-tdx-approved-v1"))
     assert INSTALLER.validate_values(values) == values
@@ -124,6 +157,15 @@ def test_tdx_readback_requires_exact_set_but_allows_reordering():
     for actual in [values["profiles"][:1], values["profiles"] + [profile("c", "c")], None]:
         with pytest.raises(ValueError):
             INSTALLER.compare_reference(values, "coco_tdx_profiles_v2", json.dumps(actual))
+
+
+@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
+def test_tdx_readback_rejects_changed_rtmr(field):
+    values = tdx_values()
+    actual = copy.deepcopy(values["profiles"])
+    actual[0][field] = "b" * 96
+    with pytest.raises(ValueError):
+        INSTALLER.compare_reference(values, "coco_tdx_profiles_v2", json.dumps(actual))
 
 
 def test_update_env_saves_private_validated_snapshot_without_touching_snp(tmp_path):

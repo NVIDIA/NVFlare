@@ -26,9 +26,11 @@ fi
 BACKUP=$(mktemp "$SCRIPT_DIR/platform.env.before-values.XXXXXX")
 install -m 0600 "$SCRIPT_DIR/platform.env" "$BACKUP"
 if [[ -n ${PLATFORM_REFERENCE_VALUES_FILE:-} ]]; then
-    python3 "$PARSER" validate "$PLATFORM_REFERENCE_VALUES_FILE" >/dev/null
+    # Preserve the previous snapshot verbatim, including retired reference schemas.
+    [[ -f "$PLATFORM_REFERENCE_VALUES_FILE" && -r "$PLATFORM_REFERENCE_VALUES_FILE" ]] || \
+        die 'Previous reference snapshot must be a readable regular file'
     install -m 0600 "$PLATFORM_REFERENCE_VALUES_FILE" "$BACKUP.references.json"
-    printf 'Previous approved JSON snapshot: %s\n' "$BACKUP.references.json"
+    printf 'Previous reference JSON snapshot: %s\n' "$BACKUP.references.json"
 fi
 python3 "$PARSER" update-env "$VALUES" "$SCRIPT_DIR/platform.env"
 printf 'Saved approved reference snapshot and updated platform.env. Previous configuration: %s\n' "$BACKUP"

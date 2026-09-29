@@ -26,12 +26,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[5]
 OPA = os.environ.get("COCO_TEST_OPA") or shutil.which("opa")
 pytestmark = pytest.mark.skipif(not OPA, reason="set COCO_TEST_OPA to the service-pinned OPA 1.8.0 executable")
+QUOTE_FIELDS = ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam")
 
 
 def profile(identifier="approved", digit="a"):
     return {
         "id": identifier,
-        **{key: digit * 96 for key in ("mr_td", "rtmr_1", "rtmr_2", "tdvfkernel", "tdvfkernelparams")},
+        **{key: digit * 96 for key in (*QUOTE_FIELDS[:-1], "tdvfkernel", "tdvfkernelparams")},
         "xfam": digit * 16,
     }
 
@@ -42,7 +43,7 @@ def evidence(reference=None):
         "tdx": {
             "quote": {
                 "header": {"tee_type": "81000000", "vendor_id": "939a7233f79c4ca9940a0db3957f0607"},
-                "body": {field: reference[field] for field in ("mr_td", "rtmr_1", "rtmr_2", "xfam")},
+                "body": {field: reference[field] for field in QUOTE_FIELDS},
             },
             "tcb_status": "UpToDate",
             "collateral_expiration_status": "0",
@@ -96,11 +97,17 @@ def test_tdx_complete_profile_passes(evaluate):
     assert approved(evaluate(evidence()))
 
 
+def test_nonzero_rtmr0_and_rtmr3_pass_when_approved(evaluate):
+    reference = profile()
+    reference.update(rtmr_0="01" * 48, rtmr_3="23" * 48)
+    assert approved(evaluate(evidence(reference), [reference]))
+
+
 def test_either_complete_profile_passes_without_cross_profile_mixing(evaluate):
     profiles = [profile(), profile("second", "b")]
     assert approved(evaluate(evidence(profiles[0]), profiles))
     assert approved(evaluate(evidence(profiles[1]), profiles))
-    for field in ("mr_td", "rtmr_1", "rtmr_2", "xfam"):
+    for field in QUOTE_FIELDS:
         claims = evidence()
         claims["tdx"]["quote"]["body"][field] = profiles[1][field]
         assert not approved(evaluate(claims, profiles))
@@ -113,12 +120,45 @@ def test_event_digest_cannot_be_borrowed_from_other_profile(evaluate, index):
     assert not approved(evaluate(claims, [profile(), profile("second", "b")]))
 
 
-@pytest.mark.parametrize("field", ["mr_td", "rtmr_1", "rtmr_2", "xfam"])
-@pytest.mark.parametrize("invalid", [None, True, 0, "", "f" * 96])
+@pytest.mark.parametrize("field", QUOTE_FIELDS)
+@pytest.mark.parametrize("invalid", [None, True, 0, "", "f" * 96, "A" * 96, "a" * 95, "a" * 97, "g" * 96])
 def test_invalid_or_unapproved_quote_measurements_rejected(evaluate, field, invalid):
     claims = evidence()
     claims["tdx"]["quote"]["body"][field] = invalid
     assert not approved(evaluate(claims))
+
+
+@pytest.mark.parametrize("field", QUOTE_FIELDS)
+def test_missing_quote_measurement_rejected(evaluate, field):
+    claims = evidence()
+    del claims["tdx"]["quote"]["body"][field]
+    result = evaluate(claims)
+    assert [result[key] for key in ("executables", "hardware", "configuration")] == [33, 97, 36]
+
+
+@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
+@pytest.mark.parametrize("invalid", [None, True, 0, "", "A" * 96, "a" * 95, "a" * 97, "g" * 96])
+def test_malformed_rtmr_reference_rejected_even_if_quote_matches(evaluate, field, invalid):
+    reference = profile()
+    reference[field] = invalid
+    result = evaluate(evidence(reference), [reference])
+    assert [result[key] for key in ("executables", "hardware", "configuration")] == [33, 97, 36]
+
+
+@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
+def test_changed_rtmr_reference_rejects_evidence(evaluate, field):
+    reference = profile()
+    reference[field] = "b" * 96
+    assert not approved(evaluate(evidence(), [reference]))
+
+
+@pytest.mark.parametrize("fields", [("rtmr_0",), ("rtmr_3",), ("rtmr_0", "rtmr_3")])
+def test_incomplete_rtmr_reference_including_old_six_field_profile_rejected(evaluate, fields):
+    reference = profile()
+    for field in fields:
+        del reference[field]
+    result = evaluate(evidence(), [reference])
+    assert [result[key] for key in ("executables", "hardware", "configuration")] == [33, 97, 36]
 
 
 @pytest.mark.parametrize("status", [None, "OutOfDate", "ConfigurationNeeded", "SWHardeningNeeded", "UpToDate ", 0])

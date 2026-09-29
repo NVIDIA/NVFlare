@@ -76,7 +76,7 @@ tdx_approved_profile if {
     input.tdx
     not input.snp
     # A single fixed RVPS key is replaced as one value. Profile IDs are labels,
-    # never reference paths supplied by evidence. All six fields must match the
+    # never reference paths supplied by evidence. All eight fields must match the
     # SAME object, rather than independent allowlists for each measurement.
     profiles := query_reference_value("coco_tdx_profiles_v2")
     is_array(profiles)
@@ -84,15 +84,17 @@ tdx_approved_profile if {
     count(profiles) <= 64
     some profile in profiles
     is_object(profile)
-    object.keys(profile) == {"id", "mr_td", "rtmr_1", "rtmr_2", "xfam", "tdvfkernel", "tdvfkernelparams"}
+    object.keys(profile) == {"id", "mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam", "tdvfkernel", "tdvfkernelparams"}
     regex.match("^[a-z0-9][a-z0-9_.-]{0,63}$", profile.id)
-    every field in ["mr_td", "rtmr_1", "rtmr_2", "tdvfkernel", "tdvfkernelparams"] {
+    every field in ["mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "tdvfkernel", "tdvfkernelparams"] {
         regex.match("^[0-9a-f]{96}$", profile[field])
     }
     regex.match("^[0-9a-f]{16}$", profile.xfam)
     input.tdx.quote.body.mr_td == profile.mr_td
+    input.tdx.quote.body.rtmr_0 == profile.rtmr_0
     input.tdx.quote.body.rtmr_1 == profile.rtmr_1
     input.tdx.quote.body.rtmr_2 == profile.rtmr_2
+    input.tdx.quote.body.rtmr_3 == profile.rtmr_3
     input.tdx.quote.body.xfam == profile.xfam
     tdx_kernel_digest == profile.tdvfkernel
     tdx_params_digest == profile.tdvfkernelparams

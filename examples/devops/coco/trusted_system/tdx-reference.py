@@ -189,7 +189,7 @@ def extract_profile(claims, profile_id):
     """Extract only already verified Trustee claims, never decoded quote bytes."""
     body = claims["quote"]["body"]
     result = {"id": profile_id}
-    for field in ("mr_td", "rtmr_1", "rtmr_2", "xfam"):
+    for field in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam"):
         value = body.get(field)
         length = 16 if field == "xfam" else 96
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):
@@ -699,6 +699,8 @@ def export(config_path, values_path, launch_path=None):
     source = profile / "approved-tdx-reference-values.json"
     if sha(source) != env.get("TDX_REFERENCE_VALUES_SHA256"):
         raise ValueError("Approved TDX references changed after finalization")
+    # Reject previously finalized profiles that omit required measurements.
+    runpy.run_path(str(HERE / "lib/platform-reference-schema.py"))["load_values"](source)
     payloads = [(Path(values_path), source.read_text())]
     if launch_path:
         launch = output(

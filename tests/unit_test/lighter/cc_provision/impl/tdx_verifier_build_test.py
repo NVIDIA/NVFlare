@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 BUILD = Path(__file__).resolve().parents[5] / "examples/devops/coco/trusted_system/tdx-verifier/build.sh"
+VERIFY_INTEL_KEY = BUILD.with_name("verify-intel-key.sh")
 IMAGE_ID = "sha256:" + "a" * 64
 
 
@@ -71,3 +72,68 @@ def test_unknown_build_network_is_rejected_before_build(tmp_path, build_env):
     assert result.returncode == 2
     assert "must be default or host" in result.stderr
     assert not any(json.loads(line)[0] == "build" for line in calls.read_text().splitlines())
+
+
+@pytest.mark.parametrize(("failure", "returncode"), [("", 0), ("fingerprint", 1), ("inspect", 1), ("dearmor", 23)])
+def test_intel_key_verification_cleans_up_gnupg_home(tmp_path, failure, returncode):
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    temporary_homes = tmp_path / "gnupg"
+    temporary_homes.mkdir()
+    mktemp = tools / "mktemp"
+    mktemp.write_text(
+        f"#!{sys.executable}\n"
+        "import os, tempfile\n"
+        "print(tempfile.mkdtemp(prefix='coco-intel-key.', dir=os.environ['INTEL_KEY_TEST_ROOT']))\n"
+    )
+    mktemp.chmod(0o700)
+    calls = tmp_path / "gpg-calls.jsonl"
+    gpg = tools / "gpg"
+    gpg.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "home = Path(sys.argv[sys.argv.index('--homedir') + 1])\n"
+        "with open(os.environ['INTEL_KEY_TEST_CALLS'], 'a') as stream:\n"
+        "    stream.write(json.dumps(str(home)) + '\\n')\n"
+        "(home / 'private-keys-v1.d').mkdir(exist_ok=True)\n"
+        "(home / 'private-keys-v1.d' / 'sentinel').write_text('temporary key data')\n"
+        "failure = os.environ['INTEL_KEY_TEST_FAILURE']\n"
+        "if '--show-keys' in sys.argv:\n"
+        "    if failure == 'inspect':\n"
+        "        sys.exit(17)\n"
+        "    fingerprint = 'invalid' if failure == 'fingerprint' else '150434D1488BF80308B69398E5C7F0FA1C6C6C3C'\n"
+        "    print('pub:-:3072:1:key:0:0::::')\n"
+        "    print('fpr:::::::::' + fingerprint + ':')\n"
+        "elif '--dearmor' in sys.argv:\n"
+        "    if failure == 'dearmor':\n"
+        "        sys.exit(23)\n"
+        "    Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'test keyring')\n"
+        "else:\n"
+        "    sys.exit(99)\n"
+    )
+    gpg.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tools}:{os.environ['PATH']}",
+        "INTEL_KEY_TEST_ROOT": str(temporary_homes),
+        "INTEL_KEY_TEST_CALLS": str(calls),
+        "INTEL_KEY_TEST_FAILURE": failure,
+    }
+    key_input = tmp_path / "intel.asc"
+    key_input.write_text("test public key")
+    key_output = tmp_path / "intel.gpg"
+    result = subprocess.run(
+        ["bash", str(VERIFY_INTEL_KEY), str(key_input), str(key_output)], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == returncode, result.stderr
+    homes = [Path(json.loads(line)) for line in calls.read_text().splitlines()]
+    assert len(homes) == (1 if failure in {"fingerprint", "inspect"} else 2)
+    assert len(set(homes)) == 1
+    assert all(home.parent == temporary_homes and not home.exists() for home in homes)
+    assert not list(temporary_homes.iterdir())
+    if returncode == 0:
+        assert key_output.read_bytes() == b"test keyring"
+        assert key_output.stat().st_mode & 0o777 == 0o644
+    else:
+        assert not key_output.exists()

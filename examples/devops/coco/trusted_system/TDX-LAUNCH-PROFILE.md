@@ -103,11 +103,19 @@ automatically without review; this is the authorization decision, not merely
 format validation. Preserve failed evidence and choose a new profile for a
 new collection rather than overwriting or mixing runs.
 
-The candidate includes kernel and kernel-parameter event digests as well as
-MRTD/RTMR/XFAM. Approve the entire tuple; do not cherry-pick lower or convenient
-values from a different report. For TDX+GPU, GPU allocation/readiness during
-collection does not replace NVIDIA remote appraisal of the eventual encrypted
-workload. CPU-only requires neither GPU collection nor NVIDIA appraisal.
+The candidate includes `mr_td`, all four RTMRs (`rtmr_0` through `rtmr_3`),
+`xfam`, `tdvfkernel` and `tdvfkernelparams`, plus its identifier. Approve the
+entire tuple; do not cherry-pick lower or convenient values from a different
+report. Quote verification and event-log replay establish integrity, not approval
+of those measurements. Collection, repeat rehearsal and the intended workload
+appraisals must use an approved, stable attestation phase, including RTMR3.
+Runtime events that change RTMR3 require explicitly reviewed profiles for the
+intended states or a redesigned measurement/attestation sequence. Do not use
+wildcards, assume RTMR3 is always zero, or enable fallback acceptance.
+
+For TDX+GPU, GPU allocation/readiness during collection does not replace NVIDIA
+remote appraisal of the eventual encrypted workload. CPU-only requires neither
+GPU collection nor NVIDIA appraisal.
 
 ## 4. Finalize and export both handoffs
 
@@ -127,6 +135,10 @@ and the explicitly approved candidate hash. Stage 10 refuses existing output
 paths. Its TDX service document uses `coco-platform-reference-values/v2`,
 `tee: tdx`, and a complete approved profile tuple; the separate admin contract
 uses `coco-approved-workload-launch/v4`. The two files are not interchangeable.
+The unreleased v2 service schema and RVPS key remain unchanged, but older
+six-field TDX profiles fail closed with the updated validator and AS policy.
+Recollect and reapprove complete profiles, and install the updated AS policy
+on secure services before using them.
 
 The provisioning node coordinates authenticated delivery: send only the
 reference JSON to secure services and the separately authenticated launch

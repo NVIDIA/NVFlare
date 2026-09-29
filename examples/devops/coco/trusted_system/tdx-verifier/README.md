@@ -50,6 +50,11 @@ replays the combined firmware/AA event log against **all four RTMRs**. This
 wrapper additionally requires non-debug mode, `UpToDate` TCB (including current
 TCB when provided), and unexpired collateral. It emits only the verified claims
 JSON on stdout. Parsing an unsigned report or decoding an EAR is not a fallback.
+Successful verification establishes evidence integrity, not approval of the
+measured platform. The trusted authority must separately approve the complete
+profile, including all four RTMR values; the AS policy matches those values as
+one tuple. See [TDX profile approval](../TDX-LAUNCH-PROFILE.md) for the stable
+attestation-phase requirement, including runtime extensions to RTMR3.
 
 In Kata 3.29.0, guest-components revision
 `de3f6ff62aa736619b80d99dfca5bc3d2c9a799d` returns exactly `quote` and

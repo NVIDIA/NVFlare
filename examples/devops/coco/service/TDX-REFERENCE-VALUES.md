@@ -30,8 +30,10 @@ contain 1–64 verified, approved profiles. Each profile has exactly:
 | --- | --- |
 | `id` | Unique 1–64 character identifier, starting with a lowercase letter/digit, then lowercase letters, digits, `_`, `.` or `-` |
 | `mr_td` | 96 lowercase hexadecimal characters |
+| `rtmr_0` | 96 lowercase hexadecimal characters |
 | `rtmr_1` | 96 lowercase hexadecimal characters |
 | `rtmr_2` | 96 lowercase hexadecimal characters |
+| `rtmr_3` | 96 lowercase hexadecimal characters |
 | `xfam` | 16 lowercase hexadecimal characters |
 | `tdvfkernel` | 96 lowercase hexadecimal characters, verified kernel event digest |
 | `tdvfkernelparams` | 96 lowercase hexadecimal characters, verified kernel-parameter event digest |
@@ -42,12 +44,24 @@ fields fail validation. The AS policy requires a match to **one whole tuple**,
 not independent field allowlists. This prevents accidentally accepting a
 combination assembled from different approved launches. The quote verifier
 and AS configuration/TCB checks remain required in addition to matching references.
+Quote signature verification and event-log replay prove integrity, not platform
+approval: all four RTMRs must match the same approved profile. RTMR3 must be
+stable at the intended attestation phase. Runtime events that change it require
+explicitly reviewed profiles for the intended states or a redesigned
+measurement/attestation sequence, never wildcards, blanket zero values or fallback
+acceptance.
 
 The entire profile array is registered under one RVPS reference ID,
 `coco_tdx_profiles_v2`. Each TDX install replaces that complete array; include
 every previously approved profile that must remain valid. Removing one revokes
 its reference match for future appraisals, not keys or tokens already issued.
 SNP's separate five references are not removed by a TDX install.
+
+The unreleased v2 schema name and RVPS key are unchanged by the addition of
+`rtmr_0` and `rtmr_3`. Older six-field profiles fail closed with the updated
+validator and AS policy; recollect and reapprove complete profiles. Existing
+services must install the updated AS policy using the migration procedure below;
+updating references alone does not replace the policy.
 
 ## 1. Validate the authenticated file without changing services
 
@@ -98,7 +112,8 @@ CPU trust vector `(3,2,2)`; do not enable a permissive fallback to get a token.
 
 ## 3. Existing services: one-time policy migration
 
-When moving from the old SNP-only CPU policy to this reviewed combined policy,
+When moving from an older CPU policy, including a combined policy that did not
+compare all four RTMRs, to this reviewed combined policy,
 preserve current configuration, reference files and policy backups privately.
 Review the new policy and coordinate the change. **Do not rerun stage 05**;
 it overwrites workload authorization with default-deny.
@@ -112,6 +127,12 @@ bash ./09-install-platform-policy.sh --approve-pinned-platform
 bash ./10-verify-platform-reference-values.sh "$VALUES" --restart-rvps
 bash ./11-verify-service.sh
 ```
+
+Stage 02 validates the complete replacement file before changing configuration.
+It archives the previously configured file as exact bytes for audit, without
+reapproving it or requiring it to satisfy the updated schema. Its
+`--configure-only` mode changes no live references or policies; stage 09 installs
+the reviewed policy and replacement references.
 
 The configured file denotes the most recently selected TEE, not the complete
 contents of RVPS. Keep and independently verify the prior SNP JSON too:
@@ -139,8 +160,8 @@ bash ./11-verify-service.sh
 The updater checks the active reviewed CPU policy before changing references,
 uses authenticated TLS administration, replaces the complete TDX tuple set in
 one RVPS write, reads it back, and confirms appraisal/release policies did not
-change. It does not accept an old SNP-only CPU policy as TDX support. Do not
-manually register independent `mr_td`, `rtmr_1`, or kernel allowlists instead.
+change. It does not accept an older CPU policy as support for the current TDX
+contract. Do not manually register independent MRTD, RTMR or kernel allowlists.
 
 Stage 10 queries live RVPS and requires exact full-set equality, including
 types and tuple membership. `--restart-rvps` deliberately restarts RVPS and

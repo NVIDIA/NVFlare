@@ -32,7 +32,7 @@ FIELDS = {
     "snp_min_reported_tcb_snp": "SNP_MIN_REPORTED_TCB_SNP",
     "snp_min_reported_tcb_microcode": "SNP_MIN_REPORTED_TCB_MICROCODE",
 }
-TDX_FIELDS = ("mr_td", "rtmr_1", "rtmr_2", "xfam", "tdvfkernel", "tdvfkernelparams")
+TDX_FIELDS = ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam", "tdvfkernel", "tdvfkernelparams")
 TDX_REFERENCE_ID = "coco_tdx_profiles_v2"
 TDX_SCHEMA = "coco-platform-reference-values/v2"
 MAX_REFERENCE_BYTES = 131072
@@ -75,7 +75,7 @@ def validate_values(values):
     identifiers, tuples = set(), set()
     for profile in profiles:
         if type(profile) is not dict or set(profile) != {"id", *TDX_FIELDS}:
-            raise ValueError("Each TDX profile must contain exactly id and all six measurement fields")
+            raise ValueError("Each TDX profile must contain exactly id and all eight measurement fields")
         identifier = profile["id"]
         if type(identifier) is not str or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", identifier):
             raise ValueError(

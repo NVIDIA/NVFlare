@@ -39,7 +39,16 @@ collector_spec.loader.exec_module(collector)
 
 def verified_claims():
     return {
-        "quote": {"body": {"mr_td": "a" * 96, "rtmr_1": "b" * 96, "rtmr_2": "c" * 96, "xfam": "d" * 16}},
+        "quote": {
+            "body": {
+                "mr_td": "a" * 96,
+                "rtmr_0": "1" * 96,
+                "rtmr_1": "b" * 96,
+                "rtmr_2": "c" * 96,
+                "rtmr_3": "2" * 96,
+                "xfam": "d" * 16,
+            }
+        },
         "uefi_event_logs": [
             {
                 "type_name": "EV_EFI_BOOT_SERVICES_APPLICATION",
@@ -60,19 +69,29 @@ def test_complete_verified_profile():
     assert result == {
         "id": "tdx-profile-1",
         "mr_td": "a" * 96,
+        "rtmr_0": "1" * 96,
         "rtmr_1": "b" * 96,
         "rtmr_2": "c" * 96,
+        "rtmr_3": "2" * 96,
         "xfam": "d" * 16,
         "tdvfkernel": "e" * 96,
         "tdvfkernelparams": "f" * 96,
     }
 
 
-@pytest.mark.parametrize("field", ["mr_td", "rtmr_1", "rtmr_2", "xfam"])
+@pytest.mark.parametrize("field", ["mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam"])
 @pytest.mark.parametrize("value", [None, 0, "", "A" * 96, "g" * 96, "0" * 64])
 def test_invalid_verified_field_rejected(field, value):
     claims = verified_claims()
     claims["quote"]["body"][field] = value
+    with pytest.raises(ValueError, match="Invalid verified"):
+        workflow.extract_profile(claims, "tdx")
+
+
+@pytest.mark.parametrize("field", ["mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam"])
+def test_missing_verified_field_rejected(field):
+    claims = verified_claims()
+    del claims["quote"]["body"][field]
     with pytest.raises(ValueError, match="Invalid verified"):
         workflow.extract_profile(claims, "tdx")
 
@@ -158,6 +177,53 @@ def test_finalize_requires_specific_authority_approval(tmp_path):
             workflow.finalize("base.env", "approval.env")
     verify.assert_not_called()
     assert not (tmp_path / "platform-reference.final.env").exists()
+
+
+@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
+@pytest.mark.parametrize("changed_run", ["first", "repeat", "both"])
+def test_finalize_rejects_register_change_in_reverified_runs(tmp_path, field, changed_run):
+    claims = verified_claims()
+    candidate = tmp_path / "candidate-tdx-profile.json"
+    candidate.write_text(json.dumps(workflow.extract_profile(claims, "tdx-test")))
+    for directory, nonce in (("rehearsal-collector-build", b"a" * 64), ("repeat-rehearsal", b"b" * 64)):
+        run_dir = tmp_path / directory
+        run_dir.mkdir()
+        (run_dir / "request-data.bin").write_bytes(nonce)
+    runs = [copy.deepcopy(claims), copy.deepcopy(claims)]
+    for index, name in enumerate(("first", "repeat")):
+        if changed_run in (name, "both"):
+            runs[index]["quote"]["body"][field] = "3" * 96
+    with (
+        patch.object(workflow, "config", return_value=({"PLATFORM_PROFILE": "tdx-test"}, tmp_path)),
+        patch.object(workflow, "approval", return_value={"APPROVED_TDX_PROFILE_SHA256": workflow.sha(candidate)}),
+        patch.object(workflow, "verifier", return_value=Path("pinned-verifier")),
+        patch.object(workflow, "output", side_effect=[json.dumps(run) for run in runs]) as verify,
+    ):
+        with pytest.raises(ValueError, match="both newly verified runs"):
+            workflow.finalize("base.env", "approval.env")
+    assert verify.call_count == 2
+    assert not (tmp_path / "approved-tdx-reference-values.json").exists()
+    assert not (tmp_path / "platform-reference.final.env").exists()
+
+
+@pytest.mark.parametrize("omitted", [(), ("rtmr_0",), ("rtmr_3",), ("rtmr_0", "rtmr_3")])
+def test_export_requires_complete_finalized_profile(tmp_path, omitted):
+    reference = workflow.extract_profile(verified_claims(), "tdx-test")
+    for field in omitted:
+        del reference[field]
+    values = {"schema": "coco-platform-reference-values/v2", "tee": "tdx", "profiles": [reference]}
+    source = tmp_path / "approved-tdx-reference-values.json"
+    source.write_text(json.dumps(values))
+    destination = tmp_path / "handoff.json"
+    env = {"TDX_REFERENCE_VALUES_SHA256": workflow.sha(source)}
+    with patch.object(workflow, "config", return_value=(env, tmp_path)):
+        if omitted:
+            with pytest.raises(ValueError, match="all eight measurement fields"):
+                workflow.export(tmp_path / "platform-reference.final.env", destination)
+            assert not destination.exists()
+        else:
+            workflow.export(tmp_path / "platform-reference.final.env", destination)
+            assert json.loads(destination.read_text()) == values
 
 
 def test_write_cannot_overwrite_evidence(tmp_path):
