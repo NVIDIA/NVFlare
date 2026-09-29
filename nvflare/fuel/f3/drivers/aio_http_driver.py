@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 import logging
 from typing import Any, Dict, List
 
@@ -92,6 +93,7 @@ class AioHttpDriver(BaseDriver):
         self.loop = self.aio_context.get_event_loop()
         self.ssl_context = None
         self.stop_event = self.loop.create_future()
+        self._shutdown_lock = asyncio.Lock()
         self.app = None
         self.site = None
         self.runner = None
@@ -195,22 +197,24 @@ class AioHttpDriver(BaseDriver):
                 break
 
     async def _async_shutdown(self):
-        self.close_all()
+        # Keep completion behind cleanup, including when shutdown calls overlap.
+        async with self._shutdown_lock:
+            self.close_all()
 
-        # Detach before awaiting so repeated shutdowns cannot clean up the same site.
-        site, self.site = self.site, None
-        runner, self.runner = self.runner, None
-        app, self.app = self.app, None
+            # Detach before awaiting so repeated shutdowns cannot clean up the same site.
+            site, self.site = self.site, None
+            runner, self.runner = self.runner, None
+            app, self.app = self.app, None
 
-        if site:
-            await site.stop()
+            if site:
+                await site.stop()
 
-        if runner:
-            await runner.cleanup()
+            if runner:
+                await runner.cleanup()
 
-        if app:
-            await app.shutdown()
-            await app.cleanup()
+            if app:
+                await app.shutdown()
+                await app.cleanup()
 
-        if self.stop_event and not self.stop_event.done():
-            self.stop_event.set_result(None)
+            if self.stop_event and not self.stop_event.done():
+                self.stop_event.set_result(None)

@@ -121,8 +121,7 @@ def test_grpc_server_shutdown_is_repeatable(asynchronous):
         assert native_server.stop.call_count == 2
 
 
-@pytest.mark.parametrize("concurrent", [False, True])
-def test_http_server_shutdown_is_repeatable(concurrent):
+def test_http_server_shutdown_is_repeatable():
     async def shutdown():
         context = MagicMock()
         context.get_event_loop.return_value = asyncio.get_running_loop()
@@ -134,14 +133,8 @@ def test_http_server_shutdown_is_repeatable(concurrent):
         driver.site = web.TCPSite(runner, "127.0.0.1", 0)
         await driver.site.start()
         try:
-            if concurrent:
-                results = await asyncio.gather(
-                    driver._async_shutdown(), driver._async_shutdown(), return_exceptions=True
-                )
-                assert results == [None, None]
-            else:
-                await driver._async_shutdown()
-                await driver._async_shutdown()
+            await driver._async_shutdown()
+            await driver._async_shutdown()
             assert driver.stop_event.done()
             assert not runner.sites
         finally:
@@ -284,4 +277,56 @@ def test_http_listener_starting_during_shutdown_releases_socket(pause_at, listen
                 await server.wait_closed()
 
         listener_context.run_coro(cleanup()).result(5)
+        assert not listener.is_alive()
+
+
+def test_overlapping_http_shutdowns_wait_for_cleanup(listener_context, monkeypatch):
+    driver = AioHttpDriver()
+    params = {"scheme": "http", "host": "127.0.0.1", "port": 0}
+    connector = ConnectorInfo("test", driver, params, Mode.PASSIVE, 0, 0, False, threading.Event())
+    started = threading.Event()
+    cleaning, release = asyncio.Event(), asyncio.Event()
+    start_site, cleanup_runner = web.TCPSite.start, web.AppRunner.cleanup
+
+    async def start(site):
+        await start_site(site)
+        started.set()
+
+    async def cleanup(runner):
+        cleaning.set()
+        await release.wait()
+        await cleanup_runner(runner)
+
+    monkeypatch.setattr(web.TCPSite, "start", start)
+    monkeypatch.setattr(web.AppRunner, "cleanup", cleanup)
+    listener, errors = _start_listener(driver, connector)
+
+    async def overlap():
+        first = asyncio.create_task(driver._async_shutdown())
+        second = None
+        try:
+            await asyncio.wait_for(cleaning.wait(), 2)
+            second = asyncio.create_task(driver._async_shutdown())
+            # Let the second shutdown run while the first is paused in cleanup.
+            await asyncio.sleep(0)
+            assert not driver.stop_event.done(), "listener released before runner cleanup completed"
+            assert listener.is_alive()
+            assert not first.done()
+            assert not second.done()
+        finally:
+            release.set()
+            await asyncio.gather(*[task for task in (first, second) if task is not None])
+
+    try:
+        assert started.wait(5)
+        connector.stopped.set()
+        listener_context.run_coro(overlap()).result(5)
+        listener.join(3)
+        assert not listener.is_alive()
+        assert not errors
+        assert driver.stop_event.done()
+    finally:
+        listener_context.get_event_loop().call_soon_threadsafe(release.set)
+        driver.shutdown()
+        listener.join(5)
         assert not listener.is_alive()
