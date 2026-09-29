@@ -246,8 +246,6 @@ class ServerEngineSpec(EngineSpec, ABC):
             resource_reqs: A dict of {client_name: resource requirements dict}
             fl_ctx: FLContext
 
-        Raises:
-            RuntimeError: if a reserved resource cancellation is not acknowledged by its client.
         """
         pass
 
