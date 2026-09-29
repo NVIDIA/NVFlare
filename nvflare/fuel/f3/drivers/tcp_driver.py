@@ -80,8 +80,17 @@ class TcpDriver(BaseDriver):
 
     def listen(self, connector: ConnectorInfo):
         self.connector = connector
-        self.server = TcpStreamServer(self, connector)
-        self.server.serve_forever()
+        server = TcpStreamServer(self, connector)
+        # Pair publication with shutdown's snapshot. Once published, serve_forever()
+        # must run so that a concurrent server.shutdown() can finish.
+        with self.conn_lock:
+            stopped = connector.stopped.is_set()
+            if not stopped:
+                self.server = server
+        if stopped:
+            server.server_close()
+        else:
+            server.serve_forever()
 
     def connect(self, connector: ConnectorInfo):
         self.connector = connector
@@ -91,7 +100,8 @@ class TcpDriver(BaseDriver):
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.settimeout(params.get(DriverParams.CONNECT_TIMEOUT))
+            timeout = params.get(DriverParams.CONNECT_TIMEOUT)
+            sock.settimeout(float(timeout) if timeout is not None else None)
             context = get_ssl_context(params, ssl_server=False)
             if context:
                 sock = context.wrap_socket(sock)
@@ -110,11 +120,13 @@ class TcpDriver(BaseDriver):
         self.close_connection(connection)
 
     def shutdown(self):
-        if self.server:
-            self.server.shutdown()
+        with self.conn_lock:
+            server = self.server
+        if server:
+            server.shutdown()
         self.close_all()
-        if self.server:
-            self.server.server_close()
+        if server:
+            server.server_close()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

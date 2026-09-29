@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp import web
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
@@ -117,14 +118,30 @@ def test_grpc_server_shutdown_is_repeatable(asynchronous):
         assert native_server.stop.call_count == 2
 
 
-def test_http_server_shutdown_is_repeatable():
+@pytest.mark.parametrize("concurrent", [False, True])
+def test_http_server_shutdown_is_repeatable(concurrent):
     async def shutdown():
         context = MagicMock()
         context.get_event_loop.return_value = asyncio.get_running_loop()
         with patch("nvflare.fuel.f3.drivers.aio_http_driver.AioContext.get_global_context", return_value=context):
             driver = AioHttpDriver()
-        await driver._async_shutdown()
-        await driver._async_shutdown()
-        assert driver.stop_event.done()
+        driver.app = web.Application()
+        driver.runner = runner = web.AppRunner(driver.app)
+        await runner.setup()
+        driver.site = web.TCPSite(runner, "127.0.0.1", 0)
+        await driver.site.start()
+        try:
+            if concurrent:
+                results = await asyncio.gather(
+                    driver._async_shutdown(), driver._async_shutdown(), return_exceptions=True
+                )
+                assert results == [None, None]
+            else:
+                await driver._async_shutdown()
+                await driver._async_shutdown()
+            assert driver.stop_event.done()
+            assert not runner.sites
+        finally:
+            await runner.cleanup()
 
     asyncio.run(shutdown())

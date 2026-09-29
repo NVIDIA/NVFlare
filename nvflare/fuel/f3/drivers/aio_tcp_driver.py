@@ -104,5 +104,7 @@ class AioTcpDriver(BaseDriver):
     async def _create_connection(self, reader, writer):
         conn = AioConnection(self.connector, self.aio_ctx, reader, writer, self.ssl_context is not None)
         self.add_connection(conn)
+        if self.connector.stopped.is_set():
+            conn.close()
         await conn.read_loop()
         self.close_connection(conn)

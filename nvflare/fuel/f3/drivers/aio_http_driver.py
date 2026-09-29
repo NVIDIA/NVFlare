@@ -193,16 +193,20 @@ class AioHttpDriver(BaseDriver):
     async def _async_shutdown(self):
         self.close_all()
 
-        if self.site:
-            await self.site.stop()
+        # Detach before awaiting so repeated shutdowns cannot clean up the same site.
+        site, self.site = self.site, None
+        runner, self.runner = self.runner, None
+        app, self.app = self.app, None
 
-        if self.runner:
-            await self.runner.cleanup()
+        if site:
+            await site.stop()
 
-        if self.app:
-            await self.app.shutdown()
-            await self.app.cleanup()
-            self.app = None
+        if runner:
+            await runner.cleanup()
+
+        if app:
+            await app.shutdown()
+            await app.cleanup()
 
         if self.stop_event and not self.stop_event.done():
             self.stop_event.set_result(None)
