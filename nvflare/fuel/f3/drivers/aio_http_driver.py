@@ -112,14 +112,18 @@ class AioHttpDriver(BaseDriver):
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
 
-        self.app = web.Application(client_max_size=MAX_FRAME_SIZE)
-        self.app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
+        app = web.Application(client_max_size=MAX_FRAME_SIZE)
+        app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
 
         async def setup():
-            self.runner = web.AppRunner(self.app, access_log=None)
-            await self.runner.setup()
-            self.site = web.TCPSite(self.runner, host, port, ssl_context=self.ssl_context)
-            await self.site.start()
+            runner = web.AppRunner(app, access_log=None)
+            await runner.setup()
+            site = web.TCPSite(runner, host, port, ssl_context=self.ssl_context)
+            await site.start()
+            # Publish only after startup so shutdown cannot detach a partially started site.
+            self.app, self.runner, self.site = app, runner, site
+            if connector.stopped.is_set() or self.stop_event.done():
+                await self._async_shutdown()
             await self.stop_event
 
         self.aio_context.run_coro(setup()).result()

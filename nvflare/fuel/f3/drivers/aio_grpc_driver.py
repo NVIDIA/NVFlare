@@ -254,6 +254,8 @@ class Server:
         self.logger.debug("starting grpc server")
         try:
             await self.grpc_server.start()
+            if self.driver.closing or self.connector.stopped.is_set():
+                await self.shutdown()
             await self.grpc_server.wait_for_termination()
         except Exception as ex:
             conn_ctx.error = f"cannot start server: {type(ex)}: {secure_format_exception(ex)}"

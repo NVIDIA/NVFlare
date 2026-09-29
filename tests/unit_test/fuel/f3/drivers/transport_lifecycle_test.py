@@ -15,6 +15,8 @@
 """Regression coverage for transport lifecycle fixes, independent of certificate renewal."""
 
 import asyncio
+import socket
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,8 +25,9 @@ from aiohttp import web
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
+from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.aio_http_driver import AioHttpDriver
-from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
@@ -145,3 +148,140 @@ def test_http_server_shutdown_is_repeatable(concurrent):
             await runner.cleanup()
 
     asyncio.run(shutdown())
+
+
+@pytest.fixture
+def listener_context(monkeypatch):
+    context = AioContext("listener_shutdown_test")
+    thread = threading.Thread(target=context.run_aio_loop, daemon=True)
+    thread.start()
+    assert context.ready.wait(5)
+    monkeypatch.setattr(AioContext, "get_global_context", lambda: context)
+    try:
+        yield context
+    finally:
+        context.stop_aio_loop()
+        thread.join(5)
+        assert not thread.is_alive()
+
+
+def _start_listener(driver, connector):
+    errors = []
+
+    def listen():
+        try:
+            driver.listen(connector)
+        except Exception as ex:
+            errors.append(ex)
+
+    listener = threading.Thread(target=listen, daemon=True)
+    listener.start()
+    return listener, errors
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("pause_at", ["construction", "start"])
+def test_grpc_listener_starting_during_shutdown_exits(asynchronous, pause_at, listener_context, monkeypatch):
+    module = aio_grpc_driver if asynchronous else grpc_driver
+    driver = module.AioGrpcDriver() if asynchronous else module.GrpcDriver()
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    params = {"scheme": "grpc", "host": "127.0.0.1", "port": port}
+    connector = ConnectorInfo("test", driver, params, Mode.PASSIVE, 0, 0, False, threading.Event())
+    entered, release = threading.Event(), threading.Event()
+    server_class = module.Server
+    servers = []
+
+    def create_server(*args, **kwargs):
+        server = server_class(*args, **kwargs)
+        servers.append(server)
+        if pause_at == "construction":
+            entered.set()
+            assert release.wait(5)
+        else:
+            start = server.grpc_server.start
+
+            def delayed_start():
+                entered.set()
+                assert release.wait(5)
+                start()
+
+            async def delayed_async_start():
+                await start()
+                entered.set()
+                assert await asyncio.to_thread(release.wait, 5)
+
+            monkeypatch.setattr(server.grpc_server, "start", delayed_async_start if asynchronous else delayed_start)
+        return server
+
+    monkeypatch.setattr(module, "Server", create_server)
+    listener, errors = _start_listener(driver, connector)
+    try:
+        assert entered.wait(5)
+        connector.stopped.set()
+        driver.shutdown()
+        release.set()
+        listener.join(3)
+        assert not listener.is_alive(), "listener started after shutdown and never exited"
+        assert not errors
+        with socket.socket() as probe:
+            probe.settimeout(1)
+            assert probe.connect_ex(("127.0.0.1", port)) != 0
+    finally:
+        release.set()
+        for server in servers:
+            if asynchronous:
+                listener_context.run_coro(server.shutdown()).result(5)
+            else:
+                server.shutdown()
+        listener.join(5)
+        assert not listener.is_alive()
+
+
+@pytest.mark.parametrize("pause_at", ["before_bind", "after_bind"])
+def test_http_listener_starting_during_shutdown_releases_socket(pause_at, listener_context, monkeypatch):
+    driver = AioHttpDriver()
+    params = {"scheme": "http", "host": "127.0.0.1", "port": 0}
+    connector = ConnectorInfo("test", driver, params, Mode.PASSIVE, 0, 0, False, threading.Event())
+    entered, release = threading.Event(), threading.Event()
+    create_server = driver.loop.create_server
+    servers, sockets = [], []
+
+    async def delayed_create(*args, **kwargs):
+        if pause_at == "before_bind":
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 5)
+        server = await create_server(*args, **kwargs)
+        servers.append(server)
+        sockets.extend(server.sockets)
+        if pause_at == "after_bind":
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 5)
+        return server
+
+    monkeypatch.setattr(driver.loop, "create_server", delayed_create)
+    listener, errors = _start_listener(driver, connector)
+    try:
+        assert entered.wait(5)
+        connector.stopped.set()
+        listener_context.run_coro(driver._async_shutdown()).result(5)
+        release.set()
+        listener.join(3)
+        assert not listener.is_alive()
+        assert not errors
+        assert sockets and all(sock.fileno() == -1 for sock in sockets)
+        assert driver.site is None
+        assert driver.runner is None
+    finally:
+        release.set()
+        listener.join(5)
+
+        async def cleanup():
+            await driver._async_shutdown()
+            for server in servers:
+                server.close()
+                await server.wait_closed()
+
+        listener_context.run_coro(cleanup()).result(5)
+        assert not listener.is_alive()

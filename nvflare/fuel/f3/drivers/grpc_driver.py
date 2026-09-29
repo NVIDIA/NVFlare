@@ -194,6 +194,9 @@ class Server:
 
     def start(self):
         self.grpc_server.start()
+        # stop() before the native server starts can be a no-op.
+        if self.driver.closing or self.connector.stopped.is_set():
+            self.shutdown()
         self.grpc_server.wait_for_termination()
 
     def shutdown(self):

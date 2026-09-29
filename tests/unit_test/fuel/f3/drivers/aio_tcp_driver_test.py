@@ -127,3 +127,44 @@ def test_connection_registered_after_shutdown_is_closed():
             await asyncio.wait_for(finished.wait(), 2)
 
     asyncio.run(shutdown())
+
+
+def test_listener_created_during_shutdown_is_closed():
+    async def shutdown():
+        context = MagicMock()
+        context.get_event_loop.return_value = asyncio.get_running_loop()
+        with patch.object(AioContext, "get_global_context", return_value=context):
+            driver = AioTcpDriver()
+        driver.connector = ConnectorInfo(
+            "test", driver, {"scheme": "atcp"}, Mode.PASSIVE, 0, 0, False, threading.Event()
+        )
+        created, release = asyncio.Event(), asyncio.Event()
+        servers = []
+        start_server = asyncio.start_server
+
+        async def delayed_start(*args, **kwargs):
+            server = await start_server(*args, **kwargs)
+            servers.append(server)
+            created.set()
+            await release.wait()
+            return server
+
+        with patch.object(asyncio, "start_server", delayed_start):
+            listener = asyncio.create_task(driver._tcp_listen("127.0.0.1", 0))
+            try:
+                await asyncio.wait_for(created.wait(), 2)
+                sockets = servers[0].sockets
+                driver.connector.stopped.set()
+                driver._shutdown_on_loop()
+                release.set()
+                await asyncio.wait_for(asyncio.shield(listener), 2)
+                assert all(sock.fileno() == -1 for sock in sockets)
+            finally:
+                release.set()
+                listener.cancel()
+                await asyncio.gather(listener, return_exceptions=True)
+                for server in servers:
+                    server.close()
+                    await server.wait_closed()
+
+    asyncio.run(shutdown())
