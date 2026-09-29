@@ -31,17 +31,30 @@ PACKAGE_SOURCES = {
     "shared/kbs-admin-audience.py": "nvflare/lighter/cc_provision/kbs_audience.py",
     "shared/trustee_claims.py": "nvflare/app_opt/confidential_computing/trustee_claims.py",
     "shared/kata-runtime-profile.py": "nvflare/lighter/cc_provision/kata_runtime_profile.py",
+    "shared/workload-release.py": "nvflare/lighter/cc_provision/workload_release.py",
     "admin/lib/workload-launch-profile.py": "nvflare/lighter/cc_provision/workload_launch_profile.py",
 }
 GENERATED = {f"{role}/lib/validate-config.sh": "shared/validate-config.sh" for role in ROLES}
 GENERATED.update({f"{role}/lib/common-base.sh": "shared/lib/common-base.sh" for role in ROLES})
 GENERATED["service/lib/kbs-admin-audience.py"] = "shared/kbs-admin-audience.py"
+GENERATED["admin/templates/workload-resource-policy.rego.template"] = (
+    "service/policies/workload-resource-policy.rego.template"
+)
+for role in ("admin", "service"):
+    GENERATED[f"{role}/lib/workload-release.py"] = "shared/workload-release.py"
+for role in ("trusted_system", "service"):
+    GENERATED[f"{role}/lib/platform-reference-schema.py"] = "shared/platform-reference-values.py"
 for role in ROLES:
     GENERATED[f"{role}/lib/workload-security-context.py"] = "shared/workload-security-context.py"
     GENERATED[f"{role}/lib/trustee_claims.py"] = "shared/trustee_claims.py"
-for role in ("coco", "trusted_system"):
     GENERATED[f"{role}/lib/kata-runtime-profile.py"] = "shared/kata-runtime-profile.py"
-    for name in ("lib/common.sh", "templates/kubeadm.yaml.in", "10-install-kubernetes.sh"):
+for role in ("coco", "trusted_system"):
+    for name in (
+        "lib/common.sh",
+        "lib/runtime-prerequisites.sh",
+        "templates/kubeadm.yaml.in",
+        "10-install-kubernetes.sh",
+    ):
         GENERATED[f"{role}/bootstrap/{name}"] = f"shared/bootstrap/{name}"
 
 

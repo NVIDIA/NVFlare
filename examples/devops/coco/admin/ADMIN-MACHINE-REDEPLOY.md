@@ -31,7 +31,8 @@ Complete this step before building an image for a different CoCo cluster. The
 cluster operator is adversarial, so values reported only by that operator are
 not trusted platform authorization inputs. A trusted platform or service
 administrator must approve the profile and independently establish the TEE
-launch measurement and GPU appraisal policy.
+launch references and, for GPU targets, GPU appraisal policy. Use the
+[runtime selector](../RUNTIME-VARIANTS.md) for the four supported profiles.
 
 The current scripts source `platform.env` from the directory containing the
 scripts. They do not accept a platform-profile option on the command line.
@@ -67,10 +68,11 @@ approved profile. The workload user must not derive or change platform values.
 Release state and secrets remain under `$HOME/coco-workload-owner`; therefore
 `RELEASE_NAME` must be unique across every kit and every target cluster.
 
-The SNP launch measurement and minimum reported-TCB floors are deliberately not
+The SNP measurement/TCB floors and TDX complete reference tuples are deliberately not
 in the admin profile or KBS resource fragment. They are enforced by the
 independent Attestation Service CPU policy. The resource fragment requires
-`cpu0` and `gpu0` to carry the complete approved trust vectors. If cluster B
+exactly `cpu0`, plus `gpu0` for GPU releases, to carry the target's complete
+approved trust vectors. If cluster B
 uses a different Kata kernel, firmware, rootfs, dm-verity configuration, or VM
 launch configuration, the service administrator must independently approve
 that measurement and implement a reviewed measurement allowlist or a separate
@@ -204,7 +206,7 @@ not transfer `cosign.key` or its password to service or CoCo.
 ```
 
 The script pins the exact encrypted image digest, command vector, non-root
-identity, runtime class, and one confidential GPU. Kata `genpolicy` produces
+identity, runtime class, and target-specific GPU allocation. Kata `genpolicy` produces
 the guest agent policy. The script disables arbitrary environment matching and
 verifies default denial of exec, attach/read/write stream, and policy
 replacement. It embeds compressed init-data containing Trustee/registry public
@@ -260,66 +262,22 @@ Multiple top-level `allow if` rules are logical alternatives, but each rule is
 bound to its own complete release tuple. Every generated fragment contains a
 unique prefix derived from `RELEASE_NAME` and checks all of the following:
 
-```rego
-<prefix>_expected_initdata := "<64-lowercase-hex-init-data-digest>"
-<prefix>_expected_image := "<registry/repository@sha256:immutable-digest>"
-<prefix>_expected_args := ["<absolute-program>", "<optional-argument>"]
+| Check | Exact per-release requirement |
+| --- | --- |
+| Request kind and path | Resource plugin and only `default/image-key/RELEASE`, `default/sig-public-key/RELEASE`, `default/security-policy/RELEASE` |
+| Submodules | Exactly `cpu0` for CPU-only; exactly `cpu0` and `gpu0` for GPU |
+| CPU evidence type | Exactly the approved signed `snp` or `tdx` evidence, never an unsigned runtime hint |
+| Trust vectors | SNP CPU `(3,2,3)`, TDX CPU `(3,2,2)`, NVIDIA GPU `(3,2,3)` for executables/hardware/configuration; all other fields zero |
+| GPU type | Required GPU submodule contains nonempty NVIDIA evidence |
+| InitData | Exact SHA-256 claim for SNP; exact 48-byte zero-padded claim and matching quoted MRCONFIGID for TDX |
+| Image | Immutable encrypted digest appears in the validated image identifiers and the approved container OCI annotations |
+| Command | Exact approved OCI process argument vector |
 
-<prefix>_authorized_path(path) if {
-    path == ["default", "image-key", "<release>"]
-}
-<prefix>_authorized_path(path) if {
-    path == ["default", "sig-public-key", "<release>"]
-}
-<prefix>_authorized_path(path) if {
-    path == ["default", "security-policy", "<release>"]
-}
-
-<prefix>_expected_trust_vector := {
-    "executables": 3,
-    "hardware": 2,
-    "configuration": 3,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
-}
-
-<prefix>_approved_trust_vector(submod) if {
-    submod["ear.trustworthiness-vector"] ==
-        <prefix>_expected_trust_vector
-}
-
-<prefix>_approved_container(container) if {
-    container["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] ==
-        <prefix>_expected_image
-    container["OCI"]["Process"]["Args"] == <prefix>_expected_args
-}
-
-allow if {
-    data.plugin == "resource"
-    <prefix>_authorized_path(data["resource-path"])
-    count(input.submods) == 2
-    <prefix>_approved_trust_vector(input.submods.cpu0)
-    <prefix>_approved_trust_vector(input.submods.gpu0)
-
-    cpu := input.submods.cpu0
-    cpu["ear.veraison.annotated-evidence"]["init_data"] ==
-        <prefix>_expected_initdata
-    <prefix>_expected_image in
-        cpu["ear.trustee.identifiers"]["validated"]["container_images"]
-
-    containers :=
-        cpu["ear.veraison.annotated-evidence"]["init_data_claims"]["agent_policy_claims"]["containers"]
-    some container in containers
-    <prefix>_approved_container(container)
-}
-```
-
-The angle-bracket form above documents the generated structure; it is not an
-installable policy and must never be completed by hand. Obtain the exact image
-digest, command, init-data digest, prefix, and paths only from:
+The canonical generated structure is the service-owned
+[policy template](../service/policies/workload-resource-policy.rego.template).
+Do not write fragments by hand or copy a legacy SNP-only illustration for TDX.
+Obtain the exact target, image digest, command, InitData digest/claim, prefix
+and paths only from:
 
 ```text
 $HOME/coco-workload-owner/releases/RELEASE/output/release-authorization.json
@@ -331,8 +289,8 @@ the complete first fragment plus the complete second fragment. Do not combine
 images with a broad `image_a or image_b` rule, share image-key paths, authorize
 a repository tag, or let one release retrieve another release's resources.
 
-The KBS resource policy does not directly approve a SNP launch measurement. It
-requires exactly the CPU and GPU submodules with complete approved trust
+The KBS resource policy does not directly approve CPU launch measurements. It
+requires the release's exact CPU/GPU submodules with complete approved trust
 vectors. The platform-owned Attestation Service policies and reference values
 produce those vectors. Both layers are required before a decryption key is
 released.

@@ -1,5 +1,10 @@
 # Workload-owner kit for `admin`
 
+The build/policy pipeline supports SNP-only, SNP+GPU, TDX-only, and TDX+GPU.
+Read the [runtime-variant guide](../RUNTIME-VARIANTS.md) before provisioning.
+The selected target must match the authenticated launch contract; keep separate
+admin configurations for different targets and approved profiles.
+
 For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
 not this source directory alone. The assembled kit includes its shared dependencies.
 
@@ -48,8 +53,8 @@ multi-release policy procedure in
   only by the adversarial cluster owner;
 - use a separate admin kit directory when runtime class, Kubernetes service
   environment, Trustee, registry trust, or other platform values differ;
-- independently approve TEE/GPU measurements and minimum SNP reported-TCB
-  floors in the service appraisal layer;
+- independently approve TEE references and the selected CPU security baseline
+  in the service appraisal layer, plus GPU appraisal for GPU releases;
 - verify credential-free registry pulls from the new cluster without giving it
   publisher credentials;
 - create a globally unique immutable release and image key for each image and

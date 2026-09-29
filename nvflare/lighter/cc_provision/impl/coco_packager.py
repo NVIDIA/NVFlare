@@ -23,7 +23,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from nvflare.lighter.cc_provision.impl.coco import COCO_STARTUP_PROLOGUE, validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import COCO_STARTUP_PROLOGUE, coco_runtime_class, validate_coco_config
 from nvflare.lighter.cc_provision.utils import resolve_cc_config
 from nvflare.lighter.cc_provision.workload_security import read_pod, validate_workload_pod
 from nvflare.lighter.constants import PropKey, ProvFileName
@@ -131,6 +131,7 @@ class CoCoPackager(Packager):
                 raise
 
     def prepare(self, owner, config_path, config):
+        runtime_class = coco_runtime_class(config)
         base = config_path.parent
         context = (base / config["image_build"]["context"]).resolve()
         dockerfile = (context / config["image_build"]["dockerfile"]).resolve()
@@ -183,6 +184,10 @@ class CoCoPackager(Packager):
         values = {
             "RELEASE_NAME": config["release_name"],
             "REGISTRY_REPOSITORY": config["registry_repository"],
+            # Describe the requested target to the trusted image runner without
+            # overriding its authority-approved, readonly RUNTIME_CLASS.
+            "COCO_RUNTIME_CLASS": runtime_class,
+            "COCO_GPU_COUNT": "1" if config["cc_gpu"] == "nvidia" else "0",
             "BUILD_CONTEXT": str(build),
             "DOCKERFILE": str(build / "Dockerfile.coco"),
             "APP_COMMAND_JSON": json.dumps(COMMAND),
@@ -211,6 +216,7 @@ class CoCoPackager(Packager):
 
     @staticmethod
     def validate_pod(path, config):
+        runtime_class = coco_runtime_class(config)
         pod = read_pod(path)
         validate_workload_pod(
             pod,
@@ -225,16 +231,25 @@ class CoCoPackager(Packager):
                 "seccompProfile": {"type": "RuntimeDefault"},
             },
             COMMAND,
+            runtime_class=runtime_class,
         )
         if not isinstance(pod, dict) or pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1":
             raise ValueError("Build did not produce a v1 Pod")
         spec = pod.get("spec", {})
         containers = spec.get("containers", [])
-        if spec.get("runtimeClassName") != "kata-qemu-nvidia-gpu-snp" or len(containers) != 1:
-            raise ValueError("Expected one CoCo SNP/GPU container")
+        if spec.get("runtimeClassName") != runtime_class or len(containers) != 1:
+            raise ValueError(f"Expected one CoCo container using {runtime_class}")
         c = containers[0]
-        if c.get("command") != COMMAND or c.get("resources", {}).get("limits") != {"nvidia.com/pgpu": "1"}:
-            raise ValueError("Unexpected CoCo command or GPU allocation")
+        expected_resources = {"nvidia.com/pgpu": "1"} if config["cc_gpu"] == "nvidia" else {}
+        resources = c.get("resources", {})
+        if (
+            c.get("command") != COMMAND
+            or not isinstance(resources, dict)
+            or set(resources) - {"limits", "requests"}
+            or resources.get("limits", {}) != expected_resources
+            or resources.get("requests", {}) not in ({}, expected_resources)
+        ):
+            raise ValueError("Unexpected CoCo command or resource allocation")
         if not re.fullmatch(
             r"[^\s]+/" + re.escape(config["registry_repository"]) + r"@sha256:[0-9a-f]{64}", c.get("image", "")
         ):

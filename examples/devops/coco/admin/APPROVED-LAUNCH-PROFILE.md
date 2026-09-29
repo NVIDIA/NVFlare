@@ -4,9 +4,11 @@ The Pod generator requires an authenticated launch contract from the trusted
 platform owner. It no longer relies only on manually matching the workload's
 resource fields to the measurement rehearsal.
 
-Only `coco-approved-workload-launch/v3` with
-`guest_token_api: guest-local-aa-token/v1` and an explicit
-`workload_security_context` is accepted. Follow the
+New contracts use `coco-approved-workload-launch/v4`, with explicit `cpu_tee`
+(`snp` or `tdx`), `gpu` (`none` or `nvidia`), and the matching runtime class.
+They require `guest_token_api: guest-local-aa-token/v1` and an explicit
+`workload_security_context`. Legacy v3 remains accepted only for its original
+SNP+GPU shape; it cannot authorize TDX or CPU-only by changing a field. Follow the
 [runtime-profile migration](../RUNTIME-PROFILE.md) and security-context migration
 below; v1/v2 profiles must be replaced by newly reviewed, rehearsed and authenticated
 contracts, not edited to add fields or change their schema identifier.
@@ -15,7 +17,7 @@ contracts, not edited to add fields or change their schema identifier.
 
 | Recipient | File | Purpose |
 |---|---|---|
-| secure services | `platform-reference-values.json` | Exactly five RVPS values: one SNP measurement and four TCB floors |
+| secure services | `platform-reference-values.json` | Five SNP fields, or a v2 TDX complete-profile reference set |
 | provisioning_node | `approved-workload-launch-profile.json` | Approved Pod constraints and runtime/configuration provenance |
 
 The admin file contains no private keys, certificate chains, hardware reports,
@@ -45,7 +47,7 @@ sha256sum "$PROFILE/handoff-with-admin/admin/approved-workload-launch-profile.js
 ```
 
 Outputs must not already exist. The existing two-argument stage-10 command
-still emits only secure services' five-value JSON. No extra numbered stage is needed.
+still emits only secure services' selected reference JSON. No extra numbered stage is needed.
 For older profiles without the token API, preserve their evidence and create a
 new profile through stages 03–10. Do not insert approval hashes or capability
 fields by hand to bypass finalization.
@@ -64,13 +66,15 @@ cd /home/operator/coco-admin
 INCOMING=/path/to/authenticated/approved-workload-launch-profile.json
 # Set from the authenticated trusted-system channel, NOT from CoCo IT.
 EXPECTED_SHA256=APPROVED_LAUNCH_PROFILE_SHA256
+RUNTIME_CLASS=kata-qemu-tdx  # Select the runtime in the authenticated contract.
 python3 lib/workload-launch-profile.py "$INCOMING" "$EXPECTED_SHA256" \
-  kata-qemu-nvidia-gpu-snp 3.29.0
+  "$RUNTIME_CLASS" 3.29.0
 install -m 0644 "$INCOMING" public/approved-workload-launch-profile.json
 ```
 
 Set `WORKLOAD_LAUNCH_PROFILE_SHA256` in this kit's trusted `platform.env` to
-that authenticated value. The checked-in kit contains no deployment-specific
+that authenticated value, and set its `RUNTIME_CLASS` to the same approved target.
+The checked-in kit contains no deployment-specific
 approved profile or pin. Protect the platform configuration, validator and contract
 from untrusted modification. A workload `.env` cannot override these readonly
 settings after they are loaded. The pin is a trusted configuration check,
@@ -95,12 +99,13 @@ the Pod again before creating any handoff directories. A changed kit pin,
 missing snapshot or incompatible Pod causes an error; an old release is not
 silently grandfathered in. Existing delivered handoffs are not modified or revoked.
 
-The tested contract requires one container, one `nvidia.com/pgpu`, runtime
-`kata-qemu-nvidia-gpu-snp`, omitted CPU/memory requests and limits, no host
+The contract requires one container, its approved runtime, omitted CPU/memory
+requests and limits, no host
 namespaces, and no unreviewed annotations or additional Pod launch fields.
-An omitted GPU request and a request of one are equivalent here, matching
+GPU targets require exactly one `nvidia.com/pgpu`; CPU-only targets omit GPU
+resources. An omitted GPU request and a request of one are equivalent, matching
 Kubernetes limit-to-request defaulting. CPU/memory omissions refer to the
-rehearsed runtime defaults of 1 vCPU and 8192 MiB; the generator must not
+rehearsed runtime defaults recorded in the authenticated contract; the generator must not
 replace them with nominally equivalent resource requests without a new review.
 
 The validator is deliberately limited to this reviewed profile shape. It
@@ -115,7 +120,7 @@ This contract prevents trusted-side configuration drift. It does not remotely
 prove what an adversarial CoCo host installed. Its runtime image/configuration
 hashes identify the approved installation for coordination; the admin generator
 does not inspect the target host. Trustee must still independently verify CPU
-measurement/TCB, GPU attestation and workload init-data before releasing keys.
+measurement/TCB, GPU attestation when required, and workload init-data before releasing keys.
 The contract itself is not a new attestation claim and is not sent as an AS policy.
 
 The generator does not yet support arbitrary resource profiles. If the workload
@@ -154,8 +159,9 @@ that check before packaging the handoff.
 The rehearsal collector deliberately uses its own privileged diagnostic context.
 Stages 05/09 approve and revalidate the **application source**, not the collector's
 context. The exported constraint is a trusted approval, not a claim that the
-collector ran with these application settings. The five-value RVPS JSON stays
-unchanged in format; the context is not a new SNP launch-measurement field.
+collector ran with these application settings. The SNP five-field RVPS JSON stays
+unchanged in format; TDX uses its separate v2 tuple schema. The application
+context is not itself a new CPU launch-measurement field.
 
 ### Guest enforcement and its limits
 
@@ -186,7 +192,7 @@ not protect against a modified runtime or prove guest enforcement.
    explicit source-YAML security fields, and run stages 05–10 with both rehearsals
    (03/04 first if the runtime changes). Stage 09 revalidates the source context
    against the approved profile; stage 10 requires the hash-bound context.
-2. Authenticate and install the new v3 admin contract and its hash as above.
+2. Authenticate and install the new v4 admin contract and its hash as above.
    Review the newly collected platform references on secure services as usual;
    changing only application security settings does not itself imply a different
    CPU launch measurement.

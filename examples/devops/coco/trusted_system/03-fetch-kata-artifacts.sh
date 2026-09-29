@@ -11,6 +11,8 @@ CONFIG_FILE="$(realpath -- "$1")"
 [[ -s "${CONFIG_FILE}" ]] || { printf 'Missing configuration: %s\n' "${CONFIG_FILE}" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "${CONFIG_FILE}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_HELPER="$SCRIPT_DIR/lib/kata-runtime-profile.py"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
@@ -21,6 +23,7 @@ for command in docker helm python3 sha256sum; do need "${command}"; done
 [[ "${KATA_CHART_OCI_DIGEST-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'invalid chart OCI digest'
 [[ "${KATA_CHART_TGZ_SHA256-}" =~ ^[0-9a-f]{64}$ ]] || die 'invalid chart archive SHA-256'
 [[ "${KATA_DEPLOY_AMD64-}" =~ @sha256:[0-9a-f]{64}$ ]] || die 'Kata deploy image must use an amd64 manifest digest'
+CONFIG_NAME=$(python3 "$RUNTIME_HELPER" target "${RUNTIME_CLASS-}" --field config_name)
 
 PROFILE_DIR="${PLATFORM_WORK_ROOT:?PLATFORM_WORK_ROOT is required}/${PLATFORM_PROFILE}"
 ARTIFACT_DIR="${PROFILE_DIR}/artifacts"
@@ -59,8 +62,10 @@ helm template kata-deploy "${CHART_FILE}" \
 grep -Fq "${KATA_DEPLOY_AMD64}" "${PROFILE_DIR}/rendered-kata-deploy.yaml" \
     || die 'rendered chart does not use the pinned Kata deploy image'
 
-KATA_CONFIG="$(find "${KATA_ROOT}" -type f -name configuration-qemu-nvidia-gpu-snp.toml -print -quit)"
-[[ -n "${KATA_CONFIG}" ]] || die 'GPU-SNP Kata configuration not found in the pinned image'
+mapfile -t KATA_CONFIGS < <(find "${KATA_ROOT}" -type f -name "$CONFIG_NAME" -print)
+[[ ${#KATA_CONFIGS[@]} == 1 ]] || die "Expected exactly one $CONFIG_NAME in the pinned runtime image"
+KATA_CONFIG=${KATA_CONFIGS[0]}
+python3 "$RUNTIME_HELPER" check-target "$RUNTIME_CLASS" "$KATA_CONFIG"
 printf '%s\n' "${KATA_CONFIG#${PROFILE_DIR}/}" > "${PROFILE_DIR}/kata-config-relative-path.txt"
 
 python3 - "${KATA_CONFIG}" <<'PY' | tee "${PROFILE_DIR}/kata-measurement-input-review.txt"
@@ -92,7 +97,6 @@ find "${KATA_ROOT}" -type f -print0 | sort -z | xargs -0 sha256sum \
     > "${PROFILE_DIR}/kata-artifacts.sha256"
 
 # Preserve the upstream payload and derive only the reviewed token-API change.
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" derive "$KATA_CONFIG" \
     "$PROFILE_DIR/approved-kata-config.toml" "$PROFILE_DIR/kata-runtime-profile.json"
 

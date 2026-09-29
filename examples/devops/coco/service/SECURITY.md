@@ -18,6 +18,14 @@ must not compare successfully. A signature-valid report from an older TCB must
 not produce the exact platform-approved trust vector merely because its
 certificate chain verifies.
 
+For TDX, CPU appraisal instead requires one complete approved MRTD/RTMR/XFAM/
+kernel-event tuple in `coco_tdx_profiles_v2`, verified quote/collateral and
+measured-boot evidence, acceptable TCB, and non-debug configuration. Independent
+per-field allowlists must not approve mixed profiles. Each workload's KBS rule
+also pins the CPU TEE, expected CPU-only or CPU+GPU submodules, and exact
+InitData (zero-padded MRCONFIGID for TDX). CPU-only approval cannot bypass a
+GPU-required release policy. See [TDX approval](TDX-REFERENCE-VALUES.md).
+
 This architecture protects confidentiality and launch integrity, not
 availability. The CoCo owner can refuse to schedule, kill the Pod, block the
 network, or submit a modified manifest that fails attestation. A Pod YAML is not

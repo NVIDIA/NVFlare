@@ -1,5 +1,10 @@
 # CoCo cluster administrator kit
 
+This kit selects SNP-only, SNP+GPU, TDX-only or TDX+GPU from trusted operator
+configuration. Read the [runtime-variant guide](../RUNTIME-VARIANTS.md) before
+installation. TDX host firmware/kernel/SGX/QGS preparation is a prerequisite,
+not an approval granted by these scripts.
+
 For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
 not this source directory alone. The assembled kit includes its shared dependencies.
 
@@ -45,6 +50,10 @@ required for this public runtime handoff. Then run:
 ./30-install-coco-gpu.sh
 ./35-repin-kata-deployment.sh public/kata-deploy-3.29.0.tgz
 ```
+
+The historical `30-install-coco-gpu.sh` filename is retained for compatibility;
+CPU-only configurations skip GPU Operator and GPU allocation. TDX targets
+require the pinned, active host QGS path to match the installed Kata configuration.
 
 Stage 35 checks the chart SHA-256 and makes the final Kata DaemonSet use the
 exact amd64 image digest. These pins are reproducibility checks, not a trust

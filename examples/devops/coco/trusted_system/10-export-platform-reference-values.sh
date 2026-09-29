@@ -9,6 +9,10 @@ CONFIG=$(realpath -e -- "$1")
 }
 # Only source the trusted local stage-09 configuration, never a received handoff.
 source "$CONFIG"
+case "${RUNTIME_CLASS:-}" in
+    kata-qemu-tdx|kata-qemu-nvidia-gpu-tdx)
+        exec python3 "$SCRIPT_DIR/tdx-reference.py" export "$CONFIG" "${@:2}" ;;
+esac
 [[ "$CONFIG" == "${PLATFORM_WORK_ROOT}/${PLATFORM_PROFILE}/platform-reference.final.env" ]] || {
     echo 'Final environment is outside its declared platform profile.' >&2; exit 1;
 }

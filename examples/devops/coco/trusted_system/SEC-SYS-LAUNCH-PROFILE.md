@@ -1,4 +1,10 @@
-# Collect five references using the workload's trusted launch profile
+# SNP: collect five references using the workload's trusted launch profile
+
+This page retains the SNP procedure and its default SNP+GPU example. For
+TDX use [TDX-LAUNCH-PROFILE.md](TDX-LAUNCH-PROFILE.md). For SNP-only select
+`kata-qemu-snp`, omit the GPU resource from the source Pod and use
+`configuration-qemu-snp.toml` in stage 05; GPU installation/checks are skipped.
+See the [four-target mapping](../RUNTIME-VARIANTS.md).
 
 This procedure runs only on the trusted platform system. It does not configure
 the adversarial cluster or secure services. The platform owner must approve the
@@ -25,7 +31,7 @@ checked, but this is not a cryptographic GPU/NRAS attestation test.
 
 Stage 05 also validates the source application's explicit security context;
 stage 09 rechecks it against the hash-bound source, and stage 10 exports it in
-the v3 admin contract. This is an application approval, not the collector's
+the v4 admin contract. This is an application approval, not the collector's
 observed context. Follow the
 [security-context contract and migration](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
 For NVFlare approve UID/GID 65532 and a writable rootfs explicitly; the static

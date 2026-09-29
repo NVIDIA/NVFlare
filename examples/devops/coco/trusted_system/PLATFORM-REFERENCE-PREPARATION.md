@@ -1,4 +1,8 @@
-# Trusted platform-reference preparation
+# SNP trusted platform-reference preparation
+
+This document covers the SNP backend. The same numbered entry points dispatch
+to TDX for a TDX runtime, but AMD tooling and the five-field export do not apply.
+Use [TDX-LAUNCH-PROFILE.md](TDX-LAUNCH-PROFILE.md) for that procedure.
 
 This procedure covers trusted artifact preparation, verified report collection,
 and five-value JSON export. Run it only on the trusted platform system.

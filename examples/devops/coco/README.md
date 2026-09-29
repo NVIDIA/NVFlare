@@ -1,9 +1,17 @@
 # Confidential workload deployment
 
-A sanitized, role-separated runnable example for AMD SEV-SNP and NVIDIA
-confidential GPUs. Scripts, policies, dependencies and configuration templates
+A sanitized, role-separated deployment example for AMD SEV-SNP or Intel TDX,
+with an optional NVIDIA confidential GPU. Scripts, policies, dependencies and configuration templates
 are included; deployment credentials, certificates, measurements, private
 evidence and generated handoffs are not.
+
+Read [runtime variants and deployment requirements](RUNTIME-VARIANTS.md) first.
+The role scripts select SNP-only, SNP+GPU, TDX-only or TDX+GPU explicitly; they
+do not infer trust from the cluster operator's runtime name. TDX host firmware,
+kernel, SGX provisioning and pinned quote-generation services must already be
+installed and reviewed. For the implementation/security contract, see
+[runtime implementation details](RUNTIME-PORTING.md). TDX hardware validation
+must be completed on the intended platform; offline tests are not that proof.
 
 Start with [CONFIGURATION.md](CONFIGURATION.md) for required inputs, configuration
 commands, transfer boundaries and execution order. Read
@@ -49,7 +57,7 @@ not included. No separate NVFlare clone is required by the cluster installer.
 ## Package capabilities, not live state
 
 For protected NVFlare servers and clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
-It requires a new trusted rehearsal and v3 admin contract; old measurements and
+It requires a new trusted rehearsal and v4 admin contract; old measurements and
 contracts are not silently reused.
 The [approved security context](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
 pins application IDs, privileges, capabilities and rootfs mode. NVFlare's writable

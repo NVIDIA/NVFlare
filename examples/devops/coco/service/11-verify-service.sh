@@ -20,10 +20,6 @@ PLATFORM_VALUES_JSON="$(configured_platform_values)"
 VALUES_FILE="$(mktemp)"
 trap 'rm -f -- "$VALUES_FILE"' EXIT
 printf '%s\n' "$PLATFORM_VALUES_JSON" > "$VALUES_FILE"
-require_uint8 SNP_MIN_REPORTED_TCB_BOOTLOADER "${SNP_MIN_REPORTED_TCB_BOOTLOADER-}"
-require_uint8 SNP_MIN_REPORTED_TCB_TEE "${SNP_MIN_REPORTED_TCB_TEE-}"
-require_uint8 SNP_MIN_REPORTED_TCB_SNP "${SNP_MIN_REPORTED_TCB_SNP-}"
-require_uint8 SNP_MIN_REPORTED_TCB_MICROCODE "${SNP_MIN_REPORTED_TCB_MICROCODE-}"
 
 cmp --silent "${SCRIPT_DIR}/policies/default_cpu.rego" \
     "${AS_STORAGE_DIR}/attestation_service_policy/default_cpu.rego" \
@@ -60,4 +56,4 @@ openssl verify -CAfile "${PUBLISHER_DIR}/registry-ca.crt" \
 printf 'Service verification passed. Public endpoints: 8443 (Trustee), 5000 (registry).\n'
 printf 'Backend ports 8080, 50003, 50004, and %s are loopback-only.\n' \
     "${REGISTRY_BACKEND_PORT}"
-printf 'SNP launch measurement and all four minimum reported TCB floors match platform.env.\n'
+printf 'Selected approved SNP or TDX reference set matches configured values.\n'

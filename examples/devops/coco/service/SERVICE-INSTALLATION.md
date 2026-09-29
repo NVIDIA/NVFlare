@@ -15,8 +15,8 @@ These numbers apply only to the service kit; trusted-system stages are unchanged
 
 The service administrator is trusted. The CoCo cluster administrator is not.
 The NVFlare provisioning node (`provisioning_node`) owns workload images and registry
-publishing. The trusted platform system supplies the five platform-reference
-values. Only public certificates and public workload/runtime handoffs go to
+publishing. The trusted platform system supplies the SNP five-field or TDX v2
+platform-reference JSON. Only public certificates and public workload/runtime handoffs go to
 CoCo; never send it publisher credentials or private keys.
 
 ## 1. Prepare the secure services host and network
@@ -105,10 +105,10 @@ a fresh OS. Existing installations upgrading this kit must also rerun stage 01.
 Do not run stage 03 yet: the distributed TCB fields deliberately have no
 defaults. Obtain authenticated platform inputs first.
 
-## 3. Receive the five trusted platform-reference values
+## 3. Receive the trusted platform-reference JSON
 
-The trusted_system operator supplies only `platform-reference-values.json`: one SNP
-launch measurement and four minimum TCB integers. Follow
+The trusted_system operator supplies only `platform-reference-values.json`.
+For SNP it contains a launch measurement and four minimum TCB integers. Follow
 [PLATFORM-REFERENCE-VALUES-HANDOFF.md](PLATFORM-REFERENCE-VALUES-HANDOFF.md)
 for export after trusted-system stage 09, authenticated transfer and the exact
 five-key format. Do not request a signed archive, Kata artifacts, SNP report,
@@ -119,6 +119,12 @@ a measurement array and one common set of four floors. Both configuration-only
 stage 02 and initial policy stage 09 preserve the full array. Follow
 [MEASUREMENT-ALLOWLIST.md](MEASUREMENT-ALLOWLIST.md) for approval and exact-list
 replacement semantics; all other installation commands below are unchanged.
+
+For TDX, use [TDX-REFERENCE-VALUES.md](TDX-REFERENCE-VALUES.md): a versioned
+set of complete approved tuples, not five renamed SNP values. The same stage-02
+command below validates and saves either schema. Initial stage 09 installs
+the combined reviewed CPU policy, and later reference-only updates require it
+already installed.
 
 On **secure services**, receive the file under `~/incoming-platform/`. Validate and
 review it, then prepare the existing local environment file:
@@ -133,8 +139,10 @@ bash ./02-install-platform-reference-values.sh "$VALUES" \
 
 The secure services owner must trust the sender and approve the values for the intended
 platform. The JSON validator checks format and types, not authenticity or
-hardware security. The configure-only operation changes only five fields in
-`platform.env`, retaining a private backup. It does not access any backend.
+hardware security. The configure-only operation saves the validated JSON
+snapshot and its `PLATFORM_REFERENCE_VALUES_FILE` selector in `platform.env`,
+retaining private backups; SNP inputs also update the legacy five environment
+fields. It does not access any backend.
 
 Set the admin egress IPv4/32 collected in step 1, without changing other fields:
 
@@ -251,27 +259,30 @@ Stage 08 verifies an unauthenticated mutation is denied, starts an authenticated
 test upload, checks that its URL preserves `https://FQDN:5000/`, and cancels
 the upload. It does not publish a workload image.
 
-## 7. Install secure services' policy and the five platform references
+## 7. Install secure services' policy and selected platform references
 
 The fresh AS needs secure services' reviewed CPU policy installed once. Stage 09 uses
-the five approved fields configured in step 3 and installs the CPU policy
+the approved JSON configured in step 3 and installs the combined SNP/TDX CPU policy
 from the service kit, not from trusted_system:
 
 ```bash
 cd /home/service_operator/coco-service-admin
 VALUES=/home/service_operator/incoming-platform/platform-reference-values.json
-bash ./09-install-platform-policy.sh --approve-pinned-snp-platform
+bash ./09-install-platform-policy.sh --approve-pinned-platform
 bash ./10-verify-platform-reference-values.sh "$VALUES"
 bash ./11-verify-service.sh
 ```
 
-Stage 09 stages restrictive numeric floors, installs the reviewed CPU policy,
-then registers the approved measurement and four scalar TCB floors in RVPS.
+Stage 09 installs the reviewed CPU policy, then registers the selected references.
+For SNP it temporarily clears measurement approval, installs the four approved
+scalar TCB floors, then activates the complete measurement allowlist. For TDX
+it replaces the whole approved tuple set under `coco_tdx_profiles_v2` in one write.
 The pinned default GPU policy remains active. No workload key is authorized;
 KBS remains default deny until a separate workload handoff is installed.
 
 Stage 10 reads every reference back through the authenticated KBS admin API
-and compares it against the JSON. Require five `PASS` lines. Stage 11 checks
+and compares it against the JSON. Require five SNP `PASS` lines or the exact
+complete TDX profile-set match. Stage 11 checks
 the CPU policy, expected values, TLS, key permissions and backend bindings.
 
 Verify persistence on **secure services**:
@@ -285,7 +296,7 @@ bash ./10-verify-platform-reference-values.sh "$VALUES"
 bash ./11-verify-service.sh
 ```
 
-The measurement and all four TCB floors must survive the restart. If RVPS is
+The complete selected reference set must survive the restart. If RVPS is
 still starting, wait and rerun verification. Do not rewrite values to mask a
 persistence failure.
 
@@ -294,7 +305,10 @@ For subsequent **reference-only** updates, use stage 02 without
 installed and leaves AS CPU/GPU and KBS release-policy files unchanged. See
 [the five-value handoff procedure](PLATFORM-REFERENCE-VALUES-HANDOFF.md).
 The legacy signed platform-bundle verifier and installer have been removed;
-this workflow accepts only the five-value JSON handoff.
+SNP uses the five-field JSON handoff. For TDX, use the versioned complete-profile
+JSON and [TDX reference installation](TDX-REFERENCE-VALUES.md), including first-time
+policy setup before later reference-only updates. Do not substitute TDX values
+into SNP fields or rerun deployment stage 05 for a reference change.
 
 ## 8. Locate and distribute the new public certificates
 

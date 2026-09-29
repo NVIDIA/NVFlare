@@ -47,12 +47,14 @@ the new configuration. Keep independently approved TCB floors; do not lower them
 to make the changed profile pass. Other known rehearsal failures must still be
 resolved without bypassing those checks.
 
-After finalization, stage 10 emits the same five-value JSON for secure services.
-The separate admin contract now uses `coco-approved-workload-launch/v3` and carries
+After finalization, stage 10 emits the selected reference JSON for secure services:
+SNP's five fields or TDX's versioned complete tuple. The separate admin contract
+uses `coco-approved-workload-launch/v4`, explicitly names CPU/GPU target, and carries
 `guest_token_api: guest-local-aa-token/v1`, verified against the hash-bound profile
 and captured command line. This is a coordination requirement, not a new signed
 attestation claim or authorization policy. It additionally carries the approved
-application `workload_security_context`; see the
+application `workload_security_context`. Legacy v3 is accepted only for SNP+GPU;
+other targets need a newly approved v4 contract. See the
 [v3 security-context migration and guest-enforcement limits](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
 
 ## Secure services and provisioning node

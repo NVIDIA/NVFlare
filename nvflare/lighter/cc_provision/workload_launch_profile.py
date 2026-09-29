@@ -26,10 +26,14 @@ from pathlib import Path
 
 if __package__:
     from . import workload_security
+    from .kata_runtime_profile import PROFILE_SCHEMA_V4, require_runtime_target
 
     SECURITY = vars(workload_security)
 else:
     SECURITY = runpy.run_path(str(Path(__file__).resolve().parent / "workload-security-context.py"))
+    RUNTIME = runpy.run_path(str(Path(__file__).resolve().parent / "kata-runtime-profile.py"))
+    PROFILE_SCHEMA_V4 = RUNTIME["PROFILE_SCHEMA_V4"]
+    require_runtime_target = RUNTIME["require_runtime_target"]
 
 
 def unique_object(pairs):
@@ -64,10 +68,14 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "pod_constraints",
         "workload_security_context",
     }
-    require(isinstance(profile, dict) and set(profile) == keys, "unexpected launch-profile schema fields")
-    require(
-        profile["schema"] == SECURITY["SCHEMA"], "review, rehearse and export a security-context-enabled v3 profile"
-    )
+    require(isinstance(profile, dict), "expected launch-profile object")
+    if profile.get("schema") == PROFILE_SCHEMA_V4:
+        keys |= {"cpu_tee", "gpu"}
+    else:
+        require(profile.get("schema") == SECURITY["SCHEMA"], "review, rehearse and export a supported launch profile")
+        require(runtime == "kata-qemu-nvidia-gpu-snp", "legacy v3 approval supports SNP+GPU only")
+    require(set(profile) == keys, "unexpected launch-profile schema fields")
+    target = require_runtime_target(profile, runtime)
     SECURITY["validate_context"](profile["workload_security_context"])
     require(profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API")
     require(
@@ -76,7 +84,7 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "invalid profile ID",
     )
     require(
-        profile["runtime_class"] == runtime == "kata-qemu-nvidia-gpu-snp",
+        profile["runtime_class"] == runtime,
         "runtime class differs from approved profile",
     )
     require(profile["kata_version"] == kata_version == "3.29.0", "Kata version differs from approved profile")
@@ -94,8 +102,8 @@ def load_profile(path, expected_sha256, runtime, kata_version):
     )
     expected = {
         "container_count": 1,
-        "gpu_resource": "nvidia.com/pgpu",
-        "gpu_count": 1,
+        "gpu_resource": "nvidia.com/pgpu" if target["gpu_count"] else None,
+        "gpu_count": target["gpu_count"],
         "cpu_memory_resources": "omitted",
         "host_namespaces": False,
         "allowed_annotations": ["io.katacontainers.config.hypervisor.cc_init_data"],
@@ -152,20 +160,25 @@ def validate_pod(profile, pod, require_policy=False):
     require(
         isinstance(resources, dict) and set(resources) <= {"requests", "limits"}, "unapproved resource configuration"
     )
+    target = require_runtime_target(profile, profile["runtime_class"])
     limits = resources.get("limits", {})
+    expected_limits = {"nvidia.com/pgpu"} if target["gpu_count"] else set()
     require(
-        isinstance(limits, dict) and set(limits) == {"nvidia.com/pgpu"},
-        "only the approved GPU limit is allowed; CPU/memory must remain omitted",
+        isinstance(limits, dict) and set(limits) == expected_limits, "only approved target resource limits are allowed"
     )
 
     def one(value):
         return (type(value) is int and value == 1) or (type(value) is str and value == "1")
 
-    require(one(limits["nvidia.com/pgpu"]), "exactly one passthrough GPU is required")
+    if target["gpu_count"]:
+        require(one(limits["nvidia.com/pgpu"]), "exactly one passthrough GPU is required")
     requests = resources.get("requests", {})
     require(
         isinstance(requests, dict)
-        and (not requests or (set(requests) == {"nvidia.com/pgpu"} and one(requests["nvidia.com/pgpu"]))),
+        and (
+            not requests
+            or (target["gpu_count"] and set(requests) == {"nvidia.com/pgpu"} and one(requests["nvidia.com/pgpu"]))
+        ),
         "CPU/memory requests must remain omitted; GPU request must equal its limit",
     )
     SECURITY["validate_pod_context"](pod, profile["workload_security_context"])

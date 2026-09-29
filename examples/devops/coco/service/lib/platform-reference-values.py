@@ -13,65 +13,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validate five reference fields and install a complete measurement allowlist."""
+"""Configure and install reviewed SNP or TDX references without changing policies."""
 
 import base64
 import http.client
+import importlib.util
 import json
 import os
 import re
+import shlex
 import ssl
 import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
-FIELDS = {
-    "snp_launch_measurement": "SNP_LAUNCH_MEASUREMENT",
-    "snp_min_reported_tcb_bootloader": "SNP_MIN_REPORTED_TCB_BOOTLOADER",
-    "snp_min_reported_tcb_tee": "SNP_MIN_REPORTED_TCB_TEE",
-    "snp_min_reported_tcb_snp": "SNP_MIN_REPORTED_TCB_SNP",
-    "snp_min_reported_tcb_microcode": "SNP_MIN_REPORTED_TCB_MICROCODE",
-}
-
-
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"Duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def measurements(value):
-    items = [value] if type(value) is str else value
-    if type(items) is not list or not 1 <= len(items) <= 64:
-        raise ValueError("Measurement must be a string or a nonempty list of at most 64 measurements")
-    if any(type(item) is not str or not re.fullmatch(r"[0-9a-f]{96}", item) for item in items):
-        raise ValueError("Every measurement must be exactly 96 lowercase hexadecimal characters")
-    if len(set(items)) != len(items):
-        raise ValueError("Duplicate measurements are not allowed")
-    return sorted(items)
-
-
-def validate_values(values):
-    if type(values) is not dict or set(values) != set(FIELDS):
-        raise ValueError("Expected exactly the five documented platform-reference keys")
-    measurements(values["snp_launch_measurement"])
-    for key in list(FIELDS)[1:]:
-        if type(values[key]) is not int or not 0 <= values[key] <= 255:
-            raise ValueError(f"{key} must be an integer in 0..255, not a string or boolean")
-    return values
-
-
-def load_values(filename):
-    with Path(filename).open("rb") as stream:
-        data = stream.read(8193)
-    if len(data) > 8192:
-        raise ValueError("Reference file exceeds 8192 bytes")
-    values = json.loads(data, object_pairs_hook=unique_object)
-    return validate_values(values)
+_schema_file = Path(__file__).with_name("platform-reference-schema.py")
+if not _schema_file.is_file():
+    _schema_file = Path(__file__).resolve().parents[2] / "shared/platform-reference-values.py"
+_spec = importlib.util.spec_from_file_location("coco_platform_reference_schema", _schema_file)
+_schema = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_schema)
+FIELDS = _schema.FIELDS
+TDX_REFERENCE_ID = _schema.TDX_REFERENCE_ID
+load_values = _schema.load_values
+measurements = _schema.measurements
+validate_values = _schema.validate_values
+reference_payload = _schema.reference_payload
+unique_object = _schema.unique_object
 
 
 def from_environment_args(args):
@@ -91,7 +60,7 @@ def update_env(values, filename):
     if path.is_symlink() or not path.is_file():
         raise ValueError("platform.env must be an existing regular, non-symlink file")
     text = path.read_text()
-    for key, variable in FIELDS.items():
+    for key, variable in FIELDS.items() if "snp_launch_measurement" in values else []:
         value = values[key]
         if key == "snp_launch_measurement" and type(value) is list:
             # Only validated hex strings are allowed, so this single-quoted
@@ -102,7 +71,22 @@ def update_env(values, filename):
         text, count = re.subn(rf"^{variable}=.*$", assignment, text, flags=re.M)
         if count != 1:
             raise ValueError(f"Expected exactly one assignment for {variable}")
-    fd, temporary = tempfile.mkstemp(prefix=".platform.env.", dir=path.parent)
+    # Save a validated, private snapshot, never source an untrusted JSON path.
+    snapshot = path.parent / "approved-platform-reference-values.json"
+    if snapshot.is_symlink():
+        raise ValueError("Reference snapshot must not be a symlink")
+    assignment = f"PLATFORM_REFERENCE_VALUES_FILE={shlex.quote(str(snapshot.resolve()))}"
+    text, count = re.subn(r"^PLATFORM_REFERENCE_VALUES_FILE=.*$", lambda _: assignment, text, flags=re.M)
+    if count > 1:
+        raise ValueError("Expected at most one PLATFORM_REFERENCE_VALUES_FILE assignment")
+    if count == 0:
+        text += "\n" + assignment + "\n"
+    atomic_write(snapshot, json.dumps(values, indent=2) + "\n")
+    atomic_write(path, text)
+
+
+def atomic_write(path, text):
+    fd, temporary = tempfile.mkstemp(prefix=".platform-reference.", dir=path.parent)
     try:
         with os.fdopen(fd, "w") as stream:
             stream.write(text)
@@ -114,21 +98,31 @@ def update_env(values, filename):
 
 def compare_reference(values, key, raw):
     # The pinned kbs-client prints JSON whose payload may itself be encoded JSON.
-    actual = json.loads(raw)
+    actual = json.loads(raw, object_pairs_hook=unique_object)
     if isinstance(actual, str):
-        actual = json.loads(actual)
-    expected = measurements(values[key]) if key == "snp_launch_measurement" else values[key]
+        actual = json.loads(actual, object_pairs_hook=unique_object)
+    expected = reference_payload(values)[key]
     if key == "snp_launch_measurement":
         if type(actual) is not list or measurements(actual) != expected:
             raise ValueError(f"RVPS {key}: expected exactly {expected!r}, received {actual!r}")
+    elif key == TDX_REFERENCE_ID:
+        received = {"schema": _schema.TDX_SCHEMA, "tee": "tdx", "profiles": actual}
+        if reference_payload(received)[key] != expected:
+            raise ValueError("RVPS TDX profiles differ from the complete approved profile set")
     elif type(actual) is not type(expected) or actual != expected:
         raise ValueError(f"RVPS {key}: expected {expected!r}, received {actual!r}")
-    print(f"PASS {key} = {values[key]}")
+    print(f"PASS {key} = {expected}")
 
 
 def reference_message(values):
     validate_values(values)
-    payload = {"snp_launch_measurement": measurements(values["snp_launch_measurement"])}
+    payload = reference_payload(values)
+    if "snp_launch_measurement" in payload:
+        payload = {"snp_launch_measurement": payload["snp_launch_measurement"]}
+    return message_for_payload(payload)
+
+
+def message_for_payload(payload):
     return {
         "version": "0.1.0",
         "type": "sample",
@@ -138,7 +132,25 @@ def reference_message(values):
 
 def install_measurements(values, url, cert_file, token_file):
     """One authenticated POST replaces the whole list. Never follow redirects."""
-    message = reference_message(values)
+    post_reference(reference_message(values), url, cert_file, token_file)
+
+
+def install_references(values, url, cert_file, token_file):
+    payload = reference_payload(values)
+    if values.get("tee") == "tdx":
+        # One key/value replacement: no intermediate mixed profile state.
+        post_reference(message_for_payload(payload), url, cert_file, token_file)
+    else:
+        # A floor of 255 is not an unconditional deny. Clear measurements before
+        # replacing floors, and activate the allowlist only after floors succeed.
+        post_reference(message_for_payload({"snp_launch_measurement": []}), url, cert_file, token_file)
+        floors = {key: value for key, value in payload.items() if key != "snp_launch_measurement"}
+        post_reference(message_for_payload(floors), url, cert_file, token_file)
+        install_measurements(values, url, cert_file, token_file)
+    print("Installed complete approved reference set; other TEE references are unchanged")
+
+
+def post_reference(message, url, cert_file, token_file):
     parsed = urlsplit(url)
     if (
         parsed.scheme != "https"
@@ -173,7 +185,6 @@ def install_measurements(values, url, cert_file, token_file):
             raise ValueError(f"KBS reference update failed: HTTP {response.status}; no redirect or retry performed")
     finally:
         connection.close()
-    print(f"Installed complete allowlist: {len(measurements(values['snp_launch_measurement']))} measurement(s)")
 
 
 def main():
@@ -186,13 +197,19 @@ def main():
         print(json.dumps(values, indent=2))
     elif mode == "update-env" and len(args) == 1:
         update_env(values, args[0])
-    elif mode == "compare-reference" and len(args) == 2 and args[0] in FIELDS:
+    elif mode == "reference-ids" and not args:
+        print("\n".join(reference_payload(values)))
+    elif mode == "tee" and not args:
+        print(values.get("tee", "snp"))
+    elif mode == "compare-reference" and len(args) == 2 and args[0] in reference_payload(values):
         compare_reference(values, args[0], args[1])
     elif mode == "install-measurements" and len(args) == 3:
         install_measurements(values, *args)
+    elif mode == "install-references" and len(args) == 3:
+        install_references(values, *args)
     else:
         raise ValueError(
-            "Usage: platform-reference-values.py validate|update-env|compare-reference|install-measurements FILE [ARGS], or from-env MEASUREMENTS BL TEE SNP MICROCODE"
+            "Usage: platform-reference-values.py validate|tee|reference-ids|update-env|compare-reference|install-references FILE [ARGS], or from-env MEASUREMENTS BL TEE SNP MICROCODE"
         )
 
 

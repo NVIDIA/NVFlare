@@ -27,7 +27,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.lighter.cc_provision import workload_launch_profile, workload_security
+from nvflare.lighter.cc_provision import kata_runtime_profile, workload_launch_profile, workload_security
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 API = vars(workload_security)
@@ -283,15 +283,16 @@ def test_request_policy_structure_fails_closed(change):
         API["validate_request_policy"](value)
 
 
-@pytest.mark.parametrize("stream_enabled", [False, True])
-def test_final_pod_policy_gate_checks_stream_settings(stream_enabled):
-    pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
+def final_workload_pod(runtime_class="kata-qemu-nvidia-gpu-snp", stream_enabled=False):
     data = policy_data()
     data["request_defaults"]["ReadStreamRequest"] = stream_enabled
     data["containers"][0]["OCI"]["Process"]["Args"] = ["python3"]
     # Structural fixtures only; no claim of executing Rego in a guest.
     raw = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
     value = pod()
+    value["spec"]["runtimeClassName"] = runtime_class
+    if runtime_class in ("kata-qemu-snp", "kata-qemu-tdx"):
+        value["spec"]["containers"][0]["resources"] = {}
     value["metadata"] = {
         "name": "review",
         "annotations": {
@@ -311,11 +312,67 @@ def test_final_pod_policy_gate_checks_stream_settings(stream_enabled):
     value["spec"]["containers"][0].update(
         {"stdin": False, "tty": False, "command": ["python3"], "imagePullPolicy": "Always"}
     )
+    return value
+
+
+RUNTIME_CLASSES = ("kata-qemu-nvidia-gpu-snp", "kata-qemu-snp", "kata-qemu-nvidia-gpu-tdx", "kata-qemu-tdx")
+
+
+@pytest.mark.parametrize("runtime_class", RUNTIME_CLASSES)
+@pytest.mark.parametrize("stream_enabled", [False, True])
+def test_final_pod_policy_gate_checks_stream_settings(runtime_class, stream_enabled):
+    pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
+    value = final_workload_pod(runtime_class, stream_enabled)
     if stream_enabled:
         with pytest.raises(ValueError, match="ReadStreamRequest must be false"):
-            workload_security.validate_workload_pod(value, context(), ["python3"])
+            workload_security.validate_workload_pod(value, context(), ["python3"], runtime_class=runtime_class)
     else:
-        workload_security.validate_workload_pod(value, context(), ["python3"])
+        workload_security.validate_workload_pod(value, context(), ["python3"], runtime_class=runtime_class)
+
+
+@pytest.mark.parametrize(
+    "expected,actual",
+    [(expected, actual) for expected in RUNTIME_CLASSES for actual in RUNTIME_CLASSES if expected != actual],
+)
+def test_generated_runtime_must_match_trusted_configuration(expected, actual):
+    with pytest.raises(ValueError, match="unapproved runtime"):
+        workload_security.validate_workload_pod(
+            final_workload_pod(actual), context(), ["python3"], runtime_class=expected
+        )
+
+
+@pytest.mark.parametrize("runtime_class", RUNTIME_CLASSES[1:])
+def test_default_pod_validation_still_requires_snp_gpu(runtime_class):
+    with pytest.raises(ValueError, match="unapproved runtime"):
+        workload_security.validate_workload_pod(final_workload_pod(runtime_class), context(), ["python3"])
+
+
+@pytest.mark.parametrize("runtime_class", ["runc", "kata", "", None, [], {}])
+def test_unsupported_approved_runtime_fails_closed(runtime_class):
+    with pytest.raises(ValueError, match="unsupported approved runtime"):
+        workload_security.validate_workload_pod({}, context(), ["python3"], runtime_class=runtime_class)
+
+
+@pytest.mark.parametrize("runtime_class", RUNTIME_CLASSES)
+@pytest.mark.parametrize(
+    "resources",
+    [None, [], {"limits": None}, {"requests": []}, {"unexpected": {}}, {"limits": {"cpu": "1"}}],
+)
+def test_runtime_variants_reject_unapproved_resources(runtime_class, resources):
+    value = final_workload_pod(runtime_class)
+    value["spec"]["containers"][0]["resources"] = resources
+    with pytest.raises(ValueError, match="unapproved resources"):
+        workload_security.validate_workload_pod(value, context(), ["python3"], runtime_class=runtime_class)
+
+
+@pytest.mark.parametrize("runtime_class", RUNTIME_CLASSES)
+def test_runtime_variants_reject_changed_gpu_allocation(runtime_class):
+    value = final_workload_pod(runtime_class)
+    value["spec"]["containers"][0]["resources"] = (
+        {"limits": {"nvidia.com/pgpu": "1"}} if "nvidia-gpu" not in runtime_class else {}
+    )
+    with pytest.raises(ValueError, match="unapproved resources"):
+        workload_security.validate_workload_pod(value, context(), ["python3"], runtime_class=runtime_class)
 
 
 @pytest.mark.parametrize(
@@ -413,6 +470,7 @@ def test_shared_helper_is_materialized_in_standalone_kit(tmp_path, role):
     if role == "admin":
         consumer = isolated.parent / "workload-launch-profile.py"
         consumer.write_bytes(Path(workload_launch_profile.__file__).read_bytes())
+        (isolated.parent / "kata-runtime-profile.py").write_bytes(Path(kata_runtime_profile.__file__).read_bytes())
         runpy.run_path(str(consumer))["validate_pod"](contract(), pod())
 
 
@@ -424,6 +482,7 @@ def test_stage05_actual_entrypoint(tmp_path, readonly):
     source.write_text(yaml.safe_dump(pod(readonly)))
     config.write_text(
         '[hypervisor.qemu]\nkernel_params = "agent.guest_components_rest_api=all"\n'
+        "confidential_guest = true\nsev_snp_guest = true\n"
         "default_vcpus = 1\ndefault_memory = 8192\n"
     )
     entry = ROOT / "trusted_system/05-define-approved-launch-profile.py"

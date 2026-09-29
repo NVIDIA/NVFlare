@@ -23,6 +23,33 @@ python3 "${WORKLOAD_PROFILE_VALIDATOR}" \
     "${OUTPUT_DIR}/approved-workload-launch-profile.json" \
     "${WORKLOAD_LAUNCH_PROFILE_SHA256:-}" "$RUNTIME_CLASS" "$KATA_VERSION" \
     --pod "${OUTPUT_DIR}/pod.yaml" --require-policy
+python3 - "${SCRIPT_DIR}/lib/workload-release.py" "${OUTPUT_DIR}" \
+    "$RUNTIME_CLASS" "$RELEASE_NAME" "$APP_COMMAND_JSON" <<'PY'
+import base64
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import runpy
+import sys
+import yaml
+
+contract = runpy.run_path(sys.argv[1])
+output = Path(sys.argv[2])
+auth = contract["load_authorization"](output / "release-authorization.json")
+pod = yaml.safe_load((output / "pod.yaml").read_text())
+raw = gzip.decompress(base64.b64decode(
+    pod["metadata"]["annotations"]["io.katacontainers.config.hypervisor.cc_init_data"], validate=True
+))
+if (auth["cpu_tee"], auth["gpu"]) != contract["target_for_runtime"](sys.argv[3]):
+    raise SystemExit("release authorization differs from approved runtime")
+if auth["release_name"] != sys.argv[4] or auth["process_args"] != json.loads(sys.argv[5]):
+    raise SystemExit("release authorization differs from approved workload")
+if auth["init_data_sha256"] != hashlib.sha256(raw).hexdigest():
+    raise SystemExit("release authorization InitData digest differs from Pod")
+if auth["encrypted_image"] != pod["spec"]["containers"][0]["image"]:
+    raise SystemExit("release authorization image differs from Pod")
+PY
 [[ ! -e "${HANDOFF_DIR}" ]] || die "handoffs already exist; this release is immutable"
 
 SERVICE_HANDOFF="${HANDOFF_DIR}/trusted-service"

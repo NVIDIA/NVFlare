@@ -74,12 +74,42 @@ def test_assembled_roles_vendor_importable_helpers_without_nvflare(tmp_path):
         "import runpy,sys; from pathlib import Path; root=Path(sys.argv[1]); "
         "api=runpy.run_path(str(root/'lib/workload-security-context.py')); "
         "assert api['normalize_resources']({'limits': {'nvidia.com/pgpu': 1}})['requests']['nvidia.com/pgpu']=='1'; "
-        "assert runpy.run_path(str(root/'lib/trustee_claims.py'))['TRUST_VECTOR']['hardware']==2"
+        "claims=runpy.run_path(str(root/'lib/trustee_claims.py')); "
+        "assert claims['TRUST_VECTOR']['hardware']==2; "
+        "assert claims['CPU_TRUST_VECTORS']['tdx']['configuration']==2; "
+        "runtime=runpy.run_path(str(root/'lib/kata-runtime-profile.py')); "
+        "assert runtime['runtime_target']('kata-qemu-tdx')['gpu_count']==0; "
+        "assert runtime['runtime_target']('kata-qemu-nvidia-gpu-tdx')['gpu_count']==1"
     )
     env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
     for role in kits["ROLES"]:
         subprocess.run(
             [sys.executable, "-I", "-S", "-c", checker, str(output / role)], cwd=tmp_path, env=env, check=True
+        )
+    for role in ("admin", "service"):
+        release_checker = (
+            "import runpy,sys; from pathlib import Path; root=Path(sys.argv[1]); "
+            "api=runpy.run_path(str(root/'lib/workload-release.py')); "
+            "assert api['init_data_claim']('tdx','a'*64)=='a'*64+'0'*32; "
+            "assert set(api['required_vectors']('tdx','none'))=={'cpu0'}"
+        )
+        subprocess.run(
+            [sys.executable, "-I", "-S", "-c", release_checker, str(output / role)],
+            cwd=tmp_path,
+            env=env,
+            check=True,
+        )
+    for role in ("trusted_system", "service"):
+        reference_checker = (
+            "import runpy,sys; from pathlib import Path; root=Path(sys.argv[1]); "
+            "api=runpy.run_path(str(root/'lib/platform-reference-schema.py')); "
+            "assert api['TDX_REFERENCE_ID']=='coco_tdx_profiles_v2'"
+        )
+        subprocess.run(
+            [sys.executable, "-I", "-S", "-c", reference_checker, str(output / role)],
+            cwd=tmp_path,
+            env=env,
+            check=True,
         )
     subprocess.run(
         [sys.executable, "-I", "-S", str(output / "admin/lib/workload-launch-profile.py"), "--help"],
