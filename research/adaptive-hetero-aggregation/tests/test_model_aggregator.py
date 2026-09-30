@@ -120,6 +120,17 @@ def test_accept_rejects_malformed_client_metadata_without_raising():
     assert aggregator._results == {}
 
 
+def test_accept_rejects_inconsistent_descriptor_length_without_raising():
+    aggregator = AdaptiveHeterogeneityModelAggregator()
+    first = FLModelUtils.to_shareable(_result("site-1", 1.0, 1, 100, [0.5, 0.5], 0.8))
+    second = FLModelUtils.to_shareable(_result("site-2", 1.0, 1, 100, [0.2, 0.3, 0.5], 0.8))
+    fl_ctx = FLContext()
+
+    assert aggregator.accept(first, fl_ctx) is True
+    assert aggregator.accept(second, fl_ctx) is False
+    assert set(aggregator._results) == {"site-1"}
+
+
 def test_model_aggregator_empty_round_is_safe_noop_diff():
     aggregator = AdaptiveHeterogeneityModelAggregator()
     result = aggregator.aggregate_model()
