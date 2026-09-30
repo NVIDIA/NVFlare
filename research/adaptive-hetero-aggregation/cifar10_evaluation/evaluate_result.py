@@ -47,6 +47,7 @@ for path in (str(PROJECT_SRC), str(CIFAR_SRC)):
         sys.path.insert(0, path)
 
 from adaptive_hetero.nvflare_aggregator import AdaptiveMetaKey  # noqa: E402
+from nvflare.app_common.app_constant import DefaultCheckpointFileName  # noqa: E402
 from data.cifar10_data_utils import CIFAR10_ROOT  # noqa: E402
 from model import ModerateCNN  # noqa: E402
 
@@ -72,10 +73,12 @@ def find_server_checkpoint(workspace: str) -> Path:
         if candidate.is_file():
             return candidate
 
+    checkpoint_names = {
+        DefaultCheckpointFileName.GLOBAL_MODEL,
+        DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+    }
     candidates = [
-        path
-        for path in workspace_path.rglob("*.pt")
-        if "server" in path.parts and path.name in {DefaultCheckpointFileName.GLOBAL_MODEL, DefaultCheckpointFileName.BEST_GLOBAL_MODEL}
+        path for path in workspace_path.rglob("*.pt") if "server" in path.parts and path.name in checkpoint_names
     ]
     if not candidates:
         raise FileNotFoundError(f"no server CIFAR checkpoint found under {workspace_path}")
