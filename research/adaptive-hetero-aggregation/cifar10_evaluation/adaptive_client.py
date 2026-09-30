@@ -22,8 +22,8 @@ CIFAR-10 test set is reserved for post-training evaluation.
 
 import argparse
 import copy
-import random
 import json
+import random
 import re
 
 import numpy as np
