@@ -115,6 +115,22 @@ The final-model results are the primary reproducibility metric because all metho
 
 ## Running the Baselines
 
+### Regenerate Initial Checkpoints
+
+The five seed-specific initial model checkpoints used in the reproducibility experiments are generated locally and are **not committed to the repository**.
+
+From the NVIDIA FLARE repository root, regenerate all five checkpoints with:
+
+```bash
+for seed in 1001 1002 1003 1004 1005; do
+  python research/fedscs/create_initial_checkpoint.py \
+    --seed "$seed" \
+    --output "research/fedscs/experiments/seed_${seed}/initial_model.pt"
+done
+```
+
+Each seed-specific checkpoint is reused across `fedavg`, `fedavg_clipped`, and `fedscs` for the corresponding seed to ensure a matched initialization.
+
 The job supports the following aggregation methods:
 
 ```bash
@@ -144,8 +160,11 @@ research/fedscs/
 ├── requirements.txt
 ├── job.py
 ├── client.py
+├── create_initial_checkpoint.py
+├── evaluate_checkpoint.py
 ├── prepare_data.sh
 └── src/
+    ├── fedavg_clipped_aggregator.py
     ├── fedscs_aggregator.py
     └── model.py
 ```
