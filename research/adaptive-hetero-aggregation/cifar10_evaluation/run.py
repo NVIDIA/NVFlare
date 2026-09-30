@@ -99,7 +99,12 @@ def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_cli
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
-    model = ModerateCNN()
+    model = ModerateCNN(seed=args.seed)
+    # ModerateCNN seeds RNGs internally; keep subsequent orchestration RNGs on the
+    # experiment seed as well.
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     common = _common_train_args(args, train_idx_root, validation_idx_root)
     name = (
         f"adaptive_hetero_cifar10_{args.method}_alpha{args.alpha:g}_seed{args.seed}_"
@@ -143,6 +148,11 @@ def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_cli
             fedprox_mu=args.fedprox_mu,
         )
     if args.method == "scaffold":
+        if round_clients != args.n_clients:
+            raise ValueError(
+                "NVFlare ScaffoldRecipe does not provide matched sampled-client partial participation; "
+                "use full participation for SCAFFOLD"
+            )
         return ScaffoldRecipe(
             name=name,
             min_clients=round_clients,
