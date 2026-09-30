@@ -129,8 +129,9 @@ Per-site final weights remain server-side and are not copied into aggregated mod
 participant does not receive every other participant's final aggregation weight through the global
 model.
 
-If no Shareable/DXO contribution is accepted, the adapter returns `ReturnCode.EMPTY_RESULT`. The
-unified `ModelAggregator` returns an empty DIFF no-op in the analogous empty-round case.
+If no Shareable/DXO contribution is accepted, the adapter returns a valid empty `WEIGHT_DIFF` DXO no-op
+(with the normal `OK` Shareable return code) so downstream DXO conversion remains valid. The unified
+`ModelAggregator` returns an empty DIFF no-op in the analogous empty-round case.
 
 ### Federation-level activation telemetry
 
@@ -241,7 +242,7 @@ imply identical optimization trajectories.
 
 ### Protocol versioning and configuration provenance
 
-Current result rows use protocol `cifar10_dirichlet_trainval_test_v3`.
+Current result rows use protocol `cifar10_dirichlet_trainval_test_v4`.
 
 Every completed row stores:
 
@@ -356,7 +357,7 @@ The default campaign is:
 - methods: FedAvg, FedProx, SCAFFOLD, FedCE, adaptive;
 - Dirichlet alpha: `0.1` and `0.5`;
 - seeds: `7, 19, 31, 43, 57`;
-- participation: `1.0` and `0.75`;
+- participation: `1.0` and `0.75` for FedAvg, FedProx, FedCE, and adaptive; SCAFFOLD is full-participation only because the current `ScaffoldRecipe` does not expose matched sampled-client cohorts;
 - 8 clients, 50 rounds, 4 local epochs;
 - 10% held-out validation from each site's CIFAR-10 training assignment.
 
@@ -374,8 +375,7 @@ python cifar10_evaluation/run_campaign.py --dry_run
 
 The campaign is resumable. A row is skipped only when its protocol version, common configuration
 hash, method configuration hash, method, alpha, participation rate, and seed match the current
-campaign. Incompatible or stale rows remain in the JSONL for auditability but are not treated as
-completed work. Use `--fresh` to start a new result file.
+campaign. Incompatible or stale rows remain in the JSONL for auditability but are not treated as completed work or passed into the current summary. Failed runs are retained as explicit missing planned conditions while the campaign continues. `--fresh --dry_run` never deletes existing results. Use `--fresh` without `--dry_run` to start a new result file.
 
 Add FedOpt as a full-participation reference with:
 
@@ -394,7 +394,13 @@ Generated artifacts are written to:
 
 ## Expected Results
 
-No final CIFAR-10 numerical performance claim is checked in yet. A successful run produces a
+The earlier v3 campaign is retained only as historical evidence because review identified that
+`ModerateCNN` reset the requested server/client RNG state to its constructor default. Protocol v4
+restores the requested experiment seed after client model construction and initializes the server
+model with the requested seed. v3 numerical results must therefore not be presented as matched v4
+evidence; the corrected v4 campaign must be rerun.
+
+No corrected v4 CIFAR-10 numerical performance claim is checked in yet. A successful run produces a
 `CIFAR10_EVAL_RESULT` record containing at least:
 
 ```text
@@ -423,9 +429,7 @@ For adaptive runs, `adaptive_telemetry` must contain valid cumulative aggregatio
 activation rate, mean/max observed blend, and cohort-change count. The main Markdown tables expose
 activation rate next to accuracy so a conservative fallback-heavy run is visible.
 
-A completed campaign must contain the full requested method/alpha/participation/seed matrix before
-reviewer-facing tables are generated. Those tables cover FedAvg, FedProx, SCAFFOLD, FedCE, and
-adaptive aggregation under full and partial participation and retain neutral or negative results.
+Reviewer-facing summaries report completed conditions and list missing planned conditions explicitly rather than requiring failed runs to be manually removed or imputed. SCAFFOLD is compared under full participation only until a matched sampled-client SCAFFOLD workflow is available. Neutral and negative results are retained.
 
 Previous checked-in development numbers were removed because they predated the current policy and
 included blend factors that are unreachable with the current `max_blend_factor=0.20` setting.
@@ -435,9 +439,9 @@ included blend factors that are unreachable with the current `max_blend_factor=0
 The requested implementation and evaluation infrastructure is present, but final evidence is not yet
 claimed. The remaining non-publication evidence work is:
 
-1. execute the documented matched CIFAR-10 campaign against FedProx, SCAFFOLD, and FedCE;
+1. rerun the corrected v4 matched CIFAR-10 campaign against FedProx, SCAFFOLD, and FedCE;
 2. generate and report the resulting confidence-interval tables;
-3. include partial-participation results and adaptive activation rates in the main result tables;
+3. include supported partial-participation results and adaptive activation rates in the main result tables;
 4. retain and report neutral or negative outcomes.
 
 The maintainer separately identified a public method write-up such as a preprint or workshop paper as
