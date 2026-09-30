@@ -40,7 +40,9 @@ from protocol import (  # noqa: E402
 )
 from run_campaign import _completed_keys  # noqa: E402
 from summarize_results import (  # noqa: E402
+    _filter_requested_configuration,
     _load_rows,
+    _planned_keys,
     render_markdown,
     summarize,
     validate_complete_matrix,
@@ -204,6 +206,44 @@ def test_train_validation_split_is_disjoint_and_exhaustive(tmp_path, monkeypatch
         assert set(train) | set(validation) == set(assigned)
         assert len(validation) == 4
         assert len(train) == 16
+
+
+def test_client_seed_is_restored_after_moderate_cnn_construction():
+    client_files = (
+        "baseline_sgd_client.py",
+        "fedprox_client.py",
+        "scaffold_client.py",
+        "fedce_client.py",
+        "adaptive_client.py",
+    )
+    for filename in client_files:
+        source = (EVAL_DIR / filename).read_text()
+        model_position = source.index("model = ModerateCNN()")
+        seed_position = source.find("torch.manual_seed(", model_position)
+        assert seed_position > model_position
+
+
+def test_scaffold_partial_participation_is_not_planned_as_matched():
+    planned = _planned_keys(["fedavg", "scaffold"], [0.1], [1.0, 0.75], [7])
+    assert ("scaffold", 0.1, 1.0, 7) in planned
+    assert ("scaffold", 0.1, 0.75, 7) not in planned
+    assert ("fedavg", 0.1, 0.75, 7) in planned
+
+
+def test_summary_filters_stale_same_protocol_rows_by_configuration():
+    args = _campaign_args()
+    current = _result_row("adaptive", 0.75, 19, 0.8, args=args)
+    changed = _campaign_args()
+    changed.max_blend_factor = 0.35
+    stale = _result_row("adaptive", 0.75, 31, 0.8, args=changed)
+
+    selected = _filter_requested_configuration(
+        [current, stale],
+        current["common_config_hash"],
+        {"adaptive": current["method_config_hash"]},
+    )
+
+    assert selected == [current]
 
 
 def test_training_clients_use_held_out_training_validation_not_cifar_test():
