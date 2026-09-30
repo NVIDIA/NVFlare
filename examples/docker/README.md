@@ -13,12 +13,17 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 ### Apple Silicon Mac with Colima
 
 Colima provides the Linux Docker daemon used by the parent and job containers.
-The `hello-numpy-docker` and `hello-pt-docker` jobs run on CPU on a Mac;
-`pt-ddp-docker` requires multiple NVIDIA GPUs and is not a Mac example.
+These steps were tested on Apple Silicon with Colima's `vz` VM and CPU execution.
+For `hello-pt-docker`, use the job copy without a GPU requirement described in Step 5.
+The PyTorch client selects `cuda:0` when `torch.cuda.is_available()` is true,
+and `cpu` otherwise; it does not select `mps`.
+[PyTorch MPS](https://docs.pytorch.org/docs/main/notes/mps.html) and
+[Colima's krunkit GPU support](https://github.com/abiosoft/colima#ai-models-gpu-accelerated)
+have not been tested with this example.
 
 ```bash
 brew install colima docker python@3.13
-colima start --cpu 4 --memory 8 --disk 40 --runtime docker \
+colima start --vm-type vz --cpu 4 --memory 8 --disk 40 --runtime docker \
   --mount "$(cd ../.. && pwd):w"
 unset DOCKER_HOST
 docker context use colima
@@ -156,7 +161,31 @@ nvflare job submit \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
-On a Mac, the PyTorch example also runs without a GPU:
+The original `hello-pt-docker` job requests one GPU for site-1. To remove that
+GPU requirement on any platform, create a copy as shown below. This allows
+the job to run on CPU when CUDA is unavailable to the clients, as in the
+Colima setup tested above. It preserves the client's existing device selection:
+CUDA when available, CPU otherwise.
+
+```bash
+python - <<'PY'
+import json
+import shutil
+from pathlib import Path
+
+shutil.copytree("jobs/hello-pt-docker", "workspace/hello-pt-docker-cpu", dirs_exist_ok=True)
+path = Path("workspace/hello-pt-docker-cpu/meta.json")
+meta = json.loads(path.read_text())
+meta["resource_spec"] = {}
+path.write_text(json.dumps(meta, indent=4) + "\n")
+PY
+nvflare job submit \
+  -j workspace/hello-pt-docker-cpu \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
+When the Docker host exposes an NVIDIA GPU, submit the original job. Use a
+CUDA-capable PyTorch job image and a Docker host configured for NVIDIA GPUs:
 
 ```bash
 nvflare job submit \
@@ -184,7 +213,7 @@ Available jobs:
 | Job | Description |
 |-----|-------------|
 | `hello-numpy-docker` | Basic numpy federated averaging |
-| `hello-pt-docker` | PyTorch CIFAR-10 federated training |
+| `hello-pt-docker` | PyTorch CIFAR-10 training; requests one NVIDIA GPU by default |
 | `pt-ddp-docker` | Multi-GPU DDP training with torchrun |
 
 ## Notes

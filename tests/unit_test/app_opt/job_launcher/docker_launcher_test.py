@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import sys
 import threading
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -990,6 +992,27 @@ class TestDockerJobLauncherLaunchJob:
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
+    @pytest.mark.parametrize("cpu_copy", [False, True])
+    def test_hello_pt_docker_example_gpu_and_cpu_copy(self, cpu_copy):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        meta_path = Path(__file__).resolve().parents[4] / "examples/docker/jobs/hello-pt-docker/meta.json"
+        job_meta = json.loads(meta_path.read_text())
+        if cpu_copy:
+            job_meta["resource_spec"] = {}
+        job_meta[JobConstants.JOB_ID] = "job-1"
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        expected_requests = None if cpu_copy else [{"Count": 1, "Capabilities": [["gpu"]]}]
+        assert call_kwargs.get("device_requests") == expected_requests
 
     def test_launch_image_from_launcher_spec_default(self):
         """launcher_spec 'default' key applies to all sites that have no explicit entry."""

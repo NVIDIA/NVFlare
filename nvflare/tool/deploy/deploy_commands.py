@@ -718,9 +718,11 @@ rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
 # Inspect the socket after Docker mounts it. On macOS, the host path can be a
 # symlink whose group differs from the socket group inside the Linux VM.
-if ! SOCK_GID=$(docker run --rm --user 0:0 --entrypoint stat \\
+# Use the Python executable required by the parent container; custom images
+# do not necessarily include the stat command.
+if ! SOCK_GID=$(docker run --rm --user 0:0 --entrypoint /usr/local/bin/python3 \\
     -v /var/run/docker.sock:/var/run/docker.sock "$DOCKER_IMAGE" \\
-    -c '%g' /var/run/docker.sock); then
+    -c 'import os; print(os.stat("/var/run/docker.sock").st_gid)'); then
     echo "ERROR: cannot inspect the Docker socket inside $DOCKER_IMAGE."
     exit 1
 fi

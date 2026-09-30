@@ -16,5 +16,9 @@
             }
         }
     },
-    "resource_spec": {}
+    "resource_spec": {
+        "site-1": {
+            "num_of_gpus": 1
+        }
+    }
 }
