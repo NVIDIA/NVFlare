@@ -45,22 +45,44 @@ def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
         dynamic_log_config('{"version": 1,', str(tmp_path), str(tmp_path / "reload.json"))
 
 
-def test_log_modes_preserve_concise_and_add_msg_only():
+def test_log_modes_preserve_concise_and_add_progress():
     from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
 
     assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
         "%(asctime)s - %(levelname)s - %(message)s"
     )
     assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
-    assert logmode_config_dict[LogMode.CONCISE]["filters"]["ConciseFilter"]["()"] == (
-        "nvflare.fuel.utils.log_utils.ConciseLogFilter"
+    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
+    assert logmode_config_dict[LogMode.CONCISE]["filters"] == logmode_config_dict[LogMode.FULL]["filters"]
+    for handler_name in ("FLFileHandler", "logFileHandler", "jsonFileHandler", "errorFileHandler"):
+        assert (
+            logmode_config_dict[LogMode.CONCISE]["handlers"][handler_name]
+            == logmode_config_dict[LogMode.FULL]["handlers"][handler_name]
+        )
+    assert logmode_config_dict[LogMode.PROGRESS]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+    assert logmode_config_dict[LogMode.PROGRESS]["formatters"]["consoleFormatter"]["()"] == (
+        "nvflare.fuel.utils.log_utils.ProgressFormatter"
     )
+    assert logmode_config_dict[LogMode.PROGRESS]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.PROGRESS]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
     assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.MSG_ONLY]["filters"] == logmode_config_dict[LogMode.FULL]["filters"]
     assert logmode_config_dict[LogMode.FULL]["filters"]["FLFilter"]["()"] == (
         "nvflare.fuel.utils.log_utils.LoggerNameFilter"
     )
     assert logmode_config_dict[LogMode.FULL]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
+
+
+def test_dynamic_log_config_accepts_progress_mode(tmp_path):
+    from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config, logmode_config_dict
+
+    with patch("nvflare.fuel.utils.log_utils.apply_log_config") as mock_apply:
+        dynamic_log_config(LogMode.PROGRESS, str(tmp_path), str(tmp_path / "reload.json"))
+
+    applied = mock_apply.call_args.args[0]
+    assert applied == logmode_config_dict[LogMode.PROGRESS]
+    assert applied is not logmode_config_dict[LogMode.PROGRESS]
 
 
 @pytest.mark.parametrize(
@@ -96,6 +118,95 @@ def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):
     assert formatter.format(record) == "hello"
 
 
+def test_progress_formatter_labels_warnings_and_errors_without_changing_info(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ProgressFormatter
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    formatter = ProgressFormatter("%(message)s")
+
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "working", (), None)) == (
+        "working"
+    )
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.WARNING, __file__, 1, "retrying", (), None)) == (
+        "WARNING: retrying"
+    )
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.ERROR, __file__, 1, "failed", (), None)) == (
+        "ERROR: failed"
+    )
+
+
+def test_progress_formatter_keeps_traceback_in_diagnostic_record_but_not_console(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ProgressFormatter
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    formatter = ProgressFormatter("%(message)s")
+    try:
+        raise RuntimeError("private traceback detail")
+    except RuntimeError:
+        record = logging.LogRecord("nvflare.test", logging.ERROR, __file__, 1, "failed", (), sys.exc_info())
+
+    assert formatter.format(record) == "ERROR: failed"
+    assert record.exc_info is not None
+
+
+def test_json_formatter_preserves_explicit_progress_marker():
+    from nvflare.fuel.utils.log_utils import JsonFormatter
+
+    formatter = JsonFormatter()
+    regular = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "diagnostic", (), None)
+    progress = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "working", (), None)
+    progress.nvflare_progress = True
+
+    assert json.loads(formatter.format(regular))["nvflare_progress"] is False
+    assert json.loads(formatter.format(progress))["nvflare_progress"] is True
+
+
+def test_progress_console_keeps_reporting_and_errors_but_filters_bookkeeping():
+    from nvflare.fuel.utils.log_utils import ConciseLogFilter, logmode_config_dict
+
+    config = logmode_config_dict["progress"]
+    filter_config = {k: v for k, v in config["filters"]["ConciseFilter"].items() if k != "()"}
+    log_filter = ConciseLogFilter(**filter_config)
+    output = io.StringIO()
+    console = logging.StreamHandler(output)
+    console.addFilter(log_filter)
+    diagnostic_output = io.StringIO()
+    diagnostic_handler = logging.StreamHandler(diagnostic_output)
+    records = [
+        ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.INFO, "transfer detail"),
+        ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.INFO, "executor detail"),
+        ("__main__.ClientTaskWorker", logging.INFO, "worker detail"),
+        ("nvflare.app_common.widgets.metrics_artifact_writer", logging.INFO, "round progress"),
+        ("nvflare.app_common.workflows.cyclic", logging.INFO, "cycle progress"),
+        (
+            "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
+            logging.INFO,
+            "Newton-Raphson updates: [1, 2, 3]",
+        ),
+        ("nvflare.app_opt.pt.fedopt.FedOpt", logging.INFO, "model contents: [4, 5, 6]"),
+        ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.WARNING, "transfer problem"),
+        ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.ERROR, "executor failure"),
+    ]
+    for index, (name, level, message) in enumerate(records):
+        record = logging.LogRecord(name, level, __file__, 1, message, (), None)
+        if index in (3, 4):
+            record.nvflare_progress = True
+        console.handle(record)
+        diagnostic_handler.handle(record)
+        assert message in diagnostic_output.getvalue()
+    assert output.getvalue().splitlines() == [
+        "round progress",
+        "cycle progress",
+        "transfer problem",
+        "executor failure",
+    ]
+    # Only the console uses the concise filter; the actual file configuration
+    # continues to retain the records suppressed above.
+    assert not config["handlers"]["logFileHandler"].get("filters")
+    assert not config["handlers"]["jsonFileHandler"].get("filters")
+    assert logmode_config_dict["full"]["handlers"]["consoleHandler"]["filters"] == ["ExcludeProgressFilter"]
+
+
 def test_color_formatter_emits_ansi_when_stdout_is_tty(monkeypatch):
     from nvflare.fuel.utils.log_utils import ColorFormatter
 
@@ -118,6 +229,7 @@ def test_validate_site_log_config_accepts_levels_and_modes():
 
     assert validate_site_log_config("INFO") == "INFO"
     assert validate_site_log_config("20") == "20"
+    assert validate_site_log_config(LogMode.PROGRESS) == LogMode.PROGRESS
     assert validate_site_log_config(LogMode.MSG_ONLY) == LogMode.MSG_ONLY
 
 
@@ -129,3 +241,231 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
 
     with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
         validate_site_log_config("/my workspace/log.conf")
+
+
+def test_progress_reuses_existing_formatters_and_retains_diagnostic_records():
+    from nvflare.fuel.utils.log_utils import ConciseLogFilter, LogMode, ProgressFormatter, logmode_config_dict
+
+    view = io.StringIO()
+    handler = logging.StreamHandler(view)
+    handler.setFormatter(ProgressFormatter(fmt="%(message)s"))
+    filter_config = logmode_config_dict[LogMode.PROGRESS]["filters"]["ConciseFilter"].copy()
+    assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.ConciseLogFilter"
+    handler.addFilter(ConciseLogFilter(**filter_config))
+    detail = io.StringIO()
+    diagnostic = logging.StreamHandler(detail)
+    records = [
+        logging.LogRecord("custom.trainer", logging.INFO, "", 0, "raw weights: [1, 2, 3]", (), None),
+        logging.LogRecord(
+            "nvflare.app_common.widgets.metrics_artifact_writer",
+            logging.INFO,
+            "",
+            0,
+            "site-1 | loss=0.25",
+            (),
+            None,
+        ),
+        logging.LogRecord(
+            "nvflare.app_common.workflows.statistics_controller.StatisticsController",
+            logging.INFO,
+            "",
+            0,
+            "fed_stats control flow started.",
+            (),
+            None,
+        ),
+        logging.LogRecord(
+            "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
+            logging.INFO,
+            "",
+            0,
+            "Newton-Raphson updates: [1, 2, 3]",
+            (),
+            None,
+        ),
+        logging.LogRecord(
+            "nvflare.transport",
+            logging.WARNING,
+            "",
+            0,
+            "[identity=site-2, run=job-123]: connection interrupted " + "details " * 20,
+            (),
+            None,
+        ),
+    ]
+    records[1].nvflare_progress = True
+    for record in records:
+        handler.handle(record)
+        diagnostic.handle(record)
+    assert "raw weights" not in view.getvalue()
+    assert "site-1 | loss=0.25" in view.getvalue()
+    assert "fed_stats control flow started." not in view.getvalue()
+    assert "Newton-Raphson updates" not in view.getvalue()
+    assert "WARNING: connection interrupted" in view.getvalue()
+    assert "run=job-123" not in view.getvalue()
+    assert "raw weights" in detail.getvalue()
+    assert "[identity=site-2, run=job-123]" in detail.getvalue()
+    config = logmode_config_dict[LogMode.PROGRESS]
+    assert config["formatters"].keys() == logmode_config_dict["full"]["formatters"].keys()
+    assert config["filters"].keys() == logmode_config_dict["full"]["filters"].keys()
+    assert config["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert config["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
+    for name in ("consoleHandler", "FLFileHandler"):
+        assert config["handlers"][name]["formatter"] == logmode_config_dict["full"]["handlers"][name]["formatter"]
+    for name in ("logFileHandler", "jsonFileHandler"):
+        assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]
+
+
+def test_progress_keeps_existing_fl_file_info_for_machine_readers():
+    from nvflare.fuel.utils.log_utils import LoggerNameFilter, LogMode, logmode_config_dict
+
+    config = logmode_config_dict[LogMode.PROGRESS]
+    filter_config = config["filters"]["FLFilter"].copy()
+    filter_config.pop("()")
+    log_filter = LoggerNameFilter(**filter_config)
+    record = logging.LogRecord(
+        "nvflare.app_common.workflows.fedavg.FedAvg",
+        logging.INFO,
+        __file__,
+        1,
+        "Aggregated 1/8 results",
+        (),
+        None,
+    )
+
+    assert log_filter.filter(record)
+
+
+@pytest.mark.parametrize("mode", ["full", "verbose"])
+def test_existing_detailed_console_modes_suppress_new_progress_records(mode):
+    from nvflare.fuel.utils.log_utils import ExcludeProgressFilter, logmode_config_dict
+
+    assert logmode_config_dict[mode]["handlers"]["consoleHandler"]["filters"] == ["ExcludeProgressFilter"]
+    log_filter = ExcludeProgressFilter()
+    diagnostic = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "existing diagnostic", (), None)
+    progress = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "new progress", (), None)
+    progress.nvflare_progress = True
+
+    assert log_filter.filter(diagnostic)
+    assert not log_filter.filter(progress)
+
+
+def test_concise_keeps_original_application_selection_and_format():
+    from nvflare.fuel.utils.log_utils import ColorFormatter, ConciseLogFilter, LogMode, logmode_config_dict
+
+    config = logmode_config_dict[LogMode.CONCISE]
+    filter_config = {key: value for key, value in config["filters"]["ConciseFilter"].items() if key != "()"}
+    log_filter = ConciseLogFilter(**filter_config)
+    record = logging.LogRecord(
+        "nvflare.app_common.executors.task_script_runner.TaskScriptRunner",
+        logging.INFO,
+        "",
+        0,
+        "Received weights: [1, 2, 3]",
+        (),
+        None,
+    )
+
+    assert log_filter.filter(record)
+    rendered = ColorFormatter(fmt=config["formatters"]["consoleFormatter"]["fmt"]).format(record)
+    assert " - INFO - Received weights: [1, 2, 3]" in rendered
+
+    progress_record = logging.LogRecord(
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+        logging.INFO,
+        "",
+        0,
+        "ROUND 1 / 2",
+        (),
+        None,
+    )
+    progress_record.nvflare_progress = True
+    assert not log_filter.filter(progress_record)
+
+
+def test_metric_table_keeps_columns_aligned_through_log_formatting():
+    from nvflare.fuel.utils.log_utils import ColorFormatter, format_metric_table
+
+    rows = [
+        ("site-1", {"accuracy": 1, "accuracy_after_local_training": 20}),
+        ("site-2", {"accuracy": 30, "accuracy_after_local_training": 70}),
+    ]
+    table = format_metric_table(rows)
+    record = logging.LogRecord(
+        "nvflare.app_common.widgets.metrics_artifact_writer", logging.INFO, "", 0, table, (), None
+    )
+    output = ColorFormatter(fmt="%(message)s").format(record)
+    assert output == table  # Wrapping must not collapse table alignment or merge rows.
+    header, first, second = output.splitlines()
+    assert first.split() == ["site-1", "1", "20"]
+    assert second.split() == ["site-2", "30", "70"]
+    assert first.rindex("20") == second.rindex("70")
+    assert len(header) <= 80
+
+
+def test_metric_table_bounds_display_and_handles_application_values():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    class BadNumber(float):
+        def __format__(self, spec):
+            raise RuntimeError("application-defined formatting failure")
+
+    rows = [("site\n" + "x" * 100, {"accuracy": BadNumber(1), "samples": list(range(10000)), "extra": 5})] * 100
+    table = format_metric_table(rows)
+    assert "[see artifact]" in table
+    assert "saved artifacts" in table
+    assert "9999" not in table
+    assert len(table.splitlines()) == 12  # Header, ten rows, one truncation notice.
+    assert all(len(line) <= 80 for line in table.splitlines())
+    assert "site\\n" in table
+
+
+def test_metric_table_missing_values_are_not_reported_as_zero():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("site-1", {"loss": 0.25}), ("site-2", {"accuracy": 1})])
+    assert table.splitlines()[1].split() == ["site-1", "0.25", "—"]
+    assert table.splitlines()[2].split() == ["site-2", "—", "1"]
+
+
+@pytest.mark.parametrize("whole_lines", [False, True])
+@pytest.mark.parametrize("size", [0, 5, 16, 4096])
+def test_shared_log_tail_bounds_reads_and_preserves_byte_or_record_contract(size, whole_lines):
+    from nvflare.fuel.utils.log_utils import read_log_tail
+
+    class TrackedStream(io.BytesIO):
+        bytes_read = 0
+
+        def read(self, size=-1):
+            data = super().read(size)
+            self.bytes_read += len(data)
+            return data
+
+    data = (b"old record\n" * size) + b"final record\n" if size else b""
+    stream = TrackedStream(data)
+    tail, truncated = read_log_tail(stream, 32, whole_lines=whole_lines)
+    expected = data[-32:]
+    if len(data) > 32 and whole_lines:
+        expected = expected.partition(b"\n")[2]
+    assert tail == expected
+    assert truncated == (len(data) > 32)
+    assert stream.bytes_read <= 32
+
+
+def test_metric_table_separates_full_width_labels_and_values():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("123456789012", {"12345678901234": "x" * 80})])
+    header, row = table.splitlines()
+    assert header.split() == ["Client", "12345678901234"]
+    assert row == "  123456789012  [see artifact]"
+
+
+def test_metric_table_preserves_distinct_site_labels():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("hospital-north", {"loss": 0.25}), ("hospital-south", {"loss": 0.5})], label_width=24)
+
+    assert "hospital-north" in table
+    assert "hospital-south" in table
+    assert "hospital-..." not in table

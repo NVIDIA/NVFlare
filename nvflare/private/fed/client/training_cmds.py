@@ -18,7 +18,7 @@ import os
 import tempfile
 from typing import List
 
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
@@ -29,6 +29,7 @@ from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info, require_signed_jobs
+from nvflare.private.fed.utils.job_cert_utils import unpack_job_cert_header, write_job_cert
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,15 @@ class DeployProcessor(RequestProcessor):
         if not job_meta:
             return error_reply("missing job meta")
 
+        job_cert = req.get_header(RequestHeader.JOB_CERT)
+        job_creds = unpack_job_cert_header(job_cert) if job_cert else None
+        if job_creds is None and engine.new_context().get_prop(FLContextKey.SECURE_MODE, False):
+            # secure jobs run only on per-job credentials; never deploy a job that would use site certs
+            return error_reply(
+                f"job {job_id} deploy request carries no valid job credential; "
+                "the server must be provisioned with a job CA"
+            )
+
         workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
         root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
         # Verify the received bytes before deploying them. AppDeployer will
@@ -136,6 +146,9 @@ class DeployProcessor(RequestProcessor):
         )
         if err:
             return error_reply(err)
+
+        if job_creds:
+            write_job_cert(workspace.get_run_dir(job_id), *job_creds)
 
         return ok_reply(body=f"deployed {app_name} to {client_name}")
 

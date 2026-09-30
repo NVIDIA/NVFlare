@@ -12,15 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import tempfile
 
 import pytest
 import torch
-from safetensors.torch import save_file
+from safetensors.torch import load_file, save_file
 
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
-from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, _LazyRef, _TempDirRef
+from nvflare.app_opt.pt.lazy_tensor_dict import (
+    LazyTensorDict,
+    TensorMetadata,
+    _LazyRef,
+    _TempDirRef,
+    safetensors_refs,
+    tensor_metadata,
+    write_safetensors,
+)
 
 
 @pytest.fixture
@@ -60,6 +69,72 @@ class TestLazyRef:
         file_path, st_key = key_to_file["layer1.bias"]
         ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
         assert "layer1.bias" in repr(ref)
+
+    def test_release_cleans_shared_temp_dir(self, temp_safetensors):
+        key_to_file, temp_dir, _ = temp_safetensors
+        file_path, st_key = key_to_file["layer1.bias"]
+        ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
+
+        ref.release()
+
+        assert not os.path.exists(temp_dir)
+
+    def test_release_preserves_a_user_checkpoint(self, tmp_path):
+        save_file({"a": torch.ones(1)}, tmp_path / "checkpoint.safetensors")
+
+        safetensors_refs(str(tmp_path / "checkpoint.safetensors"))["a"].release()
+
+        assert (tmp_path / "checkpoint.safetensors").exists()
+
+    def test_deepcopy_shares_temp_dir_lifetime(self, temp_safetensors):
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ref = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir).make_lazy_ref("layer1.weight")
+
+        snapshot = copy.deepcopy(ref)
+        assert snapshot is not ref
+        del snapshot
+
+        assert os.path.exists(temp_dir)
+        assert torch.equal(ref.materialize(), tensors["layer1.weight"])
+
+    def test_metadata_comes_from_the_header(self, tmp_path):
+        tensors = {
+            "float": torch.ones(7),
+            "flags": torch.tensor([True, False, True]),
+            "half": torch.ones(2, 3, dtype=torch.bfloat16),
+        }
+        save_file(tensors, tmp_path / "model.safetensors")
+
+        refs = safetensors_refs(str(tmp_path / "model.safetensors"))
+
+        assert refs["float"].get_metadata() == TensorMetadata((7,), "F32", 28)
+        assert refs["flags"].get_metadata() == TensorMetadata((3,), "BOOL", 3)
+        assert refs["half"].get_metadata() == TensorMetadata((2, 3), "BF16", 12)
+        assert all(refs[key].get_metadata() == tensor_metadata(tensor) for key, tensor in tensors.items())
+        assert all(ref._temp_ref is None for ref in refs.values())
+
+
+class TestWriteSafetensors:
+    def test_roundtrip_in_declared_order(self, tmp_path):
+        tensors = {"b": torch.randn(2, 3), "a": torch.arange(5), "c": torch.tensor(True)}
+        metadata = {key: tensor_metadata(tensor) for key, tensor in tensors.items()}
+
+        write_safetensors(str(tmp_path / "out.safetensors"), metadata, iter(tensors.items()))
+
+        loaded = load_file(tmp_path / "out.safetensors")
+        assert set(loaded) == set(tensors)
+        assert all(torch.equal(loaded[key], tensor) for key, tensor in tensors.items())
+
+    def test_rejects_tensors_that_do_not_match_the_header(self, tmp_path):
+        path = str(tmp_path / "out.safetensors")
+        metadata = {"a": tensor_metadata(torch.ones(2)), "b": tensor_metadata(torch.ones(3))}
+
+        with pytest.raises(ValueError, match="header order"):
+            write_safetensors(path, metadata, iter([("b", torch.ones(3)), ("a", torch.ones(2))]))
+        with pytest.raises(ValueError, match="declared shape or dtype"):
+            write_safetensors(path, metadata, iter([("a", torch.ones(2)), ("b", torch.ones(4))]))
+        with pytest.raises(ValueError, match="fewer tensors"):
+            write_safetensors(path, metadata, iter([("a", torch.ones(2))]))
 
 
 class TestTempDirRef:

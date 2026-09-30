@@ -807,7 +807,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -835,7 +835,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1265,7 +1265,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1293,7 +1293,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1493,7 +1493,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1521,16 +1521,16 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -1647,9 +1647,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -1661,6 +1661,13 @@
           },
           {
             "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_disk_aggregation",
             "type": "bool",
             "required": false,
             "default": false,
@@ -1759,7 +1766,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1787,7 +1794,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1927,7 +1934,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1955,7 +1962,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2160,7 +2167,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2188,7 +2195,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2370,7 +2377,7 @@
           },
           {
             "name": "eval_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2384,7 +2391,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2860,7 +2867,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2888,16 +2895,16 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3014,9 +3021,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3038,6 +3045,13 @@
             "type": "float",
             "required": false,
             "default": 0.01,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_disk_aggregation",
+            "type": "bool",
+            "required": false,
+            "default": false,
             "kind": "keyword_only"
           }
         ],
@@ -3248,7 +3262,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -3262,7 +3276,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -3808,7 +3822,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -3822,7 +3836,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -3969,7 +3983,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "positional_or_keyword"

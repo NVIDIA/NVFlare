@@ -260,6 +260,29 @@ class TestConstructorValidation:
         assert executor._task_script_args == "--epochs 3"
         assert executor._command is None
 
+    def test_in_process_accepts_pre_tokenized_task_script_args(self):
+        task_script_args = ["--data_root", "/data/cifar cache"]
+        executor = ClientAPIExecutor(
+            execution_mode="in_process", task_script_path="custom/train.py", task_script_args=task_script_args
+        )
+        task_script_args[-1] = "/changed"
+
+        assert executor._task_script_args == ["--data_root", "/data/cifar cache"]
+
+    def test_in_process_preserves_legacy_none_task_script_args(self):
+        executor = ClientAPIExecutor(
+            execution_mode="in_process", task_script_path="custom/train.py", task_script_args=None
+        )
+
+        assert executor._task_script_args == ""
+
+    @pytest.mark.parametrize("task_script_args", [("--epochs", "3"), ["--epochs", 3], 3])
+    def test_in_process_rejects_invalid_task_script_args(self, task_script_args):
+        with pytest.raises(ValueError, match="task_script_args"):
+            ClientAPIExecutor(
+                execution_mode="in_process", task_script_path="custom/train.py", task_script_args=task_script_args
+            )
+
     @pytest.mark.parametrize("bad_mode", ["IN_PROCESS", "In_Process", "subprocess", "launch", "", None, 1])
     def test_unknown_execution_mode_rejected(self, bad_mode):
         with pytest.raises(ValueError, match="invalid execution_mode"):

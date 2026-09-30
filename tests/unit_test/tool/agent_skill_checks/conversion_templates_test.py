@@ -622,8 +622,8 @@ def test_pytorch_eval_template_rejects_missing_or_invalid_round_steps(monkeypatc
 @pytest.mark.parametrize(
     "evaluate_before_train, expected_events",
     [
-        (True, ["init:3", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
-        (False, ["init:3", "factory", "patch", "is_running", "train", "is_running"]),
+        (True, ["init", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
+        (False, ["init", "factory", "patch", "is_running", "train", "is_running"]),
     ],
 )
 def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, evaluate_before_train, expected_events):
@@ -642,7 +642,7 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         return _Trainer()
 
     running = iter((True, False))
-    monkeypatch.setattr(module.flare, "init", lambda rank: events.append(f"init:{rank}"))
+    monkeypatch.setattr(module.flare, "init", lambda: events.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
     monkeypatch.setattr(
         module.flare,
@@ -650,25 +650,22 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         lambda: events.append("is_running") or next(running),
     )
 
-    module.main(trainer_factory, rank=3, evaluate_before_train=evaluate_before_train)
+    module.main(trainer_factory, evaluate_before_train=evaluate_before_train)
 
     assert events == expected_events
 
 
-def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypatch):
+def test_huggingface_client_template_delegates_rank_resolution_to_product_init(monkeypatch):
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
-    rank_parameter = inspect.signature(module.main).parameters["rank"]
     observed = []
 
-    monkeypatch.setattr(module.flare, "init", lambda rank: observed.append(rank))
+    monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
     monkeypatch.setattr(module.flare, "is_running", lambda: False)
 
-    assert rank_parameter.default is inspect.Parameter.empty
-    assert rank_parameter.kind is inspect.Parameter.KEYWORD_ONLY
-    for rank in (0, 1):
-        module.main(lambda: object(), rank=rank)
-    assert observed == [0, 1]
+    assert "rank" not in inspect.signature(module.main).parameters
+    module.main(lambda: object())
+    assert observed == ["init"]
 
 
 def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):
@@ -717,7 +714,7 @@ def test_huggingface_job_template_advertises_simulation_workspace(monkeypatch, t
     monkeypatch.setattr(module, "build_recipe", lambda **kwargs: _Recipe())
     monkeypatch.setattr(module, "SimEnv", lambda **kwargs: types.SimpleNamespace(**kwargs))
 
-    required_args = ["job.py", "--model_name_or_path", "model", "--data_root", "data"]
+    required_args = ["job.py", "--model_name_or_path", "model"]
     monkeypatch.setattr(sys, "argv", required_args)
     module.main()
     implicit_output = capsys.readouterr().out
@@ -740,6 +737,51 @@ def test_huggingface_job_template_advertises_simulation_workspace(monkeypatch, t
     assert status_workspaces == [executed_workspaces[0], explicit_workspace]
     assert result_workspaces == [executed_workspaces[0], explicit_workspace]
     assert explicit_workspace.is_dir()
+
+
+def test_huggingface_job_template_resolves_only_source_local_paths_from_another_cwd(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    source_root = tmp_path / "read-only-source"
+    relative_data = source_root / "datasets" / "sst2"
+    relative_data.mkdir(parents=True)
+    absolute_data = tmp_path / "absolute-data"
+    absolute_data.mkdir()
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+
+    assert module.resolve_source_local_path("datasets/sst2", source_root=source_root) == relative_data.resolve()
+    assert module.resolve_source_local_path(absolute_data, source_root=source_root) == absolute_data.resolve()
+    assert module.resolve_source_local_path("datasets/sst2", source_root=module.SOURCE_DIR) != relative_data.resolve()
+    assert Path.cwd() == caller_dir
+
+
+def test_huggingface_job_template_rejects_relative_source_root():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="source_root must be an absolute path"):
+        module.resolve_source_local_path("datasets/sst2", source_root="source")
+
+
+def test_huggingface_job_template_does_not_assume_a_source_data_argument(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    source = (HF_TEMPLATES / "job.py").read_text(encoding="utf-8")
+
+    def fail_if_called(_value):
+        raise AssertionError("Hub identifiers must not be passed through the local-path resolver")
+
+    monkeypatch.setattr(module, "resolve_source_local_path", fail_if_called)
+    train_args = module.build_train_args("org/model", 2)
+
+    assert "--model_name_or_path org/model" in train_args
+    assert "data_root" not in inspect.signature(module.build_train_args).parameters
+    assert "data_root" not in inspect.signature(module.build_recipe).parameters
+    assert 'parser.add_argument("--data_root"' not in source
 
 
 def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
@@ -804,7 +846,6 @@ def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_file
     recipe = module.build_recipe(
         name="hf-test",
         model_name_or_path="local-model",
-        data_root="/tmp/data",
         num_clients=2,
         num_rounds=3,
         key_metric="eval_accuracy",
@@ -840,7 +881,6 @@ def test_huggingface_train_only_job_disables_model_selection_by_default(tmp_path
     recipe = module.build_recipe(
         name="hf-train-only",
         model_name_or_path="local-model",
-        data_root="/tmp/data",
         num_clients=2,
         num_rounds=1,
     )
@@ -855,9 +895,9 @@ def test_huggingface_train_only_job_disables_model_selection_by_default(tmp_path
 def test_huggingface_job_template_supports_one_resolved_budget_mode():
     module = _load_module(HF_TEMPLATES / "job.py")
 
-    requested_steps = module.build_train_args("local-model", "/tmp/data", 2, max_steps=7)
-    requested_epochs = module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=3.0)
-    preserved_source = module.build_train_args("local-model", "/tmp/data", 2, preserve_source_budget=True)
+    requested_steps = module.build_train_args("local-model", 2, max_steps=7)
+    requested_epochs = module.build_train_args("local-model", 2, num_train_epochs=3.0)
+    preserved_source = module.build_train_args("local-model", 2, preserve_source_budget=True)
 
     assert "--max_steps 7" in requested_steps
     assert "--num_train_epochs" not in requested_steps
@@ -865,9 +905,10 @@ def test_huggingface_job_template_supports_one_resolved_budget_mode():
     assert "--max_steps" not in requested_epochs
     assert "--max_steps" not in preserved_source
     assert "--num_train_epochs" not in preserved_source
+    assert all("--rank" not in args for args in (requested_steps, requested_epochs, preserved_source))
 
     with pytest.raises(ValueError, match="only one"):
-        module.build_train_args("local-model", "/tmp/data", 2, max_steps=7, num_train_epochs=3.0)
+        module.build_train_args("local-model", 2, max_steps=7, num_train_epochs=3.0)
 
 
 @pytest.mark.parametrize("max_steps", [True, 0, -1, 1.5])
@@ -875,7 +916,7 @@ def test_huggingface_job_template_rejects_invalid_programmatic_step_budgets(max_
     module = _load_module(HF_TEMPLATES / "job.py")
 
     with pytest.raises(ValueError, match="positive integer"):
-        module.build_train_args("local-model", "/tmp/data", 2, max_steps=max_steps)
+        module.build_train_args("local-model", 2, max_steps=max_steps)
 
 
 @pytest.mark.parametrize("num_train_epochs", [True, 0, -1, float("nan"), float("inf")])
@@ -883,7 +924,7 @@ def test_huggingface_job_template_rejects_invalid_programmatic_epoch_budgets(num
     module = _load_module(HF_TEMPLATES / "job.py")
 
     with pytest.raises(ValueError, match="finite positive number"):
-        module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=num_train_epochs)
+        module.build_train_args("local-model", 2, num_train_epochs=num_train_epochs)
 
 
 @pytest.mark.parametrize(
@@ -907,8 +948,6 @@ def test_huggingface_job_template_cli_rejects_invalid_budgets(monkeypatch, optio
             "job.py",
             "--model_name_or_path",
             "local-model",
-            "--data_root",
-            "/tmp/data",
             "--key_metric",
             "eval_accuracy",
             option,
@@ -924,7 +963,7 @@ def test_huggingface_job_template_rejects_unrepresentable_in_process_arguments()
     module = _load_module(HF_TEMPLATES / "job.py")
 
     with pytest.raises(ValueError, match="whitespace-free"):
-        module.build_train_args("model with spaces", "/tmp/data", 2)
+        module.build_train_args("model with spaces", 2)
 
 
 def test_huggingface_job_template_exports_colocated_files_from_another_working_directory(tmp_path, monkeypatch):
@@ -943,7 +982,6 @@ def test_huggingface_job_template_exports_colocated_files_from_another_working_d
     recipe = module.build_recipe(
         name="hf-cwd-independent",
         model_name_or_path="local-model",
-        data_root="/tmp/data",
         num_clients=2,
         num_rounds=1,
         key_metric="eval_accuracy",
@@ -975,13 +1013,12 @@ def test_huggingface_job_template_exports_per_site_files_from_another_working_di
     monkeypatch.chdir(caller_dir)
     module = _load_module(job_path)
     site_args = {
-        "site-1": {"train_args": module.build_train_args("local-model", "/data/site-1", 2, max_steps=2)},
-        "site-2": {"train_args": module.build_train_args("local-model", "/data/site-2", 2, max_steps=3)},
+        "site-1": {"train_args": "--model_name_or_path local-model --dataset_path /data/site-1 --num_clients 2"},
+        "site-2": {"train_args": "--model_name_or_path local-model --dataset_path /data/site-2 --num_clients 2"},
     }
     recipe = module.build_recipe(
         name="hf-per-site-cwd-independent",
         model_name_or_path="local-model",
-        data_root="/tmp/data",
         num_clients=2,
         num_rounds=1,
         key_metric="eval_accuracy",
@@ -1006,7 +1043,10 @@ def test_huggingface_job_template_exports_per_site_files_from_another_working_di
 
 def test_huggingface_job_template_uses_one_simulator_topology_owner(tmp_path):
     module = _load_module(HF_TEMPLATES / "job.py")
-    per_site_config = {"site-a": {"train_args": "--data_root /data/a"}, "site-b": {"train_args": "--data_root /data/b"}}
+    per_site_config = {
+        "site-a": {"train_args": "--dataset_path /data/a"},
+        "site-b": {"train_args": "--dataset_path /data/b"},
+    }
 
     unified_env = module.build_sim_env(2, tmp_path / "unified")
     assert unified_env.clients is None
@@ -1029,7 +1069,6 @@ def test_huggingface_job_template_rejects_deprecated_per_site_constructor_option
         module.build_recipe(
             name="hf-deprecated-per-site",
             model_name_or_path="local-model",
-            data_root="/tmp/data",
             num_clients=2,
             num_rounds=1,
             key_metric="eval_accuracy",
@@ -1051,7 +1090,6 @@ def test_huggingface_job_template_rejects_per_site_train_script_overrides(tmp_pa
         module.build_recipe(
             name="hf-per-site-script",
             model_name_or_path="local-model",
-            data_root="/tmp/data",
             num_clients=2,
             num_rounds=1,
             key_metric="eval_accuracy",
@@ -1071,7 +1109,6 @@ def test_huggingface_job_template_restores_cwd_when_per_site_config_is_invalid(t
         module.build_recipe(
             name="hf-invalid-per-site",
             model_name_or_path="local-model",
-            data_root="/tmp/data",
             num_clients=2,
             num_rounds=1,
             key_metric="eval_accuracy",

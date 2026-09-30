@@ -60,7 +60,7 @@ def _patch_token_verifier(monkeypatch):
     monkeypatch.setattr("nvflare.fuel.hci.server.sess.TokenVerifier", _FakeTokenVerifier)
 
 
-def test_session_token_round_trip_preserves_study():
+def test_session_token_round_trip_preserves_studies():
     session = Session(
         sess_id="session-id",
         user_name="admin@nvidia.com",
@@ -68,12 +68,14 @@ def test_session_token_round_trip_preserves_study():
         role="lead",
         origin_fqcn="origin",
         active_study="cancer-research",
+        cert_studies=("cancer-research", "cardiology"),
     )
 
     token = session.make_token(_FakeIdAsserter())
     restored = Session.decode_token(token, _FakeIdAsserter())
 
     assert restored.active_study == "cancer-research"
+    assert restored.cert_studies == ("cancer-research", "cardiology")
     assert restored.user_name == "admin@nvidia.com"
     assert restored.user_org == "nvidia"
     assert restored.user_role == "lead"
@@ -112,6 +114,7 @@ def test_session_token_uses_study_field_name():
 
     assert payload["study"] == "cancer-research"
     assert "t" not in payload
+    assert "cs" not in payload
 
 
 def test_session_token_round_trip_preserves_cert_expiry():
@@ -140,6 +143,7 @@ def test_decode_token_defaults_legacy_session_study():
     restored = Session.decode_token(token, _FakeIdAsserter())
 
     assert restored.active_study == DEFAULT_STUDY
+    assert restored.cert_studies == ()
 
 
 def test_decode_token_accepts_legacy_t_study_field():

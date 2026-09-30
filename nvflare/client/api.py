@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import os
 from threading import Lock
 from typing import Any, Dict, Optional, Union
 
@@ -23,6 +22,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 # this import is to let existing scripts import client.api
 from .api_context import ClientAPIType  # noqa: F401
 from .api_context import APIContext
+from .rank import resolve_process_rank
 
 global_context_lock = Lock()
 context_dict = {}
@@ -54,23 +54,20 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
     """Initializes NVFlare Client API environment.
 
     Args:
-        rank (str): rank of the process for Client API control-path behavior.
-            In distributed training, use the global process rank (for example torchrun's RANK),
-            not the device-local rank used for GPU placement.
+        rank (str): optional global process-rank override for Client API control-path behavior.
+            When omitted, initialization resolves an initialized Torch process-group rank or
+            the launcher's global RANK. Never use a device-local rank for this value.
         config_file (str): client api configuration.
 
     Returns:
         APIContext
     """
 
-    # Cache contexts by the same effective rank that API engines use. This makes an
-    # omitted rank equivalent to an explicit RANK value (or rank 0 by default).
-    if rank is None:
-        rank = os.environ.get("RANK", "0")
-    elif isinstance(rank, int):
-        rank = str(rank)
-    elif not isinstance(rank, str):
-        raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
+    # Cache contexts by the same canonical rank that API engines use. Rankless
+    # distributed callers resolve from an initialized Torch process group or
+    # the launcher's global RANK and fail before context creation when neither
+    # source is available.
+    rank = resolve_process_rank(rank)
 
     with global_context_lock:
         global context_dict

@@ -15,7 +15,11 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Union
+from typing import Optional, Union
+
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -71,6 +75,25 @@ class Connection(ABC):
             CommError: If any errors
         """
         pass
+
+    @staticmethod
+    def record_peer(conn_props: dict, peer_cert: Optional[bytes], secure: bool = False) -> None:
+        """Record the authenticated peer: its certificate (PEER_CERT, DER) and the CN derived from it (PEER_CN).
+
+        peer_cert is DER or PEM, as the transport provides it. A secure connection with no peer
+        certificate (TLS without client authentication) reports PEER_CN "N/A".
+        """
+        if not peer_cert:
+            if secure:
+                conn_props[DriverParams.PEER_CN.value] = "N/A"
+            return
+        if peer_cert.startswith(b"-----BEGIN"):
+            cert = x509.load_pem_x509_certificate(peer_cert)
+        else:
+            cert = x509.load_der_x509_certificate(peer_cert)
+        common_names = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        conn_props[DriverParams.PEER_CERT.value] = cert.public_bytes(serialization.Encoding.DER)
+        conn_props[DriverParams.PEER_CN.value] = common_names[0].value if common_names else "N/A"
 
     @abstractmethod
     def close(self):

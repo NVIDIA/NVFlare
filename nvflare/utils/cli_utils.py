@@ -256,8 +256,8 @@ def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = Tru
 
     require_clean_up = False
     if keep_origin_format:
-        original_ext = os.path.basename(dst_path).split(".")[1]
-        fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
+        filename = os.path.basename(dst_path)
+        fmt = next((fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if filename.endswith(ext)), None)
         if fmt is None:
             raise ValueError(f"invalid file extension {dst_path}, no corresponding configuration format")
         dst_config_path = dst_path

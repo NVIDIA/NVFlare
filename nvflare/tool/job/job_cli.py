@@ -1029,9 +1029,9 @@ def create_app_dir(job_folder, app_name: str = "app"):
 
 def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
     """Create a secure session using command selectors, env, or active startup kit."""
-    from nvflare.tool.cli_output import get_connect_timeout, output_error
+    from nvflare.tool.cli_output import get_validated_connect_timeout, output_error
 
-    timeout = get_connect_timeout()
+    timeout = get_validated_connect_timeout()
 
     if admin_user_dir is None and username is None:
         try:
@@ -1621,7 +1621,9 @@ def cmd_job_abort(cmd_args):
 
 
 def cmd_job_clone(cmd_args):
+    from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+    from nvflare.fuel.utils.deprecated import warn_deprecated
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1630,7 +1632,10 @@ def cmd_job_clone(cmd_args):
         "nvflare job clone",
         ["nvflare job clone <job_id>", "nvflare job clone <job_id> --study cancer"],
         sys.argv[1:],
+        deprecated=True,
+        deprecated_message=JOB_CLONE_DEPRECATION_MESSAGE,
     )
+    warn_deprecated(JOB_CLONE_DEPRECATION_MESSAGE, stacklevel=3)
 
     study = get_arg_value(cmd_args, "study", "default")
     try:
@@ -1878,7 +1883,8 @@ def define_abort_job_parser(job_subparser):
 
 
 def define_clone_job_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_CLONE, help="clone an existing job")
+    help_text = "[DEPRECATED] clone a job with its original signing certificate; use 'nvflare job submit -j JOB_FOLDER'"
+    p = job_subparser.add_parser(CMD_JOB_CLONE, help=help_text, description=help_text)
     p.add_argument("job_id", type=str, help="job ID to clone")
     p.add_argument("--study", type=str, default="default", help="study containing the source job")
     add_startup_kit_selection_args(p)
@@ -3099,7 +3105,7 @@ def cmd_job_log(cmd_args):
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not a recognised log mode.",
-            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
         )
         return
 
@@ -3199,7 +3205,7 @@ def define_job_log_parser(job_subparser):
         "level",
         nargs="?",
         default=None,
-        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
+        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--study", type=str, default="default", help="study containing the job")

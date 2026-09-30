@@ -12,30 +12,37 @@ correctness and accuracy baseline.
 
 It is recommended to create a virtual environment before running the example.
 
-## NVIDIA FLARE Installation
+## Get the Example and Install Dependencies
 
 For complete installation instructions, see the
 [NVIDIA FLARE installation guide](https://nvflare.readthedocs.io/en/main/installation.html).
-From the root of this repository, install NVFlare and the example dependencies:
+If NVFlare is already installed, download the example and enter its directory:
 
 ```bash
-python -m pip install -e .
-python -m pip install -r examples/advanced/collab/pt_cifar10/requirements.txt
+nvflare examples get collab-pt
+cd collab-pt
+python -m pip install -r collab/pt_cifar10/requirements.txt
 ```
 
-## Code Structure
-
-First get the example code from GitHub:
+For a source checkout, install that checkout and enter the equivalent working
+directory instead:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
 cd NVFlare
 git switch <release branch>
+python -m pip install -e .
 cd examples/advanced
+python -m pip install -r collab/pt_cifar10/requirements.txt
 ```
 
-The example follows the client/server/job organization used by
-[hello-pt](../../../hello-world/hello-pt/README.md):
+Both workflows leave `collab/pt_cifar10` under the current directory, so the
+preparation and module commands below are identical.
+
+## Code Structure
+
+The example follows the client/server/job organization used by the Hello
+PyTorch example:
 
 ```text
 collab/pt_cifar10/
@@ -64,11 +71,12 @@ behavior that differs.
 ## Data
 
 This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)
-dataset. The preparation script uses Dirichlet partitioning adapted from the existing
-[`cifar10/pt`](../../cifar10/pt/README.md) example. It downloads the dataset
+dataset. The preparation script uses Dirichlet partitioning adapted from the
+CIFAR-10 PyTorch example. It downloads the dataset
 and creates disjoint client partitions.
 
-From `examples/advanced`, prepare the two client splits used by the jobs:
+From the working directory selected above, prepare the two client splits used
+by the jobs:
 
 ```bash
 python collab/pt_cifar10/prepare_data.py \
@@ -165,7 +173,7 @@ the example focused on the Collab API.
 
 ## Run Job
 
-From `examples/advanced`, run any of the three jobs:
+From the same working directory, run any of the three jobs:
 
 ```bash
 python -m collab.pt_cifar10.fedavg.job

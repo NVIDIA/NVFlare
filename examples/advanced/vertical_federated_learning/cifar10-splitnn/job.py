@@ -15,14 +15,13 @@
 """Run two-party CIFAR-10 SplitNN training with a CollabRecipe."""
 
 import argparse
-import logging
 from pathlib import Path
 
 from client import BATCH_SIZE, CALL_TIMEOUT, NUM_STEPS, SplitNNClient
 from data import get_intersection_file
 from server import SplitNNServer
 
-from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "cifar10_splitnn"
@@ -91,7 +90,6 @@ def make_recipe(dataset_root: str, split_dir: str) -> CollabRecipe:
 def main():
     """Build the recipe from prepared SplitNN data artifacts and simulate it."""
     args = define_parser().parse_args()
-    simple_logging(logging.INFO)
     recipe = make_recipe(args.dataset_root, args.split_dir)
 
     print("=" * 80)

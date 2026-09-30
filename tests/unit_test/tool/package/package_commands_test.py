@@ -30,7 +30,7 @@ import pytest
 import yaml
 from cryptography.hazmat.primitives import serialization
 
-from nvflare.lighter.constants import CtxKey, PropKey
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Project
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
@@ -2301,6 +2301,10 @@ _JSON_FILES = {
 # Cert-related keys inside JSON configs — content differs by design (different CAs).
 _CERT_VALUE_KEYS = frozenset(["ssl_private_key", "ssl_cert", "ssl_root_cert", "client_key", "client_cert", "ca_cert"])
 
+# The provisioner signs a job-issuing CA into the server kit; ``nvflare package`` never holds
+# the root key, so it cannot produce one.
+_JOB_CA_FILES = frozenset(os.path.join("startup", f) for f in (ProvFileName.JOB_CA_CERT, ProvFileName.JOB_CA_KEY))
+
 
 def _provision_project(workspace: str) -> str:
     """Run the standard provisioner and return the prod_NN directory path.
@@ -2423,9 +2427,13 @@ def _compare_kit_dirs(prov_dir: str, pkg_dir: str, participant_type: str) -> lis
         assert os.path.isdir(os.path.join(prov_dir, subdir)), f"prov missing subdir: {subdir}"
         assert os.path.isdir(os.path.join(pkg_dir, subdir)), f"pkg missing subdir: {subdir}"
 
-    # 3. File sets must match exactly.
+    # 3. File sets must match exactly, except for the server kit's job CA.
     prov_files = set(_file_tree(prov_dir).keys())
     pkg_files = set(_file_tree(pkg_dir).keys())
+    if participant_type == "server":
+        for rel in sorted(_JOB_CA_FILES & prov_files):
+            intentional_diffs.append(f"job-ca-prov-only: {rel}")
+        prov_files -= _JOB_CA_FILES
     prov_only = prov_files - pkg_files
     pkg_only = pkg_files - prov_files
     assert not prov_only, f"Files only in provision output: {sorted(prov_only)}"
@@ -2533,6 +2541,8 @@ class TestProvisionPackageParity:
         "cert-value-skipped:",
         # CertBuilder does not chmod key files; PrebuiltCertBuilder always sets 0o600.
         "key-perm-prov-",
+        # Only the provisioner has the root key needed to sign the job CA.
+        "job-ca-prov-only:",
     )
 
     @staticmethod

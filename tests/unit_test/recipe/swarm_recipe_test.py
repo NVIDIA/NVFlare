@@ -23,6 +23,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
@@ -125,11 +126,14 @@ class TestSwarmLearningRecipe:
         client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
         selector = client_components["model_selector"]
         persistor = client_components["persistor"]
+        metrics_writer = client_components["swarm_metrics_artifact_writer"]
 
         assert isinstance(selector, IntimeModelSelector)
         assert selector.key_metric == key_metric
         assert selector.negate_key_metric is negate_key_metric
         assert isinstance(persistor, PTFileModelPersistor)
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert metrics_writer.write_artifacts is False
         assert persistor.best_global_model_file_name == DefaultCheckpointFileName.BEST_GLOBAL_MODEL
         assert "model_selector" not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.components
 
@@ -396,6 +400,35 @@ class TestSwarmLearningRecipe:
         )
 
         assert recipe._job is not None
+
+    def test_pre_tokenized_command_is_validated_and_copied(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        command = ["python3", "-u"]
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_argv_cmd",
+            model=simple_pt_model,
+            num_rounds=1,
+            train_script="train.py",
+            min_clients=2,
+            launch_external_process=True,
+            command=command,
+        )
+        command[-1] = "mutated"
+
+        client_app = recipe._job._deploy_map[ALL_SITES]
+        train_executor = next(item.executor for item in client_app.app_config.executors if "train" in item.tasks)
+        assert train_executor._command[:2] == ["python3", "-u"]
+
+        with pytest.raises(ValueError, match="command must be a string or list of strings"):
+            SwarmLearningRecipe(
+                name="test_swarm_invalid_argv_cmd",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                command=("python3", "-u"),
+            )
 
 
 class TestSwarmLearningRecipeControllerConfig:

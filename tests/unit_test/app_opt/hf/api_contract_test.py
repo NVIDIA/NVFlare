@@ -182,14 +182,64 @@ def test_patch_rejects_nonzero_rank_without_initialized_distributed(monkeypatch,
         hf_api.patch(trainer, restore_state=False)
 
 
-def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path):
+@pytest.mark.parametrize("size_marker", ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE"))
+def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path, size_marker):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
     monkeypatch.setenv("RANK", "0")
-    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv(size_marker, "2")
     trainer = _make_trainer(trainer_cls, tmp_path)
 
-    with pytest.raises(RuntimeError, match="WORLD_SIZE|torch.distributed|torchrun"):
+    with pytest.raises(RuntimeError, match="multi-process|torch.distributed|torchrun"):
+        hf_api.patch(trainer, restore_state=False)
+
+
+def test_patch_single_process_marker_overrides_inherited_rank_in_multitask_slurm(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv("SLURM_PROCID", "0")
+    monkeypatch.setenv("NVFLARE_CLIENT_API_PROCESS_COUNT", "1")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
+
+    hf_api.patch(trainer, restore_state=False)
+
+    assert str(client_api_mock.init_calls[0]["rank"]) == "0"
+
+
+def test_patch_single_process_marker_accepts_initialized_torch_rank_zero(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: _FakeDist(rank=0, world_size=2))
+    monkeypatch.setenv("NVFLARE_CLIENT_API_PROCESS_COUNT", "1")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
+
+    hf_api.patch(trainer, restore_state=False)
+
+    assert str(client_api_mock.init_calls[0]["rank"]) == "0"
+
+
+def test_patch_single_process_marker_rejects_nonzero_initialized_torch_rank(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: _FakeDist(rank=1, world_size=2))
+    monkeypatch.setenv("NVFLARE_CLIENT_API_PROCESS_COUNT", "1")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=1)
+
+    with pytest.raises(RuntimeError, match="single-process marker.*Torch rank 1|Client API rank 0"):
+        hf_api.patch(trainer, restore_state=False)
+
+    assert not client_api_mock.init_calls
+
+
+def test_patch_rejects_unresolved_slurm_multiprocess_launch(monkeypatch, tmp_path):
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv("SLURM_PROCID", "0")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
+
+    with pytest.raises(RuntimeError, match="multi-process|torch.distributed|torchrun"):
         hf_api.patch(trainer, restore_state=False)
 
 

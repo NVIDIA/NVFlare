@@ -11,7 +11,7 @@ tests:
   - test_name: Run current hello-pt example with synthetic data
     setup:
       - rm -rf ./data/recipe_jobs/pytorch/hello-pt
-      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --epochs 1 --batch_size 8 --num_workers 0 --synthetic_data --train_size 32 --test_size 16"
+      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --dataset synthetic"
     event_sequence:
       - trigger:
           type: server_log
@@ -28,30 +28,7 @@ tests:
           data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
-    teardown:
-      - rm -rf ./data/recipe_jobs/pytorch/hello-pt
-
-  - test_name: Run current hello-pt cross-site evaluation example
-    setup:
-      - rm -rf ./data/recipe_jobs/pytorch/hello-pt
-      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --epochs 1 --batch_size 8 --num_workers 0 --synthetic_data --train_size 32 --test_size 16 --cross_site_eval"
-    event_sequence:
-      - trigger:
-          type: server_log
-          data: Server started
-        actions: [ "submit_job hello-pt" ]
-        result:
-          type: job_submit_success
-      - trigger:
-          type: run_state
-          data: { "run_finished": true }
-        actions: [ "ensure_current_job_done" ]
-        result:
-          type: run_state
-          data: { "run_finished": true }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.CrossValResultValidator
+      - path: tests.integration_test.src.validators.GlobalModelEvalValidator
         args: { server_model_names: [ "FL_global_model.pt" ] }
     teardown:
       - rm -rf ./data/recipe_jobs/pytorch/hello-pt

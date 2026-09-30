@@ -40,7 +40,7 @@ commands shown as examples of how they may be run with a description.
     configure_job_log,``configure_job_log job_id server config``,"Configure the job log on the server. (*config* can be a path to a json config file, a levelname/levelnumber, or 'reload')"
     ,``configure_job_log job_id client <client-name>... config``,Configure the job log on the target client(s).
     abort_job,``abort_job job_id``,Aborts the job of the specified job_id if it is running or dispatched
-    clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
+    clone_job,``clone_job job_id``,Deprecated; use ``nvflare job submit -j JOB_FOLDER`` with the original local job folder
     abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.
     ,``abort job_id server``,Aborts the server job for the specified job_id.
     download_job,``download_job job_id``,Download folder from the job store containing the job and workspace. Please note that for larger jobs there may be extra delay for workspace creation in the job store (If you try to download the job before that you may not be able to get the workspace data)

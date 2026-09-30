@@ -15,6 +15,8 @@ import collections
 import copy
 import json
 import os
+import socket
+import subprocess
 import sys
 
 import pytest
@@ -77,6 +79,30 @@ class TestPOCCommands:
             # gpu id =1 is not valid GPU ID as the host only has 1 gpu where id = 0
             gpu_ids = get_gpu_ids([0, 1], host_gpu_ids)
 
+    def test_local_port_probe_matches_listener_reuse_behavior(self, monkeypatch):
+        calls = []
+
+        class ProbeSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def setsockopt(self, *args):
+                calls.append(("setsockopt", args))
+
+            def bind(self, address):
+                calls.append(("bind", address))
+
+        monkeypatch.setattr(poc_commands.socket, "socket", lambda *_args: ProbeSocket())
+
+        assert poc_commands._is_local_port_available(8002) == (True, None)
+        assert calls == [
+            ("setsockopt", (socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)),
+            ("bind", ("127.0.0.1", 8002)),
+        ]
+
     def test_prepare_env_docker_single_gpu(self):
         my_env = prepare_env("site-1", [0], {SC.IS_DOCKER_RUN: True})
         assert my_env["CUDA_VISIBLE_DEVICES"] == "0"
@@ -95,6 +121,24 @@ class TestPOCCommands:
         assert "GPU2USE" not in my_env
         assert my_env["SVR_NAME"] == "site-1"
         assert "MY_DATA_DIR" in my_env
+
+    def test_prepare_env_sets_recipe_docker_identities_and_discards_unrequested_overrides(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_POC_CONTAINER_NAME", "inherited-container")
+        monkeypatch.setenv("NVFLARE_POC_NETWORK_NAME", "inherited-network")
+
+        recipe_env = prepare_env(
+            "site-1",
+            [],
+            {SC.IS_DOCKER_RUN: True},
+            docker_container_name="recipe-container",
+            docker_network_name="recipe-network",
+        )
+        cli_env = prepare_env("site-1", [], {SC.IS_DOCKER_RUN: True})
+
+        assert recipe_env["NVFLARE_POC_CONTAINER_NAME"] == "recipe-container"
+        assert recipe_env["NVFLARE_POC_NETWORK_NAME"] == "recipe-network"
+        assert "NVFLARE_POC_CONTAINER_NAME" not in cli_env
+        assert "NVFLARE_POC_NETWORK_NAME" not in cli_env
 
     def test_prepare_env_non_docker_with_gpu(self, monkeypatch):
         monkeypatch.delenv("GPU2USE", raising=False)
@@ -131,6 +175,91 @@ class TestPOCCommands:
 
         with pytest.raises(poc_commands.PocServiceStartError, match="server is not running"):
             poc_commands._start_poc(str(tmp_path), [], services_list=["admin@nvidia.com"])
+
+    def test_start_poc_forwards_recipe_docker_identities(self, monkeypatch, tmp_path):
+        project_config = {
+            "participants": [
+                {"name": "server", "type": "server", "fed_learn_port": 8002},
+                {"name": "site-1", "type": "client"},
+                {"name": "admin@nvidia.com", "type": "admin"},
+            ]
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.IS_DOCKER_RUN: True,
+        }
+        container_names = {"server": "recipe-server", "site-1": "recipe-site-1"}
+        run_calls = []
+        monkeypatch.setattr(poc_commands, "setup_service_config", lambda _workspace: (project_config, service_config))
+        monkeypatch.setattr(poc_commands, "validate_poc_workspace", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(poc_commands, "_run_poc", lambda *args, **kwargs: run_calls.append((args, kwargs)))
+
+        poc_commands._start_poc(
+            str(tmp_path),
+            [],
+            docker_container_names=container_names,
+            docker_network_name="recipe-network",
+        )
+
+        assert run_calls[0][1]["docker_container_names"] == container_names
+        assert run_calls[0][1]["docker_network_name"] == "recipe-network"
+
+    def test_stop_poc_with_recipe_docker_names_bypasses_coordinated_shutdown(self, monkeypatch, tmp_path):
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server", "type": "server"},
+                {"name": "site-1", "type": "client"},
+                {"name": "admin@nvidia.com", "type": "admin"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.IS_DOCKER_RUN: True,
+        }
+        container_names = {"server": "recipe-server", "site-1": "recipe-site-1"}
+        shutdown_calls = []
+        run_calls = []
+        monkeypatch.setattr(poc_commands, "validate_poc_workspace", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            poc_commands,
+            "shutdown_system",
+            lambda *args, **kwargs: shutdown_calls.append((args, kwargs)),
+        )
+        monkeypatch.setattr(poc_commands, "_run_poc", lambda *args, **kwargs: run_calls.append((args, kwargs)))
+
+        poc_commands._stop_poc(
+            str(tmp_path),
+            project_config=project_config,
+            service_config=service_config,
+            docker_container_names=container_names,
+        )
+
+        assert shutdown_calls == []
+        assert run_calls[0][0][0] == SC.CMD_STOP
+        assert run_calls[0][1]["docker_container_names"] == container_names
+
+    def test_get_docker_endpoint_resolves_remote_context(self, monkeypatch):
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            stdout = "remote-builder\n" if command[1:3] == ["context", "show"] else "ssh://docker.example\n"
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(poc_commands.subprocess, "run", run)
+
+        assert poc_commands._get_docker_endpoint({}) == "ssh://docker.example"
+        assert calls == [
+            ["docker", "context", "show"],
+            ["docker", "context", "inspect", "remote-builder", "--format", "{{.Endpoints.docker.Host}}"],
+        ]
 
     def test_get_package_command(self):
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})
@@ -211,6 +340,15 @@ class TestPOCCommands:
 
         cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", "site-1", global_packages)
         assert "docker stop site-1" == cmd
+
+        cmd = get_service_command(
+            SC.CMD_STOP,
+            "/tmp/nvflare/poc",
+            "site-1",
+            global_packages,
+            docker_container_name="nvflare-recipe-run-site-1",
+        )
+        assert "docker stop nvflare-recipe-run-site-1" == cmd
 
     def test_add_poc_docker_runtime_preserves_static_builder(self):
         project_config = collections.OrderedDict(

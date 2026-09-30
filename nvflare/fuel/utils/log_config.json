@@ -23,6 +23,9 @@
         "ConciseFilter": {
             "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
             "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+        },
+        "ExcludeProgressFilter": {
+            "()": "nvflare.fuel.utils.log_utils.ExcludeProgressFilter"
         }
     },
     "handlers": {
@@ -30,7 +33,7 @@
             "class": "logging.StreamHandler",
             "level": "DEBUG",
             "formatter": "consoleFormatter",
-            "filters": [],
+            "filters": ["ExcludeProgressFilter"],
             "stream": "ext://sys.stdout"
         },
         "logFileHandler": {

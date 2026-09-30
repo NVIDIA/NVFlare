@@ -44,6 +44,7 @@ from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
+from nvflare.private.fed.utils.job_cert_utils import NO_JOB_CREDENTIAL, JobCertError, find_job_cert
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
@@ -140,11 +141,13 @@ def require_signed_jobs(workspace: Workspace, startup_config: str = WorkspaceCon
     return value
 
 
-def _check_secure_content(site_type: str) -> List[str]:
+def _check_secure_content(site_type: str, check_private_key: bool = True) -> List[str]:
     """To check the security contents.
 
     Args:
         site_type (str): "server" or "client"
+        check_private_key: whether the site private key must be present and signed; job processes
+            run on their job credential and launchers may withhold the site key from them.
 
     Returns:
         A list of insecure content.
@@ -161,8 +164,11 @@ def _check_secure_content(site_type: str) -> List[str]:
 
     sites_to_check = data["servers"] if site_type == SiteType.SERVER else [data["client"]]
 
+    filenames = [SSLConstants.CERT, SSLConstants.ROOT_CERT]
+    if check_private_key:
+        filenames.append(SSLConstants.PRIVATE_KEY)
     for site in sites_to_check:
-        for filename in [SSLConstants.CERT, SSLConstants.PRIVATE_KEY, SSLConstants.ROOT_CERT]:
+        for filename in filenames:
             content, sig = SecurityContentService.load_content(site.get(filename))
             if sig != LoadResult.OK:
                 insecure_list.append(site.get(filename))
@@ -258,6 +264,10 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
        workspace: the workspace object.
        site_type (str): server or client. fed_client.json or fed_server.json
     """
+    # secure jobs run only on their per-job credential; never start one on site certificates
+    if secure_train and not find_job_cert(workspace.get_run_dir(job_id)):
+        raise JobCertError(NO_JOB_CREDENTIAL)
+
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
     startup_dir = workspace.get_startup_kit_dir()
@@ -267,7 +277,7 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
     # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
-        insecure_list = _check_secure_content(site_type=site_type)
+        insecure_list = _check_secure_content(site_type=site_type, check_private_key=False)
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:

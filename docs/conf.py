@@ -51,8 +51,8 @@ copyright = "2025 NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.7.0"
-version = "2.7.0"
+release = "2.9.0"
+version = "2.9.0"
 
 readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
 build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
@@ -99,8 +99,8 @@ autoclass_content = "both"
 add_module_names = False
 autosectionlabel_prefix_document = True
 llms_txt_description = (
-    "NVIDIA FLARE is an open-source SDK for federated learning, with tools for simulation, job authoring, "
-    "deployment, security, and production federated ML workflows."
+    "NVIDIA FLARE is a domain-agnostic, open-source, extensible SDK for federated learning and other "
+    "federated-computing applications, from local development through production deployment."
 )
 llms_txt_full_build = False
 llms_txt_build_parallel = False

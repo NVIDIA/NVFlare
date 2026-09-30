@@ -15,8 +15,15 @@
 name: "CodeQL"
 
 on:
+  # Queue branches are tested by merge_group, avoiding a duplicate push build.
   push:
+    branches-ignore:
+      - 'gh-readonly-queue/**'
+    tags:
+      - '**'
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 jobs:
   analyze:

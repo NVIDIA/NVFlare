@@ -133,6 +133,104 @@ class TestProducerSide:
         assert rid in service._finished_refs
         assert obj.released
 
+    @pytest.mark.parametrize("mode", ["normal", "stopped", "inline_wins", "worker_wins"])
+    def test_settlement_once_after_submit_failure(self, monkeypatch, mode):
+        from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor
+
+        service = _make_service()
+        calls = []
+        callback_locks = []
+        callback_waits = []
+        callback_entered = threading.Event()
+        release_callback = threading.Event()
+        release_worker = threading.Event()
+        worker_entered = threading.Event()
+
+        def record(name):
+            calls.append((name, waiter.done()))
+
+        def done(*args):
+            record("done")
+            # User callbacks may reenter the service: the table lock must be free.
+            acquired = service._tx_lock.acquire(timeout=1)
+            callback_locks.append(acquired)
+            if acquired:
+                service._tx_lock.release()
+            if mode == "worker_wins" and not callback_entered.is_set():
+                callback_entered.set()
+                callback_waits.append(release_callback.wait(5))
+
+        tx_id = service.new_transaction(
+            cell=Mock(),
+            timeout=30.0,
+            num_receivers=1,
+            transaction_done_cb=done,
+            outcome_cb=lambda outcome: record("outcome"),
+        )
+        obj = MockDownloadable([b"chunk"])
+        obj.transaction_done = Mock(side_effect=lambda *args: record("object"))
+        obj.release = Mock(side_effect=lambda: record("release"))
+        rid = service.add_object(tx_id, obj)
+        waiter = service.get_transfer_waiter(tx_id)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        pool = CheckedExecutor(max_workers=2, thread_name_prefix="settlement_once")
+        monkeypatch.setattr(ds_module, "callback_thread_pool", pool)
+        real_start = threading.Thread.start
+        failures = []
+
+        def fail_start(thread):
+            if thread.name.startswith("settlement_once"):
+                # The real executor has already published the work item.
+                failures.append(pool._work_queue.qsize())
+                if mode == "worker_wins":
+                    release_worker.set()
+                    assert callback_entered.wait(5)
+                raise RuntimeError("can't start new thread")
+            return real_start(thread)
+
+        def occupy_worker():
+            worker_entered.set()
+            assert release_worker.wait(5)
+
+        try:
+            if mode == "worker_wins":
+                pool.submit(occupy_worker)
+                assert worker_entered.wait(5)
+            elif mode == "stopped":
+                pool.shutdown()
+            with monkeypatch.context() as fault:
+                if mode in ("inline_wins", "worker_wins"):
+                    fault.setattr(threading.Thread, "start", fail_start)
+                reply = service._handle_download(
+                    _confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal))
+                )
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+            if mode == "worker_wins":
+                # Fallback must return without waiting for or repeating the callback.
+                assert not waiter.done()
+                assert tx_id in service._terminating_txs
+                assert calls == [("object", False), ("done", False)]
+                release_callback.set()
+            if mode == "inline_wins":
+                assert waiter.done()
+                assert pool._work_queue.qsize() == 1
+            if mode != "stopped":
+                pool.submit(lambda: None).result(timeout=5)
+            pool.shutdown()
+            outcome = _await_outcome(waiter)
+            assert outcome.completed
+            assert service.get_transaction_outcome(tx_id) is outcome
+            assert calls == [(name, False) for name in ("object", "done", "outcome", "release")]
+            assert callback_locks == [True]
+            assert callback_waits == ([True] if mode == "worker_wins" else [])
+            assert failures == ([1] if mode in ("inline_wins", "worker_wins") else [])
+            assert tx_id not in service._terminating_txs
+        finally:
+            release_worker.set()
+            release_callback.set()
+            pool.shutdown()
+            service.shutdown()
+
     def test_acquired_receiver_cancellation_fails_and_finishes_source(self):
         service = _make_service()
         tx_id, rid, obj = _new_tx(service, chunks=2)
