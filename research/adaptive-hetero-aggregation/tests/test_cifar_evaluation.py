@@ -39,6 +39,7 @@ from protocol import (  # noqa: E402
     method_run_config,
 )
 from run_campaign import _completed_keys  # noqa: E402
+from run import _build_recipe  # noqa: E402
 from summarize_results import (  # noqa: E402
     _filter_requested_configuration,
     _load_rows,
@@ -206,6 +207,22 @@ def test_train_validation_split_is_disjoint_and_exhaustive(tmp_path, monkeypatch
         assert set(train) | set(validation) == set(assigned)
         assert len(validation) == 4
         assert len(train) == 16
+
+
+def test_server_model_uses_requested_seed(tmp_path):
+    args = _campaign_args(methods=["fedavg"])
+    args.method = "fedavg"
+    args.seed = 19
+    args.alpha = 0.1
+    args.participation_rate = 1.0
+    first = _build_recipe(args, str(tmp_path / "train"), str(tmp_path / "validation"), 8)
+    first_state = {name: value.detach().clone() for name, value in first.model.state_dict().items()}
+
+    args.seed = 31
+    second = _build_recipe(args, str(tmp_path / "train"), str(tmp_path / "validation"), 8)
+    second_state = second.model.state_dict()
+
+    assert any(not torch.equal(first_state[name], second_state[name]) for name in first_state)
 
 
 def test_client_seed_is_restored_after_moderate_cnn_construction():
