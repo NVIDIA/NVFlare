@@ -415,6 +415,8 @@ def _filter_requested_configuration(
     selected = []
     for row in rows:
         method = str(row["method"])
+        if expected_method_hashes and method not in expected_method_hashes:
+            continue
         if expected_common_hash is not None and row.get("common_config_hash") != expected_common_hash:
             continue
         expected_method_hash = expected_method_hashes.get(method)
