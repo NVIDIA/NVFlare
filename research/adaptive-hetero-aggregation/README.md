@@ -258,8 +258,8 @@ Changing a method hyperparameter, worker/thread/GPU setting, or evaluator settin
 be rerun rather than silently reused.
 
 The summary step independently recomputes configuration hashes, rejects mixed common or per-method
-configurations, requires the requested method/condition/seed matrix, and requires coherent adaptive
-activation telemetry on every adaptive row. Older protocol rows are ignored.
+configurations, reports completed and missing planned conditions, and requires coherent adaptive
+activation telemetry on every completed adaptive row. Older protocol rows are ignored.
 
 ### Confidence intervals and activation reporting
 
