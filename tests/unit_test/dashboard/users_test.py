@@ -54,12 +54,13 @@ class TestUsers:
             "email": "user@test.com",
             "password": "pw123456",
             "organization": "test.com",
-            "role": "member",
+            "role": "org_admin",
             "approval_state": 200,
         }
 
         response = client.post(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", json=test_user, headers=auth_header)
         assert response.status_code == 201
+        assert response.json["user"]["role"] == "org_admin"
         new_id = response.json["user"]["id"]
 
         response = client.delete(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/" + str(new_id), headers=auth_header)

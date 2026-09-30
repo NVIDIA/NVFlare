@@ -127,6 +127,26 @@ class TestAdminRoleAssignment:
         assert resp.json["user"]["role"] == ""
         assert resp.json["user"]["organization"] == ""
 
+    @pytest.mark.parametrize("role", ["member", "lead"])
+    def test_user_can_self_assign_ordinary_role(self, client, role):
+        email = f"self-assign-{role}@test.com"
+        resp = client.post(NS + "/api/v1/users", json={"email": email, "password": "p", "name": "x"})
+        assert resp.status_code == 201
+        user_id = resp.json["user"]["id"]
+
+        resp = client.post(NS + "/api/v1/login", json={"email": email, "password": "p"})
+        assert resp.status_code == 200
+
+        resp = client.patch(
+            NS + f"/api/v1/users/{user_id}",
+            json={"role": role},
+            headers={"Authorization": f"Bearer {resp.json['access_token']}"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json["status"] == "ok"
+        assert resp.json["user"]["role"] == role
+
     def test_project_admin_can_assign_org_admin_role(self, client, auth_header):
         resp = client.post(
             NS + "/api/v1/users",

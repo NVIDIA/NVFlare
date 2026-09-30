@@ -290,7 +290,7 @@ class Store(object):
         return add_ok({})
 
     @classmethod
-    def create_user(cls, req, seeding=False):
+    def create_user(cls, req, seeding=False, created_by_project_admin=False):
         name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
@@ -298,10 +298,13 @@ class Store(object):
         organization = req.get("organization", "")
         role_name = req.get("role", "")
         description = req.get("description", "")
+        if not isinstance(role_name, str):
+            log.error(f"create_user cannot create non-string role: {role_name}")
+            return None
         if seeding:
             approval_state = 200
         else:
-            if not isinstance(role_name, str) or role_name not in _SELF_ASSIGNABLE_ROLES:
+            if not created_by_project_admin and role_name not in _SELF_ASSIGNABLE_ROLES:
                 log.error(f"Non-seeding create_user cannot create role: {role_name}")
                 return None
             approval_state = 0

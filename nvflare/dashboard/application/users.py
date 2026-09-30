@@ -23,9 +23,12 @@ from .store import Store, check_role
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["POST"])
+@jwt_required(optional=True)
 def create_one_user():
     req = request.json
-    result = Store.create_user(req)
+    claims = get_jwt()
+    created_by_project_admin = claims.get("role") == "project_admin" and claims.get("approved")
+    result = Store.create_user(req, created_by_project_admin=created_by_project_admin)
     if result is not None:
         return jsonify(result), 201
     else:
