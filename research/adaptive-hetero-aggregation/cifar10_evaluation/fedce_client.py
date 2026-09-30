@@ -16,8 +16,8 @@
 
 import argparse
 import copy
-import random
 import json
+import random
 import re
 
 import numpy as np
@@ -63,7 +63,7 @@ def main(args):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True.to(DEVICE)
+        torch.backends.cudnn.deterministic = True
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
     scheduler = None
