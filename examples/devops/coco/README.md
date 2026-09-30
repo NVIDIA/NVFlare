@@ -5,6 +5,12 @@ with an optional NVIDIA confidential GPU. Scripts, policies, dependencies and co
 are included; deployment credentials, certificates, measurements, private
 evidence and generated handoffs are not.
 
+For security guarantees, trust boundaries, threats, residual risks and the
+attestation/key-release protocol, start with the comprehensive
+[CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+The role guides below provide operational procedures, not separate security
+models. Follow the architecture's implementation-scope and validation notes.
+
 For a collaboration-level starting point, read
 [one model owner and two data owners](FL-DEPLOYMENT.md): roles and approvals,
 machine prerequisites, the guest/application distinction, reference rehearsal,

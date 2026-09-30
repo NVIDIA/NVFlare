@@ -68,23 +68,27 @@ are running in genuine secure environments before sharing sensitive data or mode
 Risk Mitigation with Confidential Computing
 -------------------------------------------
 
-FLARE's Confidential Computing solution addresses the federated learning security risks through three key mechanisms:
+FLARE's Confidential Computing integrations provide mechanisms for protecting workloads from an untrusted host:
 
-- **Secure Aggregation on Server** - The FL server operates within a TEE to aggregate client updates securely, preventing model inversion attacks and ensuring aggregated model parameters cannot be intercepted or tampered with
-- **IP Protection on Client** - Model code and weights are protected within confidential VMs on client sites, preventing model theft and unauthorized access to proprietary algorithms or pre-trained models
-- **Data Leakage Prevention on Client** - Pre-approved, certified training code runs in isolated TEEs, ensuring that only authorized computations occur and preventing malicious code from exfiltrating training data
+- **Protected Aggregation on Server** - A TEE can isolate server-side computation and plaintext model updates from the server's host operator. This is not the same as a cryptographic secure-aggregation protocol and does not by itself prevent model inversion or inference from authorized outputs.
+- **IP Protection on Client** - An approved confidential deployment can protect model code and weights from the client host operator, provided that the application, guest software, key-release policy, storage, and output handling preserve that boundary.
+- **Controlled Workload Admission** - Attestation and workload authorization can restrict execution to approved code and configurations. Approval does not establish that code is benign: an admitted application can disclose data or secrets that it is allowed to use.
 
-FLARE's IP protection solution includes CVM lockdown features that disk encryption, disable login access, block SSH connections, and restrict
-network ports to prevent unauthorized access to the protected environment. These lockdown features apply to both server and client CVMs,
-with primary focus on client-side protection where model IP is most vulnerable.
+Data-use restrictions, differential privacy, output review, application security, and any required cryptographic secure
+aggregation remain separate design requirements. See :ref:`coco_security_architecture` for the CoCo integration's
+specific guarantees, assumptions, and residual threats.
 
-FLARE's solution provides end-to-end security throughout the entire lifecycle:
+Deployment-specific lockdown can include encrypted storage, disabled login, blocked SSH access, and restricted network
+ports. CVM Builder and CoCo enforce these controls differently; consult the selected architecture and verify the
+effective configuration rather than assuming that enabling a TEE automatically enables every control.
 
-- **Deployment Protection** - Attestation-based verification ensures only certified, unmodified code packages are deployed to confidential VMs
-- **Runtime Protection** - TEEs protect model IP and training code during execution, preventing extraction or reverse engineering. CVM access is locked down with disabled login, SSH, and controlled network ports to prevent unauthorized access
-- **Storage Protection** - Integration with encrypted storage solutions and key management systems protects model checkpoints and intermediate results
-- **Trust Establishment** - Remote attestation allows model owners to verify the security posture of client environments before releasing valuable IP, ensuring compliance with confidential computing requirements
-- **Access Control Lockdown** - Comprehensive CVM hardening includes disabling interactive login, blocking SSH access, restricting network ports to only essential communication channels, and preventing unauthorized administrative access
+The selected deployment must establish and validate protection throughout the lifecycle:
+
+- **Deployment Protection** - Bind approved workload content and configuration to attestation-based authorization before releasing secrets.
+- **Runtime Protection** - Use the TEE to isolate guest memory from the host, with reviewed guest software and workload behavior.
+- **Storage Protection** - Encrypt and authenticate confidential persistent state; TEE memory protection alone does not protect host-backed files.
+- **Trust Establishment** - Verify evidence against explicit platform and workload requirements before sharing sensitive material.
+- **Access Control Lockdown** - Review interactive access, guest-agent APIs, network endpoints, and output channels for the selected deployment.
 
 Operational Risks Even with Confidential Computing
 --------------------------------------------------
@@ -102,8 +106,9 @@ While Confidential Computing significantly enhances security, certain operationa
 
    Even with Confidential Computing, without proper design of the CVM to extend the chain of trust from hardware
    to the application workload, confidential computing attestation will **NOT** be able to detect deployment-time
-   code modifications or tampering. The CVM must be designed to ensure that attestation verifies the entire execution
-   stack—from hardware through the application layer—to provide meaningful security guarantees.
+   code modifications or tampering. The deployment must extend the chain of trust from verified platform evidence to
+   authenticated application content and enforced workload policy. Not every application byte is necessarily part of
+   the CPU launch measurement.
 
 These risks require additional safeguards including:
 
@@ -118,7 +123,22 @@ This comprehensive approach enables organizations to collaborate on federated le
 FLARE Confidential Federated AI Overview
 ========================================
 
-NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. It supports CVM Builder deployments on confidential-computing hosts and Azure Confidential Computing deployments.
+NVIDIA FLARE provides Confidential Federated AI capabilities through hardware-backed security. Deployment paths include
+CVM Builder, Confidential Containers (CoCo) on Kubernetes, and Azure Confidential Computing. They share some NVFlare
+attestation components but have different boot, packaging, and key-release mechanisms; do not mix their runbooks.
+
+Confidential Containers on Kubernetes
+-------------------------------------
+
+The CoCo integration runs protected NVFlare clients and, optionally, the server inside Kata confidential VMs. The reviewed
+``2.9`` workflow uses AMD SEV-SNP plus an NVIDIA confidential GPU. CPU-only and Intel TDX extensions are documented with
+an explicit companion-implementation scope in the security architecture; this documentation change does not enable them.
+Trusted provisioning builds, signs, and encrypts workload images; independently
+administered Trustee services authorize their decryption using approved platform references and workload policy.
+
+Start with :ref:`coco_security_architecture` for the complete security model, trust boundaries, attack analysis, and
+links to role-specific deployment procedures. CoCo uses per-workload encrypted images and InitData-bound guest policy,
+not CVM Builder's generic root-and-vault packaging.
 
 On-Premises IP Protection Deployment
 ------------------------------------
@@ -155,12 +175,14 @@ This deployment model is suitable for organizations that prioritize data privacy
 Choosing the Right Deployment
 =============================
 
-- Use **On-Premises IP Protection** when model IP must be protected from participants
+- Use **Confidential Containers on Kubernetes** when protected workloads are deployed as Pods on an untrusted cluster; start with :ref:`coco_security_architecture`.
+- Use **On-Premises IP Protection / CVM Builder** when deploying the standalone root-and-vault CVM workflow.
 - Use **Azure Confidential Computing** when the primary concern is data privacy and secure aggregation among trusted collaborators
 
 
 .. toctree::
    :maxdepth: 2
 
+   coco_security_architecture
    on_premises/index
    azure/index

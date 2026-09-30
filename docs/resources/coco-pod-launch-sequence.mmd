@@ -1,0 +1,71 @@
+%% Editable companion to coco-pod-launch-sequence.svg.
+%% Conceptual launch dependencies, not an exact RPC packet trace.
+%% Only the passing branch proceeds. Pulls, attestation, and resource requests
+%% may interleave and repeat, including image-policy/signing-key requests.
+%% The NVFlare process is in the same confidential guest as Agent / CDH / AA.
+%% Keep the current image-digest limitation and all four outcomes when editing.
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, Helvetica, sans-serif", "fontSize": "20px"}, "sequence": {"actorMargin": 65, "messageMargin": 45, "noteMargin": 25, "mirrorActors": true, "useMaxWidth": false}}}%%
+sequenceDiagram
+    box rgb(255,246,244) Untrusted cluster operator and host
+        actor IT as CoCo IT operator
+        participant Kube as Kubernetes API<br/>scheduler / kubelet
+        participant Runtime as containerd + Kata<br/>selected runtime handler
+    end
+    box rgb(239,249,248) Confidential guest
+        participant Guest as Confidential guest<br/>Kata Agent / CDH / AA
+    end
+    box rgb(240,245,255) Independently administered services
+        participant Registry as Private registry<br/>encrypted images
+        participant KBS as Trustee KBS<br/>resource release
+        participant AS as Trustee AS<br/>appraisal
+        participant RVPS as Trustee RVPS<br/>approved references
+    end
+    box rgb(239,249,248) Same confidential guest
+        participant Workload as NVFlare workload<br/>process
+    end
+
+    Note over IT,Workload: Conceptual dependencies; only passing branches continue.<br/>Pulls and resource / attestation checks may interleave and repeat.
+    Note over IT,Workload: Reviewed 2.9 baseline: SNP + GPU.<br/>Extended CPU-only / TDX profiles: companion PR 5344.
+    IT->>Kube: 1. kubectl apply final Pod YAML (original or edited)
+    Kube->>Runtime: 2. Schedule Pod; kubelet CRI request uses selected handler
+    Note over IT,Runtime: RuntimeClass selects an installed runtime handler.<br/>It is not a separate service or an attested runtimeClassName string.
+    Runtime->>Guest: 3. Boot the confidential Kata guest and provide InitData
+    rect rgb(255,239,237)
+        Note over IT,Runtime: OUTCOME 1 - STARTUP FAILURE<br/>Missing handler, resources, or reachability may stop startup.<br/>Host-controlled failure is not a security guarantee.
+    end
+
+    Guest->>Guest: 4. Validate InitData against its CPU-attested binding<br/>Initialize Agent policy and guest CDH / AA
+    Note over Guest,Registry: A binding mismatch must fail; it cannot establish an approved guest.<br/>Host-supplied YAML alone is not a trusted launch claim.
+    Runtime->>Guest: CreateContainerRequest: effective arguments, environment, UID and mounts
+    Guest->>Registry: 5. Guest pull path requests encrypted image and signature artifacts
+    Registry-->>Guest: Encrypted layers and signature artifacts (no plaintext image to host)
+    Note over Registry,KBS: Image policy and signing key use the resource round trips below.
+
+    Guest->>KBS: 6. AA starts attestation / requests a challenge
+    KBS-->>Guest: Fresh challenge for this attestation session
+    Guest->>Guest: 7. AA obtains CPU evidence and required GPU evidence<br/>Bind guest key and InitData into the verified attestation context
+    Guest->>KBS: Evidence, guest public key, and bound launch context
+    KBS->>AS: 8. Appraise evidence and verify challenge / key / InitData binding
+    AS->>RVPS: Look up approved reference values / profiles
+    RVPS-->>AS: Approved reference values for appraisal
+    Note over AS,RVPS: AS appraises supplied CPU / GPU evidence and TCB.<br/>KBS enforces the release-required evidence set.<br/>Verifiers may use CPU / GPU vendor collateral and endorsement services.
+    AS-->>KBS: Signed attestation result (EAR); continue only if acceptable
+    rect rgb(255,239,237)
+        Note over KBS,RVPS: OUTCOME 2 - KEY-RELEASE DENIAL<br/>Invalid or unapproved evidence, TCB, CPU / required GPU,<br/>wrong InitData, or failed resource policy denies release.<br/>An acceptable EAR alone does not authorize every resource.
+    end
+    Guest->>KBS: 9. Request the exact protected resource path<br/>(repeat for image key, signature public key, and image policy)
+    KBS->>KBS: Authorize using attested policy image / arguments<br/>and the requested exact resource path<br/>Not the operator's raw YAML or the live OCI request
+    KBS-->>Guest: 10. Authorized resources encrypted to the attested guest key
+
+    Guest->>Guest: 11. CDH / image path verifies signature and decrypts layers<br/>Kata Agent checks the actual OCI / process request against guest policy
+    rect rgb(255,239,237)
+        Note over Guest,RVPS: OUTCOME 3 - GUEST-REQUEST DENIAL (INCLUDING IMAGE REJECTION)<br/>Bad signature / ciphertext, or a request outside effective policy<br/>(process, environment, user, capabilities, mounts, and other checked fields).<br/>This is not a claim that every edit to those fields is forbidden.
+    end
+    rect rgb(255,247,221)
+        Note over Guest,RVPS: CURRENT LIMITATION - ACTUAL IMAGE DIGEST NOT EXPLICITLY PINNED BY GUEST REGO<br/>The CRI image-name annotation key is allowed; its value is not pinned.<br/>image_guest_pull has a source TODO; signature policy uses matchRepository.<br/>A different validly signed same-repository image needs exact-digest binding<br/>plus a negative test; universal rejection is not demonstrated.
+    end
+    Guest->>Workload: 12. Start NVFlare only after all effective checks pass
+    rect rgb(229,245,237)
+        Note over Guest,Workload: OUTCOME 4 - ALLOWED CHANGE / SUCCESSFUL LAUNCH<br/>NVFlare starts; the unchanged intended Pod follows this same path.<br/>An allowed change can also pass, such as a runtime alias selecting the same handler<br/>or unbound metadata. There is no whole-YAML hash or anti-duplication guarantee.
+    end
+    Note over IT,Workload: Key release is not process start. Pod Running is not trusted launch proof.<br/>Host denial of service remains possible; attestation and policy enforcement protect specific claims.
