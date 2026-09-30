@@ -219,7 +219,10 @@ def test_client_seed_is_restored_after_moderate_cnn_construction():
     for filename in client_files:
         source = (EVAL_DIR / filename).read_text()
         model_position = source.index("model = ModerateCNN()")
-        seed_position = source.find("torch.manual_seed(", model_position)
+        if filename in {"fedce_client.py", "adaptive_client.py"}:
+            seed_position = source.find("torch.manual_seed(", model_position)
+        else:
+            seed_position = source.find("_seed_client(args.seed, site_name)", model_position)
         assert seed_position > model_position
 
 
