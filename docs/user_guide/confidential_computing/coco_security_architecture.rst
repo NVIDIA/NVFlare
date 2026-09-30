@@ -390,11 +390,12 @@ workload authorization and sends the confidential six-file release handoff to
 secure services. It contains the image key, public image-signing key, image
 policy, release authorization, resource-policy fragment, and checksum manifest.
 
-Secure services authenticates that handoff and reconstructs/checks the release
-policy using its own trusted template, rather than trusting arbitrary
-workload-supplied Rego. The operator installs the resources and reviewed rule
-into a default-deny global resource policy. Only then does CoCo IT receive the
-Pod YAML and an independently authenticated expected checksum.
+The secure-services administrator authenticates that handoff and reconstructs
+and checks the release policy using the service-owned trusted template, rather
+than trusting arbitrary workload-supplied Rego. The administrator installs the
+resources and reviewed rule into a default-deny global resource policy. Only
+then does CoCo IT receive the Pod YAML and an independently authenticated
+expected checksum.
 
 Plaintext startup kits, build contexts, Docker caches, signing material, and
 recovery outputs on the provisioning node remain sensitive. Packaging is not
@@ -509,19 +510,21 @@ The host-side API, admission, launch-script and checksum checks are bypassable
 by CoCo IT and are not the security boundary against that operator.
 
 .. figure:: ../../resources/coco-pod-launch-sequence.svg
-   :alt: Pod launch sequence among CoCo IT, Kubernetes, the Kata runtime, confidential guest services, registry, KBS, AS, RVPS and workload, showing startup failure, key-release denial, guest-request denial and allowed-change outcomes.
-   :class: wide-sequence
+   :alt: Vertically stacked Pod launch phases among CoCo IT, Kubernetes, the Kata runtime, confidential guest services, registry, KBS, AS, RVPS and workload, showing startup failure, key-release denial, guest-request denial and allowed-change outcomes. Repeated guest headings refer to the same confidential VM.
    :width: 100%
    :align: center
 
-   Conceptual launch dependencies and enforcement checkpoints, not a literal
-   packet trace. Guest policy checks and image handling can interleave, and
-   resource requests can repeat. A failure path terminates that launch attempt;
-   later steps describe the continuing successful path.
+   Read the stacked phases from top to bottom; repeated participant headings
+   refer to the same actors, not new VMs or services. These are conceptual
+   launch dependencies and enforcement checkpoints, not a literal packet
+   trace. Guest policy checks and image handling can interleave, and resource
+   requests can repeat. A failure path terminates that launch attempt; later
+   steps describe the continuing successful path.
 
 Open the :download:`full-size vector diagram <../../resources/coco-pod-launch-sequence.svg>`
 to zoom into its labels. The :download:`editable Mermaid source <../../resources/coco-pod-launch-sequence.mmd>`
-describes the same actors, checkpoints, outcomes and coverage limitation.
+retains the full logical trace of the same actors, checkpoints, outcomes and
+coverage limitation; the SVG groups it into narrower phases for readability.
 
 .. list-table:: Four outcomes, not one universal attestation failure
    :header-rows: 1
