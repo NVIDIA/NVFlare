@@ -21,6 +21,7 @@ official CIFAR-10 test set is reserved for the common post-training evaluator.
 
 import argparse
 import copy
+import random
 import re
 
 import numpy as np
@@ -50,6 +51,7 @@ def _seed_client(base_seed: int, site_name: str):
     seed = _site_seed(base_seed, site_name)
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.benchmark = False
