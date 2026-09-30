@@ -14,6 +14,18 @@ baseline and candidate. Evaluation-only, statistics-only, and unsupported
 nested-application recipes stop during import with an actionable
 `import.support.reason`; they must not start a baseline.
 
+Before baseline execution, the runner merges imported fixed-budget arguments,
+explicit `--base-args`, and `comparison_budget_args.default_candidate_budget`
+into one command line so each budget option is emitted exactly once. Explicit
+duplicates with identical values are dropped; conflicting values fail
+initialization with `AUTOFL_BUDGET_ARGUMENT_CONFLICT`. Duplicates are matched
+by the flag spellings the job's parser defines, including short aliases; a
+spelling the parser does not define passes through unchanged. A short-option
+cluster that itself sets a pinned zero-argument flag is kept, and the runner
+omits its own copy so the option still appears exactly once. Any other
+short-option token that may involve a pinned flag is rejected; write the
+options as separate tokens.
+
 The importer resolves the optimization direction from an explicit
 `key_metric_mode`, a same-metric `stop_cond`, or NVFLARE's default `max`, and
 records that provenance in `autofl.yaml`. Declare raw loss-like metrics with

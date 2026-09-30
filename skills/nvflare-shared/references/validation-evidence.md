@@ -59,10 +59,10 @@ exported-job validation.
 
 ## Terminal Simulation Evidence
 
-The hard rule — the final validation must run in the foreground and finish in the
-same step before you report success — lives in `conversion-workflow.md` ("Final
-Validation Run Must Finish Before You Finalize"). This section covers the success
-evidence to collect once it finishes.
+Run the final simulation with `run_in_background: false`; never finalize with an
+active simulation. This framework-neutral rule applies to every converter that
+loads this reference. The final validation must finish in the same step before
+you report success.
 
 Prefer foreground execution for the final run. Do not depend on a background
 task notifying you after your final answer: in a non-interactive run the task
@@ -140,12 +140,12 @@ statically; validate runtime acceptance only through the recipe or simulator
 that launches the client context.
 
 Before spending time on full simulation, run cheap checks when applicable.
-Keep custom checks atomic: reuse inspected project/generated helpers with their
-exact annotated argument types, and do not combine partition,
-model-compatibility, metric, and artifact checks in one hand-written inline
-Python program. Each custom probe should test one contract and produce one
-actionable failure. When a helper parameter is annotated as `Path`, instantiate
-and pass `Path(...)`; do not substitute a string literal.
+Keep custom checks atomic: do not combine partition, model-compatibility,
+metric, and artifact checks in one hand-written inline Python program. Each
+custom probe should test one contract and produce one actionable failure.
+Build validation calls from inspected callable signatures and type annotations,
+and preserve their required argument types. When a helper parameter is annotated
+as `Path`, instantiate and pass `Path(...)`; do not substitute a string literal.
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
@@ -195,11 +195,9 @@ fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
 from that evidence. Guard optional fields and report expected versus actual
 names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
-Build validation calls from inspected callable signatures and type annotations,
-and preserve their required argument types. When retrying a failed check, change
-only the failing assumption; preserve prior guards, fallbacks, and already-correct
-arguments. Never replace an optional-field guard with a hard-coded conventional
-name merely to make the retry different.
+When retrying a failed check, change only the failing assumption; preserve prior
+guards, fallbacks, and already-correct arguments. Never replace an optional-field
+guard with a hard-coded conventional name merely to make the retry different.
 For generated Python structure, validate semantic AST nodes rather than textual
 occurrences. Scope traversal to the field being checked; for example, inspect a
 loop's condition and body separately. Filter traversal results by node type

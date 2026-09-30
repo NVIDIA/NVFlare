@@ -12,27 +12,24 @@ Install NVFLARE and Dependencies
 --------------------------------
 
 For complete installation instructions, see :doc:`Installation </installation>`.
-On a released branch:
-
-.. code-block:: text
-
-   pip install nvflare
-
-The HuggingFace Client API is introduced for NVFlare 2.9.0. Until that package
-is published, install NVFlare from this repository and install the remaining
-example dependencies separately:
+Install the PyTorch extra on the same NVFLARE distribution that supplied this example:
 
 .. code-block:: bash
 
-   git clone https://github.com/NVIDIA/NVFlare.git
-   cd NVFlare
-   python -m pip install -e .
-   python -m pip install torch transformers accelerate datasets peft trl safetensors
+   # Stable installation
+   python -m pip install "nvflare[PT]"
 
-The ``nvflare~=2.9.0rc`` entry in ``requirements.txt`` records the first
-compatible release. After NVFlare 2.9.0 is published,
-``python -m pip install -r requirements.txt`` installs the complete
-environment.
+   # Nightly installation
+   python -m pip install "nvflare-nightly[PT]"
+
+   # Editable installation, run from the NVFlare checkout
+   python -m pip install -e ".[PT]"
+
+Then install the remaining example dependencies from the example directory:
+
+.. code-block:: bash
+
+   python -m pip install -r requirements.txt
 
 Code Structure
 --------------

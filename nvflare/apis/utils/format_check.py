@@ -25,6 +25,7 @@ type_pattern_mapping = {
     "job_name": JOB_NAME_PATTERN,
     "relay": r"^[A-Za-z0-9-_]+$",
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
+    "admin_kit": r"^[A-Za-z0-9-_]+$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
     "simple_name": r"^[A-Za-z0-9_]+$",
@@ -37,7 +38,7 @@ def name_check(name: str, entity_type: str):
     regex_pattern = type_pattern_mapping.get(entity_type)
     if regex_pattern is None:
         return True, "entity_type={} not defined, unable to check name={}.".format(entity_type, name)
-    if re.match(regex_pattern, name):
+    if re.fullmatch(regex_pattern, name):
         return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
     else:
         return True, "name={} is ill-formatted for entity_type={} based on regex_pattern={}".format(

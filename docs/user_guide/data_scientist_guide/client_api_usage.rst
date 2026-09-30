@@ -211,3 +211,8 @@ Learn More
 * :ref:`client_api_attach` - Connect a trainer owned by an external system
 * :mod:`nvflare.client.api` - Complete API reference documentation
 * :mod:`nvflare.app_opt.lightning.api` - PyTorch Lightning integration
+
+.. toctree::
+   :hidden:
+
+   hf_client_api

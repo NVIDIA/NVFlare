@@ -110,8 +110,10 @@ python examples/devops/multicloud/build_and_push.py --config "$CONFIG"
 ```
 
 This reads the image tags from `$CONFIG`, authenticates to recognized
-registries, builds `docker/Dockerfile.parent` once from the NVFlare repository
-root, tags the same parent image for every used cloud, and pushes all tags.
+registries, builds `docker/Dockerfile.parent` once, tags the same parent image
+for every used cloud, and pushes all tags. From a downloaded example, the
+helper prepares the Dockerfile and package source from the exact revision in
+`.nvflare-example.json`; a separate repository checkout is not required.
 
 If monitoring is enabled and the config points to images that still need to be
 built, pass a Dockerfile that installs `.[K8S,MONITORING]`:

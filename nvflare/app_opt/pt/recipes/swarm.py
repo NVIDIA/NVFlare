@@ -34,6 +34,7 @@ from nvflare.fuel.utils.validation_utils import check_object_type, check_positiv
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
+from nvflare.utils.argv_utils import normalize_argv
 
 _RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
 _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
@@ -130,8 +131,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         cross_site_eval_timeout: Timeout for cross-site evaluation.
         launch_external_process: Whether to launch the training script in an external process.
             Defaults to False (in-process execution).
-        command: Shell command used to launch the script when launch_external_process=True.
-            Defaults to "python3 -u".
+        command: Command used to launch the script when launch_external_process=True, either as a
+            legacy string or pre-tokenized argv. Defaults to "python3 -u".
         memory_gc_rounds: Run allocator-aware cleanup (gc.collect() + malloc_trim) on three
             independent cadences: every N training rounds in the trainer, every N completed
             learn tasks in each client job, and every N aggregations in the aggregation client
@@ -234,7 +235,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
         expected_data_kind: str = DataKind.WEIGHTS,
@@ -260,6 +261,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
         )
+        command = normalize_argv(command, "command")
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
         aggregation_format = normalize_exchange_format(aggregation_format, "aggregation_format")
         self.aggregation_format = aggregation_format

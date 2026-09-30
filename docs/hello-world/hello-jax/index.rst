@@ -1,44 +1,48 @@
 Hello JAX
 =========
 
-.. warning::
-
-   This example tracks ``main``, which is the NVFlare development branch for the next release.
-   On ``main``, example ``requirements.txt`` files may pin the first upcoming NVFlare version
-   that supports a feature, even before that package is published on PyPI.
-   If the pinned ``nvflare`` version is not available yet, install NVFlare from this repo
-   instead of from PyPI.
-
 This example demonstrates how to use NVIDIA FLARE with JAX, Flax, and Optax to train an MNIST classifier using federated averaging (FedAvg). It follows the same hello-world recipe structure as ``hello-pt``, but uses a JAX client training loop and a flattened parameter vector for transport.
 
-Install NVFLARE and Dependencies
---------------------------------
+Get NVFlare and the Example
+---------------------------
 
 For the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_.
 
+Install either the stable or nightly NVFlare distribution:
+
 .. code-block:: bash
 
-   pip install nvflare
+   # Stable
+   python -m pip install nvflare
 
-First get the example code from GitHub:
+   # Nightly (use instead of the stable command)
+   python -m pip install nvflare-nightly
+
+Then download the matching example revision:
+
+.. code-block:: bash
+
+   nvflare examples get hello-jax
+   cd hello-jax
+
+For a source checkout, install that checkout before entering the example directory:
 
 .. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
-
-Then navigate to the hello-jax directory:
-
-.. code-block:: bash
-
    cd NVFlare
    git switch <release branch>
+   python -m pip install -e .
    cd examples/hello-world/hello-jax
 
-Install the dependencies:
+Then install the remaining example dependencies:
 
 .. code-block:: bash
 
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
+
+The requirements file intentionally does not install NVFlare. This preserves
+the stable, nightly, or editable distribution that selected the example revision.
 
 Code Structure
 --------------

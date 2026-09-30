@@ -17,7 +17,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE
 from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
+from nvflare.fuel.utils.deprecated import _WARNED_DEPRECATION_MESSAGES
 from nvflare.tool import cli_output
 
 
@@ -41,8 +43,12 @@ class TestJobClone:
         args = self._make_args()
         mock_sess = MagicMock()
         mock_sess.clone_job.return_value = "def456"
+        _WARNED_DEPRECATION_MESSAGES.discard(JOB_CLONE_DEPRECATION_MESSAGE)
 
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+        with (
+            patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess),
+            pytest.warns(DeprecationWarning, match="Job cloning is deprecated") as warning_records,
+        ):
             cmd_job_clone(args)
 
         captured = capsys.readouterr()
@@ -51,6 +57,12 @@ class TestJobClone:
         assert data["exit_code"] == 0
         assert data["data"]["source_job_id"] == "abc123"
         assert data["data"]["new_job_id"] == "def456"
+        assert captured.out.count("\n") == 1
+        warning = str(warning_records[0].message)
+        assert "original signing certificate" in warning
+        assert "nvflare job submit -j JOB_FOLDER" in warning
+        assert "current submitter certificate" in warning
+        mock_sess.clone_job.assert_called_once_with("abc123")
 
     def test_clone_not_found_exits_1(self, capsys):
         """job clone with unknown job exits with code 1."""
@@ -94,3 +106,36 @@ class TestJobClone:
         assert parser is not None
         args = parser.parse_args(["abc123"])
         assert args.job_id == "abc123"
+
+    def test_clone_help_is_marked_deprecated(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subs = root.add_subparsers()
+        job_parser = def_job_cli_parser(subs)["job"]
+
+        assert "[DEPRECATED]" in job_parser.format_help()
+        clone_help = job_sub_cmd_parser["clone"].format_help()
+        assert "[DEPRECATED]" in clone_help
+        assert "nvflare job submit -j JOB_FOLDER" in " ".join(clone_help.split())
+
+    def test_clone_schema_marks_command_deprecated(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_clone, def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        with patch("sys.argv", ["nvflare", "job", "clone", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_clone(self._make_args())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["deprecated"] is True
+        assert "original signing certificate" in schema["deprecated_message"]
+        assert "nvflare job submit -j JOB_FOLDER" in schema["deprecated_message"]
+        assert "current submitter certificate" in schema["deprecated_message"]

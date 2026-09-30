@@ -473,6 +473,28 @@ POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
 metadata. When ``project_conf_path`` is supplied, its project definition takes
 precedence over client-count and Docker preparation options.
 
+Each ``PocEnv`` instance creates a unique Recipe-owned workspace beside the
+workspace configured for the reusable ``nvflare poc`` CLI workflow. The CLI
+workspace is never replaced by Recipe provisioning. A ``PocEnv`` owns one
+provisioning lifecycle and cannot be reused after provisioning begins; create a
+new instance for another deployment. Pass ``clean_up=False`` to
+``Run.get_result()`` to retain the Recipe workspace for inspection.
+``Run.abort()`` aborts the job without stopping the environment, so executing
+again with that same ``PocEnv`` raises. Call ``Run.get_result()`` or
+``PocEnv.stop()``, then create a new environment for the next execution.
+File isolation does not isolate configured server ports. Before starting local
+processes, ``PocEnv`` checks those ports and rejects resources already in use.
+Docker Recipe deployments use unique per-workspace container and network names,
+so a deployment that loses a concurrent port race cannot observe or stop the
+other deployment's containers. The local port probe is also used for a local
+Docker daemon; for a remote ``DOCKER_HOST`` or Docker context, daemon-side
+startup and readiness checks are authoritative because local loopback is a
+different host. ``PocEnv`` also refuses to start while the configured CLI POC
+deployment is running; stop that deployment with ``nvflare poc stop`` first. If
+failure cleanup cannot be verified, the raised error identifies the unique
+Recipe workspace for manual cleanup. Other deployments do not scan or delete
+retained Recipe workspaces.
+
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
 ``ProdEnv`` use ``study`` to select the submission context; see
@@ -518,6 +540,79 @@ submitted. ``Run`` exposes:
 
 ``run.abort()``
    Request that the environment abort the running job.
+
+Following a Run
+---------------
+
+Recipe execution prints the job name before deployment. Simulation also prints
+the resolved client count; POC and production print status changes while the job
+runs.
+
+The simulator continues to use ``concise`` logging by default, preserving the
+existing timestamped application-log view. Select ``progress`` for focused
+training rounds and metrics in deep-learning, traditional-ML, Swarm, cyclic,
+and XGBoost jobs, evaluation progress, or workflow phases for federated
+statistics, PSI, and survival analysis. Warnings and errors remain visible:
+
+.. code-block:: bash
+
+   python job.py --log_config progress
+
+Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
+diagnostics on the console, run:
+
+.. code-block:: bash
+
+   python job.py --log_config full
+
+For custom workflows using ``MetricsArtifactWriter``, client contributions can place a current post-training metric
+mapping, such as ``{"auc": 0.85}``, in ``AppConstants.PROGRESS_METRICS``. The writer uses that mapping for progress
+display and records it separately as per-site ``progress_metrics`` in metric artifacts. The per-site ``metrics`` values
+retain their aggregation or evaluation phase, without changing the incoming-model meaning of ``INITIAL_METRICS`` used by
+model-selection components.
+
+Recipe consumes ``--log_config`` as a system argument before the script's own
+argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and
+``verbose`` modes are supported. The separate ``nvflare simulator`` command continues to use
+``-l`` or ``--log_config``. See :ref:`logging_configuration` for the mode and file
+details.
+
+POC and production use the same focused presentation when ``progress`` is
+selected and the updated server is available. Live remote progress is a recent
+preview from a bounded server ``log.json`` tail, with a bounded ``log.txt``
+fallback. It does not grant access to client machines or reconfigure running
+services. After completion, use the logs in the downloaded result. An authorized
+operator can also run ``nvflare job logs <job_id>`` for server logs and for client
+logs that were already streamed to the server. Other retained service or client
+logs require authorized access to the corresponding site. See
+:ref:`job_cli` for log retrieval and client-log streaming details.
+
+End-of-Run Summary
+------------------
+
+``run.get_result()`` waits for the result, records the final status, stops the
+environment, and returns the result workspace path when one is available. It also
+prints a ``RUN SUMMARY`` containing:
+
+* the completed, failed, or not-scheduled status and elapsed time;
+* up to ten recorded rounds of aggregated training metrics;
+* cross-site model-evaluation results when present; and
+* locations of model, statistics, metric, evaluation, and log artifacts.
+
+The summary reads existing artifacts and does not load model weights or change
+metric values. Missing, malformed, oversized, or custom-layout artifacts do not
+prevent result retrieval. Metric tables are bounded; inspect the referenced
+artifacts for complete values.
+
+A failed job can still return a workspace. Failure output summarizes available
+errors, affected sites, application code locations, and log paths. Full tracebacks
+remain in the site logs. POC and production can include client details only when
+those logs were already streamed to the server; the summary does not enable log
+streaming or contact clients.
+
+Use ``run.get_result(clean_up=False)`` to retain environment files for inspection.
+If cleanup removes a workspace, the output states that it is no longer available.
+Repeated calls return the cached result without printing the summary again.
 
 What You Can Rely On
 --------------------

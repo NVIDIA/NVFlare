@@ -27,7 +27,7 @@ import argparse
 from collab.async_aggregation.avg_intime import NPFedAvgInTime
 from collab.async_aggregation.trainer import NPTrainer
 
-from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -49,7 +49,6 @@ def main():
     parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--num-rounds", type=int, default=2)
     args = parser.parse_args()
-    simple_logging()
     run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

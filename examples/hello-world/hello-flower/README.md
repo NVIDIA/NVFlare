@@ -2,34 +2,46 @@
 
 This example demonstrates how to use NVIDIA FLARE with Flower to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the `hello-flower directory <examples/hello-world/hello-flower/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
 
-## NVIDIA FLARE Installation
+## Get NVFlare and the Example
 
-For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+Install either the stable or nightly NVFlare distribution:
 
-Get the example code from github:
+```bash
+# Stable
+python -m pip install nvflare
 
-```
-  git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-then navigate to the hello-flower directory:
-
-```
-  cd NVFlare
-  git switch <release branch>
-  cd examples/hello-world/hello-flower
+# Nightly (use instead of the stable command)
+python -m pip install nvflare-nightly
 ```
 
-Install the dependency
+Then download the matching example revision:
 
+```bash
+nvflare examples get hello-flower
+cd hello-flower
 ```
-  pip install -r requirements.txt
+
+For a source checkout, install that checkout before entering the example directory:
+
+```bash
+git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
+git switch <release branch>
+python -m pip install -e .
+cd examples/hello-world/hello-flower
 ```
+
+Then install the remaining example dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The requirements file intentionally does not install NVFlare. This preserves the stable,
+nightly, or editable distribution that selected the example revision.
 
 > [!IMPORTANT]
 > This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
-> Use the NVFlare 2.9 release candidate line (`nvflare~=2.9.0rc`), or install NVFlare from this
-> repository if that package is not available from PyPI yet.
 > If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
 > NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
 

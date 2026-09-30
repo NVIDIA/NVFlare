@@ -51,6 +51,13 @@ class JobProcessEnv:
     TOKEN_SIGNATURE = "NVFLARE_JOB_TOKEN_SIGNATURE"
     SSID = "NVFLARE_JOB_SSID"
 
+    # PEM job credential for launchers whose job process has no filesystem path to the
+    # run dir at startup (K8s workspace transfer); written to the run dir by download_workspace().
+    JOB_CERT = "NVFLARE_JOB_CERT"
+    JOB_KEY = "NVFLARE_JOB_KEY"
+
+    ALL = (AUTH_TOKEN, TOKEN_SIGNATURE, SSID, JOB_CERT, JOB_KEY)
+
 
 def pop_credential_env() -> dict:
     """Remove every JobProcessEnv credential from the environment and return it.
@@ -59,8 +66,7 @@ def pop_credential_env() -> dict:
     job-spawned children from inheriting credentials. Empty values count as absent so
     a blank env var fails parsing like a missing one.
     """
-    names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
-    return {name: os.environ.pop(name, None) or None for name in names}
+    return {name: os.environ.pop(name, None) or None for name in JobProcessEnv.ALL}
 
 
 class JobReturnCode(ProcessExitCode):

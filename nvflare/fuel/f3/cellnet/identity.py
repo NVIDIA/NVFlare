@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import List, Optional
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.cellnet.fqcn import CLIENT_API_ATTACH_LEAF_PREFIX, FQCN
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri_values
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.argument_utils import str2bool
 
@@ -35,6 +36,16 @@ def get_param(params: dict, key: DriverParams, default=None):
     if value is None:
         value = params.get(key, default)
     return value
+
+
+def cell_scopes(cert: x509.Certificate) -> List[str]:
+    """FQCNs a certificate is restricted to, each with its descendants; empty means unrestricted."""
+    return cert_uri_values(cert, CELL_URI_KIND)
+
+
+def fqcn_in_scopes(fqcn: str, scopes: List[str]) -> bool:
+    fqcn = FQCN.normalize(fqcn)
+    return any(fqcn == scope or FQCN.is_ancestor(scope, fqcn) for scope in scopes)
 
 
 def is_mtls_connection(params: dict) -> bool:
@@ -156,13 +167,22 @@ class CellIdentityResolver:
 
         return parts[0] if parts else fqcn
 
-    def require_match(self, fqcn: str, peer_cn: str, peer_desc: str):
+    def require_match(self, fqcn: str, peer_cn: str, peer_desc: str, peer_cert: Optional[x509.Certificate] = None):
         expected_cn = self.resolve(fqcn)
         if not expected_cn:
             raise ValueError(f"{peer_desc} claimed endpoint '{fqcn}' does not resolve to an expected identity")
 
         if not peer_cn or peer_cn == "N/A":
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
+
+        # A certificate may restrict which cells it can claim (see cell_scopes).
+        if peer_cert is not None:
+            scopes = cell_scopes(peer_cert)
+            if scopes and not fqcn_in_scopes(fqcn, scopes):
+                raise ValueError(
+                    f"{peer_desc} authenticated with a certificate restricted to cells {scopes} "
+                    f"but claimed endpoint '{fqcn}' is outside that scope"
+                )
 
         # Admin client cell names are per-session random IDs; the authenticated user is the cert CN.
         if is_valid_admin_client_name(fqcn):

@@ -635,10 +635,13 @@ class FederatedServer(BaseServer):
             ssl_cert = server_config[SecureTrainConst.SSL_CERT]
             private_key = server_config[SecureTrainConst.PRIVATE_KEY]
 
+            # both TLS roles use the job credential so directory-based back-fill never picks a site cert
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
+                DriverParams.CLIENT_CERT.value: ssl_cert,
+                DriverParams.CLIENT_KEY.value: private_key,
             }
 
             conn_security = server_config.get(ConnPropKey.CONNECTION_SECURITY)
@@ -1119,7 +1122,6 @@ class FederatedServer(BaseServer):
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
         self.engine.asked_to_stop = False
-        self.run_manager.cell = self.cell
 
         fed_event_runner = ServerFedEventRunner()
         self.run_manager.add_handler(fed_event_runner)

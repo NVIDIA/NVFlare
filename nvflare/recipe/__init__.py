@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import _args  # Consume shared arguments before importing recipe implementations.
 from .fed_task import FedTaskRecipe
 from .fedavg import FedAvgRecipe
 from .poc_env import PocEnv

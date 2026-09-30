@@ -18,9 +18,9 @@ metadata:
 
 ## Use When
 
-Proceed only when the request includes a reported NVFLARE job failure signal as
-defined in the description. Follow the evidence workflow even when the likely
-cause appears obvious; do not diagnose from prior knowledge alone.
+Proceed only when the request includes a reported NVFLARE job failure signal as defined
+in the description. Follow the evidence workflow even when the likely cause appears
+obvious; do not diagnose from prior knowledge alone.
 
 ## Do Not Use When
 

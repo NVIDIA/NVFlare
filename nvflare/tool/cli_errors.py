@@ -48,7 +48,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "LOG_CONFIG_INVALID": {
         "message": "Log config is not valid JSON or a recognised log mode.",
-        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
     },
     "SERVER_UNREACHABLE": {
         "message": "Server stopped or job ended before command was delivered.",

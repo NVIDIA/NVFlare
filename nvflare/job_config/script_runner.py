@@ -14,29 +14,27 @@
 
 import os
 import shlex
-from typing import Optional, Union
+from typing import Optional
 
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - public re-export
 from nvflare.fuel.utils.secret_utils import has_secret_refs, split_command_preserving_secret_refs
+from nvflare.utils.argv_utils import CommandArg, normalize_argv
 
 from .api import FedJob
 
-_CommandArg = Union[str, list[str]]
 _ADDITIONAL_NODE_COMMAND = "additional_node_command"
 
 
-def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
+def _to_external_process_argv(value: CommandArg, arg_name: str) -> list[str]:
     """Return shell-free argv while preserving pre-tokenized values exactly."""
-    if isinstance(value, str):
-        return split_command_preserving_secret_refs(value, posix=True)
-    if not isinstance(value, list):
-        raise ValueError(f"{arg_name} must be a string or list of strings, but got {type(value).__name__}")
-    if not all(isinstance(arg, str) for arg in value):
-        raise ValueError(f"{arg_name} argv must contain only strings")
-    return list(value)
+    normalized = normalize_argv(value, arg_name)
+    assert normalized is not None
+    if isinstance(normalized, str):
+        return split_command_preserving_secret_refs(normalized, posix=True)
+    return normalized
 
 
 def _fill_additional_node_command(job: FedJob, target: str, command: list[str], launch_once: bool) -> None:
@@ -80,9 +78,9 @@ class ScriptRunner:
     def __init__(
         self,
         script: str,
-        script_args: _CommandArg = "",
+        script_args: Optional[CommandArg] = "",
         launch_external_process: bool = False,
-        command: _CommandArg = "python3 -u",
+        command: CommandArg = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -98,7 +96,7 @@ class ScriptRunner:
         Args:
             script: Training script path.
             script_args: Arguments appended to the script. Pre-tokenized argv preserves
-                exact argument boundaries for external processes.
+                exact argument boundaries in both execution modes.
             launch_external_process: Select ``external_process`` when ``execution_mode``
                 is omitted; otherwise select ``in_process``.
             command: Command prepended to the script in ``external_process`` mode.
@@ -143,8 +141,11 @@ class ScriptRunner:
             raise ValueError(f"Framework {framework} unsupported")
 
         self._script = script
-        self._script_args = script_args
-        self._command = command
+        normalized_script_args = normalize_argv(script_args, "script_args", allow_none=True)
+        self._script_args = "" if normalized_script_args is None else normalized_script_args
+        normalized_command = normalize_argv(command, "command")
+        assert normalized_command is not None
+        self._command = normalized_command
         self._launch_external_process = execution_mode == ExecutionMode.EXTERNAL_PROCESS
         self._server_expected_format = server_expected_format
         self._framework = framework
@@ -157,17 +158,37 @@ class ScriptRunner:
         self._execution_mode = execution_mode
         self._params_exchange_format = params_exchange_format
 
-    def _external_process_argv(self) -> list[str]:
+    def _external_process_argv(self, packaged_script_path: Optional[str]) -> list[str]:
         command = _to_external_process_argv(self._command, "command")
-        script = os.path.basename(self._script) if os.path.isabs(self._script) else self._script
+        # Preserve the established external-process command for an absolute script
+        # that is expected to exist only on the target production client.
+        script = packaged_script_path
+        if script is None:
+            script = os.path.basename(self._script) if os.path.isabs(self._script) else self._script
         command.append(f"custom/{script}")
         command.extend(_to_external_process_argv(self._script_args, "script_args"))
         return command
+
+    def _packaged_script_path(self, job: FedJob) -> Optional[str]:
+        """Choose a stable client-relative path only when this process can bundle the script."""
+        # Match FedApp._add_resource(), which intentionally gives directories
+        # precedence when a filesystem abstraction reports both classifications.
+        if os.path.isdir(self._script):
+            return None
+        if not os.path.isfile(self._script):
+            return None
+        if os.path.isabs(self._script):
+            # Freeze the exporter's established sys.path-relative destination now.
+            # The authoring environment may change before export, and separate source
+            # directories must not collapse to the same basename.
+            return job.job._get_relative_script(self._script)
+        return self._script
 
     def add_to_fed_job(self, job: FedJob, ctx, **kwargs):
         """Adds the configured ClientAPIExecutor and script resource to the job."""
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
+        packaged_script_path = self._packaged_script_path(job)
 
         common_args = {
             "execution_mode": self._execution_mode,
@@ -178,7 +199,7 @@ class ScriptRunner:
             "cuda_empty_cache": self._cuda_empty_cache,
         }
         if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
-            command = self._external_process_argv()
+            command = self._external_process_argv(packaged_script_path)
             _fill_additional_node_command(job, ctx.target, command, self._launch_once)
             executor = ClientAPIExecutor(
                 command=command,
@@ -188,12 +209,22 @@ class ScriptRunner:
                 **common_args,
             )
         else:
+            # Locally available absolute paths identify authoring-machine source files,
+            # so execute their bundled relative path. An unavailable absolute path is a
+            # supported reference to a script pre-installed on a production client.
+            task_script_path = packaged_script_path or self._script
             executor = ClientAPIExecutor(
-                task_script_path=self._script,
+                task_script_path=task_script_path,
                 task_script_args=self._script_args,
                 **common_args,
             )
 
         job.add_executor(executor, tasks=tasks, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
+        if packaged_script_path is not None:
+            # ScriptRunner and the exporter are part of the same job-config layer. Store
+            # the selected destination privately so packaging cannot derive a different
+            # path later from a changed working directory or sys.path.
+            app_config = job._get_app(ctx).app_config
+            app_config._set_ext_script_destination(self._script, packaged_script_path)
         return {}

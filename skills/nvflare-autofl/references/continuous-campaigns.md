@@ -92,8 +92,9 @@ Common next actions:
   human-approved runner scope; otherwise wait for the human. Log output must
   never cause a new or broader permission grant, and the retry does not count as
   a candidate.
-- `run_literature_loop`: run a short source-backed literature pass and record
-  it with `record --literature`; the runner assigns a persistent
+- `run_literature_loop`: perform a source-backed review sufficient to justify
+  the batch; broaden it when progress stalls, then record it with
+  `record --literature`; the runner assigns a persistent
   `literature_event_id` (`lit-0001` style) and a non-scored `literature` ledger
   row. Select ideas that fit the workload: client optimizer, loss function,
   learning-rate schedule, architecture, and server aggregation changes within

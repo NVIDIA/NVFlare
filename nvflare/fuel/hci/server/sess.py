@@ -35,7 +35,17 @@ CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
-    def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY, cert_exp=None):
+    def __init__(
+        self,
+        sess_id,
+        user_name,
+        org,
+        role,
+        origin_fqcn,
+        active_study=DEFAULT_STUDY,
+        cert_exp=None,
+        cert_studies=(),
+    ):
         """Object keeping track of an admin client session with token and time data."""
         self.sess_id = sess_id
         self.user_name = user_name
@@ -43,6 +53,7 @@ class Session(object):
         self.user_role = role
         self.active_study = active_study
         self.cert_exp = cert_exp
+        self.cert_studies = tuple(cert_studies)
         self.origin_fqcn = origin_fqcn
         self.start_time = time.time()
         self.last_active_time = time.time()
@@ -66,6 +77,8 @@ class Session(object):
         }
         if self.cert_exp:
             user["ce"] = self.cert_exp
+        if self.cert_studies:
+            user["cs"] = self.cert_studies
         ds = json.dumps(user)
         bds = str_to_b64str(ds)
         signature = id_asserter.sign(ds, return_str=True)
@@ -93,6 +106,9 @@ class Session(object):
             return None
 
         user = json.loads(ds)
+        cert_studies = user.get("cs", ())
+        if not isinstance(cert_studies, (list, tuple)) or not all(isinstance(s, str) for s in cert_studies):
+            raise ValueError("invalid certificate studies in session token")
         return Session(
             user_name=user.get("n"),
             role=user.get("r"),
@@ -101,6 +117,7 @@ class Session(object):
             origin_fqcn="",
             active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
             cert_exp=user.get("ce"),
+            cert_studies=cert_studies,
         )
 
 
@@ -147,7 +164,16 @@ class SessionManager(CommandModule):
     def shutdown(self):
         self.asked_to_stop = True
 
-    def create_session(self, user_name, user_org, user_role, origin_fqcn, active_study=DEFAULT_STUDY, cert_exp=None):
+    def create_session(
+        self,
+        user_name,
+        user_org,
+        user_role,
+        origin_fqcn,
+        active_study=DEFAULT_STUDY,
+        cert_exp=None,
+        cert_studies=(),
+    ):
         """Creates new session with a new session token.
 
         Args:
@@ -155,7 +181,9 @@ class SessionManager(CommandModule):
             user_org: org of the user
             user_role: user's role
             origin_fqcn: request origin FQCN
-            id_asserter: used to sign session token
+            active_study: study selected for the session
+            cert_exp: admin certificate expiration time
+            cert_studies: named studies authorized by the admin certificate
 
         Returns: Session
 
@@ -169,6 +197,7 @@ class SessionManager(CommandModule):
             origin_fqcn=origin_fqcn,
             active_study=active_study,
             cert_exp=cert_exp,
+            cert_studies=cert_studies,
         )
         with self.sess_update_lock:
             self.sessions[sess_id] = sess

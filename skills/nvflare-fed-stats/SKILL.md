@@ -16,8 +16,8 @@ metadata:
 
 # NVFLARE Federated Statistics
 
-Data-first and automatic: point at tabular or image data and it runs
-end-to-end — no interaction, no user statistics code.
+Data-first and automatic: point at tabular or image data and it runs end-to-end —
+no interaction, no user statistics code.
 
 ## Use When
 

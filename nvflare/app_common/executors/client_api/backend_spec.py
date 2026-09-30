@@ -27,13 +27,14 @@ This module is internal to NVFlare. It is not a user extension point; users conf
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.utils.argv_utils import CommandArg
 
 if TYPE_CHECKING:
     # Import for typing only; avoids a runtime import cycle
@@ -65,9 +66,9 @@ class ClientAPIBackendContext:
     executor: "ClientAPIExecutor"
     # in_process entry point
     task_script_path: Optional[str] = None
-    task_script_args: str = ""
+    task_script_args: Optional[CommandArg] = ""
     # external_process launch
-    command: Optional[Union[str, list[str]]] = None
+    command: Optional[CommandArg] = None
     launch_once: bool = True
     launch_timeout: Optional[float] = 300.0
     shutdown_timeout: Optional[float] = None

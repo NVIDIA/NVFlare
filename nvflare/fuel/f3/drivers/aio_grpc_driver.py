@@ -196,9 +196,8 @@ class Servicer(StreamerServicer):
                 DriverParams.LOCAL_ADDR.value: get_address(self.server.connector.params),
             }
 
-            cn_names = context.auth_context().get("x509_common_name")
-            if cn_names:
-                conn_props[DriverParams.PEER_CN.value] = cn_names[0].decode("utf-8")
+            pem_certs = context.auth_context().get("x509_pem_cert")
+            Connection.record_peer(conn_props, pem_certs[0] if pem_certs else None)
 
             connection = AioStreamSession(
                 aio_ctx=self.aio_ctx,

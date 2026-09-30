@@ -191,6 +191,8 @@ def parse_arguments():
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()
+    args.job_cert_pem = creds[JobProcessEnv.JOB_CERT]
+    args.job_key_pem = creds[JobProcessEnv.JOB_KEY]
     return args
 
 

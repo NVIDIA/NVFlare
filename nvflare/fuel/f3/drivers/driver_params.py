@@ -34,6 +34,8 @@ class DriverParams(str, Enum):
     CLIENT_CERT = "client_cert"
     CLIENT_KEY = "client_key"
     CONNECTION_SECURITY = "connection_security"
+    CONNECT_TIMEOUT = "connect_timeout"
+    QUIET_RECONNECT = "quiet_reconnect"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SECURE = "secure"
     PORTS = "ports"
@@ -42,6 +44,7 @@ class DriverParams(str, Enum):
     LOCAL_ADDR = "local_addr"
     PEER_ADDR = "peer_addr"
     PEER_CN = "peer_cn"
+    PEER_CERT = "peer_cert"  # DER of the authenticated peer certificate
     IMPLEMENTED_CONN_SEC = "implemented_conn_sec"
 
 

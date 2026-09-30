@@ -4,14 +4,26 @@ This example demonstrates using the NVFLARE Federated Statistics Agent Skill
 with Codex or Claude Code. The coding agent creates and validates an NVFLARE
 statistics job from per-site synthetic CSV files.
 
-## NVIDIA FLARE Installation
+## Setup
 
-For complete setup instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
+Install NVFLARE using the [Installation guide](https://nvflare.readthedocs.io/en/main/installation.html), keeping
+the stable, nightly, or editable distribution already selected. Then install the example dependencies:
 
 ```bash
-python -m pip install 'nvflare~=2.9.0'
 python -m pip install -r requirements.txt
-npx skills add ../../../../skills --skill '*' -a codex -a claude-code -y
+```
+
+For an example downloaded with `nvflare examples get`, install the skills from its recorded source revision:
+
+```bash
+NVFLARE_REVISION=$(nvflare examples revision)
+npx skills add "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" --skill '*' -a codex -a claude-code -y
+```
+
+If you already have NVFLARE cloned at the same revision, use its top-level skills directory instead:
+
+```bash
+npx skills add "<nvflare-repo>/skills" --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure

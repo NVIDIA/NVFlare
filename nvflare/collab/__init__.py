@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 from typing import TYPE_CHECKING
 
 from .api.facade import Facade as collab
@@ -24,13 +23,7 @@ __all__ = [
     "collab",
     "CollabCallError",
     "CollabRecipe",
-    "simple_logging",
 ]
-
-
-def simple_logging(level=logging.INFO):
-    """Configure basic stdout logging for example and user scripts."""
-    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 # The user-facing classes are exported here so users never need implementation

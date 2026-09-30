@@ -31,7 +31,6 @@ def test_client_hf_reexports_standard_client_api_surface(monkeypatch):
         "get_job_id",
         "get_site_name",
         "get_task_name",
-        "init",
         "is_evaluate",
         "is_submit_model",
         "is_train",
@@ -44,6 +43,7 @@ def test_client_hf_reexports_standard_client_api_surface(monkeypatch):
         assert hasattr(hf_client, name), f"nvflare.client.hf must export {name}"
         assert getattr(hf_client, name) is getattr(flare, name)
 
+    assert hf_client.init is flare.init
     assert hf_client.is_running is not flare.is_running
 
 

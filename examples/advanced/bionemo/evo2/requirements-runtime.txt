@@ -1,0 +1,6 @@
+# These packages are installed by the Evo2 Docker image.
+datasets==5.0.1
+matplotlib==3.11.1
+scikit-learn==1.9.0
+tensorboard==2.21.0
+jupyterlab==4.6.4

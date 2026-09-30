@@ -32,7 +32,7 @@ def define_parser():
         "--log_config",
         type=str,
         default=None,
-        help="Log config mode ('concise', 'full', 'verbose'), filepath to a log config json file, or level (info, debug, error, etc.)",
+        help="Log config mode ('concise', 'progress', 'full', 'verbose'), filepath to a log config json file, or level (info, debug, error, etc.)",
     )
 
     return parser.parse_args()

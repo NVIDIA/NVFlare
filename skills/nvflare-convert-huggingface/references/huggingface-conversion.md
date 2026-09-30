@@ -42,10 +42,15 @@ default selector. See the Best-Model Metric section of
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
 so every `flare.*` call below resolves to `nvflare.client.hf`.
 
-Call `flare.init(rank=rank)` explicitly before `flare.get_site_name()`,
-`flare.get_config()`, or other Client API context access that occurs before
-`patch()`. The patch initializes the Client API when no earlier context access
-is needed.
+Follow the framework-neutral Client API initialization and rank contract in
+`../../nvflare-shared/references/conversion-common.md`. The standard
+asset always calls rankless `nvflare.client.hf.init()`. The product resolves an
+initialized process-group rank or global `RANK` and rejects an unresolved
+multi-process launch before creating a Client API context; do not reimplement
+that logic in generated code. For a preserved multi-GPU launch, load
+`huggingface-state-and-distributed.md`. Initialize before
+`flare.get_site_name()`, `flare.get_config()`, or other Client API context access
+that occurs before `patch()`.
 
 Do not add manual model loading from `flare.receive()` or model sending through
 `flare.send()`. The patch wraps `train()` and `evaluate()`, loads the received
@@ -116,6 +121,12 @@ generated files into a child package and refer back with `../model.py`:
 NVFLARE rejects parent-traversal external-script paths. For an exceptional
 non-co-located module, pass its existing resolved absolute source path to the
 packaging API.
+
+`SOURCE_DIR` identifies the generated-file directory for packaging; it is the
+source-project root only in the colocated case. If a read-only source root puts
+generated files elsewhere, pass the inspected original root explicitly to
+`resolve_source_local_path(..., source_root=...)` for source-relative data. Do
+not resolve those data paths against the writable generated-file directory.
 
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy

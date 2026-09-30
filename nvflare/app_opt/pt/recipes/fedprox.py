@@ -42,12 +42,13 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds. Defaults to 2.
         train_script: Client training script path.
-        train_args: Command-line arguments passed to the client training script.
+        train_args: Command-line arguments passed to the client training script as a string or pre-tokenized argv.
         aggregator: Optional custom model aggregator.
         aggregator_data_kind: Data kind accepted by the aggregator.
         launch_external_process: Whether to launch the client script externally.
-        command: Command prepended to the script for external launches.
-        server_expected_format: Parameter format expected by the server.
+        command: Command prepended to the script for external launches as a string or pre-tokenized argv.
+        server_expected_format: Parameter exchange format. Defaults to NumPy for in-memory
+            aggregation and PyTorch for disk aggregation. Disk aggregation rejects other formats.
         params_transfer_type: Full-model or model-difference transfer.
         model_persistor: Optional custom model persistor.
         model_locator: Optional custom model locator.
@@ -66,10 +67,12 @@ class FedProxRecipe(FedAvgRecipe):
         exclude_vars: Optional regex for variables excluded from aggregation.
         aggregation_weights: Optional per-client aggregation weights.
         server_memory_gc_rounds: Server garbage-collection interval.
-        enable_tensor_disk_offload: Enable server tensor disk offload.
+        enable_tensor_disk_offload: Enable incoming server tensor disk offload. None selects True
+            with disk aggregation and False otherwise. Explicit False is incompatible with disk aggregation.
         client_memory_gc_rounds: Client garbage-collection interval.
         cuda_empty_cache: Whether clients empty the CUDA cache during cleanup.
         fedprox_mu: Finite positive proximal coefficient. Defaults to 0.01.
+        enable_disk_aggregation: Enable disk-backed server aggregation and safetensors model persistence.
     """
 
     def __init__(
@@ -81,12 +84,12 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        command: Union[str, list[str]] = "python3 -u",
+        server_expected_format: Optional[ExchangeFormat] = None,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
@@ -103,10 +106,11 @@ class FedProxRecipe(FedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
-        enable_tensor_disk_offload: bool = False,
+        enable_tensor_disk_offload: Optional[bool] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         fedprox_mu: float = 0.01,
+        enable_disk_aggregation: bool = False,
     ):
         # FedAvgRecipe builds the controller through _get_controller_kwargs(), so this must precede super().__init__.
         self.fedprox_mu = validate_fedprox_mu(fedprox_mu)
@@ -142,6 +146,7 @@ class FedProxRecipe(FedAvgRecipe):
             enable_tensor_disk_offload=enable_tensor_disk_offload,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            enable_disk_aggregation=enable_disk_aggregation,
         )
 
     def _get_controller_kwargs(self) -> dict[str, Any]:

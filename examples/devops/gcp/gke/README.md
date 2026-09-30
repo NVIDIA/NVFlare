@@ -2,6 +2,18 @@
 
 Cluster lifecycle + NVFlare storage bootstrap.
 
+## Working Directory
+
+Download this example and enter the preserved provider directory:
+
+```bash
+nvflare examples get devops-gcp-gke
+cd devops-gcp-gke/gcp/gke
+```
+
+From an NVFlare source checkout, use `cd examples/devops/gcp/gke` instead.
+The scripts keep generated kubeconfig files under the downloaded example root.
+
 ## Prereqs
 
 `gcloud` (authenticated, project selected), `kubectl`, `gke-gcloud-auth-plugin`.

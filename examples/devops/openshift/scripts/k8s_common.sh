@@ -101,7 +101,7 @@ init_k8s_env() {
   local require_image=${1:-false}
 
   SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-  REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
+  EXAMPLE_ROOT="${EXAMPLE_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
   KUBE_CMD="${KUBE_CMD:-oc}"
   PROJECT_NAME="${PROJECT_NAME:-openshift_nvflare_e2e}"
@@ -179,7 +179,7 @@ init_k8s_env() {
   PROD_DIR="${PACKAGE_WORKSPACE}/${PROJECT_NAME}/prod_00"
   LAST_JOB_ID_FILE="${WORK_DIR}/last_job_id"
 
-  [[ -d "${REPO_ROOT}" ]] || fail "REPO_ROOT does not exist: ${REPO_ROOT}"
+  [[ -d "${EXAMPLE_ROOT}" ]] || fail "EXAMPLE_ROOT does not exist: ${EXAMPLE_ROOT}"
 }
 
 clean_work_dir_if_requested() {
@@ -554,15 +554,14 @@ export_hello_numpy_job() {
   job_parent="$(dirname "${job_dir}")"
   rm -rf "${job_dir}"
   mkdir -p "${job_parent}"
-  python3 - "${REPO_ROOT}" "${job_parent}" "${CLIENT_COUNT}" "${NUM_ROUNDS}" <<'PY'
-import os
+  python3 - "${EXAMPLE_ROOT}" "${job_parent}" "${CLIENT_COUNT}" "${NUM_ROUNDS}" <<'PY'
 import pathlib
 import sys
 
-repo_root, job_parent, client_count, num_rounds = sys.argv[1:5]
-example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-numpy")
-sys.path.insert(0, repo_root)
-os.chdir(example_dir)
+example_root, job_parent, client_count, num_rounds = sys.argv[1:5]
+client_script = pathlib.Path(example_root) / "jobs" / "numpy_client.py"
+if not client_script.is_file():
+    raise SystemExit(f"missing OpenShift example client: {client_script}")
 
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.client.config import TransferType
@@ -572,7 +571,7 @@ recipe = NumpyFedAvgRecipe(
     min_clients=int(client_count),
     num_rounds=int(num_rounds),
     model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-    train_script="client.py",
+    train_script=str(client_script),
     train_args="--update_type full",
     launch_external_process=False,
     params_transfer_type=TransferType.FULL,

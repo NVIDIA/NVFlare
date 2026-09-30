@@ -45,7 +45,7 @@ Command Usage
                                 number of parallel running clients
         -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
         -l LOG_CONFIG, --log_config LOG_CONFIG
-                                log config mode ('concise', 'full', 'verbose'), filepath, or level
+                                log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level
         -m MAX_CLIENTS, --max_clients MAX_CLIENTS
                                 max number of clients
         --end_run_for_all     flag to indicate if running END_RUN event for all clients
@@ -819,7 +819,7 @@ application run.
             "--log_config",
             type=str,
             default=None,
-            help="log config mode ('concise', 'msg_only', 'full', 'verbose'), filepath, or level",
+            help="log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level",
         )
         simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 

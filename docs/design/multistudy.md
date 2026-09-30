@@ -186,7 +186,7 @@ Bootstrap modes:
 
 Runtime study state and runtime participant identity are separate concerns:
 
-- `study_registry.json` is the source of truth for study membership and per-study admin membership
+- `study_registry.json` is the source of truth for site enrollment and registry-managed admin membership
 - the running server derives `site -> org` ownership from authenticated client certificates when sites connect
 - this connected-client `site -> org` map is runtime state used to validate study membership mutations; it is not persisted in `study_registry.json`
 - centralized bootstrap may pre-populate `site_orgs`, but runtime-created or runtime-mutated study membership is still validated against the connected client's certificate org
@@ -222,11 +222,18 @@ When a session is opened for a named study:
 
 1. the server verifies that a study registry exists
 2. the study name exists in the registry
-3. the user has an entry in that study's `admins` list
+3. the user has an entry in that study's `admins` list, or the validated admin certificate authorizes the study
 
-If any of those checks fail, opening a session for that named study is rejected.
+The registry and certificate checks in step 3 are combined with logical OR. If neither source authorizes the user,
+opening the session is rejected.
 
 For a valid named study session, the certificate-baked role remains the effective role for **study-scoped authorization**. The study record adds membership, not a second role.
+
+### Certificate-Derived Study Membership
+
+For the URI SAN contract, validation, and entitlement lifetime, see "Certificate-Derived Study Membership"
+in `docs/user_guide/admin_guide/multi_study_guide.rst`. Issuer configuration and the downloadable template
+are in `docs/programming_guide/provisioning_system.rst`.
 
 ### What Is Study-Scoped
 
@@ -255,7 +262,8 @@ Requests are enforced in this order:
 ### Login
 
 - opening a default-study session is always allowed if certificate authentication succeeds
-- opening a session for a named study is allowed only when the runtime registry exists and the user is listed in that study
+- opening a session for a named study requires the runtime registry and a known study, then requires registry or
+  certificate authorization
 - if the runtime registry has no named studies, opening a session for a named study is rejected
 
 ### Job Visibility

@@ -31,8 +31,8 @@ class ErrorHandlingController(Controller, ABC):
             ReturnCode.TASK_RESULT_FILTER_ERROR: True,
         }
 
-    def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext):
-        client_name = client_task.client.name
+    def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext, client_label: str = None):
+        client_name = client_label or client_task.client.name
         task_name = client_task.task.name
         abort = self.abort_job_in_error[rc]
         self.log_error(fl_ctx, f"error code = {rc}")

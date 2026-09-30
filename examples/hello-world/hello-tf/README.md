@@ -16,31 +16,43 @@ Ensure the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-n
   docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
 ```
 
-## NVIDIA FLARE Installation
+## Get NVFlare and the Example
 
-For complete installation instructions, visit [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
-
-```bash
-  pip install nvflare
-```
-Clone the example code from GitHub:
+Install either the stable or nightly NVFlare distribution:
 
 ```bash
-  git clone https://github.com/NVIDIA/NVFlare.git
+# Stable
+python -m pip install nvflare
+
+# Nightly (use instead of the stable command)
+python -m pip install nvflare-nightly
 ```
-Navigate to the hello-tf directory:
+
+Then download the matching example revision:
 
 ```bash
-  cd NVFlare
-  git switch <release branch>
-  cd examples/hello-world/hello-tf
+nvflare examples get hello-tf
+cd hello-tf
 ```
 
-Install the dependencies:
+For a source checkout, install that checkout before entering the example directory:
 
 ```bash
-  pip install -r requirements.txt
+git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
+git switch <release branch>
+python -m pip install -e .
+cd examples/hello-world/hello-tf
 ```
+
+Then install the remaining example dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The requirements file intentionally does not install NVFlare. This preserves the stable,
+nightly, or editable distribution that selected the example revision.
 ## Code Structure
 
 

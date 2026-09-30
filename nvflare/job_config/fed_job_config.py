@@ -318,7 +318,11 @@ class FedJobConfig:
             json_dump = json.dumps(server_app, indent=4)
             outfile.write(json_dump)
 
-        self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
+        self._copy_ext_scripts(
+            custom_dir,
+            fed_app.server_app.ext_scripts,
+            fed_app.server_app._ext_script_destinations,
+        )
         self._copy_ext_dirs(custom_dir, fed_app.server_app)
         self._copy_file_sources(config_dir, custom_dir, fed_app.server_app.file_sources)
 
@@ -348,45 +352,57 @@ class FedJobConfig:
                 # this is a dir
                 shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
-    def _copy_ext_scripts(self, custom_dir, ext_scripts):
+    def _copy_ext_scripts(self, custom_dir, ext_scripts, ext_script_destinations=None):
+        ext_script_destinations = ext_script_destinations or {}
+        copied_registrations = set()
         for script in ext_scripts:
             if os.path.exists(script):
-                if os.path.isabs(script):
+                relative_scripts = ext_script_destinations.get(script)
+                if relative_scripts:
                     source_file = self._resolved_path(script)
-                    relative_script = self._get_relative_script(source_file)
+                    source_path_for_root = source_file
+                elif os.path.isabs(script):
+                    source_file = self._resolved_path(script)
+                    relative_scripts = [self._get_relative_script(source_file)]
                     source_path_for_root = source_file
                 else:
                     source_file = script
-                    relative_script = script
+                    relative_scripts = [script]
                     source_path_for_root = os.path.abspath(script)
-                relative_script = os.path.normpath(relative_script)
-                if (
-                    relative_script in ("", os.curdir)
-                    or os.path.isabs(relative_script)
-                    or relative_script == os.pardir
-                    or relative_script.startswith(os.pardir + os.sep)
-                ):
-                    raise ValueError(f"Invalid external script path: {script}")
+                for relative_script in relative_scripts:
+                    relative_script = os.path.normpath(relative_script)
+                    if (
+                        relative_script in ("", os.curdir)
+                        or os.path.isabs(relative_script)
+                        or relative_script == os.pardir
+                        or relative_script.startswith(os.pardir + os.sep)
+                    ):
+                        raise ValueError(f"Invalid external script path: {script}")
 
-                dest_file = os.path.join(custom_dir, relative_script)
-                module_path = relative_script[:-3] if relative_script.endswith(".py") else relative_script
-                if os.path.basename(module_path) == "__init__" and os.path.dirname(module_path):
-                    module_path = os.path.dirname(module_path)
-                module = module_path.replace(os.sep, ".")
-                path_depth = len(module_path.split(os.sep))
-                if os.path.basename(source_file) != "__init__.py":
-                    path_depth -= 1
-                source_root = os.path.dirname(source_path_for_root)
-                for _ in range(max(path_depth, 1)):
-                    source_root = os.path.dirname(source_root)
-                self._copy_source_file(
-                    custom_dir,
-                    module,
-                    source_file,
-                    dest_file,
-                    source_root=source_root,
-                    is_external_script=True,
-                )
+                    registration = (source_file, relative_script)
+                    if registration in copied_registrations:
+                        continue
+                    copied_registrations.add(registration)
+
+                    dest_file = os.path.join(custom_dir, relative_script)
+                    module_path = relative_script[:-3] if relative_script.endswith(".py") else relative_script
+                    if os.path.basename(module_path) == "__init__" and os.path.dirname(module_path):
+                        module_path = os.path.dirname(module_path)
+                    module = module_path.replace(os.sep, ".")
+                    path_depth = len(module_path.split(os.sep))
+                    if os.path.basename(source_file) != "__init__.py":
+                        path_depth -= 1
+                    source_root = os.path.dirname(source_path_for_root)
+                    for _ in range(path_depth):
+                        source_root = os.path.dirname(source_root)
+                    self._copy_source_file(
+                        custom_dir,
+                        module,
+                        source_file,
+                        dest_file,
+                        source_root=source_root,
+                        is_external_script=True,
+                    )
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
@@ -492,7 +508,7 @@ class FedJobConfig:
         self._check_destination_collision(source_file, dest_file)
         return source_file, source_root, dest_file
 
-    def _get_custom_file(self, custom_dir, module, source_file, source_root=None):
+    def _get_custom_file(self, custom_dir, module, source_file, source_root=None, flat_import_roots=None):
         module_parts = self._module_parts(module)
         if source_root is None:
             source_root = self._derive_source_root(module=module, source_file=source_file)
@@ -514,7 +530,14 @@ class FedJobConfig:
 
         self.custom_modules.append(module)
         try:
-            self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
+            self._copy_source_file(
+                custom_dir,
+                module,
+                source_file,
+                dest_file,
+                source_root=source_root,
+                flat_import_roots=flat_import_roots,
+            )
         except Exception:
             self.custom_modules.remove(module)
             raise
@@ -538,7 +561,16 @@ class FedJobConfig:
         resolved_parts = package_parts[:keep_parts] + import_parts
         return ".".join(resolved_parts) if resolved_parts else None
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root, is_external_script=False):
+    def _copy_source_file(
+        self,
+        custom_dir,
+        module,
+        source_file,
+        dest_file,
+        source_root,
+        is_external_script=False,
+        flat_import_roots=None,
+    ):
         source_file, source_root, dest_file = self._validate_copy_paths(
             custom_dir=custom_dir,
             source_file=source_file,
@@ -556,16 +588,20 @@ class FedJobConfig:
 
         source_dir = os.path.dirname(source_file)
         is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
-        search_source_dir = is_flat_external_script or "." not in module
+        is_flat_module = (is_flat_external_script or "." not in module) and os.path.basename(
+            source_file
+        ) != "__init__.py"
+        if is_flat_module and flat_import_roots is None:
+            flat_import_roots = [source_dir, source_root]
+            if is_external_script and "." not in module:
+                flat_import_roots.append(os.path.dirname(source_dir))
         for import_source, level in import_specs:
             import_module = self._resolve_import_module(module, import_source, level, source_file)
             if not import_module:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
-            search_roots = [source_root]
-            # Flat registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
-            if level == 0 and search_source_dir and os.path.basename(source_file) != "__init__.py":
-                search_roots.insert(0, source_dir)
+            # Flat modules retain the registered script's ordered roots; package modules stay anchored to their root.
+            search_roots = list(flat_import_roots) if level == 0 and is_flat_module else [source_root]
             checked_roots = set()
             for search_root in search_roots:
                 search_root = self._resolved_path(search_root)
@@ -578,7 +614,8 @@ class FedJobConfig:
                         custom_dir,
                         import_module,
                         import_source_file,
-                        source_root=source_root,
+                        source_root=search_root,
+                        flat_import_roots=flat_import_roots if "." not in import_module else None,
                     )
                     break
 
@@ -605,7 +642,11 @@ class FedJobConfig:
             json_dump = json.dumps(client_app, indent=4)
             outfile.write(json_dump)
 
-        self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
+        self._copy_ext_scripts(
+            custom_dir,
+            fed_app.client_app.ext_scripts,
+            fed_app.client_app._ext_script_destinations,
+        )
         self._copy_ext_dirs(custom_dir, fed_app.client_app)
         self._copy_file_sources(config_dir, custom_dir, fed_app.client_app.file_sources)
 

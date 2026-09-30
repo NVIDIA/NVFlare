@@ -110,7 +110,10 @@ All examples use the Recipe API for simplified configuration. Choose your prefer
 
 ### Prerequisites
 
-Please make sure you set up a virtual environment and follow the installation steps on the [example root readme](../../README.md).
+Set up a virtual environment with NVFlare, PyTorch, and the tracking backend you intend to use: MLflow,
+TensorBoard, or Weights & Biases. The tracking backend is not installed by `nvflare examples get`.
+When using a downloaded example, keep the NVFlare distribution that supplied the example instead of replacing it
+with another NVFlare version from an example requirements file.
 
 This folder contains examples for [experiment tracking](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
 using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to
@@ -156,14 +159,45 @@ showing how to use W&B for experiment tracking with both server-side and client-
 
 ## Quick Start Guide
 
-### 1. Install Requirements
+Run these commands from the downloaded `experiment-tracking` directory.
+
+### 1. Choose and configure a tracking backend
+
+Install only the selected tracking package. These commands leave the installed NVFlare distribution unchanged:
+
+**MLflow**:
 
 ```bash
-cd examples/advanced/experiment-tracking/<framework>
-pip install -r requirements.txt
+python -m pip install mlflow
 ```
 
-### 2. Download Data (if needed)
+The `hello-lightning-mlflow` variant also requires PyTorch Lightning:
+
+```bash
+python -m pip install pytorch-lightning
+```
+
+**TensorBoard**:
+
+```bash
+python -m pip install tensorboard
+```
+
+**Weights & Biases**:
+
+```bash
+python -m pip install wandb
+wandb login
+```
+
+The backend READMEs provide configuration and result-viewing details. When using a downloaded example, skip their
+**Install Requirements** steps because those requirements may name a different NVFlare version:
+
+- [MLflow](./mlflow/README.md)
+- [TensorBoard](./tensorboard/README.md)
+- [Weights & Biases](./wandb/README.md)
+
+### 2. Download Data
 
 ```bash
 ./prepare_data.sh
@@ -171,8 +205,26 @@ pip install -r requirements.txt
 
 ### 3. Run Example
 
+**TensorBoard**:
+
 ```bash
-cd <framework>/jobs/<job_name>/code
+cd tensorboard
+python job.py
+```
+
+**Weights & Biases**:
+
+```bash
+cd wandb
+python job.py
+```
+
+**MLflow**:
+
+Choose `hello-pt-mlflow`, `hello-pt-mlflow-client`, or `hello-lightning-mlflow`, then run:
+
+```bash
+cd mlflow/<example-name>
 python job.py
 ```
 

@@ -297,6 +297,7 @@ Supported built-in values for positional ``level``:
 - ``ERROR``
 - ``CRITICAL``
 - ``concise``
+- ``progress``
 - ``msg_only``
 - ``full``
 - ``verbose``

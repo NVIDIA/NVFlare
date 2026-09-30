@@ -47,6 +47,24 @@ Job Submission & Execution Errors
 - Out-of-memory errors (see also :doc:`/programming_guide/memory_management`)
 - Model serialization errors
 
+Job fails with ``FAILED_TO_RUN`` and a job credential message
+---------------------------------------------------------------
+
+In secure mode every job runs on a :ref:`per-job certificate <per_job_certificates>`
+and there is no fallback to the site certificates. The reason is recorded in
+the job's ``job_deploy_detail``:
+
+- ``server startup kit has no job CA (job_ca.crt / job_ca.key)``: the server was
+  provisioned before this feature or with ``enable_job_ca: false``.
+  Re-provision the project and redeploy the server startup kit.
+- ``job CA expires at ...``: the job CA has less than one hour of validity
+  left. Re-provision the project to renew it.
+- ``deploy request carries no valid job credential`` (reported by a client):
+  the server did not send a job credential. The server and client releases do
+  not match; run the same release on all participants.
+- ``has no job credential`` (reported by the Docker, Kubernetes, or Slurm
+  launcher): same cause as above.
+
 Training & Convergence Issues
 ==============================
 

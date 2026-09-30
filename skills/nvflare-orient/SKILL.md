@@ -18,11 +18,10 @@ metadata:
 
 ## Use When
 
-Use when the user asks where to start with NVFLARE, how a local project maps to
-FLARE workflows, or which FLARE skill should handle an ambiguous request. For a
-concrete conversion request, use only after preliminary source inspection
-explicitly reports unresolved ownership or conflicting active training owners
-that require a user choice.
+Use when the user asks where to start with NVFLARE, how a local project maps to FLARE
+workflows, or which FLARE skill should handle an ambiguous request. For a concrete
+conversion request, use only after preliminary source inspection explicitly reports
+unresolved ownership or conflicting active training owners that require a user choice.
 
 ## Do Not Use When
 
