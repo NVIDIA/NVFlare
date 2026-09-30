@@ -189,7 +189,7 @@ def validate_complete_matrix(
     for method in methods:
         for alpha in alphas:
             for participation in participation_rates:
-                if method == "fedopt" and participation < 1.0:
+                if method in {"fedopt", "scaffold"} and participation < 1.0:
                     continue
                 for seed in seeds:
                     expected.add((method, float(alpha), float(participation), int(seed)))
