@@ -232,7 +232,7 @@ class FedAvg(BaseFedAvg):
                     task_name=self.task_name,
                     targets=clients,
                     data=model,
-                    callback=aggregate_one_result if not self.aggregator else self._aggregate_one_result,
+                    callback=aggregate_one_result,
                 )
 
                 # Wait for all results to be processed
@@ -247,7 +247,7 @@ class FedAvg(BaseFedAvg):
                         return
                     time.sleep(self._task_check_period)
 
-                # Task retirement can precede callback completion: wait for the consumer.
+                # Propagate callback failures before publishing or saving the aggregate.
                 with round_state["lock"]:
                     round_state["closed"] = True
                     if round_state["failed"]:

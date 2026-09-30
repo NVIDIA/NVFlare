@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
@@ -49,7 +50,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
-            Note: PyTorch requires model when using initial_ckpt (for architecture).
+            With enable_disk_aggregation=True, may also be a Hugging Face safetensors index
+            or checkpoint directory. Memory mode requires model for architecture.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -61,7 +63,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3 -u".
-        server_expected_format (str): What format to exchange the parameters between server and client.
+        server_expected_format (str): Parameter exchange format. Defaults to NumPy for in-memory
+            aggregation and PyTorch for disk aggregation. Disk aggregation rejects other formats.
         params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
             calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
@@ -86,6 +89,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
+            None selects True with disk aggregation and False otherwise. Explicit False is
+            incompatible with enable_disk_aggregation=True.
+        enable_disk_aggregation: Enable tensor-at-a-time server aggregation and safetensors model persistence.
+            Requires initial_ckpt and PyTorch exchange, which the recipe selects automatically.
+            Supports FULL/DIFF, exclusions and early stopping. Custom model components,
+            checkpoint filenames, model locators and historical snapshots are unsupported.
     Example:
         Basic usage with early stopping:
 
@@ -103,9 +112,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         ```
 
     Note:
-        This recipe uses InTime (streaming) aggregation for memory efficiency - each client
-        result is aggregated immediately upon receipt rather than collecting all results first.
-        Memory usage is constant regardless of the number of clients.
+        Memory mode accumulates results as they arrive. Disk mode retains client tensor
+        references and aggregates one key at a time after the round's transfers complete.
     """
 
     def __init__(
@@ -122,7 +130,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: Union[str, list[str]] = "python3 -u",
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        server_expected_format: Optional[ExchangeFormat] = None,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
@@ -140,10 +148,34 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
-        enable_tensor_disk_offload: bool = False,
+        enable_tensor_disk_offload: Optional[bool] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        enable_disk_aggregation: bool = False,
     ):
+        self.enable_disk_aggregation = enable_disk_aggregation
+        if enable_tensor_disk_offload is None:
+            enable_tensor_disk_offload = enable_disk_aggregation
+        if enable_disk_aggregation:
+            if not enable_tensor_disk_offload:
+                raise ValueError("enable_disk_aggregation=True requires enable_tensor_disk_offload=True")
+            if model is not None or aggregator is not None or model_persistor is not None or model_locator is not None:
+                raise ValueError("disk aggregation configures its own model, aggregator and persistor; no locator")
+            if best_model_filename is not None or save_filename is not None:
+                raise ValueError("disk aggregation uses fixed current/saved checkpoint filenames")
+            if not isinstance(initial_ckpt, str) or not initial_ckpt:
+                raise ValueError("disk aggregation requires a safetensors initial_ckpt")
+            if initial_ckpt.endswith(".json") and not os.path.isabs(initial_ckpt):
+                raise ValueError("disk aggregation requires an absolute server path for a safetensors index")
+            if server_expected_format not in (None, ExchangeFormat.PYTORCH):
+                raise ValueError("disk aggregation requires PyTorch exchange")
+            from nvflare.app_opt.pt.disk_fedavg_components import DiskFedAvgAggregator
+
+            aggregator = DiskFedAvgAggregator(aggregation_weights=aggregation_weights, exclude_vars=exclude_vars)
+            server_expected_format = ExchangeFormat.PYTORCH
+        elif server_expected_format is None:
+            server_expected_format = ExchangeFormat.NUMPY
+
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
 
@@ -184,8 +216,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
-        from nvflare.app_opt.pt.job_config.model import PTModel
         from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt, setup_custom_persistor
+
+        if self.enable_disk_aggregation:
+            from nvflare.app_opt.pt.disk_fedavg_components import DiskFedAvgPersistor
+
+            ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+            self.model_persistor = DiskFedAvgPersistor(ckpt_path)
 
         persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
         if persistor_id:
@@ -196,6 +233,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
                     if isinstance(locator_id, str) and locator_id:
                         job.comp_ids["locator_id"] = locator_id
             return persistor_id
+
+        from nvflare.app_opt.pt.job_config.model import PTModel
 
         ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
         if self.model is None and ckpt_path:
@@ -219,3 +258,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         if persistor_id and hasattr(job, "comp_ids"):
             job.comp_ids.setdefault("persistor_id", persistor_id)
         return persistor_id
+
+    def _create_client_runner(self, site_config):
+        if self.enable_disk_aggregation:
+            if (
+                self._site_value(site_config, "server_expected_format", self.server_expected_format)
+                != ExchangeFormat.PYTORCH
+            ):
+                raise ValueError("disk aggregation requires PyTorch exchange for every site")
+        return super()._create_client_runner(site_config)

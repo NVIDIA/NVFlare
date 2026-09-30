@@ -179,6 +179,8 @@ class TestSimulatorRunner:
                     assert workspace_obj.get_root_dir() == os.path.join(workspace, "server")
                     job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
                     assert job_meta[JobMetaKey.JOB_NAME.value] == "sag"
+                    assert runner.server.engine.get_cell() is runner.server.job_cell
+                    assert runner.server.engine.run_manager.cell is runner.server.job_cell
 
                     runner.server.logger = Mock()
                     runner.server.engine.asked_to_stop = True
