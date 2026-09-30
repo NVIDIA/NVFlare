@@ -16,6 +16,7 @@
 
 import argparse
 import copy
+import random
 import json
 import re
 
@@ -58,6 +59,7 @@ def main(args):
     # before any data-loader or training randomness is consumed.
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.benchmark = False
