@@ -250,6 +250,16 @@ def test_scaffold_partial_participation_is_not_planned_as_matched():
     assert ("fedavg", 0.1, 0.75, 7) in planned
 
 
+def test_complete_matrix_skips_unsupported_scaffold_partial_participation():
+    rows = [
+        _result_row("scaffold", 1.0, 7, 0.75),
+        _result_row("fedavg", 1.0, 7, 0.76),
+        _result_row("fedavg", 0.75, 7, 0.74),
+    ]
+
+    validate_complete_matrix(rows, ["scaffold", "fedavg"], [0.1], [1.0, 0.75], [7])
+
+
 def test_summary_filters_stale_same_protocol_rows_by_configuration():
     args = _campaign_args()
     current = _result_row("adaptive", 0.75, 19, 0.8, args=args)
