@@ -299,13 +299,13 @@ class Store(object):
         role_name = req.get("role", "")
         description = req.get("description", "")
         if not isinstance(role_name, str):
-            log.error(f"create_user cannot create non-string role: {role_name}")
+            log.error(f"create_user cannot create role with type: {type(role_name).__name__}")
             return None
         if seeding:
             approval_state = 200
         else:
             if not created_by_project_admin and role_name not in _SELF_ASSIGNABLE_ROLES:
-                log.error(f"Non-seeding create_user cannot create role: {role_name}")
+                log.error("Non-seeding create_user cannot create requested role")
                 return None
             approval_state = 0
         org = get_or_create(db.session, Organization, name=organization)

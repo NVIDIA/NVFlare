@@ -15,6 +15,8 @@
 from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required, verify_jwt_in_request
+from flask_jwt_extended.exceptions import JWTExtendedException
+from jwt import PyJWTError
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
@@ -25,11 +27,11 @@ from .store import Store, check_role
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["POST"])
 def create_one_user():
     req = request.json
-    if request.headers.get("Authorization", "").strip().lower() == "bearer":
-        claims = {}
-    else:
+    try:
         verify_jwt_in_request(optional=True)
         claims = get_jwt()
+    except (JWTExtendedException, PyJWTError):
+        claims = {}
     created_by_project_admin = claims.get("role") == "project_admin" and claims.get("approved")
     result = Store.create_user(req, created_by_project_admin=created_by_project_admin)
     if result is not None:

@@ -104,15 +104,25 @@ class TestAdminRoleAssignment:
 
         assert resp.status_code == 409
 
-    def test_public_registration_accepts_empty_bearer_token(self, client):
+    @pytest.mark.parametrize("token", ["", "undefined", "null"])
+    def test_public_registration_accepts_malformed_bearer_token(self, client, token):
         resp = client.post(
             NS + "/api/v1/users",
-            json={"email": "empty-token@test.com", "password": "p", "name": "x", "role": "member"},
-            headers={"Authorization": "Bearer "},
+            json={"email": f"malformed-token-{token}@test.com", "password": "p", "name": "x", "role": "member"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         assert resp.status_code == 201
         assert resp.json["user"]["role"] == "member"
+
+    def test_malformed_bearer_token_cannot_request_admin_role(self, client):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "malformed-token-admin@test.com", "password": "p", "name": "x", "role": "org_admin"},
+            headers={"Authorization": "Bearer undefined"},
+        )
+
+        assert resp.status_code == 409
 
     @pytest.mark.parametrize("role", ["org_admin", "project_admin", "custom_admin"])
     def test_user_cannot_self_assign_admin_role(self, client, auth_header, role):
@@ -174,6 +184,25 @@ class TestAdminRoleAssignment:
         assert resp.status_code == 200
         assert resp.json["user"]["role"] == "org_admin"
         assert resp.json["user"]["organization"] == "approved-org"
+
+    def test_unapproved_project_admin_cannot_create_admin_role(self, client, auth_header):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "pending-admin@test.com", "password": "p", "name": "x", "role": "project_admin"},
+            headers=auth_header,
+        )
+        assert resp.status_code == 201
+
+        resp = client.post(NS + "/api/v1/login", json={"email": "pending-admin@test.com", "password": "p"})
+        assert resp.status_code == 200
+
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "pending-created@test.com", "password": "p", "name": "x", "role": "org_admin"},
+            headers={"Authorization": f"Bearer {resp.json['access_token']}"},
+        )
+
+        assert resp.status_code == 409
 
 
 class TestApprovalEnforcement:
