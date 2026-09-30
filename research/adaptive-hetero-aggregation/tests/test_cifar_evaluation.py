@@ -22,9 +22,12 @@ import pytest
 import torch
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_DIR.parents[1]
 EVAL_DIR = PROJECT_DIR / "cifar10_evaluation"
-if str(EVAL_DIR) not in sys.path:
-    sys.path.insert(0, str(EVAL_DIR))
+CIFAR_SRC = REPO_ROOT / "examples" / "advanced" / "cifar10" / "pt" / "src"
+for path in (str(CIFAR_SRC), str(EVAL_DIR)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 import eval_split  # noqa: E402
 from evaluate_result import checkpoint_meta, checkpoint_state_dict, find_server_checkpoint  # noqa: E402
