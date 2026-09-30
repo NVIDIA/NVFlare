@@ -127,6 +127,14 @@ same federation.
 The first `start_docker.sh` command creates `nvflare-network` if it does not
 already exist, so no separate `docker network create` command is required.
 
+The PyTorch job image provides a writable `/var/tmp/nvflare/data` cache. If the
+host-side site-2 process cannot write that path, choose a writable cache before
+starting it (this was needed in the tested macOS setup):
+
+```bash
+export NVFL_CIFAR10_ROOT="$(pwd)/workspace/cifar10-site-2"
+```
+
 Start all three parent processes from the `examples/docker` directory:
 
 ```bash
@@ -193,8 +201,11 @@ nvflare job submit \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
-This job downloads CIFAR-10 into a writable `data` directory at each site's
-working directory. It uses a [faster mirror](https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz)
+This job keeps the original CIFAR-10 cache path, `/var/tmp/nvflare/data`, unless
+`NVFL_CIFAR10_ROOT` selects another directory. For Docker clients, set that
+variable in `job_launcher.default_job_env` in `docker.yaml` before preparing
+their kits; exporting it on the host affects the process client only.
+It uses a [faster mirror](https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz)
 of the [CIFAR-10 Python archive](https://zenodo.org/records/10089977);
 torchvision checks the archive against the original MD5 before extraction.
 To use another source, set `NVFL_CIFAR10_URL` in `job_launcher.default_job_env`

@@ -30,7 +30,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
-DATASET_PATH = "./data"
+DATASET_PATH = os.environ.get("NVFL_CIFAR10_ROOT") or "/var/tmp/nvflare/data"
 
 
 class CIFAR10(torchvision.datasets.CIFAR10):

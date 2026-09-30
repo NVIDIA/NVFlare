@@ -14,3 +14,7 @@ RUN pip install -U pip && pip install -e ".[PT]" "torch==2.5.1" "torchvision==0.
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare
+
+# Job containers run with the host UID, which may not exist in this image.
+# Keep the original CIFAR-10 cache path writable for those non-root users.
+RUN mkdir -p /var/tmp/nvflare/data && chmod 1777 /var/tmp/nvflare/data
