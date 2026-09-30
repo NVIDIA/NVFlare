@@ -59,9 +59,10 @@ def _seed_client(base_seed: int, site_name: str):
 def main(args):
     flare.init()
     site_name = flare.get_site_name()
-    _seed_client(args.seed, site_name)
-
     model = ModerateCNN()
+    # ModerateCNN seeds RNGs during construction; restore the requested site seed
+    # before any data-loader or training randomness is consumed.
+    _seed_client(args.seed, site_name)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
     scheduler = None
