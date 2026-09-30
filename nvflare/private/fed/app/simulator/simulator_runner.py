@@ -571,6 +571,7 @@ class SimulatorRunner(FLComponent):
             False,
             None,
         )
+        self.server.engine.set_cell(self.server.job_cell)
         server_app_runner = SimulatorServerAppRunner(self.server)
         snapshot = None
         kv_list = [f"secure_train={self.server.secure_train}"]

@@ -18,10 +18,14 @@ Note: Deep copy protection is now handled at broadcast level in WFCommServer,
 not in TensorDownloadable itself. These tests verify the Downloadable's basic behavior.
 """
 
+import threading
+
 import pytest
 import torch
 from safetensors.torch import load as load_tensors
+from safetensors.torch import save_file
 
+from nvflare.app_opt.pt.lazy_tensor_dict import _LazyRef, safetensors_refs
 from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
 from nvflare.fuel.f3.streaming.download_service import ProduceRC
 
@@ -120,3 +124,62 @@ class TestTensorDownloadableBasic:
         assert downloadable.get_item_size(0) is None
         with pytest.raises(RuntimeError, match="released"):
             downloadable.produce_item(0)
+
+    @pytest.mark.parametrize("max_chunk_size", [1, 1024])
+    def test_lazy_refs_roundtrip_without_prefetch_or_cache(self, tmp_path, max_chunk_size):
+        tensors = {"a": torch.arange(4.0), "b": torch.ones(2)}
+        save_file(tensors, tmp_path / "model.safetensors")
+        downloadable = TensorDownloadable(
+            tensors=safetensors_refs(str(tmp_path / "model.safetensors")), max_chunk_size=max_chunk_size
+        )
+
+        assert downloadable.cache is None
+        assert downloadable.get_item_size(0) == 16
+        rc, items, state = downloadable.produce({}, "receiver")
+
+        assert rc == ProduceRC.OK
+        assert len(items) == (1 if max_chunk_size == 1 else 2)
+        if max_chunk_size == 1:
+            rc, remaining, _ = downloadable.produce(state, "receiver")
+            assert rc == ProduceRC.OK
+            items += remaining
+        restored = {key: value for item in items for key, value in load_tensors(item).items()}
+        assert set(restored) == set(tensors)
+        assert all(torch.equal(restored[key], value) for key, value in tensors.items())
+        assert not downloadable._prefetch_futures
+        downloadable.release()
+
+    def test_lazy_refs_serve_concurrent_receivers_without_serializing_them(self, tmp_path, monkeypatch):
+        barrier = threading.Barrier(2)
+        save_file({"only": torch.ones(1)}, tmp_path / "model.safetensors")
+        original = _LazyRef.materialize
+
+        def materialize(ref):
+            barrier.wait(timeout=2.0)
+            return original(ref)
+
+        monkeypatch.setattr(_LazyRef, "materialize", materialize)
+        downloadable = TensorDownloadable(safetensors_refs(str(tmp_path / "model.safetensors")), max_chunk_size=1)
+        results = []
+        threads = [
+            threading.Thread(target=lambda client=client: results.append(downloadable.produce({}, client)))
+            for client in ("site-1", "site-2")
+        ]
+
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3.0)
+
+        assert all(not thread.is_alive() for thread in threads)
+        assert len(results) == 2
+        assert all(rc == ProduceRC.OK and len(items) == 1 for rc, items, _ in results)
+        downloadable.release()
+
+    def test_lazy_refs_reject_native_serialization(self, tmp_path):
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        save_file({"w": torch.ones(1)}, tmp_path / "model.safetensors")
+        ref = safetensors_refs(str(tmp_path / "model.safetensors"))["w"]
+        with pytest.raises(ValueError, match="tensor streaming"):
+            TensorDecomposer().native_decompose(ref)
