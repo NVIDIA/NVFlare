@@ -104,6 +104,16 @@ class TestAdminRoleAssignment:
 
         assert resp.status_code == 409
 
+    def test_public_registration_accepts_empty_bearer_token(self, client):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "empty-token@test.com", "password": "p", "name": "x", "role": "member"},
+            headers={"Authorization": "Bearer "},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json["user"]["role"] == "member"
+
     @pytest.mark.parametrize("role", ["org_admin", "project_admin", "custom_admin"])
     def test_user_cannot_self_assign_admin_role(self, client, auth_header, role):
         email = f"self-assign-{role}@test.com"
