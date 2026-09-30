@@ -407,9 +407,41 @@ def _method_hashes(values: list[str]) -> dict[str, str]:
     return result
 
 
+def _filter_requested_configuration(
+    rows: list[dict], expected_common_hash: str | None, expected_method_hashes: dict[str, str]
+) -> list[dict]:
+    """Select current-campaign rows while retaining stale JSONL rows for audit history."""
+
+    selected = []
+    for row in rows:
+        method = str(row["method"])
+        if expected_common_hash is not None and row.get("common_config_hash") != expected_common_hash:
+            continue
+        expected_method_hash = expected_method_hashes.get(method)
+        if expected_method_hash is not None and row.get("method_config_hash") != expected_method_hash:
+            continue
+        selected.append(row)
+    if not selected:
+        raise ValueError("results file contains no rows matching the requested campaign configuration")
+    return selected
+
+
+def _planned_keys(methods, alphas, participation_rates, seeds) -> set[tuple]:
+    expected = set()
+    for method in methods:
+        for alpha in alphas:
+            for participation in participation_rates:
+                if method in {"fedopt", "scaffold"} and participation < 1.0:
+                    continue
+                for seed in seeds:
+                    expected.add((method, float(alpha), float(participation), int(seed)))
+    return expected
+
+
 def main(args):
     rows = _load_rows(args.input, protocol_version=args.protocol_version)
     expected_method_hashes = _method_hashes(args.method_config_hash)
+    rows = _filter_requested_configuration(rows, args.common_config_hash, expected_method_hashes)
     if args.require_complete:
         validate_complete_matrix(
             rows,
@@ -423,6 +455,14 @@ def main(args):
     elif args.common_config_hash or expected_method_hashes:
         validate_config_provenance(rows, args.common_config_hash, expected_method_hashes)
     result = summarize(rows, reference_method=args.reference_method)
+    planned = _planned_keys(args.methods, args.alphas, args.participation_rates, args.seeds)
+    completed = {_condition_key(row) for row in rows}
+    result["planned_conditions"] = len(planned)
+    result["completed_conditions"] = len(completed & planned)
+    result["missing_conditions"] = [
+        {"method": method, "alpha": alpha, "participation_rate": participation, "seed": seed}
+        for method, alpha, participation, seed in sorted(planned - completed)
+    ]
     if args.protocol_version is not None:
         result["protocol_version"] = args.protocol_version
     if args.common_config_hash is not None:
