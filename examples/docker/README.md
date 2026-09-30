@@ -13,6 +13,8 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 ### Apple Silicon Mac with Colima
 
 Colima provides the Linux Docker daemon used by the parent and job containers.
+Docker Desktop is not required. The Homebrew `docker` package below provides
+the Docker CLI.
 These steps were tested on Apple Silicon with Colima's `vz` VM and CPU execution.
 For `hello-pt-docker`, use the job copy without a GPU requirement described in Step 5.
 The PyTorch client selects `cuda:0` when `torch.cuda.is_available()` is true,
@@ -84,17 +86,19 @@ The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
 and a `local/study_data.yaml` template. The generated start script creates the
 Docker network if needed.
 
-## Step 3: Add /etc/hosts entries (if needed)
+## Step 3: Configure connections from the host
 
-Skip this step if `server` already resolves via your DNS. Otherwise, add the following
-to `/etc/hosts` so the admin CLI can reach the server container by name:
+On Linux, skip this step if `server` already resolves to your NVFlare server.
+Otherwise, add the following to `/etc/hosts` so the admin CLI can reach the
+server container by name:
 
 ```
 127.0.0.1  server
 ```
 
-On a Mac where `server` already names another host, leave `/etc/hosts` alone.
-Point only the host-side site-2 and admin kits at the published loopback port.
+On macOS, point the host-side site-2 and admin kits at the published loopback port
+using the commands below. This also handles Macs where `server` already names
+another host, and requires no `/etc/hosts` edit.
 Run this after provisioning and before starting site-2 or submitting a job:
 
 ```bash
@@ -135,13 +139,54 @@ starting it (this was needed in the tested macOS setup):
 export NVFL_CIFAR10_ROOT="$(pwd)/workspace/cifar10-site-2"
 ```
 
-Start all three parent processes from the `examples/docker` directory:
+On macOS, download the process client's archive before starting it. The
+commands below use curl's retry/resume support and verify the original
+CIFAR-10 checksum. Continue only after checksum verification succeeds.
+Docker clients download and verify their own data.
+
+```bash
+CIFAR10_CACHE="${NVFL_CIFAR10_ROOT:-/var/tmp/nvflare/data}"
+mkdir -p "$CIFAR10_CACHE"
+curl -fL --retry 5 --retry-all-errors --continue-at - \
+  --output "$CIFAR10_CACHE/cifar-10-python.tar.gz" \
+  "${NVFL_CIFAR10_URL:-https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz}"
+python - <<'PY'
+import hashlib
+import os
+from pathlib import Path
+
+root = Path(os.environ.get("NVFL_CIFAR10_ROOT") or "/var/tmp/nvflare/data")
+archive = root / "cifar-10-python.tar.gz"
+checksum = hashlib.md5(usedforsecurity=False)
+with archive.open("rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        checksum.update(chunk)
+if checksum.hexdigest() != "c58f30108f718f92721af3b95e74349a":
+    raise SystemExit("CIFAR-10 checksum mismatch: remove the archive and retry the curl command.")
+print("CIFAR-10 checksum verified")
+PY
+```
+
+Start the server from the `examples/docker` directory:
 
 ```bash
 (
   cd workspace/docker_test_project/prepared/server
   nohup bash startup/start_docker.sh > server.log 2>&1 < /dev/null &
 )
+```
+
+Wait until the server container is running before starting the clients.
+The following command should print `true`; repeat it if the container is
+still starting:
+
+```bash
+docker inspect --format '{{.State.Running}}' server
+```
+
+Then start both clients:
+
+```bash
 (
   cd workspace/docker_test_project/prepared/site-1
   nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
@@ -160,6 +205,15 @@ tail -f \
   workspace/docker_test_project/prepared/site-1/site-1.log \
   workspace/docker_test_project/prod_00/site-2/site-2.log
 ```
+
+Before submitting a job, check that both `site-1` and `site-2` are connected:
+
+```bash
+nvflare system status \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
+Repeat this command if the clients are still starting.
 
 ## Step 5: Submit a job
 
@@ -226,6 +280,17 @@ Available jobs:
 | `hello-numpy-docker` | Basic numpy federated averaging |
 | `hello-pt-docker` | PyTorch CIFAR-10 training; requests one NVIDIA GPU by default |
 | `pt-ddp-docker` | Multi-GPU DDP training with torchrun |
+
+## Step 6: Stop the example
+
+After the jobs finish, shut down this federation:
+
+```bash
+nvflare system shutdown all --force --timeout 60 \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
+On macOS, you can also run `colima stop` when you are finished using its containers.
 
 ## Notes
 
