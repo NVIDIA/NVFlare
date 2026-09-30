@@ -240,3 +240,8 @@ class BuffDeviceManager(DeviceManager):
 
     def get_active_model_versions(self, fl_ctx) -> Set[int]:
         return set(self.current_selection.values())
+
+    def get_selection(self, fl_ctx) -> Dict[str, int]:
+        # A device only trains again when its selection id changes. The model version cannot be that id:
+        # a device reselected before the model advances would get the same id again and be refused.
+        return {device_id: self.used_devices[device_id]["selection_version"] for device_id in self.current_selection}
