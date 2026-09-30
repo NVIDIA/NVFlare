@@ -34,6 +34,8 @@ _PROJECT_WRITABLE = {
     "cc_mode",
 }
 
+_SELF_ASSIGNABLE_ROLES = {"", "lead", "member"}
+
 
 def check_role(id, claims, requester):
     is_creator = requester == Store._get_email_by_id(id)
@@ -299,8 +301,8 @@ class Store(object):
         if seeding:
             approval_state = 200
         else:
-            if role_name == "project_admin":
-                log.error("Non-seeding create_user cannot create project_admin")
+            if not isinstance(role_name, str) or role_name not in _SELF_ASSIGNABLE_ROLES:
+                log.error(f"Non-seeding create_user cannot create role: {role_name}")
                 return None
             approval_state = 0
         org = get_or_create(db.session, Organization, name=organization)
@@ -381,7 +383,7 @@ class Store(object):
         user = User.query.get(id)
         _ = req.pop("approval_state", None)
         role = req.pop("role", None)
-        if role == "project_admin":
+        if role is not None and (not isinstance(role, str) or role not in _SELF_ASSIGNABLE_ROLES):
             return {"status": "error"}
         if role is not None and user.role.name == "":
             role = get_or_create(db.session, Role, name=role)

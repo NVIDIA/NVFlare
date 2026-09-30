@@ -54,7 +54,7 @@ class TestUsers:
             "email": "user@test.com",
             "password": "pw123456",
             "organization": "test.com",
-            "role": "org_admin",
+            "role": "member",
             "approval_state": 200,
         }
 
