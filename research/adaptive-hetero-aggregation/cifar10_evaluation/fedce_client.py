@@ -53,14 +53,15 @@ def main(args):
     flare.init()
     client_name = flare.get_site_name()
     seed = _site_seed(args.seed, client_name)
+    model = ModerateCNN()
+    # ModerateCNN seeds RNGs during construction; restore the requested site seed
+    # before any data-loader or training randomness is consumed.
     torch.manual_seed(seed)
     np.random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
-
-    model = ModerateCNN().to(DEVICE)
+        torch.backends.cudnn.deterministic = True.to(DEVICE)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
     scheduler = None
