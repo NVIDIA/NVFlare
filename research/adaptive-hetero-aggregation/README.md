@@ -357,7 +357,9 @@ The default campaign is:
 - methods: FedAvg, FedProx, SCAFFOLD, FedCE, adaptive;
 - Dirichlet alpha: `0.1` and `0.5`;
 - seeds: `7, 19, 31, 43, 57`;
-- participation: `1.0` and `0.75` for FedAvg, FedProx, FedCE, and adaptive; SCAFFOLD is full-participation only because the current `ScaffoldRecipe` does not expose matched sampled-client cohorts;
+- participation: `1.0` and `0.75` for FedAvg, FedProx, FedCE, and adaptive; SCAFFOLD is
+  full-participation only because the current `ScaffoldRecipe` does not expose matched sampled-client
+  cohorts;
 - 8 clients, 50 rounds, 4 local epochs;
 - 10% held-out validation from each site's CIFAR-10 training assignment.
 
@@ -375,7 +377,10 @@ python cifar10_evaluation/run_campaign.py --dry_run
 
 The campaign is resumable. A row is skipped only when its protocol version, common configuration
 hash, method configuration hash, method, alpha, participation rate, and seed match the current
-campaign. Incompatible or stale rows remain in the JSONL for auditability but are not treated as completed work or passed into the current summary. Failed runs are retained as explicit missing planned conditions while the campaign continues. `--fresh --dry_run` never deletes existing results. Use `--fresh` without `--dry_run` to start a new result file.
+campaign. Incompatible or stale rows remain in the JSONL for auditability but are not treated as
+completed work or passed into the current summary. Failed runs are retained as explicit missing
+planned conditions while the campaign continues. `--fresh --dry_run` never deletes existing results.
+Use `--fresh` without `--dry_run` to start a new result file.
 
 Add FedOpt as a full-participation reference with:
 
@@ -429,7 +434,10 @@ For adaptive runs, `adaptive_telemetry` must contain valid cumulative aggregatio
 activation rate, mean/max observed blend, and cohort-change count. The main Markdown tables expose
 activation rate next to accuracy so a conservative fallback-heavy run is visible.
 
-Reviewer-facing summaries report completed conditions and list missing planned conditions explicitly rather than requiring failed runs to be manually removed or imputed. SCAFFOLD is compared under full participation only until a matched sampled-client SCAFFOLD workflow is available. Neutral and negative results are retained.
+Reviewer-facing summaries report completed conditions and list missing planned conditions explicitly
+rather than requiring failed runs to be manually removed or imputed. SCAFFOLD is compared under full
+participation only until a matched sampled-client SCAFFOLD workflow is available. Neutral and
+negative results are retained.
 
 Previous checked-in development numbers were removed because they predated the current policy and
 included blend factors that are unreachable with the current `max_blend_factor=0.20` setting.
