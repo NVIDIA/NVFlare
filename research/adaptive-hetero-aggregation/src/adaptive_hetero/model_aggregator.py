@@ -171,6 +171,15 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
             raise ValueError(f"client {client_name!r} provided an invalid distribution descriptor")
         if sum(descriptor) <= 0.0:
             raise ValueError(f"client {client_name!r} distribution descriptor must have positive mass")
+        if self._results:
+            expected_length = len(
+                next(iter(self._results.values())).meta[AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR]
+            )
+            if len(descriptor) != expected_length:
+                raise ValueError(
+                    f"client {client_name!r} distribution descriptor length {len(descriptor)} "
+                    f"does not match accepted length {expected_length}"
+                )
 
         try:
             metric = float(meta[AdaptiveMetaKey.CLIENT_METRIC])
