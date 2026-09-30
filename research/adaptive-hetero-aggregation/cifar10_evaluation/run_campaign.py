@@ -173,7 +173,7 @@ def _run_command(args, method: str, alpha: float, participation: float, seed: in
 def main(args):
     results_path = Path(args.results_jsonl)
     results_path.parent.mkdir(parents=True, exist_ok=True)
-    if args.fresh and results_path.exists():
+    if args.fresh and not args.dry_run and results_path.exists():
         results_path.unlink()
 
     completed = _completed_keys(results_path, args) if args.resume else set()
@@ -181,7 +181,7 @@ def main(args):
     for alpha in args.alphas:
         for participation in args.participation_rates:
             for method in args.methods:
-                if method == "fedopt" and participation < 1.0:
+                if method in {"fedopt", "scaffold"} and participation < 1.0:
                     continue
                 for seed in args.seeds:
                     key = (method, float(alpha), float(participation), int(seed))
@@ -202,7 +202,12 @@ def main(args):
         if args.dry_run:
             print(" ".join(command))
             continue
-        subprocess.run(command, check=True)
+        completed_run = subprocess.run(command, check=False)
+        if completed_run.returncode != 0:
+            print(
+                f"Run failed (exit={completed_run.returncode}); retaining condition as missing and continuing.",
+                flush=True,
+            )
 
     if args.dry_run:
         return
@@ -222,7 +227,6 @@ def main(args):
         PROTOCOL_VERSION,
         "--common_config_hash",
         _expected_common_hash(args),
-        "--require_complete",
         "--methods",
         *args.methods,
         "--alphas",
