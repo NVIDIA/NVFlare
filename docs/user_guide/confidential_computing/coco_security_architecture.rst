@@ -236,6 +236,226 @@ Assets and visibility
      - Image/configuration metadata, sizes, timing and resource usage remain
        observable. Do not put secrets in command lines or environment metadata.
 
+.. _coco_security_attack_surface:
+
+Attack-surface inventory
+========================
+
+The **attack surface** is the set of interfaces and data-processing paths
+through which an actor can influence trusted execution or reach sensitive
+assets. It includes more than listening network ports: boot inputs, agent
+requests, image and evidence parsers, administrative handoffs, local APIs,
+application inputs, and output/storage channels all cross relevant boundaries.
+
+This inventory maps each surface to its possible caller, protected assets,
+enforcement point, and remaining risk. It is an architecture-level inventory,
+not a complete list of kernel interfaces, device operations, parser bugs, or
+currently open listeners. Verify the actual deployment's reachability and
+versions. A stated deployment obligation is not a claim that the scripts have
+implemented or tested every necessary control. The release-scope qualification
+above also applies here.
+
+Authentication, attestation, and default-deny authorization do not eliminate
+the code that parses a request before deciding whether to accept it. Malformed
+input and resource exhaustion remain concerns even when no secret is released.
+For individual attacks and their outcomes, see
+:ref:`Threats, enforcement, and residual risks <coco_security_threats>`.
+
+Host-controlled and guest-local interfaces
+------------------------------------------
+
+.. list-table:: Interfaces reaching the confidential guest
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Surface and possible caller
+     - Assets and enforcement boundary
+     - Residual risk / deployment obligation
+   * - **Pod, runtime, and launch configuration.** CoCo IT controls Kubernetes,
+       CRI requests, runtime selection, boot inputs, InitData delivery, and
+       effective container configuration.
+     - **Assets:** approved guest and workload execution, release keys.
+       Approved measurements, independent expected InitData, and effective
+       guest-policy checks constrain selected inputs; host validation is not
+       the adversarial boundary.
+     - Not every YAML field is bound. Equivalent or unconstrained changes may
+       pass, and the host can prevent execution. Use the field-change tables
+       and demonstrate integrity coverage for external guest rootfs inputs.
+   * - **Host-to-guest agent requests and virtual I/O.** The host/VMM supplies
+       agent requests, virtual-device responses, and shared-I/O inputs to the
+       guest, regardless of Kubernetes admission controls.
+     - **Assets:** guest kernel/services and private CPU/GPU state. The approved
+       guest stack and TEE enforce the boundary; agent rules constrain
+       effective requests and deny interactive exec/stream and policy-replacement
+       paths. Permitted lifecycle operations still exist.
+     - Agent parsers, guest drivers, and allowed request handling remain trusted
+       attack surface. Attesting their identity does not prove absence of
+       vulnerabilities. Review enabled devices/interfaces and shared data;
+       do not claim guest seccomp, universal side-channel protection, or host
+       denial-of-service resistance.
+   * - **Registry responses and image artifacts.** The guest processes
+       manifests, configuration, signatures, and encrypted layers supplied
+       through the registry; publishers and compromised infrastructure can
+       affect available content, while the host controls transport.
+     - **Assets:** image confidentiality and guest execution integrity.
+       Configured TLS trust, guest signature/integrity/decryption checks, and
+       independent KBS authorization are the enforcement points. Anonymous
+       ciphertext pulls do not grant publishing or decryption authority.
+     - Image parsers/unpackers remain trusted code. Another accepted-key,
+       same-repository signed image is subject to the documented unresolved
+       exact-digest authorization limitation. Review image content and parser
+       dependencies; encryption alone neither hides all metadata nor prevents
+       substitution attempts or exhaustion.
+   * - **Guest-local AA/CDH interfaces.** Admitted guest processes deliberately
+       use token/resource services. The reviewed REST configuration enables
+       guest-component APIs, including AA's ``/aa/token``; CDH also has a
+       guest-local socket interface.
+     - **Assets:** raw AA response and its guest private key, EARs, and released
+       resources. CoCoAuthorizer restricts its AA call to guest loopback,
+       disables proxies/redirects, and bounds the response. KBS separately
+       authorizes protected resource requests.
+     - These caller checks are not isolation from a compromised application
+       inside the guest. Review all enabled REST/socket endpoints and their
+       reachability, not only the URL used by CoCoAuthorizer. Do not export
+       them through a Service, host port, proxy, or diagnostic output; do not
+       assume a host-controlled network policy protects them.
+
+Secure services and trusted-side interfaces
+-------------------------------------------
+
+.. list-table:: Interfaces capable of changing trust or releasing resources
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Surface and possible caller
+     - Assets and enforcement boundary
+     - Residual risk / deployment obligation
+   * - **Build/provisioning inputs and handoff import.** Workload owners and
+       platform authorities supply source, dependencies, project configuration,
+       startup kits, evidence, references, and release files; supply-chain
+       producers influence those inputs.
+     - **Assets:** plaintext images, FL credentials, signing/publishing keys,
+       image keys, and approval provenance. Trusted-side review and
+       independently authenticated handoffs establish authority. The release
+       importer checks the handoff and reconstructs policy from a service-owned
+       template instead of accepting arbitrary supplied Rego.
+     - Trusted code execution and build caches remain sensitive. An attacker
+       controlling a trusted build or approval authority can authorize malicious
+       content. Review dependencies and imported files, authenticate expected
+       handoff hashes out of band, and protect retained plaintext/recovery data.
+   * - **KBS attestation and resource HTTPS requests.** Any client that can
+       reach the endpoint can attempt protocol requests; it need not already
+       be an approved confidential workload.
+     - **Assets:** per-release keys and verification policy/material. AS
+       appraisal, session/guest-key binding, and KBS's exact resource-path and
+       workload authorization gate release. Authorized responses are encrypted
+       to the attested guest key, not to an identity asserted by the host.
+     - TLS endpoint authentication is not resource authorization. HTTP,
+       evidence, and policy processing still require security review and
+       operational capacity limits. A successful appraisal grants no store-wide
+       access; a permissive resource policy can defeat release isolation.
+   * - **AS/RVPS service calls and reference ingestion.** KBS forwards evidence
+       for appraisal; trusted administrators install references and policies.
+       Hostile evidence therefore reaches verifier code even when backends are
+       not directly reachable from the cluster.
+     - **Assets:** appraisal integrity, AS signing authority, reference values,
+       and TCB floors. Evidence verification, approved reference provenance,
+       service-owned appraisal policy, and controlled administration form the
+       trusted boundary.
+     - Keep backend interfaces restricted and verify actual listeners/routes;
+       do not infer isolation from component names. Verifier flaws, compromised
+       reference ingestion, or administrator mistakes can approve an
+       unacceptable guest. Verify persisted references and policy after changes.
+   * - **Administrative APIs, publishing, and host management.** Secure-services
+       administrators and authorized registry publishers hold distinct
+       credentials; remote clients may still reach administrative request
+       parsers on the public HTTPS front end.
+     - **Assets:** KBS resources/policies, AS/TLS keys, registry content, and
+       backups. KBS administrative authentication and the configured ``KBS``
+       audience checks protect administrative calls; registry publishing uses
+       separate authorization. OS/container administrators remain trusted.
+     - The TLS proxy forwards KBS routes; administrative routes are not
+       guaranteed a separate private listener. Protect credentials and
+       management access independently of CoCo IT. A valid privileged identity
+       can change trust decisions; attestation cannot veto that administrator.
+   * - **Vendor evidence, endorsement, and collateral inputs.** Verifiers use
+       hardware evidence, vendor-issued certificates/reference material,
+       appraisal responses, and possibly locally cached copies.
+     - **Assets:** platform identity, freshness, and accepted security baseline.
+       Vendor trust roots and verifier checks establish authenticity;
+       independently approved AS/RVPS policy decides acceptability. The
+       CPU/GPU-specific approval sections describe the supported paths.
+     - Vendor services, verifier dependencies, cache contents, freshness, and
+       availability remain part of the trust/operations review. Valid signatures
+       alone do not approve a TCB. Do not relax checks or accept stale material
+       solely to restore connectivity.
+
+Federation, application, and output interfaces
+----------------------------------------------
+
+.. list-table:: Interfaces still relevant after successful attestation
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Surface and possible caller
+     - Assets and enforcement boundary
+     - Residual risk / deployment obligation
+   * - **FL transport and peer-proof verification.** Network actors can disrupt
+       or redirect connections; authenticated peers supply EARs and signed
+       proofs that the receiving participant must parse and verify.
+     - **Assets:** participant identity and federation admission. End-to-end FL
+       mTLS, pinned AS trust, guest-key proof verification, expected
+       site/audience, and time/replay checks enforce separate transport and
+       attestation boundaries. Use site-aware verification, not merely
+       compatibility ``verify(token)``.
+     - Authentication does not make a peer's inputs harmless. Cached EARs,
+       process-local replay state, clocks, verifier restarts, and replicas limit
+       freshness/revocation guarantees. Host CNI, source IP, and a successful
+       local installer are not independent identity authorities.
+   * - **Application/job inputs and FL administration.** Admitted participants,
+       data sources, and authorized FL administrators supply application
+       requests, datasets, model updates, and permitted job configuration.
+     - **Assets:** training data, model/code confidentiality, computation, and
+       guest-accessible credentials. Application authorization, reviewed code
+       and dependencies, and CCManager's job-code restrictions complement
+       attestation. Administrator connections are not attested as worker
+       participants by this CCManager path.
+     - Allowed component classes are trusted code, not a sandbox. A vulnerable
+       or malicious admitted application can expose its keys/data, offer an
+       interactive endpoint, or misuse valid proofs. Review actual listeners,
+       input handling, administrator privileges, and permitted outputs; TEE
+       identity does not establish application benevolence or training privacy.
+   * - **Logs, results, writable storage, and checkpoints.** Approved code emits
+       outputs; recipients and any host-backed sink may observe them. CoCo IT
+       controls host storage, traffic metadata, scheduling, and restart/replay
+       of public launch inputs.
+     - **Assets:** guest files, secrets, derived data, and persistent state.
+       Guest-private state, denied agent streams, silent generated startup,
+       and authenticated application channels protect specific paths.
+       Persistent storage needs its own confidentiality/integrity and key
+       management design.
+     - Console redirection does not stop alternate output channels or disable
+       Kubernetes logs. Image encryption does not encrypt arbitrary writable
+       volumes or prevent rollback, duplicate execution, or inference from
+       released results. Explicitly approve each output/storage destination.
+
+Using the inventory during deployment review
+--------------------------------------------
+
+For each row, record the actual endpoint or local interface, listener/bind
+scope, reachable callers, required credentials, owning trusted authority,
+software/policy revision, and positive and negative test evidence. Include
+indirect reachability: a private AS can still parse evidence forwarded by KBS,
+and a guest-local API can become exposed by an application proxy. Record the
+result of each check rather than treating this table as a completed audit.
+
+Remove unnecessary listeners, debug services, and API forwarding. Review any
+new device, mount, sidecar, application service, dependency, or administrative
+route as a change to the attack surface. Where a measured launch input or
+workload authorization changes, obtain new approved references/releases as
+required. These are review obligations, not additional protections introduced
+by this documentation.
+
 .. _coco_security_platform_approval:
 
 Platform evidence is verified, then approved
@@ -998,6 +1218,9 @@ Operational security and lifecycle
 Before deploying
 ----------------
 
+* Complete the :ref:`attack-surface inventory <coco_security_attack_surface>`
+  for the actual deployment, including local APIs, internal backends, and
+  administrative routes as well as public endpoints.
 * Establish who trusts each authority and who can change its configuration.
   Separate mutually distrustful administrative domains; the example is not a
   multi-tenant administrative isolation proof.
