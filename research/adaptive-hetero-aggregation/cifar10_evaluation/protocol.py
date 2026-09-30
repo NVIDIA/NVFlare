@@ -17,7 +17,7 @@
 import hashlib
 import json
 
-PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v3"
+PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v4"
 
 
 def canonical_config_hash(config: dict) -> str:
