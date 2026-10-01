@@ -175,15 +175,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         if isinstance(element, dict):
             if force_current or self._is_authorizable_component_config(element, node):
                 self._authorize_component_config(element, config_ctx, node)
-                args = element.get("args")
-                if isinstance(args, (dict, list)):
-                    self._authorize_component_config_tree(
-                        args,
-                        config_ctx,
-                        self._make_child_node(node, args, "args"),
-                    )
-                return
 
+            # Authorization must cover sibling configs even when the containing
+            # dictionary is itself recognized as a class configuration.
             for key, value in element.items():
                 if isinstance(value, (dict, list)):
                     self._authorize_component_config_tree(

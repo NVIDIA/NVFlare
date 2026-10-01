@@ -13,6 +13,7 @@
 # limitations under the License.
 """Common contracts for launching disposable task execution units."""
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -51,9 +52,12 @@ class TaskResourceRequest:
 
     def __post_init__(self):
         if self.cpu_cores is not None and (
-            isinstance(self.cpu_cores, bool) or not isinstance(self.cpu_cores, (int, float)) or self.cpu_cores <= 0
+            isinstance(self.cpu_cores, bool)
+            or not isinstance(self.cpu_cores, (int, float))
+            or not math.isfinite(self.cpu_cores)
+            or self.cpu_cores <= 0
         ):
-            raise ValueError("cpu_cores must be a positive number or None")
+            raise ValueError("cpu_cores must be a finite positive number or None")
         if self.memory_mb is not None and (
             isinstance(self.memory_mb, bool) or not isinstance(self.memory_mb, int) or self.memory_mb <= 0
         ):
@@ -89,6 +93,8 @@ class TaskLaunchRequest:
             if not isinstance(value, str) or not value.strip() or "\x00" in value:
                 raise ValueError(f"{name} must be a non-empty string without NUL")
 
+        if isinstance(self.argv, (str, bytes, bytearray)):
+            raise ValueError("argv must be a non-empty sequence of strings, not a string or bytes")
         argv = tuple(self.argv)
         if not argv or any(not isinstance(arg, str) or "\x00" in arg for arg in argv):
             raise ValueError("argv must be a non-empty sequence of strings without NUL")

@@ -24,10 +24,16 @@ import pytest
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
+from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
@@ -95,6 +101,13 @@ class RaiseExecutor(ProbeExecutor):
 @pytest.fixture(autouse=True)
 def _initialize_fobs():
     nvflare_fobs_initialize()
+    # Other suites reset the registry without resetting module-level guards.
+    # Register this fixture's exact dependencies on every invocation.
+    fobs.register(DictDecomposer(Shareable))
+    fobs.register(DictDecomposer(ModelLearnable))
+    fobs.register(DXODecomposer)
+    fobs.register(FLModelDecomposer)
+    fobs.register(NumpyArrayDecomposer)
 
 
 def _workspace(tmp_path):

@@ -21,6 +21,8 @@ from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.app_common.np.np_trainer import NPTrainer
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.job_config.task_execution import TASK_EXECUTOR_PATH, prepare_task_execution
 from nvflare.recipe.spec import Recipe
 
@@ -171,6 +173,37 @@ def test_resident_mode_preserves_client_gpu_resource_reservation(tmp_path):
 
     meta = json.loads((tmp_path / job.name / "meta.json").read_text())
     assert meta["resource_spec"]["site-1"]["num_of_gpus"] == 1
+
+
+@pytest.mark.parametrize("wildcard", [False, True])
+@pytest.mark.parametrize("resource_kind", ["resource_spec", "launcher_spec"])
+def test_mixed_task_and_resident_apps_preserve_resident_gpu_resources(tmp_path, wildcard, resource_kind):
+    task_app, resident_app = ClientAppConfig(), ClientAppConfig()
+    task_app.execution_lifetime = "task"
+    task_app.add_executor(["train"], NPTrainer())
+    resident_app.add_executor(["train"], NPTrainer())
+    settings = {"site-gpu": {"num_of_gpus": 1}}
+    job = FedJobConfig("mixed-apps", min_clients=1, meta_props={resource_kind: settings})
+    job.add_fed_app("cpu", FedAppConfig(client_app=task_app))
+    job.add_fed_app("gpu", FedAppConfig(client_app=resident_app))
+    job.set_site_app("@ALL" if wildcard else "site-cpu", "cpu")
+    job.set_site_app("site-gpu", "gpu")
+    job.generate_job_config(str(tmp_path))
+    assert json.loads((tmp_path / "mixed-apps/meta.json").read_text())[resource_kind] == settings
+
+
+def test_task_resource_validation_uses_effective_defaults_and_overrides():
+    task_app = ClientAppConfig()
+    task_app.execution_lifetime = "task"
+    job = FedJobConfig("task-defaults", min_clients=1)
+    job.add_fed_app("cpu", FedAppConfig(client_app=task_app))
+    job.set_site_app("site-cpu", "cpu")
+    job.add_resource_spec("@default", {"num_of_gpus": 1})
+    job.add_resource_spec("site-cpu", {"num_of_gpus": 0})
+    job._prepare_meta()
+    job.resource_specs["site-cpu"]["num_of_gpus"] = 1
+    with pytest.raises(ValueError, match="CPU Process workers only"):
+        job._prepare_meta()
 
 
 def test_client_api_task_lifetime_preserves_script_and_arguments(tmp_path):

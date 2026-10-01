@@ -26,10 +26,16 @@ from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
+from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
@@ -67,6 +73,11 @@ class SlowExecutor(Executor):
 @pytest.fixture(autouse=True)
 def _initialize_fobs():
     nvflare_fobs_initialize()
+    fobs.register(DictDecomposer(Shareable))
+    fobs.register(DictDecomposer(ModelLearnable))
+    fobs.register(DXODecomposer)
+    fobs.register(FLModelDecomposer)
+    fobs.register(NumpyArrayDecomposer)
 
 
 def _workspace(tmp_path):
@@ -170,6 +181,7 @@ while flare.is_running():
     analytics_files = list((tmp_path / "workspace").rglob("analytics.fobs"))
     assert len(analytics_files) == 1
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
     executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
     assert not analytics_files[0].exists()
 
@@ -198,6 +210,7 @@ def test_supervisor_runs_fresh_worker_settles_and_releases_payloads_after_public
     assert os.path.isfile(os.path.join(attempt_dir, "result.fobs"))
 
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
     executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
     publication = _diagnostics(workspace)[-1]
@@ -211,7 +224,8 @@ def test_supervisor_runs_fresh_worker_settles_and_releases_payloads_after_public
     assert not os.path.exists(os.path.join(attempt_dir, "input.fobs"))
 
 
-def test_supervisor_retains_payloads_when_publication_is_not_accepted(tmp_path):
+@pytest.mark.parametrize("sent, accepted", [(False, None), (True, False), (True, None)])
+def test_supervisor_retains_payloads_when_publication_is_not_accepted(tmp_path, sent, accepted):
     workspace = _workspace(tmp_path)
     fl_ctx = _context(workspace)
     executor = _executor()
@@ -220,12 +234,63 @@ def test_supervisor_retains_payloads_when_publication_is_not_accepted(tmp_path):
     attempt_id = _diagnostics(workspace)[-1]["attempt_id"]
     attempt_dir = os.path.join(workspace.get_run_dir("job-1"), ".nvflare", "task-execution", "attempts", attempt_id)
 
-    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, False, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, sent, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
     executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
     assert _diagnostics(workspace)[-1]["publication_outcome"] == "not_accepted"
     assert os.path.isfile(os.path.join(attempt_dir, "result.fobs"))
     assert os.path.isfile(os.path.join(attempt_dir, "input.fobs"))
+
+
+def test_site_approved_secret_reaches_script_without_credentials_or_persisting_values(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    script = """
+import argparse, os
+import nvflare.client as flare
+from nvflare.apis.job_launcher_spec import JobProcessEnv
+parser = argparse.ArgumentParser()
+parser.add_argument('--key')
+args = parser.parse_args()
+assert args.key == 'site-only test value'
+assert 'UNAPPROVED_SECRET' not in os.environ
+assert not set(JobProcessEnv.ALL).intersection(os.environ)
+flare.init()
+flare.receive()
+flare.send(flare.FLModel(metrics={'key_received': True}))
+"""
+    script_path = os.path.join(workspace.get_app_custom_dir("job-1"), "secret_script.py")
+    with open(script_path, "w") as stream:
+        stream.write(script)
+    monkeypatch.setenv("TEST_TASK_KEY", "site-only test value")
+    monkeypatch.setenv("UNAPPROVED_SECRET", "excluded")
+    for name in JobProcessEnv.ALL:
+        monkeypatch.setenv(name, "excluded-credential")
+    executor = TaskWorkerExecutor(
+        executor={
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+                "execution_mode": "in_process",
+                "task_script_path": "secret_script.py",
+                "task_script_args": ["--key", "${secret:TEST_TASK_KEY}"],
+            },
+        },
+        components=[],
+    )
+    executor.set_task_launcher(ProcessTaskLauncher(), environment_variables=["TEST_TASK_KEY"])
+    result = executor.execute(
+        "train", FLModelUtils.to_shareable(FLModel(metrics={"seed": 1})), _context(workspace), Signal()
+    )
+    assert FLModelUtils.from_shareable(result).metrics == {"key_received": True}
+    for path in (tmp_path / "workspace").rglob("*.json*"):
+        if path.name == "meta.json" or path.name.startswith("diagnostics") or path.name == "bootstrap.json":
+            assert "site-only test value" not in path.read_text()
+
+
+@pytest.mark.parametrize("name", [*JobProcessEnv.ALL, "CUDA_VISIBLE_DEVICES", "NVFLARE_CLIENT_API_BOOTSTRAP"])
+def test_site_environment_policy_cannot_forward_protected_variables(name):
+    with pytest.raises(ValueError, match="protected variable"):
+        _executor().set_task_launcher(ProcessTaskLauncher(), environment_variables=[name])
 
 
 def test_supervisor_rejects_clean_exit_without_committed_result(tmp_path):

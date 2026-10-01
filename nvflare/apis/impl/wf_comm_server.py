@@ -445,6 +445,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         if not isinstance(result, Shareable):
             raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
 
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
@@ -458,6 +459,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 and completed_client_task.task_name == task_name
             ):
                 self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
                 return
 
             # cannot find a standing task for the submission
@@ -492,6 +494,7 @@ class WFCommServer(FLComponent, WFCommSpec):
 
             if client_task.result_received_time is not None:
                 self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
                 return
 
             # do client task CB processing outside the lock
@@ -523,6 +526,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self.log_debug(fl_ctx, "no result_received_cb")
 
             client_task.result_received_time = time.time()
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
 
     def _schedule_task(
         self,

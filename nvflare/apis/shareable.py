@@ -27,6 +27,7 @@ class ReservedHeaderKey:
     REPLY_IS_LATE = "__reply_is_late__"
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
+    TASK_RESULT_ACCEPTED = "__task_result_accepted__"
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"

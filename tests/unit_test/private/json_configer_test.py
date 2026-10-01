@@ -188,6 +188,37 @@ def _make_authorized_configurator(config_file):
     return configurator
 
 
+@pytest.mark.parametrize("worker", [False, True])
+def test_class_like_args_dictionary_does_not_hide_sibling_class_before_import(tmp_path, monkeypatch, worker):
+    marker = tmp_path / "imported.txt"
+    (tmp_path / "allowed_outer.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('imported')\n"
+        "class Outer:\n"
+        "    def __init__(self, **kwargs): pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    config = {
+        "path": "allowed_outer.Outer",
+        "args": {"path": "allowed_outer.Outer", "helper": {"path": "subprocess.Popen", "args": {}}},
+    }
+    _set_class_allow_list(["allowed_outer.Outer"])
+    if worker:
+        builder = WorkerComponentBuilder(fl_ctx=FLContext())
+        with pytest.raises(ComponentNotAuthorized, match="subprocess.Popen.*allow_list"):
+            builder.build_component(config)
+    else:
+        config_file = tmp_path / "config.json"
+        _write_component_config(config_file, config)
+        configurator = _NestedComponentConfigurator(str(config_file))
+        configurator.set_component_build_authorizer(
+            _authorize_with_component_path_authorizer, authorizer=ComponentPathAuthorizer()
+        )
+        with pytest.raises(ComponentNotAuthorized, match="subprocess.Popen.*allow_list"):
+            configurator.configure()
+    assert not marker.exists()
+
+
 def test_configure_expands_system_vars_but_preserves_secret_refs_for_runtime_consumers(tmp_path):
     secret_file = tmp_path / "mounted-api-key"
     secret_file.write_text("file-secret-value")

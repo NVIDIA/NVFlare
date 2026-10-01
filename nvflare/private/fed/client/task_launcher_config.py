@@ -30,6 +30,13 @@ TASK_LAUNCHER_ARGS = "args"
 DEFAULT_TASK_LAUNCHER_PATH = "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher"
 
 
+def _site_task_launcher_config():
+    resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
+    if resources is not None and not isinstance(resources, dict):
+        raise TypeError("the site resources configuration must be a dict")
+    return (resources or {}).get(TASK_LAUNCHER_CONFIG, {})
+
+
 def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
     """Build the launcher selected by trusted site/runtime configuration.
 
@@ -38,16 +45,14 @@ def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
     backend, which keeps simulator and basic local deployments working.
     """
     if config is None:
-        resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
-        if resources is not None and not isinstance(resources, dict):
-            raise TypeError("the site resources configuration must be a dict")
-        config = (resources or {}).get(TASK_LAUNCHER_CONFIG, {})
+        config = _site_task_launcher_config()
 
     if not isinstance(config, dict):
         raise TypeError(f"{TASK_LAUNCHER_CONFIG} must be a dict but got {type(config)}")
-    unknown = set(config).difference({TASK_LAUNCHER_PATH, TASK_LAUNCHER_ARGS})
+    unknown = set(config).difference({TASK_LAUNCHER_PATH, TASK_LAUNCHER_ARGS, "environment_variables"})
     if unknown:
         raise ValueError(f"{TASK_LAUNCHER_CONFIG} contains unsupported settings: {sorted(unknown)}")
+    TaskWorkerExecutor.validate_environment_variables(config.get("environment_variables", []))
 
     class_path = config.get(TASK_LAUNCHER_PATH, DEFAULT_TASK_LAUNCHER_PATH)
     if not isinstance(class_path, str) or not class_path.strip():
@@ -87,7 +92,9 @@ def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[
             "CP, CJ, and task workers must use the same launch mode"
         )
     for supervisor in supervisors:
-        supervisor.set_task_launcher(launcher)
+        supervisor.set_task_launcher(
+            launcher, environment_variables=_site_task_launcher_config().get("environment_variables", [])
+        )
 
     handlers = getattr(runner_config, "handlers", None)
     if not isinstance(handlers, list):

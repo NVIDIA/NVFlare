@@ -488,6 +488,9 @@ class Communicator:
         self.pending_task = None
 
         start_time = time.time()
+        # Transport success alone is not proof the server admitted this result.
+        # Clear the previous attempt's acknowledgement, including on early exit.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, None, private=True, sticky=False)
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_peer_context(shared_fl_ctx)
 
@@ -530,6 +533,10 @@ class Communicator:
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        if return_code == ReturnCode.OK and isinstance(result.payload, Shareable):
+            accepted = result.payload.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED)
+            if isinstance(accepted, bool):
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
         size = task_message.get_header(MessageHeaderKey.PAYLOAD_LEN)
         self.logger.info(
             f"SubmitUpdate to: {parent_fqcn}. size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"

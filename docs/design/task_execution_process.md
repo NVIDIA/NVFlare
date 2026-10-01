@@ -56,7 +56,8 @@ the site's `resources.json` configures it:
       "stop_grace_period": 2.0,
       "descendant_settle_timeout": 0.25,
       "poll_interval": 0.05
-    }
+    },
+    "environment_variables": ["SITE_DATA_API_KEY"]
   }
 }
 ```
@@ -67,6 +68,13 @@ The CJ validates that this mode matches the actual selected JobLauncher before
 injecting the launcher into its framework supervisors. The initial supported
 deployment is Process Client Parent (CP), Process CJ and Process task worker;
 mixed-mode chains are rejected. The simulator uses its own Process startup path.
+
+`environment_variables` is an optional site-owned allow-list of environment
+variable names to forward from the CJ to workers. It supports script arguments
+such as `${secret:SITE_DATA_API_KEY}` without placing secret values in submitted
+jobs, bootstrap files or diagnostics. Jobs cannot expand this policy. Federation
+bootstrap credentials, Client API bootstrap paths and GPU visibility variables
+cannot be forwarded through it; unapproved variables remain excluded.
 
 TaskLauncher/TaskHandle contracts are public extension points in `nvflare.apis`.
 The Process backend lives in `nvflare.app_common.task_launcher`. The supervisor
@@ -84,15 +92,20 @@ finish. A failure after `send()` therefore cannot publish a successful result.
 The script's `result_wait_timeout` becomes the worker timeout.
 
 The Process launcher owns a POSIX process group, observes descendants, and
-escalates cancellation from SIGTERM to SIGKILL. The CJ requires confirmed
+escalates cancellation from SIGTERM to SIGKILL. Zombie-only groups are settled
+because their members cannot execute or hold compute resources; a live or
+uninspectable member still prevents settlement. The CJ requires confirmed
 settlement before reading completion, forwarding analytics or returning a result
 to ClientRunner. A worker must not detach descendants into another POSIX session;
 process-group containment is not a hostile-code sandbox.
 
-Acknowledged publication releases the attempt's bulky input/result/bootstrap
+An explicit server acknowledgement of workflow admission (or a previously
+received matching client task) releases the attempt's bulky input/result/bootstrap
 payloads. Completion metadata and lifecycle diagnostics remain at
 `<run_dir>/.nvflare/task-execution/diagnostics.jsonl`. Failed or unaccepted
-attempts retain payloads for an explicit later retention decision.
+attempts retain payloads for an explicit later retention decision. Transport OK
+without an admission acknowledgement, including replies from older servers,
+does not authorize cleanup.
 
 This launcher does not reserve CPU, memory or GPU resources and rejects explicit
 resource requests it cannot honor. CPU task execution must not inherit a job-long

@@ -22,6 +22,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
@@ -111,6 +112,7 @@ class TaskWorkerExecutor(Executor):
         self.worker_timeout = None if worker_timeout is None else float(worker_timeout)
         self.poll_interval = float(poll_interval)
         self._launcher = None
+        self._environment_variables = ()
         self._execution_lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._diagnostic_lock = threading.Lock()
@@ -118,7 +120,19 @@ class TaskWorkerExecutor(Executor):
         self._stopping = False
         self._pending_publication = {}
 
-    def set_task_launcher(self, launcher: TaskLauncherSpec):
+    @staticmethod
+    def validate_environment_variables(names):
+        if not isinstance(names, (list, tuple)):
+            raise ValueError("task_launcher.environment_variables must be a list of environment variable names")
+        forbidden = set(JobProcessEnv.ALL) | _GPU_ENVIRONMENT_NAMES | {"NVFLARE_CLIENT_API_BOOTSTRAP"}
+        for name in names:
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                raise ValueError("task_launcher.environment_variables contains an invalid variable name")
+            if name in forbidden:
+                raise ValueError(f"task_launcher.environment_variables cannot forward protected variable {name!r}")
+        return tuple(dict.fromkeys(names))
+
+    def set_task_launcher(self, launcher: TaskLauncherSpec, environment_variables=()):
         """Inject the launcher selected by the trusted site runtime.
 
         Launcher construction and backend selection deliberately stay outside
@@ -128,10 +142,12 @@ class TaskWorkerExecutor(Executor):
         """
         if not isinstance(launcher, TaskLauncherSpec):
             raise TypeError(f"launcher must be a TaskLauncherSpec but got {type(launcher)}")
+        names = self.validate_environment_variables(environment_variables)
         with self._state_lock:
-            if self._launcher is not None and self._launcher is not launcher:
+            if self._launcher is not None and (self._launcher is not launcher or self._environment_variables != names):
                 raise RuntimeError("task launcher has already been configured")
             self._launcher = launcher
+            self._environment_variables = names
 
     def _get_task_launcher(self) -> TaskLauncherSpec:
         with self._state_lock:
@@ -165,16 +181,15 @@ class TaskWorkerExecutor(Executor):
                 raise
 
     @staticmethod
-    def _worker_environment():
+    def _worker_environment(environment_variables=()):
         # TaskLauncherSpec treats this as the complete child environment.
         # This first CPU-only slice deliberately masks inherited GPU visibility
         # and drops federation bootstrap credentials.
+        allowed = _PASSTHROUGH_ENVIRONMENT_NAMES | set(environment_variables)
         environment = {
             name: value
             for name, value in os.environ.items()
-            if name in _PASSTHROUGH_ENVIRONMENT_NAMES
-            and name not in _GPU_ENVIRONMENT_NAMES
-            and name not in JobProcessEnv.ALL
+            if name in allowed and name not in _GPU_ENVIRONMENT_NAMES and name not in JobProcessEnv.ALL
         }
         environment.update(
             {
@@ -347,7 +362,7 @@ class TaskWorkerExecutor(Executor):
             task_id=task_id,
             attempt_id=identity.attempt_id,
             argv=(sys.executable, "-m", WORKER_MODULE, "--bootstrap", bootstrap_path),
-            environment=self._worker_environment(),
+            environment=self._worker_environment(self._environment_variables),
             cwd=self._workspace(fl_ctx).get_run_dir(job_id),
             resources=TaskResourceRequest(),
         )
@@ -449,7 +464,10 @@ class TaskWorkerExecutor(Executor):
         if pending is None:
             return
         identity, store, runtime_root, diagnostic = pending
-        succeeded = fl_ctx.get_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS) is True
+        succeeded = (
+            fl_ctx.get_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS) is True
+            and fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        )
         diagnostic["publication_timestamp"] = time.time()
         diagnostic["publication_outcome"] = "accepted" if succeeded else "not_accepted"
         try:

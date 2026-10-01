@@ -148,3 +148,22 @@ def test_runtime_requires_supported_task_launcher_mode(monkeypatch):
 
     with pytest.raises(ValueError, match="configured TaskLauncher mode must be one of"):
         configure_task_launchers(runner_config, job_launcher_mode=LauncherMode.PROCESS.value)
+
+
+def test_only_site_config_injects_worker_environment_names():
+    ConfigService.add_section(
+        SystemConfigs.RESOURCES_CONF, {"task_launcher": {"environment_variables": ["SITE_DATA_KEY"]}}
+    )
+    supervisor = _supervisor()
+    configure_task_launchers(_runner_config(supervisor), job_launcher_mode=LauncherMode.PROCESS.value)
+    assert supervisor._environment_variables == ("SITE_DATA_KEY",)
+
+
+@pytest.mark.parametrize("names", ["KEY", ["invalid=name"], [7], ["NVFLARE_JOB_AUTH_TOKEN"]])
+def test_invalid_site_environment_policy_is_rejected_before_launcher_import(names, monkeypatch):
+    monkeypatch.setattr(
+        "nvflare.private.fed.client.task_launcher_config.load_class",
+        lambda _path: pytest.fail("invalid policy must fail before import"),
+    )
+    with pytest.raises(ValueError, match="environment_variables"):
+        build_task_launcher({"environment_variables": names})

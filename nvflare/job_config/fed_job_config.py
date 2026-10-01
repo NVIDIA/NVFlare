@@ -13,6 +13,7 @@
 # limitations under the License.
 import ast
 import builtins
+import copy
 import inspect
 import json
 import os
@@ -25,6 +26,7 @@ from enum import Enum
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -149,21 +151,27 @@ class FedJobConfig:
 
     def _validate_task_execution_resources(self):
         """Keep the first Process slice from inheriting a job-long GPU reservation."""
-        task_mode = any(
-            fed_app.client_app and fed_app.client_app.execution_lifetime == "task" for fed_app in self.fed_apps.values()
-        )
-        if not task_mode:
-            return
-
         meta_props = self.meta_props if isinstance(self.meta_props, dict) else {}
         resource_specs = meta_props.get("resource_spec", self.resource_specs)
         launcher_specs = meta_props.get("launcher_spec", {})
-        for setting_name, settings in (("resource_spec", resource_specs), ("launcher_spec", launcher_specs)):
+        for setting_name, settings, default_key in (
+            ("resource_spec", resource_specs, "@default"),
+            ("launcher_spec", launcher_specs, "default"),
+        ):
             if not isinstance(settings, dict):
                 continue
-            for site_name, site_settings in settings.items():
-                if site_name == "server":
+            # Include explicit resource sites and the wildcard deployment, but
+            # respect resident per-site apps overriding that wildcard.
+            for site_name in set(self.deploy_map) | (set(settings) - {default_key}):
+                app_name = self.deploy_map.get(site_name, self.deploy_map.get(ALL_SITES))
+                app = self.fed_apps.get(app_name)
+                if site_name == "server" or not app or not app.client_app:
                     continue
+                if app.client_app.execution_lifetime != "task":
+                    continue
+                site_settings = self._merge_resource_settings(
+                    settings.get(default_key, {}), settings.get(site_name, {})
+                )
                 gpu_path = self._find_nonempty_gpu_setting(site_settings)
                 if gpu_path:
                     raise ValueError(
@@ -171,6 +179,17 @@ class FedJobConfig:
                         f"client {setting_name} for {site_name!r} requests GPU resources at {gpu_path!r}. "
                         "Keep this job resident until task-scoped GPU admission is configured."
                     )
+
+    @classmethod
+    def _merge_resource_settings(cls, default, override):
+        result = copy.deepcopy(default) if isinstance(default, dict) else {}
+        if isinstance(override, dict):
+            for key, value in override.items():
+                if isinstance(result.get(key), dict) and isinstance(value, dict):
+                    result[key] = cls._merge_resource_settings(result[key], value)
+                else:
+                    result[key] = copy.deepcopy(value)
+        return result
 
     @classmethod
     def _find_nonempty_gpu_setting(cls, value, path=""):

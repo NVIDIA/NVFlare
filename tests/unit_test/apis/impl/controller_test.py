@@ -35,6 +35,7 @@ import nvflare.apis.impl.seq_relay_manager as _seq_relay_manager_mod
 import nvflare.apis.impl.wf_comm_server as _wf_comm_server_mod
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
@@ -881,6 +882,7 @@ class TestCallback(TestController):
             client=client1, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
         )
         assert task.last_client_task_map["__test_client0"].result == result
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
 
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client2, fl_ctx)
         assert task_name_out == ""
@@ -1153,6 +1155,7 @@ class TestBasic(TestController):
         client_task = task.last_client_task_map[assigned_client.name]
         assert client_task.result is None
         assert client_task.result_received_time is None
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
 
         result = Shareable()
         result["result"] = "result"
@@ -1164,6 +1167,7 @@ class TestBasic(TestController):
             result=result,
         )
         assert client_task.result == result
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 
@@ -1218,6 +1222,7 @@ class TestBasic(TestController):
         client_task = task.last_client_task_map[client.name]
         assert result_count == 1
         assert client_task.result == result
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 

@@ -27,6 +27,8 @@ import threading
 import time
 from typing import Optional
 
+import psutil
+
 from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
@@ -87,12 +89,31 @@ class ProcessTaskHandle(TaskHandleSpec):
     def _group_exists(self) -> bool:
         try:
             os.killpg(self._process_group_id, 0)
-            return True
         except ProcessLookupError:
             return False
         except PermissionError:
             # Lack of probe permission is not evidence that resources settled.
             return True
+
+        # killpg also sees unreaped zombies. They cannot execute or hold compute
+        # resources and cannot be removed with signals. Ignore a group only
+        # when all observed members are dead; uncertain observations fail closed.
+        dead_member_seen = False
+        try:
+            for process in psutil.process_iter():
+                try:
+                    if os.getpgid(process.pid) != self._process_group_id:
+                        continue
+                    if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                        return True
+                    dead_member_seen = True
+                except (ProcessLookupError, psutil.NoSuchProcess):
+                    continue
+                except (PermissionError, psutil.AccessDenied):
+                    return True
+        except (PermissionError, psutil.AccessDenied):
+            return True
+        return not dead_member_seen
 
     def _signal_group(self, sig: int) -> None:
         try:
@@ -104,7 +125,7 @@ class ProcessTaskHandle(TaskHandleSpec):
 
     def _status_unlocked(self) -> TaskExecutionStatus:
         return_code = self._adapter.poll()
-        group_exists = self._group_exists()
+        group_exists = return_code is None or self._group_exists()
         if return_code is None:
             phase = TaskExecutionPhase.RUNNING
             exit_code = None

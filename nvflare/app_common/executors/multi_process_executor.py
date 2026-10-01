@@ -113,11 +113,10 @@ class WorkerComponentBuilder(ComponentBuilder):
         if isinstance(element, dict):
             if force_current or self._is_authorizable_component_config(element, node):
                 self._authorize_component_config(element, node)
-                args = element.get("args")
-                if isinstance(args, (dict, list)):
-                    self._authorize_component_config_tree(args, self._make_child_node(node, args, "args"))
-                return
 
+            # An args dictionary can itself look like a class config while
+            # containing other class-valued arguments. Authorize every branch
+            # before construction, not only a recognized config's args key.
             for key, value in element.items():
                 if isinstance(value, (dict, list)):
                     self._authorize_component_config_tree(value, self._make_child_node(node, value, key))

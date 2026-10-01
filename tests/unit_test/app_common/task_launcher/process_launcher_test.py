@@ -15,11 +15,13 @@
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
 from unittest.mock import Mock
 
+import psutil
 import pytest
 
 from nvflare.apis.task_launcher_spec import (
@@ -54,12 +56,13 @@ def _wait_for_file(path, timeout=5.0):
         time.sleep(0.01)
 
 
-def _assert_pid_gone(pid):
+def _assert_pid_not_running(pid):
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+        if psutil.Process(pid).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+            return
+    except psutil.NoSuchProcess:
         return
-    pytest.fail(f"process {pid} survived confirmed process-group settlement")
+    pytest.fail(f"process {pid} is still running after confirmed process-group settlement")
 
 
 @pytest.mark.parametrize("field", ["stop_grace_period", "descendant_settle_timeout", "poll_interval"])
@@ -195,7 +198,7 @@ def test_cancel_terminates_leader_and_child_and_confirms_settlement(tmp_path):
     assert status.settled is True
     assert status.succeeded is False
     assert status.termination_signal == signal.SIGKILL
-    _assert_pid_gone(child_pid)
+    _assert_pid_not_running(child_pid)
 
 
 def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
@@ -221,7 +224,7 @@ def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
     assert status.settled is True
     assert status.succeeded is False
     assert status.failure_reason == "task leader exited while descendants remained alive"
-    _assert_pid_gone(child_pid)
+    _assert_pid_not_running(child_pid)
 
 
 def test_wait_timeout_does_not_claim_settlement_or_cancel(tmp_path):
@@ -319,3 +322,90 @@ def test_request_rejects_invalid_identity(field, value, message):
     values[field] = value
     with pytest.raises(ValueError, match=message):
         TaskLaunchRequest(**values, argv=(sys.executable,), environment={})
+
+
+@pytest.mark.parametrize("cpu_cores", [float("nan"), float("inf"), float("-inf"), 0, -1, True, "1"])
+def test_resource_request_rejects_invalid_cpu_count(cpu_cores):
+    with pytest.raises(ValueError, match="cpu_cores.*finite positive"):
+        TaskResourceRequest(cpu_cores=cpu_cores)
+
+
+@pytest.mark.parametrize("cpu_cores", [None, 0.5, 1, 2.0])
+def test_resource_request_accepts_finite_cpu_count(cpu_cores):
+    assert TaskResourceRequest(cpu_cores=cpu_cores).cpu_cores == cpu_cores
+
+
+@pytest.mark.parametrize("argv", ["python", b"python", bytearray(b"python")])
+def test_request_rejects_scalar_argv(argv):
+    with pytest.raises(ValueError, match="argv.*sequence"):
+        TaskLaunchRequest(job_id="j", site_name="s", task_id="t", attempt_id="a", argv=argv)
+
+
+@pytest.mark.parametrize(
+    "statuses, settled", [([psutil.STATUS_ZOMBIE], True), ([psutil.STATUS_ZOMBIE, psutil.STATUS_RUNNING], False)]
+)
+def test_settlement_distinguishes_zombies_from_live_group_members(tmp_path, monkeypatch, statuses, settled):
+    handle = ProcessTaskHandle(
+        _request(tmp_path, "zombie", "pass"),
+        Mock(pid=1234, poll=lambda: 0),
+        stop_grace_period=0.2,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+    monkeypatch.setattr(os, "killpg", lambda *_args: None)
+    monkeypatch.setattr(os, "getpgid", lambda _pid: 1234)
+    monkeypatch.setattr(
+        psutil, "process_iter", lambda: [Mock(pid=i, status=lambda s=s: s) for i, s in enumerate(statuses)]
+    )
+    assert handle.poll().settled is settled
+
+
+def test_group_inspection_permission_failure_does_not_claim_settlement(tmp_path, monkeypatch):
+    process = Mock(pid=1234)
+    process.status.side_effect = psutil.AccessDenied(pid=1234)
+    handle = ProcessTaskHandle(
+        _request(tmp_path, "unknown-status", "pass"),
+        Mock(pid=1234, poll=lambda: 0),
+        stop_grace_period=0.2,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+    monkeypatch.setattr(os, "killpg", lambda *_args: None)
+    monkeypatch.setattr(os, "getpgid", lambda _pid: 1234)
+    monkeypatch.setattr(psutil, "process_iter", lambda: [process])
+    assert handle.poll().settled is False
+
+
+def test_process_enumeration_permission_failure_does_not_claim_settlement(tmp_path, monkeypatch):
+    handle = ProcessTaskHandle(
+        _request(tmp_path, "uninspectable-group", "pass"),
+        Mock(pid=1234, poll=lambda: 0),
+        stop_grace_period=0.2,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+    monkeypatch.setattr(os, "killpg", lambda *_args: None)
+    monkeypatch.setattr(psutil, "process_iter", Mock(side_effect=PermissionError("cannot enumerate processes")))
+    assert handle.poll().settled is False
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux zombie process-group regression")
+def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_path):
+    process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    try:
+        observation = psutil.Process(process.pid)
+        deadline = time.monotonic() + 5
+        while observation.status() != psutil.STATUS_ZOMBIE:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        handle = ProcessTaskHandle(
+            _request(tmp_path, "real-zombie", "pass"),
+            Mock(pid=process.pid, poll=lambda: 0),
+            stop_grace_period=0.2,
+            descendant_settle_timeout=0.1,
+            poll_interval=0.01,
+        )
+        assert handle.wait_for_settlement(timeout=1).succeeded
+        assert observation.status() == psutil.STATUS_ZOMBIE
+    finally:
+        process.wait(timeout=5)
