@@ -33,14 +33,6 @@ from nvflare.client.tracking import SummaryWriter
 DATASET_PATH = os.environ.get("NVFL_CIFAR10_ROOT") or "/var/tmp/nvflare/data"
 
 
-class CIFAR10(torchvision.datasets.CIFAR10):
-    # The default Toronto endpoint is slow. Torchvision still verifies the
-    # archive and extracted files against the original CIFAR-10 checksums.
-    url = os.environ.get("NVFL_CIFAR10_URL") or (
-        "https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz"
-    )
-
-
 def evaluate(net, data_loader, device):
     correct = 0
     total = 0
@@ -79,10 +71,10 @@ def main():
     )
 
     # Load datasets
-    train_set = CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
+    train_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
-    test_set = CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
+    test_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
     # (3) initializes NVFlare client API

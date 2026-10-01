@@ -141,15 +141,17 @@ export NVFL_CIFAR10_ROOT="$(pwd)/workspace/cifar10-site-2"
 
 On macOS, download the process client's archive before starting it. The
 commands below use curl's retry/resume support and verify the original
-CIFAR-10 checksum. Continue only after checksum verification succeeds.
+CIFAR-10 checksum. They use the download URL provided by torchvision.
+Continue only after checksum verification succeeds.
 Docker clients download and verify their own data.
 
 ```bash
 CIFAR10_CACHE="${NVFL_CIFAR10_ROOT:-/var/tmp/nvflare/data}"
+CIFAR10_URL="$(python -c 'from torchvision.datasets import CIFAR10; print(CIFAR10.url)')"
 mkdir -p "$CIFAR10_CACHE"
 curl -fL --retry 5 --retry-all-errors --continue-at - \
   --output "$CIFAR10_CACHE/cifar-10-python.tar.gz" \
-  "${NVFL_CIFAR10_URL:-https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz}"
+  "$CIFAR10_URL"
 python - <<'PY'
 import hashlib
 import os
@@ -259,11 +261,9 @@ This job keeps the original CIFAR-10 cache path, `/var/tmp/nvflare/data`, unless
 `NVFL_CIFAR10_ROOT` selects another directory. For Docker clients, set that
 variable in `job_launcher.default_job_env` in `docker.yaml` before preparing
 their kits; exporting it on the host affects the process client only.
-It uses a [faster mirror](https://data.brainchip.com/dataset-mirror/cifar10/cifar-10-python.tar.gz)
-of the [CIFAR-10 Python archive](https://zenodo.org/records/10089977);
-torchvision checks the archive against the original MD5 before extraction.
-To use another source, set `NVFL_CIFAR10_URL` in `job_launcher.default_job_env`
-in `docker.yaml` before preparing site-1, and export it before starting site-2.
+The job uses torchvision's standard
+[CIFAR-10 dataset](https://www.cs.toronto.edu/~kriz/cifar.html) download URL
+and checksum validation.
 Use the returned job ID to check completion:
 
 ```bash
