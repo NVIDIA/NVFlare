@@ -43,7 +43,7 @@ class ProfileTests(unittest.TestCase):
         with (
             patch.object(config, "load_yaml", return_value=settings),
             patch.object(config, "local_path", side_effect=lambda path, value: value),
-            patch.object(config, "read_json", return_value={}) as read,
+            patch.object(config, "read_json", return_value={"snp_single_socket": False}) as read,
             patch.object(config, "validate_references") as validate,
             patch.object(config, "gpu_inputs") as gpu_inputs,
             patch.object(config, "validate_gpu_policy"),
@@ -51,8 +51,19 @@ class ProfileTests(unittest.TestCase):
             profile = config.profile("profile.yml")
         self.assertEqual(profile["gpu_attestation_provenance"], "nvat_build.json")
         read.assert_called_once_with(profile["reference_values"])
-        validate.assert_called_once_with({}, ["amd_sev_snp", "intel_tdx"], gpu=True)
+        self.assertIs(profile["snp_single_socket"], False)
+        validate.assert_called_once_with({"snp_single_socket": False}, ["amd_sev_snp", "intel_tdx"], gpu=True)
         gpu_inputs.assert_called_once()
+
+    def test_snp_profile_and_approved_reference_must_match(self):
+        with (
+            patch.object(config, "load_yaml", return_value={"snp_single_socket": True}),
+            patch.object(config, "local_path", side_effect=lambda path, value: value),
+            patch.object(config, "read_json", return_value={"snp_single_socket": False}),
+            patch.object(config, "validate_references"),
+            self.assertRaisesRegex(BuildError, "snp_single_socket reference must match"),
+        ):
+            config.profile("profile.yml")
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

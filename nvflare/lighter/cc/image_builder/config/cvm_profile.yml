@@ -1,5 +1,5 @@
 # Supply reviewed input files. Example package pins are for Ubuntu 26.04.
-profile_version: cpu-2026.09-r4
+profile_version: cpu-2026.09-r5
 # This checked-in kernel/storage combination is a nonproduction candidate. Set
 # true only in a new profile version after the exact pins pass the full matrix.
 production_ready: false
@@ -8,6 +8,10 @@ production_ready: false
 # acceptance_runner: /usr/local/bin/site_acceptance
 guest_release: '26.04'
 gpu: none
+# Keep the portable SNP policy by default. SINGLE_SOCKET is rejected by some
+# otherwise capable host stacks. Set true only in a separately versioned profile
+# qualified on every target; approved-tcb-references.json must match this value.
+snp_single_socket: false
 # For gpu: nvidia_cc, GPU_BUILD.md supplies the required gpu_apt_repositories,
 # exact gpu_packages, gpu_attestation_library and gpu_attestation_provenance.
 # A GPU profile passes exactly this many GPUs (1-8) through to the CVM.

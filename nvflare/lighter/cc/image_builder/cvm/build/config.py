@@ -115,13 +115,16 @@ DEFAULT_PACKAGES = [
 
 
 PROFILE_DEFAULTS = {
-    "profile_version": "cpu-2026.09-r4",
+    "profile_version": "cpu-2026.09-r5",
     # The checked-in pins are a buildable candidate, not a production claim.
     # A site sets this only in a newly qualified profile version.
     "production_ready": False,
     "guest_release": "26.04",
     "gpu": "none",
     "gpu_count": 1,
+    # SINGLE_SOCKET is rejected by otherwise capable SNP host stacks such as
+    # QEMU 9.2.1/kernel 6.14. Enable it only in a separately qualified profile.
+    "snp_single_socket": False,
     "base_image": str(INPUTS / "ubuntu-26.04-server-cloudimg-amd64.img"),
     "build_firmware": "/usr/share/ovmf/OVMF.fd",
     "build_user": "ubuntu",
@@ -394,6 +397,7 @@ def profile(path):
         type(value.get("gpu_count")) is int and 1 <= value["gpu_count"] <= 8,
         "gpu_count must be an integer from 1 through 8",
     )
+    require(type(value.get("snp_single_socket")) is bool, "snp_single_socket must be boolean")
     require(value.get("vault_header_bytes") == HEADER_BYTES, "Unsupported header range")
     require(value.get("vault_storage_profile") == STORAGE_PROFILE, "Unsupported authenticated storage profile")
     require(type(value.get("vault_prescan")) is bool, "vault_prescan must be boolean")
@@ -458,11 +462,14 @@ def profile(path):
     if value.get("approval_signing_key") is not None:
         value["approval_signing_key"] = local_path(path, value["approval_signing_key"])
 
-    validate_references(
-        read_json(value["reference_values"]),
-        [p for p, v in value["platforms"].items() if v.get("enabled", True)],
-        gpu=value["gpu"] == "nvidia_cc",
-    )
+    enabled_platforms = [p for p, v in value["platforms"].items() if v.get("enabled", True)]
+    references = read_json(value["reference_values"])
+    validate_references(references, enabled_platforms, gpu=value["gpu"] == "nvidia_cc")
+    if "amd_sev_snp" in enabled_platforms:
+        require(
+            references.get("snp_single_socket") == value["snp_single_socket"],
+            "Approved snp_single_socket reference must match the build profile",
+        )
     if value["gpu"] == "nvidia_cc":
         for key in ("gpu_policy", "gpu_attestation_library", "gpu_attestation_provenance"):
             value[key] = local_path(path, value.get(key))

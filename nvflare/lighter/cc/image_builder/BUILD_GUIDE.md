@@ -206,6 +206,13 @@ and cannot be downloaded from this repository:
 
 `inputs/` and `credentials/` are ignored by git; never commit their contents.
 
+For AMD SEV-SNP, set `snp_single_socket` to `false` in
+`inputs/approved-tcb-references.json`, matching the checked-in build profile.
+This omits the optional `SINGLE_SOCKET` guest-policy bit, which QEMU 9.2.1 and
+kernel 6.14 hosts can reject even on single-socket hardware. Set both the profile
+and approved reference to `true` only in a new profile version after every target
+host stack has passed acceptance with that policy.
+
 Use reviewed, immutable copies of every input in production. The builder hashes
 the base image, firmware, trust files, policy, runtime source, and final artifacts
 into the CVM contract and manifest.
@@ -299,7 +306,7 @@ the real bundle's private report with:
 
 ```sh
 sudo ./cvmctl inspect-tcb \
-  target/cvm_cpu-2026.09-r4/intel_tdx/reference-evidence.json
+  target/cvm_cpu-2026.09-r5/intel_tdx/reference-evidence.json
 ```
 
 Compare its TCB fields with the approved input and complete signed-quote/CCEL
@@ -343,10 +350,11 @@ and soak tests; an unfinished runner never approves a bundle.
 The main defaults are:
 
 ```yaml
-profile_version: cpu-2026.09-r4
+profile_version: cpu-2026.09-r5
 production_ready: false
 guest_release: '26.04'
 gpu: none
+snp_single_socket: false
 base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
 build_firmware: /usr/share/ovmf/OVMF.fd
 build_user: ubuntu
@@ -496,11 +504,11 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo ./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+sudo ./cvmctl pull cvm_cpu-2026.09-r5_amd_sev_snp.oci.tar \
   --archive-sha256 ARCHIVE_SHA256_FROM_THE_BUILD_HOST \
-  --output /srv/cvm/cvm_cpu-2026.09-r4
+  --output /srv/cvm/cvm_cpu-2026.09-r5
 sudo ./cvmctl finalize \
-  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp
 ```
 
 Run the site's acceptance matrix there. Then sign its exact report with the
@@ -509,13 +517,13 @@ policy; `admin.json` must list the matching public key in `approval_public_keys`
 
 ```sh
 sudo ./cvmctl admin approve \
-  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp \
+  /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp \
   /srv/cvm/acceptance-report.json \
   --signing-key /secure/acceptance-signing.key
 
 sudo ./cvmctl admin install \
   /srv/trustee/admin.json \
-  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp
 ```
 
 Finalization and approval regenerate the OCI artifact so it includes the final
@@ -530,13 +538,13 @@ profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
 
 ```sh
-./cvmctl pull cvm_cpu-2026.09-r4_intel_tdx.oci.tar \
-  --archive-sha256 TDX_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r4
-./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
-  --archive-sha256 SNP_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r4 --merge
+./cvmctl pull cvm_cpu-2026.09-r5_intel_tdx.oci.tar \
+  --archive-sha256 TDX_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r5
+./cvmctl pull cvm_cpu-2026.09-r5_amd_sev_snp.oci.tar \
+  --archive-sha256 SNP_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r5 --merge
 ```
 
-Set `cvm_image: ../target/final_cvm_cpu-2026.09-r4` in
+Set `cvm_image: ../target/final_cvm_cpu-2026.09-r5` in
 `config/vault_build.yml` to use that aggregated folder.
 
 ## 4. Vault Build
@@ -591,7 +599,7 @@ Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
 ```yaml
-cvm_image: ../target/cvm_cpu-2026.09-r4
+cvm_image: ../target/cvm_cpu-2026.09-r5
 docker_archive: ../inputs/application.tar
 image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 # Optional: omit to use every platform available in cvm_image.
@@ -633,7 +641,7 @@ Optional `container` confinement settings: `capabilities` lists capabilities exp
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
 
 ```yaml
-cvm_image: registry.example.org/cvm/cpu-2026.09-r4@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+cvm_image: registry.example.org/cvm/cpu-2026.09-r5@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 `oci://` and `https://` prefixes are also accepted. Use the actual digest printed

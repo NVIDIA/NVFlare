@@ -48,6 +48,7 @@ from .storage import build_verity, linux_root, sidecar
 RUNTIME_KEYS = (
     "gpu",
     "gpu_count",
+    "snp_single_socket",
     "bootstrap_egress",
     "kbs_url",
     "token_algorithm",

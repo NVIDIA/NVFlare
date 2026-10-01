@@ -6,6 +6,18 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## AMD portable launch policy — 2026-10-01 UTC
+
+The checked-in `cpu-2026.09-r5` profile defaults `snp_single_socket` to
+`false`, and profile validation requires the administrator-approved reference to
+match. On single-socket EPYC 7313P host `ipp2-1805`, QEMU 9.2.1 and kernel
+6.14.0-37 rejected policy `0x130137` at `SNP_LAUNCH_START` with `ret=-22` and
+`fw_error=0`. Removing only the optional `SINGLE_SOCKET` bit produced policy
+`0x30137`, passed `SNP_LAUNCH_START`, and reached Linux guest execution. The
+probe used one vCPU, 1 GiB RAM and no GPU; existing host workloads remained
+running. Enable `SINGLE_SOCKET` only in a separately versioned profile after the
+same policy passes the complete target-host acceptance matrix.
+
 ## Design review and pinned storage acceptance — 2026-09-21 UTC
 
 **Production gate: FAILED.** The review fixes were applied and tested, but the
@@ -14,7 +26,7 @@ A VM exit after a kernel panic is not a passing integrity-monitor poweroff
 result. Do not approve this kernel/storage combination for production or treat
 `vault_prescan: false` as qualified. A corrected kernel/profile needs the same
 acceptance run before promotion; no weaker storage fallback was enabled.
-The checked-in `cpu-2026.09-r4` profile therefore sets
+The checked-in `cpu-2026.09-r5` profile therefore sets
 `production_ready: false`, and both `approve_bundle()` and approval verification
 reject its manifest even if a report or receipt is supplied. Candidate build,
 candidate policy installation, and candidate vault construction remain available
@@ -521,7 +533,7 @@ new generic images, reference collection and acceptance before production approv
 
 The current implementation uses unmodified upstream Trustee commit
 `512fed65642015b849f38fb13bfdec7806639987`. The previous custom Rust verifier,
-attester and source patch are removed. The default generic profile advances to
+attester and source patch are removed. The default generic profile advanced to
 `cpu-2026.09-r4`; earlier bundle approvals do not cover this migration.
 
 The isolated Linux compatibility tests use the official upstream KBS image
