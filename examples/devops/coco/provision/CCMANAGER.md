@@ -70,10 +70,11 @@ authorizer namespace for each participant:
 
 With an ordinary server, the required map instead contains only protected
 clients. CPU/GPU appraisal inside each combined proof is still enforced by
-CoCoAuthorizer. No extra GPU token namespace is required. The protected server
-uses the same AMD SEV-SNP and NVIDIA confidential-GPU runtime/profile as the
-clients; CPU-only CoCo provisioning and mixed CC compute environments are not
-supported by this example.
+CoCoAuthorizer. No extra GPU token namespace is required. The deployment
+scripts support AMD SEV-SNP or Intel TDX with optional NVIDIA confidential GPU
+for protected servers and clients. Select and approve the target using the
+[runtime-variant guide](../RUNTIME-VARIANTS.md). Mixing other CC compute
+environments into the project is not supported.
 
 Re-run provisioning and distribute the regenerated kits to fix heterogeneous
 deployments. Existing hand-written/previously generated configurations without
@@ -126,26 +127,30 @@ corresponding workload authorization; there is no trust-on-first-use fallback.
 
 The approved guest runtime must expose the [guest-components token API](https://github.com/confidential-containers/guest-components/blob/main/api-server-rest/README.md)
 at `http://127.0.0.1:8006/aa/token?token_type=kbs` **inside the container's guest
-network**, with KBS configured and both CPU/GPU evidence enabled. Its response
+network**, with KBS configured and evidence for the selected target enabled:
+SNP or TDX CPU evidence for every protected participant, and NVIDIA GPU evidence
+only for a GPU target. A CPU-only deployment does not require a GPU or `gpu0`
+appraisal. A GPU release still requires both successful `cpu0` and `gpu0`
+appraisals before KBS releases its image key. Its response
 contains a signed token and a TEE private key. Never print it, save it, put it in
 Pod logs, or expose this API through a Kubernetes Service, host port, proxy, or
 ingress. No Kubernetes volume or hostPath is needed by the authorizer.
 
-A runtime supporting GPU/SNP does not by itself prove this API is built,
-enabled, reachable from the workload, or returns the required claims. Verify
+A runtime supporting SNP or TDX, with or without a GPU, does not by itself prove
+this API is built, enabled, reachable from the workload, or returns the required claims. Verify
 those properties in a trusted rehearsal of the actual NVFlare image. If enabling
 the API requires changes to the guest image or kernel command line, those are
 measured launch inputs: repeat the trusted measurement workflow and approve the
 new platform references before using it. These provisioning changes deliberately
 do not alter a cluster runtime or reuse an old measurement after such changes.
 
-In the tested pinned Kata 3.29.0 guest, the default REST feature exposed resource
-routes but not `/aa/token`. The historical diagnostic used a per-Pod kernel
+In the historically tested pinned Kata 3.29.0 SNP+GPU guest, the default REST
+feature exposed resource routes but not `/aa/token`. The historical diagnostic used a per-Pod kernel
 override; that is not supported by the packaged workload's approved profile.
 The packaged workflow now derives and installs a runtime-level configuration
 with `agent.guest_components_rest_api=all`, preserving all other parameters,
 including repeated `pci=` options. Follow the [runtime-profile procedure](../RUNTIME-PROFILE.md)
-to collect and approve a new measurement and v3 admin contract before provisioning.
+to collect and approve new references and a v4 admin contract before provisioning.
 The contract must explicitly approve UID/GID 65532 and
 `readOnlyRootFilesystem: false` for the current NVFlare packager, along with the
 [remaining application security settings](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
@@ -428,7 +433,7 @@ raw EAR alone does not satisfy `verify()`.
 
 1. The guest fetches the token response without environment proxies or redirects.
    It validates the EAR signature with the pinned AS public key and checks its
-   time claims, profile, and successful CPU/GPU trust vectors.
+   time claims, profile, and the CPU trust vector plus the GPU trust vector when present.
 2. It checks that the returned private key matches the public key in the signed
    CPU `runtime_data_claims.tee-pubkey`, then signs a short-lived proof containing
    the EAR, FL site, project-specific audience, issue/expiry times, and random
@@ -437,11 +442,29 @@ raw EAR alone does not satisfy `verify()`.
    using the public key authenticated by that EAR. The proof must have the
    project-specific audience, the expected authenticated site as subject, a short lifetime, and a
    previously unseen identifier.
-4. Both `cpu0` and `gpu0`, and no other submods, must carry this exact vector:
-   `executables=3`, `hardware=2`, `configuration=3`, and `file-system`,
-   `instance-identity`, `runtime-opaque`, `storage-opaque`, `sourced-data` all `0`.
-   These checks match this kit's KBS resource policy; they are not universal
-   success thresholds for every Trustee policy.
+4. After verifying the AS signature, the authorizer accepts exactly `cpu0`
+   (CPU-only) or exactly `cpu0` and `gpu0` (CPU plus GPU). Every present
+   submodule must carry its exact approved vector:
+
+   | Appraisal | `executables` | `hardware` | `configuration` | Other five vector fields |
+   | --- | --- | --- | --- | --- |
+   | SNP CPU | 3 | 2 | 3 | All 0 |
+   | TDX CPU | 3 | 2 | 2 | All 0 |
+   | NVIDIA GPU | 3 | 2 | 3 | All 0 |
+
+   The other fields are `file-system`, `instance-identity`, `runtime-opaque`,
+   `storage-opaque`, and `sourced-data`. CPU annotated evidence must identify
+   exactly one supported platform (`snp` or `tdx`) with a nonempty hardware
+   claims object. The type is selected from the AS-signed evidence, not from
+   an unsigned hint or by trying both trust vectors. Missing, unknown, or
+   ambiguous CPU types are rejected. The GPU vector does not change for TDX.
+   Missing CPU evidence, unknown/extra submodules, malformed appraisals, and
+   failed CPU or GPU vectors are rejected. A present but failed GPU appraisal
+   never falls back to CPU-only verification. These are not universal success
+   thresholds for every Trustee policy; numeric inequalities are not used.
+   In particular, the pinned TDX policy's Grub fallback `executables=4` is not
+   accepted. The TDX vector matches the approved-kernel/event-log path in the
+   [pinned Trustee CPU policy](https://github.com/confidential-containers/trustee/blob/338610fbfed57b66c61a8a3a60e0e4386bdce793/attestation-service/src/ear_token/ear_default_policy_cpu.rego).
 5. Each verifier rejects an expired proof or an already-seen proof identifier.
    Its bounded in-memory replay cache resets on restart; this is not a durable
    replay ledger or a server-challenge protocol. Keep FL mTLS enabled and
@@ -452,7 +475,7 @@ raw EAR alone does not satisfy `verify()`.
 
 The signed-claim contract follows [Trustee's EAR documentation](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/attestation_token.md).
 An incompatible token format or policy fails closed rather than silently
-accepting missing CPU/GPU appraisal claims. Proof of possession prevents forwarding
+accepting missing CPU evidence or ignoring a present GPU appraisal. Proof of possession prevents forwarding
 an EAR alone from satisfying NVFlare; it does not make arbitrary trusted
 application code safe or replace the guest policy's isolation protections.
 
@@ -471,7 +494,17 @@ verifier = CoCoAuthorizer(
     workload_constraints={
         "site-1": {
             "init_data": approved_init_data_sha256,  # 64 lowercase hex characters
-            "measurement": approved_snp_measurement,  # 96 lowercase hex characters
+            "cpu_tee": "snp",
+            "measurement": approved_snp_measurement,  # SNP-only; 96 lowercase hex
+        },
+        "site-2": {
+            "cpu_tee": "tdx",
+            "init_data": approved_tdx_init_data_sha256,  # canonical 64 lowercase hex
+            "tdx_mr_td": approved_tdx_mr_td,  # 96 lowercase hex characters
+            "tdx_rtmr_0": approved_tdx_rtmr_0,
+            "tdx_rtmr_1": approved_tdx_rtmr_1,
+            "tdx_rtmr_2": approved_tdx_rtmr_2,
+            "tdx_rtmr_3": approved_tdx_rtmr_3,
         },
     },
 )
@@ -479,13 +512,36 @@ verifier = CoCoAuthorizer(
 
 Both options default to `None` for the existing Trustee flow. With constraints
 configured, every verified subject must have an entry; all configured claims
-must match signed CPU evidence. An entry can pin either or both fields. Obtain
+must match signed CPU evidence. Choose the needed typed constraints; `measurement`
+remains SNP-only and cannot pin TDX MRTD. TDX fields require signed TDX evidence
+and canonical 96-character lowercase hex values. Cross-TEE or mixed constraints
+fail closed. `init_data` remains a canonical 32-byte digest for either TEE;
+TDX normalization also checks the quoted MRCONFIGID agrees and has exactly
+16 zero padding bytes. Obtain
 values from the trusted platform and workload owner, never from the CoCo host.
 An absent/mismatched configured EAR audience or workload claim fails closed.
-The generated CC YAML schema does not infer these optional verifier pins:
-configure them on the ordinary server's verifier after approving the release.
-Do not bake a workload's own final InitData digest into that same image, which
-would create a circular image/policy dependency.
+To provision platform pins, put the same complete `workload_constraints` mapping
+under `cc_issuers[0].args` in every protected participant's CC YAML. Provisioning
+validates it and installs that mapping in protected participants and ordinary
+verifier-only kits. Use logical `server` as the protected server key, not its
+DNS name. For example, inside the existing issuer's `args`:
+
+```yaml
+workload_constraints:
+  site-1:
+    cpu_tee: tdx
+    tdx_mr_td: '<approved 96-character lowercase MRTD>'
+  server:
+    cpu_tee: snp
+    measurement: '<approved 96-character lowercase SNP measurement>'
+```
+
+Replace placeholders with authenticated references before provisioning. Every
+protected subject must have the applicable entry, and all participants must
+use the identical effective mapping. Do not embed a workload's own final
+InitData digest into its startup image: that creates a circular
+image/policy/InitData dependency. An ordinary external verifier may additionally
+pin `init_data` after the final workload artifact has been approved.
 
 Replay IDs are intentionally local to each verifier process. A still-valid proof
 may be accepted by a different verifier or after restart. They do not prove a
@@ -501,6 +557,21 @@ CoCo's implementation enforces its bounded request/retry budget explicitly.
 
 ### What verification does not authorize
 
+The authorizer deliberately accepts SNP or TDX, with either CPU-only or
+CPU-plus-GPU evidence by default. An explicit `cpu_tee` constraint can restrict
+a site to one CPU TEE; the authorizer does not enforce a per-site GPU requirement.
+CPU-only evidence means no GPU
+was attested in that token, not that the machine has no GPU. `generate()` applies
+the same checks to the EAR returned by the guest API; it neither requests a
+CPU-only mode nor strips GPU claims (which would invalidate the AS signature).
+
+Core provisioning and the supplied deployment scripts accept all four combinations.
+Each release's KBS policy selects the approved CPU TEE and requires either CPU
+alone or CPU plus GPU; accepting a CPU-only NVFlare proof cannot satisfy a GPU
+release's KBS policy. Deployments
+requiring GPU attestation at the FL participant boundary also need an independent
+GPU requirement; the token-driven authorizer alone does not provide one.
+
 CCManager binds a protected client's registration envelope to `CLIENT_NAME`,
 the same asserted name that ClientManager must authenticate against its
 certificate and registration nonce before accepting registration. It requires
@@ -514,8 +585,9 @@ to the authenticated root-server identity `server` and reject an absent or inval
 proof before completing registration. The certificate's DNS name still controls
 TLS endpoint authentication; it does not replace that logical attestation identity.
 
-The authorizer still does not compare expected image, command, or InitData
-values. The added peer binding is not workload authorization. Compatibility
+The authorizer does not directly compare expected image or command. Optional
+typed workload constraints can pin InitData and CPU measurements, but peer
+binding alone is not workload authorization. Compatibility
 `verify(token)` alone also does not bind a peer. Legacy non-CoCo authorizers
 inherit their existing token-verification semantics unless they implement
 site-aware verification themselves.
@@ -534,7 +606,8 @@ instance; replicas and process restarts require separate consideration.
 ## Verification status
 
 Offline tests cover real cryptographic signatures, RSA/EC TEE proof keys,
-expiry/replay failures, CPU/GPU appraisal failures, and actual startup-kit
+SNP/TDX CPU-only and CPU-plus-GPU proofs, rejected CPU-type/GPU-claim tampering, malformed
+submodules, expiry/replay failures, CPU/GPU appraisal failures, and actual startup-kit
 provisioning with a mocked image runner. These tests alone do not establish
 guest REST availability or change a remote runtime.
 

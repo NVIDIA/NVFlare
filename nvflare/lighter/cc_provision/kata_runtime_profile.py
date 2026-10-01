@@ -23,12 +23,65 @@ import os
 import re
 import subprocess
 import tempfile
-import tomllib
 from pathlib import Path
 
 OPTION = "agent.guest_components_rest_api"
 REQUIRED = OPTION + "=all"
 CAPABILITY = "guest-local-aa-token/v1"
+PROFILE_SCHEMA_V4 = "coco-approved-workload-launch/v4"
+RUNTIME_TARGETS = {
+    "kata-qemu-nvidia-gpu-snp": ("snp", "nvidia"),
+    "kata-qemu-snp": ("snp", "none"),
+    "kata-qemu-nvidia-gpu-tdx": ("tdx", "nvidia"),
+    "kata-qemu-tdx": ("tdx", "none"),
+}
+
+
+def toml_loads(text):
+    # Target/profile validation also runs inside supported Python 3.10
+    # provisioning environments; only host TOML operations need 3.11+.
+    try:
+        import tomllib
+    except ImportError as error:
+        raise ValueError("Runtime TOML operations require system Python 3.11+") from error
+    return tomllib.loads(text)
+
+
+def runtime_target(runtime):
+    """Resolve a reviewed RuntimeClass, never infer a TEE from a substring."""
+    if not isinstance(runtime, str) or runtime not in RUNTIME_TARGETS:
+        raise ValueError("Unsupported confidential RuntimeClass")
+    tee, gpu = RUNTIME_TARGETS[runtime]
+    return {
+        "cpu_tee": tee,
+        "gpu": gpu,
+        "gpu_count": 1 if gpu == "nvidia" else 0,
+        "config_name": "configuration-" + runtime.removeprefix("kata-") + ".toml",
+        "node_label": "amd.feature.node.kubernetes.io/snp" if tee == "snp" else "intel.feature.node.kubernetes.io/tdx",
+    }
+
+
+def require_runtime_target(profile, runtime):
+    """Keep legacy approvals limited to their original SNP+GPU interpretation."""
+    target = runtime_target(runtime)
+    legacy = "cpu_tee" not in profile and "gpu" not in profile
+    if legacy and runtime == "kata-qemu-nvidia-gpu-snp":
+        return target
+    if profile.get("cpu_tee") != target["cpu_tee"] or profile.get("gpu") != target["gpu"]:
+        raise ValueError("Approved CPU/GPU target differs from RuntimeClass")
+    return target
+
+
+def require_confidential_config(qemu, runtime):
+    """Reject a non-confidential or cross-TEE TOML before installing it."""
+    target = runtime_target(runtime)
+    if qemu.get("confidential_guest") is not True:
+        raise ValueError("Kata configuration must enable confidential_guest")
+    if qemu.get("sev_snp_guest", False) is not (target["cpu_tee"] == "snp"):
+        raise ValueError("Kata sev_snp_guest does not match approved CPU TEE")
+    if target["cpu_tee"] == "tdx" and qemu.get("machine_type") != "q35":
+        raise ValueError("The approved TDX profile requires QEMU q35")
+    return target
 
 
 def require_token_api(cmdline):
@@ -56,11 +109,11 @@ def runtime_config_path(path):
 
 def settings(text):
     # Ignore comments/layout, not value types (Python equality considers True == 1).
-    return json.dumps(tomllib.loads(text), sort_keys=True, allow_nan=False)
+    return json.dumps(toml_loads(text), sort_keys=True, allow_nan=False)
 
 
 def derive(text):
-    original = tomllib.loads(text)
+    original = toml_loads(text)
     params = original["hypervisor"]["qemu"]["kernel_params"]
     if not isinstance(params, str):
         raise ValueError("Expected explicit string kernel_params")
@@ -82,7 +135,7 @@ def derive(text):
     result = text[: section.start("body")] + body + text[section.end("body") :]
     expected = copy.deepcopy(original)
     expected["hypervisor"]["qemu"]["kernel_params"] = updated
-    if tomllib.loads(result) != expected:
+    if toml_loads(result) != expected:
         raise ValueError("Runtime derivation changed an unrelated setting")
     require_token_api(updated)
     return result
@@ -150,6 +203,12 @@ def enable(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="operation", required=True)
+    target = sub.add_parser("target", help="print the fixed, reviewed RuntimeClass mapping")
+    target.add_argument("runtime")
+    target.add_argument("--field", choices=("cpu_tee", "gpu", "gpu_count", "config_name", "node_label"))
+    check_config = sub.add_parser("check-target", help="check the confidential guest settings in a runtime TOML")
+    check_config.add_argument("runtime")
+    check_config.add_argument("config", type=Path)
     for name in ("derive", "verify", "install"):
         p = sub.add_parser(name)
         p.add_argument("upstream", type=Path)
@@ -165,6 +224,14 @@ def main():
         if name == "check":
             p.add_argument("--runtime", type=Path, help="also verify kata-env effective parameters")
     args = parser.parse_args()
+    if args.operation == "target":
+        target = runtime_target(args.runtime)
+        print(target[args.field] if args.field else json.dumps(target, sort_keys=True))
+        return
+    if args.operation == "check-target":
+        require_confidential_config(toml_loads(args.config.read_text())["hypervisor"]["qemu"], args.runtime)
+        print("Verified confidential runtime target")
+        return
     if args.operation == "derive":
         raw = read_config(args.upstream)
         effective = derive(raw)
@@ -193,7 +260,7 @@ def main():
         enable(args.config)
     else:
         require_token_api(
-            tomllib.loads(read_config(runtime_config_path(args.config)))["hypervisor"]["qemu"]["kernel_params"]
+            toml_loads(read_config(runtime_config_path(args.config)))["hypervisor"]["qemu"]["kernel_params"]
         )
         if args.runtime:
             env = json.loads(

@@ -3,6 +3,9 @@
 These commands require this complete runnable service kit and its private
 configuration, not just a copy of this document.
 
+For TDX complete-profile sets use [TDX-REFERENCE-VALUES.md](TDX-REFERENCE-VALUES.md).
+Do not turn the TDX tuple fields into independent allowlists.
+
 The existing AS CPU policy already checks membership:
 
 ```rego
@@ -14,9 +17,9 @@ executables := 3 if {
 
 RVPS stores one array under `snp_launch_measurement`. Matching any entry passes
 this measurement check. The four shared minimum reported-TCB checks, debug
-and migration restrictions, GPU appraisal, and KBS workload/resource-path
-authorization still have to pass. No AS or KBS policy change is needed for a
-measurement-only update through stage 02.
+and migration restrictions, GPU appraisal for GPU-required workloads, and KBS
+workload/resource-path authorization still have to pass. No AS or KBS policy
+change is needed for a measurement-only update through stage 02.
 
 ## 1. Prepare the complete approved file
 
@@ -84,9 +87,9 @@ bash ./10-verify-platform-reference-values.sh "$VALUES"
 bash ./11-verify-service.sh
 ```
 
-Stage 02 retains a private `platform.env` backup, stages restrictive floors,
-replaces the list in one TLS-authenticated admin request, restores the approved
-floors, then reads all five references back. It checks that AS CPU/GPU and KBS
+Stage 02 retains private configuration/reference backups, clears measurement
+approval, sets the approved floors, activates the complete list in one
+TLS-authenticated admin request, then reads all five references back. It checks that AS CPU/GPU and KBS
 policy files remain unchanged. The verifier requires the **entire** measurement
 set to match, not merely the presence of one approved entry. List ordering does
 not matter; extra, missing, duplicate or incorrectly typed entries fail.
@@ -102,7 +105,8 @@ Stages 03, 09 and 11 understand both the old scalar and the new array form.
 
 For a **fresh machine**, follow [SERVICE-INSTALLATION.md](SERVICE-INSTALLATION.md):
 stage 02 with `--configure-only`, then stages 03–09, 10 and 11. Stage 09 consumes
-the full list from `platform.env`, so it does not collapse it to one measurement.
+the saved approved JSON selected by `platform.env`, so it does not collapse it
+to one measurement. Legacy explicit SNP environment values remain readable.
 
 ## 4. Verify persistence and authorization
 
@@ -119,11 +123,12 @@ bash ./11-verify-service.sh
 Require all five reference checks to pass again. For end-to-end acceptance,
 rehearse an authorized workload under each approved launch profile; an
 unlisted measurement must fail the measurement appraisal. A listed measurement
-with inadequate TCB, failed GPU appraisal or mismatched workload identity must
-still be denied. Readback and unit tests are not proof of live key-release behavior.
+with inadequate TCB, failed required GPU appraisal or mismatched workload
+identity must still be denied. Readback and unit tests are not proof of live
+key-release behavior.
 
 Five-key updates are not transactional. Coordinate writers and pause new
 workload launches. The installers' lock covers only this service-kit directory;
-it cannot serialize other API clients. TCB staging at 255 is restrictive, not
-an unconditional deny. On failure, investigate and rerun the same approved
+it cannot serialize other API clients. Clearing the measurement allowlist
+denies SNP matching during the update. On failure, investigate and rerun the same approved
 input; there is no automatic rollback. Do not lower floors to bypass an error.

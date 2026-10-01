@@ -18,4 +18,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-from nvflare.app_opt.confidential_computing.trustee_claims import TRUST_VECTOR  # noqa: E402,F401
+from nvflare.app_opt.confidential_computing.trustee_claims import (  # noqa: E402,F401
+    CPU_TRUST_VECTORS,
+    TRUST_VECTOR,
+    cpu_evidence_type,
+    normalized_init_data,
+)

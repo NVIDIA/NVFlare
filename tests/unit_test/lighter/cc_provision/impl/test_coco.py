@@ -17,6 +17,7 @@ import copy
 import gzip
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,7 @@ from nvflare.lighter.cc_provision.impl.cc import CCBuilder
 from nvflare.lighter.cc_provision.impl.coco import (
     COCO_STARTUP_PROLOGUE,
     CoCoBuilder,
+    coco_runtime_class,
     resolve_cc_config,
     validate_coco_config,
 )
@@ -44,6 +46,13 @@ from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import verify_folder_signature
+
+RUNTIME_CASES = [
+    ("amd_sev_snp", "nvidia", "kata-qemu-nvidia-gpu-snp"),
+    ("amd_sev_snp", "none", "kata-qemu-snp"),
+    ("intel_tdx", "nvidia", "kata-qemu-nvidia-gpu-tdx"),
+    ("intel_tdx", "none", "kata-qemu-tdx"),
+]
 
 
 def setup_project(tmp_path):
@@ -112,49 +121,68 @@ def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
     assert resolve_cc_config(project, "cc_site.yml") == str(source.parent / "cc_site.yml")
 
 
-def write_fake_result(request, config=None):
+def coco_pod(runtime, gpu, image):
     pytest.importorskip("tomllib", reason="full CoCo Pod packaging requires a Python 3.11+ deployment host")
     from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import context, policy, policy_data
 
-    owner = request.parent
-    params = json.loads(request.read_text())
-    pod_path = owner / "protected-pod.yaml"
-    config = config or {"registry_repository": "workloads/site-1", "release_name": "site-1-v1"}
-    image = "secure.unit.local:5000/" + config["registry_repository"] + "@sha256:" + "a" * 64
     data = policy_data()
     data["containers"][0]["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] = image
     data["containers"][0]["OCI"]["Process"]["Args"] = COMMAND
     initdata = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "annotations": {
+                "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(
+                    gzip.compress(initdata.encode())
+                ).decode()
+            }
+        },
+        "spec": {
+            "runtimeClassName": runtime,
+            "automountServiceAccountToken": False,
+            "enableServiceLinks": False,
+            "restartPolicy": "Never",
+            "containers": [
+                {
+                    "image": image,
+                    "command": COMMAND,
+                    "imagePullPolicy": "Always",
+                    "securityContext": context(),
+                    "stdin": False,
+                    "tty": False,
+                    "resources": {"limits": {"nvidia.com/pgpu": "1"}} if gpu == "nvidia" else {},
+                }
+            ],
+        },
+    }
+
+
+def write_fake_result(request, config=None):
+    owner = request.parent
+    params = json.loads(request.read_text())
+    if "workload_env" in params:
+        workload = dict(
+            shlex.split(line)[0].split("=", 1) for line in Path(params["workload_env"]).read_text().splitlines()
+        )
+    else:
+        # Standalone hardening fixtures do not invoke the provisioning runner.
+        workload = {
+            "REGISTRY_REPOSITORY": "workloads/site-1",
+            "RELEASE_NAME": "site-1-v1",
+            "COCO_RUNTIME_CLASS": "kata-qemu-nvidia-gpu-snp",
+            "COCO_GPU_COUNT": "1",
+        }
+    pod_path = owner / "protected-pod.yaml"
+    config = config or {
+        "registry_repository": workload["REGISTRY_REPOSITORY"],
+        "release_name": workload["RELEASE_NAME"],
+    }
+    image = "secure.unit.local:5000/" + config["registry_repository"] + "@sha256:" + "a" * 64
     pod_path.write_text(
         yaml.safe_dump(
-            {
-                "apiVersion": "v1",
-                "kind": "Pod",
-                "metadata": {
-                    "annotations": {
-                        "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(
-                            gzip.compress(initdata.encode())
-                        ).decode()
-                    }
-                },
-                "spec": {
-                    "runtimeClassName": "kata-qemu-nvidia-gpu-snp",
-                    "automountServiceAccountToken": False,
-                    "enableServiceLinks": False,
-                    "restartPolicy": "Never",
-                    "containers": [
-                        {
-                            "image": image,
-                            "command": COMMAND,
-                            "imagePullPolicy": "Always",
-                            "securityContext": context(),
-                            "stdin": False,
-                            "tty": False,
-                            "resources": {"limits": {"nvidia.com/pgpu": "1"}},
-                        }
-                    ],
-                },
-            }
+            coco_pod(workload["COCO_RUNTIME_CLASS"], "nvidia" if workload["COCO_GPU_COUNT"] == "1" else "none", image)
         )
     )
     Path(params["result_file"]).write_text(
@@ -189,14 +217,18 @@ def setup_server_project(tmp_path, with_cc_client=True):
 
 @pytest.mark.parametrize("with_cc_client", [False, True])
 @pytest.mark.parametrize("proof_iat_leeway", [None, 30])
-def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_client, proof_iat_leeway):
+@pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
+def test_provision_server_signed_kit_and_client_verifiers(
+    tmp_path, with_cc_client, proof_iat_leeway, cpu, gpu, runtime
+):
     project, configs = setup_server_project(tmp_path, with_cc_client)
-    if proof_iat_leeway is not None:
-        for participant in project.get_all_participants():
-            if participant.name in configs:
-                config = configs[participant.name]
+    configs[project.get_server().name].update(cc_cpu_mechanism=cpu, cc_gpu=gpu)
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            config = configs[participant.name]
+            if proof_iat_leeway is not None:
                 config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = proof_iat_leeway
-                (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
+            (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
     seen = {}
     root = tmp_path / "workspace/test_project"
 
@@ -259,6 +291,10 @@ def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_clie
             pod = yaml.safe_load(next(handoff.iterdir()).read_text())
             assert pod["spec"]["containers"][0]["command"] == COMMAND
             if participant.type == "server":
+                assert pod["spec"]["runtimeClassName"] == runtime
+                assert pod["spec"]["containers"][0]["resources"] == (
+                    {"limits": {"nvidia.com/pgpu": "1"}} if gpu == "nvidia" else {}
+                )
                 permissions = json.loads((local / ProvFileName.AUTHORIZATION_JSON_DEFAULT).read_text())["permissions"]
                 assert permissions["org_admin"]["submit_job"] == "none"
                 assert permissions["org_admin"]["shell_commands"] == "none"
@@ -360,8 +396,10 @@ def test_protected_entrypoint_is_silent_and_verifies_kit_before_starting(
 
 
 @pytest.mark.parametrize("custom_retry", [False, True, "legacy_timeout"])
-def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
+@pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
+def test_provision_real_signed_kit_then_package(tmp_path, custom_retry, cpu, gpu, runtime):
     project, config = setup_project(tmp_path)
+    config.update(cc_cpu_mechanism=cpu, cc_gpu=gpu)
     retry_options = {}
     timeouts = {"registration_token_timeout": 300, "refresh_token_timeout": 22.5, "get_token_request_timeout": 45}
     if custom_retry == "legacy_timeout":
@@ -380,7 +418,7 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
         config["cc_issuers"][0]["args"].update(retry_options)
         config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = 30
         config["cc_attestation"].update(timeouts)
-        (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
+    (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     seen = []
 
     def runner(command, **kwargs):
@@ -443,11 +481,24 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
     assert json.dumps(COMMAND) in dockerfile
     assert "!.nvflare-kit/**" in (owner / "build-context/.dockerignore").read_text()
     assert "APP_READ_ONLY_ROOT_FILESYSTEM=false" in (owner / "workload.env").read_text()
+    workload = (owner / "workload.env").read_text()
+    assert f"COCO_RUNTIME_CLASS={runtime}\n" in workload
+    assert "COCO_GPU_COUNT=" + ("1" if gpu == "nvidia" else "0") + "\n" in workload
+    assert not any(line.startswith("RUNTIME_CLASS=") for line in workload.splitlines())
+    pod = yaml.safe_load((result / "site-1/site-1-v1-pod.yaml").read_text())
+    assert pod["spec"]["runtimeClassName"] == runtime
 
 
 @pytest.mark.parametrize(
     "field,value",
-    [("cc_gpu", "none"), ("cc_cpu_mechanism", "intel_tdx"), ("role", "server"), ("release_name", "../oops")],
+    [
+        ("cc_gpu", "unsupported"),
+        ("cc_gpu", None),
+        ("cc_cpu_mechanism", "unsupported"),
+        ("cc_cpu_mechanism", []),
+        ("role", "server"),
+        ("release_name", "../oops"),
+    ],
 )
 def test_invalid_config_is_fail_closed(tmp_path, field, value):
     project, config = setup_project(tmp_path)
@@ -539,6 +590,85 @@ def test_explicit_default_proof_iat_leeway_matches_omitted_default(tmp_path):
     assert "proof_iat_leeway_seconds" not in builder.settings["site-1"][0]
 
 
+def test_typed_workload_constraints_reach_protected_and_ordinary_verifiers(tmp_path):
+    project, configs = setup_server_project(tmp_path)
+    configs[project.get_server().name].update(cc_cpu_mechanism="intel_tdx", cc_gpu="none")
+    constraints = {
+        "server": {"cpu_tee": "tdx", "tdx_mr_td": "a" * 96, "tdx_rtmr_0": "b" * 96},
+        "site-1": {"cpu_tee": "snp", "measurement": "c" * 96},
+    }
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            config = configs[participant.name]
+            config["cc_issuers"][0]["args"]["workload_constraints"] = copy.deepcopy(constraints)
+            (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
+    seen = {}
+
+    def runner(command, **kwargs):
+        request = Path(command[1])
+        seen[request.parent.name] = request.parent / "startup-kit"
+        write_fake_result(request, configs[request.parent.name])
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    result = Path(ctx.get_result_location())
+    for participant in project.get_all_participants():
+        kit = seen.get(participant.name, result / participant.name)
+        resource = json.loads((kit / "local/coco_authorizer__p_resources.json").read_text())
+        assert resource["components"][0]["args"]["workload_constraints"] == constraints
+
+
+@pytest.mark.parametrize(
+    "constraints",
+    [
+        {},
+        [],
+        "site-1",
+        {"site-1": {}},
+        {"site-1": {"cpu_tee": "sgx"}},
+        {"site-1": {"tdx_mr_td": "short"}},
+        {"site-1": {"cpu_tee": "tdx", "measurement": "a" * 96}},
+        {"site-1": {"cpu_tee": "snp", "tdx_mr_td": "a" * 96}},
+        {"site-1": {"unrecognized": "a" * 96}},
+    ],
+)
+def test_invalid_workload_constraints_fail_before_packaging(tmp_path, constraints):
+    project, config = setup_project(tmp_path)
+    config["cc_issuers"][0]["args"]["workload_constraints"] = constraints
+    (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    runner.assert_not_called()
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
+@pytest.mark.parametrize("omit_on_client", [False, True])
+def test_protected_participants_cannot_have_different_workload_constraints(tmp_path, omit_on_client):
+    project, configs = setup_server_project(tmp_path)
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            config = configs[participant.name]
+            if participant.type == "server" or not omit_on_client:
+                config["cc_issuers"][0]["args"]["workload_constraints"] = {
+                    "server": {"cpu_tee": "snp"},
+                    "site-1": {"measurement": ("a" if participant.type == "server" else "b") * 96},
+                }
+            participant.set_prop(PropKey.CC_CONFIG_DICT, config)
+    with pytest.raises(ValueError, match="verifier policy"):
+        CoCoBuilder().initialize(project, None)
+
+
+def test_explicit_none_workload_constraints_matches_omitted_default(tmp_path):
+    project, configs = setup_server_project(tmp_path)
+    configs[project.get_server().name]["cc_issuers"][0]["args"]["workload_constraints"] = None
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            participant.set_prop(PropKey.CC_CONFIG_DICT, configs[participant.name])
+    CoCoBuilder().initialize(project, None)
+
+
 @pytest.mark.parametrize("different_timeout", [False, True])
 def test_clients_may_vary_backoff_but_must_share_manager_timeouts(tmp_path, different_timeout):
     project, config = setup_project(tmp_path)
@@ -569,6 +699,135 @@ def test_missing_gpu_and_unknown_fields_rejected(tmp_path):
     config["unknown_field"] = []
     with pytest.raises(ValueError, match="fields"):
         validate_coco_config(config)
+
+
+@pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
+def test_explicit_runtime_combinations(tmp_path, cpu, gpu, runtime):
+    _, config = setup_project(tmp_path)
+    config.update(cc_cpu_mechanism=cpu, cc_gpu=gpu)
+    validate_coco_config(config)
+    assert coco_runtime_class(config) == runtime
+
+
+@pytest.mark.parametrize("field", ["cc_gpu", "cc_cpu_mechanism"])
+@pytest.mark.parametrize("value", [None, True, False, 1, [], {}, "", "auto"])
+def test_runtime_selection_rejects_invalid_types_and_implicit_choices(tmp_path, field, value):
+    _, config = setup_project(tmp_path)
+    config[field] = value
+    with pytest.raises(ValueError, match=field):
+        validate_coco_config(config)
+
+
+def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_path):
+    _, base_config = setup_project(tmp_path)
+    participants = [{"type": "server", "name": "server.example.com", "org": "example"}]
+    for i, (cpu, gpu, _) in enumerate(RUNTIME_CASES, 1):
+        config = copy.deepcopy(base_config)
+        config.update(
+            cc_cpu_mechanism=cpu,
+            cc_gpu=gpu,
+            release_name=f"site-{i}-v1",
+            registry_repository=f"workloads/site-{i}",
+        )
+        config_file = f"cc_site-{i}.yml"
+        (tmp_path / config_file).write_text(yaml.safe_dump(config))
+        participants.append({"type": "client", "name": f"site-{i}", "org": "example", "cc_config": config_file})
+    project = prepare_project(
+        {
+            "api_version": 3,
+            "name": "test_project",
+            "participants": participants,
+            "packager": {"path": "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager"},
+        },
+        project_file=tmp_path / "project.yaml",
+    )
+    requests = []
+
+    def runner(command, **kwargs):
+        request = Path(command[1])
+        requests.append(request)
+        write_fake_result(request)
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+    assert len(requests) == 4
+    result = Path(ctx.get_result_location())
+    server_local = result / "server.example.com/local"
+    server_auth = json.loads((server_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
+    manager = json.loads((server_local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
+    assert manager["cc_enabled_sites"] == [f"site-{i}" for i in range(1, 5)]
+    for i, (_, gpu, runtime) in enumerate(RUNTIME_CASES, 1):
+        public = result / f"site-{i}"
+        assert [path.name for path in public.iterdir()] == [f"site-{i}-v1-pod.yaml"]
+        pod = yaml.safe_load((public / f"site-{i}-v1-pod.yaml").read_text())
+        assert pod["spec"]["runtimeClassName"] == runtime
+        assert pod["spec"]["containers"][0]["resources"] == (
+            {"limits": {"nvidia.com/pgpu": "1"}} if gpu == "nvidia" else {}
+        )
+        client_local = requests[i - 1].parent / "startup-kit/local"
+        client_auth = json.loads((client_local / "coco_authorizer__p_resources.json").read_text())["components"][0][
+            "args"
+        ]
+        assert client_auth["site_name"] == f"site-{i}"
+        assert client_auth["trustee_public_key"] == server_auth["trustee_public_key"]
+        assert client_auth["audience"] == server_auth["audience"]
+
+
+@pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
+@pytest.mark.parametrize("pod_runtime", [case[2] for case in RUNTIME_CASES])
+def test_pod_runtime_must_match_configured_cpu_and_gpu(tmp_path, cpu, gpu, runtime, pod_runtime):
+    config = {"cc_cpu_mechanism": cpu, "cc_gpu": gpu, "registry_repository": "workloads/site-1"}
+    pod = coco_pod(pod_runtime, gpu, "registry.example/workloads/site-1@sha256:" + "a" * 64)
+    path = tmp_path / "pod.yaml"
+    path.write_text(yaml.safe_dump(pod))
+    if runtime == pod_runtime:
+        CoCoPackager.validate_pod(path, config)
+    else:
+        with pytest.raises(ValueError, match="runtime"):
+            CoCoPackager.validate_pod(path, config)
+
+
+@pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
+@pytest.mark.parametrize(
+    "resources",
+    [
+        {},
+        {"limits": {}, "requests": {}},
+        {"limits": {"nvidia.com/pgpu": "1"}},
+        {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}},
+        {"limits": {"nvidia.com/pgpu": "2"}},
+        {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "2"}},
+        {"requests": {"nvidia.com/pgpu": "1"}},
+        {"limits": {"nvidia.com/gpu": "1"}},
+        {"limits": {"cpu": "1"}},
+        {"requests": {"memory": "1Gi"}},
+        {"limits": {"nvidia.com/pgpu": "1"}, "claims": [{"name": "unapproved"}]},
+        {"limits": None},
+        {"requests": None},
+        None,
+        [],
+    ],
+)
+def test_pod_resources_match_approved_zero_or_one_gpu_shape(tmp_path, cpu, gpu, runtime, resources):
+    config = {"cc_cpu_mechanism": cpu, "cc_gpu": gpu, "registry_repository": "workloads/site-1"}
+    pod = coco_pod(runtime, gpu, "registry.example/workloads/site-1@sha256:" + "a" * 64)
+    pod["spec"]["containers"][0]["resources"] = resources
+    path = tmp_path / "pod.yaml"
+    path.write_text(yaml.safe_dump(pod))
+    valid = (
+        [
+            {"limits": {"nvidia.com/pgpu": "1"}},
+            {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}},
+        ]
+        if gpu == "nvidia"
+        else [{}, {"limits": {}, "requests": {}}]
+    )
+    if resources in valid:
+        CoCoPackager.validate_pod(path, config)
+    else:
+        with pytest.raises(ValueError, match="resource"):
+            CoCoPackager.validate_pod(path, config)
 
 
 def test_missing_packager_rejected_before_plaintext_release(tmp_path):
@@ -790,10 +1049,7 @@ def test_cli_reprovision_retains_private_stages_from_other_directory(tmp_path, f
     }
     (tmp_path / "project.yaml").write_text(yaml.safe_dump(definition))
     # Trusted fixture runner: publish no image and generate only a fake receipt.
-    fixture_request = tmp_path / "fixture-request.json"
-    fixture_request.write_text(json.dumps({"result_file": str(tmp_path / "fixture-result.json")}))
-    write_fake_result(fixture_request)
-    pod = yaml.safe_load((tmp_path / "protected-pod.yaml").read_text())
+    pod = coco_pod("kata-qemu-nvidia-gpu-snp", "nvidia", "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64)
     (tmp_path / "build.sh").write_text(
         f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
         "request = json.loads(Path(sys.argv[1]).read_text())\n"

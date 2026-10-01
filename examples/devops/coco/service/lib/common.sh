@@ -81,6 +81,10 @@ lock_platform_reference_update() {
 }
 
 configured_platform_values() {
+    if [[ -n ${PLATFORM_REFERENCE_VALUES_FILE:-} ]]; then
+        python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" validate "$PLATFORM_REFERENCE_VALUES_FILE"
+        return
+    fi
     python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" from-env \
         "${SNP_LAUNCH_MEASUREMENT:-}" "${SNP_MIN_REPORTED_TCB_BOOTLOADER:-}" \
         "${SNP_MIN_REPORTED_TCB_TEE:-}" "${SNP_MIN_REPORTED_TCB_SNP:-}" \
@@ -89,5 +93,10 @@ configured_platform_values() {
 
 install_measurement_allowlist() {
     sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-measurements \
+        "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
+}
+
+install_platform_references() {
+    sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-references \
         "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
 }

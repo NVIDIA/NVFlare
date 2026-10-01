@@ -30,6 +30,7 @@ class CCConfigValue:
 
     # CC CPU mechanisms
     AMD_SEV_SNP = "amd_sev_snp"
+    INTEL_TDX = "intel_tdx"
 
 
 # CC Manager constants

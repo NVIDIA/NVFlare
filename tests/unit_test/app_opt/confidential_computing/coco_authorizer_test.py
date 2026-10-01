@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import copy
 import json
 import threading
@@ -32,32 +33,62 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError
 from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
-from nvflare.app_opt.confidential_computing.coco_authorizer import EAT_PROFILE, TRUST_VECTOR, CoCoAuthorizer
+from nvflare.app_opt.confidential_computing.coco_authorizer import (
+    CPU_TRUST_VECTORS,
+    EAT_PROFILE,
+    TRUST_VECTOR,
+    CoCoAuthorizer,
+)
+from nvflare.app_opt.confidential_computing.trustee_claims import normalized_init_data
 
 
-@pytest.fixture(params=["rsa", "ec"])
+@pytest.fixture(params=[("rsa", "snp"), ("ec", "snp"), ("rsa", "tdx"), ("ec", "tdx")])
 def material(request):
+    key_type, cpu_type = request.param
     signer = ec.generate_private_key(ec.SECP256R1())
     key = (
         rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        if request.param == "rsa"
+        if key_type == "rsa"
         else ec.generate_private_key(ec.SECP256R1())
     )
-    algorithm = jwt.algorithms.RSAAlgorithm if request.param == "rsa" else jwt.algorithms.ECAlgorithm
+    algorithm = jwt.algorithms.RSAAlgorithm if key_type == "rsa" else jwt.algorithms.ECAlgorithm
     jwk = json.loads(algorithm.to_jwk(key.public_key()))
-    if request.param == "rsa":
+    if key_type == "rsa":
         jwk["alg"] = "RSA-OAEP-256"
     expected = {"init_data": "a" * 64, "image": "registry.example/workload@sha256:" + "b" * 64, "args": ["/start"]}
+    # Match the pinned Trustee TDX claims.rs / AS flattening contract. These
+    # synthetic values exercise the real claim shape, not hardware validation.
+    init_data = expected["init_data"] + ("0" * 32 if cpu_type == "tdx" else "")
     claims = {
         "iat": int(time.time()),
         "exp": int(time.time()) + 300,
         "eat_profile": EAT_PROFILE,
         "submods": {
             "cpu0": {
-                "ear.trustworthiness-vector": copy.deepcopy(TRUST_VECTOR),
+                "ear.trustworthiness-vector": copy.deepcopy(CPU_TRUST_VECTORS[cpu_type]),
                 "ear.veraison.annotated-evidence": {
+                    # AS-signed evidence identifies the appraised CPU platform.
+                    cpu_type: (
+                        {"measurement": "c" * 96}
+                        if cpu_type == "snp"
+                        else {
+                            "quote": {
+                                "header": {"version": "0400", "tee_type": "81000000"},
+                                "body": {
+                                    "mr_td": "d" * 96,
+                                    "mr_config_id": init_data,
+                                    "rtmr_0": "0" * 96,
+                                    "rtmr_1": "1" * 96,
+                                    "rtmr_2": "2" * 96,
+                                    "rtmr_3": "3" * 96,
+                                    "td_attributes": "0000000000000000",
+                                },
+                            },
+                            "td_attributes": {"debug": False},
+                        }
+                    ),
                     "runtime_data_claims": {"tee-pubkey": jwk},
-                    "init_data": expected["init_data"],
+                    "init_data": init_data,
                     "init_data_claims": {
                         "agent_policy_claims": {
                             "containers": [
@@ -99,9 +130,15 @@ def material(request):
     return claims, client, verifier, generate, key
 
 
-def test_valid_proof_and_single_use(material):
-    _, _, verifier, generate, _ = material
+@pytest.mark.parametrize("gpu", [False, True])
+def test_valid_proof_and_single_use(material, gpu):
+    claims, _, verifier, generate, _ = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
     token = generate()
+    proof = jwt.decode(token, options={"verify_signature": False})
+    ear = jwt.decode(proof["ear"], options={"verify_signature": False})
+    assert set(ear["submods"]) == ({"cpu0", "gpu0"} if gpu else {"cpu0"})
     assert "PRIVATE KEY" not in token
     assert verifier.verify(token)
     assert not verifier.verify(token)
@@ -119,6 +156,7 @@ def test_optional_ear_audience_is_verified(material, audience):
     assert verifier.verify(generate()) is (audience == "expected")
 
 
+@pytest.mark.parametrize("material", [("rsa", "snp"), ("ec", "snp")], indirect=True)
 @pytest.mark.parametrize("change", ["none", "init_data", "measurement", "missing", "site"])
 def test_optional_workload_constraints_are_verified(material, change):
     claims, _, verifier, generate, _ = material
@@ -130,10 +168,32 @@ def test_optional_workload_constraints_are_verified(material, change):
     elif change == "measurement":
         evidence["snp"]["measurement"] = "c" * 96
     elif change == "missing":
-        del evidence["snp"]
+        evidence["snp"] = {"policy": {"debug": False}}
     elif change == "site":
         verifier.workload_constraints = {"site-2": {"init_data": "a" * 64}}
     assert verifier.verify_for_site(generate(), "site-1") is (change == "none")
+
+
+@pytest.mark.parametrize("change", ["none", "init_data", "missing", "site"])
+def test_optional_init_data_constraints_are_verified_for_both_cpu_types(material, change):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    verifier.workload_constraints = {"site-1": {"init_data": "a" * 64}}
+    if change == "init_data":
+        evidence["init_data"] = "c" * 64
+    elif change == "missing":
+        del evidence["init_data"]
+    elif change == "site":
+        verifier.workload_constraints = {"site-2": {"init_data": "a" * 64}}
+    assert verifier.verify_for_site(generate(), "site-1") is (change == "none")
+
+
+@pytest.mark.parametrize("material", [("rsa", "tdx"), ("ec", "tdx")], indirect=True)
+def test_tdx_cannot_satisfy_snp_measurement_constraint(material):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    verifier.workload_constraints = {"site-1": {"measurement": evidence["tdx"]["quote"]["body"]["mr_td"]}}
+    assert not verifier.verify_for_site(generate(), "site-1")
 
 
 @pytest.mark.parametrize(
@@ -145,12 +205,152 @@ def test_optional_workload_constraints_are_verified(material, change):
         {"site-1": {}},
         {"site-1": {"other": "a" * 64}},
         {"site-1": {"init_data": "not-hex"}},
+        {"site-1": {"cpu_tee": "sample"}},
+        {"site-1": {"cpu_tee": True}},
+        {"site-1": {"cpu_tee": "TDX"}},
+        {"site-1": {"tdx_mr_td": "a" * 64}},
+        {"site-1": {"tdx_rtmr_0": "A" * 96}},
+        {"site-1": {"tdx_rtmr_1": None}},
+        {"site-1": {"tdx_rtmr_4": "a" * 96}},
+        {"site-1": {"measurement": "a" * 96, "tdx_mr_td": "a" * 96}},
+        {"site-1": {"cpu_tee": "tdx", "measurement": "a" * 96}},
+        {"site-1": {"cpu_tee": "snp", "tdx_rtmr_1": "a" * 96}},
     ],
 )
 def test_malformed_workload_constraints_fail_at_construction(material, pins):
     _, _, _, generate, _ = material
     with pytest.raises(ValueError):
         generate(workload_constraints=pins)
+
+
+@pytest.mark.parametrize("cpu_tee", ["snp", "tdx"])
+def test_cpu_tee_constraint_pins_signed_platform(material, cpu_tee):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    verifier.workload_constraints = {"site-1": {"cpu_tee": cpu_tee}}
+    assert verifier.verify_for_site(generate(), "site-1") is (cpu_tee in evidence)
+
+
+def test_typed_constraints_are_accepted_at_construction(material):
+    claims, _, _, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    if "snp" in evidence:
+        pins = {"cpu_tee": "snp", "init_data": "a" * 64, "measurement": evidence["snp"]["measurement"]}
+    else:
+        body = evidence["tdx"]["quote"]["body"]
+        pins = {
+            "cpu_tee": "tdx",
+            "init_data": "a" * 64,
+            **{f"tdx_{name}": body[name] for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3")},
+        }
+    assert generate(workload_constraints={"site-1": pins})
+
+
+@pytest.mark.parametrize("material", [("rsa", "tdx"), ("ec", "tdx")], indirect=True)
+@pytest.mark.parametrize("gpu", [False, True])
+@pytest.mark.parametrize("change", ["none", "mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "missing", "malformed"])
+def test_tdx_typed_measurement_constraints(material, gpu, change):
+    claims, _, verifier, generate, _ = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    body = evidence["tdx"]["quote"]["body"]
+    verifier.workload_constraints = {
+        "site-1": {
+            "cpu_tee": "tdx",
+            "init_data": "a" * 64,
+            **{f"tdx_{name}": body[name] for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3")},
+        }
+    }
+    if change == "missing":
+        body.pop("rtmr_2")
+    elif change == "malformed":
+        evidence["tdx"]["quote"] = []
+    elif change != "none":
+        body[change] = "f" * 96
+    assert verifier.verify_for_site(generate(), "site-1") is (change == "none")
+
+
+@pytest.mark.parametrize("material", [("rsa", "snp"), ("ec", "snp")], indirect=True)
+@pytest.mark.parametrize("pin", ["tdx_mr_td", "tdx_rtmr_0", "tdx_rtmr_1", "tdx_rtmr_2", "tdx_rtmr_3"])
+def test_snp_cannot_satisfy_tdx_measurement_constraint(material, pin):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    verifier.workload_constraints = {"site-1": {pin: evidence["snp"]["measurement"]}}
+    assert not verifier.verify_for_site(generate(), "site-1")
+
+
+@pytest.mark.parametrize("material", [("rsa", "tdx"), ("ec", "tdx")], indirect=True)
+@pytest.mark.parametrize(
+    "change", ["padding", "short", "long", "upper", "not_hex", "null", "body_mismatch", "body_missing", "body_type"]
+)
+def test_tdx_init_data_pin_rejects_malformed_or_inconsistent_binding(material, change):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    body = evidence["tdx"]["quote"]["body"]
+    verifier.workload_constraints = {"site-1": {"init_data": "a" * 64}}
+    if change == "body_mismatch":
+        body["mr_config_id"] = "b" * 64 + "0" * 32
+    elif change == "body_missing":
+        body.pop("mr_config_id")
+    elif change == "body_type":
+        evidence["tdx"]["quote"]["body"] = []
+    else:
+        value = {
+            "padding": "a" * 64 + "0" * 31 + "1",
+            "short": "a" * 64,
+            "long": "a" * 64 + "0" * 64,
+            "upper": "A" * 64 + "0" * 32,
+            "not_hex": "z" * 64 + "0" * 32,
+            "null": None,
+        }[change]
+        evidence["init_data"] = body["mr_config_id"] = value
+    assert not verifier.verify_for_site(generate(), "site-1")
+
+
+@pytest.mark.parametrize("material", [("rsa", "tdx"), ("ec", "tdx")], indirect=True)
+@pytest.mark.parametrize("change", ["mr_td", "rtmr_1", "init_data"])
+def test_tdx_pin_cannot_be_satisfied_by_modifying_ear_and_resigning_outer_proof(material, change):
+    _, _, verifier, generate, key = material
+    proof = jwt.decode(generate(), options={"verify_signature": False})
+    header, _, signature = proof["ear"].split(".")
+    claims = jwt.decode(proof["ear"], options={"verify_signature": False})
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    body = evidence["tdx"]["quote"]["body"]
+    if change == "init_data":
+        evidence["init_data"] = body["mr_config_id"] = "b" * 64 + "0" * 32
+        verifier.workload_constraints = {"site-1": {"init_data": "b" * 64}}
+    else:
+        body[change] = "b" * 96
+        verifier.workload_constraints = {"site-1": {f"tdx_{change}": "b" * 96}}
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    proof["ear"] = ".".join((header, payload, signature))
+    token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+    assert not verifier.verify_for_site(token, "site-1")
+
+
+@pytest.mark.parametrize("material", [("rsa", "snp"), ("ec", "snp")], indirect=True)
+def test_snp_init_data_does_not_accept_tdx_padding(material):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    verifier.workload_constraints = {"site-1": {"init_data": "a" * 64}}
+    evidence["init_data"] += "0" * 32
+    assert not verifier.verify_for_site(generate(), "site-1")
+
+
+@pytest.mark.parametrize("change", ["none", "unknown", "ambiguous"])
+def test_init_data_normalizer_requires_explicit_unambiguous_cpu_evidence(material, change):
+    claims, _, _, _, _ = material
+    evidence = copy.deepcopy(claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"])
+    if change == "none":
+        assert normalized_init_data(evidence) == "a" * 64
+    else:
+        if change == "unknown":
+            evidence["untrusted"] = {"measurement": "a" * 96}
+        else:
+            evidence["tdx" if "snp" in evidence else "snp"] = {"measurement": "a" * 96}
+        with pytest.raises(ValueError):
+            normalized_init_data(evidence)
 
 
 def test_replay_cache_is_process_local_not_a_challenge_protocol(material):
@@ -441,8 +641,11 @@ def test_longer_proof_does_not_extend_ear_freshness(material):
         generate(proof_lifetime_seconds=600)
 
 
-def test_peer_bound_proof(material):
-    _, _, verifier, generate, _ = material
+@pytest.mark.parametrize("gpu", [False, True])
+def test_peer_bound_proof(material, gpu):
+    claims, _, verifier, generate, _ = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
     token = generate()
     assert not verifier.verify_for_site(token, "site-2")
     assert not verifier.verify_for_site(token, "")
@@ -485,8 +688,11 @@ def test_server_proof_is_verified_locally_with_logical_identity(material, case):
         session.assert_not_called()
 
 
-def test_registration_rejects_other_clients_real_signed_proof(material):
-    _, _, verifier, generate, _ = material
+@pytest.mark.parametrize("gpu", [False, True])
+def test_registration_rejects_other_clients_real_signed_proof(material, gpu):
+    claims, _, verifier, generate, _ = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
     token = generate()
     manager = CCManager([], ["coco"], cc_enabled_sites=["site-1", "site-2"])
     manager.cc_verifiers = {verifier.get_namespace(): verifier}
@@ -504,12 +710,12 @@ def test_registration_rejects_other_clients_real_signed_proof(material):
 
 
 @pytest.mark.parametrize(
-    "failure", ["gpu_missing", "gpu_failed", "cpu_failed", "extra_submod", "old", "expired", "wrong_key"]
+    "failure", ["cpu_missing", "gpu_failed", "cpu_failed", "extra_submod", "old", "expired", "wrong_key"]
 )
 def test_bad_ear_rejected(material, failure):
     claims, client, _, generate, _ = material
-    if failure == "gpu_missing":
-        claims["submods"].pop("gpu0")
+    if failure == "cpu_missing":
+        claims["submods"].pop("cpu0")
     elif failure == "gpu_failed":
         claims["submods"]["gpu0"]["ear.trustworthiness-vector"]["hardware"] = 97
     elif failure == "cpu_failed":
@@ -527,9 +733,12 @@ def test_bad_ear_rejected(material, failure):
         generate()
 
 
+@pytest.mark.parametrize("gpu", [False, True])
 @pytest.mark.parametrize("failure", ["subject", "audience", "signature", "time", "ear_signature"])
-def test_invalid_proof_rejected(material, failure):
-    _, _, verifier, generate, key = material
+def test_invalid_proof_rejected(material, failure, gpu):
+    claims, _, verifier, generate, key = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
     token = generate()
     if failure == "audience":
         verifier.audience = "nvflare-coco:another-project"
@@ -546,6 +755,127 @@ def test_invalid_proof_rejected(material, failure):
             claims = jwt.decode(proof["ear"], options={"verify_signature": False})
             proof["ear"] = jwt.encode(claims, ec.generate_private_key(ec.SECP256R1()), algorithm="ES256")
         token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize(
+    "submods", [None, [], ["cpu0"], "cpu0", {}, {"gpu0": {}}, {"cpu0": None}, {"cpu0": []}, {"cpu1": {}}]
+)
+def test_malformed_signed_submodules_rejected(material, submods):
+    claims, client, verifier, generate, key = material
+    claims["submods"] = submods
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    # Bypass only the generating client's appraisal to test the independent
+    # verifier with an AS-signed EAR and a genuinely signed outer proof.
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("gpu", [False, True])
+@pytest.mark.parametrize("failure", ["cpu_failed", "cpu_vector_missing", "cpu_key_missing", "extra_submod"])
+def test_signed_invalid_cpu_evidence_rejected_in_both_modes(material, gpu, failure):
+    claims, client, verifier, generate, key = material
+    if not gpu:
+        claims["submods"].pop("gpu0")
+    cpu = claims["submods"]["cpu0"]
+    if failure == "cpu_failed":
+        cpu["ear.trustworthiness-vector"]["hardware"] = 97
+    elif failure == "cpu_vector_missing":
+        cpu.pop("ear.trustworthiness-vector")
+    elif failure == "cpu_key_missing":
+        cpu["ear.veraison.annotated-evidence"]["runtime_data_claims"].pop("tee-pubkey")
+    else:
+        claims["submods"]["gpu1"] = copy.deepcopy(cpu)
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("gpu_claim", [None, [], {}, {"ear.trustworthiness-vector": {**TRUST_VECTOR, "hardware": 97}}])
+def test_present_invalid_gpu_never_falls_back_to_cpu_only(material, gpu_claim):
+    claims, client, verifier, generate, key = material
+    claims["submods"]["gpu0"] = gpu_claim
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+def test_removing_gpu_from_signed_ear_rejected_even_with_resigned_outer_proof(material):
+    _, _, verifier, generate, key = material
+    proof = jwt.decode(generate(), options={"verify_signature": False})
+    header, payload, signature = proof["ear"].split(".")
+    claims = jwt.decode(proof["ear"], options={"verify_signature": False})
+    claims["submods"].pop("gpu0")
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    proof["ear"] = ".".join((header, payload, signature))
+    token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("failure", ["missing", "unknown", "ambiguous", "null", "empty", "list"])
+def test_cpu_type_must_be_supported_unambiguous_signed_evidence(material, failure):
+    claims, client, verifier, generate, key = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    cpu_type = "snp" if "snp" in evidence else "tdx"
+    if failure == "missing":
+        evidence.pop(cpu_type)
+    elif failure == "unknown":
+        evidence["sample"] = evidence.pop(cpu_type)
+    elif failure == "ambiguous":
+        evidence["tdx" if cpu_type == "snp" else "snp"] = copy.deepcopy(evidence[cpu_type])
+    else:
+        evidence[cpu_type] = {"null": None, "empty": {}, "list": []}[failure]
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("submod", ["cpu0", "gpu0"])
+@pytest.mark.parametrize("field,value", [("configuration", 0), ("configuration", True), ("executables", 4)])
+def test_platform_vectors_do_not_accept_generic_success_threshold(material, submod, field, value):
+    claims, client, verifier, generate, key = material
+    claims["submods"][submod]["ear.trustworthiness-vector"][field] = value
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("submod", ["cpu0", "gpu0"])
+def test_cpu_and_gpu_configuration_vectors_are_not_interchangeable(material, submod):
+    claims, client, verifier, generate, key = material
+    vector = claims["submods"][submod]["ear.trustworthiness-vector"]
+    vector["configuration"] = 2 if vector["configuration"] == 3 else 3
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+def test_changing_cpu_type_without_as_signature_is_rejected(material):
+    _, _, verifier, generate, key = material
+    proof = jwt.decode(generate(), options={"verify_signature": False})
+    header, _, signature = proof["ear"].split(".")
+    claims = jwt.decode(proof["ear"], options={"verify_signature": False})
+    cpu = claims["submods"]["cpu0"]
+    evidence = cpu["ear.veraison.annotated-evidence"]
+    old_type = "snp" if "snp" in evidence else "tdx"
+    new_type = "tdx" if old_type == "snp" else "snp"
+    evidence[new_type] = evidence.pop(old_type)
+    cpu["ear.trustworthiness-vector"] = CPU_TRUST_VECTORS[new_type]
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    proof["ear"] = ".".join((header, payload, signature))
+    token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
     assert not verifier.verify(token)
 
 

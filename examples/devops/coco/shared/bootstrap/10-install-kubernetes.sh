@@ -9,8 +9,10 @@ load_config
 [[ ${KUBERNETES_APT_KEY_FINGERPRINT:-} =~ ^[0-9A-Fa-f]{40}$ ]] || die "Set KUBERNETES_APT_KEY_FINGERPRINT to the approved primary fingerprint in $CONFIG_FILE before installing"
 require_root_or_sudo
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+# Verified archives are extracted as root. Keep their scratch space root-private
+# and clean it with the same privilege, including on failed installations.
+tmp_dir="$(as_root mktemp -d /var/tmp/coco-kubernetes.XXXXXXXXXX)"
+trap 'as_root rm -rf -- "$tmp_dir"' EXIT
 download_dir="$STATE_DIR/downloads"
 prepare_download_dir
 
@@ -140,7 +142,7 @@ fi
 if [[ ! -s "$KUBECONFIG_PATH" ]]; then
   log "Initializing the single-node Kubernetes control plane"
   kubeadm_config="$tmp_dir/kubeadm.yaml"
-  sed -e "s|@@NODE_IP@@|$NODE_IP|g" -e "s|@@K8S_SEMVER@@|$KUBERNETES_SEMVER|g" -e "s|@@POD_CIDR@@|$POD_CIDR|g" -e "s|@@SERVICE_CIDR@@|$SERVICE_CIDR|g" -e "s|@@CLUSTER_DNS@@|$CLUSTER_DNS|g" "$TEMPLATE_DIR/kubeadm.yaml.in" >"$kubeadm_config"
+  sed -e "s|@@NODE_IP@@|$NODE_IP|g" -e "s|@@K8S_SEMVER@@|$KUBERNETES_SEMVER|g" -e "s|@@POD_CIDR@@|$POD_CIDR|g" -e "s|@@SERVICE_CIDR@@|$SERVICE_CIDR|g" -e "s|@@CLUSTER_DNS@@|$CLUSTER_DNS|g" "$TEMPLATE_DIR/kubeadm.yaml.in" | as_root tee "$kubeadm_config" >/dev/null
   as_root kubeadm init --config "$kubeadm_config" --skip-token-print
 else
   log "Existing cluster found at $KUBECONFIG_PATH; kubeadm init skipped"

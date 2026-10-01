@@ -1,11 +1,19 @@
 # Configure the public package before deployment
 
+The examples default to SNP+GPU. For SNP-only, TDX-only, or TDX+GPU,
+first select the matching [runtime configuration](RUNTIME-VARIANTS.md).
+Keep the trusted launch contract, participant CC YAML, and runtime configuration
+consistent; changing one variable cannot authorize a different platform.
+
 This package contains code and templates, not an existing deployment's state.
 Use dedicated Ubuntu 26.04 x86_64 provisioning/trusted/CoCo hosts and a fresh
-Ubuntu 24.04 x86_64 secure-services host. The trusted and CoCo hosts need AMD
-SEV-SNP enabled and one supported NVIDIA GPU in production CC mode. A CC-ready
-label is not cryptographic GPU attestation. Secure services must successfully
-appraise both CPU and GPU evidence before authorizing key release.
+Ubuntu 24.04 x86_64 secure-services host. The trusted and CoCo hosts need the
+selected AMD SEV-SNP or Intel TDX host stack. GPU targets additionally need one
+supported NVIDIA GPU in production CC mode. TDX requires preinstalled, pinned
+QGS and reviewed Intel quote collateral configuration; the bootstrap does not
+install firmware or enroll a platform with Intel. A CC-ready label is not
+cryptographic GPU attestation. Secure services appraise the CPU and, for GPU
+releases, the GPU before authorizing key release.
 
 Read scripts before running them. Installers change packages, services,
 networking and GPU ownership; they are not safe for a shared production host.
@@ -64,7 +72,7 @@ insufficient. Configure DNS before the rehearsal or workload launch.
 | Role | Configuration requiring deployment-specific review |
 |---|---|
 | Admin | `REGISTRY_HOST`, `KBS_URL`, `WORK_ROOT`, target Kubernetes service IP/port; later pin `WORKLOAD_LAUNCH_PROFILE_SHA256` to the authenticated contract |
-| Secure services | `SERVICE_FQDN`, `REGISTRY_PUBLISHER_CIDR` (admin's exact egress IPv4/32), dedicated state paths; stage 02 fills the five blank reference fields |
+| Secure services | `SERVICE_FQDN`, `REGISTRY_PUBLISHER_CIDR` (admin's exact egress IPv4/32), dedicated state paths; stage 02 installs the selected SNP or TDX reference configuration |
 | CoCo | `SERVICE_FQDN`, private `COCO_CONFIG` and state paths; the runtime does not need approved measurements in its configuration |
 
 Keep registry TLS on 5000 and KBS HTTPS on 8443. Allow access only from intended
@@ -97,11 +105,12 @@ editor trusted_system/bootstrap/config.env
 ```
 
 Set `EXPECTED_HOSTNAME` in **both** files. Choose a new `PLATFORM_PROFILE`
-for every collection; use dedicated private work/tools directories and place
+for every collection; set the same target in both configurations, use dedicated private work/tools directories and place
 the reviewed source Pod YAML at `REHEARSAL_WORKLOAD_YAML`. For the included
-one-container/one-GPU example, start from
+one-container/one-GPU default example, start from
 `trusted_system/workload-source.yaml.example`; it defines only the launch
-shape and must not be deployed as an application. The rehearsal substitutes
+shape and must not be deployed as an application. For CPU-only remove the GPU
+resources and select its runtime before approving the source. The rehearsal substitutes
 its collector image. Review the exact workload's launch conditions, the CPU
 baseline assumption, and the limitations in
 [the trusted-system guide](trusted_system/SEC-SYS-LAUNCH-PROFILE.md).
@@ -111,7 +120,8 @@ baseline assumption, and the limitations in
 1. Trusted system: stages **01–10**, with fresh evidence and a repeat rehearsal.
    Stage 01 takes `"$CONFIG"`; stage 02 uses `bootstrap/config.env`.
 2. Admin coordinates the two stage-10 outputs. Secure services receives only
-   the five-value JSON; admin authenticates and pins its separate launch contract.
+   the selected reference JSON (five fields for SNP, a versioned complete-profile
+   document for TDX); admin authenticates and pins its separate launch contract.
 3. Secure services: stages **01–11**, then RVPS restart/readback. See
    [fresh installation](service/SERVICE-INSTALLATION.md).
 4. Admin: receive public trust and its private publisher credential, then

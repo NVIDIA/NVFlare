@@ -76,22 +76,22 @@ REVIEWED_FRAGMENT="${WORK_DIR}/reviewed-resource-policy-fragment.rego"
 mapfile -d '' -t RELEASE_META < <(
     python3 - "${HANDOFF_DIR}" "${SERVICE_FQDN}:${REGISTRY_PORT}" \
         "${SCRIPT_DIR}/policies/workload-resource-policy.rego.template" "${REVIEWED_FRAGMENT}" \
-        "${SCRIPT_DIR}/lib/trustee_claims.py" <<'PY'
+        "${SCRIPT_DIR}/lib/workload-release.py" \
+        "${SCRIPT_DIR}/policies/workload-resource-policy-v1.rego.template" <<'PY'
 import json
 from pathlib import Path
 import re
 import sys
-from string import Template
 import runpy
 
 root = Path(sys.argv[1])
-authorization = json.loads((root / "release-authorization.json").read_text())
+contract = runpy.run_path(sys.argv[5])
+received = json.loads((root / "release-authorization.json").read_text(), object_pairs_hook=contract["unique_object"])
+authorization = contract["validate_authorization"](received)
 image_policy = json.loads((root / "image-security-policy.json").read_text())
 fragment = (root / "resource-policy-fragment.rego").read_text()
 cosign_public = (root / "cosign.pub").read_text()
 
-if authorization.get("schema") != "coco-workload-owner-authorization/v1":
-    raise SystemExit("unsupported release-authorization schema")
 release = authorization.get("release_name", "")
 if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release) or len(release) > 63:
     raise SystemExit("invalid release_name")
@@ -111,18 +111,6 @@ if not isinstance(args, list) or not args or not all(isinstance(v, str) and v fo
     raise SystemExit("process_args must be a non-empty string array")
 if not args[0].startswith("/"):
     raise SystemExit("the executable in process_args must be an absolute path")
-
-initdata = authorization.get("snp_init_data_sha256", "")
-if not re.fullmatch(r"[0-9a-f]{64}", initdata):
-    raise SystemExit("SNP init-data value is not 64-character lowercase hex")
-if authorization.get("snp_init_data_encoding_in_trustee_v0_21") != "lowercase-hex":
-    raise SystemExit("unexpected SNP init-data encoding")
-if authorization.get("required_ear_submods") != ["cpu0", "gpu0"]:
-    raise SystemExit("authorization does not require exactly CPU and GPU submodules")
-expected_vector = runpy.run_path(sys.argv[5])["TRUST_VECTOR"]
-required_vectors = {name: expected_vector for name in ("cpu0", "gpu0")}
-if authorization.get("required_ear_trust_vectors") != required_vectors:
-    raise SystemExit("authorization lacks the exact approved CPU/GPU trust vectors")
 
 paths = authorization.get("kbs_resource_paths")
 expected_paths = {
@@ -153,22 +141,17 @@ if not cosign_public.startswith("-----BEGIN PUBLIC KEY-----\n"):
     raise SystemExit("cosign.pub is not a PEM public key")
 
 prefix = "wo_" + re.sub(r"[^a-z0-9_]", "_", release)
-def compact(value):
-    return json.dumps(value, separators=(",", ":"))
-
 # Only this secure-services-owned template can contribute executable Rego.
 # JSON encoding keeps owner-supplied strings as data; Template substitution
 # is single-pass, so placeholder-like text in arguments is not interpreted.
-rendered = Template(Path(sys.argv[3]).read_text()).substitute(
-    prefix=prefix, initdata=compact(initdata), image=compact(image), args=compact(args),
-    trust_vector=json.dumps(expected_vector, indent=4),
-    path_rules="\n".join(
-        f'{prefix}_authorized_path(path) if {{ path == {compact(path.split("/"))} }}'
-        for path in paths
-    ),
-)
-if fragment.strip() != rendered.strip():
+rendered = contract["render_fragment"](authorization, Path(sys.argv[3]).read_text())
+expected_received = rendered
+if received["schema"] == contract["V1"]:
+    expected_received = contract["render_fragment"](received, Path(sys.argv[6]).read_text(), legacy=True)
+if fragment.strip() != expected_received.strip():
     raise SystemExit("received policy fragment differs from the secure-services template")
+# Even an authenticated legacy fragment is upgraded to require exact CPU type,
+# GPU identity, and submodule membership. Never install received executable code.
 Path(sys.argv[4]).write_text(rendered)
 
 values = [release, key_path, signing_path, policy_path, prefix]
@@ -229,81 +212,17 @@ opa check --strict "${CANDIDATE_POLICY}"
 # Defense-in-depth tests for the merged policy. These sampled inputs are not
 # a sandbox for arbitrary Rego: the trusted template above is the boundary.
 mapfile -d '' -t SEMANTIC_CASES < <(
-    python3 - "${HANDOFF_DIR}/release-authorization.json" "${WORK_DIR}" <<'PY'
+    python3 - "${HANDOFF_DIR}/release-authorization.json" "${WORK_DIR}" \
+        "${SCRIPT_DIR}/lib/workload-release.py" <<'PY'
 import json
 from pathlib import Path
 import sys
+import runpy
 
 auth_path, work_dir = Path(sys.argv[1]), Path(sys.argv[2])
-authorization = json.loads(auth_path.read_text())
-image = authorization["encrypted_image"]
-args = authorization["process_args"]
-initdata = authorization["snp_init_data_sha256"]
-trust_vector = next(iter(authorization["required_ear_trust_vectors"].values()))
-paths = authorization["kbs_resource_paths"]
-approved_path = sorted(paths)[0]
-
-def submod(init_data=initdata, image_name=image, process_args=args, vector=trust_vector):
-    return {
-        "ear.trustworthiness-vector": vector,
-        "ear.veraison.annotated-evidence": {
-            "init_data": init_data,
-            "init_data_claims": {
-                "agent_policy_claims": {
-                    "containers": [
-                        {"OCI": {
-                            "Annotations": {"io.kubernetes.cri.image-name": image_name},
-                            "Process": {"Args": process_args},
-                        }}
-                    ]
-                }
-            },
-        },
-        "ear.trustee.identifiers": {"validated": {"container_images": [image_name]}},
-    }
-
-approved = submod()
-wrong_vector = dict(trust_vector)
-wrong_vector["hardware"] = 0
-
-def doc(resource_path="", plugin="", cpu=None, gpu=None):
-    data = {}
-    if resource_path:
-        # The generated {prefix}_authorized_path() rule compares
-        # data["resource-path"] against path.split("/"): KBS supplies the
-        # resource path as a list of segments, not a slash-joined string.
-        data["resource-path"] = resource_path.split("/")
-    if plugin:
-        data["plugin"] = plugin
-    submods = {}
-    if cpu is not None:
-        submods["cpu0"] = cpu
-    if gpu is not None:
-        submods["gpu0"] = gpu
-    input_doc = {"submods": submods} if submods else {}
-    return data, input_doc
-
-cases = {
-    "positive": (*doc(approved_path, "resource", approved, approved), True),
-    "negative-empty": (*doc(), False),
-    "negative-wrong-path": (*doc("no/such/path", "resource", approved, approved), False),
-    "negative-wrong-plugin": (*doc(approved_path, "not-resource", approved, approved), False),
-    "negative-tampered-initdata": (
-        *doc(approved_path, "resource", submod(init_data="0" * 64), approved), False,
-    ),
-    "negative-tampered-image": (
-        *doc(approved_path, "resource", submod(image_name="docker.io/other/image:latest"), approved),
-        False,
-    ),
-    "negative-weak-trust-vector": (
-        *doc(approved_path, "resource", submod(vector=wrong_vector), approved), False,
-    ),
-    "negative-missing-gpu": (*doc(approved_path, "resource", approved, None), False),
-}
-# count(input.submods) == 2 must reject a third submodule.
-extra_data, extra_input = doc(approved_path, "resource", approved, approved)
-extra_input["submods"]["cpu1"] = approved
-cases["negative-extra-submod"] = (extra_data, extra_input, False)
+contract = runpy.run_path(sys.argv[3])
+authorization = contract["load_authorization"](auth_path)
+cases = contract["policy_test_cases"](authorization)
 
 out = []
 for name, (data, input_doc, expected) in cases.items():

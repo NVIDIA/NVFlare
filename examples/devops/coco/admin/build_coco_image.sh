@@ -25,6 +25,9 @@ ADMIN_DIR="${REQUEST[1]}"
 RESULT_FILE="${REQUEST[2]}"
 # The platform file and scripts are trusted admin-node inputs, never CoCo inputs.
 source "${ADMIN_DIR}/lib/release.sh"
+need_file "${WORKLOAD_LAUNCH_PROFILE}"
+python3 "${WORKLOAD_PROFILE_VALIDATOR}" "${WORKLOAD_LAUNCH_PROFILE}" \
+    "${WORKLOAD_LAUNCH_PROFILE_SHA256:-}" "$RUNTIME_CLASS" "$KATA_VERSION"
 for stage in 10-build-plaintext.sh 20-encrypt-sign-publish.sh 25-verify-published-image.sh \
     30-generate-pod-and-policies.sh 40-create-handoffs.sh; do
     [[ -x "${ADMIN_DIR}/${stage}" ]] || die "missing executable stage ${stage}"

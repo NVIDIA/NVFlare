@@ -46,7 +46,7 @@ meets an already approved floor. It must not define the floor.
 
 ## Installation
 
-The current trusted_system handoff is exactly one JSON file with five values. Follow
+The SNP trusted_system handoff is exactly one JSON file with five values. Follow
 [PLATFORM-REFERENCE-VALUES-HANDOFF.md](PLATFORM-REFERENCE-VALUES-HANDOFF.md)
 for export, transfer, approval, reference-only installation with stage 02,
 and live read-back verification with stage 10. No signed archive or AS policy
@@ -65,10 +65,12 @@ then run:
 Stage 09 writes each floor into RVPS as a numeric single value. The Rego policy
 uses `is_number` before every `>=` comparison, so a missing reference (`null`),
 a quoted string, or an array cannot accidentally authorize a report. The stage
-temporarily writes `255` to all four references before enabling the policy,
-making an interrupted update restrictive rather than permissive.
+temporarily clears SNP measurement approval, updates the four floors, then
+activates the complete approved measurement list. A failed intermediate update
+does not leave a permissive mixture of old and new SNP approvals.
 
-The KBS resource policy separately requires exactly the CPU and GPU submodules,
+The KBS resource policy separately requires exactly the CPU submodule, plus
+the GPU submodule for a GPU release,
 and compares each complete signed EAR trust vector with the platform-approved
 vector. Therefore a below-floor CPU appraisal changes the CPU trust vector and
 cannot release the image key, signature policy, or public verification key for
