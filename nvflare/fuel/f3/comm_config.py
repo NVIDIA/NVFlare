@@ -79,6 +79,9 @@ class CommConfigurator:
     def get_config(self):
         return self.config
 
+    def certificate_renewal_enabled(self):
+        return ConfigService.get_bool_var("certificate_renewal", self.config, default=False)
+
     def get_max_message_size(self):
         return ConfigService.get_int_var(VarName.MAX_MESSAGE_SIZE, self.config, default=DEFAULT_MAX_MSG_SIZE)
 

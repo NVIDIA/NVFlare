@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import threading
+import time
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -48,6 +49,7 @@ class CredentialManager:
 
         self.local_endpoint = local_endpoint
         self.cert_cache = {}
+        self._cert_refresh_at = {}
         self.lock = threading.Lock()
         self.identity_resolver = identity_resolver if identity_resolver else CellIdentityResolver(local_endpoint.name)
         self.enforce_identity = enforce_identity
@@ -62,6 +64,8 @@ class CredentialManager:
             local_cert_path = conn_props.get(DriverParams.CLIENT_CERT)
             local_key_path = conn_props.get(DriverParams.CLIENT_KEY)
 
+        self._renewal = conn_props.get(DriverParams.CERTIFICATE_RENEWAL, False)
+        self._cert_file = local_cert_path
         if not local_cert_path:
             log.debug("Certificate is not configured, secure message is not supported")
             self.ca_cert = None
@@ -72,7 +76,6 @@ class CredentialManager:
             self.ca_cert = self.read_file(ca_cert_path)
             self.local_cert = self.read_file(local_cert_path)
             self.local_key = self.read_file(local_key_path)
-            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert_chain())
 
         if not self.local_cert:
             log.debug("Certificate is not configured, secure message is not supported")
@@ -98,9 +101,20 @@ class CredentialManager:
         if not self.cell_cipher:
             raise RuntimeError("This cell doesn't support certificate exchange, not running in secure mode")
         with self.lock:
-            return self.cert_cache.get(fqcn)
+            cert = self.cert_cache.get(fqcn)
+            if cert and time.time() >= self._cert_refresh_at[fqcn]:
+                # Reserve the refresh before releasing the lock; concurrent messages
+                # may use the still-valid cached cert, not trigger another exchange.
+                self._cert_refresh_at[fqcn] = time.time() + 5
+                return None
+            return cert
+
+    def _refresh_local_cert(self):
+        if self._renewal:
+            self.local_cert = self.read_file(self._cert_file)
 
     def create_request(self) -> dict:
+        self._refresh_local_cert()
         req = {
             CERT_CONTENT: self.local_cert,
             CERT_CA_CONTENT: self.ca_cert,
@@ -124,10 +138,14 @@ class CredentialManager:
             except ValueError as ex:
                 raise RuntimeError(str(ex))
 
+        expires = min(c.not_valid_after_utc.timestamp() for c in x509.load_pem_x509_certificates(cert))
+        refresh_at = max(expires - 60, time.time() + 5)
         with self.lock:
             self.cert_cache[fqcn] = cert
+            self._cert_refresh_at[fqcn] = refresh_at
 
     def process_request(self, request: Message) -> dict:
+        self._refresh_local_cert()
         origin = request.get_header(MessageHeaderKey.ORIGIN)
         target = request.get_header(MessageHeaderKey.DESTINATION)
         reply = {}

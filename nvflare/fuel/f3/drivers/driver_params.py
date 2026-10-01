@@ -45,6 +45,7 @@ class DriverParams(str, Enum):
     PEER_ADDR = "peer_addr"
     PEER_CN = "peer_cn"
     PEER_CERT = "peer_cert"  # DER of the authenticated peer certificate
+    CERTIFICATE_RENEWAL = "certificate_renewal"
     IMPLEMENTED_CONN_SEC = "implemented_conn_sec"
 
 

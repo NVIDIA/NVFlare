@@ -55,6 +55,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
@@ -265,7 +266,10 @@ class BaseServer(ABC):
                 root_url.append(admin_url)
 
         my_fqcn = FQCN.ROOT_SERVER
+        renewal = CommConfigurator().certificate_renewal_enabled()
         auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)
+        if renewal and not auth_identity and service_host not in ("0", "0.0.0.0"):
+            auth_identity = service_host
         auth_identity_map = grpc_args.get(ConnPropKey.AUTH_IDENTITY_MAP)
         self.cell = Cell(
             fqcn=my_fqcn,
@@ -277,6 +281,7 @@ class BaseServer(ABC):
             internal_listener_host=listening_host,
             auth_identity=auth_identity,
             auth_identity_map=auth_identity_map,
+            certificate_renewal=renewal,
         )
 
         self.cell.start()

@@ -56,6 +56,18 @@ def ssl_required(params: dict) -> bool:
 
 
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
+    ctx = _load_ssl_context(params, ssl_server)
+    if ctx and ssl_server and params.get(DriverParams.CERTIFICATE_RENEWAL):
+
+        def reload_context(sock, server_name, initial_context):
+            # Never mutate a context already used by another connection.
+            sock.context = _load_ssl_context(dict(params), True)
+
+        ctx.sni_callback = reload_context
+    return ctx
+
+
+def _load_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if not ssl_required(params):
         params[DriverParams.IMPLEMENTED_CONN_SEC.value] = "clear"
         return None
@@ -111,6 +123,11 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.load_verify_locations(ca_path)
+    if params.get(DriverParams.CERTIFICATE_RENEWAL):
+        ctx.verify_flags |= ssl.VERIFY_X509_STRICT
+        ctx.options |= ssl.OP_NO_TICKET
+        if ssl_server:
+            ctx.num_tickets = 0
     if cert_path:
         ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 

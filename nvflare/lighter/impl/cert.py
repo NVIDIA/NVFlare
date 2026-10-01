@@ -120,7 +120,8 @@ class CertBuilder(Builder):
                 renew or replace a root CA already stored in the provisioning state.
             enable_job_ca: also generate a job-signing intermediate CA (job_ca.crt/job_ca.key) in the server
                 startup kit. The server uses it at job deploy time to issue short-lived per-job certificates;
-                without it, secure-mode jobs refuse to deploy. Set False only for non-secure deployments.
+                without it, secure-mode jobs refuse to deploy. A server with external_job_ca skips generation
+                independently of this setting and requires deployment-installed job-CA credentials.
         """
         if isinstance(root_valid_days, bool) or not isinstance(root_valid_days, int) or root_valid_days <= 0:
             raise ValueError(
@@ -244,6 +245,10 @@ class CertBuilder(Builder):
             self.persistent_state.set_root_pri_key(serialize_pri_key(self.pri_key).decode("ascii"))
 
     def _build_write_cert_pair(self, participant: Participant, base_name, ctx: ProvisionContext):
+        if participant.get_prop(PropKey.EXTERNAL_CERT):
+            self._write_root_ca(participant, ctx)
+            return
+
         assert isinstance(self.persistent_state, _CertState)
         subject = participant.subject
         if self.persistent_state.has_subject(subject):
@@ -340,7 +345,7 @@ class CertBuilder(Builder):
         server = project.get_server()
         if server:
             self._build_write_cert_pair(server, CertFileBasename.SERVER, ctx)
-            if self.enable_job_ca:
+            if self.enable_job_ca and not server.get_prop(PropKey.EXTERNAL_JOB_CA):
                 self._build_write_job_ca(project, server, ctx)
 
         for client in project.get_clients():

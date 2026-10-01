@@ -21,6 +21,7 @@ from typing import Dict, List, Optional
 import msgpack
 from cryptography import x509
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_admin_listener, is_mtls_connection
 from nvflare.fuel.f3.comm_error import CommError
@@ -110,6 +111,10 @@ class ConnManager(ConnMonitor):
         # Validate parameters
         capabilities = driver.capabilities()
         support_ssl = capabilities.get(DriverCap.SUPPORT_SSL, False)
+        if self.local_endpoint.conn_props.get(DriverParams.CERTIFICATE_RENEWAL) and ssl_required(params):
+            params[DriverParams.CERTIFICATE_RENEWAL] = True
+            if params.get(DriverParams.CONNECTION_SECURITY, ConnectionSecurity.MTLS) != ConnectionSecurity.MTLS:
+                raise CommError(CommError.BAD_CONFIG, "certificate_renewal requires end-to-end mTLS")
 
         if ssl_required(params) and not support_ssl:
             scheme = params.get(DriverParams.SCHEME.value, "Unknown")

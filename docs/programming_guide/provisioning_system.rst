@@ -595,6 +595,89 @@ identity/role mapping rather than replacing it with this example's fixed role.
 .. literalinclude:: ../resources/step_ca_admin.tpl
    :language: text
 
+.. _external_workload_certificates:
+
+Externally issued workload certificates
+========================================
+
+Use ``external_cert: true`` for externally enrolled server/client endpoints and
+``external_job_ca: true`` for an externally supplied server job-signing CA.
+The options are independent and leave other credentials unchanged. Both apply
+only to centralized ``nvflare provision``; distributed provisioning rejects them.
+FLARE does not call an issuer or manage enrollment.
+
+.. code-block:: yaml
+
+  participants:
+    - name: server1
+      type: server
+      org: example_org
+      external_cert: true
+      external_job_ca: true  # optional; server only
+
+    - name: site-1
+      type: client
+      org: example_org
+      external_cert: true
+
+With ``external_cert``, kits retain configuration and ``rootCA.pem`` but omit
+the endpoint pair. Install ``startup/server.crt`` and ``startup/server.key``
+on servers, or ``startup/client.crt`` and ``startup/client.key`` on clients,
+before running ``start.sh``.
+
+Use a matching RSA-2048 key (required by endpoint message encryption) and a PEM
+chain ordered leaf first, then intermediates, trusted by ``rootCA.pem``.
+The leaf CN must match the configured participant identity; put server hostnames
+in SANs. A client with ``listening_host`` also needs a ``server.crt``/``server.key``
+pair for its listener, with the client's identity as CN and listener hostnames
+in SANs. Mount credentials read-only into FLARE, writable only by enrollment tooling.
+
+Credentials load at startup unless :ref:`certificate_renewal` is enabled.
+That feature reloads same-key endpoint certificates without restarting parents
+or jobs; private-key replacement still requires a restart.
+
+This option supports standard mTLS startup kits. Provisioning rejects
+``external_cert`` for signed Confidential Computing and HE kits: their integrity
+manifest covers the original certificate bytes and cannot survive replacement.
+
+.. _external_job_ca:
+
+Externally supplied server job CA
+----------------------------------------
+
+With ``external_job_ca``, deployment tooling must generate the key locally at the
+server, obtain an approved CA certificate, and install ``startup/job_ca.crt`` and
+``startup/job_ca.key`` before deploying secure jobs. Provisioning omits this pair,
+does not import the external key into its state, and leaves installed material intact.
+
+**Deployment prerequisite:** FLARE requires an approved job-signing CA whose
+certificate chain permits issuance of job certificates. It need not be issued
+by the CA used for endpoint enrollment. Both paths must reach the configured
+``rootCA.pem``. Ordinary endpoint enrollment permission does not authorize CA
+issuance. Do not loosen existing IT path-length constraints; obtain approval for
+the hierarchy and for the server holding the signing key before deployment.
+
+The certificate file contains the job CA first, followed by its issuing
+intermediates. The job CA requires a matching RSA or EC key,
+``CA:TRUE/pathlen:0``, ``keyCertSign``, and the issuer-signed URI SAN
+``https://nvidia.com/nvflare/v1/ca/job``. Any EKU restriction in the chain must
+permit both client and server authentication. Ancestors must permit the extra
+CA level: an issuing CA with ``pathlen:0`` cannot issue this job CA.
+
+FLARE validates the chain and requires more than one hour of remaining validity
+before job issuance. Missing or invalid material blocks secure job deployment;
+there is no endpoint-key fallback. Jobs use locally issued credentials even when
+the external issuer is unavailable, and cannot outlive the chain. The job CA
+stays fixed: this option adds no renewal, rotation, or live replacement.
+
+Keep enrollment tokens and issuer configuration in a parent-only secret mount,
+not job-visible startup, local, custom, or workspace directories. Container
+launchers forward only standard startup configuration, public endpoint/root
+certificates, and signed HE context/manifest files; never embed enrollment secrets
+there. Processes sharing an OS identity are not a filesystem security boundary.
+Kubernetes startup Secrets exclude HE context files.
+Content-integrity checks remain required; the job CA is not a CC/HE content-signing key.
+
 .. _project_yml:
 
 Default project.yml file

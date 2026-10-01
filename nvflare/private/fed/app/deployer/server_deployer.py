@@ -19,6 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SiteType, SystemComponents
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.app.utils import component_security_check
 from nvflare.private.fed.server.fed_server import FederatedServer
@@ -76,6 +77,9 @@ class ServerDeployer:
 
         if self.host:
             target = first_server["service"].get("target", None)
+            # Preserve the configured identity before overriding only the bind address.
+            if CommConfigurator().certificate_renewal_enabled() and target.split(":")[0] not in ("0", "0.0.0.0"):
+                first_server.setdefault("auth_identity", target.split(":")[0])
             first_server["service"]["target"] = self.host + ":" + target.split(":")[1]
 
         services = FederatedServer(

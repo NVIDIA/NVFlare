@@ -3519,7 +3519,17 @@ class TestK8sCredentialTransport:
 
         startup_dir = tmp_path / "startup"
         startup_dir.mkdir()
-        for name in ("rootCA.pem", cert_name, key_name, "job_ca.key", "fed_client.json"):
+        for name in (
+            "rootCA.pem",
+            cert_name,
+            key_name,
+            "job_ca.key",
+            "fed_client.json",
+            "enrollment-token",
+            "issuer-config.json",
+            "client_context.tenseal",
+            "signature.json",
+        ):
             (startup_dir / name).write_text(name)
         launcher = ClientK8sJobLauncher(config_file_path=None)
         launcher.core_v1 = MagicMock()
@@ -3527,7 +3537,12 @@ class TestK8sCredentialTransport:
         launcher._ensure_startup_secret("site-1", str(startup_dir))
 
         body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
-        assert set(body["data"]) == {"rootCA.pem", cert_name, "fed_client.json"}
+        assert set(body["data"]) == {
+            "rootCA.pem",
+            cert_name,
+            "fed_client.json",
+            "signature.json",
+        }
 
     def test_job_credential_rides_credential_secret(self):
         patches = _make_k8s_launcher_patches()

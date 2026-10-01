@@ -62,6 +62,8 @@ class PropKey:
     ADMIN_CERT_PROVIDER = "admin_cert_provider"
     AUTH_IDENTITY = "auth_identity"
     CUSTOM_CA_CERT = "custom_ca_cert"
+    EXTERNAL_CERT = "external_cert"
+    EXTERNAL_JOB_CA = "external_job_ca"
     SCHEME = "scheme"
     CAPACITY = "capacity"
     NUM_GPUS = "num_of_gpus"

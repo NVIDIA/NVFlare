@@ -27,6 +27,7 @@ from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -248,6 +249,7 @@ class FederatedClientBase:
             parent_resources=parent_resources,
             auth_identity=client_auth_identity,
             auth_identity_map=auth_identity_map,
+            certificate_renewal=not self.args.job_id and CommConfigurator().certificate_renewal_enabled(),
         )
         self.cell.start()
         self.communicator.set_cell(self.cell)
