@@ -14,7 +14,7 @@
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 
@@ -218,7 +218,7 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
     log_info.assert_not_called()
 
 
-def test_job_log_receiver_delays_end_run_until_all_active_streams_finish():
+def test_job_log_receiver_delays_end_run_until_all_active_streams_finish(receiver_clock):
     receiver = JobLogReceiver()
     stream_ctx_1 = {
         KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
@@ -244,12 +244,14 @@ def test_job_log_receiver_delays_end_run_until_all_active_streams_finish():
 
     receiver._on_stream_done(stream_ctx_2, _make_recv_fl_ctx())
 
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
     ready_ctx = FLContext()
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
 
 
-def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_path):
+def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_path, receiver_clock):
     receiver = JobLogReceiver(dest_dir=str(tmp_path))
     fl_ctx = _make_recv_fl_ctx()
     job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
@@ -264,18 +266,29 @@ def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_
     with pytest.raises(RuntimeError, match="storage failed"):
         receiver._on_stream_done(stream_ctx, fl_ctx)
 
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
     ready_ctx = FLContext()
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
 
 
 @pytest.fixture
-def log_transports(tmp_path):
+def receiver_clock():
+    # Replace only the receiver's module reference, not Python logging's clock.
+    with patch("nvflare.app_common.logging.job_log_receiver.time") as clock:
+        clock.monotonic.return_value = 0.0
+        yield clock.monotonic
+
+
+@pytest.fixture
+def log_transports(tmp_path, receiver_clock):
     """Use the real receiving protocol with separate parent/job receiver instances."""
     transports = []
 
-    def create(process_type=ProcessType.SERVER_JOB):
-        receiver = JobLogReceiver(dest_dir=str(tmp_path / str(len(transports))), idle_timeout=0)
+    def create(process_type=ProcessType.SERVER_JOB, receiver=None):
+        if receiver is None:
+            receiver = JobLogReceiver(dest_dir=str(tmp_path / str(len(transports))), idle_timeout=0)
         streamer = ObjectStreamer(Mock())
         transports.append(streamer)
         fl_ctx = _make_recv_fl_ctx()
@@ -319,7 +332,7 @@ def _ready_to_end(receiver):
     return not fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)
 
 
-def test_sender_marker_cannot_hide_another_active_stream(log_transports):
+def test_sender_marker_cannot_hide_another_active_stream(log_transports, receiver_clock):
     receiver, streamer, fl_ctx = log_transports()
     forged_ctx = {KEY_FILE_NAME: "log.json", "JobLogReceiver.stream_active": True}
     reply = streamer._handle_request(
@@ -333,19 +346,21 @@ def test_sender_marker_cannot_hide_another_active_stream(log_transports):
     assert not _ready_to_end(receiver)
 
     streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("normal", seq=1, eof=True), fl_ctx)
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
 
 
-def test_ready_transition_rejects_a_racing_first_message(log_transports):
+def test_initial_readiness_accepts_a_delayed_first_message(log_transports, receiver_clock):
     receiver, streamer, fl_ctx = log_transports()
     entered = threading.Event()
     resume = threading.Event()
     on_started = receiver._on_stream_started
 
-    def delayed_start(stream_ctx, callback_fl_ctx):
+    def delayed_start(stream_ctx, callback_fl_ctx, **kwargs):
         entered.set()
         assert resume.wait(timeout=5)
-        return on_started(stream_ctx, callback_fl_ctx)
+        return on_started(stream_ctx, callback_fl_ctx, **kwargs)
 
     with patch.object(receiver, "_on_stream_started", side_effect=delayed_start):
         fire_event(EventType.START_RUN, [receiver], fl_ctx)
@@ -355,16 +370,124 @@ def test_ready_transition_rejects_a_racing_first_message(log_transports):
             )
             try:
                 assert entered.wait(timeout=5)
-                assert _ready_to_end(receiver)
+                assert not _ready_to_end(receiver)
             finally:
                 resume.set()
-            assert pending.result(timeout=5).get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert pending.result(timeout=5).get_return_code() == ReturnCode.OK
 
+    assert not _ready_to_end(receiver)
+    reply = streamer._handle_request(
+        TOPIC_STREAM_REQUEST, _log_request("late", seq=1, data=b"final bytes\n", eof=True), fl_ctx
+    )
+    assert reply.get_return_code() == ReturnCode.OK
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+
+    assert not streamer.tx_table
+    job_manager = fl_ctx.get_engine().get_component.return_value
+    job_manager.set_client_data.assert_called_once()
+    with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
+        assert log_file.read() == b"late log\nfinal bytes\n"
+
+
+def test_end_run_drains_a_stream_admitted_after_last_ready_result(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", data=b"late log\n"), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.OK
+    waiting = threading.Event()
+    original_wait = receiver._active_stream_lock.wait
+
+    def wait_for_stream(timeout):
+        if timeout == 4.5:
+            waiting.set()
+            return original_wait(timeout=timeout)
+        # Once EOF is persisted, advance through the final quiet window.
+        receiver_clock.return_value += timeout
+
+    with patch.object(receiver._active_stream_lock, "wait", side_effect=wait_for_stream) as wait:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            ending = executor.submit(fire_event, EventType.END_RUN, [receiver], fl_ctx)
+            assert waiting.wait(timeout=5)
+            assert not ending.done()
+            reply = streamer._handle_request(
+                TOPIC_STREAM_REQUEST, _log_request("late", seq=1, data=b"final bytes\n", eof=True), fl_ctx
+            )
+            assert reply.get_return_code() == ReturnCode.OK
+            ending.result(timeout=5)
+
+    assert wait.call_args_list == [call(timeout=4.5), call(timeout=0.5)]
+    assert not receiver._active_streams
+    assert not receiver._accepting_streams
+    job_manager = fl_ctx.get_engine().get_component.return_value
+    job_manager.set_client_data.assert_called_once()
+    with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
+        assert log_file.read() == b"late log\nfinal bytes\n"
+
+
+def test_empty_receiver_waits_for_one_configured_quiet_interval(log_transports, receiver_clock):
+    receiver, _, _ = log_transports()
+    with patch("nvflare.app_common.logging.job_log_receiver.get_positive_float_var", side_effect=[3.0, 1.0]):
+        assert not _ready_to_end(receiver)
+    assert receiver._end_run_deadline == 3.0
+    receiver_clock.return_value = 0.9
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 1.0
+    assert _ready_to_end(receiver)
+    # Readiness does not close admission; END_RUN owns that transition.
+    assert receiver._accepting_streams
+
+
+def test_end_run_closes_admission_after_successful_draining(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("too-late", data=b"late\n"), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert not receiver._active_streams
     assert not streamer.tx_table
     fl_ctx.get_engine().get_component.return_value.set_client_data.assert_not_called()
 
 
-def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports):
+def test_late_stream_completion_restarts_the_quiet_window(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.4
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", heartbeat=True), fl_ctx)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", seq=1, eof=True), fl_ctx)
+    receiver_clock.return_value = 0.5
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 1.0
+    assert _ready_to_end(receiver)
+
+
+def test_end_run_wait_for_late_stream_uses_only_remaining_budget(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late-stalled", heartbeat=True), fl_ctx)
+
+    def expire_budget(timeout):
+        receiver_clock.return_value += timeout
+
+    with patch.object(receiver._active_stream_lock, "wait", side_effect=expire_budget) as wait:
+        fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    wait.assert_called_once_with(timeout=4.5)
+    assert receiver_clock.return_value == 5.0
+    assert not receiver._active_streams
+    assert not receiver._accepting_streams
+
+
+def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports, receiver_clock):
     receiver, streamer, fl_ctx = log_transports()
     job_manager = fl_ctx.get_engine().get_component.return_value
     during_storage = []
@@ -379,13 +502,15 @@ def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports)
 
     assert reply.get_return_code() == ReturnCode.OK
     assert during_storage == [False]
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
     job_manager.set_client_data.assert_called_once()
     with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
         assert log_file.read() == b"before stop\nfinal bytes\n"
 
 
-def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, caplog):
+def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receiver_clock, caplog):
     caplog.set_level("DEBUG")
     receiver, streamer, fl_ctx = log_transports()
     streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
@@ -398,18 +523,29 @@ def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, caplog)
         patch("nvflare.private.fed.tbi.time") as clock,
         patch.object(runner, "log_warning") as warning,
     ):
-        clock.time.side_effect = [0.0, 1.0, 6.0]
+        times = iter([0.0, 1.0, 6.0])
+
+        def now():
+            receiver_clock.return_value = next(times)
+            return receiver_clock.return_value
+
+        clock.time.side_effect = now
         runner.check_end_run_readiness(fl_ctx)
 
     clock.sleep.assert_called_once_with(0.5)
     warning.assert_called_once_with(fl_ctx, "quit waiting for component ready-to-end-run after 5.0 seconds")
-    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    with patch.object(receiver._active_stream_lock, "wait") as wait:
+        fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    wait.assert_not_called()
+    assert not receiver._active_streams
     reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", data=b"late\n"), fl_ctx)
     assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
 
-def test_start_run_reopens_admission_after_previous_run(log_transports):
+def test_start_run_reopens_admission_after_previous_run(log_transports, receiver_clock):
     receiver, streamer, fl_ctx = log_transports()
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
     fire_event(EventType.START_RUN, [receiver], fl_ctx)
@@ -419,13 +555,58 @@ def test_start_run_reopens_admission_after_previous_run(log_transports):
     assert not _ready_to_end(receiver)
 
 
-def test_parent_receiver_persists_after_job_receiver_has_shut_down(log_transports):
+def test_timed_out_stream_does_not_carry_into_next_run(log_transports, receiver_clock):
+    receiver, old_streamer, old_ctx = log_transports()
+    old_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("old-run", heartbeat=True), old_ctx)
+    old_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("old-run-2", heartbeat=True), old_ctx)
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 6.0
+    fire_event(EventType.END_RUN, [receiver], old_ctx)
+    assert not receiver._active_streams
+
+    # A new run manager brings a new ObjectStreamer, but reuses the widget.
+    _, new_streamer, new_ctx = log_transports(receiver=receiver)
+    reply = old_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late-old-run", heartbeat=True), old_ctx)
+    assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert "late-old-run" not in old_streamer.tx_table
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 6.5
+    assert _ready_to_end(receiver)
+
+    new_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("new-run", heartbeat=True), new_ctx)
+    assert not _ready_to_end(receiver)
+    # Completion from the old transport cannot untrack the new stream.
+    old_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("old-run", seq=1, eof=True), old_ctx)
+    assert len(receiver._active_streams) == 1
+    assert not _ready_to_end(receiver)
+
+    new_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("new-run", seq=1, eof=True), new_ctx)
+    assert not _ready_to_end(receiver)
+    # Nor can an old completion restart the new run's quiet interval.
+    receiver_clock.return_value = 6.9
+    old_streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("old-run-2", seq=1, eof=True), old_ctx)
+    receiver_clock.return_value = 7.0
+    assert _ready_to_end(receiver)
+
+
+@pytest.mark.parametrize("event", [EventType.ABOUT_TO_START_RUN, EventType.START_RUN])
+def test_reregistration_does_not_forget_an_active_stream(log_transports, event):
+    receiver, streamer, fl_ctx = log_transports()
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("active", heartbeat=True), fl_ctx)
+    fire_event(event, [receiver], fl_ctx)
+    assert len(receiver._active_streams) == 1
+    assert not _ready_to_end(receiver)
+
+
+def test_parent_receiver_persists_after_job_receiver_has_shut_down(log_transports, receiver_clock):
     _, parent_streamer, parent_ctx = log_transports(ProcessType.SERVER_PARENT)
     job_receiver, job_streamer, job_ctx = log_transports(ProcessType.SERVER_JOB)
     parent_streamer._handle_request(
         TOPIC_STREAM_REQUEST, _log_request("parent-stream", data=b"before job shutdown\n"), parent_ctx
     )
 
+    assert not _ready_to_end(job_receiver)
+    receiver_clock.return_value = 0.5
     assert _ready_to_end(job_receiver)
     fire_event(EventType.END_RUN, [job_receiver], job_ctx)
     job_streamer.shutdown()
@@ -463,7 +644,8 @@ def test_register_fires_on_run_lifecycle_events(event_type):
     kwargs = mock_register.call_args.kwargs
     assert kwargs["channel"] == Channels.LOG_STREAMING_CHANNEL
     assert kwargs["topic"] == LIVE_LOG_TOPIC
-    assert kwargs["stream_started_cb"] == receiver._on_stream_started
+    assert kwargs["stream_started_cb"].func == receiver._on_stream_started
+    assert kwargs["stream_started_cb"].keywords == {"generation": receiver._stream_generation}
     assert kwargs["stream_done_cb"] == receiver._on_stream_done
 
 
