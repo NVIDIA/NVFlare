@@ -16,6 +16,9 @@ import os
 import shutil
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -23,9 +26,14 @@ from safetensors.torch import save as save_tensors
 
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
 import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
-from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
-from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
+)
+from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, read_safetensors_metadata, tensor_metadata
+from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 
 
 @pytest.fixture
@@ -35,41 +43,99 @@ def temp_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-class TestExtractSafetensorsKeys:
+def test_root_close_waits_for_consumer_registration(tmp_path, monkeypatch):
+    cell = Mock()
+    props = {}
+    cell.get_fobs_context.side_effect = lambda: dict(props)
+    cell.update_fobs_context.side_effect = props.update
+    engine = SimpleNamespace(get_cell=lambda: cell)
+    context = setup_tensor_disk_offload(engine, enabled=True, root_dir=str(tmp_path))
+    created, register, closing, closed = (threading.Event() for _ in range(4))
+    lock = context.lock
+
+    class ObservedGate:
+        def __enter__(self):
+            if threading.current_thread().name.startswith("closer"):
+                closing.set()
+            lock.acquire()
+
+        def __exit__(self, *args):
+            lock.release()
+
+    context.lock = ObservedGate()
+    initialize = DiskTensorConsumer.__init__
+
+    def delayed_registration(consumer, directory):
+        assert os.path.isdir(directory)
+        created.set()
+        assert register.wait(5), "test did not release registration"
+        initialize(consumer, directory)
+
+    def download_object(**kwargs):
+        assert closed.wait(5), "root cleanup did not finish"
+        kwargs["consumer"].consume_items([save_tensors({"w": torch.ones(1)})], None)
+
+    monkeypatch.setattr(DiskTensorConsumer, "__init__", delayed_registration)
+    monkeypatch.setattr(tensor_downloader, "download_object", download_object)
+    try:
+        with ThreadPoolExecutor(1) as downloads, ThreadPoolExecutor(1, thread_name_prefix="closer") as closers:
+            download = downloads.submit(tensor_downloader.download_tensors_to_disk, "site", "ref", 1.0, cell)
+            assert created.wait(5)
+            cleanup = closers.submit(cleanup_tensor_disk_offload, engine, context)
+            try:
+                assert closing.wait(5)
+                assert not cleanup.done(), "cleanup overtook an unregistered consumer"
+                assert os.path.isdir(context.root_dir)
+            finally:
+                register.set()
+            try:
+                cleanup.result(timeout=5)
+            finally:
+                closed.set()
+            with pytest.raises(DownloadCancelled):
+                download.result(timeout=5)
+        assert not os.path.exists(context.root_dir)
+    finally:
+        register.set()
+        closed.set()
+        cleanup_tensor_disk_offload(engine, context)
+
+
+class TestReadSafetensorsMetadata:
     def test_single_key(self):
         data = save_tensors({"weight": torch.randn(3, 3)})
-        keys = _extract_safetensors_keys(data)
-        assert keys == ["weight"]
+        keys = read_safetensors_metadata(data)
+        assert list(keys) == ["weight"]
 
     def test_multiple_keys(self):
         data = save_tensors({"a": torch.randn(2), "b": torch.randn(2)})
-        keys = _extract_safetensors_keys(data)
+        keys = read_safetensors_metadata(data)
         assert set(keys) == {"a", "b"}
 
     def test_invalid_data(self):
         with pytest.raises(ValueError, match="too short"):
-            _extract_safetensors_keys(b"short")
+            read_safetensors_metadata(b"short")
 
     def test_header_size_exceeds_payload(self):
         # Header says 100 bytes of JSON, but payload only has 2.
         data = (100).to_bytes(8, byteorder="little") + b"{}"
         with pytest.raises(ValueError, match="header size exceeds payload length"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_zero_header_size(self):
         data = (0).to_bytes(8, byteorder="little")
         with pytest.raises(ValueError, match="empty header"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_invalid_json_header(self):
         data = (4).to_bytes(8, byteorder="little") + b"nope"
         with pytest.raises(ValueError, match="invalid JSON header"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
     def test_non_object_json_header(self):
         data = (2).to_bytes(8, byteorder="little") + b"[]"
         with pytest.raises(ValueError, match="header must be JSON object"):
-            _extract_safetensors_keys(data)
+            read_safetensors_metadata(data)
 
 
 class TestDiskTensorConsumer:
@@ -155,13 +221,35 @@ class TestDiskTensorConsumer:
 
         assert not os.path.exists(temp_dir)
 
+    @pytest.mark.parametrize("first", ["release", "cancel", "failure"])
+    def test_finalization_racing_ownership_transfer(self, temp_dir, first):
+        consumer = DiskTensorConsumer(temp_dir)
+        consumer.consume_items([save_tensors({"x": torch.ones(2)})], None)
+        reason = "workflow finalized before tensor download completed"
+        if first == "release":
+            consumer.release()
+        elif first == "failure":
+            # Even an identical error string is not a local cancellation.
+            consumer.download_failed("ref", reason)
+
+        # A finalizer may have snapshotted the consumer before it was released/failed.
+        consumer.cleanup(cancel_reason=reason)
+        if first == "cancel":
+            consumer.download_failed("ref", "late chunk failed")
+            with pytest.raises(DownloadCancelled, match=reason):
+                consumer.release()
+        else:
+            consumer.release()
+        assert os.path.exists(temp_dir) == (first == "release")
+        assert consumer.error == (None if first == "release" else reason)
+
     def test_cleanup_waits_for_inflight_write_and_removes_completed_chunk(self, temp_dir, monkeypatch):
         consumer = DiskTensorConsumer(temp_dir)
         item = save_tensors({"x": torch.randn(2)})
         write_entered = threading.Event()
         release_write = threading.Event()
         consume_errors = []
-        original_extract = tensor_downloader._extract_safetensors_keys
+        original_extract = tensor_downloader.read_safetensors_metadata
 
         def blocking_extract(data):
             write_entered.set()
@@ -175,7 +263,7 @@ class TestDiskTensorConsumer:
             except Exception as e:
                 consume_errors.append(e)
 
-        monkeypatch.setattr(tensor_downloader, "_extract_safetensors_keys", blocking_extract)
+        monkeypatch.setattr(tensor_downloader, "read_safetensors_metadata", blocking_extract)
         consume_thread = threading.Thread(target=consume)
         consume_thread.start()
         assert write_entered.wait(timeout=1.0)
@@ -337,10 +425,11 @@ def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkey
 def test_download_tensors_to_disk_uses_scoped_root_dir(monkeypatch, tmp_path):
     root_dir = tmp_path / "nvflare_tensor_offload_root"
     root_dir.mkdir()
+    tensors = {"w": torch.tensor([1.0]), "count": torch.tensor(2), "empty": torch.empty(0, 3)}
 
     def fake_download_object(**kwargs):
         kwargs["consumer"].result = kwargs["consumer"].consume_items(
-            [save_tensors({"w": torch.tensor([1.0])})],
+            [save_tensors({"w": tensors["w"]}), save_tensors({k: v for k, v in tensors.items() if k != "w"})],
             None,
         )
 
@@ -362,3 +451,6 @@ def test_download_tensors_to_disk_uses_scoped_root_dir(monkeypatch, tmp_path):
     shutil.rmtree(root_dir)
 
     assert not root_dir.exists()
+    # Metadata travels with the download: querying a ref must not reopen a chunk.
+    for key, tensor in tensors.items():
+        assert lazy_tensors.make_lazy_ref(key).get_metadata() == tensor_metadata(tensor)
