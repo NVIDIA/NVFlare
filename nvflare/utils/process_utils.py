@@ -316,21 +316,24 @@ class ProcessAdapter:
             self.logger.warning("Failed to kill process group %s (%s)", pgid, exc)
 
 
-def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
+def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
     This method attempts to use os.posix_spawn with setsid=True to avoid fork() related issues
     (such as gRPC deadlocks). If posix_spawn is unavailable or fails, it falls back to
-    subprocess.Popen with preexec_fn=os.setsid.
+    subprocess.Popen in a new session.
 
     Args:
         cmd_args: The command arguments as a list of strings.
         env: The environment variables dictionary.
+        cwd: Optional working directory. A working directory requires the
+            subprocess fallback because portable ``posix_spawn`` has no chdir
+            argument.
 
     Returns:
         ProcessAdapter: An adapter wrapping the launched process.
     """
-    if _POSIX_SPAWN_SUPPORTED and cmd_args:
+    if _POSIX_SPAWN_SUPPORTED and cmd_args and cwd is None:
         try:
             # Note: 'setsid' is a potential extension or patch in some python environments.
             # We wrap it in try-except to gracefully fallback if not supported.
@@ -346,7 +349,15 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
     preexec_fn = os.setsid if hasattr(os, "setsid") else None
-    process = subprocess.Popen(cmd_args, shell=False, preexec_fn=preexec_fn, env=env)
+    popen_kwargs = {"shell": False, "preexec_fn": preexec_fn, "env": env}
+    if cwd is not None:
+        popen_kwargs["cwd"] = cwd
+        # Task processes are launched from a multithreaded client job. Avoid
+        # running Python between fork and exec when cwd selects this fallback.
+        # start_new_session has the same setsid effect without preexec_fn.
+        popen_kwargs.pop("preexec_fn")
+        popen_kwargs["start_new_session"] = True
+    process = subprocess.Popen(cmd_args, **popen_kwargs)
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)

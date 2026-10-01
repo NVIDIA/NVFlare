@@ -232,16 +232,23 @@ def test_fetch_and_run_handles_no_work_and_control_tasks(assignment, expected):
     assert runner.fetch_and_run_one_task(FLContext()) == expected
 
 
-def test_fetch_and_run_processes_task_and_uses_requested_interval():
+@pytest.mark.parametrize("send_success", [True, False])
+def test_fetch_and_run_processes_task_and_exposes_publication_outcome(send_success):
     runner = _runner()
     task = _task()
     task.data.set_header(TaskConstant.WAIT_TIME, 2.0)
     runner.engine.get_task_assignment.return_value = task
     runner._process_task = MagicMock(return_value=Shareable())
-    runner._send_task_result = MagicMock()
+    runner._send_task_result = MagicMock(return_value=send_success)
+    observed = []
+    runner.fire_event = lambda event_type, fl_ctx: observed.append(
+        (event_type, fl_ctx.get_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS))
+    )
+    fl_ctx = FLContext()
 
-    assert runner.fetch_and_run_one_task(FLContext()) == (2.0, True)
+    assert runner.fetch_and_run_one_task(fl_ctx) == (2.0, True)
     runner._send_task_result.assert_called_once()
+    assert observed[-1] == (EventType.AFTER_SEND_TASK_RESULT, send_success)
 
 
 @pytest.mark.parametrize(

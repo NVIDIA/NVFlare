@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from argparse import Namespace
 from types import SimpleNamespace
 
 import pytest
@@ -137,3 +138,56 @@ class TestClientAPIExecutorRuntimeValidation:
         )
 
         configurator._validate_client_api_executors()
+
+
+def test_task_config_prevalidation_does_not_import_original_executor_in_cj(tmp_path, monkeypatch):
+    import_marker = tmp_path / "imported.txt"
+    (tmp_path / "malicious_probe.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(import_marker)!r}).write_text('imported in CJ')\n"
+        "from nvflare.apis.executor import Executor\n"
+        "class ProbeExecutor(Executor):\n"
+        "    def execute(self, task_name, shareable, fl_ctx, abort_signal):\n"
+        "        return shareable\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    config_file = tmp_path / "config_fed_client.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "format_version": 2,
+                "execution_lifetime": "task",
+                "executors": [
+                    {
+                        "tasks": ["train"],
+                        "executor": {"path": "malicious_probe.ProbeExecutor", "args": {}},
+                    }
+                ],
+                "components": [],
+                "task_data_filters": [],
+                "task_result_filters": [],
+            }
+        )
+    )
+    args = Namespace(
+        sp_scheme="grpc",
+        sp_target="localhost:8002",
+        client_name="site-1",
+        parent_url=None,
+        job_id="job-1",
+        workspace=str(tmp_path),
+    )
+    workspace = SimpleNamespace(
+        get_app_custom_dir=lambda job_id: str(tmp_path / job_id / "custom"),
+        get_app_config_dir=lambda job_id: str(tmp_path / job_id / "config"),
+    )
+
+    configurator = ClientJsonConfigurator(
+        workspace_obj=workspace,
+        config_file_name=str(config_file),
+        args=args,
+        app_root=str(tmp_path),
+    )
+    configurator.configure()
+
+    assert not import_marker.exists()

@@ -31,6 +31,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
+from nvflare.job_config.task_execution import EXECUTION_LIFETIME_KEY, prepare_task_execution
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 
@@ -131,6 +132,7 @@ class FedJobConfig:
     def _prepare_meta(self):
         """Validate and serialize job metadata before replacing an existing export."""
         self._validate_meta_props(self.meta_props)
+        self._validate_task_execution_resources()
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -144,6 +146,56 @@ class FedJobConfig:
             meta_json.update(self.meta_props)
 
         return json.dumps(meta_json, indent=4)
+
+    def _validate_task_execution_resources(self):
+        """Keep the first Process slice from inheriting a job-long GPU reservation."""
+        task_mode = any(
+            fed_app.client_app and fed_app.client_app.execution_lifetime == "task" for fed_app in self.fed_apps.values()
+        )
+        if not task_mode:
+            return
+
+        meta_props = self.meta_props if isinstance(self.meta_props, dict) else {}
+        resource_specs = meta_props.get("resource_spec", self.resource_specs)
+        launcher_specs = meta_props.get("launcher_spec", {})
+        for setting_name, settings in (("resource_spec", resource_specs), ("launcher_spec", launcher_specs)):
+            if not isinstance(settings, dict):
+                continue
+            for site_name, site_settings in settings.items():
+                if site_name == "server":
+                    continue
+                gpu_path = self._find_nonempty_gpu_setting(site_settings)
+                if gpu_path:
+                    raise ValueError(
+                        "execution_lifetime='task' currently supports CPU Process workers only; "
+                        f"client {setting_name} for {site_name!r} requests GPU resources at {gpu_path!r}. "
+                        "Keep this job resident until task-scoped GPU admission is configured."
+                    )
+
+    @classmethod
+    def _find_nonempty_gpu_setting(cls, value, path=""):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                item_path = f"{path}.{key}" if path else str(key)
+                if "gpu" in str(key).lower() and cls._has_resource_value(item):
+                    return item_path
+                found = cls._find_nonempty_gpu_setting(item, item_path)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                found = cls._find_nonempty_gpu_setting(item, f"{path}[{index}]")
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _has_resource_value(value):
+        if value is None or value is False:
+            return False
+        if isinstance(value, (int, float)):
+            return value > 0
+        return bool(value)
 
     def _generate_meta(self, job_dir, json_dump):
         """Atomically write the pre-validated job metadata."""
@@ -636,6 +688,14 @@ class FedJobConfig:
         # Add additional system parameters to the client app config
         if fed_app.client_app.additional_params:
             client_app.update(fed_app.client_app.additional_params)
+
+        execution_lifetime = fed_app.client_app.execution_lifetime
+        if execution_lifetime != "resident":
+            client_app[EXECUTION_LIFETIME_KEY] = execution_lifetime
+            # Validate the exported application without replacing its Executor
+            # with an internal runtime class. The trusted CJ runtime creates the
+            # supervisor after authorizing these original application specs.
+            prepare_task_execution(client_app)
 
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(client_config, "w") as outfile:

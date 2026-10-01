@@ -289,6 +289,8 @@ class JobExecutor(ClientExecutor):
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_client.json"),
             JobProcessArgs.OPTIONS: ("--set", command_options),
         }
+        if isinstance(job_launcher.launch_mode, str) and job_launcher.launch_mode.strip():
+            job_args[JobProcessArgs.LAUNCH_MODE] = ("--launch_mode", job_launcher.launch_mode)
 
         params = client.cell.get_internal_listener_params()
         if params:

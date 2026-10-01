@@ -23,7 +23,7 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -211,6 +211,37 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
             None,
             fl_ctx,
         )
+
+
+def test_start_app_passes_selected_job_launcher_mode_to_client_job(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launcher.launch_mode = "docker"
+    launcher.launch_job.return_value = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    job_args = next(
+        call.kwargs["value"]
+        for call in fl_ctx.set_prop.call_args_list
+        if call.kwargs.get("key") == FLContextKey.JOB_PROCESS_ARGS
+    )
+    assert job_args[JobProcessArgs.LAUNCH_MODE] == ("--launch_mode", "docker")
 
 
 @pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])

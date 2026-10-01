@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import re
 
 from nvflare.apis.executor import Executor
@@ -22,6 +23,8 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.job_config.task_execution import prepare_task_execution
+from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
@@ -101,11 +104,24 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             sys_vars=sys_vars,
         )
 
+        try:
+            self.task_execution_config = prepare_task_execution(self.config_data)
+        except (TypeError, ValueError) as e:
+            raise ConfigError(str(e)) from e
+        if self.task_execution_config is not None:
+            # Worker-owned components must not be constructed in the resident
+            # CJ. Keep the submitted job config unchanged on disk and apply the
+            # placement plan only to this runtime copy.
+            self.config_data["components"] = [
+                copy.deepcopy(component) for component in self.task_execution_config.resident_components
+            ]
+
         self.config_files = [config_file_name]
 
         self.runner_config = None
         self.executors = []
         self.current_exe = None
+        self.current_exe_index = None
         self._default_task_fetch_interval = 0.5
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
@@ -126,8 +142,10 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             return
 
         # executors
-        if re.search(r"^executors\.#[0-9]+$", path):
+        match = re.search(r"^executors\.#([0-9]+)$", path)
+        if match:
             self.current_exe = _ExecutorDef()
+            self.current_exe_index = int(match.group(1)) - 1
             node.props["data"] = self.current_exe
             node.exit_cb = self._process_executor_def
             return
@@ -137,8 +155,33 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^executors\.#[0-9]+\.executor$", path):
-            self.current_exe.executor = self.authorize_and_build_component(element, config_ctx, node)
+            if self.task_execution_config is None:
+                self.current_exe.executor = self.authorize_and_build_component(element, config_ctx, node)
+            else:
+                self.current_exe.executor = self._authorize_and_create_task_supervisor(config_ctx, node)
             return
+
+    def _authorize_and_create_task_supervisor(self, config_ctx: ConfigContext, node: Node) -> TaskWorkerExecutor:
+        """Authorize inert application specs, then create the internal supervisor."""
+        index = self.current_exe_index
+        if index is None or index < 0 or index >= len(self.task_execution_config.executors):
+            raise ConfigError(f"missing task execution plan for executor index {index}")
+
+        task_config = self.task_execution_config.executors[index]
+        self._authorize_component_config_tree(task_config.executor, config_ctx, node, force_current=True)
+
+        components_node = self._make_child_node(node, list(task_config.components), "worker_components")
+        for component_index, component in enumerate(task_config.components, start=1):
+            component_node = self._make_child_node(components_node, component, f"#{component_index}")
+            self._authorize_component_config_tree(component, config_ctx, component_node, force_current=True)
+
+        supervisor = TaskWorkerExecutor(
+            executor=copy.deepcopy(task_config.executor),
+            components=[copy.deepcopy(component) for component in task_config.components],
+            worker_timeout=task_config.worker_timeout,
+        )
+        self.handlers.append(supervisor)
+        return supervisor
 
     def _build_component(self, config_dict):
         t = super()._build_component(config_dict)

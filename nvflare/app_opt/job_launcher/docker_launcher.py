@@ -35,6 +35,7 @@ from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, JobConsta
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -423,6 +424,8 @@ class DockerJobLauncher(JobLauncherSpec):
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
+
+    launch_mode = LauncherMode.DOCKER.value
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
     STUDY_DATA_PATH_FILE = "local/study_data.yaml"

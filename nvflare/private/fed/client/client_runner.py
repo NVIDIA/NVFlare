@@ -581,7 +581,8 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
         self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-        self._send_task_result(task_reply, task.task_id, fl_ctx)
+        send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 

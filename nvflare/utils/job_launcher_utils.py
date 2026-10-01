@@ -74,6 +74,7 @@ def get_client_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.TARGET,
             JobProcessArgs.SCHEME,
             JobProcessArgs.STARTUP_CONFIG_FILE,
+            JobProcessArgs.LAUNCH_MODE,
         ]
     )
 

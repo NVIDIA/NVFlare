@@ -188,6 +188,7 @@ def parse_arguments():
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
     )
+    parser.add_argument("--launch_mode", type=str, required=False, default=None)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()

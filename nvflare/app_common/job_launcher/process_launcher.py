@@ -22,6 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
+from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
@@ -59,6 +60,8 @@ class ProcessHandle(JobHandleSpec):
 
 
 class ProcessJobLauncher(JobLauncherSpec):
+    launch_mode = LauncherMode.PROCESS.value
+
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
