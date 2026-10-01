@@ -89,6 +89,15 @@ def _task_config(executor):
     }
 
 
+@pytest.mark.parametrize("index", [None, -1, 1])
+def test_missing_executor_placement_plan_is_rejected(tmp_path, index):
+    config = _task_config({"path": "nvflare.app_common.np.np_trainer.NPTrainer", "args": {}})
+    configurator = _configurator(tmp_path, config, allow_list=[])
+    configurator.current_exe_index = index
+    with pytest.raises(ConfigError, match="missing task execution plan"):
+        configurator._authorize_and_create_task_supervisor(None, None)
+
+
 def test_runtime_task_supervisor_rejects_original_executor_before_import(tmp_path, monkeypatch):
     marker = tmp_path / "executor-imported.txt"
     module_path = tmp_path / "forbidden_executor.py"

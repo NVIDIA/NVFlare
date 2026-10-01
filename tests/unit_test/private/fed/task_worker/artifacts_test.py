@@ -14,11 +14,19 @@
 
 import json
 import os
+from dataclasses import replace
 
 import pytest
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from nvflare.private.fed.task_worker import FileTaskArtifactStore, IncompleteTaskArtifactError, TaskAttemptIdentity
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+from nvflare.private.fed.task_worker import (
+    FileTaskArtifactStore,
+    IncompleteTaskArtifactError,
+    TaskAttemptIdentity,
+    artifacts,
+)
+from nvflare.private.fed.task_worker.artifacts import ArtifactReference, TaskCompletion
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 
@@ -142,3 +150,193 @@ def test_lazy_or_pass_through_input_is_not_a_durable_handoff(tmp_path):
 
     with pytest.raises(ValueError, match="eager"):
         store.write_input(identity, data)
+
+
+@pytest.mark.parametrize("data", [{}, Shareable({"nested": [LazyDownloadRef("server", "batch", "item")]})])
+def test_artifact_requires_eager_shareable(data):
+    with pytest.raises((TypeError, ValueError)):
+        artifacts.require_eager_shareable(data)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"kind": "unknown"},
+        {"file_name": "../result.fobs"},
+        {"size": -1},
+        {"size": "1"},
+        {"sha256": "short"},
+        {"sha256": "z" * 64},
+    ],
+)
+def test_artifact_reference_rejects_invalid_fields(changes):
+    values = {"kind": "result", "file_name": "result.fobs", "size": 0, "sha256": "0" * 64}
+    with pytest.raises(ValueError):
+        ArtifactReference(**(values | changes))
+
+
+@pytest.mark.parametrize("record", [None, [], {}, {"unknown": True}])
+def test_artifact_records_require_exact_fields(record):
+    with pytest.raises(ValueError):
+        ArtifactReference.from_dict(record)
+    with pytest.raises(ValueError):
+        TaskCompletion.from_dict(record)
+
+
+@pytest.mark.parametrize(
+    "changes, error",
+    [
+        ({"schema_version": 2}, ValueError),
+        ({"identity": {}}, TypeError),
+        ({"result": {}}, TypeError),
+        ({"worker_pid": 0}, ValueError),
+        ({"worker_ppid": -1}, ValueError),
+        ({"started_at": "now"}, TypeError),
+        ({"completed_at": 0}, ValueError),
+        ({"diagnostics": []}, TypeError),
+    ],
+)
+def test_completion_rejects_invalid_fields(changes, error):
+    completion = TaskCompletion(_identity(), ArtifactReference("result", "result.fobs", 0, "0" * 64), 1, 0, 1, 2)
+    with pytest.raises(error):
+        replace(completion, **changes)
+
+
+@pytest.mark.parametrize("root", [None, "relative"])
+def test_artifact_store_requires_absolute_root(root):
+    with pytest.raises(ValueError, match="absolute path"):
+        FileTaskArtifactStore(root)
+
+
+def test_artifact_store_rejects_invalid_identity_and_escape(tmp_path):
+    root = tmp_path / "artifacts"
+    root.mkdir()
+    store = FileTaskArtifactStore(str(root))
+    with pytest.raises(TypeError, match="TaskAttemptIdentity"):
+        store.attempt_dir({})
+    (root / "attempt-1").symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(ValueError, match="escapes"):
+        store.attempt_dir(_identity())
+
+
+def test_artifact_record_limits_and_regular_file_requirement(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, "_MAX_RECORD_BYTES", 16)
+    with pytest.raises(ValueError, match="too large"):
+        artifacts._write_json_exclusive(str(tmp_path), "record.json", {"value": "x" * 16})
+    path = tmp_path / "record.json"
+    path.write_bytes(b" " * 17)
+    with pytest.raises(ValueError, match="too large"):
+        artifacts._read_json(str(path))
+    path.write_text("[]")
+    with pytest.raises(ValueError, match="JSON object"):
+        artifacts._read_json(str(path))
+    with pytest.raises(ValueError, match="regular file"):
+        artifacts._read_json(str(tmp_path))
+
+
+@pytest.mark.parametrize("fault", ["unknown_field", "schema", "kind", "stale"])
+def test_input_manifest_is_strictly_validated(tmp_path, fault):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    store.write_input(identity, Shareable())
+    path = tmp_path / identity.attempt_id / "input.json"
+    record = json.loads(path.read_text())
+    if fault == "unknown_field":
+        record["extra"] = 1
+    elif fault == "schema":
+        record["schema_version"] = 2
+    elif fault == "kind":
+        record["artifact"].update(kind="result", file_name="result.fobs")
+    else:
+        record["identity"]["site_name"] = "another-site"
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError):
+        store.read_input(identity)
+
+
+def test_missing_attempt_and_invalid_staged_results_are_rejected(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    with pytest.raises(ValueError, match="missing or invalid"):
+        store.write_input(identity, Shareable())
+    with pytest.raises(ValueError, match="missing or invalid"):
+        store.release_payloads(identity)
+    store.create_attempt(identity)
+    reference = store.write_input(identity, Shareable())
+    for invalid in ({}, reference):
+        with pytest.raises(ValueError, match="result artifact"):
+            store.commit_staged_result(identity, invalid)
+    staged = store.stage_result(identity, Shareable())
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        store.commit_staged_result(identity, staged, diagnostics={"bad": object()})
+    assert not (tmp_path / identity.attempt_id / "completion.json").exists()
+
+
+@pytest.mark.parametrize("records", [[{"key": "loss", "value": 0.5}], "not-a-list", [None]])
+def test_analytics_records_are_validated_on_read(tmp_path, records):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    reference = store.write_analytics(identity, records)
+    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
+    if isinstance(records, list) and all(isinstance(record, dict) for record in records):
+        assert store.read_analytics(identity, completion) == records
+    else:
+        with pytest.raises(ValueError, match="list of records"):
+            store.read_analytics(identity, completion)
+    with pytest.raises(ValueError, match="wrong artifact kind"):
+        store.read_analytics(identity, replace(completion, diagnostics={"analytics": completion.result.to_dict()}))
+
+
+@pytest.mark.parametrize("kind", ["directory", "symlink"])
+def test_cleanup_refuses_non_regular_payloads(tmp_path, kind):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    path = tmp_path / identity.attempt_id / "input.fobs"
+    if kind == "directory":
+        path.mkdir()
+    else:
+        target = tmp_path / "precious"
+        target.write_text("retain")
+        path.symlink_to(target)
+    with pytest.raises(ValueError, match="invalid attempt artifact"):
+        store.release_payloads(identity)
+    assert os.path.isdir(directory)
+    if kind == "symlink":
+        assert target.read_text() == "retain"
+
+
+def test_artifact_publication_tolerates_disappearing_temporary_file(tmp_path, monkeypatch):
+    unlink = artifacts.os.unlink
+
+    def already_unlinked(path):
+        unlink(path)
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(artifacts.os, "unlink", already_unlinked)
+    artifacts._write_json_exclusive(str(tmp_path), "record.json", {"value": 1})
+    assert artifacts._read_json(str(tmp_path / "record.json")) == {"value": 1}
+
+
+def test_attempt_removal_refuses_directory_replaced_by_symlink_after_resolution(tmp_path, monkeypatch):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    marker = tmp_path / identity.attempt_id / "retain"
+    marker.write_text("evidence")
+    resolve = store.attempt_dir
+    moved = tmp_path / "moved"
+
+    def replace_after_resolution(attempt):
+        path = resolve(attempt)
+        os.rename(path, moved)
+        os.symlink(moved, path)
+        return path
+
+    monkeypatch.setattr(store, "attempt_dir", replace_after_resolution)
+    with pytest.raises(ValueError, match="symlinked attempt"):
+        store.remove_attempt(identity)
+    assert os.path.islink(directory)
+    assert (moved / "retain").read_text() == "evidence"

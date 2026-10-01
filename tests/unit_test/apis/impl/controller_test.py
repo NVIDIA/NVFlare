@@ -1206,6 +1206,18 @@ class TestBasic(TestController):
             result=result,
         )
 
+        # A retry may arrive before the completed task is swept from the active
+        # map. It must acknowledge the first result without invoking its callback again.
+        controller.communicator.process_submission(
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=Shareable({"result": "active-map duplicate"}),
+        )
+        assert result_count == 1
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+
         controller.communicator.check_tasks()
         assert client_task_id not in controller.communicator._client_task_map
 

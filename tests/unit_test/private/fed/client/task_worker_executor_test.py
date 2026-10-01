@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -26,6 +27,7 @@ from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -524,3 +526,156 @@ def test_diagnostic_write_failure_cancels_launched_worker(tmp_path, monkeypatch)
     assert handles[0].poll().settled
     assert handles[0].poll().cancel_requested
     assert executor._active_handle is None
+
+
+@pytest.mark.parametrize("executor, components", [(None, []), ({}, {}), ({}, [None])])
+def test_supervisor_requires_inert_config_shapes(executor, components):
+    with pytest.raises(TypeError):
+        TaskWorkerExecutor(executor=executor, components=components)
+
+
+def test_supervisor_rejects_invalid_launcher_and_halts_after_cancellation_failure():
+    executor = _executor()
+    with pytest.raises(TypeError, match="TaskLauncherSpec"):
+        executor.set_task_launcher(object())
+    executor._active_handle = Mock(cancel=Mock(side_effect=RuntimeError("cannot settle")))
+    with pytest.raises(RuntimeError, match="cannot settle"):
+        executor.handle_event(EventType.ABORT_TASK, None)
+    assert executor._stopping
+    executor._active_handle = None
+    executor.handle_event(EventType.START_RUN, None)
+    assert not executor._stopping
+    executor.handle_event(EventType.END_RUN, None)
+    assert executor._stopping
+
+
+def test_supervisor_rejects_invalid_or_concurrent_assignment_before_launch(tmp_path):
+    executor = _executor()
+    fl_ctx = _context(_workspace(tmp_path))
+    with pytest.raises(TypeError, match="Shareable"):
+        executor.execute("train", {}, fl_ctx, Signal())
+    executor._execution_lock.acquire()
+    try:
+        with pytest.raises(RuntimeError, match="active task"):
+            executor.execute("train", Shareable(), fl_ctx, Signal())
+    finally:
+        executor._execution_lock.release()
+    fl_ctx.set_prop(FLContextKey.TASK_ID, None, private=True, sticky=False)
+    with pytest.raises(RuntimeError, match="current task ID"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    fl_ctx.set_prop(FLContextKey.TASK_ID, "task-1", private=True, sticky=False)
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    with pytest.raises(RuntimeError, match="stopping"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+
+
+def test_supervisor_resource_validation_handles_absent_metadata_and_nested_values(tmp_path):
+    workspace = _workspace(tmp_path)
+    fl_ctx = _context(workspace)
+    os.unlink(workspace.get_job_meta_path("job-1"))
+    TaskWorkerExecutor._validate_cpu_only_runtime(fl_ctx)
+    fl_ctx.set_prop(FLContextKey.JOB_META, [], private=True)
+    TaskWorkerExecutor._validate_cpu_only_runtime(fl_ctx)
+    assert TaskWorkerExecutor._effective_site_settings(None, "site-1", "default") == {}
+    assert TaskWorkerExecutor._effective_site_settings({"default": [], "site-1": None}, "site-1", "default") == {}
+    assert (
+        TaskWorkerExecutor._find_nonempty_gpu_setting({"nested": [None, {"gpu": "0"}]}) == "resource_spec.nested[1].gpu"
+    )
+    assert TaskWorkerExecutor._find_nonempty_gpu_setting({"nested": [None, {"gpu": False}]}) is None
+
+
+def _fake_execution(tmp_path, monkeypatch, status=None):
+    executor = _executor()
+    fl_ctx = _context(_workspace(tmp_path))
+    status = status or TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
+    handle = SimpleNamespace(
+        execution_id="test:attempt",
+        poll=Mock(return_value=status),
+        wait_for_settlement=Mock(return_value=status),
+        cancel=Mock(return_value=status),
+    )
+    monkeypatch.setattr(executor._get_task_launcher(), "launch_task", lambda _request: handle)
+    completion = SimpleNamespace(worker_pid=123, worker_ppid=12, started_at=1, completed_at=2)
+    monkeypatch.setattr(FileTaskArtifactStore, "read_result", lambda *_args: (Shareable({"result": 1}), completion))
+    monkeypatch.setattr(FileTaskArtifactStore, "read_analytics", lambda *_args: [])
+    return executor, fl_ctx, handle
+
+
+def test_supervisor_cancels_when_terminal_worker_fails_to_settle_before_timeout(tmp_path, monkeypatch):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+    handle.wait_for_settlement.side_effect = TimeoutError("descendants did not settle")
+    with pytest.raises(RuntimeError, match="timed out"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    handle.cancel.assert_called_once()
+    assert executor._active_handle is None
+
+
+@pytest.mark.parametrize("failure", ["unsettled", "signal", "pid", "duplicate"])
+def test_supervisor_rejects_invalid_completion_or_unsettled_execution(tmp_path, monkeypatch, failure):
+    status = None
+    if failure == "unsettled":
+        status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=False)
+    elif failure == "signal":
+        status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, termination_signal=15, settled=True)
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch, status)
+    if failure == "pid":
+        handle.process_group_id = 456
+    elif failure == "duplicate":
+        executor._pending_publication["task-1"] = "earlier result"
+    expected = {
+        "unsettled": "did not settle",
+        "signal": "termination signal",
+        "pid": "PID",
+        "duplicate": "pending publication",
+    }
+    with pytest.raises((RuntimeError, ValueError), match=expected[failure]):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    if failure == "unsettled":
+        handle.cancel.assert_called_once()
+        assert executor._stopping
+        assert executor._active_handle is handle
+
+
+@pytest.mark.parametrize("failure", ["cancel", "poll"])
+def test_supervisor_keeps_runtime_stopped_if_cleanup_cannot_confirm_settlement(tmp_path, monkeypatch, failure):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+    monkeypatch.setattr(executor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
+    if failure == "cancel":
+        handle.poll.return_value = TaskExecutionStatus(TaskExecutionPhase.RUNNING)
+        handle.cancel.side_effect = RuntimeError("cleanup failed")
+    else:
+        handle.poll.side_effect = RuntimeError("status unavailable")
+    with pytest.raises(RuntimeError, match="cleanup failed|status unavailable"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    assert executor._stopping
+    assert executor._active_handle is handle
+
+
+def test_malformed_analytics_cannot_discard_successful_task_result(tmp_path, monkeypatch):
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
+    monkeypatch.setattr(FileTaskArtifactStore, "read_analytics", lambda *_args: [{"bad": "record"}])
+    log = Mock()
+    monkeypatch.setattr(executor, "log_error", log)
+    assert executor.execute("train", Shareable(), fl_ctx, Signal())["result"] == 1
+    log.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", ["diagnostics", "payload_cleanup"])
+def test_publication_cleanup_failures_preserve_evidence_and_are_logged(tmp_path, monkeypatch, failure):
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)  # No pending result is harmless.
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
+    release = Mock(side_effect=OSError("cleanup failed"))
+    monkeypatch.setattr(FileTaskArtifactStore, "release_payloads", release)
+    log = Mock()
+    if failure == "diagnostics":
+        monkeypatch.setattr(executor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
+        monkeypatch.setattr(executor, "log_error", log)
+    else:
+        monkeypatch.setattr(executor, "log_warning", log)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+    log.assert_called_once()
+    if failure == "diagnostics":
+        release.assert_not_called()

@@ -167,3 +167,16 @@ def test_invalid_site_environment_policy_is_rejected_before_launcher_import(name
     )
     with pytest.raises(ValueError, match="environment_variables"):
         build_task_launcher({"environment_variables": names})
+
+
+def test_site_resources_must_be_mapping(monkeypatch):
+    monkeypatch.setattr(ConfigService, "get_section", lambda _name: [])
+    with pytest.raises(TypeError, match="resources configuration"):
+        build_task_launcher()
+
+
+def test_runtime_requires_lifecycle_handler_list():
+    config = _runner_config(_supervisor())
+    config.handlers = ()
+    with pytest.raises(TypeError, match="handlers must be a list"):
+        configure_task_launchers(config, job_launcher_mode="process")

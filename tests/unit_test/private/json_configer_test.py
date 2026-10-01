@@ -918,6 +918,23 @@ def test_worker_component_builder_is_private_runtime_owned():
     assert WorkerComponentBuilder.__module__ == "nvflare.private.fed.utils.worker_component_builder"
 
 
+def test_trusted_worker_builder_constructs_component_with_default_node():
+    builder = WorkerComponentBuilder(enforce_authorization=False)
+    assert builder.get_module_scanner() is builder.module_scanner
+    config = {"path": "builtins.dict", "args": {"value": 3}}
+    assert builder.build_component(config) == {"value": 3}
+
+
+def test_worker_builder_authorizes_class_configs_nested_in_argument_lists():
+    _set_class_allow_list(_test_component_allow_list())
+    config = {
+        "path": _component_path(ContainerComponent),
+        "args": {"child": ["literal", [{"path": "socket.socket", "args": {}}]]},
+    }
+    with pytest.raises(ComponentNotAuthorized, match="socket.socket"):
+        WorkerComponentBuilder().build_component(config)
+
+
 def test_worker_component_builder_rejects_nested_unsafe_config_before_build():
     component_config = {
         "id": "container",

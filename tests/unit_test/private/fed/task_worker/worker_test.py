@@ -17,11 +17,16 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import EventScope, FLContextKey
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
@@ -40,6 +45,7 @@ from nvflare.private.fed.task_worker import (
     IncompleteTaskArtifactError,
     TaskAttemptIdentity,
     WorkerBootstrap,
+    worker,
     write_bootstrap,
 )
 from nvflare.private.fed.task_worker.protocol import WORKER_MODULE
@@ -476,3 +482,131 @@ def test_unmodified_np_validator_runs_in_worker(tmp_path):
     assert validated.data_kind == DataKind.METRICS
     assert isinstance(validated.data["accuracy"], float)
     assert completion.worker_pid != os.getpid()
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        "get_cell",
+        "register_aux_message_handler",
+        "send_aux_request",
+        "multicast_aux_requests",
+        "fire_and_forget_aux_request",
+        "dispatch",
+        "stream_objects",
+        "get_task_assignment",
+        "send_task_result",
+        "validate_targets",
+        "get_widget",
+        "build_component",
+        "abort_app",
+    ],
+)
+def test_task_engine_explicitly_rejects_resident_services(service):
+    engine = worker.TaskWorkerEngine(None, {})
+    with pytest.raises(worker.UnsupportedTaskWorkerService, match="does not provide"):
+        getattr(engine, service)()
+
+
+def test_task_engine_local_context_and_component_views():
+    workspace, component = object(), object()
+    engine = worker.TaskWorkerEngine(workspace, {"helper": component})
+    assert engine.get_workspace() is workspace
+    assert engine.get_component("helper") is component
+    view = engine.get_all_components()
+    view.clear()
+    assert engine.get_component("helper") is component
+    with pytest.raises(RuntimeError, match="not initialized"):
+        engine.new_context()
+    engine._context_manager = FLContextManager(engine=engine, identity_name="site", job_id="job")
+    assert engine.new_context().get_identity_name() == "site"
+    fl_ctx = engine.new_context()
+    engine.fire_event("local", fl_ctx)
+    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True)
+    with pytest.raises(worker.UnsupportedTaskWorkerService, match="federated events"):
+        engine.fire_event("federated", fl_ctx)
+
+
+def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
+    monkeypatch.setattr(worker, "get_job_meta_from_workspace", Mock(side_effect=FileNotFoundError()))
+    assert worker._read_job_meta(None, "job") == {}
+    monkeypatch.setattr(worker, "get_job_meta_from_workspace", lambda *_args: [])
+    with pytest.raises(RuntimeError, match="metadata must be a dict"):
+        worker._read_job_meta(None, "job")
+
+
+def test_checked_event_surfaces_component_failure_and_clears_exception_state():
+    fl_ctx = FLContext()
+    error = ValueError("initializer failed")
+    engine = SimpleNamespace(fire_event=lambda *_args: fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"helper": error}))
+    with pytest.raises(RuntimeError, match="helper.*initializer failed") as raised:
+        worker._fire_checked(engine, EventType.START_RUN, fl_ctx)
+    assert raised.value.__cause__ is error
+    assert fl_ctx.get_prop(FLContextKey.EXCEPTIONS) is None
+
+
+def test_peer_context_is_restored_from_staged_shareable():
+    data, fl_ctx = Shareable(), FLContext()
+    data.set_peer_props({"origin": "server"})
+    worker._restore_peer_context(data, fl_ctx)
+    assert fl_ctx.get_peer_context().get_prop("origin") == "server"
+
+
+def test_worker_rejects_non_executor_component(tmp_path, monkeypatch):
+    workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
+    bootstrap = WorkerBootstrap(_identity("invalid-executor"), str(tmp_path), workspace.get_root_dir(), {})
+    engine, fl_ctx = worker._new_context(bootstrap, workspace)
+    builder = Mock(build_component=lambda *_args: object())
+    monkeypatch.setattr(worker, "WorkerComponentBuilder", lambda **_kwargs: builder)
+    with pytest.raises(TypeError, match="instead of Executor"):
+        worker._build_compute_graph(bootstrap, workspace, fl_ctx, engine)
+
+
+def test_invalid_executor_result_still_finalizes_compute_graph(tmp_path, monkeypatch):
+    workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
+    bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
+    executor = SimpleNamespace(execute=lambda *_args: {})
+    monkeypatch.setattr(worker, "_build_compute_graph", lambda *_args: executor)
+    events = []
+    monkeypatch.setattr(worker, "_fire_checked", lambda _engine, event, _ctx: events.append(event))
+    with pytest.raises(TypeError, match="instead of Shareable"):
+        worker._execute(bootstrap, Shareable(), workspace, None)
+    assert events == [EventType.START_RUN, EventType.BEFORE_TASK_EXECUTION, EventType.END_RUN]
+
+
+def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    path = _stage(store, _identity("failure-record"), workspace, {}, Shareable())
+    monkeypatch.setattr(worker, "pop_credential_env", Mock())
+    monkeypatch.setattr(worker, "_execute", Mock(side_effect=RuntimeError("original failure")))
+    monkeypatch.setattr(FileTaskArtifactStore, "record_failure", Mock(side_effect=OSError("disk full")))
+    previous_path = sys.path.copy()
+    with pytest.raises(RuntimeError, match="original failure"):
+        worker.run_worker(path)
+    assert sys.path == previous_path
+
+
+@pytest.mark.parametrize("exit_code", [None, 0, 2])
+def test_client_api_script_system_exit_preserves_completion_semantics(tmp_path, exit_code):
+    workspace = _workspace(tmp_path)
+    script = "import nvflare.client as flare\nflare.init()\nflare.receive()\nflare.send(flare.FLModel(metrics={'done': 1}))\n"
+    (workspace / "job-1/app_site-1/custom/train.py").write_text(script + f"raise SystemExit({exit_code!r})\n")
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("system-exit")
+    config = {
+        "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+        "args": {
+            "execution_mode": "in_process",
+            "task_script_path": "train.py",
+        },
+    }
+    path = _stage(store, identity, workspace, config, FLModelUtils.to_shareable(FLModel(metrics={"seed": 1})))
+    process = _run_process(path)
+    if exit_code in (None, 0):
+        assert process.returncode == 0, process.stderr
+        assert FLModelUtils.from_shareable(store.read_result(identity)[0]).metrics == {"done": 1}
+    else:
+        assert process.returncode != 0
+        with pytest.raises(IncompleteTaskArtifactError):
+            store.read_completion(identity)

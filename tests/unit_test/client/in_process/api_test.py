@@ -421,3 +421,14 @@ def test_api_shutdown_preserves_its_expected_reason(caplog):
         assert all(r.levelname == "INFO" for r in stop_logs)
     finally:
         client_api.close()
+
+
+def test_receive_callback_surfaces_non_shareable_input():
+    api = InProcessClientAPI({})
+    try:
+        api.init()
+        api._InProcessClientAPI__receive_callback(TOPIC_GLOBAL_RESULT, {}, api.data_bus)
+        with pytest.raises(RuntimeError, match="expecting a Shareable"):
+            api.receive(timeout=0)
+    finally:
+        api.close()

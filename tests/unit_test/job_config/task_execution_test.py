@@ -251,3 +251,59 @@ def test_client_api_result_timeout_is_carried_to_worker_supervision():
         ],
     }
     assert prepare_task_execution(config).executors[0].worker_timeout == 15
+
+
+@pytest.mark.parametrize("config", [None, []])
+def test_task_placement_requires_client_config_mapping(config):
+    with pytest.raises(TypeError, match="client_config"):
+        prepare_task_execution(config)
+
+
+def test_resident_config_does_not_create_task_placement():
+    assert prepare_task_execution({}) is None
+
+
+@pytest.mark.parametrize(
+    "changes", [{"components": {}}, {"components": [None]}, {"executors": [{}]}, {"executors": []}]
+)
+def test_task_placement_rejects_malformed_compute_graph(changes):
+    config = {"execution_lifetime": "task", "executors": [{"executor": {"path": "example.Executor"}}]}
+    with pytest.raises(ValueError):
+        prepare_task_execution(config | changes)
+
+
+@pytest.mark.parametrize("timeout", [-1, True, "1", float("nan"), float("inf")])
+def test_client_api_task_timeout_is_validated(timeout):
+    config = {
+        "execution_lifetime": "task",
+        "executors": [
+            {
+                "executor": {
+                    "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+                    "args": {"execution_mode": "in_process", "result_wait_timeout": timeout},
+                }
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="result_wait_timeout"):
+        prepare_task_execution(config)
+
+
+def test_component_closure_handles_cycles_without_duplicate_placement():
+    config = {
+        "execution_lifetime": "task",
+        "executors": [{"executor": {"path": "example.Executor", "args": {"ids": ["a", "b"]}}}],
+        "components": [_component("a", dependency="b"), _component("b", dependency="a")],
+    }
+    assert len(prepare_task_execution(config).executors[0].components) == 2
+
+
+def test_task_resource_validation_handles_nested_defaults_and_non_mapping_settings():
+    job = FedJobConfig("resources", min_clients=1, meta_props={"resource_spec": [], "launcher_spec": None})
+    job._validate_task_execution_resources()
+    assert job._merge_resource_settings({"nested": {"cpu": 1, "gpu": 0}}, {"nested": {"cpu": 2}}) == {
+        "nested": {"cpu": 2, "gpu": 0}
+    }
+    assert job._merge_resource_settings(None, None) == {}
+    assert job._find_nonempty_gpu_setting({"nested": [None, {"gpu": "device-0"}]}) == "nested[1].gpu"
+    assert job._find_nonempty_gpu_setting({"nested": [None, {"gpu": False}]}) is None

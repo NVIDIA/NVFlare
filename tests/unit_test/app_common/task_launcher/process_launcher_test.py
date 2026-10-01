@@ -29,6 +29,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskLauncherError,
     TaskLaunchRequest,
     TaskResourceRequest,
+    TaskSettlementError,
     UnsupportedTaskResourceError,
 )
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskHandle, ProcessTaskLauncher
@@ -409,3 +410,87 @@ def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_pa
         assert observation.status() == psutil.STATUS_ZOMBIE
     finally:
         process.wait(timeout=5)
+
+
+def _mock_handle(tmp_path):
+    return ProcessTaskHandle(
+        _request(tmp_path, "fault", "pass"),
+        Mock(pid=1234, poll=lambda: 0),
+        stop_grace_period=0.1,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+
+
+@pytest.mark.parametrize("error", [ProcessLookupError(), PermissionError("denied")])
+def test_group_signalling_handles_missing_or_inaccessible_group(tmp_path, monkeypatch, error):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(os, "killpg", Mock(side_effect=error))
+    handle._signal_group(signal.SIGTERM)
+    if isinstance(error, PermissionError):
+        assert handle._group_exists() is True
+
+
+def test_group_inspection_tolerates_process_exit_between_enumeration_and_probe(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(os, "killpg", lambda *_args: None)
+    monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
+    monkeypatch.setattr(psutil, "process_iter", lambda: [Mock(pid=10)])
+    assert handle._group_exists() is True  # No observed dead members: fail closed.
+
+
+def test_failed_termination_reports_unsettled_status_and_keeps_failure_reason(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(handle, "_group_exists", lambda: True)
+    monkeypatch.setattr(handle, "_wait_for_group_exit", lambda _timeout: False)
+    signals = Mock()
+    monkeypatch.setattr(handle, "_signal_group", signals)
+    with pytest.raises(TaskSettlementError, match="did not settle") as error:
+        handle.cancel()
+    assert not error.value.status.settled
+    assert error.value.status.cancel_requested
+    assert [call.args[0] for call in signals.call_args_list] == [signal.SIGTERM, signal.SIGKILL]
+    handle._failure_reason = "earlier failure"
+    with pytest.raises(TaskSettlementError, match="earlier failure"):
+        handle.cancel()
+
+
+def test_cancel_and_termination_are_idempotent_after_settlement(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(handle, "_group_exists", lambda: False)
+    assert handle.cancel().succeeded
+    assert handle._terminate_group().succeeded
+
+
+@pytest.mark.parametrize("settles", [False, True])
+def test_leader_exit_wait_respects_descendant_deadline(tmp_path, monkeypatch, settles):
+    handle = _mock_handle(tmp_path)
+    probe = Mock(side_effect=[True, False]) if settles else Mock(return_value=True)
+    monkeypatch.setattr(handle, "_group_exists", probe)
+    monkeypatch.setattr(handle, "_wait_for_group_exit", lambda _timeout: settles)
+    if settles:
+        assert handle.wait_for_settlement(timeout=0).succeeded
+    else:
+        with pytest.raises(TimeoutError, match="did not settle"):
+            handle.wait_for_settlement(timeout=0)
+
+
+def test_launcher_rejects_invalid_request_and_unsupported_platform(tmp_path, monkeypatch):
+    launcher = ProcessTaskLauncher()
+    with pytest.raises(TypeError, match="TaskLaunchRequest"):
+        launcher.launch_task({})
+    monkeypatch.delattr(os, "killpg")
+    with pytest.raises(TaskLauncherError, match="POSIX"):
+        launcher.launch_task(_request(tmp_path, "unsupported", "pass"))
+
+
+def test_spawn_failure_allows_retry_of_same_attempt(tmp_path, monkeypatch):
+    launcher = ProcessTaskLauncher()
+    request = _request(tmp_path, "retry-spawn", "pass")
+    monkeypatch.setattr(
+        "nvflare.app_common.task_launcher.process_launcher.spawn_process", Mock(side_effect=OSError("spawn failed"))
+    )
+    for _ in range(2):
+        with pytest.raises(OSError, match="spawn failed"):
+            launcher.launch_task(request)
+        assert request.identity not in launcher._attempt_identities
