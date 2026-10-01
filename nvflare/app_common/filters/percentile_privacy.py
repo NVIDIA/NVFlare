@@ -57,9 +57,6 @@ class PercentilePrivacy(DXOFilter):
 
         Returns: filtered dxo
         """
-        if not dxo.data:
-            return None
-
         self.log_debug(fl_ctx, "inside filter")
         self.logger.debug("check gamma")
         if self.gamma <= 0:

@@ -51,9 +51,6 @@ class BioNeMoParamsFilter(DXOFilter):
 
         """
 
-        if not dxo.data:
-            return None
-
         self.log_info(fl_ctx, f"Adding `{self._prefix}` prefix...")
 
         params = dxo.data
@@ -92,9 +89,6 @@ class BioNeMoExcludeParamsFilter(DXOFilter):
 
         """
 
-        if not dxo.data:
-            return None
-
         params = dxo.data
         new_params = {}
         for k, v in params.items():
@@ -132,9 +126,6 @@ class BioNeMoStateDictFilter(DXOFilter):
         Returns: DXO object with filtered out _extra_state keys.
 
         """
-
-        if not dxo.data:
-            return None
 
         self.log_info(fl_ctx, "Filtering out extra states...")
 

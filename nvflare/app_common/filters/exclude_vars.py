@@ -84,7 +84,7 @@ class ExcludeVars(DXOFilter):
 
         Returns: filtered dxo
         """
-        if self.skip or not dxo.data:
+        if self.skip:
             return None
 
         weights = dxo.data

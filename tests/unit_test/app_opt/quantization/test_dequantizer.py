@@ -38,11 +38,6 @@ class TestModelDequantizer(unittest.TestCase):
         dequantizer = ModelDequantizer()
         self.assertIsNotNone(dequantizer)
 
-    def test_process_dxo_skips_empty_data(self):
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data={})
-
-        self.assertIsNone(self.dequantizer.process_dxo(dxo, Shareable(), self.fl_ctx))
-
     def test_dequantization_float16_numpy(self):
         """Test float16 dequantization with numpy arrays."""
         # First quantize

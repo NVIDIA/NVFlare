@@ -193,8 +193,6 @@ class ModelDequantizer(DXOFilter):
         Returns: DXO object with dequantized weights
 
         """
-        if not dxo.data:
-            return None
 
         self.log_info(fl_ctx, "Running dequantization...")
 

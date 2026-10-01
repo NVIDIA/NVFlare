@@ -211,9 +211,6 @@ class RelativeDataLeakageValueFilter(DXOFilter):
 
         Returns: filtered result.
         """
-        if not dxo.data:
-            return None
-
         self._setup(fl_ctx)
 
         # Compute inversions
