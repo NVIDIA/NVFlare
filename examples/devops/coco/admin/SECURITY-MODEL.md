@@ -45,10 +45,10 @@ not by themselves close that limitation.
 |---|---|
 | Host downloads image | Registry stores and anonymously serves ciphertext only |
 | Host changes image | Immutable digest, guest signature policy, agent policy and KBS authorization constrain the release, subject to the image-binding limitation above |
-| Host changes command/OCI properties | Kata agent policy rejects `CreateContainerRequest` |
+| Host changes command/OCI properties | Kata agent policy rejects `CreateContainerRequest` values outside its enforced rules; not every Pod/OCI field is constrained |
 | Host replaces guest policy or KBS endpoint | SHA-256 of exact init-data changes; attested SNP HOST_DATA or TDX MRCONFIGID no longer matches service authorization |
 | Host runs `kubectl exec`/attach/cp | No exec commands are authorized; exec and stream requests default-deny |
-| Host tries SSH | Image has no SSH server, credential, or port; network services require owner mTLS |
+| Host tries SSH | Owner review must exclude SSH servers and unauthorized access paths; the packager does not scan custom images for them. Application network services require owner mTLS |
 | Host corrupts ciphertext | OCI digest/signature and authenticated encryption fail |
 | CPU or GPU evidence is unacceptable | Service requires the approved CPU type and exactly `cpu0`, plus `gpu0` for a GPU release; every vector must equal its approved target vector |
 

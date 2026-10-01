@@ -20,17 +20,18 @@ storage design; its guarantees must not be imported into this CoCo deployment.
 
 .. important::
 
-   **Release scope:** the ``2.9`` baseline reviewed here is
-   `60359c4d7 <https://github.com/NVIDIA/NVFlare/commit/60359c4d7>`_, whose CoCo
-   workflow and peer authorizer require **SNP plus NVIDIA GPU**. The CPU-only,
-   TDX, target-aware release-policy, and extended measurement-constraint
-   descriptions document the companion
-   `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_ at reviewed revision
-   `7f9f63b967fd57f399bbea9deaefba2d756eff67 <https://github.com/NVIDIA/NVFlare/commit/7f9f63b967fd57f399bbea9deaefba2d756eff67>`_.
-   They are not enabled by this documentation-only change. Use the matching
-   implementation and runbooks before deploying an extended target; do not
-   interpret the four-profile diagrams as a claim that the baseline supports
-   all four. Companion-only source links below are pinned to that revision.
+   **Implementation scope:** ``2.9`` revision
+   `0b2d5dd39 <https://github.com/NVIDIA/NVFlare/commit/0b2d5dd39>`_ includes
+   `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_, extending the
+   SNP-plus-GPU framework to all four explicit SNP/TDX CPU-only/GPU targets.
+   This architecture change documents that implementation; it adds no runtime
+   support itself. **TDX remains experimental pending hardware acceptance.**
+   The recorded real-quote test was rejected because both launch and current
+   TCB were ``OutOfDate``. Encrypted NVFlare execution, attestation-gated
+   key release and peer-proof generation/verification have not passed end to
+   end on the tested TDX platform. See
+   :github_nvflare_link:`support status and hardware validation <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`.
+   Implemented targets and passing offline tests are not hardware acceptance.
 
 .. contents:: Find a security answer
    :local:
@@ -83,24 +84,24 @@ Target profiles and implementation scope
      - ``kata-qemu-snp``
      - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: none``
      - CPU only
-     - Companion PR #5344
+     - Implemented in ``2.9``
    * - SNP with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-snp``
      - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: nvidia``
      - CPU and GPU
-     - Reviewed ``2.9`` baseline
+     - Implemented in ``2.9``
    * - TDX, CPU-only
      - ``kata-qemu-tdx``
      - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: none``
      - CPU only
-     - Companion PR #5344
+     - Implemented in ``2.9``; experimental
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
      - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: nvidia``
      - CPU and GPU
-     - Companion PR #5344
+     - Implemented in ``2.9``; experimental
 
-In the companion implementation, CPU-only is an intentional deployment mode,
+CPU-only is an intentional deployment mode,
 not a fallback after GPU attestation fails. CPU-only profiles need no NVIDIA GPU
 or GPU Operator.
 Current launch contracts support one application container, no host namespaces
@@ -244,8 +245,10 @@ Worked example: one model owner and two data owners
 This example maps the deployment roles to a federation: **model owner M** runs
 the FL server, **data owner A** participates as ``site-1``, and **data owner B**
 participates as ``site-2``. Each client runs in its own adversarially operated
-CoCo cluster. The concrete setup uses the reviewed **SNP plus NVIDIA GPU**
-baseline; consult the release-scope qualification above for other targets.
+CoCo cluster. The concrete setup uses the **SNP plus NVIDIA GPU** profile;
+consult the implementation-scope qualification above and the
+:github_nvflare_link:`runtime-aware FL deployment guide <examples/devops/coco/FL-DEPLOYMENT.md>`
+for other target choices.
 It is an architectural deployment recipe, not a supplied end-to-end training
 application or a claim that this exact two-site deployment has been tested.
 
@@ -357,11 +360,13 @@ Machines and inputs to prepare
      - Data goes only to the authorized site's guest; persistence and result
        delivery obey the owner's separate storage/output policy.
 
-Two simultaneous protected clients consume two allocatable GPUs. A protected
-server is optional and requires a third concurrent GPU in this baseline, its
-own encrypted release, and the logical CC identity ``server`` in the required
-attested set. An ordinary server needs no CoCo runtime to verify client proofs,
-but its operator remains trusted with aggregation and permitted updates.
+Two simultaneous clients in this example consume two allocatable GPUs. A
+protected server is optional and requires its own encrypted release and the
+logical CC identity ``server`` in the required attested set. Selecting the same
+GPU profile for the server requires a third concurrent GPU; a separately
+approved CPU-only server profile needs none. An ordinary server needs no CoCo
+runtime to verify client proofs, but its operator remains trusted with
+aggregation and permitted updates.
 
 Ensure secure-services DNS resolves **inside each guest**, and registry HTTPS
 and KBS are reachable on their configured ports (defaults 5000 and 8443).
@@ -462,9 +467,14 @@ access, or the application-specific data API.
 
    Substitute the delivered filename and digest, and use the site-2 release
    at B. Only launch after secure-services approval. The service administrator
-   checks each release with ``./13-verify-workload-release.sh site-1-v1 5m``
-   (and separately ``site-2-v1``). These checks supplement attestation; host
-   readiness and service log entries alone do not prove a successful FL job.
+   checks each release with its target-aware authorization, for example::
+
+      ./13-verify-workload-release.sh site-1-v1 5m \
+        "$HOME/incoming/site-1-v1/release-authorization.json"
+
+   Repeat for ``site-2-v1`` and its authorization. These checks supplement
+   attestation; host readiness and service log entries alone do not prove a
+   successful FL job.
 
 8. **The trusted FL administrator verifies both clients**, using
    :github_nvflare_link:`examples/devops/coco/provision/VERIFY-RUNNING-FEDERATION.md`.
@@ -844,10 +854,10 @@ The provisioning node coordinates two distinct authenticated handoffs:
 
 * ``platform-reference-values.json`` goes to secure services for reviewed RVPS
   installation under service-owned AS policies.
-* ``approved-workload-launch-profile.json`` goes to the workload owner. The
-  baseline uses a v3 contract for its SNP-plus-GPU launch; companion PR #5344
-  extends it to v4 with explicit CPU/GPU target selection. The contract
-  constrains trusted-side generation and records runtime provenance, launch
+* ``approved-workload-launch-profile.json`` goes to the workload owner as
+  a target-aware v4 contract. Legacy v3 is accepted only for its original
+  SNP-plus-GPU profile; changing its fields does not approve another target.
+  The contract constrains trusted-side generation and records runtime provenance, launch
   shape, application security context, and guest token-API capability. It is
   not itself an attestation claim.
 
@@ -876,8 +886,9 @@ the platform under test.
 TDX approval
 ------------
 
-The collection/export and RVPS/AS policy implementation in this section is
-part of companion PR #5344, not the baseline SNP-plus-GPU role kit.
+The collection/export and RVPS/AS policy implementation is included in
+``2.9``. Its TDX end-to-end hardware acceptance remains outstanding as described
+in the implementation-scope note above.
 
 A TDX guest obtains a TD report; a Quote Generation Service on the same physical
 platform uses Intel's quoting infrastructure to produce a remotely verifiable
@@ -925,8 +936,7 @@ Vendor evidence appraisal checks the GPU's reported state against
 the applicable signed reference material; it does not make arbitrary driver
 versions or future releases automatically acceptable to an organization.
 
-The baseline release and peer-verification rules require CPU plus GPU.
-In the companion implementation, CPU-only release rules require exactly
+CPU-only release rules require exactly
 ``cpu0``. GPU release rules require exactly ``cpu0`` and ``gpu0`` and
 successful appraisals of both. A failed or
 missing GPU cannot silently downgrade a GPU-required release. Conversely,
@@ -1063,7 +1073,7 @@ The exact accepted EAR trust vectors for this policy are:
      - 2
      - 3
      - All 0
-   * - TDX CPU (companion PR #5344)
+   * - TDX CPU
      - 3
      - 2
      - 2
@@ -1394,24 +1404,22 @@ automatically removed from the trust requirement.
 What the default authorizer accepts
 -----------------------------------
 
-The baseline authorizer requires exactly ``cpu0`` and ``gpu0`` with the
-SNP-plus-GPU vector. In companion PR #5344, the authorizer accepts exactly
+The authorizer accepts exactly
 ``cpu0`` or exactly ``cpu0`` and ``gpu0``. It
 selects SNP/TDX from AS-signed evidence and verifies every present appraisal
 against its exact vector. Unknown CPU types, unknown submodules, malformed
 claims, and failed GPU appraisal are rejected. Stripping GPU claims from an
 EAR breaks the AS signature.
 
-In that extended authorizer, default peer verification **does not require GPU evidence for a
+Default peer verification **does not require GPU evidence for a
 particular site**, nor directly compare its image digest or command. It trusts
 the configured AS signer and its accepted claims. Workload-specific key
 authorization remains KBS's job. A deployment requiring GPU attestation at the
 FL participant boundary needs an additional independently reviewed requirement;
 token-driven CPU/GPU selection alone does not establish it.
 
-Baseline ``workload_constraints`` can pin each protected site's InitData digest
-and SNP measurement. The companion implementation adds CPU TEE and TDX
-MRTD/RTMR values. With constraints enabled,
+``workload_constraints`` can pin each protected site's InitData digest,
+SNP measurement, CPU TEE and TDX MRTD/RTMR values. With constraints enabled,
 unlisted sites or missing/mismatched required claims fail. The legacy
 ``measurement`` key means SNP, never TDX. The canonical InitData constraint is
 SHA-256, with strict TDX padding normalization. These restrictions narrow
@@ -1536,7 +1544,7 @@ real boundary, not merely trusting an installer's preflight.
      - Each accepted state still needs independent approval; event-log consistency alone is not approval.
    * - Omit GPU or submit failed GPU evidence
      - GPU release policy requires exactly CPU+GPU and both exact vectors; present failed GPU proofs are rejected.
-     - Baseline peers require CPU+GPU. The companion authorizer also accepts valid CPU-only proofs; per-site GPU requirements then need additional controls.
+     - The authorizer also accepts valid CPU-only proofs; per-site GPU requirements need additional controls.
    * - Request another workload's decryption key
      - KBS checks the actual exact path plus that release's platform/workload constraints on every request.
      - Knowing a path or passing CPU appraisal grants no store-wide access. A permissive global policy defeats isolation.
@@ -1813,9 +1821,8 @@ RuntimeClass name is not enough to establish measurement equality.
 Can a signed CPU+GPU token be changed into CPU-only?
 ----------------------------------------------------
 
-Not without invalidating the AS signature. The baseline authorizer requires
-both CPU and GPU appraisals. The companion authorizer also accepts a
-legitimately issued CPU-only proof by default. For that extension, GPU-required
+Not without invalidating the AS signature. The authorizer also accepts a
+legitimately issued CPU-only proof by default. GPU-required
 KBS authorization is a separate constraint; an FL-wide or site-specific GPU
 requirement needs an independently enforced participant policy.
 
@@ -1905,13 +1912,13 @@ Glossary and implementation references
 Use the following runbooks for commands. They complement this security model;
 installation success does not replace its acceptance requirements.
 
-* `Extended runtime selection and role workflow (companion revision) <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/RUNTIME-VARIANTS.md>`_
+* :github_nvflare_link:`Runtime selection and role workflow <examples/devops/coco/RUNTIME-VARIANTS.md>`
 * :github_nvflare_link:`Configuration and transfer boundaries <examples/devops/coco/CONFIGURATION.md>`
 * :github_nvflare_link:`Trusted SNP rehearsal <examples/devops/coco/trusted_system/SEC-SYS-LAUNCH-PROFILE.md>`
-  and `trusted TDX rehearsal (companion revision) <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/trusted_system/TDX-LAUNCH-PROFILE.md>`_
+  and :github_nvflare_link:`trusted TDX rehearsal <examples/devops/coco/trusted_system/TDX-LAUNCH-PROFILE.md>`
 * :github_nvflare_link:`Approved workload launch contract and security-context limitations <examples/devops/coco/admin/APPROVED-LAUNCH-PROFILE.md>`
 * :github_nvflare_link:`Secure-services installation <examples/devops/coco/service/SERVICE-INSTALLATION.md>`,
-  `TDX reference updates (companion revision) <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/service/TDX-REFERENCE-VALUES.md>`_, and
+  :github_nvflare_link:`TDX reference updates <examples/devops/coco/service/TDX-REFERENCE-VALUES.md>`, and
   :github_nvflare_link:`release installation <examples/devops/coco/service/TRUSTED-HANDOFF-RUNBOOK.md>`
 * :github_nvflare_link:`KBS administrator credential protection and rotation <examples/devops/coco/service/TRUSTEE-ADMIN-CREDENTIAL-SECURITY.md>`
 * :github_nvflare_link:`NVFlare provisioning and recovery <examples/devops/coco/provision/README.md>`
@@ -1919,24 +1926,19 @@ installation success does not replace its acceptance requirements.
 * :github_nvflare_link:`Authenticated federation verification <examples/devops/coco/provision/VERIFY-RUNNING-FEDERATION.md>`
   and :github_nvflare_link:`CoCo IT runbook <examples/devops/coco/coco/COCO-IT-RUNBOOK.md>`
 
-Baseline implementation sources for reviewers, except where a companion
-revision is explicitly identified:
+Implementation sources for reviewers:
 
 * :github_nvflare_link:`CoCoAuthorizer <nvflare/app_opt/confidential_computing/coco_authorizer.py>` and
   :github_nvflare_link:`CCManager <nvflare/app_opt/confidential_computing/cc_manager.py>`
 * :github_nvflare_link:`CoCo provisioning <nvflare/lighter/cc_provision/impl/coco.py>` and
   :github_nvflare_link:`packaging <nvflare/lighter/cc_provision/impl/coco_packager.py>`
 * :github_nvflare_link:`Guest-policy validation <nvflare/lighter/cc_provision/workload_security.py>` and
-  `target-aware release authorization (companion revision) <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/nvflare/lighter/cc_provision/workload_release.py>`_
+  :github_nvflare_link:`target-aware release authorization <nvflare/lighter/cc_provision/workload_release.py>`
 * :github_nvflare_link:`Policy and Pod generation <examples/devops/coco/admin/30-generate-pod-and-policies.sh>` and
   :github_nvflare_link:`pinned hardened guest rules <tests/unit_test/lighter/cc_provision/impl/fixtures/kata-3.29-hardened-rules.rego>`
 * :github_nvflare_link:`AS CPU policy <examples/devops/coco/service/policies/default_cpu.rego>` and
   :github_nvflare_link:`KBS resource-policy template <examples/devops/coco/service/policies/workload-resource-policy.rego.template>`
-* `Trusted TDX verifier contract (companion revision) <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/trusted_system/tdx-verifier/README.md>`_
-* Extended `peer authorizer <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/nvflare/app_opt/confidential_computing/coco_authorizer.py>`_,
-  `CPU appraisal policy <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/service/policies/default_cpu.rego>`_, and
-  `target-aware KBS policy <https://github.com/NVIDIA/NVFlare/blob/7f9f63b967fd57f399bbea9deaefba2d756eff67/examples/devops/coco/service/policies/workload-resource-policy.rego.template>`_
-  at the reviewed companion revision.
+* :github_nvflare_link:`Trusted TDX verifier contract <examples/devops/coco/trusted_system/tdx-verifier/README.md>`
 
 For upstream concepts, consult:
 

@@ -80,7 +80,7 @@ NVFlare currently supports the following ``CCAuthorizer`` components:
    * - ``ACIAuthorizer``
      - Azure Confidential Containers Instance
    * - ``CoCoAuthorizer``
-     - Kata/Trustee-backed AMD SEV-SNP plus NVIDIA GPU in the reviewed ``2.9`` baseline; additional targets have explicit companion scope in the CoCo architecture.
+     - Kata/Trustee-backed AMD SEV-SNP or Intel TDX, CPU-only or with NVIDIA GPU. TDX is experimental pending hardware acceptance; see the CoCo architecture.
 
 Configuration
 -------------

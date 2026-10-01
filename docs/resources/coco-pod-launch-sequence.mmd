@@ -25,7 +25,7 @@ sequenceDiagram
     end
 
     Note over IT,Workload: Conceptual dependencies; only passing branches continue.<br/>Pulls and resource / attestation checks may interleave and repeat.
-    Note over IT,Workload: Reviewed 2.9 baseline: SNP + GPU.<br/>Extended CPU-only / TDX profiles: companion PR 5344.
+    Note over IT,Workload: 2.9: SNP/TDX, CPU-only or GPU.<br/>TDX is experimental pending hardware acceptance.
     IT->>Kube: 1. kubectl apply final Pod YAML (original or edited)
     Kube->>Runtime: 2. Schedule Pod; kubelet CRI request uses selected handler
     Note over IT,Runtime: RuntimeClass selects an installed runtime handler.<br/>It is not a separate service or an attested runtimeClassName string.

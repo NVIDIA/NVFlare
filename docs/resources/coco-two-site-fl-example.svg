@@ -30,7 +30,7 @@
   </defs>
   <rect width="1120" height="1900" fill="#ffffff"/>
   <text x="32" y="49" class="title">Two data owners, two confidential FL clients</text>
-  <text x="32" y="86" class="muted">Worked architecture example · Baseline: AMD SEV-SNP + NVIDIA GPU</text>
+  <text x="32" y="86" class="muted">Worked architecture example · Example target: AMD SEV-SNP + NVIDIA GPU</text>
 
   <rect x="32" y="125" width="315" height="180" rx="12" class="service"/>
   <text x="189" y="162" class="heading center">Model owner M</text>
