@@ -5,7 +5,20 @@ with an optional NVIDIA confidential GPU. Scripts, policies, dependencies and co
 are included; deployment credentials, certificates, measurements, private
 evidence and generated handoffs are not.
 
-Read [runtime variants and deployment requirements](RUNTIME-VARIANTS.md) first.
+For a collaboration-level starting point, read
+[one model owner and two data owners](FL-DEPLOYMENT.md): roles and approvals,
+machine prerequisites, the guest/application distinction, reference rehearsal,
+ordered handoffs, and the dataset integrations users must supply.
+
+**TDX support is experimental pending hardware acceptance.** It extends the
+existing SNP+GPU deployment framework. The tested TDX platform generated a
+real quote, but its outdated firmware/TCB baseline was rejected with
+`TDX verification rejected: Intel DCAP TCB is not UpToDate`; both launch and
+current TCB were `OutOfDate`. Encrypted NVFlare execution, attestation-gated key
+release, and peer-proof generation/verification have not passed end to end on
+that platform. See [support status and the exact test boundary](RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+
+Choose the target using [runtime variants and deployment requirements](RUNTIME-VARIANTS.md).
 The role scripts select SNP-only, SNP+GPU, TDX-only or TDX+GPU explicitly; they
 do not infer trust from the cluster operator's runtime name. TDX host firmware,
 kernel, SGX provisioning and pinned quote-generation services must already be

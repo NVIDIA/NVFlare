@@ -17,7 +17,55 @@ on the intended platform; unit/static tests do not establish that result.
 YAML null and unknown mechanisms fail closed. Do not reuse the SNP+GPU
 measurements or launch contract for a different row.
 
-### CPU-only deployments
+## Support status and hardware validation
+
+**TDX-only and TDX+GPU are experimental pending successful hardware acceptance.**
+The additional implementation follows the existing SNP+GPU framework: separate
+trusted rehearsal, approved platform references, signed/encrypted participant
+images, InitData-bound workload authorization, and CoCoAuthorizer peer proofs.
+It generalizes those paths to explicit CPU/GPU targets and adds Intel-specific
+quote verification and measured-boot appraisal. Code review and offline tests
+support the expectation that the remaining integration should work on a
+compliant, correctly configured TDX CoCo cluster; they are not proof of an
+end-to-end deployment or a guarantee that no integration defects remain.
+
+In the recorded CPU-only TDX hardware test on **2026-09-29**, Kubernetes and
+the pinned Kata runtime were installed and a real collector quote was obtained.
+An earlier PCK-certificate retrieval failure was resolved using Intel's
+official local-cache workflow. The subsequent strict verification failed:
+
+```text
+TDX verification rejected: Intel DCAP TCB is not UpToDate
+```
+
+Intel reported `tcb_status=OutOfDate` and `tcb_status_current=OutOfDate`;
+collateral was not expired (`collateral_expiration_status=0`). Diagnostic verification
+checked the quote signature, fresh challenge, InitData binding and event-log
+consistency before the TCB rejection. The canonical verifier also exited with
+status 1 and emitted no approved claims. This blocked the workflow at the
+hardware firmware/TCB acceptance boundary, not at a successful application
+launch. The tested platform still needed vendor-supported firmware/TCB
+remediation and a fresh strict attestation pass. A firmware update alone is
+not evidence that this acceptance requirement has been met.
+
+No approved reference was exported from that failed test, and the attestation
+requirements were not weakened. Successful encrypted NVFlare execution,
+attestation-gated workload-key release, and in-Pod CoCoAuthorizer generation
+with peer verification remain **unverified end to end on TDX**, including the
+TDX+GPU variant. A working collector or passing unit tests do not imply those
+later stages succeeded. The tested failure is not a claim that all TDX hardware
+is affected, nor a reason to accept `OutOfDate` evidence.
+
+Users deploying into their own TDX CoCo-enabled Kubernetes cluster must first
+satisfy the host prerequisites below and complete
+[real-hardware acceptance](#6-validate-on-real-hardware). We will investigate
+and fix implementation issues encountered and reported during those deployments.
+Include software versions and sanitized failing-stage/error details in reports;
+do not publish image keys, credentials, raw AA private-key responses, or private
+platform evidence. Keep strict appraisal and release policies enabled while
+investigating failures.
+
+## CPU-only deployments
 
 CPU-only is an explicit supported target for both protected clients and servers,
 not a fallback when GPU attestation fails. Select `cc_gpu: none` in each
