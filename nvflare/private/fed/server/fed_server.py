@@ -462,7 +462,8 @@ class FederatedServer(BaseServer):
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.REPORT_JOB_OUTCOME,
-            cb=self.process_job_outcome,
+            # Preserve existing overrides through the legacy forwarding method.
+            cb=self.process_job_failure,
         )
 
         self.cell.register_request_cb(

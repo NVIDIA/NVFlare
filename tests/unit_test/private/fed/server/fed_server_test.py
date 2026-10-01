@@ -819,6 +819,68 @@ class TestFederatedServer:
         server.process_job_outcome.assert_called_once_with(request)
         assert reply is server.process_job_outcome.return_value
 
+    @pytest.mark.parametrize("handler_name", ["process_job_failure", "process_job_outcome"])
+    def test_registered_job_outcome_callback_preserves_handler_override(self, handler_name):
+        calls = []
+        expected_reply = new_cell_message({}, {})
+
+        def handle_report(server, request):
+            calls.append((server, request))
+            return expected_reply
+
+        custom_server_class = type("CustomServer", (FederatedServer,), {handler_name: handle_report})
+        server = object.__new__(custom_server_class)
+        server.cell = MagicMock()
+        server.logger = MagicMock()
+        with patch("nvflare.private.fed.server.fed_server.threading.Thread"):
+            server._register_cellnet_cbs()
+        outcome_cb = next(
+            call.kwargs["cb"]
+            for call in server.cell.register_request_cb.call_args_list
+            if call.kwargs["topic"] == "report_job_failure"
+        )
+        request = new_cell_message({}, {})
+
+        reply = outcome_cb(request)
+
+        assert calls == [(server, request)]
+        assert reply is expected_reply
+
+    def test_registered_legacy_override_can_delegate_to_authenticated_outcome_handler(self):
+        calls = []
+
+        class CustomServer(FederatedServer):
+            def process_job_failure(self, request):
+                calls.append(request)
+                return super().process_job_failure(request)
+
+        server = object.__new__(CustomServer)
+        server.cell = MagicMock()
+        server.logger = MagicMock()
+        server.client_manager = MagicMock()
+        server.client_manager.is_from_authorized_client.return_value = False
+        server.engine = MagicMock()
+        with patch("nvflare.private.fed.server.fed_server.threading.Thread"):
+            server._register_cellnet_cbs()
+        outcome_cb = next(
+            call.kwargs["cb"]
+            for call in server.cell.register_request_cb.call_args_list
+            if call.kwargs["topic"] == "report_job_failure"
+        )
+        request = new_cell_message(
+            {CellMessageHeaderKeys.TOKEN: "unauthorized-token", MessageHeaderKey.ORIGIN: "site-1"},
+            {JobOutcomeMsgKey.JOB_ID: "job-1"},
+        )
+
+        reply = outcome_cb(request)
+
+        assert calls == [request]
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        server.client_manager.is_from_authorized_client.assert_called_once_with("unauthorized-token")
+        server.engine.job_runner.resolve_client_outcome.assert_not_called()
+        server.engine.job_runner.fail_run.assert_not_called()
+        server.engine.job_runner.stop_run.assert_not_called()
+
     def test_process_job_outcome_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
@@ -957,7 +1019,7 @@ class TestFederatedServer:
             server.cell.register_request_cb.assert_any_call(
                 channel=CellChannel.SERVER_MAIN,
                 topic=CellChannelTopic.REPORT_JOB_FAILURE,
-                cb=server.process_job_outcome,
+                cb=server.process_job_failure,
             )
             outcome_cb = next(
                 call.kwargs["cb"]
