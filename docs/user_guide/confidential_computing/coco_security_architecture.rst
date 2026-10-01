@@ -236,6 +236,370 @@ Assets and visibility
      - Image/configuration metadata, sizes, timing and resource usage remain
        observable. Do not put secrets in command lines or environment metadata.
 
+.. _coco_security_two_site_example:
+
+Worked example: one model owner and two data owners
+===================================================
+
+This example maps the deployment roles to a federation: **model owner M** runs
+the FL server, **data owner A** participates as ``site-1``, and **data owner B**
+participates as ``site-2``. Each client runs in its own adversarially operated
+CoCo cluster. The concrete setup uses the reviewed **SNP plus NVIDIA GPU**
+baseline; consult the release-scope qualification above for other targets.
+It is an architectural deployment recipe, not a supplied end-to-end training
+application or a claim that this exact two-site deployment has been tested.
+
+.. figure:: ../../resources/coco-two-site-fl-example.svg
+   :alt: Model owner M supplies reviewed client code to a mutually trusted provisioner. Separate encrypted releases run in hostile clusters for site-1 and site-2, with independent secure services. Each data owner authorizes a user-supplied TLS dataset connector into its guest. Approved model updates go to M's ordinary trusted server.
+   :width: 100%
+   :align: center
+
+   Solid paths use the CoCo/NVFlare deployment model. Dashed dataset paths
+   require application-specific implementation and authorization; they are
+   not supplied by the CoCo packaging scripts.
+
+Agree on authority before preparing machines
+--------------------------------------------
+
+.. list-table:: FL stakeholders and deployment authority
+   :header-rows: 1
+   :widths: 24 40 36
+
+   * - Stakeholder
+     - Operates or supplies
+     - Required approval / trust
+   * - Model owner M
+     - Model, reviewed client/server application, ordinary FL server, and
+       trusted FL project-administration console.
+     - A and B approve the admitted client code, permitted job/model inputs,
+       and outputs to M. M's server administrators can see those outputs.
+   * - Data owner A / B
+     - Its dataset service and storage, separately administered from its
+       untrusted compute operator.
+     - Each owner approves code that may access its data, dataset scope,
+       purpose, recipients, retention, and output policy. An explicitly
+       delegated reviewer may act for that owner; CoCo IT does not approve it.
+   * - Trusted provisioning operator
+     - ``admin/`` role kit, build/sign/encrypt pipeline, project provisioning,
+       and separate client releases.
+     - M, A, and B must trust this operator with application plaintext,
+       participant credentials, build inputs, signing keys, and image keys.
+       M may perform this role only with that agreement.
+   * - Trusted platform authority
+     - ``trusted_system/`` role kit and approved platform rehearsal.
+     - Reviews guest artifacts, effective launch inputs and firmware/TCB
+       baseline; supplies authenticated references and launch contracts.
+       The future hostile cluster operator is not this authority.
+   * - Independent secure-services administrator
+     - ``service/`` role kit, registry, Trustee/KBS, AS/RVPS and release policy.
+     - Acts as a trusted delegate for the affected owners; checks their
+       recorded approvals before installing platform or workload policy.
+       Trustee does not implement an automatic multi-owner vote or quorum.
+   * - CoCo IT A / B
+     - ``coco/`` public role kit, host, Kubernetes and runtime; launches its
+       site's delivered Pod.
+     - Receives no plaintext startup kit, image key, registry publishing
+       password, or secure-services administration credentials.
+
+Code confidentiality from compute IT must not prevent the data owners' trusted
+reviewers from assessing what will consume their data. Image signing proves
+publisher authorization, not privacy-preserving behavior. Record the accepted
+code/build recipe, dependencies, release identifiers, policies, and allowed
+outputs; organization-level consent is not produced by ``nvflare provision``.
+
+The ``admin/`` deployment kit is the **trusted provisioning role**, not the
+``admin@example.com`` FL console startup kit. The latter authenticates the FL
+project administrator. Neither belongs on an adversarial cluster host.
+Trusted roles may be co-located only if all affected owners accept their
+combined administrative authority and secret exposure. Separate VMs under one
+hostile administrator do not create independent trust.
+
+Machines and inputs to prepare
+-------------------------------
+
+.. list-table:: Prerequisites for this SNP plus GPU example
+   :header-rows: 1
+   :widths: 25 40 35
+
+   * - Machine / operator
+     - Required environment
+     - Intended final state
+   * - Provisioning node / trusted provisioning operator
+     - Dedicated Ubuntu 26.04 x86_64; matching NVFlare environment, Docker and
+       build tools; reviewed application contexts; authenticated public trust
+       material and restricted registry publishing credentials.
+     - Private build workspace, signed kits, per-site encrypted releases and
+       handoffs. No cluster administration is needed to package a release.
+   * - Trusted platform system / platform authority
+     - Ubuntu 26.04 x86_64; enabled AMD SEV-SNP, supported production-CC NVIDIA
+       GPU, KVM/SEV devices, and independently approved firmware baseline.
+     - Rehearsal Kubernetes/Kata environment; verified CPU evidence, five
+       approved SNP reference values, and approved workload launch contract.
+   * - Secure-services host / independent administrator
+     - Fresh Ubuntu 24.04 x86_64; Docker, DNS/network access, protected TLS and
+       administrative keys. No confidential CPU/GPU or Kubernetes is needed.
+     - TLS registry and Trustee/KBS/AS/RVPS, approved references, and separate
+       workload release authorizations.
+   * - Two site compute hosts / CoCo IT A and B
+     - Ubuntu 26.04 x86_64; enabled SNP and one available supported
+       production-CC GPU per running protected Pod; matching approved launch
+       profile. Follow host preflight, including VFIO and swap requirements.
+     - Kubernetes, pinned Kata runtime and GPU support; one confidential
+       NVFlare client at each site. Host software remains untrusted.
+   * - FL server and administration host / M
+     - Trusted OS and matching NVFlare environment; private signed server and
+       FL admin kits; reachable server DNS and authenticated FL transport.
+     - Ordinary server verifies both client proofs locally with the pinned AS
+       public key; trusted console verifies registration and job results.
+   * - Dataset endpoints / A and B independently
+     - Owner-controlled storage and authenticated data API, plus a reviewed
+       guest connector and recipient authorization mechanism supplied by users.
+     - Data goes only to the authorized site's guest; persistence and result
+       delivery obey the owner's separate storage/output policy.
+
+Two simultaneous protected clients consume two allocatable GPUs. A protected
+server is optional and requires a third concurrent GPU in this baseline, its
+own encrypted release, and the logical CC identity ``server`` in the required
+attested set. An ordinary server needs no CoCo runtime to verify client proofs,
+but its operator remains trusted with aggregation and permitted updates.
+
+Ensure secure-services DNS resolves **inside each guest**, and registry HTTPS
+and KBS are reachable on their configured ports (defaults 5000 and 8443).
+Host ``/etc/hosts`` entries are insufficient. For the supplied registry access
+configuration, the publisher's public egress IPv4 must differ from both CoCo
+sites' egress; configure its exact ``/32`` as ``REGISTRY_PUBLISHER_CIDR``.
+Otherwise a guest pull can encounter the publisher authentication challenge.
+
+The **prebuilt Kata guest** and the **application container** are different
+artifacts. The pinned Kata 3.29.0 chart/artifact image supplies the runtime and
+guest boot artifacts, including kernel, rootfs and guest services; operators
+do not build a new guest OS for each client. M instead supplies reviewed
+application Dockerfiles containing matching NVFlare, Python 3.11 or later,
+bash/coreutils, required userspace libraries, and approved training/connector
+code. The example Dockerfiles contain deliberately non-runnable placeholder
+bases: replace them with reviewed, digest-pinned bases before provisioning.
+Provisioning adds the individual client's signed startup kit to its image.
+
+Initial setup and handoff order
+-------------------------------
+
+Use a clean, reviewed source revision and assemble the complete role kits as
+described in :github_nvflare_link:`examples/devops/coco/CONFIGURATION.md`.
+Do not distribute only the top-level script wrappers. Create the private
+``platform.env`` configurations for the actual endpoints and machines. The
+scripts do not supply leases, firmware enablement, DNS, firewall rules, SSH
+access, or the application-specific data API.
+
+1. **M, A and B review the application and launch shape.** Choose the baked-in
+   executor/controller code, dataset connector, output policy, non-root
+   UID/GID 65532, and permitted writable state. Explicitly set the source
+   application's ``securityContext.readOnlyRootFilesystem: false`` for
+   NVFlare; the source template's read-only default does not match the
+   packager's required writable setting. Include a harmless finite
+   validation workflow before building images. Prepare the source launch YAML
+   for rehearsal; this is not yet the final encrypted-release Pod. Host
+   volumes are unsupported. Changing the approved security context later
+   requires a new contract, not an edit by IT.
+
+2. **The platform authority runs trusted-system stages 01 through 10**, in
+   the order and with the inputs in
+   :github_nvflare_link:`examples/devops/coco/trusted_system/SEC-SYS-LAUNCH-PROFILE.md`.
+   This installs rehearsal Kubernetes/Kata, approves the token-API-enabled
+   launch profile, verifies fresh CPU evidence, repeats the launch, and exports
+   ``platform-reference-values.json`` for secure services plus
+   ``approved-workload-launch-profile.json`` for provisioning. Authenticate
+   both handoffs through the provisioning coordinator. Review TCB minimums
+   independently; do not approve floors merely because a collector reported
+   them. A collector rehearsal does not run the application or prove GPU/NRAS
+   appraisal. Rehearse and approve additional platform profiles if the sites
+   cannot use the same approved inputs.
+
+3. **The secure-services administrator runs stages 01 through 11** from
+   :github_nvflare_link:`examples/devops/coco/service/README.md`, using the
+   authenticated reference file. Verify RVPS persistence after restart and
+   TLS reachability. Authenticate distribution of registry/KBS trust roots and
+   the AS signing public key; give publishing credentials only to the trusted
+   provisioner. Do not send KBS administrative credentials to it merely to
+   submit a workload. Stage 05 resets workload policy to default-deny; do not
+   rerun it to approve a new release.
+
+4. **CoCo IT at each site installs public platform inputs.** Follow
+   :github_nvflare_link:`examples/devops/coco/coco/README.md`: stages
+   **00, 10, 20, 30, 35, 40, 60**, including the first stage-10 configuration
+   edit and rerun, and receipt of the pinned public chart/configuration before
+   runtime installation. This can proceed in parallel with workload packaging.
+   IT does not collect or approve replacement reference values, and does not
+   install a local Trustee to bypass independent secure services.
+
+5. **The provisioner prepares tools and packages both clients.** Run admin
+   stages **00 and 05** for tools and the authenticated publishing credential,
+   after placing authenticated ``public/trustee.crt`` and
+   ``public/registry-ca.crt`` in the admin kit;
+   follow :github_nvflare_link:`examples/devops/coco/provision/README.md` and
+   the two-client configuration below. Pin the approved launch contract for
+   each destination. Keep all plaintext kits and recovery/build files private.
+
+6. **The secure-services administrator approves each release**, after checking
+   the owners' recorded authorization and independently authenticating the
+   handoff manifest digest. From the service kit, repeat for each release::
+
+      ./12-install-trusted-service-handoff.sh \
+        "$HOME/incoming/site-1-v1" "$EXPECTED_MANIFEST_SHA256"
+
+   Use ``site-2-v1`` and its own expected digest for the other site. These
+   private handoffs contain the image key, verification public key, image
+   policy, release authorization, resource-policy fragment, and manifest.
+   Stage 12 merges the approved release into the complete policy; never
+   install a fragment as the global policy. The two releases have different
+   keys and resource paths.
+
+7. **M starts the ordinary server with its private signed kit.** CoCo IT
+   receives only its site's public Pod and independently authenticated
+   checksum, then runs from its CoCo kit::
+
+      ./50-launch-handoff.sh site-1-v1-pod.yaml EXPECTED_SHA256
+      ./70-verify-running-workload.sh site-1-v1-pod.yaml EXPECTED_SHA256
+
+   Substitute the delivered filename and digest, and use the site-2 release
+   at B. Only launch after secure-services approval. The service administrator
+   checks each release with ``./13-verify-workload-release.sh site-1-v1 5m``
+   (and separately ``site-2-v1``). These checks supplement attestation; host
+   readiness and service log entries alone do not prove a successful FL job.
+
+8. **The trusted FL administrator verifies both clients**, using
+   :github_nvflare_link:`examples/devops/coco/provision/VERIFY-RUNNING-FEDERATION.md`.
+   Set ``REQUIRED_CC_SITES=site-1,site-2`` and
+   ``EXPECTED_CLIENTS=site-1,site-2`` in that procedure. Require both clients in
+   the validation job's ``mandatory_clients``, set ``min_clients`` to ``2``,
+   and check that the controller actually exercised both clients. Verify
+   registration, completion, expected results and required periodic proofs.
+   There is no universal validation job in the package. Do not release real
+   datasets until the owner-specific authorization and confidentiality gates
+   below are also satisfied.
+
+Provision two separate client releases
+--------------------------------------
+
+Start from the complete ``provision/project.yaml``. Retain its server and FL
+admin participants, builder order and ``CoCoPackager``; replace the placeholder
+server/admin names with the actual identities and configure reachable server
+DNS/port before provisioning. Replace its one-client participant entry
+with these two entries within ``participants`` (this fragment is not a complete
+project file):
+
+.. code-block:: yaml
+
+   - name: site-1
+     type: client
+     org: data-owner-a
+     cc_config: cc_site-1.yml
+   - name: site-2
+     type: client
+     org: data-owner-b
+     cc_config: cc_site-2.yml
+
+Copy/adapt ``cc_site-1.yml`` to ``cc_site-2.yml`` and supply the reviewed
+application contexts. Keep ``compute_env: confidential_containers``,
+``cc_cpu_mechanism: amd_sev_snp``, ``cc_gpu: nvidia`` and ``role: client``.
+Use these distinct packaging values:
+
+.. list-table:: Per-client packaging inputs
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Field
+     - ``cc_site-1.yml``
+     - ``cc_site-2.yml``
+   * - ``image_build.context``
+     - ``./site-1``
+     - ``./site-2``
+   * - ``image_build.dockerfile``
+     - ``Dockerfile``
+     - ``Dockerfile``
+   * - ``release_name``
+     - ``site-1-v1``
+     - ``site-2-v1``
+   * - ``registry_repository``
+     - ``workloads/site-1``
+     - ``workloads/site-2``
+
+Use the same authenticated AS public key and identical project-wide
+attestation timing/manager settings. Each ``platform_config`` must reference a
+file named ``platform.env`` inside a complete prepared admin kit directory for
+its destination. Use separate admin kit directories when launch contracts,
+cluster service environment or trust inputs differ. Use reviewed, fully
+qualified ``class_allow_list`` entries for admitted
+application components. Do not upload executable code through a job to avoid
+rebuilding: CCManager disables bring-your-own-code jobs.
+
+From the assembled ``provision/`` directory in the trusted, matching NVFlare
+environment, run::
+
+   nvflare provision -p project.yaml
+
+The packager invokes admin stages **10, 20, 25, 30, 40** for each protected
+participant, including the operator's plaintext-image approval after stage 10.
+It produces separate participant kits, encrypted/signed images, InitData and
+policies, secure-services handoffs and Pod manifests. The same approved base
+code may be reused, but the sites must not share a packaged identity or image
+key. Code, dependency, startup-kit or security-policy changes require a fresh
+release and renewed approval; measured launch-input changes also need fresh
+platform rehearsal. Protect the ordinary server and FL admin kits separately.
+
+Dataset access, training outputs and persistence
+------------------------------------------------
+
+**The CoCo package does not implement the dataset path.** A suitable design for
+this example is a guest-initiated, end-to-end TLS/mTLS connection from each
+client to its own owner's data service, with the connector baked into the
+reviewed image. A supplies only A's authorized records to site-1; B supplies
+only B's authorized records to site-2. Keep the data services, authorization
+secrets and storage outside the hostile compute administrators' control.
+
+Before sending data, the owner-controlled service must authenticate the
+recipient and authorize its site, approved workload, dataset scope and expiry.
+A participant certificate proves an identity, not that approved code is
+executing. CoCoAuthorizer's peer proof is also **not an exact-image workload
+authorization or a dataset ACL**. Implement and review the service's proof and
+credential-delivery protocol; do not export the raw AA response or its private
+key, and do not put dataset credentials in public Pod YAML or host-managed
+Kubernetes Secrets.
+
+.. important::
+
+   Strict release of data **only to the approved application** remains a
+   deployment gate: establish the actual-image authorization and guest
+   boot/rootfs integrity coverage discussed in
+   :ref:`the Pod launch analysis <coco_security_pod_launch>`, and test the
+   resulting recipient authorization. The current exact-image-digest gap
+   must not be hidden by the diagram or by a successful peer TEE proof. Until
+   these requirements are met, this example is not a demonstrated confidential
+   dataset-delivery solution for that threat model.
+
+Do not use ``hostPath`` or PVC mounts for the dataset: the current packager
+rejects volumes. Consume plaintext in private guest memory, or in storage with
+separately demonstrated confidentiality and integrity; being named a guest
+filesystem does not establish that a host-backed disk is protected. The
+provided writable workload state is ephemeral, not a durable encrypted data
+or checkpoint service.
+
+For persistence, users must implement a reviewed result/checkpoint protocol to
+owner-controlled network storage, including authentication, key custody,
+retention and rollback/replay handling. If storage administrators are also
+untrusted, encrypt and authenticate data inside the guest before upload and
+keep decryption authority outside their control. Neither durable confidential
+storage nor freshness protection is supplied automatically by CoCo.
+
+During training M sends the approved model/configuration; clients compute over
+their authorized inputs and return permitted model updates through NVFlare's
+authenticated transport. Keeping raw data site-local is an **application and
+output-policy requirement**, not a consequence of attestation alone. Updates
+can disclose training information. This setup does not automatically provide
+differential privacy, secure aggregation, or protection from malicious model
+inputs. A and B must approve what M may receive; M's ordinary server sees those
+updates in plaintext. Review and validate these application-level controls
+before enabling sensitive training.
+
 .. _coco_security_attack_surface:
 
 Attack-surface inventory
