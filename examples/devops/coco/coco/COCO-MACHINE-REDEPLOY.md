@@ -189,24 +189,52 @@ Record only nonsecret status:
 ```
 
 The verifier compares the live image, command, init-data, and runtime with the
-authenticated handoff; requires Running, Ready, and zero restarts; requires
-zero application log bytes for the silent demo or silent provisioned NVFlare
-startup (an explicit guest `ReadStreamRequest` denial also passes); and performs a negative
-`kubectl exec` test that must return `PermissionDenied` with
-`ExecProcessRequest is blocked by policy`.
+authenticated handoff; requires Running, Ready, and zero restarts; and samples
+application output with `kubectl logs --limit-bytes=1`. Any visible byte fails
+the silent demo or silent provisioned NVFlare startup check; an explicit guest
+`ReadStreamRequest` denial also passes. A negative `kubectl exec` test must
+return `PermissionDenied` with `ExecProcessRequest is blocked by policy`.
 
 NVFlare startup is redirected before kit signing on the trusted provisioning
 node. Do not work around visible output by skipping this check or changing the
 approved command. Rebuild and authorize a fresh release for older noisy kits.
 The verifier never prints application logs and does not mistake an unrelated
-Kubernetes log-access error for policy enforcement.
+Kubernetes log-access error for policy enforcement. An empty sample is not
+proof that no earlier or future sensitive output reaches host-visible logs.
 
 Do not use SSH, attach, copy, debug containers, host mounts, or altered YAML as
 a success path. The operator can delete or withhold the Pod and observe
 metadata, timing, resource usage, the ciphertext manifest/layers, the public
 embedded policy, and Kubernetes logs. It must not learn plaintext image layers
-or receive decryption/signing keys. A modified image/command/init-data must fail
-attestation or guest policy and receive no KBS resources.
+or receive decryption/signing keys. Do not interpret these requirements as a
+guarantee that every YAML change fails attestation or prevents KBS release:
+
+- Changing the decoded, approved InitData changes its attested digest and must
+  fail release authorization. KBS checks policy-derived image/command claims
+  and the InitData binding, not a measurement of the actual decrypted image or
+  the host's live container-creation request.
+- With unchanged InitData, an effective command outside the approved guest
+  rules must be rejected by the guest agent. Attestation and KBS authorization
+  may already have passed for the original policy; guest-request denial does
+  not imply that no resources were released inside the confidential guest.
+- Image signature, digest/integrity, decryption and guest-policy checks still
+  apply. However, exact-image-digest authorization has an unresolved coverage
+  limitation: another image signed by the accepted key in the permitted
+  repository is not shown to be rejected solely because its digest differs.
+  It must still satisfy the other checks. This is not a demonstrated successful
+  substitution or key-extraction attack.
+- A different RuntimeClass name that produces the same approved measured guest
+  launch can pass. Independent attestation authorizes covered guest inputs,
+  not the hostile host's runtime name or every literal YAML field.
+
+Retain the independent digest, signature and release checks. Trusted deployment
+acceptance must test changed InitData, forbidden effective commands and
+unsigned/corrupt images at the enforcing service/guest boundary. Before claiming
+all image substitutions are blocked, close the exact-image binding gap and test
+an actual accepted-key/same-repository replacement with unchanged InitData.
+Changing only policy claims, checking the handoff hash, or passing stage 70 does
+not establish that binding. See the canonical
+[image authorization analysis](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
 
 The service administrator, not CoCo IT, confirms CPU/GPU appraisal and KBS
 resource release. The workload owner confirms application success over its own
