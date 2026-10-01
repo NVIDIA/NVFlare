@@ -1,4 +1,9 @@
-# trusted_system → secure services: five platform-reference values
+# trusted_system → secure services: five SNP platform-reference values
+
+This page documents the unchanged SNP format. TDX uses a versioned set of
+complete tuples and the same numbered installer entry points; follow
+[TDX-REFERENCE-VALUES.md](TDX-REFERENCE-VALUES.md). Do not place TDX values in
+these SNP fields. Coexisting SNP and TDX reference sets remain separate.
 
 First configure the complete service kit as described in
 [../CONFIGURATION.md](../CONFIGURATION.md). No approved values are bundled.
@@ -41,9 +46,11 @@ preparing and installing a multiple-measurement file.
 
 AS requires an exact match to **any one** measurement in the list and uses the four
 floors for numeric `reported_tcb_* >= minimum` checks. These are CPU platform
-references, not GPU reference values. Existing GPU verification and the KBS
-requirement for acceptable CPU **and** GPU results remain in place; installing
-these values alone does not authorize any workload's resource paths or keys.
+references, not GPU reference values. The workload's KBS authorization requires
+acceptable CPU results for CPU-only workloads, or acceptable CPU **and** GPU
+results for GPU-required workloads. Existing GPU verification remains enabled;
+installing these values does not change the workload's GPU requirement or
+authorize any workload's resource paths or keys.
 Do not lower a floor merely to make a failing cluster pass; a reduction requires
 an explicitly reviewed security exception.
 All measurements use the **same four floors**. This is not a set of
@@ -120,13 +127,14 @@ bash ./02-install-platform-reference-values.sh "$VALUES" \
 Execution order inside stage 02:
 
 1. Validate the JSON before any changes and require the reviewed CPU policy.
-2. Save a mode-0600 copy of the previous `platform.env`; replace only its five
-   reference fields, preserving all other service configuration.
-3. Temporarily register the four TCB floors as 255, following stage 09's
-   restrictive update order.
-4. Replace `snp_launch_measurement` with the complete approved JSON array in
-   one authenticated HTTPS request (a single string becomes a one-item array).
-5. Register the four approved TCB floors as scalar integers.
+2. Save a mode-0600 copy of the previous `platform.env`, update its reference
+   fields and save a validated mode-0600 JSON snapshot selected by
+   `PLATFORM_REFERENCE_VALUES_FILE`, preserving other service configuration.
+3. Clear `snp_launch_measurement` to an empty array so no SNP measurement can
+   pass during the multi-reference update.
+4. Register the four approved TCB floors as scalar integers.
+5. Activate the complete approved measurement array in one authenticated HTTPS
+   request (a single string becomes a one-item array).
 6. Read all five references back through the authenticated KBS admin API and
    compare them with the received JSON, requiring exact measurement-set
    equality regardless of order, then confirm AS CPU/GPU and KBS
@@ -136,16 +144,12 @@ The underlying administration commands are:
 
 ```bash
 source ./lib/common.sh
-# The installer sets all four temporary numeric floors before this command.
-install_measurement_allowlist "$VALUES"
-kbs_admin set-sample-reference-value snp_min_reported_tcb_bootloader "$SNP_MIN_REPORTED_TCB_BOOTLOADER" --as-integer --as-single-value
-kbs_admin set-sample-reference-value snp_min_reported_tcb_tee "$SNP_MIN_REPORTED_TCB_TEE" --as-integer --as-single-value
-kbs_admin set-sample-reference-value snp_min_reported_tcb_snp "$SNP_MIN_REPORTED_TCB_SNP" --as-integer --as-single-value
-kbs_admin set-sample-reference-value snp_min_reported_tcb_microcode "$SNP_MIN_REPORTED_TCB_MICROCODE" --as-integer --as-single-value
+# Internal helper used by stages 02 and 09, after validation and locking:
+install_platform_references "$VALUES"
 ```
 
 Use stage 02 for the guarded sequence rather than executing selected writes
-manually. `install_measurement_allowlist` uses Python's standard-library HTTPS
+manually. `install_platform_references` uses Python's standard-library HTTPS
 client with the configured CA certificate, hostname validation and the local
 KBS admin token file. It posts a native array using Trustee's sample extractor
 envelope to `/kbs/v0/reference-value`; it does not follow redirects or expose
@@ -157,7 +161,8 @@ that CLI would register the array text as one string, not multiple measurements.
 Updates across all five references are not an atomic RVPS transaction and may
 temporarily deny requests. Stages 02 and 09 share a nonblocking local lock;
 another copy of the kit or a manual API caller is not covered by that lock.
-Staging TCB floors at 255 is restrictive, not an unconditional deny rule.
+An intermediate failure leaves SNP measurement approval empty until a successful
+retry; the installer does not restore a permissive partial reference set.
 Do not install references concurrently or launch new workloads
 during installation. On failure, stop, inspect the error, and rerun the same
 approved file after fixing the cause. Do not assume automatic rollback or

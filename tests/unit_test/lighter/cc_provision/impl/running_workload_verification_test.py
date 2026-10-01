@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.lighter.cc_provision.kata_runtime_profile import RUNTIME_TARGETS, runtime_target
 from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import require_coco_bash
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
@@ -85,11 +86,15 @@ def run_verifier(tmp_path):
     library = script.parent / "lib/common.sh"
     library.parent.mkdir()
     library.write_text(
-        f"RUNTIME_CLASS={RUNTIME}\n"
+        f'RUNTIME_CLASS="${{TEST_RUNTIME:-{RUNTIME}}}"\n'
         "die() { printf '%s\\n' \"$*\" >&2; exit 1; }\n"
         'need_file() { [[ -f "$1" ]] || die "missing fixture file"; }\n'
         'need_cmd() { command -v "$1" >/dev/null || die "missing command"; }\n'
         'kctl() { kubectl "$@"; }\n'
+    )
+    shutil.copyfile(
+        ROOT.parents[2] / "nvflare/lighter/cc_provision/kata_runtime_profile.py",
+        library.parent / "kata-runtime-profile.py",
     )
     binaries = tmp_path / "bin"
     binaries.mkdir()
@@ -111,7 +116,9 @@ def run_verifier(tmp_path):
         "FAKE_KUBECTL_CALLS": str(calls_file),
     }
 
-    def run(command=None, mutate_live=None, expected_hash=None, **overrides):
+    def run(command=None, mutate_live=None, expected_hash=None, runtime=RUNTIME, **overrides):
+        environment["TEST_RUNTIME"] = runtime
+        gpu_count = runtime_target(runtime)["gpu_count"]
         expected = {
             "metadata": {
                 "name": "fixture-pod",
@@ -119,9 +126,14 @@ def run_verifier(tmp_path):
                 "annotations": {"io.katacontainers.config.hypervisor.cc_init_data": "authenticated-init-data"},
             },
             "spec": {
-                "runtimeClassName": RUNTIME,
+                "runtimeClassName": runtime,
                 "containers": [
-                    {"name": "workload", "image": "fixture@sha256:" + "a" * 64, "command": command or NVFLARE_COMMAND}
+                    {
+                        "name": "workload",
+                        "image": "fixture@sha256:" + "a" * 64,
+                        "command": command or NVFLARE_COMMAND,
+                        "resources": {"limits": {"nvidia.com/pgpu": gpu_count}} if gpu_count else {},
+                    }
                 ],
             },
         }
@@ -253,3 +265,29 @@ def test_handoff_hash_mismatch_stops_before_any_cluster_command(run_verifier):
     assert result.returncode != 0
     assert "Pod SHA-256 mismatch" in result.stderr
     assert not calls
+
+
+@pytest.mark.parametrize("runtime", RUNTIME_TARGETS)
+def test_running_workload_verification_supports_all_approved_targets(run_verifier, runtime):
+    result, _ = run_verifier(runtime=runtime)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("runtime", RUNTIME_TARGETS)
+@pytest.mark.parametrize("resources", [{}, {"limits": {"nvidia.com/pgpu": 1}}, {"limits": {"cpu": 1}}])
+def test_target_resource_allocation_cannot_drift(run_verifier, runtime, resources):
+    result, calls = run_verifier(
+        runtime=runtime,
+        mutate_live=lambda pod: pod["spec"]["containers"][0].update(resources=resources),
+    )
+    expected = {"limits": {"nvidia.com/pgpu": 1}} if runtime_target(runtime)["gpu_count"] else {}
+    assert (result.returncode == 0) == (resources == expected), result.stderr
+    if resources != expected:
+        assert "GPU allocation differs" in result.stderr
+        assert "logs" not in [call[0] for call in calls]
+
+
+def test_sidecar_drift_rejected(run_verifier):
+    result, _ = run_verifier(mutate_live=lambda pod: pod["spec"]["containers"].append({"name": "extra"}))
+    assert result.returncode != 0
+    assert "exactly one workload container" in result.stderr

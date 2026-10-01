@@ -98,6 +98,83 @@ def archive(path, content):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("exit_code", [0, 23])
+def test_installer_scratch_creation_and_cleanup_use_same_privilege(tmp_path, exit_code):
+    source = INSTALLER.read_text()
+    section = source[source.index('tmp_dir="') : source.index('download_dir="')]
+    # Exercise the actual trap without sudo or root writes. Redirect only the
+    # privileged mktemp call to the fixture; record all privileged operations.
+    result = run(
+        tmp_path,
+        f"""
+fixture={shlex.quote(str(tmp_path))}
+as_root() {{
+  printf '%s\\n' "$*" >>"$fixture/root-calls"
+  case "$1" in
+    mktemp)
+      [[ $# == 3 && $2 == -d && $3 == /var/tmp/coco-kubernetes.XXXXXXXXXX ]] || return 91
+      command mktemp -d "$fixture/coco-kubernetes.XXXXXXXXXX"
+      ;;
+    rm)
+      [[ $# == 4 && $2 == -rf && $3 == -- && $4 == "$fixture"/coco-kubernetes.* ]] || return 92
+      command rm -rf -- "$4"
+      ;;
+    *) return 93 ;;
+  esac
+}}
+{section}
+[[ $(stat -c %a "$tmp_dir") == 700 ]]
+mkdir "$tmp_dir/linux-amd64"
+printf 'helm fixture\\n' >"$tmp_dir/linux-amd64/helm"
+printf '%s\\n' "$tmp_dir" >"$fixture/scratch-path"
+exit {exit_code}
+""",
+    )
+    assert result.returncode == exit_code, result.stderr
+    scratch = Path((tmp_path / "scratch-path").read_text().strip())
+    assert not scratch.exists()
+    assert (tmp_path / "root-calls").read_text().splitlines() == [
+        "mktemp -d /var/tmp/coco-kubernetes.XXXXXXXXXX",
+        f"rm -rf -- {scratch}",
+    ]
+
+
+def test_installer_writes_kubeadm_config_through_privileged_boundary(tmp_path):
+    source = INSTALLER.read_text()
+    start = source.index('  kubeadm_config="$tmp_dir/kubeadm.yaml"')
+    stop = source.index('\nelse\n  log "Existing cluster', start)
+    template = COMMON.parents[1] / "templates/kubeadm.yaml.in"
+    result = run(
+        tmp_path,
+        f"""
+tmp_dir={shlex.quote(str(tmp_path))}
+TEMPLATE_DIR={shlex.quote(str(template.parent))}
+NODE_IP=192.0.2.10
+KUBERNETES_SEMVER=v1.34.9
+POD_CIDR=192.168.0.0/16
+SERVICE_CIDR=10.96.0.0/12
+CLUSTER_DNS=10.96.0.10
+as_root() {{
+  printf '%s\\n' "$*" >>"$tmp_dir/root-calls"
+  case "$1" in
+    tee) [[ $# == 2 && $2 == "$tmp_dir/kubeadm.yaml" ]] && command tee "$2" ;;
+    kubeadm) [[ $# == 5 && $2 == init && $3 == --config && $4 == "$tmp_dir/kubeadm.yaml" && $5 == --skip-token-print ]] ;;
+    *) return 93 ;;
+  esac
+}}
+{source[start:stop]}
+""",
+    )
+    assert result.returncode == 0, result.stderr
+    config = tmp_path / "kubeadm.yaml"
+    assert "advertiseAddress: 192.0.2.10" in config.read_text()
+    assert "@@" not in config.read_text()
+    assert (tmp_path / "root-calls").read_text().splitlines() == [
+        f"tee {config}",
+        f"kubeadm init --config {config} --skip-token-print",
+    ]
+
+
 @pytest.mark.parametrize("replace_after_check", [False, True])
 def test_privileged_consumer_rechecks_private_snapshot(tmp_path, replace_after_check):
     source, replacement = tmp_path / "good.tgz", tmp_path / "replacement.tgz"

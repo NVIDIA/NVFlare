@@ -9,18 +9,26 @@ need kubectl
 need helm
 need containerd
 need ctr
-need lspci
+need python3
+gpu_count="$(python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" target "$RUNTIME_CLASS" --field gpu_count)"
+if ((gpu_count > 0)); then need lspci; fi
+validate_runtime_prerequisites "$RUNTIME_CLASS"
 
 kctl get nodes >/dev/null
 node_name="$(kctl get nodes -o jsonpath='{.items[0].metadata.name}')"
 [[ -n "$node_name" ]] || die "No Kubernetes node found"
 
-log "Labelling $node_name for ${TEE_NAME} and NVIDIA VM passthrough"
+log "Labelling $node_name for ${TEE_NAME}"
 kctl label node "$node_name" "${TEE_NODE_LABEL_KEY}=true" --overwrite
-kctl label node "$node_name" nvidia.com/gpu.workload.config=vm-passthrough --overwrite
+if ((gpu_count > 0)); then
+  kctl label node "$node_name" nvidia.com/gpu.workload.config=vm-passthrough --overwrite
+fi
 
 log "Installing Kata Containers ${KATA_VERSION}"
+selected_runtime="$RUNTIME_CLASS"
 source "$SCRIPT_DIR/../public/kata-platform.env"
+# Legacy pin files contain a default RuntimeClass; preserve the selected target.
+RUNTIME_CLASS="$selected_runtime"
 chart="$SCRIPT_DIR/../public/kata-deploy-${KATA_VERSION}.tgz"
 [[ -s $chart ]] || die "Receive the public Kata chart before installing the runtime"
 printf '%s  %s\n' "$KATA_CHART_TGZ_SHA256" "$chart" | sha256sum --check --strict
@@ -87,11 +95,18 @@ runtime_config="$(
 [[ -n "$runtime_config" ]] ||
   die "Could not resolve the Kata configuration for ${RUNTIME_CLASS}"
 as_root python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" enable "$runtime_config"
+as_root python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" check-target "$RUNTIME_CLASS" "$runtime_config"
 as_root python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" check "$runtime_config" --runtime /opt/kata/bin/kata-runtime
+validate_runtime_prerequisites "$RUNTIME_CLASS" "$runtime_config"
 as_root grep -Eq '^emptydir_mode = "block-encrypted"$' "$runtime_config" ||
   die "${RUNTIME_CLASS} does not enable released CoCo block-encrypted emptyDir volumes"
 log "Released CoCo LUKS2/dm-crypt emptyDir support is enabled"
 
+runtime_ready() { kctl get runtimeclass "$RUNTIME_CLASS" >/dev/null 2>&1; }
+wait_for "RuntimeClass ${RUNTIME_CLASS}" 900 runtime_ready
+kctl wait --for=condition=Ready nodes "$node_name" --timeout=10m
+
+if ((gpu_count > 0)); then
 log "Installing NVIDIA GPU Operator ${GPU_OPERATOR_VERSION} for Kata passthrough"
 helmctl repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
 helmctl repo update nvidia
@@ -111,7 +126,6 @@ helmctl upgrade --install gpu-operator nvidia/gpu-operator \
 
 log "Waiting for CoCo GPU readiness"
 kctl wait --for=condition=Ready nodes "$node_name" --timeout=10m
-runtime_ready() { kctl get runtimeclass "$RUNTIME_CLASS" >/dev/null 2>&1; }
 cc_ready() { [[ "$(kctl get node "$node_name" -o jsonpath='{.metadata.labels.nvidia\.com/cc\.ready\.state}' 2>/dev/null)" == true ]]; }
 gpu_allocatable() {
   local escaped_resource value
@@ -119,7 +133,6 @@ gpu_allocatable() {
   value="$(kctl get node "$node_name" -o "jsonpath={.status.allocatable.${escaped_resource}}" 2>/dev/null || true)"
   [[ "${value:-0}" != 0 ]]
 }
-wait_for "RuntimeClass ${RUNTIME_CLASS}" 900 runtime_ready
 wait_for "NVIDIA confidential-computing readiness label" 1800 cc_ready
 wait_for "$GPU_RESOURCE allocatable resource" 1800 gpu_allocatable
 
@@ -131,3 +144,7 @@ for gpu_bdf in "${gpu_bdfs[@]}"; do
   log "Post-install validation: GPU $gpu_bdf is bound to vfio-pci"
 done
 log "Kata CoCo runtime and GPU passthrough are ready"
+else
+  log "CPU-only Kata CoCo runtime is ready; no GPU Operator or passthrough components were installed"
+fi
+log "Cluster readiness is operational only; secure services still approve guest evidence and key release"

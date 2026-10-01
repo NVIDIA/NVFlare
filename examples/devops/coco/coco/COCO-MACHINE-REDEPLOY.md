@@ -14,8 +14,11 @@ build input, plaintext image, Trustee private key, or KBS admin token.
 
 ## 1. Hardware and host prerequisites
 
-- AMD SEV-SNP enabled with `/dev/sev` and `/dev/kvm` accessible to the runtime.
-- One H200 NVL GPU isolated from host drivers before passthrough.
+- The selected AMD SEV-SNP or Intel TDX host stack enabled, with `/dev/kvm`
+  accessible to the runtime. SNP needs `/dev/sev`; TDX needs the reviewed,
+  pinned Intel QGS/SGX/collateral setup in [RUNTIME-VARIANTS.md](../RUNTIME-VARIANTS.md).
+- GPU targets: one supported NVIDIA confidential GPU isolated from host drivers
+  before passthrough. CPU-only targets do not need GPU/IOMMU/VFIO setup.
 - Ubuntu 26.04 x86_64, swap disabled, passwordless noninteractive sudo, ample
   memory/disk, DNS, and outbound access to pinned artifact registries.
 - No existing Kubernetes/containerd state when performing a clean rebuild.
@@ -32,11 +35,12 @@ cat /etc/os-release
 uname -r
 swapon --show
 lscpu
-ls -l /dev/kvm /dev/sev
-lspci -Dnnk | grep -A3 -i NVIDIA
+ls -l /dev/kvm
+# SNP only: ls -l /dev/sev
+# GPU targets only: lspci -Dnnk | grep -A3 -i NVIDIA
 ```
 
-Stop if an NVIDIA/Nouveau driver owns the GPU, swap is active, the expected TEE
+Stop if an NVIDIA/Nouveau driver owns the required GPU, swap is active, the expected TEE
 devices are absent, or the host/lease differs from the reviewed target.
 
 ## 2. Check the vendored bootstrap
@@ -63,10 +67,14 @@ editor "$HOME/.config/coco-platform/config.env"
 
 Review `$HOME/.config/coco-platform/config.env` against the kit template and
 host. Required values include Kubernetes `1.34.9-1.1`, containerd `2.2.2`,
-Kata `3.29.0`, GPU Operator `v26.3.1`, Calico `v3.32.1`, `TEE_PLATFORM=snp`, `RUNTIME_CLASS=kata-qemu-nvidia-gpu-snp`, and
+Kata `3.29.0`, GPU Operator `v26.3.1` for GPU targets, Calico `v3.32.1`, the
+selected `TEE_PLATFORM`/`RUNTIME_CLASS` pair, and
 `EXPECTED_HOSTNAME` matching the intended machine. No measurement is needed
 in this untrusted installer configuration. An empty `NODE_IP` means derive the default-route IPv4 address.
 Do not learn the approved launch measurement from this adversarial node.
+Set the same `RUNTIME_CLASS` in `platform.env`. For TDX also pin
+`QGS_PACKAGE_VERSION`, `QGS_CONFIG_SHA256` and `QGS_QCNL_CONFIG_SHA256` in
+bootstrap configuration after reviewing the preinstalled host stack.
 
 After review, run preflight:
 
@@ -95,7 +103,7 @@ sudo kubectl --kubeconfig /etc/kubernetes/admin.conf get pods -A -o wide
 
 ## 5. Receive the public runtime inputs
 
-Admin_node delivers `kata-deploy-3.29.0.tgz`; place it at
+The provisioning node delivers `kata-deploy-3.29.0.tgz`; place it at
 `$HOME/coco-it/public/kata-deploy-3.29.0.tgz`. The kit already contains
 `public/kata-platform.env`, which provides the approved chart hash and runtime
 image digest. No platform archive, detached signature, platform signing public
@@ -107,7 +115,7 @@ The pins used by stage 35 are:
 Kata version: 3.29.0
 Chart SHA-256: dfa752945f35e2fd2d81e5293e214b7d513ae05a5edb0b0f58b3ef67eed854c2
 Runtime image: quay.io/kata-containers/kata-deploy@sha256:1e80246bbecd4fdfde2281a1ebefcd77da3f3722eca57856260d2b270de0b6ff
-RuntimeClass: kata-qemu-nvidia-gpu-snp
+RuntimeClass: selected approved SNP/TDX CPU-only or NVIDIA GPU runtime
 ```
 
 CoCo is the untrusted cluster operator, not the trusted system. Do not generate
@@ -117,7 +125,7 @@ installation reproducible; they are not a security boundary against CoCo IT.
 The independent service evaluates hardware attestation against its approved
 references and CPU/GPU and workload policies before releasing keys.
 
-## 6. Install Kata confidential GPU support
+## 6. Install the selected Kata confidential runtime
 
 ```bash
 ./30-install-coco-gpu.sh
@@ -126,9 +134,11 @@ references and CPU/GPU and workload policies before releasing keys.
 
 This invokes only the included cluster bootstrap stage 20. The first Kata
 installation already uses the hash-checked chart and immutable image digest. It installs the Kata deployment and
-NVIDIA GPU Operator for confidential passthrough, waits for the host/runtime
+NVIDIA GPU Operator for confidential passthrough only on GPU targets, waits for the host/runtime
 files, verifies released confidential-volume settings, and waits for the
-runtime class and `nvidia.com/pgpu` capacity. Do not install a host NVIDIA
+runtime class and, for GPU targets, `nvidia.com/pgpu` capacity. CPU-only uses the
+same historical stage-30 filename without installing GPU Operator. TDX runtime
+setup verifies the configured QGS path. Do not install a host NVIDIA
 driver for this passthrough design.
 
 ## 7. Trust the independent registry for pulls only
@@ -144,8 +154,8 @@ Then run:
 
 The script installs containerd `hosts.toml` with only `pull` and `resolve`
 capabilities and no publisher credential. The final verifier must show a Ready
-node, runtime class `kata-qemu-nvidia-gpu-snp`, one allocatable
-`nvidia.com/pgpu`, healthy system pods, pinned client/runtime versions, and the
+node, the selected runtime class, one allocatable `nvidia.com/pgpu` for GPU
+targets, healthy system pods, pinned client/runtime versions, and the
 registry trust files.
 
 ## 8. Receive and launch one immutable Pod handoff
@@ -162,8 +172,9 @@ From an interactive terminal:
 ```
 
 The launcher checks the hash, enforces the one-container/no-volume/no-port
-shape, exact registry digest, Kata runtime, one confidential GPU, non-root and
-read-only security context, disabled service-account token and service links,
+shape, exact registry digest, selected Kata runtime, target-specific GPU
+allocation, non-root and explicitly approved read-only or writable security
+context, disabled service-account token and service links,
 embedded init-data, server-side dry run, and an explicit typed confirmation. It
 also rejects embedded Kata policy that lacks the four official
 CVE-2026-77176 workaround checks. It applies the unchanged bytes and waits for

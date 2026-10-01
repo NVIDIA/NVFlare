@@ -38,7 +38,23 @@ RETRY_ARGUMENTS = {
     "retry_backoff_multiplier",
     "retry_jitter_ratio",
 }
-VERIFIER_ARGUMENTS = {"proof_iat_leeway_seconds"}
+VERIFIER_ARGUMENTS = {"proof_iat_leeway_seconds", "workload_constraints"}
+COCO_RUNTIMES = {
+    (CCConfigValue.AMD_SEV_SNP, "nvidia"): "kata-qemu-nvidia-gpu-snp",
+    (CCConfigValue.AMD_SEV_SNP, "none"): "kata-qemu-snp",
+    (CCConfigValue.INTEL_TDX, "nvidia"): "kata-qemu-nvidia-gpu-tdx",
+    (CCConfigValue.INTEL_TDX, "none"): "kata-qemu-tdx",
+}
+
+
+def coco_runtime_class(config):
+    """Resolve an explicit CPU/GPU combination; never infer CPU-only from omission."""
+    cpu, gpu = config.get(CCConfigKey.CC_CPU_MECHANISM), config.get(CCConfigKey.CC_GPU)
+    if not isinstance(cpu, str) or cpu not in (CCConfigValue.AMD_SEV_SNP, CCConfigValue.INTEL_TDX):
+        raise ValueError("CoCo cc_cpu_mechanism must be amd_sev_snp or intel_tdx")
+    if not isinstance(gpu, str) or gpu not in ("nvidia", "none"):
+        raise ValueError("CoCo cc_gpu must be explicitly nvidia or none")
+    return COCO_RUNTIMES[(cpu, gpu)]
 
 
 def validate_coco_config(config):
@@ -67,13 +83,12 @@ def validate_coco_config(config):
         )
     for key, value in {
         "compute_env": CCConfigValue.CONFIDENTIAL_CONTAINERS,
-        "cc_cpu_mechanism": CCConfigValue.AMD_SEV_SNP,
-        CCConfigKey.CC_GPU: "nvidia",
     }.items():
         if config.get(key) != value:
             raise ValueError(f"CoCo requires {key}: {value}")
     if config.get("role") not in (SiteType.CLIENT, SiteType.SERVER):
         raise ValueError("CoCo role must be client or server")
+    coco_runtime_class(config)
     image = config.get("image_build")
     if not isinstance(image, dict) or set(image) != {"context", "dockerfile"}:
         raise ValueError("image_build requires exactly context and dockerfile")
@@ -174,6 +189,7 @@ class CoCoBuilder(Builder):
                     {
                         **{name: value for name, value in args.items() if name not in RETRY_ARGUMENTS},
                         "proof_iat_leeway_seconds": authorizer.proof_iat_leeway_seconds,
+                        "workload_constraints": authorizer.workload_constraints,
                     },
                     attestation.get("check_frequency", 120),
                     timeouts,
@@ -182,7 +198,7 @@ class CoCoBuilder(Builder):
         if not self.settings:
             raise ValueError("CoCoBuilder requires at least one CoCo participant")
         if any(s != verifier_settings[0] for s in verifier_settings[1:]):
-            raise ValueError("CoCo participants must share the pinned AS key and attestation timing")
+            raise ValueError("CoCo participants must share the pinned AS key, verifier policy and attestation timing")
 
     def build(self, project, ctx):
         server = project.get_server()

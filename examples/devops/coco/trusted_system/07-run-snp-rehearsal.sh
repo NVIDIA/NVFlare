@@ -10,10 +10,18 @@ umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE_CONFIG="$(realpath -m -- "$1")"
 APPROVAL_ENV="$(realpath -m -- "$2")"
+# Historical filename retained for compatibility; selected runtime chooses backend.
+if [[ -f "$BASE_CONFIG" && -r "$BASE_CONFIG" ]]; then source "$BASE_CONFIG"; fi
+case "${RUNTIME_CLASS:-}" in
+    kata-qemu-tdx|kata-qemu-nvidia-gpu-tdx)
+        exec python3 "$SCRIPT_DIR/tdx-reference.py" collect "$BASE_CONFIG" "$APPROVAL_ENV" ;;
+esac
 
 source "${SCRIPT_DIR}/lib/common-base.sh"
 source "${SCRIPT_DIR}/lib/rehearsal-preflight.sh"
 rehearsal_preflight
+INSTALLED_KATA_CONFIG="/opt/kata/share/defaults/kata-containers/$(python3 \
+    "$SCRIPT_DIR/lib/kata-runtime-profile.py" target "$RUNTIME_CLASS" --field config_name)"
 
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-/etc/kubernetes/admin.conf}"
 KCTL=(kubectl --kubeconfig "${KUBECONFIG_PATH}")
@@ -220,8 +228,8 @@ while (( SECONDS < deadline )); do
     phase="$("${KCTL[@]}" -n "${NAMESPACE}" get pod "${POD}" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
     if [[ "${phase}" == Running && -n "${REHEARSAL_WORKLOAD_YAML:-}" && ! -s "${COLLECTOR_DIR}/actual-launch.json" ]]; then
         if sudo python3 "${SCRIPT_DIR}/capture-running-launch.py" "${NAMESPACE}" "${POD}" \
-            /opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml \
-            "${COLLECTOR_DIR}/actual-launch.json"; then
+            "$INSTALLED_KATA_CONFIG" \
+            "${COLLECTOR_DIR}/actual-launch.json" "$KUBECONFIG_PATH"; then
             sudo chown "$(id -u):$(id -g)" "${COLLECTOR_DIR}/actual-launch.json"
         else
             capture_status=$?

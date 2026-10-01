@@ -17,6 +17,7 @@ EXPECTED_SHA256="$2"
     || die 'expected SHA-256 is not 64 lowercase hex characters'
 need_file "${POD_FILE}"
 for command in kubectl python3 sha256sum wc; do need_cmd "${command}"; done
+GPU_COUNT="$(python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" target "$RUNTIME_CLASS" --field gpu_count)"
 
 ACTUAL_SHA256="$(sha256sum "${POD_FILE}" | awk '{print $1}')"
 [[ "${ACTUAL_SHA256}" == "${EXPECTED_SHA256}" ]] \
@@ -51,17 +52,31 @@ POD_NAME="${POD_META[1]}"
 kctl wait --for=condition=Ready "pod/${POD_NAME}" -n "${NAMESPACE}" --timeout=2m
 kctl get pod "${POD_NAME}" -n "${NAMESPACE}" -o json > "${LIVE_JSON}"
 
-python3 - "${EXPECTED_JSON}" "${LIVE_JSON}" "${RUNTIME_CLASS}" <<'PY'
+python3 - "${EXPECTED_JSON}" "${LIVE_JSON}" "${RUNTIME_CLASS}" "${GPU_COUNT}" <<'PY'
 import json
 import sys
 
 expected = json.load(open(sys.argv[1], encoding="utf-8"))
 live = json.load(open(sys.argv[2], encoding="utf-8"))
 runtime = sys.argv[3]
+gpu_count = int(sys.argv[4])
+if len(expected["spec"]["containers"]) != 1 or len(live["spec"]["containers"]) != 1:
+    raise SystemExit("approved launch profile requires exactly one workload container")
 ec = expected["spec"]["containers"][0]
 lc = live["spec"]["containers"][0]
-if live["spec"].get("runtimeClassName") != runtime:
-    raise SystemExit("live Pod uses the wrong runtime class")
+if any(pod["spec"].get("runtimeClassName") != runtime for pod in (expected, live)):
+    raise SystemExit("handoff or live Pod uses the wrong runtime class")
+for container in (ec, lc):
+    resources = container.get("resources", {})
+    if not isinstance(resources, dict) or set(resources) - {"requests", "limits"}:
+        raise SystemExit("Pod has unsupported resource allocation")
+    limits = resources.get("limits", {})
+    requests = resources.get("requests", {})
+    required = {"nvidia.com/pgpu": str(gpu_count)} if gpu_count else {}
+    if not isinstance(limits, dict) or {k: str(v) for k, v in limits.items()} != required:
+        raise SystemExit("Pod GPU allocation differs from selected runtime")
+    if not isinstance(requests, dict) or {k: str(v) for k, v in requests.items()} not in ({}, required):
+        raise SystemExit("Pod resource requests differ from selected runtime")
 if lc.get("image") != ec.get("image") or lc.get("command") != ec.get("command"):
     raise SystemExit("live image or command differs from authenticated handoff")
 if live["metadata"].get("annotations", {}).get(

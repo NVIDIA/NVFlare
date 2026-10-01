@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../lib" && pwd)/common-base.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/runtime-prerequisites.sh"
 # Cluster-only bootstrap helpers; no secure-services deployment.
 SUITE_DIR="${COCO_BOOTSTRAP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CONFIG_FILE="${COCO_CONFIG:-${SUITE_DIR}/config.env}"
@@ -9,13 +10,18 @@ load_config() {
   source "$CONFIG_FILE"
   source "$SUITE_DIR/../lib/validate-config.sh"
   validate_target_host
-  [[ ${TEE_PLATFORM:-} == snp && ${RUNTIME_CLASS:-} == kata-qemu-nvidia-gpu-snp ]] || die "This package supports AMD SNP plus NVIDIA confidential GPU only"
+  local runtime_helper="$SUITE_DIR/../lib/kata-runtime-profile.py" derived_tee derived_gpus
+  derived_tee=$(python3 "$runtime_helper" target "${RUNTIME_CLASS:-}" --field cpu_tee) || die 'Unsupported runtime target'
+  [[ ${TEE_PLATFORM:-} == "$derived_tee" ]] || die 'TEE_PLATFORM must agree with RUNTIME_CLASS'
+  derived_gpus=$(python3 "$runtime_helper" target "$RUNTIME_CLASS" --field gpu_count)
+  [[ ${GPU_COUNT:-$derived_gpus} == "$derived_gpus" ]] || die 'GPU_COUNT must agree with RUNTIME_CLASS'
+  GPU_COUNT=$derived_gpus
+  TEE_NODE_LABEL_KEY=$(python3 "$runtime_helper" target "$RUNTIME_CLASS" --field node_label)
   [[ ${IGNORE_CHECKSUM_MISMATCH:-0} == 0 ]] || die "Checksum bypass is not supported"
   IGNORE_CHECKSUM_MISMATCH=0
   [[ ${ALLOW_PACKAGE_DOWNGRADES:-0} =~ ^[01]$ ]] || die "Invalid downgrade option"
   ALLOW_PACKAGE_DOWNGRADES=${ALLOW_PACKAGE_DOWNGRADES:-0}
-  TEE_NAME="AMD SEV-SNP"
-  TEE_NODE_LABEL_KEY=amd.feature.node.kubernetes.io/snp
+  if [[ $TEE_PLATFORM == snp ]]; then TEE_NAME='AMD SEV-SNP'; else TEE_NAME='Intel TDX'; fi
   if [[ -z ${NODE_IP:-} ]]; then
     NODE_IP="$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
   fi
@@ -29,7 +35,7 @@ assert not pod.overlaps(service), "Pod and service CIDRs overlap"
 assert ipaddress.IPv4Address(sys.argv[4]) in service, "Cluster DNS must be in the service subnet"
 CHECK
   validate_private_root "$STATE_DIR"
-  export NODE_IP TEE_PLATFORM TEE_NAME TEE_NODE_LABEL_KEY RUNTIME_CLASS
+  export NODE_IP TEE_PLATFORM TEE_NAME TEE_NODE_LABEL_KEY RUNTIME_CLASS GPU_COUNT
   export IGNORE_CHECKSUM_MISMATCH ALLOW_PACKAGE_DOWNGRADES
   mkdir -p "$STATE_DIR"
 }

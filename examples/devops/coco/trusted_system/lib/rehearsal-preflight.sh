@@ -31,7 +31,8 @@ rehearsal_preflight() {
     # shellcheck source=/dev/null
     source "${BASE_CONFIG}"
     [[ "${PLATFORM_PROFILE-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || preflight_error 'invalid PLATFORM_PROFILE'
-    [[ "${RUNTIME_CLASS-}" == 'kata-qemu-nvidia-gpu-snp' ]] || preflight_error 'unexpected RUNTIME_CLASS'
+    [[ "${RUNTIME_CLASS-}" == 'kata-qemu-nvidia-gpu-snp' || "${RUNTIME_CLASS-}" == 'kata-qemu-snp' ]] \
+        || preflight_error 'unexpected SNP RUNTIME_CLASS'
     [[ "${PLATFORM_WORK_ROOT:-}" == /* ]] || preflight_error 'PLATFORM_WORK_ROOT must be an absolute path'
     if [[ ! "${PLATFORM_PROFILE-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ || "${PLATFORM_WORK_ROOT:-}" != /* ]]; then
         finish_preflight

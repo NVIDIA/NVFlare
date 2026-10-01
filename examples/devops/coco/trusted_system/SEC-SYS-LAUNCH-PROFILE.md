@@ -1,4 +1,18 @@
-# Collect five references using the workload's trusted launch profile
+# SNP: collect five references using the workload's trusted launch profile
+
+This page retains the SNP procedure and its default SNP+GPU example. For
+TDX use [TDX-LAUNCH-PROFILE.md](TDX-LAUNCH-PROFILE.md). For SNP-only select
+`kata-qemu-snp`, omit the GPU resource from the source Pod and use
+`configuration-qemu-snp.toml` in stage 05; GPU installation/checks are skipped.
+See the [four-target mapping](../RUNTIME-VARIANTS.md).
+
+Set `TEE_PLATFORM=snp` and the selected `RUNTIME_CLASS` consistently in both
+private configurations (the platform environment and `bootstrap/config.env`).
+For CPU-only select `kata-qemu-snp`; for SNP+GPU select
+`kata-qemu-nvidia-gpu-snp`. GPU count is derived from that runtime (zero or one);
+if explicitly supplied, `GPU_COUNT` must agree. The source Pod's RuntimeClass
+and GPU resources must match the selection. Use a new profile and fresh evidence
+when changing targets; do not reuse an SNP+GPU measurement for SNP CPU-only.
 
 This procedure runs only on the trusted platform system. It does not configure
 the adversarial cluster or secure services. The platform owner must approve the
@@ -8,24 +22,27 @@ Evidence collection is not an independent firmware vulnerability audit.
 
 ## Scope and approved inputs
 
-The source workload is `example-workload-v1-pod.yaml`. Its relevant launch
+The default SNP+GPU source example is `example-workload-v1-pod.yaml`. Its launch
 conditions are one container, RuntimeClass `kata-qemu-nvidia-gpu-snp`, one
 `nvidia.com/pgpu`, no CPU/memory requests or limits, and no host namespaces.
 Kata supplies the omitted sizing: 1 vCPU and 8192 MiB. Kubernetes defaults the
 GPU request from its limit. The approved profile records these fields, the
 host CPU identity, full Kata configuration, and hashes of the QEMU executable,
-firmware, kernel and rootfs. The running guest used QEMU CPU model `EPYC-v4`.
+firmware, kernel and rootfs. The original tested guest used QEMU CPU model
+`EPYC-v4`; neither that model nor its observed measurement is a universal input.
+For CPU-only, remove `nvidia.com/pgpu` from both requests and limits and use
+`kata-qemu-snp`; approve and capture that runtime's own sizing and artifacts.
 
 The collector substitutes its image, command, privileged diagnostic context,
 and temporary-registry init-data for the workload's own content. It does NOT
 run the encrypted application or test application key release. It reproduces
 the selected VM resource/device conditions and captures the actual QEMU
 launch. CPU report verification is performed; GPU allocation/CC readiness is
-checked, but this is not a cryptographic GPU/NRAS attestation test.
+checked only for SNP+GPU, and is not a cryptographic GPU/NRAS attestation test.
 
 Stage 05 also validates the source application's explicit security context;
 stage 09 rechecks it against the hash-bound source, and stage 10 exports it in
-the v3 admin contract. This is an application approval, not the collector's
+the v4 admin contract. This is an application approval, not the collector's
 observed context. Follow the
 [security-context contract and migration](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
 For NVFlare approve UID/GID 65532 and a writable rootfs explicitly; the static
@@ -44,8 +61,9 @@ and the chosen source Pod YAML to trusted_system. Do not clone NVFlare. The Kube
 bootstrap files are already included; their provenance is in `bootstrap/README.md`.
 First create and review both private configurations as described in
 [CONFIGURATION.md](../CONFIGURATION.md#3-trusted-platform-system-configuration).
-The installers compare `EXPECTED_HOSTNAME` against this host; the runtime stage
-discovers the single NVIDIA GPU PCI address instead of assuming a fixed slot.
+The installers compare `EXPECTED_HOSTNAME` against this host; for SNP+GPU the
+runtime stage discovers NVIDIA GPU PCI addresses instead of assuming a fixed slot.
+CPU-only skips GPU discovery, CC-mode checks and GPU Operator installation.
 Place the reviewed source YAML at the configured `REHEARSAL_WORKLOAD_YAML`.
 
 Use a stable absolute path and retain that file unchanged until stage 10 completes.
@@ -94,25 +112,32 @@ and must be retained.
 ```bash
 bash trusted_system/03-fetch-kata-artifacts.sh "$CONFIG"
 bash trusted_system/04-install-rehearsal-runtime.sh "$CONFIG"
+# Select the installed TOML for the RUNTIME_CLASS approved in both configurations.
+case "$RUNTIME_CLASS" in
+  kata-qemu-snp) KATA_CONFIG=/opt/kata/share/defaults/kata-containers/configuration-qemu-snp.toml ;;
+  kata-qemu-nvidia-gpu-snp) KATA_CONFIG=/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml ;;
+  *) printf 'This procedure requires an SNP runtime\n' >&2; exit 1 ;;
+esac
 python3 trusted_system/05-define-approved-launch-profile.py \
-  "$REHEARSAL_WORKLOAD_YAML" \
-  /opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml \
+  "$REHEARSAL_WORKLOAD_YAML" "$KATA_CONFIG" \
   "$PROFILE/approved-launch-profile.json"
 bash trusted_system/06-prepare-platform-reference.sh "$CONFIG"
 ```
 
 Stage 03 checks the chart archive digest and immutable Kata image, preserves the
 original artifacts, and derives the [NVFlare token-API configuration](../RUNTIME-PROFILE.md).
-Stage 04 installs that chart, image and approved configuration, restarts containerd/kubelet, and installs GPU
-Operator 26.3.1 with confidential-computing management and VFIO passthrough.
+Stage 04 installs that chart, image and approved configuration and restarts
+containerd/kubelet. For SNP+GPU only, it also installs GPU Operator 26.3.1 with
+confidential-computing management and VFIO passthrough.
 The configuration helper preserves Kata-deploy's management header and installed
 in-tree symlink while rejecting unrelated TOML setting changes. Stage 05 and the
 launch capture hash the exact installed file (including that header); stage 09
 checks those hashes separately from the unchanged upstream/approved-file hashes.
-It requires SNP enabled, CC-ready GPU status, the SNP RuntimeClass and the
-nydus snapshotter. Stage 05 rejects unsupported profiles instead of silently
-approving them. Stage 06 prepares the isolated measurement-tool environment
-and the approval template. No separate confidential VM is needed.
+It requires SNP enabled, the selected SNP RuntimeClass and the nydus snapshotter;
+CC-ready GPU status is required only for SNP+GPU. Stage 05 rejects unsupported
+profiles instead of silently approving them. Stage 06 prepares the isolated
+measurement-tool environment and the approval template. No separate confidential
+VM is needed.
 
 ## 3. Rehearse and independently repeat the launch
 
@@ -232,5 +257,7 @@ numbered stage and grants no additional authority to CoCo IT.
 Collect fresh evidence on the intended approved platform. No report or
 measurement from a previous installation is packaged. A successful collector
 proves the verified CPU report and recorded launch, not application execution
-or GPU remote attestation. Secure services must appraise CPU and GPU evidence
-for the actual encrypted workload before KBS releases its resources.
+or GPU remote attestation. Secure services must appraise CPU evidence, plus GPU
+evidence for a GPU-required release, for the actual encrypted workload before
+KBS releases its resources. CPU-only does not need GPU evidence, but still needs
+the complete platform, InitData and workload-specific authorization checks.

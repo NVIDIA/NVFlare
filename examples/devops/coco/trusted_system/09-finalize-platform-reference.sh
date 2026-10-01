@@ -12,6 +12,11 @@ APPROVAL_ENV="$(realpath -- "$2")"
 [[ -s "${BASE_CONFIG}" && -s "${APPROVAL_ENV}" ]] || { printf 'Missing input file\n' >&2; exit 1; }
 # shellcheck source=/dev/null
 source "${BASE_CONFIG}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+case "${RUNTIME_CLASS:-}" in
+    kata-qemu-tdx|kata-qemu-nvidia-gpu-tdx)
+        exec python3 "$SCRIPT_DIR/tdx-reference.py" finalize "$BASE_CONFIG" "$APPROVAL_ENV" ;;
+esac
 PROFILE_DIR="${PLATFORM_WORK_ROOT:?PLATFORM_WORK_ROOT is required}/${PLATFORM_PROFILE}"
 DERIVED_ENV="${PROFILE_DIR}/platform-derived.env"
 [[ -s "${DERIVED_ENV}" ]] || { printf 'Run stage 06 first\n' >&2; exit 1; }
@@ -36,7 +41,8 @@ PINNED_KATA_CONFIG="${PROFILE_DIR}/${KATA_CONFIG_REL}"
 APPROVED_KATA_CONFIG="${PROFILE_DIR}/approved-kata-config.toml"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_PROFILE_HELPER="$SCRIPT_DIR/lib/kata-runtime-profile.py"
-INSTALLED_KATA_CONFIG='/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml'
+INSTALLED_KATA_CONFIG="/opt/kata/share/defaults/kata-containers/$(python3 \
+    "$RUNTIME_PROFILE_HELPER" target "$RUNTIME_CLASS" --field config_name)"
 KATA_RUNTIME='/opt/kata/bin/kata-runtime'
 [[ -s "${PINNED_KATA_CONFIG}" && -s "${INSTALLED_KATA_CONFIG}" && -x "${KATA_RUNTIME}" ]] \
     || die 'pinned or installed Kata SNP runtime input is missing'

@@ -1,0 +1,17 @@
+[package]
+name = "tdx-evidence-verify"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.23"
+# The pinned Trustee disables this crate's defaults; alpha.9 makes its
+# existing reqwest-middleware integration an explicit opt-in feature.
+http-cache-reqwest = { version = "=1.0.0-alpha.9", default-features = false, features = ["reqwest-middleware"] }
+serde_json = "1.0"
+sha2 = "0.11"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+toml = "1.1.2"
+verifier = { git = "https://github.com/confidential-containers/trustee", rev = "338610fbfed57b66c61a8a3a60e0e4386bdce793", default-features = false, features = ["tdx-verifier"] }

@@ -11,9 +11,10 @@ pass() { printf 'PASS  %s\n' "$*"; }
 fail() { printf 'FAIL  %s\n' "$*"; failures=$((failures + 1)); }
 
 configured_platform_values >/dev/null \
-    && pass "approved SNP measurement allowlist and TCB floors are well formed" \
-    || fail "invalid approved measurement allowlist or TCB floors"
+    && pass "approved SNP or TDX references are well formed" \
+    || fail "invalid approved platform reference values"
 
+if [[ -z ${PLATFORM_REFERENCE_VALUES_FILE:-} ]]; then
 for variable in \
     SNP_MIN_REPORTED_TCB_BOOTLOADER \
     SNP_MIN_REPORTED_TCB_TEE \
@@ -25,6 +26,7 @@ for variable in \
         fail "${variable} must be independently approved and set to decimal 0..255"
     fi
 done
+fi
 
 [[ "$(uname -m)" == "x86_64" ]] && pass "x86_64 host" || fail "x86_64 is required"
 if [[ -r /etc/os-release ]]; then

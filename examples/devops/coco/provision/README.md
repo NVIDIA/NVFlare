@@ -25,8 +25,9 @@ using relative CC-config paths, or provide absolute paths themselves.
    values from CoCo IT.
 3. Prepare an application Dockerfile containing the same NVFlare version used
    for provisioning, Python 3.11+, bash, standard coreutils, and all reviewed
-   application code and dependencies (including required NVIDIA userspace
-   libraries). The supplied [client Dockerfile](site-1/Dockerfile) and
+   application code and dependencies (including NVIDIA userspace libraries only
+   when the application requires a GPU). CPU-only workloads need neither CUDA
+   nor a GPU base image. The supplied [client Dockerfile](site-1/Dockerfile) and
    [server Dockerfile](server/Dockerfile) deliberately have non-runnable
    placeholder bases. Replace each selected base with your reviewed application
    image pinned by digest, or replace its Dockerfile entirely. Include the
@@ -84,15 +85,69 @@ To protect the server too, uncomment its `cc_config: cc_server.yml` in
 
 The server CC YAML uses `role: server`, `image_build.context: ./server`,
 `release_name: server-v1`, and `registry_repository: workloads/server`.
-The CC role must match the participant type. Both roles currently require the
-same AMD SEV-SNP plus NVIDIA confidential-GPU profile, including successful GPU
-appraisal even if the server's controller does not use a GPU. This does not
-provide a CPU-only server profile. Admin participants cannot use CoCo packaging.
+The CC role must match the participant type. The supplied deployment scripts
+default to the same AMD SEV-SNP plus NVIDIA confidential-GPU profile for both roles,
+including successful GPU appraisal before key release even if the server's
+controller does not use a GPU. Select a separate approved CPU-only or TDX
+profile as described below when needed. Admin participants cannot use CoCo packaging.
 The client name `server` is reserved for NVFlare's logical root-server identity.
-The current profile reserves one `nvidia.com/pgpu` per Pod, including the server.
-Running one protected server and one protected client concurrently requires two
+The supplied SNP+GPU profile reserves one `nvidia.com/pgpu` per Pod, including
+the server. Running one protected server and one protected client with that
+profile concurrently requires two
 allocatable confidential GPUs, which can be on separate nodes or clusters.
 A node with only one allocatable GPU cannot schedule both Pods concurrently.
+
+### CPU and GPU selection
+
+See [runtime-specific deployment steps](../RUNTIME-VARIANTS.md) for host
+prerequisites, reference collection, secure-services policies, runner setup,
+provisioning/launch commands, and hardware acceptance requirements.
+
+The NVFlare builder and packager accept these explicit combinations for
+protected clients and servers:
+
+| `cc_cpu_mechanism` | `cc_gpu` | Required Pod RuntimeClass | GPU allocation |
+| --- | --- | --- | --- |
+| `amd_sev_snp` | `nvidia` | `kata-qemu-nvidia-gpu-snp` | One `nvidia.com/pgpu` |
+| `amd_sev_snp` | `none` | `kata-qemu-snp` | None |
+| `intel_tdx` | `nvidia` | `kata-qemu-nvidia-gpu-tdx` | One `nvidia.com/pgpu` |
+| `intel_tdx` | `none` | `kata-qemu-tdx` | None |
+
+Keep `cc_gpu` explicit; omitting it, using YAML null, or choosing an unknown
+CPU/GPU mechanism fails provisioning. `kata-qemu-tdx-gpu` is not an accepted
+alias. Existing SNP+GPU configuration is unchanged. CPU-only Pods omit GPU
+resources; GPU Pods require a limit of `nvidia.com/pgpu: "1"` and either omit
+requests or request the same single GPU. CPU/memory resources remain omitted
+under this narrow launch contract. Mixed SNP/TDX and CPU-only/GPU participants can
+share a project, subject to the common AS-key and attestation-timing constraints.
+
+The supplied `../admin/build_coco_image.sh` runner selects the same four targets.
+For each participant, point `platform_config` to the appropriate prepared admin
+configuration and authenticated v4 launch contract. The matching runtime,
+verified references and secure-services policies must be installed before launch.
+Changing the two CC YAML fields is not itself platform approval. A runner that
+returns the wrong runtime or GPU allocation is rejected before its Pod becomes
+a public handoff. Complete the hardware acceptance checks before relying on a
+new target; offline provisioning tests do not prove TDX quote or key release.
+
+For example, a CPU-only TDX client uses these fields in its own CC YAML:
+
+```yaml
+compute_env: confidential_containers
+cc_cpu_mechanism: intel_tdx
+cc_gpu: none
+role: client
+platform_config: ../admin-tdx-cpu/platform.env
+```
+
+Keep its issuer, image-build and release settings from the full example above.
+Set that admin kit's `RUNTIME_CLASS=kata-qemu-tdx` and install the authenticated
+CPU-only TDX v4 launch contract before running `nvflare provision -p project.yaml`.
+For CPU-only SNP, instead use `cc_cpu_mechanism: amd_sev_snp`, retain `cc_gpu: none`,
+and select an independently approved `kata-qemu-snp` admin kit/profile. CPU-only
+mode is selected during trusted provisioning, not by deleting GPU resources from
+an already generated Pod. The protected server uses the same target choices
+with `role: server` in its own CC YAML.
 
 `cc_config` is relative to `project.yaml`. Context, platform configuration, and
 `build_image_cmd` paths are relative to the participant's CC YAML. The Dockerfile
@@ -129,8 +184,11 @@ An ordinary server verifies without attesting itself. When the server is
 protected, ordinary clients also receive verifier-only configuration to check
 its proof. The pinned public-key path is relative to the CC YAML. Protected
 participants in one project must share that key, token expiration, check frequency,
-and manager timeouts. `cc_gpu: nvidia` declares the required
-profile; signed CPU and GPU appraisals supply the evidence. Invalid configuration
+and manager timeouts. `cc_gpu: nvidia` declares the GPU deployment profile;
+it is not a per-site GPU requirement in the token-driven authorizer.
+That authorizer checks the CPU type in the signed EAR and verifies every present
+CPU/GPU appraisal. KBS must independently enforce each workload's CPU/GPU
+requirements before releasing its keys. Invalid configuration
 aborts provisioning. Mixing other CC compute environments into this project is
 not supported yet. See [the checks and limitations](CCMANAGER.md).
 
@@ -189,6 +247,14 @@ and absolute `workload_env`, `admin_dir`, `result_file` paths. Success writes a
 `nvflare-coco-build-result/v1` receipt with `release_name`, `pod_yaml`, and
 `trusted_service` paths. A custom runner is trusted code and must preserve the
 same checks; a generated YAML alone is not proof of encryption.
+
+The generated `workload.env` also carries `COCO_RUNTIME_CLASS` and
+`COCO_GPU_COUNT` (`0` or `1`) for the image runner. These describe
+the requested target; they do not override the admin kit's approved, readonly
+`RUNTIME_CLASS`. A runner must compare them with its independently reviewed
+launch profile and generate the matching resources/policy. The bundled runner
+supports all four SNP/TDX and CPU-only/NVIDIA GPU variants and checks that the
+requested target matches the admin configuration.
 
 ## Protected workload output and diagnostics
 

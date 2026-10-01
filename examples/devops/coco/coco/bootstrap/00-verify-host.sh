@@ -12,7 +12,8 @@ warn() { printf 'WARN  %s\n' "$*"; warnings=$((warnings+1)); }
 fail() { printf 'FAIL  %s\n' "$*"; failures=$((failures+1)); }
 has() { command -v "$1" >/dev/null 2>&1; }
 
-echo "CoCo ${TEE_NAME} + NVIDIA GPU host prerequisite report"
+gpu_count="$(python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" target "$RUNTIME_CLASS" --field gpu_count)"
+echo "CoCo ${TEE_NAME} host prerequisite report (confidential GPUs: $gpu_count)"
 echo "Node address: $NODE_IP"
 echo "Selected runtime: $RUNTIME_CLASS"
 
@@ -74,6 +75,8 @@ case "$TEE_PLATFORM" in
     [[ -e /dev/kvm ]] && pass "/dev/kvm present" || fail "/dev/kvm missing"
     ;;
 esac
+validate_runtime_prerequisites "$RUNTIME_CLASS"
+if ((gpu_count > 0)); then
 [[ -d /sys/kernel/iommu_groups ]] && [[ -n "$(find /sys/kernel/iommu_groups -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]] \
   && pass "IOMMU groups populated" || fail "IOMMU groups absent; enable the platform IOMMU in firmware/kernel"
 
@@ -119,6 +122,9 @@ else
 fi
 
 if find /sys/kernel/iommu_groups -type l 2>/dev/null | grep -q .; then pass "PCI devices assigned to IOMMU groups"; fi
+else
+  pass "CPU-only target: NVIDIA GPU, VFIO, and IOMMU passthrough checks are not required"
+fi
 grep -qw swap /proc/swaps 2>/dev/null && warn "Swap is enabled; Kubernetes installer will disable it" || pass "Swap disabled"
 mem_gib=$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 1024 / 1024 ))
 ((mem_gib >= 64)) && pass "Memory: ${mem_gib} GiB" || warn "Only ${mem_gib} GiB RAM; 64 GiB or more is recommended"
@@ -131,12 +137,12 @@ endpoints=(
   https://github.com/ \
   https://raw.githubusercontent.com/ \
   https://ghcr.io/v2/ \
-  https://helm.ngc.nvidia.com/ \
-  https://nvcr.io/v2/ \
   https://quay.io/v2/ \
-  https://registry-1.docker.io/v2/ \
-  https://developer.download.nvidia.com/
+  https://registry-1.docker.io/v2/
 )
+if ((gpu_count > 0)); then
+  endpoints+=(https://helm.ngc.nvidia.com/ https://nvcr.io/v2/ https://developer.download.nvidia.com/)
+fi
 if [[ "$TEE_PLATFORM" == snp ]]; then
   endpoints+=(https://kdsintf.amd.com/)
 else

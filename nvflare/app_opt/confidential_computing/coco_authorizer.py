@@ -14,6 +14,9 @@
 
 """Trustee EAR verification and guest-held TEE-key proof of possession.
 
+Accept SNP/TDX CPU-only or CPU-plus-GPU evidence; every present appraisal must pass.
+This does not enforce a workload-specific requirement to attest a GPU.
+
 The REST response includes a private key. It is consumed in memory only and
 must never be forwarded as a CC token, persisted, or included in exceptions.
 """
@@ -34,7 +37,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from .cc_authorizer import CCAuthorizer, CCTokenGenerateError
-from .trustee_claims import TRUST_VECTOR
+from .trustee_claims import CPU_TRUST_VECTORS, TRUST_VECTOR, cpu_evidence_type, normalized_init_data
 
 COCO_NAMESPACE = "x-trustee-coco"
 EAT_PROFILE = "tag:github.com,2024:confidential-containers/Trustee"
@@ -83,7 +86,10 @@ class CoCoAuthorizer(CCAuthorizer):
         retry_backoff_multiplier up to retry_max_delay.
         ear_audience optionally pins the inner EAR aud, independently of the
         required FL proof audience. workload_constraints optionally maps signed
-        site subjects to init_data (SHA-256) and/or SNP measurement pins.
+        site subjects to init_data (SHA-256), cpu_tee (snp/tdx), SNP measurement,
+        and/or explicit TDX tdx_mr_td / tdx_rtmr_0..3 (SHA-384) pins. The legacy
+        measurement pin always means SNP; it is never reinterpreted as MRTD.
+        TDX InitData is accepted only as SHA-256 zero-padded to MRCONFIGID width.
         Unlisted sites or missing claims fail closed when constraints are set.
         """
         self.trustee_key = serialization.load_pem_public_key(trustee_public_key.encode())
@@ -141,10 +147,20 @@ class CoCoAuthorizer(CCAuthorizer):
                     or not site
                     or not isinstance(pins, dict)
                     or not pins
-                    or set(pins) - {"init_data", "measurement"}
+                    or set(pins)
+                    - {"init_data", "measurement", "cpu_tee", "tdx_mr_td", *(f"tdx_rtmr_{i}" for i in range(4))}
                 ):
                     raise ValueError("Invalid site workload constraints")
+                tdx_pins = any(name.startswith("tdx_") for name in pins)
+                if ("measurement" in pins and (tdx_pins or pins.get("cpu_tee") == "tdx")) or (
+                    tdx_pins and pins.get("cpu_tee") == "snp"
+                ):
+                    raise ValueError("Conflicting CPU workload constraints")
                 for name, value in pins.items():
+                    if name == "cpu_tee":
+                        if not isinstance(value, str) or value not in CPU_TRUST_VECTORS:
+                            raise ValueError("Invalid workload cpu_tee pin")
+                        continue
                     length = 64 if name == "init_data" else 96
                     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):
                         raise ValueError(f"Invalid workload {name} pin")
@@ -207,14 +223,24 @@ class CoCoAuthorizer(CCAuthorizer):
         ):
             raise ValueError("Invalid EAR freshness or profile")
         submods = claims.get("submods", {})
-        if set(submods) != {"cpu0", "gpu0"}:
-            raise ValueError("Both CPU and GPU appraisals are required")
-        for submod in submods.values():
-            if json.dumps(submod.get("ear.trustworthiness-vector"), sort_keys=True) != json.dumps(
-                TRUST_VECTOR, sort_keys=True
-            ):
-                raise ValueError("CPU/GPU appraisal failed")
-        evidence = submods["cpu0"]["ear.veraison.annotated-evidence"]
+        # Select only from authenticated claims, never from the unverified JWT.
+        # A present GPU appraisal must pass; it cannot fall back to CPU-only.
+        if not isinstance(submods, dict) or set(submods) not in ({"cpu0"}, {"cpu0", "gpu0"}):
+            raise ValueError("Expected a CPU appraisal and optionally one GPU appraisal")
+        cpu = submods["cpu0"]
+        if not isinstance(cpu, dict):
+            raise ValueError("Malformed CPU appraisal")
+        evidence = cpu.get("ear.veraison.annotated-evidence")
+        # Pinned Trustee flattens these common claims and nests hardware claims
+        # under the TEE name. Reject unknown/ambiguous types instead of trying
+        # whichever vector happens to pass or trusting an unsigned hint.
+        cpu_type = cpu_evidence_type(evidence)
+        for name, submod in submods.items():
+            expected_vector = CPU_TRUST_VECTORS[cpu_type] if name == "cpu0" else TRUST_VECTOR
+            if not isinstance(submod, dict) or json.dumps(
+                submod.get("ear.trustworthiness-vector"), sort_keys=True
+            ) != json.dumps(expected_vector, sort_keys=True):
+                raise ValueError(f"{name} appraisal failed")
         jwk = evidence["runtime_data_claims"]["tee-pubkey"]
         # KBS encryption JWKs may advertise RSA-OAEP. Use only their public
         # key coordinates, selecting a signing algorithm locally.
@@ -410,11 +436,24 @@ class CoCoAuthorizer(CCAuthorizer):
                 if pins is None:
                     raise ValueError("No workload constraints for authenticated site")
                 evidence = ear["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+                cpu_type = cpu_evidence_type(evidence)
                 actual = {
-                    "init_data": evidence.get("init_data"),
+                    "cpu_tee": cpu_type,
                     "measurement": evidence.get("snp", {}).get("measurement"),
                 }
-                if any(actual[name] != value for name, value in pins.items()):
+                if "init_data" in pins:
+                    actual["init_data"] = normalized_init_data(evidence)
+                if cpu_type == "tdx":
+                    quote = evidence["tdx"].get("quote")
+                    body = quote.get("body") if isinstance(quote, dict) else None
+                    if not isinstance(body, dict):
+                        raise ValueError("Malformed TDX quote body")
+                    actual.update(
+                        {f"tdx_{name}": body.get(name) for name in ("mr_td", *(f"rtmr_{i}" for i in range(4)))}
+                    )
+                # Missing hardware-specific claims cannot satisfy another TEE's
+                # pins, even when their digest happens to be identical.
+                if any(actual.get(name) != value for name, value in pins.items()):
                     raise ValueError("Attested workload differs from locally approved constraints")
             with self.lock:
                 self.seen = {k: expiry for k, expiry in self.seen.items() if expiry > now}

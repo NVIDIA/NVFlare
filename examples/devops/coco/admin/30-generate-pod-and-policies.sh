@@ -20,6 +20,12 @@ need_file "${OUTPUT_DIR}/encrypted-image-reference.txt"
 need_file "${OUTPUT_DIR}/cosign.pub"
 need_file "${IMAGE_KEY_PATH}"
 need_file "${REGISTRY_AUTH_FILE}"
+RELEASE_POLICY_TEMPLATE="${SCRIPT_DIR}/templates/workload-resource-policy.rego.template"
+if [[ ! -f "$RELEASE_POLICY_TEMPLATE" ]]; then
+    # Source-checkout path; role assembly vendors the reviewed template above.
+    RELEASE_POLICY_TEMPLATE="${SCRIPT_DIR}/../service/policies/workload-resource-policy.rego.template"
+fi
+need_file "$RELEASE_POLICY_TEMPLATE"
 
 POLICY_FILES=(
     approved-workload-launch-profile.json
@@ -225,13 +231,14 @@ unset TRUSTEE_CERT REGISTRY_CA
 
 python3 - "${POLICY_WORK_DIR}/pod.yaml" "${RELEASE_NAME}" "${RUNTIME_CLASS}" \
     "${IMAGE_REF}" "${APP_COMMAND_JSON}" "${APP_UID}" "${APP_GID}" \
-    "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}" "${APP_READ_ONLY_ROOT_FILESYSTEM}" <<'PY'
+    "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}" "${APP_READ_ONLY_ROOT_FILESYSTEM}" \
+    "${EXPECTED_GPU_COUNT}" <<'PY'
 import json
 from pathlib import Path
 import sys
 import yaml
 
-path, name, runtime, image, command_json, uid, gid, api_host, api_port, read_only = sys.argv[1:]
+path, name, runtime, image, command_json, uid, gid, api_host, api_port, read_only, gpu_count = sys.argv[1:]
 if read_only not in ("true", "false"):
     raise SystemExit("invalid read-only root setting")
 command = json.loads(command_json)
@@ -271,7 +278,7 @@ pod = {
                 "capabilities": {"drop": ["ALL"]},
                 "seccompProfile": {"type": "RuntimeDefault"},
             },
-            "resources": {"limits": {"nvidia.com/pgpu": "1"}},
+            "resources": {"limits": {"nvidia.com/pgpu": "1"}} if gpu_count == "1" else {},
         }],
     },
 }
@@ -369,22 +376,21 @@ security["validate_workload_pod"](pod, {
     "privileged": False, "allowPrivilegeEscalation": False, "runAsNonRoot": True,
     "runAsUser": uid, "runAsGroup": gid, "readOnlyRootFilesystem": sys.argv[7] == "true",
     "capabilities": {"drop": ["ALL"]}, "seccompProfile": {"type": "RuntimeDefault"},
-}, command)
+}, command, runtime_class=runtime)
 print("Pod and generated agent-policy invariants verified")
 PY
 
 check_launch_profile --require-policy
 EXPECTED_INITDATA_HEX="$(tr -d '\r\n' < "${POLICY_WORK_DIR}/expected-initdata-sha256.hex")"
 [[ "${EXPECTED_INITDATA_HEX}" =~ ^[0-9a-f]{64}$ ]] \
-    || die "invalid lowercase-hex SNP init-data digest"
+    || die "invalid lowercase-hex SHA-256 init-data digest"
 
 python3 - "${POLICY_WORK_DIR}" "${RELEASE_NAME}" "${IMAGE_REF}" \
     "${APP_COMMAND_JSON}" "${EXPECTED_INITDATA_HEX}" \
     "${KBS_IMAGE_KEY_PATH}" "${KBS_SIGNING_KEY_PATH}" "${KBS_IMAGE_POLICY_PATH}" \
-    "${SCRIPT_DIR}/lib/trustee_claims.py" <<'PY'
+    "${SCRIPT_DIR}/lib/workload-release.py" "${RUNTIME_CLASS}" "${RELEASE_POLICY_TEMPLATE}" <<'PY'
 import json
 from pathlib import Path
-import re
 import sys
 
 out = Path(sys.argv[1])
@@ -393,67 +399,10 @@ args = json.loads(sys.argv[4])
 initdata = sys.argv[5]
 paths = sys.argv[6:9]
 import runpy
-trust_vector = runpy.run_path(sys.argv[9])["TRUST_VECTOR"]
-prefix = "wo_" + re.sub(r"[^a-z0-9_]", "_", release)
-
-def q(value):
-    return json.dumps(value, separators=(",", ":"))
-
-path_rules = "\n".join(
-    f'{prefix}_authorized_path(path) if {{ path == {q(path.split("/"))} }}'
-    for path in paths
-)
-fragment = f'''# Merge this fragment into the trusted service administrator's global
-# package policy. Do not add another package/import/default declaration.
-
-{prefix}_expected_initdata := {q(initdata)}
-{prefix}_expected_image := {q(image)}
-{prefix}_expected_args := {q(args)}
-{prefix}_expected_trust_vector := {json.dumps(trust_vector, indent=4)}
-
-{path_rules}
-
-{prefix}_approved_trust_vector(submod) if {{
-    submod["ear.trustworthiness-vector"] == {prefix}_expected_trust_vector
-}}
-
-{prefix}_approved_container(container) if {{
-    container["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] == {prefix}_expected_image
-    container["OCI"]["Process"]["Args"] == {prefix}_expected_args
-}}
-
-allow if {{
-    data.plugin == "resource"
-    {prefix}_authorized_path(data["resource-path"])
-    count(input.submods) == 2
-    {prefix}_approved_trust_vector(input.submods.cpu0)
-    {prefix}_approved_trust_vector(input.submods.gpu0)
-
-    cpu := input.submods.cpu0
-    cpu["ear.veraison.annotated-evidence"]["init_data"] == {prefix}_expected_initdata
-    {prefix}_expected_image in cpu["ear.trustee.identifiers"]["validated"]["container_images"]
-
-    containers := cpu["ear.veraison.annotated-evidence"]["init_data_claims"]["agent_policy_claims"]["containers"]
-    some container in containers
-    {prefix}_approved_container(container)
-}}
-'''
+contract = runpy.run_path(sys.argv[9])
+authorization = contract["build_authorization"](sys.argv[10], release, image, args, initdata, paths)
+fragment = contract["render_fragment"](authorization, Path(sys.argv[11]).read_text())
 (out / "resource-policy-fragment.rego").write_text(fragment)
-
-authorization = {
-    "schema": "coco-workload-owner-authorization/v1",
-    "release_name": release,
-    "encrypted_image": image,
-    "process_args": args,
-    "snp_init_data_sha256": initdata,
-    "snp_init_data_encoding_in_trustee_v0_21": "lowercase-hex",
-    "required_ear_submods": ["cpu0", "gpu0"],
-    "required_ear_trust_vectors": {
-        name: trust_vector
-        for name in ("cpu0", "gpu0")
-    },
-    "kbs_resource_paths": paths,
-}
 (out / "release-authorization.json").write_text(json.dumps(authorization, indent=2) + "\n")
 PY
 

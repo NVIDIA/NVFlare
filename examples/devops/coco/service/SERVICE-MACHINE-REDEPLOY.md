@@ -13,6 +13,7 @@ Before doing so, follow the
 Stages 09–11 do not restore workload approvals, and resetting the policy cannot
 revoke keys already released to running guests.
 
-Platform handoff: five-value JSON through the provisioning node.
+Platform handoff: SNP five-field or TDX v2 complete-profile JSON through the
+provisioning node. See [TDX references](TDX-REFERENCE-VALUES.md) for the latter.
 Workload handoff: separate confidential resources and exact release policy.
 CoCo runtime handoff: public chart and digest pins, no signed runtime bundle.

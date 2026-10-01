@@ -21,6 +21,19 @@ need_file "${OWNER_CONFIG}"
 # shellcheck disable=SC1090
 source "${OWNER_CONFIG}"
 
+# The workload request selects a target but cannot override platform authority.
+# Reject a mismatch before building/signing/publishing anything.
+case "$RUNTIME_CLASS" in
+    kata-qemu-nvidia-gpu-snp|kata-qemu-nvidia-gpu-tdx) EXPECTED_GPU_COUNT=1 ;;
+    kata-qemu-snp|kata-qemu-tdx) EXPECTED_GPU_COUNT=0 ;;
+    *) die "unsupported approved RUNTIME_CLASS: $RUNTIME_CLASS" ;;
+esac
+[[ "${COCO_RUNTIME_CLASS:-$RUNTIME_CLASS}" == "$RUNTIME_CLASS" ]] \
+    || die 'requested COCO_RUNTIME_CLASS differs from the approved platform runtime'
+[[ "${COCO_GPU_COUNT:-$EXPECTED_GPU_COUNT}" == "$EXPECTED_GPU_COUNT" ]] \
+    || die 'requested COCO_GPU_COUNT differs from the approved platform runtime'
+readonly EXPECTED_GPU_COUNT
+
 # Explicitly bound into genpolicy/InitData. Existing workloads stay read-only;
 # provisioned NVFlare clients require guest-local writable logs and job state.
 APP_READ_ONLY_ROOT_FILESYSTEM="${APP_READ_ONLY_ROOT_FILESYSTEM:-true}"

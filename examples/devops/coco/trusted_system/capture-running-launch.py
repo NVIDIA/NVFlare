@@ -19,10 +19,75 @@ import argparse
 import hashlib
 import json
 import os
+import runpy
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+RUNTIME = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
+SECURITY = runpy.run_path(str(Path(__file__).resolve().parent / "lib/workload-security-context.py"))
+
+
+def confidential_guest(argv, runtime):
+    """Validate both pinned QEMU encodings, without substring TEE detection."""
+    target = RUNTIME["runtime_target"](runtime)
+    guests = []
+    for index, value in enumerate(argv):
+        if value != "-object":
+            continue
+        if index + 1 >= len(argv):
+            raise ValueError("Missing QEMU object value")
+        raw = argv[index + 1]
+        if raw.startswith("{"):
+
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("Duplicate QEMU object key")
+                    result[key] = value
+                return result
+
+            obj = json.loads(raw, object_pairs_hook=unique)
+            if not isinstance(obj, dict):
+                raise ValueError("Malformed QEMU object")
+        else:
+            fields = raw.split(",")
+            obj = {"qom-type": fields[0]}
+            for field in fields[1:]:
+                key, separator, value = field.partition("=")
+                if not separator or key in obj:
+                    raise ValueError("Unsupported or ambiguous QEMU object encoding")
+                obj[key] = value
+        if obj.get("qom-type") in ("sev-guest", "sev-snp-guest", "tdx-guest"):
+            guests.append(obj)
+    expected = "sev-snp-guest" if target["cpu_tee"] == "snp" else "tdx-guest"
+    if len(guests) != 1 or guests[0].get("qom-type") != expected:
+        raise ValueError("Actual QEMU confidential guest does not match approved RuntimeClass")
+    guest = guests[0]
+    machines = [argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == "-machine"]
+    if len(machines) != 1 or not guest.get("id"):
+        raise ValueError("Missing explicit confidential machine/guest identifier")
+    machine_fields = {}
+    for field in machines[0].split(",")[1:]:
+        key, separator, value = field.partition("=")
+        if not separator or key in machine_fields:
+            raise ValueError("Unsupported or duplicate QEMU machine field")
+        machine_fields[key] = value
+    if machine_fields.get("confidential-guest-support") != guest["id"]:
+        raise ValueError("QEMU machine does not select the approved confidential guest")
+    if target["cpu_tee"] == "tdx":
+        debug = guest.get("debug", False)
+        if not (debug is False or (type(debug) is str and debug in ("off", "false"))):
+            raise ValueError("TDX debug is not approved")
+    # InitData differs per workload and is independently authenticated in
+    # attestation. QGS is an untrusted transport, not a platform measurement.
+    # Preserve the exact original arguments separately for the private audit.
+    stable = {
+        key: value for key, value in guest.items() if key not in ("mrconfigid", "host-data", "quote-generation-socket")
+    }
+    return target, stable
 
 
 def digest(path):
@@ -57,8 +122,8 @@ def rootfs_image(argv):
     return images[0] if images else None
 
 
-def capture(namespace, pod, config):
-    kube = ["kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf"]
+def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf"):
+    kube = ["kubectl", "--kubeconfig", kubeconfig]
     obj = json.loads(subprocess.check_output(kube + ["-n", namespace, "get", "pod", pod, "-o", "json"]))
     uid = obj["metadata"]["uid"]
     cri = ["crictl", "--runtime-endpoint=unix:///run/containerd/containerd.sock"]
@@ -103,9 +168,8 @@ def capture(namespace, pod, config):
         if qemu.get(key):
             files["configured_" + key] = qemu[key]
     hashes = {key: {"path": value, "sha256": digest(value)} for key, value in files.items()}
-    objects = [argv[i + 1] for i, value in enumerate(argv) if value == "-object" and i + 1 < len(argv)]
-    if not any("sev-snp-guest" in value for value in objects):
-        raise ValueError("Actual QEMU launch is not SEV-SNP")
+    target, guest = confidential_guest(argv, obj["spec"].get("runtimeClassName"))
+    RUNTIME["require_confidential_config"](qemu, obj["spec"]["runtimeClassName"])
     stable = {
         "artifacts": {k: v["sha256"] for k, v in hashes.items()},
         "cpu": option("-cpu"),
@@ -113,11 +177,14 @@ def capture(namespace, pod, config):
         "memory": option("-m"),
         "machine": option("-machine"),
         "kernel_command_line": option("-append"),
+        "confidential_guest": guest,
     }
     if not stable["smp"] or not stable["kernel_command_line"]:
         raise ValueError("Actual launch lacks explicit CPU topology or kernel command line")
     return {
         "schema": 1,
+        "cpu_tee": target["cpu_tee"],
+        "gpu": target["gpu"],
         "pod_uid": uid,
         "sandbox_ids": ids,
         "qemu_pid": int(process.name),
@@ -125,7 +192,10 @@ def capture(namespace, pod, config):
         "artifacts": hashes,
         "launch_inputs": stable,
         "launch_inputs_sha256": hashlib.sha256(json.dumps(stable, sort_keys=True).encode()).hexdigest(),
-        "pod_resources": [c.get("resources", {}) for c in obj["spec"]["containers"]],
+        "pod_resources": [
+            {kind: values for kind, values in SECURITY["normalize_resources"](c.get("resources", {})).items() if values}
+            for c in obj["spec"]["containers"]
+        ],
     }
 
 
@@ -135,9 +205,10 @@ if __name__ == "__main__":
     parser.add_argument("pod")
     parser.add_argument("config")
     parser.add_argument("output")
+    parser.add_argument("kubeconfig", nargs="?", default="/etc/kubernetes/admin.conf")
     args = parser.parse_args()
     os.umask(0o077)
-    result = capture(args.namespace, args.pod, args.config)
+    result = capture(args.namespace, args.pod, args.config, args.kubeconfig)
     with Path(args.output).open("x") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")

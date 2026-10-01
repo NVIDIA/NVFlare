@@ -27,22 +27,29 @@ and the complete embedded init-data/agent policy.
 | Host downloads image | Registry stores and anonymously serves ciphertext only |
 | Host changes image | Immutable digest, guest signature policy, agent policy, and KBS authorization disagree |
 | Host changes command/OCI properties | Kata agent policy rejects `CreateContainerRequest` |
-| Host replaces guest policy or KBS endpoint | SHA-256 of exact init-data changes; attested SNP `init_data` no longer matches the service authorization |
+| Host replaces guest policy or KBS endpoint | SHA-256 of exact init-data changes; attested SNP HOST_DATA or TDX MRCONFIGID no longer matches service authorization |
 | Host runs `kubectl exec`/attach/cp | No exec commands are authorized; exec and stream requests default-deny |
 | Host tries SSH | Image has no SSH server, credential, or port; network services require owner mTLS |
 | Host corrupts ciphertext | OCI digest/signature and authenticated encryption fail |
-| CPU or GPU evidence is unacceptable | Service requires exactly `cpu0` and `gpu0`; each complete signed EAR trust vector must equal the platform-approved vector |
+| CPU or GPU evidence is unacceptable | Service requires the approved CPU type and exactly `cpu0`, plus `gpu0` for a GPU release; every vector must equal its approved target vector |
 
 The service-owned CPU appraisal also requires all four signed SNP reported-TCB
 SVNs (bootloader, TEE, SNP firmware, and microcode) to meet independently
 approved minimums. These floors are platform policy, not workload input, and
 must never be learned solely from `coco`.
+TDX instead requires a complete approved reference tuple, verified boot events,
+accepted quote/TCB/collateral status and non-debug configuration. Related fields
+must match one approved profile, never a mixture of independent allowlists.
 
 For this pinned post-v0.21 Trustee SNP deployment, the resource policy compares the
 `ear.veraison.annotated-evidence.init_data` claim with the 32-byte SHA-256 value
 encoded as 64 lowercase hexadecimal characters. Base64 is retained only inside
 the Pod transport encoding for the compressed init-data annotation; it is not the
 format of this EAR claim.
+For TDX the claim is 96 lowercase hex characters: that same 32-byte SHA-256
+digest followed by 16 zero bytes. Its quoted MRCONFIGID must agree. The service
+authorizes the exact target-specific representation; arbitrary truncation or
+nonzero padding is not accepted.
 
 ## Why the Pod checksum is not the trust anchor
 
@@ -50,7 +57,7 @@ An authenticated out-of-band SHA-256 lets IT detect delivery corruption and give
 the owner an exact release record. A malicious IT operator can ignore it. The
 trust anchor is the independently administered service policy: only attestation
 of the exact embedded agent policy, image digest, process argv, trusted CPU, and
-trusted GPU can release the image key and image-verification material.
+trusted GPU when required can release the image key and image-verification material.
 
 ## Logging and network limits
 

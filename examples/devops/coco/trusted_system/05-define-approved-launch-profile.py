@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Define a trusted single-container GPU rehearsal profile without guessing boot defaults."""
+"""Define a trusted single-container rehearsal profile without guessing boot defaults."""
 
 import hashlib
 import json
@@ -28,23 +28,27 @@ from pathlib import Path
 workload_path, config_path, output_path = map(Path, sys.argv[1:])
 os.umask(0o077)
 security = runpy.run_path(str(Path(__file__).resolve().parent / "lib/workload-security-context.py"))
+runtime_profile = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
 workload = security["read_pod"](workload_path)
 workload_security_context = security["pod_context"](workload)
 spec = workload["spec"]
-if spec.get("runtimeClassName") != "kata-qemu-nvidia-gpu-snp":
-    raise SystemExit("Expected the NVIDIA GPU SNP RuntimeClass")
+target = runtime_profile["runtime_target"](spec.get("runtimeClassName"))
 if len(spec["containers"]) != 1 or spec.get("initContainers"):
     raise SystemExit("Only a single-container workload profile is supported")
 if any(spec.get(key, False) for key in ["hostNetwork", "hostPID", "hostIPC"]):
     raise SystemExit("Host namespaces are not approved")
 resources = security["normalize_resources"](spec["containers"][0].get("resources", {}))
-if str(resources.get("limits", {}).get("nvidia.com/pgpu", 0)) != "1":
-    raise SystemExit("This trusted host profile requires exactly one passthrough GPU")
+resources = {kind: values for kind, values in resources.items() if values}
+expected_resources = (
+    {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}} if target["gpu_count"] else {}
+)
+if resources != expected_resources:
+    raise SystemExit("Workload resources must match the approved target; omit CPU and memory overrides")
 with config_path.open("rb") as stream:
     config = tomllib.load(stream)
 qemu = config["hypervisor"]["qemu"]
-runtime_profile = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
 runtime_profile["require_token_api"](qemu.get("kernel_params"))
+runtime_profile["require_confidential_config"](qemu, spec["runtimeClassName"])
 for name in ["default_vcpus", "default_memory"]:
     if type(qemu.get(name)) is not int or qemu[name] <= 0:
         raise SystemExit(f"Explicit positive runtime {name} is required")
@@ -63,11 +67,13 @@ for name in ["path", "firmware", "kernel", "initrd", "image"]:
 cpu = json.loads(subprocess.check_output(["lscpu", "-J"]))
 data = {
     "schema": 1,
-    "scope": "Trusted sec_sys single-container GPU launch; not a cross-machine portability claim",
+    "scope": "Trusted single-container launch; not a cross-machine portability claim",
     "host": platform.node(),
     "host_kernel": platform.release(),
     "cpu": cpu,
     "runtime_class": spec["runtimeClassName"],
+    "cpu_tee": target["cpu_tee"],
+    "gpu": target["gpu"],
     "workload_source": str(workload_path),
     "workload_yaml_sha256": digest(workload_path),
     "pod_resources": resources,
@@ -89,5 +95,12 @@ with output_path.open("x") as stream:
     json.dump(data, stream, indent=2)
     stream.write("\n")
 print("Defined profile:", output_path)
-print("Runtime defaults:", qemu["default_vcpus"], "vCPUs;", qemu["default_memory"], "MiB; passthrough GPUs: 1")
+print(
+    "Runtime defaults:",
+    qemu["default_vcpus"],
+    "vCPUs;",
+    qemu["default_memory"],
+    "MiB; passthrough GPUs:",
+    target["gpu_count"],
+)
 print("Workload resource fields are preserved; actual QEMU launch must be captured and compared.")
