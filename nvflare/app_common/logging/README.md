@@ -50,7 +50,7 @@ active log.
 | Component | Location | Responsibility |
 |-----------|----------|----------------|
 | `JobLogStreamer` | Job subprocess | Tails a log file, sends data chunks, emits liveness heartbeats, drains remaining bytes on shutdown |
-| `JobLogReceiver` | Server | Receives stream chunks, writes them to disk immediately, finalizes the result into job-managed storage |
+| `JobLogReceiver` | Server | Receives stream chunks, writes them to disk immediately, delays graceful teardown while streams are active, and finalizes the result into job-managed storage |
 | `SiteLogStreamer` | Client `resources.json` / `CLIENT_PARENT` | Injects `JobLogStreamer` into jobs that do not already declare one |
 
 ## 5. High-Level Architecture
@@ -140,6 +140,12 @@ would be missed. Instead, `ABOUT_TO_END_RUN` only sets the stop signal.
 `END_RUN` performs the join. This keeps `client_run()` alive until the stream
 has drained and EOF has been sent, reducing the chance that later shutdown logic
 aborts the stream before the final bytes reach the server.
+
+On the server, `JobLogReceiver` participates in end-run readiness while any
+accepted log stream remains active. This keeps the job-scoped receiver alive
+long enough to accept the client's final data and EOF during graceful shutdown.
+The framework's configured end-run readiness timeout remains the upper bound,
+so an unreachable client cannot block teardown indefinitely.
 
 ## 9. Drain Behavior
 

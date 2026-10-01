@@ -70,6 +70,26 @@ def test_stream_done_callback_is_scoped_per_stream():
     assert calls == ["one.log", "two.log"]
 
 
+def test_stream_started_callback_is_called_once_per_accepted_stream():
+    calls = []
+
+    def stream_started_cb(stream_ctx, fl_ctx, **kwargs):
+        calls.append(stream_ctx[KEY_FILE_NAME])
+
+    factory = LogChunkConsumerFactory(
+        chunk_received_cb=None,
+        idle_timeout=0.0,
+        stream_done_cb=None,
+        cb_kwargs={},
+        stream_started_cb=stream_started_cb,
+    )
+
+    factory.get_consumer({KEY_FILE_NAME: "one.log"}, None)
+    factory.get_consumer({KEY_FILE_NAME: "two.log"}, None)
+
+    assert calls == ["one.log", "two.log"]
+
+
 def test_idle_timeout_ends_each_stream_independently():
     ended = []
     fl_ctx = Mock(spec=FLContext)
