@@ -8,7 +8,20 @@ WORKDIR /opt/NVFlare
 # re-download on every source edit.
 COPY setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
-RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]"
+ARG TARGETARCH
+# Keep the Linux ARM64 CPU wheels used by Colima. On other architectures,
+# retain the normal PT dependencies for hello-pt-docker and pt-ddp-docker.
+# Debian's architecture also works with legacy builders without TARGETARCH.
+RUN pip install -U pip && \
+    if [ "${TARGETARCH:-$(dpkg --print-architecture)}" = "arm64" ]; then \
+        pip install -e ".[PT]" "torch==2.5.1" "torchvision==0.20.1" tensorboard; \
+    else \
+        pip install -e ".[PT]" tensorboard; \
+    fi
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare
+
+# Job containers run with the host UID, which may not exist in this image.
+# Keep the original CIFAR-10 cache path writable for those non-root users.
+RUN mkdir -p /var/tmp/nvflare/data && chmod 1777 /var/tmp/nvflare/data
