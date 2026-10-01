@@ -17,7 +17,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    ReservedKey,
+    ReturnCode,
+    StreamCtxKey,
+    SystemComponents,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
@@ -204,6 +211,57 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
     log_info.assert_not_called()
 
 
+def test_job_log_receiver_delays_end_run_until_all_active_streams_finish():
+    receiver = JobLogReceiver()
+    stream_ctx_1 = {
+        KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+    stream_ctx_2 = {
+        KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    receiver._on_stream_started(stream_ctx_1, FLContext())
+    receiver._on_stream_started(stream_ctx_2, FLContext())
+
+    waiting_ctx = FLContext()
+    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, waiting_ctx)
+    assert waiting_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is True
+
+    receiver._on_stream_done(stream_ctx_1, _make_recv_fl_ctx())
+
+    still_waiting_ctx = FLContext()
+    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, still_waiting_ctx)
+    assert still_waiting_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is True
+
+    receiver._on_stream_done(stream_ctx_2, _make_recv_fl_ctx())
+
+    ready_ctx = FLContext()
+    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
+    assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
+
+
+def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    job_manager.set_client_data.side_effect = RuntimeError("storage failed")
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    receiver._on_stream_started(stream_ctx, fl_ctx)
+    receiver._on_chunk_received(b"log line\n", stream_ctx, fl_ctx)
+    with pytest.raises(RuntimeError, match="storage failed"):
+        receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    ready_ctx = FLContext()
+    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
+    assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
+
+
 @pytest.mark.parametrize(
     "event_type",
     [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
@@ -224,6 +282,8 @@ def test_register_fires_on_run_lifecycle_events(event_type):
     kwargs = mock_register.call_args.kwargs
     assert kwargs["channel"] == Channels.LOG_STREAMING_CHANNEL
     assert kwargs["topic"] == LIVE_LOG_TOPIC
+    assert kwargs["stream_started_cb"] == receiver._on_stream_started
+    assert kwargs["stream_done_cb"] == receiver._on_stream_done
 
 
 def test_register_reregisters_on_each_event():
@@ -260,3 +320,15 @@ def test_register_event_handlers_cover_server_subprocess_path():
     assert EventType.START_RUN in registered_events
     assert EventType.SYSTEM_START in registered_events
     assert EventType.ABOUT_TO_START_RUN in registered_events
+
+
+def test_register_event_handlers_cover_end_run_readiness():
+    receiver = JobLogReceiver()
+
+    registered_events = {
+        event_type
+        for event_type, entries in receiver.get_event_handlers().items()
+        if any(handler == receiver._check_end_run_readiness for handler, _ in entries)
+    }
+
+    assert EventType.CHECK_END_RUN_READINESS in registered_events
