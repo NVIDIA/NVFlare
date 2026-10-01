@@ -8,9 +8,16 @@ WORKDIR /opt/NVFlare
 # re-download on every source edit.
 COPY setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
-# Pin a matching PyTorch pair with Linux ARM64 wheels. Newer ARM64 releases
-# pull CUDA libraries even for this CPU example, which are unused in Colima.
-RUN pip install -U pip && pip install -e ".[PT]" "torch==2.5.1" "torchvision==0.20.1" tensorboard
+ARG TARGETARCH
+# Keep the Linux ARM64 CPU wheels used by Colima. On other architectures,
+# retain the normal PT dependencies for hello-pt-docker and pt-ddp-docker.
+# Debian's architecture also works with legacy builders without TARGETARCH.
+RUN pip install -U pip && \
+    if [ "${TARGETARCH:-$(dpkg --print-architecture)}" = "arm64" ]; then \
+        pip install -e ".[PT]" "torch==2.5.1" "torchvision==0.20.1" tensorboard; \
+    else \
+        pip install -e ".[PT]" tensorboard; \
+    fi
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare
