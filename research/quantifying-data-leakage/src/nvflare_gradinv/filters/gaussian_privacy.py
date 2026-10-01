@@ -65,6 +65,9 @@ class GaussianPrivacy(DXOFilter):
 
         Returns: filtered result.
         """
+        if not dxo.data:
+            return None
+
         if self.sigma0 > 0.0:
             weights = dxo.data
 

@@ -47,6 +47,9 @@ class ExcludeParamsFilter(DXOFilter):
 
         """
 
+        if not dxo.data:
+            return None
+
         params = dxo.data
         new_params = {}
         for k, v in params.items():
