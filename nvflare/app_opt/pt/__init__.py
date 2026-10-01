@@ -21,6 +21,5 @@ from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.he_model_reader_writer import HEPTModelReaderWriter
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.app_opt.pt.model_reader_writer import PTModelReaderWriter
-from nvflare.app_opt.pt.multi_process_executor import PTMultiProcessExecutor
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper, get_lr_values
 from nvflare.app_opt.pt.utils import feed_vars

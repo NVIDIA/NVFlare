@@ -22,20 +22,18 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor, WorkerComponentBuilder
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
-from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.utils import class_utils
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.secret_utils import secret_file_ref
-from nvflare.private.fed.app.client.sub_worker_process import SubWorkerExecutor
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.utils import fed_utils
 from nvflare.private.fed.utils.fed_utils import authorize_build_component
+from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.private.json_configer import ConfigContext, JsonConfigurator
 
 
@@ -84,17 +82,6 @@ class BuildDuringInitComponent:
 
     def __init__(self):
         BuildDuringInitComponent.configurator.build_component(BuildDuringInitComponent.runtime_component_config)
-
-
-class _TestMultiProcessExecutor(MultiProcessExecutor):
-    instantiated = False
-
-    def __init__(self, *args, **kwargs):
-        _TestMultiProcessExecutor.instantiated = True
-        super().__init__(*args, **kwargs)
-
-    def get_multi_process_command(self) -> str:
-        return "python3"
 
 
 class FakeWorkspace:
@@ -685,15 +672,13 @@ def test_components_missing_from_allow_list_block_before_instantiation(tmp_path,
 
 
 @pytest.mark.parametrize("path_key", ["path", "class_path"])
-def test_multi_process_components_with_config_type_dict_are_authorized_before_build(tmp_path, path_key):
+def test_components_with_config_type_dict_are_authorized_before_build(tmp_path, path_key):
     config_file = tmp_path / "config.json"
     _write_component_config(
         config_file,
         {
-            "path": _component_path(_TestMultiProcessExecutor),
+            "path": _component_path(ContainerComponent),
             "args": {
-                "executor_id": "bad",
-                "num_of_processes": 1,
                 "components": [
                     {
                         "id": "bad",
@@ -706,13 +691,13 @@ def test_multi_process_components_with_config_type_dict_are_authorized_before_bu
         },
     )
 
-    _TestMultiProcessExecutor.instantiated = False
+    ContainerComponent.instantiated = False
     configurator = _make_authorized_configurator(config_file)
 
     with pytest.raises(ComponentNotAuthorized, match=r"subprocess\.Popen.*component\.args\.components\.#1"):
         configurator.configure()
 
-    assert _TestMultiProcessExecutor.instantiated is False
+    assert ContainerComponent.instantiated is False
 
 
 def test_config_type_dict_with_id_and_path_outside_components_list_remains_data(tmp_path):
@@ -929,6 +914,10 @@ def test_worker_component_builder_make_component_node_uses_components_path():
     assert node.path() == "components.#3"
 
 
+def test_worker_component_builder_is_private_runtime_owned():
+    assert WorkerComponentBuilder.__module__ == "nvflare.private.fed.utils.worker_component_builder"
+
+
 def test_worker_component_builder_rejects_nested_unsafe_config_before_build():
     component_config = {
         "id": "container",
@@ -946,83 +935,29 @@ def test_worker_component_builder_rejects_nested_unsafe_config_before_build():
     assert ContainerComponent.instantiated is False
 
 
-def test_multi_process_build_components_rejects_config_type_dict_without_byoc(monkeypatch):
+def test_worker_component_builder_rejects_config_type_dict_without_byoc(monkeypatch):
     loaded_paths = _record_load_class_calls(monkeypatch)
     _set_class_allow_list(_test_component_allow_list())
-    executor = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
-    executor.components = {}
-    executor.handlers = []
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.JOB_META, {}, sticky=False, private=True)
+    builder = WorkerComponentBuilder(fl_ctx=fl_ctx)
+    config = {"id": "bad", "config_type": "dict", "path": "subprocess.Popen", "args": {}}
 
     with pytest.raises(ComponentNotAuthorized, match=r"subprocess\.Popen.*components\.#1"):
-        executor._build_components(
-            [
-                {
-                    "id": "bad",
-                    "config_type": "dict",
-                    "path": "subprocess.Popen",
-                    "args": {},
-                }
-            ],
-            fl_ctx=fl_ctx,
-        )
+        builder.build_component(config, builder.make_component_node(config, 1))
 
     assert loaded_paths == []
 
 
-def test_multi_process_build_components_skips_allow_list_for_byoc_config_type_dict():
+def test_worker_component_builder_skips_allow_list_for_byoc_config_type_dict():
     _set_class_allow_list([])
-    executor = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
-    executor.components = {}
-    executor.handlers = []
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.JOB_META, {AppValidationKey.BYOC: True}, sticky=False, private=True)
+    builder = WorkerComponentBuilder(fl_ctx=fl_ctx)
+    config = {"id": "byoc_component", "config_type": "dict", "path": _component_path(NestedComponent), "args": {}}
 
     NestedComponent.instantiated = False
-    executor._build_components(
-        [
-            {
-                "id": "byoc_component",
-                "config_type": "dict",
-                "path": _component_path(NestedComponent),
-                "args": {},
-            }
-        ],
-        fl_ctx=fl_ctx,
-    )
+    component = builder.build_component(config, builder.make_component_node(config, 1))
 
-    assert isinstance(executor.components["byoc_component"], NestedComponent)
+    assert isinstance(component, NestedComponent)
     assert NestedComponent.instantiated is True
-
-
-def test_sub_worker_initialize_rejects_unsafe_component_payload_before_build(tmp_path):
-    sub_worker = SubWorkerExecutor.__new__(SubWorkerExecutor)
-    sub_worker.components = {}
-    sub_worker.handlers = []
-    meta_path = tmp_path / "meta.json"
-    meta_path.write_text("{}")
-    resources_path = tmp_path / "resources.json"
-    resources_path.write_text(json.dumps({"class_allow_list": _test_component_allow_list()}))
-    sub_worker.workspace = FakeWorkspace(str(meta_path), str(resources_path))
-
-    fl_ctx = FLContext()
-    fl_ctx.set_prop(FLContextKey.JOB_META, {}, sticky=False, private=True)
-
-    data = {
-        CommunicationMetaData.FL_CTX: fl_ctx,
-        CommunicationMetaData.LOCAL_EXECUTOR: "container",
-        CommunicationMetaData.COMPONENTS: [
-            {
-                "id": "container",
-                "path": _component_path(ContainerComponent),
-                "args": {"child": {"path": "socket.socket", "args": {}}},
-            }
-        ],
-    }
-
-    ContainerComponent.instantiated = False
-    with pytest.raises(ComponentNotAuthorized, match="socket.socket.*components.#1.args.child"):
-        sub_worker._initialize(data)
-
-    assert ContainerComponent.instantiated is False

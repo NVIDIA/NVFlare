@@ -82,6 +82,14 @@ in `nvflare.private.fed.client.task_worker_executor` is internal runtime code,
 not an application customization or subclassing point. Future backends can use
 the same supervisor through site/runtime injection.
 
+The legacy `MultiProcessExecutor`/`PTMultiProcessExecutor` stack and its rank
+sub-worker runtime have been removed, without compatibility aliases. Old job
+configurations selecting those classes must migrate to the resident Client API
+with external-process `torchrun`, as in `examples/advanced/multi-gpu/pt`.
+That distributed training path is not part of this CPU task-worker profile.
+Task-worker component construction now lives in the private runtime utility
+`nvflare.private.fed.utils.worker_component_builder`.
+
 ## Lifecycle and support boundaries
 
 Workers receive credential-stripped bootstrap data and eager local FOBS input

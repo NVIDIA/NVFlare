@@ -142,6 +142,30 @@ def test_runtime_task_supervisor_rejects_worker_component_before_import(tmp_path
     assert not marker.exists()
 
 
+def test_runtime_task_supervisor_rejects_sibling_in_class_like_args_before_import(tmp_path, monkeypatch):
+    marker = tmp_path / "outer-imported.txt"
+    (tmp_path / "outer_executor.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('imported')\n"
+        "from nvflare.apis.executor import Executor\n"
+        "class OuterExecutor(Executor):\n"
+        "    def execute(self, task_name, shareable, fl_ctx, abort_signal):\n"
+        "        return shareable\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    executor_path = "outer_executor.OuterExecutor"
+    executor = {
+        "path": executor_path,
+        "args": {"path": executor_path, "helper": {"path": "subprocess.Popen", "args": {}}},
+    }
+    configurator = _configurator(tmp_path, _task_config(executor), allow_list=[executor_path])
+
+    with pytest.raises(ComponentNotAuthorized, match=r"subprocess\.Popen.*allow_list"):
+        configurator.configure()
+
+    assert not marker.exists()
+
+
 def test_runtime_creates_framework_supervisor_without_allow_list_entry(tmp_path):
     executor_path = "nvflare.app_common.np.np_trainer.NPTrainer"
     configurator = _configurator(

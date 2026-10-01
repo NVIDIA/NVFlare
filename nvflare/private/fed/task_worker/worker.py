@@ -32,9 +32,9 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-from nvflare.app_common.executors.multi_process_executor import WorkerComponentBuilder
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
+from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
 
 from .artifacts import FileTaskArtifactStore, TaskCompletion
