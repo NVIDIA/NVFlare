@@ -79,7 +79,7 @@ def _assert_workers(root, final_metrics, num_rounds, job_id=None):
 @pytest.mark.skipif(sys.platform != "linux", reason="This matrix qualifies the Colossus Linux Process profile")
 @pytest.mark.timeout(360)
 @pytest.mark.parametrize("environment", ["sim", "poc", "prod"])
-@pytest.mark.parametrize("execution_lifetime", ["resident", "task"])
+@pytest.mark.parametrize("execution_lifetime", ["job", "task"])
 def test_hello_pt_same_client_across_lifetimes(tmp_path, monkeypatch, environment, execution_lifetime):
     kit = os.environ.get("NVFLARE_E2E_PROD_ADMIN_KIT")
     prod_workspace = os.environ.get("NVFLARE_E2E_PROD_WORKSPACE")

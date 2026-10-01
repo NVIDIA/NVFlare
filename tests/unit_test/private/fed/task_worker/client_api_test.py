@@ -17,8 +17,12 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-from nvflare.private.fed.task_worker.client_api import TaskClientAPI, execute_client_api_task
+from nvflare.client.api_spec import CLIENT_API_KEY
+from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.private.fed.task_worker import client_api
+from nvflare.private.fed.task_worker.client_api import TaskClientAPI, TaskClientAPIBackend
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
 
@@ -29,12 +33,13 @@ def test_task_client_api_requires_exactly_one_durable_send():
     with pytest.raises(RuntimeError, match="without sending"):
         api.get_result()
     api._publish_result(Shareable())
-    assert api.get_result().reference is store.stage_result.return_value
+    assert api.get_result() is store.read_script_result.return_value
+    store.read_script_result.assert_called_once_with(identity, store.stage_script_result.return_value)
     assert not api.is_running()
     assert api.receive() is None
     with pytest.raises(RuntimeError, match="exactly one"):
         api._publish_result(Shareable())
-    store.stage_result.assert_called_once()
+    store.stage_script_result.assert_called_once()
     api.close()
 
 
@@ -43,11 +48,104 @@ def test_task_adapter_rejects_custom_client_api_subclass():
         pass
 
     executor = CustomExecutor(execution_mode="in_process", task_script_path="train.py")
+    backend = TaskClientAPIBackend(None, None, [])
     with pytest.raises(RuntimeError, match="subclasses"):
-        execute_client_api_task(executor, None, None, None, None)
+        backend.initialize(executor._build_backend_context(), None)
 
 
 def test_task_adapter_rejects_external_process_mode():
     executor = ClientAPIExecutor(execution_mode="external_process", command=["python", "train.py"])
+    backend = TaskClientAPIBackend(None, None, [])
     with pytest.raises(RuntimeError, match="in_process scripts only"):
-        execute_client_api_task(executor, None, None, None, None)
+        backend.initialize(executor._build_backend_context(), None)
+
+
+@pytest.fixture
+def task_backend(monkeypatch):
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    api = Mock()
+    api.get_result.return_value = Shareable({"result": 1})
+    monkeypatch.setattr(client_api, "TaskClientAPI", lambda *_args: api)
+    runner = Mock()
+    monkeypatch.setattr(client_api, "TaskScriptRunner", lambda **_kwargs: runner)
+    backend = TaskClientAPIBackend(Mock(), identity, [])
+    executor = ClientAPIExecutor(execution_mode="in_process", task_script_path="train.py")
+    fl_ctx = Mock()
+    bus = DataBus()
+    previous_api = bus.get_data(CLIENT_API_KEY)
+    try:
+        yield backend, executor._build_backend_context(), fl_ctx, api, runner
+    finally:
+        backend.finalize(fl_ctx)
+        bus.put_data(CLIENT_API_KEY, previous_api)
+
+
+def test_task_backend_uses_lifecycle_and_preserves_other_bus_owner(task_backend):
+    backend, context, fl_ctx, api, runner = task_backend
+    backend.initialize(context, fl_ctx)
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    assert result == Shareable({"result": 1})
+    assert DataBus().get_data(CLIENT_API_KEY) is api
+    runner.run.assert_called_once()
+    backend.abort(fl_ctx)
+    assert api.stop is True
+    other_api = object()
+    DataBus().put_data(CLIENT_API_KEY, other_api)
+    backend.finalize(fl_ctx)
+    backend.finalize(fl_ctx)
+    api.close.assert_called_once()
+    assert DataBus().get_data(CLIENT_API_KEY) is other_api
+
+
+@pytest.mark.parametrize("setup_failure", ["api", "runner"])
+def test_task_backend_initialization_unwinds_before_propagating_failure(task_backend, monkeypatch, setup_failure):
+    backend, context, fl_ctx, api, _runner = task_backend
+    if setup_failure == "api":
+        api.init.side_effect = RuntimeError("setup failed")
+    else:
+        monkeypatch.setattr(client_api, "TaskScriptRunner", Mock(side_effect=RuntimeError("setup failed")))
+    with pytest.raises(RuntimeError, match="setup failed"):
+        backend.initialize(context, fl_ctx)
+    api.close.assert_called_once()
+    assert backend._api is None
+
+
+@pytest.mark.parametrize("failure", ["uninitialized", "wrong_task", "aborted", "repeated"])
+def test_task_backend_rejects_invalid_assignment(task_backend, failure):
+    backend, context, fl_ctx, _api, runner = task_backend
+    signal = Signal()
+    task_name = "train"
+    if failure != "uninitialized":
+        backend.initialize(context, fl_ctx)
+    if failure == "wrong_task":
+        task_name = "validate"
+    elif failure == "aborted":
+        signal.trigger(True)
+    elif failure == "repeated":
+        backend.execute(task_name, Shareable(), fl_ctx, signal)
+    with pytest.raises(RuntimeError):
+        backend.execute(task_name, Shareable(), fl_ctx, signal)
+    assert runner.run.call_count == (1 if failure == "repeated" else 0)
+
+
+@pytest.mark.parametrize("exit_code", [None, 0, 2])
+def test_task_backend_handles_only_clean_script_system_exit(task_backend, exit_code):
+    backend, context, fl_ctx, _api, runner = task_backend
+    backend.initialize(context, fl_ctx)
+    runner.run.side_effect = SystemExit(exit_code)
+    if exit_code in (None, 0):
+        assert backend.execute("train", Shareable(), fl_ctx, Signal())["result"] == 1
+    else:
+        with pytest.raises(SystemExit):
+            backend.execute("train", Shareable(), fl_ctx, Signal())
+
+
+def test_task_backend_finalization_failure_clears_owned_bus_entry(task_backend):
+    backend, context, fl_ctx, api, _runner = task_backend
+    backend.initialize(context, fl_ctx)
+    backend.execute("train", Shareable(), fl_ctx, Signal())
+    api.close.side_effect = RuntimeError("finalize failed")
+    with pytest.raises(RuntimeError, match="finalize failed"):
+        backend.finalize(fl_ctx)
+    assert backend._api is None
+    assert DataBus().get_data(CLIENT_API_KEY) is None

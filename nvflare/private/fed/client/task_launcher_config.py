@@ -19,6 +19,7 @@ from typing import Optional
 
 from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.launcher import LauncherMode
+from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskLauncherSpec
 from nvflare.fuel.utils.class_loader import load_class
 from nvflare.fuel.utils.config_service import ConfigService
@@ -30,11 +31,25 @@ TASK_LAUNCHER_ARGS = "args"
 DEFAULT_TASK_LAUNCHER_PATH = "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher"
 
 
-def _site_task_launcher_config():
+def _site_resources():
     resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
     if resources is not None and not isinstance(resources, dict):
         raise TypeError("the site resources configuration must be a dict")
-    return (resources or {}).get(TASK_LAUNCHER_CONFIG, {})
+    return resources or {}
+
+
+def _site_task_launcher_config():
+    return _site_resources().get(TASK_LAUNCHER_CONFIG, {})
+
+
+def _site_artifact_cleanup():
+    config = _site_resources().get("task_execution", {})
+    if not isinstance(config, dict):
+        raise TypeError("task_execution must be a dict")
+    unknown = set(config).difference({"artifact_cleanup"})
+    if unknown:
+        raise ValueError(f"task_execution contains unsupported settings: {sorted(unknown)}")
+    return TaskArtifactCleanup.validate(config.get("artifact_cleanup", TaskArtifactCleanup.JOB))
 
 
 def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
@@ -83,6 +98,7 @@ def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[
     if not supervisors:
         return None
 
+    artifact_cleanup = _site_artifact_cleanup()
     launcher = build_task_launcher()
     job_mode = LauncherMode.validate(job_launcher_mode, "selected JobLauncher mode")
     task_mode = LauncherMode.validate(launcher.launch_mode, "configured TaskLauncher mode")
@@ -93,7 +109,9 @@ def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[
         )
     for supervisor in supervisors:
         supervisor.set_task_launcher(
-            launcher, environment_variables=_site_task_launcher_config().get("environment_variables", [])
+            launcher,
+            environment_variables=_site_task_launcher_config().get("environment_variables", []),
+            artifact_cleanup=artifact_cleanup,
         )
 
     handlers = getattr(runner_config, "handlers", None)

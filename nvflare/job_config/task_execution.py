@@ -41,7 +41,7 @@ class TaskExecutionConfig:
     """Runtime placement plan derived from an unmodified submitted job config."""
 
     executors: tuple[TaskExecutorConfig, ...]
-    resident_components: tuple[dict, ...]
+    job_components: tuple[dict, ...]
 
 
 def _collect_strings(value, result):
@@ -84,16 +84,16 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
     if not isinstance(client_config, dict):
         raise TypeError("client_config must be a dict")
 
-    lifetime = client_config.get(EXECUTION_LIFETIME_KEY, ExecutionLifetime.RESIDENT)
+    lifetime = client_config.get(EXECUTION_LIFETIME_KEY, ExecutionLifetime.JOB)
     ExecutionLifetime.validate(lifetime)
-    if lifetime == ExecutionLifetime.RESIDENT:
+    for setting in (TASK_LAUNCHER_KEY, "task_execution"):
+        if setting in client_config:
+            raise ValueError(
+                f"{setting!r} is site/runtime configuration and cannot be selected by a job; "
+                "configure it in the site's resources.json"
+            )
+    if lifetime == ExecutionLifetime.JOB:
         return None
-
-    if TASK_LAUNCHER_KEY in client_config:
-        raise ValueError(
-            f"{TASK_LAUNCHER_KEY!r} is site/runtime configuration and cannot be selected by a job; "
-            "configure it in the site's resources.json"
-        )
 
     executors = client_config.get("executors")
     if not isinstance(executors, list) or not executors:
@@ -134,7 +134,7 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
             if execution_mode != "in_process":
                 raise ValueError(
                     "execution_lifetime='task' currently supports ClientAPIExecutor in_process scripts only; "
-                    "external_process and attach require resident execution"
+                    "external_process and attach require job-based execution"
                 )
             worker_timeout = executor_config.get("args", {}).get("result_wait_timeout")
             if worker_timeout is not None and (
@@ -156,7 +156,7 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
             f"{sorted(shared_ids)}"
         )
 
-    resident_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in worker_component_ids)
+    job_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in worker_component_ids)
     task_executors = []
     for executor_def, executor_component_ids, worker_timeout in zip(
         executors, executor_worker_component_ids, executor_worker_timeouts
@@ -171,4 +171,4 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
             )
         )
 
-    return TaskExecutionConfig(executors=tuple(task_executors), resident_components=resident_components)
+    return TaskExecutionConfig(executors=tuple(task_executors), job_components=job_components)

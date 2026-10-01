@@ -25,6 +25,7 @@ import os
 import signal
 import threading
 import time
+from dataclasses import replace
 from typing import Optional
 
 import psutil
@@ -70,6 +71,7 @@ class ProcessTaskHandle(TaskHandleSpec):
         self._poll_interval = _positive_number(poll_interval, "poll_interval")
         self._cancel_requested = False
         self._failure_reason = None
+        self._settled_status = None
         self._lock = threading.RLock()
         self._termination_lock = threading.Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -113,6 +115,15 @@ class ProcessTaskHandle(TaskHandleSpec):
                     return True
         except (PermissionError, psutil.AccessDenied):
             return True
+        if not dead_member_seen:
+            # The last member can disappear between killpg and enumeration.
+            # Confirm absence afresh instead of retaining the stale probe.
+            try:
+                os.killpg(self._process_group_id, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
         return not dead_member_seen
 
     def _signal_group(self, sig: int) -> None:
@@ -124,6 +135,8 @@ class ProcessTaskHandle(TaskHandleSpec):
             self.logger.warning("cannot signal task process group %s: %s", self._process_group_id, e)
 
     def _status_unlocked(self) -> TaskExecutionStatus:
+        if self._settled_status is not None:
+            return self._settled_status
         return_code = self._adapter.poll()
         group_exists = return_code is None or self._group_exists()
         if return_code is None:
@@ -134,7 +147,7 @@ class ProcessTaskHandle(TaskHandleSpec):
             phase = TaskExecutionPhase.TERMINAL
             exit_code = return_code if return_code >= 0 else None
             termination_signal = -return_code if return_code < 0 else None
-        return TaskExecutionStatus(
+        status = TaskExecutionStatus(
             phase=phase,
             exit_code=exit_code,
             termination_signal=termination_signal,
@@ -142,6 +155,11 @@ class ProcessTaskHandle(TaskHandleSpec):
             settled=return_code is not None and not group_exists,
             failure_reason=self._failure_reason,
         )
+        if status.settled:
+            # Settlement is final for this physical execution. Never reopen
+            # its scope because a later scan is uncertain or its PGID is reused.
+            self._settled_status = status
+        return status
 
     def poll(self) -> TaskExecutionStatus:
         with self._lock:
@@ -169,13 +187,14 @@ class ProcessTaskHandle(TaskHandleSpec):
                 self._signal_group(signal.SIGKILL)
                 self._wait_for_group_exit(self._stop_grace_period)
 
-            status = self.poll()
-            if not status.settled:
-                with self._lock:
+            with self._lock:
+                status = self._status_unlocked()
+                if not status.settled:
                     if self._failure_reason is None:
                         self._failure_reason = "task process group did not settle after SIGKILL"
-                    status = self._status_unlocked()
-                raise TaskSettlementError(self._failure_reason, status)
+                    raise TaskSettlementError(
+                        self._failure_reason, replace(status, failure_reason=self._failure_reason)
+                    )
             return status
 
     def cancel(self) -> TaskExecutionStatus:
@@ -225,6 +244,9 @@ class ProcessTaskHandle(TaskHandleSpec):
             raise TimeoutError(f"task execution {self.execution_id} did not settle within {timeout} seconds")
 
         with self._lock:
+            status = self._status_unlocked()
+            if status.settled:
+                return status
             if not self._cancel_requested:
                 self._failure_reason = "task leader exited while descendants remained alive"
         return self._terminate_group()

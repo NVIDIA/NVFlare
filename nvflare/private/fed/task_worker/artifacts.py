@@ -34,6 +34,7 @@ _CHUNK_SIZE = 1024 * 1024
 _MAX_RECORD_BYTES = 1024 * 1024
 _INPUT_KIND = "input"
 _RESULT_KIND = "result"
+_SCRIPT_RESULT_KIND = "script_result"
 _ANALYTICS_KIND = "analytics"
 
 
@@ -120,8 +121,8 @@ class ArtifactReference:
     sha256: str
 
     def __post_init__(self):
-        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _ANALYTICS_KIND):
-            raise ValueError("artifact kind must be input, result or analytics")
+        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _SCRIPT_RESULT_KIND, _ANALYTICS_KIND):
+            raise ValueError("artifact kind must be input, result, script_result or analytics")
         if self.file_name != f"{self.kind}.fobs":
             raise ValueError("artifact payload name does not match its kind")
         if not isinstance(self.size, int) or self.size < 0:
@@ -213,8 +214,8 @@ class TaskCompletion:
 class FileTaskArtifactStore:
     """Process-backend artifact store whose files outlive the worker process.
 
-    The store never removes an attempt automatically. After publication, the
-    resident supervisor may call :meth:`release_payloads` while retaining the
+    The store never removes an attempt automatically. Under site policy, the
+    CJ supervisor may call :meth:`release_payloads` while retaining the
     completion record, or :meth:`remove_attempt` after a full retention decision.
     """
 
@@ -324,6 +325,19 @@ class FileTaskArtifactStore:
         """Durably hand off a result without declaring successful worker completion."""
         return self._write_payload(identity, _RESULT_KIND, data)
 
+    def stage_script_result(self, identity: TaskAttemptIdentity, data: Shareable) -> ArtifactReference:
+        """Keep the script's durable send distinct from the final Executor result.
+
+        Task hooks can modify the returned Shareable. Only the result written
+        after those hooks and END_RUN is eligible for the completion record.
+        """
+        return self._write_payload(identity, _SCRIPT_RESULT_KIND, data)
+
+    def read_script_result(self, identity: TaskAttemptIdentity, reference: ArtifactReference) -> Shareable:
+        if not isinstance(reference, ArtifactReference) or reference.kind != _SCRIPT_RESULT_KIND:
+            raise ValueError("script result must be a script_result artifact reference")
+        return self._read_payload(identity, reference)
+
     def commit_staged_result(
         self,
         identity: TaskAttemptIdentity,
@@ -408,9 +422,20 @@ class FileTaskArtifactStore:
         """Release bulky attempt data while retaining completion diagnostics."""
 
         directory = self.attempt_dir(identity)
-        if os.path.islink(directory) or not os.path.isdir(directory):
+        if (
+            os.path.islink(os.path.join(self.root_dir, identity.attempt_id))
+            or os.path.islink(directory)
+            or not os.path.isdir(directory)
+        ):
             raise ValueError("attempt directory is missing or invalid")
-        for name in ("bootstrap.json", "input.json", "input.fobs", "result.fobs", "analytics.fobs"):
+        for name in (
+            "bootstrap.json",
+            "input.json",
+            "input.fobs",
+            "script_result.fobs",
+            "result.fobs",
+            "analytics.fobs",
+        ):
             path = os.path.join(directory, name)
             try:
                 if os.path.islink(path) or (os.path.exists(path) and not os.path.isfile(path)):

@@ -226,7 +226,7 @@ class Recipe(ABC):
         pass
 
     def set_execution_lifetime(self, execution_lifetime: str):
-        """Select resident or fresh-per-task client application execution."""
+        """Select job-based or fresh-per-task client application execution."""
         self._job.set_execution_lifetime(execution_lifetime)
         return self
 

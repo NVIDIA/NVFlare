@@ -20,6 +20,7 @@ import os
 import resource
 import sys
 import time
+from functools import partial
 from typing import Mapping
 
 from nvflare.apis.event_type import EventType
@@ -31,18 +32,19 @@ from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
 
 from .artifacts import FileTaskArtifactStore, TaskCompletion
-from .client_api import ClientAPITaskResult, execute_client_api_task
+from .client_api import TaskClientAPIBackend
 from .protocol import WorkerBootstrap, read_bootstrap
 
 _PROCESS_TYPE = "client_task_worker"
 _PROTECTED_CONTEXT_KEYS = {
+    CLIENT_API_BACKEND_FACTORY,
     FLContextKey.APP_ROOT,
     FLContextKey.CLIENT_NAME,
     FLContextKey.CURRENT_JOB_ID,
@@ -130,13 +132,13 @@ class TaskWorkerEngine:
         self._unsupported("federation target validation")
 
     def get_widget(self, *args, **kwargs):
-        self._unsupported("resident job widgets")
+        self._unsupported("job-based job widgets")
 
     def build_component(self, *args, **kwargs):
         self._unsupported("runtime component construction")
 
     def abort_app(self, *args, **kwargs):
-        self._unsupported("resident application control")
+        self._unsupported("job-based application control")
 
 
 def _read_job_meta(workspace: Workspace, job_id: str) -> dict:
@@ -195,8 +197,7 @@ def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ct
     # the explicitly selected compute graph receives them; job-scoped CJ
     # handlers are neither copied nor replayed.
     engine._handlers = [component for component in components.values() if isinstance(component, FLComponent)]
-    if not isinstance(executor, ClientAPIExecutor):
-        engine._handlers.append(executor)
+    engine._handlers.append(executor)
     return executor
 
 
@@ -228,6 +229,13 @@ def _restore_peer_context(data: Shareable, fl_ctx: FLContext):
 
 def _execute(bootstrap: WorkerBootstrap, data: Shareable, workspace: Workspace, store: FileTaskArtifactStore):
     engine, fl_ctx = _new_context(bootstrap, workspace)
+    analytics = []
+    fl_ctx.set_prop(
+        CLIENT_API_BACKEND_FACTORY,
+        partial(TaskClientAPIBackend, store, bootstrap.identity, analytics),
+        private=True,
+        sticky=True,
+    )
     executor = _build_compute_graph(bootstrap, workspace, fl_ctx, engine)
     abort_signal = Signal()
     _restore_peer_context(data, fl_ctx)
@@ -238,15 +246,12 @@ def _execute(bootstrap: WorkerBootstrap, data: Shareable, workspace: Workspace, 
         _fire_checked(engine, EventType.START_RUN, fl_ctx)
         fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
         _fire_checked(engine, EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        if isinstance(executor, ClientAPIExecutor):
-            result = execute_client_api_task(executor, data, fl_ctx, store, bootstrap.identity)
-            return result
         result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, abort_signal)
         if not isinstance(result, Shareable):
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
         _fire_checked(engine, EventType.AFTER_TASK_EXECUTION, fl_ctx)
-        return result
+        return result, analytics
     finally:
         if started:
             _fire_checked(engine, EventType.END_RUN, fl_ctx)
@@ -271,7 +276,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             sys.path.insert(0, custom_dir)
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
         data = store.read_input(identity)
-        result = _execute(bootstrap, data, workspace, store)
+        result, analytics = _execute(bootstrap, data, workspace, store)
         usage = resource.getrusage(resource.RUSAGE_SELF)
         completed_at = time.time()
         diagnostics = {
@@ -280,17 +285,11 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             "max_rss_native_units": usage.ru_maxrss,
             "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
         }
-        if isinstance(result, ClientAPITaskResult):
-            if result.analytics:
-                diagnostics["analytics"] = store.write_analytics(identity, result.analytics).to_dict()
-            commit = store.commit_staged_result
-            payload = result.reference
-        else:
-            commit = store.commit_result
-            payload = result
-        return commit(
+        if analytics:
+            diagnostics["analytics"] = store.write_analytics(identity, analytics).to_dict()
+        return store.commit_result(
             identity,
-            payload,
+            result,
             worker_pid=os.getpid(),
             worker_ppid=os.getppid(),
             started_at=started_at,

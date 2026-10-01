@@ -190,7 +190,7 @@ class FedJob:
         mandatory_clients: Optional[List[str]] = None,
         meta_props: Optional[Dict[str, Any]] = None,
         fail_fast: bool = False,
-        execution_lifetime: str = ExecutionLifetime.RESIDENT,
+        execution_lifetime: str = ExecutionLifetime.JOB,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -209,9 +209,9 @@ class FedJob:
                 immediate abort on any client failure; when min_clients < total enrolled, the
                 disconnect is simply detected faster without necessarily aborting the job.
                 When False (the default), the existing dead-client grace period behaviour applies.
-            execution_lifetime: ``resident`` keeps client application Executors in the Client Job
+            execution_lifetime: ``job`` keeps client application Executors in the Client Job
                 process. ``task`` runs each task in a fresh worker while the Client Job remains
-                resident for task acquisition, filters, and result publication.
+                job-based for task acquisition, filters, and result publication.
 
         """
         check_job_name("name", name)
@@ -240,7 +240,7 @@ class FedJob:
     def set_execution_lifetime(self, execution_lifetime: str):
         """Set client application execution lifetime for this job.
 
-        Existing jobs remain resident unless task lifetime is selected explicitly.
+        Existing jobs remain job-based unless task lifetime is selected explicitly.
         """
         self.execution_lifetime = ExecutionLifetime.validate(execution_lifetime)
         for app in self._deploy_map.values():

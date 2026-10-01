@@ -58,7 +58,7 @@ def test_task_config_partitions_transitive_executor_and_filter_dependencies():
 
     assert plan.executors[0].executor == original["executors"][0]["executor"]
     assert [component["id"] for component in plan.executors[0].components] == ["learner", "optimizer"]
-    assert [component["id"] for component in plan.resident_components] == [
+    assert [component["id"] for component in plan.job_components] == [
         "filter_state",
         "filter_source",
         "job_handler",
@@ -145,7 +145,7 @@ def test_task_config_rejects_job_selected_framework_supervisor():
         prepare_task_execution(config)
 
 
-@pytest.mark.parametrize("execution_lifetime", [None, "process", "TASK"])
+@pytest.mark.parametrize("execution_lifetime", [None, "process", "TASK", "resident"])
 def test_fed_job_rejects_invalid_execution_lifetime(execution_lifetime):
     with pytest.raises(ValueError, match="execution_lifetime"):
         FedJob(name="bad-lifetime", execution_lifetime=execution_lifetime)
@@ -162,9 +162,9 @@ def test_task_mode_rejects_client_gpu_resource_reservation(tmp_path):
         job.export_job(str(tmp_path))
 
 
-def test_resident_mode_preserves_client_gpu_resource_reservation(tmp_path):
+def test_job_based_mode_preserves_client_gpu_resource_reservation(tmp_path):
     executor = NPTrainer()
-    job = FedJob(name="resident-gpu")
+    job = FedJob(name="job-gpu")
     job.to_server(FedAvg())
     job.to_clients(executor, tasks=["train"])
     job.job.add_resource_spec("site-1", {"num_of_gpus": 1})
@@ -177,15 +177,15 @@ def test_resident_mode_preserves_client_gpu_resource_reservation(tmp_path):
 
 @pytest.mark.parametrize("wildcard", [False, True])
 @pytest.mark.parametrize("resource_kind", ["resource_spec", "launcher_spec"])
-def test_mixed_task_and_resident_apps_preserve_resident_gpu_resources(tmp_path, wildcard, resource_kind):
-    task_app, resident_app = ClientAppConfig(), ClientAppConfig()
+def test_mixed_task_and_job_apps_preserve_job_based_gpu_resources(tmp_path, wildcard, resource_kind):
+    task_app, job_app = ClientAppConfig(), ClientAppConfig()
     task_app.execution_lifetime = "task"
     task_app.add_executor(["train"], NPTrainer())
-    resident_app.add_executor(["train"], NPTrainer())
+    job_app.add_executor(["train"], NPTrainer())
     settings = {"site-gpu": {"num_of_gpus": 1}}
     job = FedJobConfig("mixed-apps", min_clients=1, meta_props={resource_kind: settings})
     job.add_fed_app("cpu", FedAppConfig(client_app=task_app))
-    job.add_fed_app("gpu", FedAppConfig(client_app=resident_app))
+    job.add_fed_app("gpu", FedAppConfig(client_app=job_app))
     job.set_site_app("@ALL" if wildcard else "site-cpu", "cpu")
     job.set_site_app("site-gpu", "gpu")
     job.generate_job_config(str(tmp_path))
@@ -259,8 +259,16 @@ def test_task_placement_requires_client_config_mapping(config):
         prepare_task_execution(config)
 
 
-def test_resident_config_does_not_create_task_placement():
+def test_job_based_config_does_not_create_task_placement():
     assert prepare_task_execution({}) is None
+    assert prepare_task_execution({"execution_lifetime": "job"}) is None
+
+
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("setting", ["task_launcher", "task_execution"])
+def test_job_cannot_override_site_owned_runtime_settings(lifetime, setting):
+    with pytest.raises(ValueError, match="site/runtime configuration.*resources.json"):
+        prepare_task_execution({"execution_lifetime": lifetime, setting: {"artifact_cleanup": "retain"}})
 
 
 @pytest.mark.parametrize(

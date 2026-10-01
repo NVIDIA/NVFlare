@@ -109,11 +109,11 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         except (TypeError, ValueError) as e:
             raise ConfigError(str(e)) from e
         if self.task_execution_config is not None:
-            # Worker-owned components must not be constructed in the resident
+            # Worker-owned components must not be constructed in the job-based
             # CJ. Keep the submitted job config unchanged on disk and apply the
             # placement plan only to this runtime copy.
             self.config_data["components"] = [
-                copy.deepcopy(component) for component in self.task_execution_config.resident_components
+                copy.deepcopy(component) for component in self.task_execution_config.job_components
             ]
 
         self.config_files = [config_file_name]

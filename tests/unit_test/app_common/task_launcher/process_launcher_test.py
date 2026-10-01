@@ -439,6 +439,83 @@ def test_group_inspection_tolerates_process_exit_between_enumeration_and_probe(t
     assert handle._group_exists() is True  # No observed dead members: fail closed.
 
 
+@pytest.mark.parametrize("members", [[], [Mock(pid=10)]])
+def test_group_disappearing_during_inspection_is_settled(tmp_path, monkeypatch, members):
+    handle = _mock_handle(tmp_path)
+    # The initial signal probe succeeds, but init reaps the last member before
+    # inspection can observe it. A fresh signal probe confirms the empty scope.
+    probe = Mock(side_effect=[None, ProcessLookupError()])
+    monkeypatch.setattr(os, "killpg", probe)
+    monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
+    monkeypatch.setattr(psutil, "process_iter", lambda: members)
+    assert handle.poll().settled
+    assert probe.call_count == 2
+
+
+@pytest.mark.parametrize("result", [None, PermissionError("cannot confirm absence")])
+def test_empty_process_snapshot_does_not_prove_settlement(tmp_path, monkeypatch, result):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(os, "killpg", Mock(side_effect=[None, result]))
+    monkeypatch.setattr(psutil, "process_iter", lambda: [])
+    assert not handle.poll().settled
+
+
+def test_confirmed_settlement_is_not_reopened_by_a_later_probe(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    adapter_poll = Mock(return_value=0)
+    monkeypatch.setattr(handle._adapter, "poll", adapter_poll)
+    # A later scan could be inconclusive, or the numeric PGID could be reused.
+    # Neither is part of the execution scope whose settlement was already proved.
+    probe = Mock(side_effect=[False, True])
+    monkeypatch.setattr(handle, "_group_exists", probe)
+    signals = Mock()
+    monkeypatch.setattr(handle, "_signal_group", signals)
+    settled = handle.poll()
+    assert settled.succeeded
+    assert handle.poll() == settled
+    assert handle.cancel() == settled
+    assert handle.wait_for_settlement(timeout=0) == settled
+    signals.assert_not_called()
+    probe.assert_called_once()
+    adapter_poll.assert_called_once()
+
+
+def test_termination_keeps_settlement_proved_by_its_wait(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    probe = Mock(side_effect=[True, True, False, True, True])
+    monkeypatch.setattr(handle, "_group_exists", probe)
+    signals = Mock()
+    monkeypatch.setattr(handle, "_signal_group", signals)
+    status = handle.cancel()
+    assert status.settled
+    assert status.cancel_requested
+    assert status.failure_reason is None
+    signals.assert_called_once_with(signal.SIGTERM)
+    assert probe.call_count == 3
+
+
+def test_final_cleanup_observation_can_confirm_settlement(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, True, False]))
+    monkeypatch.setattr(handle, "_wait_for_group_exit", lambda _timeout: False)
+    signals = Mock()
+    monkeypatch.setattr(handle, "_signal_group", signals)
+    status = handle.cancel()
+    assert status.settled
+    assert status.failure_reason is None
+    assert [call.args[0] for call in signals.call_args_list] == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_settlement_at_descendant_deadline_is_not_marked_as_failure(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, False]))
+    monkeypatch.setattr(handle, "_wait_for_group_exit", lambda _timeout: False)
+    signals = Mock()
+    monkeypatch.setattr(handle, "_signal_group", signals)
+    assert handle.wait_for_settlement().succeeded
+    signals.assert_not_called()
+
+
 def test_failed_termination_reports_unsettled_status_and_keeps_failure_reason(tmp_path, monkeypatch):
     handle = _mock_handle(tmp_path)
     monkeypatch.setattr(handle, "_group_exists", lambda: True)

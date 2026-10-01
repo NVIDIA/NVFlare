@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""JSON bootstrap types shared by the resident supervisor and task worker."""
+"""JSON bootstrap types shared by the job-based supervisor and task worker."""
 
 import json
 import os
@@ -131,11 +131,11 @@ class ContextProperty:
 
 @dataclass(frozen=True)
 class WorkerBootstrap:
-    """Everything a fresh worker may receive from the resident client process.
+    """Everything a fresh worker may receive from the job-based client process.
 
     ``executor`` and ``components`` retain normal NVFlare JSON component shapes.
     The worker builds only this selected compute graph; it does not reconstruct a
-    live ClientRunManager or replay the resident job's handler graph.
+    live ClientRunManager or replay the job-based job's handler graph.
     """
 
     identity: TaskAttemptIdentity

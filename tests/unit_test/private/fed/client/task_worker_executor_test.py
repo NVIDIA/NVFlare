@@ -27,6 +27,7 @@ from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.apis.workspace import Workspace
@@ -104,14 +105,14 @@ def _context(workspace, task_id="task-1"):
     return fl_ctx
 
 
-def _executor(class_name="ProbeExecutor", **kwargs):
+def _executor(class_name="ProbeExecutor", artifact_cleanup=TaskArtifactCleanup.JOB, **kwargs):
     executor = TaskWorkerExecutor(
         executor={"path": f"supervisor_probe.{class_name}", "args": {}},
         components=[],
         poll_interval=0.01,
         **kwargs,
     )
-    executor.set_task_launcher(ProcessTaskLauncher(poll_interval=0.01))
+    executor.set_task_launcher(ProcessTaskLauncher(poll_interval=0.01), artifact_cleanup=artifact_cleanup)
     return executor
 
 
@@ -164,7 +165,7 @@ while flare.is_running():
         },
         components=[],
     )
-    executor.set_task_launcher(ProcessTaskLauncher())
+    executor.set_task_launcher(ProcessTaskLauncher(), artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
     emitted = []
 
     def record(comp, dxo, ctx, event_type, fire_fed_event):
@@ -197,7 +198,7 @@ def _diagnostics(workspace):
 def test_supervisor_runs_fresh_worker_settles_and_releases_payloads_after_publication(tmp_path):
     workspace = _workspace(tmp_path)
     fl_ctx = _context(workspace)
-    executor = _executor()
+    executor = _executor(artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
     executor.handle_event(EventType.START_RUN, fl_ctx)
 
     result = executor.execute("train", Shareable({"value": 2}), fl_ctx, Signal())
@@ -230,7 +231,7 @@ def test_supervisor_runs_fresh_worker_settles_and_releases_payloads_after_public
 def test_supervisor_retains_payloads_when_publication_is_not_accepted(tmp_path, sent, accepted):
     workspace = _workspace(tmp_path)
     fl_ctx = _context(workspace)
-    executor = _executor()
+    executor = _executor(artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
     result = executor.execute("train", Shareable({"value": 2}), fl_ctx, Signal())
     assert result["value"] == 3
     attempt_id = _diagnostics(workspace)[-1]["attempt_id"]
@@ -584,8 +585,8 @@ def test_supervisor_resource_validation_handles_absent_metadata_and_nested_value
     assert TaskWorkerExecutor._find_nonempty_gpu_setting({"nested": [None, {"gpu": False}]}) is None
 
 
-def _fake_execution(tmp_path, monkeypatch, status=None):
-    executor = _executor()
+def _fake_execution(tmp_path, monkeypatch, status=None, artifact_cleanup=TaskArtifactCleanup.JOB):
+    executor = _executor(artifact_cleanup=artifact_cleanup)
     fl_ctx = _context(_workspace(tmp_path))
     status = status or TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
     handle = SimpleNamespace(
@@ -662,7 +663,7 @@ def test_malformed_analytics_cannot_discard_successful_task_result(tmp_path, mon
 
 @pytest.mark.parametrize("failure", ["diagnostics", "payload_cleanup"])
 def test_publication_cleanup_failures_preserve_evidence_and_are_logged(tmp_path, monkeypatch, failure):
-    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch, artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
     executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)  # No pending result is harmless.
     executor.execute("train", Shareable(), fl_ctx, Signal())
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True, private=True, sticky=False)
@@ -679,3 +680,93 @@ def test_publication_cleanup_failures_preserve_evidence_and_are_logged(tmp_path,
     log.assert_called_once()
     if failure == "diagnostics":
         release.assert_not_called()
+
+
+@pytest.mark.parametrize("accepted", [True, False, None])
+@pytest.mark.parametrize("policy", [TaskArtifactCleanup.JOB, TaskArtifactCleanup.RETAIN])
+def test_site_cleanup_policy_controls_payloads_until_and_after_job_end(tmp_path, monkeypatch, accepted, policy):
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch, artifact_cleanup=policy)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    identity, store = next(iter(executor._retained_attempts.values()))
+    completion = store.commit_result(identity, Shareable({"result": 1}))
+    result_path = os.path.join(store.attempt_dir(identity), "result.fobs")
+    input_path = os.path.join(store.attempt_dir(identity), "input.fobs")
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+    assert os.path.isfile(result_path) and os.path.isfile(input_path)
+
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+
+    assert os.path.exists(result_path) is (policy == TaskArtifactCleanup.RETAIN)
+    assert os.path.exists(input_path) is (policy == TaskArtifactCleanup.RETAIN)
+    assert store.read_completion(identity) == completion
+    executor.handle_event(EventType.END_RUN, fl_ctx)  # Cleanup is idempotent.
+
+
+def test_job_cleanup_is_deferred_while_execution_gate_is_held_and_preserves_unowned_attempts(tmp_path, monkeypatch):
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    identity, store = next(iter(executor._retained_attempts.values()))
+    other = type(identity)("job-1", "site-1", "other-task", "train", "other-attempt")
+    store.create_attempt(other)
+    store.write_input(other, Shareable())
+    executor._execution_lock.acquire()
+    try:
+        executor.handle_event(EventType.END_RUN, fl_ctx)
+        assert os.path.exists(os.path.join(store.attempt_dir(identity), "input.fobs"))
+    finally:
+        executor._execution_lock.release()
+    executor._cleanup_job_payloads(fl_ctx)
+    assert not os.path.exists(os.path.join(store.attempt_dir(identity), "input.fobs"))
+    assert os.path.exists(os.path.join(store.attempt_dir(other), "input.fobs"))
+
+
+def test_job_cleanup_cannot_delete_payloads_while_worker_settlement_is_unconfirmed(tmp_path, monkeypatch):
+    status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=False)
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch, status)
+    with pytest.raises(RuntimeError, match="did not settle"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    release = Mock()
+    monkeypatch.setattr(FileTaskArtifactStore, "release_payloads", release)
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    release.assert_not_called()
+
+
+def test_execution_finally_completes_deferred_job_cleanup_after_cancel_settles(tmp_path, monkeypatch):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+
+    def end_job_while_launching(_request):
+        executor.handle_event(EventType.END_RUN, fl_ctx)
+        assert executor._retained_attempts  # Execution owns the read/cleanup gate.
+        return handle
+
+    monkeypatch.setattr(executor._get_task_launcher(), "launch_task", end_job_while_launching)
+    with pytest.raises(RuntimeError, match="aborted"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    handle.cancel.assert_called_once()
+    assert executor._active_handle is None
+    assert not executor._retained_attempts
+
+
+def test_job_cleanup_failures_are_logged_and_remain_retryable(tmp_path, monkeypatch):
+    executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    release = Mock(side_effect=OSError("disk unavailable"))
+    log = Mock()
+    monkeypatch.setattr(FileTaskArtifactStore, "release_payloads", release)
+    monkeypatch.setattr(executor, "log_warning", log)
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    log.assert_called_once()
+    assert executor._retained_attempts
+    release.side_effect = None
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    assert not executor._retained_attempts
+
+
+def test_supervisor_rejects_invalid_cleanup_policy_or_reconfiguration():
+    executor = _executor()
+    with pytest.raises(ValueError, match="artifact_cleanup"):
+        executor.set_task_launcher(executor._get_task_launcher(), artifact_cleanup="task")
+    with pytest.raises(RuntimeError, match="already been configured"):
+        executor.set_task_launcher(executor._get_task_launcher(), artifact_cleanup=TaskArtifactCleanup.RETAIN)

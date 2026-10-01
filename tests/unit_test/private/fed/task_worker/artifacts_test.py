@@ -60,6 +60,29 @@ def test_result_is_not_readable_until_completion_is_installed(tmp_path):
     assert os.path.isdir(attempt_dir)
 
 
+def test_durable_script_send_is_distinct_from_final_hook_modified_result(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    reference = store.stage_script_result(identity, Shareable({"value": 1}))
+    result = store.read_script_result(identity, reference)
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+    result["value"] = 2
+    completion = store.commit_result(identity, result)
+    assert store.read_result(identity)[0]["value"] == 2
+    assert store.read_script_result(identity, reference)["value"] == 1
+    assert reference.kind == "script_result"
+    assert completion.result.kind == "result"
+    with pytest.raises(FileExistsError):
+        store.stage_script_result(identity, Shareable())
+    with pytest.raises(ValueError, match="script_result artifact"):
+        store.read_script_result(identity, completion.result)
+    store.release_payloads(identity)
+    assert not os.path.exists(os.path.join(directory, "script_result.fobs"))
+    assert store.read_completion(identity) == completion
+
+
 def test_round_trip_binds_complete_attempt_identity_and_survives_writer(tmp_path):
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity()
@@ -306,6 +329,18 @@ def test_cleanup_refuses_non_regular_payloads(tmp_path, kind):
     assert os.path.isdir(directory)
     if kind == "symlink":
         assert target.read_text() == "retain"
+
+
+def test_cleanup_refuses_attempt_directory_redirected_to_another_owned_root_entry(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path))
+    target = _identity("target-attempt")
+    store.create_attempt(target)
+    store.write_input(target, Shareable({"precious": 1}))
+    alias = _identity("alias-attempt")
+    (tmp_path / alias.attempt_id).symlink_to(store.attempt_dir(target), target_is_directory=True)
+    with pytest.raises(ValueError, match="missing or invalid"):
+        store.release_payloads(alias)
+    assert store.read_input(target)["precious"] == 1
 
 
 def test_artifact_publication_tolerates_disappearing_temporary_file(tmp_path, monkeypatch):

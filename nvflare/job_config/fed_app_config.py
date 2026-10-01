@@ -31,7 +31,7 @@ class ClientAppConfig(BaseAppConfig):
     def __init__(self) -> None:
         super().__init__()
         self.executors: [_ExecutorDef] = []
-        self.execution_lifetime = ExecutionLifetime.RESIDENT
+        self.execution_lifetime = ExecutionLifetime.JOB
 
     def add_executor(self, tasks: List[str], executor: Executor):
         if not isinstance(executor, Executor):

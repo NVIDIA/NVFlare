@@ -16,6 +16,7 @@ import pytest
 
 from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.launcher import LauncherMode
+from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskLauncherSpec
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.fuel.utils.config_service import ConfigService
@@ -180,3 +181,28 @@ def test_runtime_requires_lifecycle_handler_list():
     config.handlers = ()
     with pytest.raises(TypeError, match="handlers must be a list"):
         configure_task_launchers(config, job_launcher_mode="process")
+
+
+@pytest.mark.parametrize("policy", ["job", "accepted", "retain"])
+def test_site_resources_inject_artifact_cleanup_policy(policy):
+    ConfigService.add_section(SystemConfigs.RESOURCES_CONF, {"task_execution": {"artifact_cleanup": policy}})
+    supervisor = _supervisor()
+    configure_task_launchers(_runner_config(supervisor), job_launcher_mode="process")
+    assert supervisor._artifact_cleanup == policy
+
+
+def test_missing_site_cleanup_setting_defaults_to_job_end():
+    supervisor = _supervisor()
+    configure_task_launchers(_runner_config(supervisor), job_launcher_mode="process")
+    assert supervisor._artifact_cleanup == TaskArtifactCleanup.JOB
+
+
+@pytest.mark.parametrize("setting", [None, [], "job", {"unknown": 1}, {"artifact_cleanup": "task"}])
+def test_invalid_site_cleanup_setting_fails_before_launcher_import(monkeypatch, setting):
+    ConfigService.add_section(SystemConfigs.RESOURCES_CONF, {"task_execution": setting})
+    monkeypatch.setattr(
+        "nvflare.private.fed.client.task_launcher_config.load_class",
+        lambda _path: pytest.fail("invalid retention policy must fail before launcher import"),
+    )
+    with pytest.raises((TypeError, ValueError), match="task_execution"):
+        configure_task_launchers(_runner_config(_supervisor()), job_launcher_mode="process")

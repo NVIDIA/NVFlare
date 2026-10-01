@@ -20,6 +20,7 @@ import pytest
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.json_scanner import Node
 from tests.unit_test.fuel.utils.mock_component_builder import MockComponentBuilder
 
 
@@ -49,6 +50,39 @@ def is_python_greater_than_309():
 
 
 class TestComponentBuilder:
+    def test_authorization_walker_preserves_all_sibling_and_component_list_paths(self):
+        builder = MockComponentBuilder()
+        config = {
+            "path": "builtins.dict",
+            "args": {
+                "path": "builtins.dict",
+                "sibling": [{"class_path": "builtins.list"}],
+                "literal": {"config_type": "dict", "path": "not.a.component"},
+            },
+            "components": [{"id": "explicit", "path": "builtins.dict", "config_type": "dict"}],
+        }
+        node = Node(config)
+        node.paths = ["root"]
+        node.processor = builder
+        seen = []
+        builder.authorize_component_config_tree(config, node, lambda _cfg, child: seen.append(child))
+        assert [child.path() for child in seen] == ["root", "root.args", "root.args.sibling.#1", "root.components.#1"]
+        assert node.paths == ["root"]
+        for child in seen[1:]:
+            assert child.processor is builder
+            assert child.parent is not None
+            assert child.level == child.parent.level + 1
+
+    def test_authorization_walker_can_force_root_and_ignores_scalar_input(self):
+        builder = MockComponentBuilder()
+        seen = []
+        node = Node({})
+        builder.authorize_component_config_tree({}, node, lambda config, child: seen.append((config, child)), True)
+        builder.authorize_component_config_tree(
+            "literal", node, lambda *_args: pytest.fail("scalar is not a component")
+        )
+        assert seen == [({}, node)]
+
     def test_component_builder_is_abstract(self):
         with pytest.raises(TypeError):
             ComponentBuilder()

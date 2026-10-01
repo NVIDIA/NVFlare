@@ -74,7 +74,7 @@ class TaskLaunchRequest:
     """Backend-independent request for one physical task attempt.
 
     ``environment`` is the complete environment passed to the execution unit;
-    launchers do not implicitly copy the resident process environment. This
+    launchers do not implicitly copy the parent process environment. This
     keeps credential and policy decisions with the supervising runtime.
     """
 

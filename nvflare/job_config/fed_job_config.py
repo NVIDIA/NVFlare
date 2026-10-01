@@ -161,7 +161,7 @@ class FedJobConfig:
             if not isinstance(settings, dict):
                 continue
             # Include explicit resource sites and the wildcard deployment, but
-            # respect resident per-site apps overriding that wildcard.
+            # respect job-based per-site apps overriding that wildcard.
             for site_name in set(self.deploy_map) | (set(settings) - {default_key}):
                 app_name = self.deploy_map.get(site_name, self.deploy_map.get(ALL_SITES))
                 app = self.fed_apps.get(app_name)
@@ -177,7 +177,7 @@ class FedJobConfig:
                     raise ValueError(
                         "execution_lifetime='task' currently supports CPU Process workers only; "
                         f"client {setting_name} for {site_name!r} requests GPU resources at {gpu_path!r}. "
-                        "Keep this job resident until task-scoped GPU admission is configured."
+                        "Keep this job job-based until task-scoped GPU admission is configured."
                     )
 
     @classmethod
@@ -709,7 +709,7 @@ class FedJobConfig:
             client_app.update(fed_app.client_app.additional_params)
 
         execution_lifetime = fed_app.client_app.execution_lifetime
-        if execution_lifetime != "resident":
+        if execution_lifetime != "job":
             client_app[EXECUTION_LIFETIME_KEY] = execution_lifetime
             # Validate the exported application without replacing its Executor
             # with an internal runtime class. The trusted CJ runtime creates the

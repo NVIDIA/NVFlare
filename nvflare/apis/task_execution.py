@@ -16,11 +16,27 @@
 class ExecutionLifetime:
     """Supported lifetimes for client application execution."""
 
-    RESIDENT = "resident"
+    JOB = "job"
     TASK = "task"
 
     @classmethod
     def validate(cls, value: str) -> str:
-        if value not in (cls.RESIDENT, cls.TASK):
-            raise ValueError(f"execution_lifetime must be {cls.RESIDENT!r} or {cls.TASK!r}, but got {value!r}")
+        if value not in (cls.JOB, cls.TASK):
+            raise ValueError(f"execution_lifetime must be {cls.JOB!r} or {cls.TASK!r}, but got {value!r}")
+        return value
+
+
+class TaskArtifactCleanup:
+    """Site-owned retention policy for settled task-worker payloads."""
+
+    JOB = "job"
+    ACCEPTED = "accepted"
+    RETAIN = "retain"
+
+    @classmethod
+    def validate(cls, value: str) -> str:
+        if value not in (cls.JOB, cls.ACCEPTED, cls.RETAIN):
+            raise ValueError(
+                f"task_execution.artifact_cleanup must be 'job', 'accepted' or 'retain', but got {value!r}"
+            )
         return value

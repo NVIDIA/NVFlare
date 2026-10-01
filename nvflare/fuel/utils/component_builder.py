@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_utils import get_class_path_from_config, instantiate_class
+from nvflare.fuel.utils.json_scanner import Node
 from nvflare.security.logging import secure_format_exception
 
 
@@ -92,6 +93,36 @@ class ComponentBuilder(ABC):
 
     def build_nested_component(self, config_dict, arg_name):
         return self.build_component(config_dict)
+
+    @staticmethod
+    def _make_child_node(parent_node, element, key):
+        node = Node(element)
+        node.processor = parent_node.processor
+        node.parent = parent_node
+        node.level = parent_node.level + 1
+        node.key = str(key)
+        node.paths = [*parent_node.paths, node.key]
+        return node
+
+    def authorize_component_config_tree(self, element, node, authorize, force_current=False):
+        """Preflight every component branch before construction, using the caller's policy.
+
+        Keep traversing siblings inside class-shaped dictionaries, and retain
+        component-list paths so explicit entries cannot bypass authorization
+        using ``config_type: dict``. Policy and authorization scope belong to
+        the runtime calling this walker, not to the generic builder.
+        """
+        if isinstance(element, dict):
+            if force_current or self.is_authorizable_component_config(element, node):
+                authorize(element, node)
+            children = element.items()
+        elif isinstance(element, list):
+            children = ((f"#{i + 1}", item) for i, item in enumerate(element))
+        else:
+            return
+        for key, value in children:
+            if isinstance(value, (dict, list)):
+                self.authorize_component_config_tree(value, self._make_child_node(node, value, key), authorize)
 
     def build_component(self, config_dict):
         if not config_dict:

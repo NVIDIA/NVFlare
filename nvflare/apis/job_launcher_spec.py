@@ -114,7 +114,7 @@ class JobHandleSpec(ABC):
 
 class JobLauncherSpec(FLComponent, ABC):
     # Built-in launchers set this to a LauncherMode value. It is optional for
-    # resident compatibility, but task execution requires a declared mode so
+    # job-based compatibility, but task execution requires a declared mode so
     # the CJ can reject a mismatched TaskLauncher before launching compute.
     launch_mode = None
 

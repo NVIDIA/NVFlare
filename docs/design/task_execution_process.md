@@ -1,8 +1,8 @@
 # Task execution lifetime: CPU Process support
 
-Client application execution can be resident for the job or disposable per task.
-The default remains `resident`. With `task` lifetime, the Client Job (CJ) stays
-resident for communication, input/result filters and publication, while a fresh
+Client application execution can be job-based or task-based.
+The default lifetime is `job`. With `task` lifetime, the Client Job (CJ) remains
+alive for communication, input/result filters and publication, while a fresh
 worker runs the application's Executor for each assignment.
 
 This increment supports ordinary Executors and the exact `ClientAPIExecutor`
@@ -28,7 +28,7 @@ recipe.set_execution_lifetime("task")
 ```
 
 For a hand-written client application configuration, set the top-level field
-`"execution_lifetime": "task"`. Omit it or use `"resident"` for existing behavior.
+`"execution_lifetime": "task"`. Omit it or use `"job"` for existing behavior.
 This setting is separate from `ClientAPIExecutor.execution_mode`.
 
 The submitted/exported job retains the original Executor specifications and
@@ -58,6 +58,9 @@ the site's `resources.json` configures it:
       "poll_interval": 0.05
     },
     "environment_variables": ["SITE_DATA_API_KEY"]
+  },
+  "task_execution": {
+    "artifact_cleanup": "job"
   }
 }
 ```
@@ -84,19 +87,25 @@ the same supervisor through site/runtime injection.
 
 The legacy `MultiProcessExecutor`/`PTMultiProcessExecutor` stack and its rank
 sub-worker runtime have been removed, without compatibility aliases. Old job
-configurations selecting those classes must migrate to the resident Client API
+configurations selecting those classes must migrate to the job-based Client API
 with external-process `torchrun`, as in `examples/advanced/multi-gpu/pt`.
 That distributed training path is not part of this CPU task-worker profile.
 Task-worker component construction now lives in the private runtime utility
-`nvflare.private.fed.utils.worker_component_builder`.
+`nvflare.private.fed.utils.worker_component_builder`. It and the CJ configurator
+share the authorization-tree walker; each retains its runtime's site-policy wiring.
 
 ## Lifecycle and support boundaries
 
-Workers receive credential-stripped bootstrap data and eager local FOBS input
-artifacts. Result artifacts are immutable and validated against the attempt
-identity and digest. For Client API scripts, `flare.send()` stages the result;
-successful completion is committed only after the script and finalization
-finish. A failure after `send()` therefore cannot publish a successful result.
+Workers are launched without federation credentials; they do not connect to the
+federation. Startup also clears credential environment variables defensively,
+before importing application code, in case a launcher forwarded them incorrectly.
+Workers receive inert bootstrap configuration and eager local FOBS input artifacts.
+Result artifacts are immutable and validated against the attempt identity and digest.
+For Client API scripts, `flare.send()` durably stages `script_result.fobs`. The
+runtime-injected Client API backend returns a Shareable through the same Executor
+pipeline as ordinary Executors, including task hooks and finalization. The final
+`result.fobs` and completion are written only after that pipeline finishes.
+A failure after `send()` therefore cannot publish a successful result.
 The script's `result_wait_timeout` becomes the worker timeout.
 
 The Process launcher owns a POSIX process group, observes descendants, and
@@ -107,13 +116,28 @@ settlement before reading completion, forwarding analytics or returning a result
 to ClientRunner. A worker must not detach descendants into another POSIX session;
 process-group containment is not a hostile-code sandbox.
 
-An explicit server acknowledgement of workflow admission (or a previously
-received matching client task) releases the attempt's bulky input/result/bootstrap
-payloads. Completion metadata and lifecycle diagnostics remain at
-`<run_dir>/.nvflare/task-execution/diagnostics.jsonl`. Failed or unaccepted
-attempts retain payloads for an explicit later retention decision. Transport OK
-without an admission acknowledgement, including replies from older servers,
-does not authorize cleanup.
+The site controls bulky input, staged/final result, analytics and bootstrap
+retention with `task_execution.artifact_cleanup` in `resources.json`:
+
+- `job` (default): retain payloads during the job; release owned attempts at
+  `END_RUN`, after worker settlement and artifact reads finish. This does not
+  depend on server acceptance and includes settled failed/unaccepted attempts.
+- `accepted`: release each settled attempt after both a successful result send
+  and explicit server acknowledgement of workflow admission (or a previously
+  received matching client task). Failed/unaccepted attempts remain.
+- `retain`: do not automatically release task payloads, even at job end.
+
+All policies retain completion/failure records and lifecycle diagnostics under
+`<run_dir>/.nvflare/task-execution/`. Jobs cannot override site retention policy.
+No policy deletes payloads while a worker is live or settlement is unconfirmed.
+Abrupt CJ termination can leave artifacts for later site-managed cleanup; this
+slice does not add crash recovery or a background retention service. `retain`
+does not prevent an administrator from removing the whole job workspace.
+
+Acceptance is workflow admission, not a durable aggregation/checkpoint guarantee.
+Transport OK without an admission acknowledgement (including replies from older
+servers) does not trigger the optional `accepted` policy. It does not affect
+the default `job` policy.
 
 This launcher does not reserve CPU, memory or GPU resources and rejects explicit
 resource requests it cannot honor. CPU task execution must not inherit a job-long
@@ -124,14 +148,14 @@ combinations need explicit qualification.
 
 ## Integration checks
 
-The NumPy Process simulator tests cover resident and task execution, Job API
+The NumPy Process simulator tests cover job-based and task execution, Job API
 export, CJ-owned filters, process settlement and publication cleanup:
 
 ```bash
 python -m pytest -q tests/integration_test/fast/task_worker_process_e2e_test.py
 ```
 
-On Linux, the hello-pt matrix runs the unchanged example script in resident and
+On Linux, the hello-pt matrix runs the unchanged example script in job-based and
 task mode in SimEnv, PocEnv and ProdEnv:
 
 ```bash

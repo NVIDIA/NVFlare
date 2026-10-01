@@ -157,42 +157,13 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         if self._authorized_config_ids is not None:
             self._authorized_config_ids.add(id(config_dict))
 
-    def _is_authorizable_component_config(self, config_dict, node=None):
-        return self.is_authorizable_component_config(config_dict, node)
-
-    @staticmethod
-    def _make_child_node(parent_node, element, key):
-        node = Node(element)
-        node.processor = parent_node.processor
-        node.parent = parent_node
-        node.level = parent_node.level + 1
-        node.key = str(key)
-        node.paths = copy.copy(parent_node.paths)
-        node.paths.append(node.key)
-        return node
-
     def _authorize_component_config_tree(self, element, config_ctx: ConfigContext, node: Node, force_current=False):
-        if isinstance(element, dict):
-            if force_current or self._is_authorizable_component_config(element, node):
-                self._authorize_component_config(element, config_ctx, node)
-
-            # Authorization must cover sibling configs even when the containing
-            # dictionary is itself recognized as a class configuration.
-            for key, value in element.items():
-                if isinstance(value, (dict, list)):
-                    self._authorize_component_config_tree(
-                        value,
-                        config_ctx,
-                        self._make_child_node(node, value, key),
-                    )
-        elif isinstance(element, list):
-            for i, item in enumerate(element):
-                if isinstance(item, (dict, list)):
-                    self._authorize_component_config_tree(
-                        item,
-                        config_ctx,
-                        self._make_child_node(node, item, f"#{i + 1}"),
-                    )
+        self.authorize_component_config_tree(
+            element,
+            node,
+            lambda config, child: self._authorize_component_config(config, config_ctx, child),
+            force_current=force_current,
+        )
 
     def authorize_and_build_component(self, config_dict, config_ctx: ConfigContext, node: Node):
         new_auth_scope = self._authorized_config_ids is None

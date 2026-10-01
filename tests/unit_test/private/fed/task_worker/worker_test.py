@@ -35,6 +35,7 @@ from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
 from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils import fobs
@@ -303,7 +304,8 @@ def test_nested_component_is_authorized_before_any_component_import(tmp_path):
     assert not import_marker.exists()
 
 
-def test_bootstrap_cannot_override_authoritative_job_metadata(tmp_path):
+@pytest.mark.parametrize("property_name", ["__job_meta__", CLIENT_API_BACKEND_FACTORY])
+def test_bootstrap_cannot_override_authoritative_runtime_properties(tmp_path, property_name):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
     import_marker = tmp_path / "imported.txt"
@@ -324,13 +326,13 @@ def test_bootstrap_cannot_override_authoritative_job_metadata(tmp_path):
         workspace_root,
         executor={"path": "metadata_bypass.MetadataBypassExecutor", "args": {}},
         data=Shareable(),
-        context_properties={"__job_meta__": ContextProperty({"byoc": True})},
+        context_properties={property_name: ContextProperty({"byoc": True})},
     )
 
     process = _run_process(store.bootstrap_path(identity))
 
     assert process.returncode != 0
-    assert "cannot override framework context property '__job_meta__'" in process.stderr
+    assert f"cannot override framework context property {property_name!r}" in process.stderr
     assert not import_marker.exists()
 
 
@@ -359,7 +361,8 @@ while flare.is_running():
         output = flare.FLModel(params={'weights': model.params['weights'] + 2}, metrics={'accuracy': 1.0})
     flare.send(output)
     attempt = Path(args.attempt_dir)
-    assert (attempt / 'result.fobs').is_file()
+    assert (attempt / 'script_result.fobs').is_file()
+    assert not (attempt / 'result.fobs').exists()
     assert not (attempt / 'completion.json').exists()
     flare.log('after_send', 1, flare.AnalyticsDataType.SCALAR)
     if args.fail_after_send:
@@ -435,9 +438,58 @@ def test_client_api_failure_after_send_does_not_commit_success(tmp_path):
 
     assert process.returncode != 0
     assert "failure after durable send" in process.stderr
-    assert (Path(store.attempt_dir(identity)) / "result.fobs").is_file()
+    assert (Path(store.attempt_dir(identity)) / "script_result.fobs").is_file()
+    assert not (Path(store.attempt_dir(identity)) / "result.fobs").exists()
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
+
+
+@pytest.mark.parametrize("finalizer_fails", [False, True])
+def test_client_api_uses_generic_task_hooks_and_commits_only_after_finalization(tmp_path, finalizer_fails):
+    workspace = _workspace(tmp_path)
+    custom_dir = workspace / "job-1/app_site-1/custom"
+    (custom_dir / "train.py").write_text(
+        "import nvflare.client as flare\n"
+        "flare.init()\nflare.receive()\nflare.send(flare.FLModel(metrics={'accuracy': 1}))\n"
+    )
+    (custom_dir / "result_hook.py").write_text(
+        "from nvflare.apis.event_type import EventType\n"
+        "from nvflare.apis.fl_component import FLComponent\n"
+        "from nvflare.apis.fl_constant import FLContextKey\n"
+        "from nvflare.app_common.utils.fl_model_utils import FLModelUtils\n"
+        "class ResultHook(FLComponent):\n"
+        "    def handle_event(self, event_type, fl_ctx):\n"
+        "        if event_type == EventType.AFTER_TASK_EXECUTION:\n"
+        "            result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)\n"
+        "            model = FLModelUtils.from_shareable(result)\n"
+        "            model.metrics['accuracy'] = 2\n"
+        "            result.update(FLModelUtils.to_shareable(model))\n"
+        f"        if event_type == EventType.END_RUN and {finalizer_fails!r}:\n"
+        "            raise RuntimeError('finalizer failed')\n"
+    )
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("task-hooks")
+    config = {
+        "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+        "args": {"execution_mode": "in_process", "task_script_path": "train.py"},
+    }
+    path = _stage(
+        store,
+        identity,
+        workspace,
+        config,
+        FLModelUtils.to_shareable(FLModel(metrics={"seed": 1})),
+        components=[{"id": "hook", "path": "result_hook.ResultHook"}],
+    )
+    process = _run_process(path)
+    if finalizer_fails:
+        assert process.returncode != 0
+        assert "finalizer failed" in process.stderr
+        with pytest.raises(IncompleteTaskArtifactError):
+            store.read_result(identity)
+    else:
+        assert process.returncode == 0, process.stderr
+        assert FLModelUtils.from_shareable(store.read_result(identity)[0]).metrics == {"accuracy": 2}
 
 
 def test_unmodified_np_trainer_keeps_workspace_model_state_across_fresh_workers(tmp_path):
@@ -502,7 +554,7 @@ def test_unmodified_np_validator_runs_in_worker(tmp_path):
         "abort_app",
     ],
 )
-def test_task_engine_explicitly_rejects_resident_services(service):
+def test_task_engine_explicitly_rejects_job_based_services(service):
     engine = worker.TaskWorkerEngine(None, {})
     with pytest.raises(worker.UnsupportedTaskWorkerService, match="does not provide"):
         getattr(engine, service)()

@@ -37,6 +37,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskLauncherSpec, TaskLaunchRequest, TaskResourceRequest
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.private.fed.task_worker import FileTaskArtifactStore, TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
@@ -119,6 +120,9 @@ class TaskWorkerExecutor(Executor):
         self._active_handle = None
         self._stopping = False
         self._pending_publication = {}
+        self._artifact_cleanup = TaskArtifactCleanup.JOB
+        self._retained_attempts = {}
+        self._job_cleanup_requested = False
 
     @staticmethod
     def validate_environment_variables(names):
@@ -132,7 +136,9 @@ class TaskWorkerExecutor(Executor):
                 raise ValueError(f"task_launcher.environment_variables cannot forward protected variable {name!r}")
         return tuple(dict.fromkeys(names))
 
-    def set_task_launcher(self, launcher: TaskLauncherSpec, environment_variables=()):
+    def set_task_launcher(
+        self, launcher: TaskLauncherSpec, environment_variables=(), artifact_cleanup=TaskArtifactCleanup.JOB
+    ):
         """Inject the launcher selected by the trusted site runtime.
 
         Launcher construction and backend selection deliberately stay outside
@@ -143,11 +149,17 @@ class TaskWorkerExecutor(Executor):
         if not isinstance(launcher, TaskLauncherSpec):
             raise TypeError(f"launcher must be a TaskLauncherSpec but got {type(launcher)}")
         names = self.validate_environment_variables(environment_variables)
+        cleanup = TaskArtifactCleanup.validate(artifact_cleanup)
         with self._state_lock:
-            if self._launcher is not None and (self._launcher is not launcher or self._environment_variables != names):
+            if self._launcher is not None and (
+                self._launcher is not launcher
+                or self._environment_variables != names
+                or self._artifact_cleanup != cleanup
+            ):
                 raise RuntimeError("task launcher has already been configured")
             self._launcher = launcher
             self._environment_variables = names
+            self._artifact_cleanup = cleanup
 
     def _get_task_launcher(self) -> TaskLauncherSpec:
         with self._state_lock:
@@ -160,12 +172,15 @@ class TaskWorkerExecutor(Executor):
         if event_type == EventType.START_RUN:
             with self._state_lock:
                 self._stopping = False
+                self._job_cleanup_requested = False
         elif event_type == EventType.ABORT_TASK:
             self._cancel_active()
         elif event_type == EventType.END_RUN:
             with self._state_lock:
                 self._stopping = True
+                self._job_cleanup_requested = True
             self._cancel_active()
+            self._cleanup_job_payloads(fl_ctx)
         elif event_type == EventType.AFTER_SEND_TASK_RESULT:
             self._record_publication_outcome(fl_ctx)
 
@@ -179,6 +194,33 @@ class TaskWorkerExecutor(Executor):
                 with self._state_lock:
                     self._stopping = True
                 raise
+
+    def _cleanup_job_payloads(self, fl_ctx):
+        """Release owned attempts only after END_RUN and all worker/read activity settles.
+
+        END_RUN can race execution. In that case execute's finally block retries
+        cleanup after releasing the gate. An uninspectable or live worker keeps
+        its active handle and blocks cleanup; no workspace-wide scan is used.
+        """
+        if self._artifact_cleanup != TaskArtifactCleanup.JOB or not self._job_cleanup_requested:
+            return
+        if not self._execution_lock.acquire(blocking=False):
+            return
+        try:
+            with self._state_lock:
+                if self._active_handle is not None:
+                    return
+                attempts = list(self._retained_attempts.items())
+            for attempt_id, (identity, store) in attempts:
+                try:
+                    store.release_payloads(identity)
+                except Exception as e:
+                    self.log_warning(fl_ctx, f"failed to remove job-ended task worker artifacts: {e}")
+                else:
+                    with self._state_lock:
+                        self._retained_attempts.pop(attempt_id, None)
+        finally:
+            self._execution_lock.release()
 
     @staticmethod
     def _worker_environment(environment_variables=()):
@@ -317,6 +359,7 @@ class TaskWorkerExecutor(Executor):
             return self._execute(task_name, shareable, fl_ctx, abort_signal)
         finally:
             self._execution_lock.release()
+            self._cleanup_job_payloads(fl_ctx)
 
     def _execute(self, task_name, shareable, fl_ctx, abort_signal):
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
@@ -342,6 +385,8 @@ class TaskWorkerExecutor(Executor):
         runtime_root, artifact_root = self._runtime_paths(fl_ctx)
         store = FileTaskArtifactStore(artifact_root)
         store.create_attempt(identity)
+        with self._state_lock:
+            self._retained_attempts[identity.attempt_id] = (identity, store)
         store.write_input(identity, shareable)
         bootstrap = WorkerBootstrap(
             identity=identity,
@@ -356,6 +401,7 @@ class TaskWorkerExecutor(Executor):
         diagnostic = self._new_diagnostic(identity)
         diagnostic["launcher_class"] = f"{type(launcher).__module__}.{type(launcher).__qualname__}"
         diagnostic["launcher_mode"] = launcher.launch_mode
+        diagnostic["artifact_cleanup"] = self._artifact_cleanup
         request = TaskLaunchRequest(
             job_id=job_id,
             site_name=site_name,
@@ -475,8 +521,10 @@ class TaskWorkerExecutor(Executor):
         except Exception as e:
             self.log_error(fl_ctx, f"failed to record task worker publication outcome: {e}")
             return
-        if succeeded:
+        if succeeded and self._artifact_cleanup == TaskArtifactCleanup.ACCEPTED:
             try:
                 store.release_payloads(identity)
+                with self._state_lock:
+                    self._retained_attempts.pop(identity.attempt_id, None)
             except Exception as e:
                 self.log_warning(fl_ctx, f"failed to remove accepted task worker artifacts: {e}")

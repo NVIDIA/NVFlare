@@ -16,7 +16,7 @@
 
 These CPU Process integration checks do not qualify scheduler/GPU admission or
 the production launch backends. The only application configuration difference
-between resident and task runs is the execution lifetime setting.
+between job-based and task runs is the execution lifetime setting.
 """
 
 import json
@@ -155,7 +155,7 @@ def _configure_site_process_launcher(workspace):
 
 @pytest.mark.skipif(os.name != "posix", reason="The initial ProcessTaskLauncher requires POSIX process groups")
 @pytest.mark.timeout(180)
-@pytest.mark.parametrize("execution_lifetime", ["resident", "task"])
+@pytest.mark.parametrize("execution_lifetime", ["job", "task"])
 def test_existing_numpy_fedavg_across_three_rounds(tmp_path, execution_lifetime):
     job_dir = tmp_path / "hello-numpy-sag"
     shutil.copytree(FIXTURE, job_dir)

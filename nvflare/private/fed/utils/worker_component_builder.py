@@ -48,17 +48,6 @@ class WorkerComponentBuilder(ComponentBuilder):
             node.paths = ["components", node.key]
         return node
 
-    @staticmethod
-    def _make_child_node(parent_node, element, key):
-        node = Node(element)
-        node.processor = parent_node.processor
-        node.parent = parent_node
-        node.level = parent_node.level + 1
-        node.key = str(key)
-        node.paths = parent_node.paths.copy()
-        node.paths.append(node.key)
-        return node
-
     def _authorize_component_config(self, config_dict, node):
         if not self.enforce_authorization:
             return
@@ -70,20 +59,9 @@ class WorkerComponentBuilder(ComponentBuilder):
             raise ComponentNotAuthorized(f"component not authorized: {ex}")
 
     def _authorize_component_config_tree(self, element, node, force_current=False):
-        if isinstance(element, dict):
-            if force_current or self.is_authorizable_component_config(element, node):
-                self._authorize_component_config(element, node)
-
-            # An args dictionary can itself look like a class config while
-            # containing other class-valued arguments. Authorize every branch
-            # before construction, not only a recognized config's args key.
-            for key, value in element.items():
-                if isinstance(value, (dict, list)):
-                    self._authorize_component_config_tree(value, self._make_child_node(node, value, key))
-        elif isinstance(element, list):
-            for i, item in enumerate(element):
-                if isinstance(item, (dict, list)):
-                    self._authorize_component_config_tree(item, self._make_child_node(node, item, f"#{i + 1}"))
+        self.authorize_component_config_tree(
+            element, node, self._authorize_component_config, force_current=force_current
+        )
 
     def build_component(self, config_dict, node=None):
         if node is None:
