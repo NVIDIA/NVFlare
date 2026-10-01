@@ -385,20 +385,23 @@ def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports)
         assert log_file.read() == b"before stop\nfinal bytes\n"
 
 
-def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports):
+def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, caplog):
+    caplog.set_level("DEBUG")
     receiver, streamer, fl_ctx = log_transports()
     streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
     runner = TBI()
 
     with (
         patch.object(runner, "get_positive_float_var", side_effect=[5.0, 0.5]),
-        patch("nvflare.private.fed.tbi.time.time", side_effect=[0.0, 1.0, 6.0]),
-        patch("nvflare.private.fed.tbi.time.sleep") as sleep,
+        # Replace TBI's module reference so older Python logging does not
+        # consume the clock values through the shared time.time function.
+        patch("nvflare.private.fed.tbi.time") as clock,
         patch.object(runner, "log_warning") as warning,
     ):
+        clock.time.side_effect = [0.0, 1.0, 6.0]
         runner.check_end_run_readiness(fl_ctx)
 
-    sleep.assert_called_once_with(0.5)
+    clock.sleep.assert_called_once_with(0.5)
     warning.assert_called_once_with(fl_ctx, "quit waiting for component ready-to-end-run after 5.0 seconds")
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
     reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", data=b"late\n"), fl_ctx)
