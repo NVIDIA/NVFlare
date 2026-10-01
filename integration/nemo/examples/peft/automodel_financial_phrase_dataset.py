@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import random
+
 
 def _build_prompt(sentence: str) -> str:
     return f"{sentence} sentiment:"
@@ -24,12 +26,18 @@ def _clean_label(label: str) -> str:
     return f" {label.strip().lower()}"
 
 
-def _balanced_indices(dataset, limit_dataset_samples: int) -> list[int]:
+def _balanced_indices(
+    dataset, limit_dataset_samples: int, seed: int | None = None, recycle_samples: bool = False
+) -> list[int]:
     """Build deterministic, label-balanced indices for small demo training windows."""
     buckets = {}
     for index, example in enumerate(dataset):
         label = _clean_label(example["label"])
         buckets.setdefault(label, []).append(index)
+    if seed is not None:
+        rng = random.Random(seed)
+        for indices in buckets.values():
+            rng.shuffle(indices)
 
     selected = []
     offsets = {label: 0 for label in buckets}
@@ -37,9 +45,9 @@ def _balanced_indices(dataset, limit_dataset_samples: int) -> list[int]:
         added = False
         for label, indices in buckets.items():
             offset = offsets[label]
-            if offset >= len(indices):
+            if offset >= len(indices) and not recycle_samples:
                 continue
-            selected.append(indices[offset])
+            selected.append(indices[offset % len(indices)])
             offsets[label] = offset + 1
             added = True
             if len(selected) >= limit_dataset_samples:
@@ -55,6 +63,8 @@ def make_financial_phrase_dataset(
     seq_length: int | None = None,
     limit_dataset_samples: int | None = None,
     balance_labels: bool = False,
+    seed: int | None = None,
+    recycle_samples: bool = False,
     use_chat_template: bool = False,
     fp8: bool = False,
     padding: bool = False,
@@ -74,11 +84,13 @@ def make_financial_phrase_dataset(
 
     dataset = load_dataset("json", data_files=data_file, split="train")
     if limit_dataset_samples is not None:
-        sample_count = min(limit_dataset_samples, len(dataset))
+        sample_count = limit_dataset_samples if recycle_samples else min(limit_dataset_samples, len(dataset))
         if balance_labels:
-            dataset = dataset.select(_balanced_indices(dataset, sample_count))
+            dataset = dataset.select(
+                _balanced_indices(dataset, sample_count, seed=seed, recycle_samples=recycle_samples)
+            )
         else:
-            dataset = dataset.select(range(sample_count))
+            dataset = dataset.select([index % len(dataset) for index in range(sample_count)])
 
     eos_token_id = getattr(tokenizer, "eos_token_id", 0)
     pad_token_id = getattr(tokenizer, "pad_token_id", None)
