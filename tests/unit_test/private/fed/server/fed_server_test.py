@@ -27,7 +27,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -809,7 +809,17 @@ class TestFederatedServer:
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
 
-    def test_process_job_failure_stops_run_for_reported_unsafe_client_failure(self):
+    def test_process_job_failure_compatibility_entry_point(self):
+        server = object.__new__(FederatedServer)
+        server.process_job_outcome = MagicMock()
+        request = new_cell_message({}, {})
+
+        reply = server.process_job_failure(request)
+
+        server.process_job_outcome.assert_called_once_with(request)
+        assert reply is server.process_job_outcome.return_value
+
+    def test_process_job_outcome_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -837,13 +847,13 @@ class TestFederatedServer:
                     MessageHeaderKey.ORIGIN: "site-1",
                 },
                 {
-                    JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT,
-                    JobFailureMsgKey.REASON: "fatal client failure",
+                    JobOutcomeMsgKey.JOB_ID: "job-1",
+                    JobOutcomeMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT,
+                    JobOutcomeMsgKey.REASON: "fatal client failure",
                 },
             )
 
-            server.process_job_failure(request)
+            server.process_job_outcome(request)
 
             server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
             server.engine.job_runner.fail_run.assert_not_called()
@@ -858,7 +868,7 @@ class TestFederatedServer:
             (JobReturnCode.ABORTED, JobReturnCode.ABORTED),
         ],
     )
-    def test_process_job_failure_fails_run_for_reported_client_failures(self, failure_code, expected_code):
+    def test_process_job_outcome_fails_run_for_reported_client_failures(self, failure_code, expected_code):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -889,19 +899,22 @@ class TestFederatedServer:
                     MessageHeaderKey.ORIGIN: "site-1",
                 },
                 {
-                    JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: failure_code,
-                    JobFailureMsgKey.REASON: "fatal client failure",
+                    JobOutcomeMsgKey.JOB_ID: "job-1",
+                    JobOutcomeMsgKey.CODE: failure_code,
+                    JobOutcomeMsgKey.REASON: "fatal client failure",
                 },
             )
 
-            server.process_job_failure(request)
+            server.process_job_outcome(request)
 
             server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
             server.engine.job_runner.stop_run.assert_not_called()
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
-    def test_process_job_failure_ignores_generic_launcher_execution_error(self):
+    @pytest.mark.parametrize(
+        "return_code", [JobReturnCode.SUCCESS, JobReturnCode.EXECUTION_ERROR, JobReturnCode.UNKNOWN]
+    )
+    def test_process_job_outcome_resolves_non_failure_result_without_failing_run(self, return_code):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -927,18 +940,37 @@ class TestFederatedServer:
                     MessageHeaderKey.ORIGIN: "site-1",
                 },
                 {
-                    JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: JobReturnCode.EXECUTION_ERROR,
-                    JobFailureMsgKey.REASON: "generic launcher failure",
+                    JobOutcomeMsgKey.JOB_ID: "job-1",
+                    JobOutcomeMsgKey.CODE: return_code,
+                    JobOutcomeMsgKey.REASON: None,
                 },
             )
 
-            server.process_job_failure(request)
+            # Existing clients use the original topic and payload keys. Exercise dispatch
+            # through the registered callback so both wire and Python compatibility are covered.
+            from nvflare.private.defs import CellChannelTopic, JobFailureMsgKey
 
+            assert JobFailureMsgKey is JobOutcomeMsgKey
+            server.cell = MagicMock()
+            with patch("nvflare.private.fed.server.fed_server.threading.Thread"):
+                server._register_cellnet_cbs()
+            server.cell.register_request_cb.assert_any_call(
+                channel=CellChannel.SERVER_MAIN,
+                topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                cb=server.process_job_outcome,
+            )
+            outcome_cb = next(
+                call.kwargs["cb"]
+                for call in server.cell.register_request_cb.call_args_list
+                if call.kwargs["topic"] == "report_job_failure"
+            )
+            result = outcome_cb(request)
+
+            assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
             server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.stop_run.assert_not_called()
             server.engine.job_runner.is_client_outcome_pending.return_value = False
-            result = server.process_job_failure(request)
+            result = server.process_job_outcome(request)
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
