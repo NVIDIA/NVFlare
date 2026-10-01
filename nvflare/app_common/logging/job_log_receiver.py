@@ -29,7 +29,6 @@ from nvflare.widgets.widget import Widget
 # Keys for per-stream state stored in StreamContext
 _KEY_RECV_FILE = "JobLogReceiver.recv_file"
 _KEY_RECV_PATH = "JobLogReceiver.recv_path"
-_KEY_STREAM_ACTIVE = "JobLogReceiver.stream_active"
 
 # Cap on the number of (client, job_id) pairs we remember for "log once"
 # tracking. The receiver is a long-lived server-side widget; without a cap,
@@ -89,7 +88,10 @@ class JobLogReceiver(Widget):
         # lock so the check-then-add is atomic across concurrent stream chunks.
         self._unauthorized_logged: OrderedDict = OrderedDict()
         self._unauthorized_lock = threading.Lock()
-        self._active_stream_count = 0
+        # Keep receiver-owned references: stream_ctx comes from the sender and
+        # must not control admission or completion bookkeeping.
+        self._active_streams = {}
+        self._accepting_streams = True
         self._active_stream_lock = threading.Lock()
         # Trigger on every event that may bring up a fresh ObjectStreamer:
         #   - SYSTEM_START fires once in the long-lived server parent process.
@@ -107,6 +109,7 @@ class JobLogReceiver(Widget):
             self._register,
         )
         self.register_event_handler(EventType.CHECK_END_RUN_READINESS, self._check_end_run_readiness)
+        self.register_event_handler(EventType.END_RUN, self._on_end_run)
 
     def _effective_dest_dir(self) -> str:
         return self._dest_dir or tempfile.gettempdir()
@@ -171,24 +174,30 @@ class JobLogReceiver(Widget):
 
     def _on_stream_started(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         with self._active_stream_lock:
-            if stream_ctx.get(_KEY_STREAM_ACTIVE):
-                return
-            stream_ctx[_KEY_STREAM_ACTIVE] = True
-            self._active_stream_count += 1
+            if not self._accepting_streams:
+                return False
+            self._active_streams[id(stream_ctx)] = stream_ctx
+            return True
 
     def _mark_stream_done(self, stream_ctx: StreamContext):
         with self._active_stream_lock:
-            if not stream_ctx.get(_KEY_STREAM_ACTIVE):
-                return
-            stream_ctx[_KEY_STREAM_ACTIVE] = False
-            self._active_stream_count -= 1
+            self._active_streams.pop(id(stream_ctx), None)
 
     def _check_end_run_readiness(self, event_type: str, fl_ctx: FLContext):
         with self._active_stream_lock:
-            active_stream_count = self._active_stream_count
+            active_stream_count = len(self._active_streams)
+            if not active_stream_count:
+                # Atomically close admission before reporting ready. A request
+                # racing with this check must either be counted or rejected.
+                self._accepting_streams = False
         if active_stream_count:
             self.log_debug(fl_ctx, f"Waiting for {active_stream_count} active live log stream(s) to finish")
             fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, value=True, private=True, sticky=False)
+
+    def _on_end_run(self, event_type: str, fl_ctx: FLContext):
+        # Also close admission when the framework readiness timeout expires.
+        with self._active_stream_lock:
+            self._accepting_streams = False
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
@@ -278,6 +287,8 @@ class JobLogReceiver(Widget):
         # leave the new run_manager's registry empty and produce
         # "no stream processing info registered for log_streaming:live_log"
         # on the first incoming chunk.
+        with self._active_stream_lock:
+            self._accepting_streams = True
         LogStreamer.register_stream_processing(
             fl_ctx,
             channel=Channels.LOG_STREAMING_CHANNEL,

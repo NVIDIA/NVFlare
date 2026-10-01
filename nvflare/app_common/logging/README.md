@@ -141,11 +141,21 @@ would be missed. Instead, `ABOUT_TO_END_RUN` only sets the stop signal.
 has drained and EOF has been sent, reducing the chance that later shutdown logic
 aborts the stream before the final bytes reach the server.
 
-On the server, `JobLogReceiver` participates in end-run readiness while any
-accepted log stream remains active. This keeps the job-scoped receiver alive
-long enough to accept the client's final data and EOF during graceful shutdown.
-The framework's configured end-run readiness timeout remains the upper bound,
-so an unreachable client cannot block teardown indefinitely.
+A job-level `JobLogReceiver`, such as the receiver added by
+`Recipe.enable_log_streaming()`, participates in server-job end-run readiness
+while any accepted log stream remains active. This keeps the job-scoped
+receiver alive to accept the client's final data and EOF during graceful
+shutdown. Once all streams have finalized, the receiver closes admission
+atomically with reporting readiness; later streams are rejected. The
+framework's configured end-run readiness timeout remains the upper bound, so
+an unreachable client cannot block teardown indefinitely. `START_RUN` reopens
+admission when the receiver is reused for a new run.
+
+Site-injected streamers use `target_parent_server=True` and send to the
+long-lived receiver in server `resources.json`. That receiver is independent
+of the server job process and stays available after its `END_RUN`. It does not
+need to delay server-job teardown. The client still joins its streaming thread
+in `END_RUN` to complete its flush before exiting.
 
 ## 9. Drain Behavior
 
