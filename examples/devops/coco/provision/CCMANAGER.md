@@ -1,9 +1,16 @@
 # CoCo client and server attestation
 
-There are two separate enforcement points. KBS releases an image key only when
-its resource policy permits it. Each generated NVFlare CCManager then
-periodically verifies tokens from all protected participants. CCManager cannot replace
-KBS policy, genpolicy, image signing/encryption, or approved platform references.
+The [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+is the authoritative explanation of the trust model, threats, guarantees and
+limitations. This runbook keeps the provisioning options, protocol contract,
+API examples and scoped verification records together. KBS workload-key release
+and NVFlare participant verification are separate enforcement points; neither
+replaces the other.
+
+This runbook documents the 2.9 integration for AMD SEV-SNP or Intel TDX, with or
+without an NVIDIA confidential GPU, including the typed verifier constraints
+described below. Select and approve each target using the
+[runtime-variant guide](../RUNTIME-VARIANTS.md).
 
 The server can run as a protected CoCo participant or verify CoCo client proofs
 on an ordinary host or in an ordinary container. Verification requires the
@@ -31,16 +38,21 @@ when the server is protected, so they enforce the same server requirement.
 Without a server `cc_config`, generated CoCo client-only deployments omit `server`
 from this set, and the ordinary server needs no TEE or generated token.
 
-Periodic and pre-job validation require verified tokens covering every locally
-configured protected participant. Server discovery supplies routes only: missing
-required sites, duplicate names/routes or a substituted root-server route fail
-closed. A complete set with an invalid token still fails. Ordinary participants
-outside the required set do not acquire an attestation requirement.
+Periodic validation and the initial scheduling-related check require verified
+tokens covering every locally configured protected participant. Server discovery
+supplies routes only: missing required sites, duplicate names/routes or a
+substituted root-server route fail closed. A complete set with an invalid token
+still fails. Ordinary participants outside the required set do not acquire an
+attestation requirement.
 
 The first periodic round waits one configured verification interval plus
-0–20% jitter for coordinated startup; pre-job validation does not wait and cannot
-pass with missing attestations. All required sites must be connected and able to
-attest by that first round and remain available thereafter. An omitted/offline site
+0–20% jitter for coordinated startup. Before checking job resources, the server
+performs cross-validation only if no cross-validation has run yet; this check
+does not wait for the periodic interval and cannot pass with missing attestations.
+Once a periodic or scheduling-related round has run, later jobs do not force a
+new round. Continued validation is periodic, not fresh hardware attestation for
+every job. All required sites must be connected and able to attest by that first
+round and remain available thereafter. An omitted/offline site
 is a validation failure, not an implicit membership removal, and follows the
 existing federation-shutdown policy. Coordinate startup and review the configured
 validation interval; changing federation membership requires trusted
@@ -431,6 +443,10 @@ raw EAR alone does not satisfy `verify()`.
 
 ## Verification protocol
 
+The following is the implementation contract for the examples and options in
+this runbook. For the wider protocol threat model and lifecycle, see the
+[security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+
 1. The guest fetches the token response without environment proxies or redirects.
    It validates the EAR signature with the pinned AS public key and checks its
    time claims, profile, and the CPU trust vector plus the GPU trust vector when present.
@@ -543,12 +559,6 @@ InitData digest into its startup image: that creates a circular
 image/policy/InitData dependency. An ordinary external verifier may additionally
 pin `init_data` after the final workload artifact has been approved.
 
-Replay IDs are intentionally local to each verifier process. A still-valid proof
-may be accepted by a different verifier or after restart. They do not prove a
-fresh response to a verifier-issued nonce. Deployments requiring that stronger
-property need a separate challenge/response protocol; no such guarantee is made
-here. Keep secure FL authentication, site binding and protected participant keys.
-
 Generated CoCo managers set `require_site_binding: true`. A custom authorizer
 must declare `supports_site_binding = True` and implement `verify_for_site`;
 otherwise startup fails. Legacy non-CoCo managers default to `false`. The base
@@ -556,6 +566,9 @@ otherwise startup fails. Legacy non-CoCo managers default to `false`. The base
 CoCo's implementation enforces its bounded request/retry budget explicitly.
 
 ### What verification does not authorize
+
+Successful peer verification is not workload authorization or image-key release;
+the separate KBS release policy authorizes access to the workload's resources.
 
 The authorizer deliberately accepts SNP or TDX, with either CPU-only or
 CPU-plus-GPU evidence by default. An explicit `cpu_tee` constraint can restrict
@@ -586,22 +599,18 @@ proof before completing registration. The certificate's DNS name still controls
 TLS endpoint authentication; it does not replace that logical attestation identity.
 
 The authorizer does not directly compare expected image or command. Optional
-typed workload constraints can pin InitData and CPU measurements, but peer
-binding alone is not workload authorization. Compatibility
-`verify(token)` alone also does not bind a peer. Legacy non-CoCo authorizers
-inherit their existing token-verification semantics unless they implement
-site-aware verification themselves.
+typed workload constraints can pin signed InitData and SNP or TDX CPU measurements
+as described above, but peer binding alone is not workload authorization.
+Compatibility `verify(token)` does not bind an authenticated peer. Keep
+`verify_for_site()` and FL authentication at the authorization boundary. Legacy
+non-CoCo authorizers retain their own semantics unless they implement site binding.
 
-KBS workload/resource-path policies and protected guest policies remain separate
-controls. Successful proof verification does not itself release an image key
-or prove that a particular application is authorized for the FL project.
-
-Because verification is local, it does not immediately discover an RVPS update,
-reference removal, or policy change. Previously issued tokens can remain
-acceptable until their expiration or the verifier's freshness limit. A fresh
-proof may contain a cached EAR. Do not treat an RVPS update as immediate
-revocation of every existing token. Replay state is local to one verifier
-instance; replicas and process restarts require separate consideration.
+Verification is local: reference or policy changes do not immediately revoke
+issued EARs, a new proof can contain a cached EAR, and the replay cache is
+process-local. A still-valid proof may be accepted by another verifier or after
+restart; it is not a fresh response to a verifier-issued challenge. Consult the
+[security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+for the resulting revocation, cross-verifier replay and application-trust limits.
 
 ## Verification status
 
