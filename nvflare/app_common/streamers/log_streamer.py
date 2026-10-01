@@ -187,18 +187,18 @@ class LogChunkConsumerFactory(ConsumerFactory):
         self._stream_started_cb = stream_started_cb
 
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
+        if self._stream_started_cb:
+            if self._stream_started_cb(stream_ctx, fl_ctx, **self._cb_kwargs) is False:
+                return None
         if self._stream_done_cb:
             stream_ctx[KEY_STREAM_DONE_CB] = _make_once(self._stream_done_cb)
-        consumer = _LogChunkConsumer(
+        return _LogChunkConsumer(
             stream_ctx=stream_ctx,
             chunk_received_cb=self._chunk_received_cb,
             idle_timeout=self._idle_timeout,
             cb_kwargs=self._cb_kwargs,
             fl_ctx=fl_ctx,
         )
-        if self._stream_started_cb:
-            self._stream_started_cb(stream_ctx, fl_ctx, **self._cb_kwargs)
-        return consumer
 
 
 def dispatch_stream_done(stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
@@ -424,7 +424,8 @@ class LogStreamer(StreamerBase):
                 Set to 0 to disable.
             stream_started_cb: called once when the receiver accepts a new stream,
                 before its first message is consumed; follows the same signature as
-                ``stream_done_cb``.
+                ``stream_done_cb``. Returning False rejects the stream without
+                creating a consumer or invoking ``stream_done_cb``.
             **cb_kwargs: kwargs forwarded to all callbacks
 
         Returns: None

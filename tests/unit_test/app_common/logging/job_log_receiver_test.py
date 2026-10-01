@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 import pytest
@@ -19,6 +21,7 @@ import pytest
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     FLContextKey,
+    ProcessType,
     ReservedKey,
     ReturnCode,
     StreamCtxKey,
@@ -26,11 +29,15 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
-from nvflare.apis.streaming import StreamContextKey
+from nvflare.apis.streaming import StreamableEngine, StreamContextKey
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
+from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
+from nvflare.private.event import fire_event
+from nvflare.private.fed.tbi import TBI
+from nvflare.private.stream_runner import TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
 
 
 def _allowed_client(name: str = "trusted_client", allow: bool = True):
@@ -260,6 +267,177 @@ def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_
     ready_ctx = FLContext()
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
+
+
+@pytest.fixture
+def log_transports(tmp_path):
+    """Use the real receiving protocol with separate parent/job receiver instances."""
+    transports = []
+
+    def create(process_type=ProcessType.SERVER_JOB):
+        receiver = JobLogReceiver(dest_dir=str(tmp_path / str(len(transports))), idle_timeout=0)
+        streamer = ObjectStreamer(Mock())
+        transports.append(streamer)
+        fl_ctx = _make_recv_fl_ctx()
+        engine = Mock(spec=StreamableEngine)
+        engine.get_component = Mock(return_value=Mock())
+        engine.get_client_from_name = Mock(return_value=_allowed_client())
+        engine.fire_event = lambda event, ctx: fire_event(event, [receiver], ctx)
+        engine.register_stream_processing.side_effect = streamer.register_stream_processing
+        fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+        fl_ctx.put(key=ReservedKey.PROCESS_TYPE, value=process_type, private=True, sticky=False)
+        event = EventType.SYSTEM_START if process_type == ProcessType.SERVER_PARENT else EventType.START_RUN
+        fire_event(event, [receiver], fl_ctx)
+        return receiver, streamer, fl_ctx
+
+    yield create
+
+    for streamer in transports:
+        for tx_id in list(streamer.tx_table):
+            streamer._end_tx(tx_id, ReturnCode.TASK_ABORTED, streamer.tx_table[tx_id].consumer._fl_ctx)
+        streamer.shutdown()
+
+
+def _log_request(tx_id, seq=0, data=b"", eof=False, heartbeat=False, stream_ctx=None):
+    request = Shareable()
+    request[KEY_DATA] = data
+    request[KEY_DATA_SIZE] = len(data)
+    request[KEY_EOF] = eof
+    request[KEY_HEARTBEAT] = heartbeat
+    request.set_header(HeaderKey.TX_ID, tx_id)
+    request.set_header(HeaderKey.SEQ, seq)
+    request.set_header(HeaderKey.CHANNEL, Channels.LOG_STREAMING_CHANNEL)
+    request.set_header(HeaderKey.TOPIC, LIVE_LOG_TOPIC)
+    if seq == 0:
+        request.set_header(HeaderKey.CTX, stream_ctx or {KEY_FILE_NAME: "log.json"})
+    return request
+
+
+def _ready_to_end(receiver):
+    fl_ctx = FLContext()
+    fire_event(EventType.CHECK_END_RUN_READINESS, [receiver], fl_ctx)
+    return not fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)
+
+
+def test_sender_marker_cannot_hide_another_active_stream(log_transports):
+    receiver, streamer, fl_ctx = log_transports()
+    forged_ctx = {KEY_FILE_NAME: "log.json", "JobLogReceiver.stream_active": True}
+    reply = streamer._handle_request(
+        TOPIC_STREAM_REQUEST, _log_request("forged", heartbeat=True, stream_ctx=forged_ctx), fl_ctx
+    )
+    assert reply.get_return_code() == ReturnCode.OK
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("normal", heartbeat=True), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.OK
+
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("forged", seq=1, eof=True), fl_ctx)
+    assert not _ready_to_end(receiver)
+
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("normal", seq=1, eof=True), fl_ctx)
+    assert _ready_to_end(receiver)
+
+
+def test_ready_transition_rejects_a_racing_first_message(log_transports):
+    receiver, streamer, fl_ctx = log_transports()
+    entered = threading.Event()
+    resume = threading.Event()
+    on_started = receiver._on_stream_started
+
+    def delayed_start(stream_ctx, callback_fl_ctx):
+        entered.set()
+        assert resume.wait(timeout=5)
+        return on_started(stream_ctx, callback_fl_ctx)
+
+    with patch.object(receiver, "_on_stream_started", side_effect=delayed_start):
+        fire_event(EventType.START_RUN, [receiver], fl_ctx)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(
+                streamer._handle_request, TOPIC_STREAM_REQUEST, _log_request("late", data=b"late log\n"), fl_ctx
+            )
+            try:
+                assert entered.wait(timeout=5)
+                assert _ready_to_end(receiver)
+            finally:
+                resume.set()
+            assert pending.result(timeout=5).get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+    assert not streamer.tx_table
+    fl_ctx.get_engine().get_component.return_value.set_client_data.assert_not_called()
+
+
+def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports):
+    receiver, streamer, fl_ctx = log_transports()
+    job_manager = fl_ctx.get_engine().get_component.return_value
+    during_storage = []
+    job_manager.set_client_data.side_effect = lambda *args: during_storage.append(_ready_to_end(receiver))
+
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("active", data=b"before stop\n"), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.OK
+    assert not _ready_to_end(receiver)
+    reply = streamer._handle_request(
+        TOPIC_STREAM_REQUEST, _log_request("active", seq=1, data=b"final bytes\n", eof=True), fl_ctx
+    )
+
+    assert reply.get_return_code() == ReturnCode.OK
+    assert during_storage == [False]
+    assert _ready_to_end(receiver)
+    job_manager.set_client_data.assert_called_once()
+    with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
+        assert log_file.read() == b"before stop\nfinal bytes\n"
+
+
+def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports):
+    receiver, streamer, fl_ctx = log_transports()
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
+    runner = TBI()
+
+    with (
+        patch.object(runner, "get_positive_float_var", side_effect=[5.0, 0.5]),
+        patch("nvflare.private.fed.tbi.time.time", side_effect=[0.0, 1.0, 6.0]),
+        patch("nvflare.private.fed.tbi.time.sleep") as sleep,
+        patch.object(runner, "log_warning") as warning,
+    ):
+        runner.check_end_run_readiness(fl_ctx)
+
+    sleep.assert_called_once_with(0.5)
+    warning.assert_called_once_with(fl_ctx, "quit waiting for component ready-to-end-run after 5.0 seconds")
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", data=b"late\n"), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_start_run_reopens_admission_after_previous_run(log_transports):
+    receiver, streamer, fl_ctx = log_transports()
+    assert _ready_to_end(receiver)
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    fire_event(EventType.START_RUN, [receiver], fl_ctx)
+
+    reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("new-run", heartbeat=True), fl_ctx)
+    assert reply.get_return_code() == ReturnCode.OK
+    assert not _ready_to_end(receiver)
+
+
+def test_parent_receiver_persists_after_job_receiver_has_shut_down(log_transports):
+    _, parent_streamer, parent_ctx = log_transports(ProcessType.SERVER_PARENT)
+    job_receiver, job_streamer, job_ctx = log_transports(ProcessType.SERVER_JOB)
+    parent_streamer._handle_request(
+        TOPIC_STREAM_REQUEST, _log_request("parent-stream", data=b"before job shutdown\n"), parent_ctx
+    )
+
+    assert _ready_to_end(job_receiver)
+    fire_event(EventType.END_RUN, [job_receiver], job_ctx)
+    job_streamer.shutdown()
+
+    reply = parent_streamer._handle_request(
+        TOPIC_STREAM_REQUEST,
+        _log_request("parent-stream", seq=1, data=b"after job shutdown\n", eof=True),
+        parent_ctx,
+    )
+    assert reply.get_return_code() == ReturnCode.OK
+    job_manager = parent_ctx.get_engine().get_component.return_value
+    job_manager.set_client_data.assert_called_once()
+    assert job_manager.set_client_data.call_args.args[0] == "trusted_job"
+    with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
+        assert log_file.read() == b"before job shutdown\nafter job shutdown\n"
 
 
 @pytest.mark.parametrize(
