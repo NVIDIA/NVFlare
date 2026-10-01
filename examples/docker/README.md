@@ -131,13 +131,28 @@ same federation.
 The first `start_docker.sh` command creates `nvflare-network` if it does not
 already exist, so no separate `docker network create` command is required.
 
-The PyTorch job image provides a writable `/var/tmp/nvflare/data` cache. If the
-host-side site-2 process cannot write that path, choose a writable cache before
-starting it (this was needed in the tested macOS setup):
+The PyTorch job image provides a writable `/var/tmp/nvflare/data` cache.
+On macOS, set the host-side site-2 cache to the workspace directory below
+before downloading data or starting site-2. Run these commands as the same
+user who will start site-2, in the same shell used for the remaining steps.
+On other hosts, use this override if the default cache is not writable.
 
 ```bash
 export NVFL_CIFAR10_ROOT="$(pwd)/workspace/cifar10-site-2"
+mkdir -p "$NVFL_CIFAR10_ROOT"
+python - <<'PY'
+import os
+import tempfile
+
+with tempfile.TemporaryFile(dir=os.environ["NVFL_CIFAR10_ROOT"]):
+    pass
+print("CIFAR-10 cache is writable")
+PY
 ```
+
+Continue only after the write check succeeds. If it fails, choose a directory
+writable by that user and repeat the commands. This host environment variable
+sets site-2's cache; site-1's Docker job keeps its writable default cache.
 
 On macOS, download the process client's archive before starting it. The
 commands below use curl's retry/resume support and verify the original
