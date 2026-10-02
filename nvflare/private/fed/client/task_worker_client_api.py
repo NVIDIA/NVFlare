@@ -12,22 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One-assignment Client API binding for a disposable script worker."""
+"""Client-specific context and Client API binding for a disposable task worker."""
 
-from nvflare.apis.fl_constant import FLMetaKey
+from functools import partial
+
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.script_utils import (
+    close_script_api,
+    create_script_binding,
+    prepare_task_metadata,
+)
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
-from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey
-from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.api import InProcessClientAPI
 from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
-from .artifacts import FileTaskArtifactStore
-from .protocol import TaskAttemptIdentity
+CLIENT_TASK_CONTEXT_KEYS = {CLIENT_API_BACKEND_FACTORY, FLContextKey.CLIENT_NAME, FLContextKey.PROCESS_TYPE}
+
+
+def bind_client_task_context(fl_ctx, identity, store, analytics):
+    """Bind client services outside the role-neutral compute runtime."""
+    fl_ctx.set_prop(FLContextKey.CLIENT_NAME, identity.site_name, private=True, sticky=True)
+    fl_ctx.set_prop(FLContextKey.PROCESS_TYPE, "client_task_worker", private=True, sticky=True)
+    fl_ctx.set_prop(
+        CLIENT_API_BACKEND_FACTORY,
+        partial(TaskClientAPIBackend, store, identity, analytics),
+        private=True,
+        sticky=True,
+    )
 
 
 class TaskClientAPI(InProcessClientAPI):
@@ -67,9 +84,6 @@ class TaskClientAPI(InProcessClientAPI):
     def _publish_log(self, message: dict):
         self.analytics.append(message)
 
-    def is_running(self) -> bool:
-        return self._result_reference is None and super().is_running()
-
     def receive(self, timeout=None):
         if self._result_reference is not None:
             return None
@@ -105,35 +119,13 @@ class TaskClientAPIBackend(ClientAPIBackendSpec):
             raise RuntimeError("task lifetime does not yet support ClientAPIExecutor subclasses")
         if executor.execution_mode != ExecutionMode.IN_PROCESS:
             raise RuntimeError("the Process Client API task backend currently supports in_process scripts only")
-        register_framework_decomposers(context.params_exchange_format, context.server_expected_format, executor.logger)
-        metadata = {
-            FLMetaKey.SITE_NAME: self._identity.site_name,
-            FLMetaKey.JOB_ID: self._identity.job_id,
-            ConfigKey.TASK_NAME: self._identity.task_name,
-            ConfigKey.TASK_EXCHANGE: {
-                ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
-                ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
-                ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
-                ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
-                ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
-                ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,
-            },
-        }
-        api = TaskClientAPI(metadata, self._store, self._identity, self._analytics)
-        try:
-            api.init()
-            api.configure_memory_management(context.memory_gc_rounds, context.cuda_empty_cache)
-            runner = TaskScriptRunner(
-                custom_dir=fl_ctx.get_workspace().get_app_custom_dir(self._identity.job_id),
-                script_path=context.task_script_path,
-                script_args=context.task_script_args,
-            )
-        except BaseException:
-            api.close()
-            raise
-        self._api = api
-        self._runner = runner
+        self._api, self._runner = create_script_binding(
+            context,
+            prepare_task_metadata(context, self._identity.site_name, self._identity.job_id, self._identity.task_name),
+            fl_ctx.get_workspace().get_app_custom_dir(self._identity.job_id),
+            lambda metadata: TaskClientAPI(metadata, self._store, self._identity, self._analytics),
+            executor.logger,
+        )
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal) -> Shareable:
         if self._api is None or self._runner is None:
@@ -160,10 +152,4 @@ class TaskClientAPIBackend(ClientAPIBackendSpec):
         api = self._api
         self._api = None
         self._runner = None
-        if api is not None:
-            try:
-                api.close()
-            finally:
-                bus = DataBus()
-                if bus.get_data(CLIENT_API_KEY) is api:
-                    bus.put_data(CLIENT_API_KEY, None)
+        close_script_api(api, DataBus())

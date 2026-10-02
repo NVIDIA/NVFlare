@@ -25,8 +25,10 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
+from nvflare.apis.executor import Executor
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
@@ -50,6 +52,7 @@ from nvflare.private.fed.task_worker import (
     write_bootstrap,
 )
 from nvflare.private.fed.task_worker.protocol import WORKER_MODULE
+from nvflare.private.fed.task_worker.runtime import TaskRuntime, UnsupportedTaskRuntimeService
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 _PROBE_MODULE = """
@@ -304,7 +307,16 @@ def test_nested_component_is_authorized_before_any_component_import(tmp_path):
     assert not import_marker.exists()
 
 
-@pytest.mark.parametrize("property_name", ["__job_meta__", CLIENT_API_BACKEND_FACTORY])
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        FLContextKey.JOB_META,
+        CLIENT_API_BACKEND_FACTORY,
+        FLContextKey.CLIENT_NAME,
+        FLContextKey.PROCESS_TYPE,
+        FLContextKey.RUN_ABORT_SIGNAL,
+    ],
+)
 def test_bootstrap_cannot_override_authoritative_runtime_properties(tmp_path, property_name):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
@@ -554,29 +566,78 @@ def test_unmodified_np_validator_runs_in_worker(tmp_path):
         "abort_app",
     ],
 )
-def test_task_engine_explicitly_rejects_job_based_services(service):
-    engine = worker.TaskWorkerEngine(None, {})
-    with pytest.raises(worker.UnsupportedTaskWorkerService, match="does not provide"):
-        getattr(engine, service)()
+def test_task_runtime_explicitly_rejects_job_based_services(service):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    with pytest.raises(UnsupportedTaskRuntimeService, match="does not provide"):
+        getattr(runtime, service)()
 
 
-def test_task_engine_local_context_and_component_views():
+def test_task_runtime_owns_local_context_and_component_views():
     workspace, component = object(), object()
-    engine = worker.TaskWorkerEngine(workspace, {"helper": component})
-    assert engine.get_workspace() is workspace
-    assert engine.get_component("helper") is component
-    view = engine.get_all_components()
+    runtime = TaskRuntime(workspace, "endpoint", "job")
+    runtime.set_compute_graph({"helper": component}, FLComponent())
+    assert runtime.get_workspace() is workspace
+    assert runtime.get_component("helper") is component
+    view = runtime.get_all_components()
     view.clear()
-    assert engine.get_component("helper") is component
-    with pytest.raises(RuntimeError, match="not initialized"):
-        engine.new_context()
-    engine._context_manager = FLContextManager(engine=engine, identity_name="site", job_id="job")
-    assert engine.new_context().get_identity_name() == "site"
-    fl_ctx = engine.new_context()
-    engine.fire_event("local", fl_ctx)
+    assert runtime.get_component("helper") is component
+    fl_ctx = runtime.new_context()
+    assert fl_ctx.get_identity_name() == "endpoint"
+    assert fl_ctx.get_job_id() == "job"
+    assert fl_ctx.get_run_abort_signal() is runtime.abort_signal
+    assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) is None
+    assert fl_ctx.get_process_type() is None
+    runtime.fire_event("local", fl_ctx)
     fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True)
-    with pytest.raises(worker.UnsupportedTaskWorkerService, match="federated events"):
-        engine.fire_event("federated", fl_ctx)
+    with pytest.raises(UnsupportedTaskRuntimeService, match="federated events"):
+        runtime.fire_event("federated", fl_ctx)
+
+
+def test_task_runtime_panic_latches_first_failure_and_triggers_abort():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    component = FLComponent()
+    runtime.set_compute_graph({}, component)
+    fl_ctx = runtime.new_context()
+    component.system_panic("first failure", fl_ctx)
+    component.system_panic("later failure", fl_ctx)
+    assert runtime.abort_signal.triggered
+    assert runtime.new_context().get_run_abort_signal().triggered
+    with pytest.raises(RuntimeError, match="FATAL_SYSTEM_ERROR: first failure"):
+        runtime.raise_if_failed()
+
+
+@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.AFTER_TASK_EXECUTION, EventType.END_RUN])
+def test_worker_panic_never_commits_completion_and_still_finalizes(tmp_path, monkeypatch, phase):
+    events = []
+
+    class PanicExecutor(Executor):
+        def handle_event(self, event_type, fl_ctx):
+            events.append(event_type)
+            if event_type == phase:
+                self.system_panic("compute panic", fl_ctx)
+
+        def execute(self, task_name, shareable, fl_ctx, abort_signal):
+            if phase == "execute":
+                self.system_panic("compute panic", fl_ctx)
+            return Shareable({"done": True})
+
+    def build_graph(_bootstrap, _workspace, _fl_ctx, runtime):
+        executor = PanicExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", build_graph)
+    workspace = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("panic")
+    path = _stage(store, identity, workspace, {}, Shareable())
+    with pytest.raises(RuntimeError, match="FATAL_SYSTEM_ERROR: compute panic"):
+        worker.run_worker(path)
+    assert events.count(EventType.END_RUN) == 1
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+    failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
+    assert "compute panic" in failure["message"]
 
 
 def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
@@ -590,7 +651,10 @@ def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
 def test_checked_event_surfaces_component_failure_and_clears_exception_state():
     fl_ctx = FLContext()
     error = ValueError("initializer failed")
-    engine = SimpleNamespace(fire_event=lambda *_args: fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"helper": error}))
+    engine = SimpleNamespace(
+        fire_event=lambda *_args: fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"helper": error}),
+        raise_if_failed=lambda: None,
+    )
     with pytest.raises(RuntimeError, match="helper.*initializer failed") as raised:
         worker._fire_checked(engine, EventType.START_RUN, fl_ctx)
     assert raised.value.__cause__ is error

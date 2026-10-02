@@ -176,34 +176,24 @@ def _make_authorized_configurator(config_file):
 
 
 @pytest.mark.parametrize("worker", [False, True])
-def test_class_like_args_dictionary_does_not_hide_sibling_class_before_import(tmp_path, monkeypatch, worker):
-    marker = tmp_path / "imported.txt"
-    (tmp_path / "allowed_outer.py").write_text(
-        "from pathlib import Path\n"
-        f"Path({str(marker)!r}).write_text('imported')\n"
-        "class Outer:\n"
-        "    def __init__(self, **kwargs): pass\n"
-    )
-    monkeypatch.syspath_prepend(str(tmp_path))
+@pytest.mark.parametrize("metadata", [{"path": "subprocess.Popen"}, [{"path": "subprocess.Popen"}]])
+def test_component_metadata_outside_args_retains_existing_authorization_behavior(tmp_path, worker, metadata):
     config = {
-        "path": "allowed_outer.Outer",
-        "args": {"path": "allowed_outer.Outer", "helper": {"path": "subprocess.Popen", "args": {}}},
+        "path": _component_path(ContainerComponent),
+        "args": {"child": {"path": _component_path(NestedComponent), "args": {}}},
+        "metadata": metadata,
     }
-    _set_class_allow_list(["allowed_outer.Outer"])
+    _set_class_allow_list(_test_component_allow_list())
     if worker:
         builder = WorkerComponentBuilder(fl_ctx=FLContext())
-        with pytest.raises(ComponentNotAuthorized, match="subprocess.Popen.*allow_list"):
-            builder.build_component(config)
+        component = builder.build_component(config)
     else:
         config_file = tmp_path / "config.json"
         _write_component_config(config_file, config)
-        configurator = _NestedComponentConfigurator(str(config_file))
-        configurator.set_component_build_authorizer(
-            _authorize_with_component_path_authorizer, authorizer=ComponentPathAuthorizer()
-        )
-        with pytest.raises(ComponentNotAuthorized, match="subprocess.Popen.*allow_list"):
-            configurator.configure()
-    assert not marker.exists()
+        configurator = _make_authorized_configurator(config_file)
+        configurator.configure()
+        component = configurator.component
+    assert isinstance(component.child, NestedComponent)
 
 
 def test_configure_expands_system_vars_but_preserves_secret_refs_for_runtime_consumers(tmp_path):

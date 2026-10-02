@@ -16,14 +16,38 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.executors.client_api import script_utils
+from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.fuel.data_event.data_bus import DataBus
-from nvflare.private.fed.task_worker import client_api
-from nvflare.private.fed.task_worker.client_api import TaskClientAPI, TaskClientAPIBackend
+from nvflare.private.fed.client import task_worker_client_api as client_api
+from nvflare.private.fed.client.task_worker_client_api import TaskClientAPI, TaskClientAPIBackend
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+
+def test_client_binding_supplies_only_client_context_and_backend_services():
+    fl_ctx, store, analytics = FLContext(), Mock(), []
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    client_api.bind_client_task_context(fl_ctx, identity, store, analytics)
+    assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) == identity.site_name
+    assert fl_ctx.get_process_type() == "client_task_worker"
+    factory = fl_ctx.get_prop(CLIENT_API_BACKEND_FACTORY)
+    backend = factory()
+    assert isinstance(backend, TaskClientAPIBackend)
+    assert backend._store is store
+    assert backend._identity is identity
+    assert backend._analytics is analytics
+    assert client_api.CLIENT_TASK_CONTEXT_KEYS == {
+        FLContextKey.CLIENT_NAME,
+        FLContextKey.PROCESS_TYPE,
+        CLIENT_API_BACKEND_FACTORY,
+    }
+    assert fl_ctx.get_engine() is None
 
 
 def test_task_client_api_requires_exactly_one_durable_send():
@@ -67,7 +91,7 @@ def task_backend(monkeypatch):
     api.get_result.return_value = Shareable({"result": 1})
     monkeypatch.setattr(client_api, "TaskClientAPI", lambda *_args: api)
     runner = Mock()
-    monkeypatch.setattr(client_api, "TaskScriptRunner", lambda **_kwargs: runner)
+    monkeypatch.setattr(script_utils, "TaskScriptRunner", lambda **_kwargs: runner)
     backend = TaskClientAPIBackend(Mock(), identity, [])
     executor = ClientAPIExecutor(execution_mode="in_process", task_script_path="train.py")
     fl_ctx = Mock()
@@ -103,7 +127,7 @@ def test_task_backend_initialization_unwinds_before_propagating_failure(task_bac
     if setup_failure == "api":
         api.init.side_effect = RuntimeError("setup failed")
     else:
-        monkeypatch.setattr(client_api, "TaskScriptRunner", Mock(side_effect=RuntimeError("setup failed")))
+        monkeypatch.setattr(script_utils, "TaskScriptRunner", Mock(side_effect=RuntimeError("setup failed")))
     with pytest.raises(RuntimeError, match="setup failed"):
         backend.initialize(context, fl_ctx)
     api.close.assert_called_once()

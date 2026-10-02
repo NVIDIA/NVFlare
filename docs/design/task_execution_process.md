@@ -93,6 +93,17 @@ That distributed training path is not part of this CPU task-worker profile.
 Task-worker component construction now lives in the private runtime utility
 `nvflare.private.fed.utils.worker_component_builder`. It and the CJ configurator
 share the authorization-tree walker; each retains its runtime's site-policy wiring.
+The shared walker preserves existing traversal semantics: recognized component
+specifications expose nested components through `args`, not arbitrary metadata.
+
+The worker's private `TaskRuntime` owns its local context manager, compute graph,
+event dispatch and abort signal. It does not inherit `ClientEngineSpec` or
+`ServerEngineSpec`. Client metadata and Client API backend injection live in
+`nvflare.private.fed.client.task_worker_client_api`, outside the local runtime
+and compute pipeline. The Client API adapters share metadata, API/script setup
+and owned DataBus cleanup with the job-based in-process backend; only their
+transport and execution lifetimes differ. Server-side worker integration and
+parent/job engine-interface restructuring remain future work.
 
 ## Lifecycle and support boundaries
 
@@ -106,6 +117,9 @@ runtime-injected Client API backend returns a Shareable through the same Executo
 pipeline as ordinary Executors, including task hooks and finalization. The final
 `result.fobs` and completion are written only after that pipeline finishes.
 A failure after `send()` therefore cannot publish a successful result.
+Likewise, `system_panic()` triggers the attempt's abort signal and fails the
+attempt even if its Executor returns a Shareable. Compute finalizers still run;
+the worker does not write successful completion after a fatal event.
 The script's `result_wait_timeout` becomes the worker timeout.
 
 The Process launcher owns a POSIX process group, observes descendants, and

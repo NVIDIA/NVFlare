@@ -94,6 +94,9 @@ class ComponentBuilder(ABC):
     def build_nested_component(self, config_dict, arg_name):
         return self.build_component(config_dict)
 
+    def _is_authorizable_component_config(self, config_dict, node=None):
+        return self.is_authorizable_component_config(config_dict, node)
+
     @staticmethod
     def _make_child_node(parent_node, element, key):
         node = Node(element)
@@ -105,16 +108,21 @@ class ComponentBuilder(ABC):
         return node
 
     def authorize_component_config_tree(self, element, node, authorize, force_current=False):
-        """Preflight every component branch before construction, using the caller's policy.
+        """Preflight component arguments using the existing configurator traversal rules.
 
-        Keep traversing siblings inside class-shaped dictionaries, and retain
-        component-list paths so explicit entries cannot bypass authorization
-        using ``config_type: dict``. Policy and authorization scope belong to
-        the runtime calling this walker, not to the generic builder.
+        Recognized component specifications expose nested components through
+        ``args``, not through arbitrary metadata fields. Retain component-list
+        paths so explicit entries cannot bypass authorization using
+        ``config_type: dict``. Policy and authorization scope belong to the
+        runtime calling this walker, not to the generic builder.
         """
         if isinstance(element, dict):
-            if force_current or self.is_authorizable_component_config(element, node):
+            if force_current or self._is_authorizable_component_config(element, node):
                 authorize(element, node)
+                args = element.get("args")
+                if isinstance(args, (dict, list)):
+                    self.authorize_component_config_tree(args, self._make_child_node(node, args, "args"), authorize)
+                return
             children = element.items()
         elif isinstance(element, list):
             children = ((f"#{i + 1}", item) for i, item in enumerate(element))
