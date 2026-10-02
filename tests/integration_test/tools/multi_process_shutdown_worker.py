@@ -46,12 +46,29 @@ def _launcher(directory):
             child.wait(timeout=5.0)
 
 
+def _exited_launcher(directory):
+    # Keep a rank in this launcher's process group after the launcher exits.
+    child = subprocess.Popen([sys.executable, __file__, "rank", str(directory), "0"])
+    try:
+        deadline = time.monotonic() + 10.0
+        while not (directory / "ready-0").exists():
+            if child.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError("rank did not start")
+            time.sleep(0.01)
+    except BaseException:
+        child.kill()
+        child.wait(timeout=5.0)
+        raise
+
+
 def main():
     mode, directory = sys.argv[1], Path(sys.argv[2])
     if mode == "launcher":
         _launcher(directory)
     elif mode == "rank":
         _rank(directory, sys.argv[3])
+    elif mode == "exited-launcher":
+        _exited_launcher(directory)
     elif mode == "hung":
         (directory / "ready").touch()
         time.sleep(30.0)

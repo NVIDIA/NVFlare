@@ -202,8 +202,11 @@ class MultiProcessExecutor(Executor):
             self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
             if not self.finalized:
-                # Rank END_RUN handlers must finish while their command cells are alive.
-                self._pass_event_to_rank_processes(event_type, fl_ctx)
+                if fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED, False):
+                    self._abort_requested = True
+                # Aborted runs must not wait for rank handlers or normal launcher exit.
+                if not self._abort_requested:
+                    self._pass_event_to_rank_processes(event_type, fl_ctx)
                 self.finalize(fl_ctx)
             return
 
@@ -428,8 +431,7 @@ class MultiProcessExecutor(Executor):
 
     def _wait_for_worker_exit(self, timeout):
         try:
-            self.exe_process.wait(timeout=timeout)
-            return True
+            return self.exe_process.wait(timeout=timeout) == 0
         except subprocess.TimeoutExpired:
             self.logger.warning(f"Multi-process launcher did not exit within {timeout} seconds.")
         except Exception as ex:
@@ -474,8 +476,16 @@ class MultiProcessExecutor(Executor):
             except Exception as ex:
                 self.logger.warning(f"Could not close rank processes: {secure_format_exception(ex)}")
 
-        if self.exe_process and self.exe_process.poll() is None:
-            if self._abort_requested or not close_sent or not self._wait_for_worker_exit(_WORKER_SHUTDOWN_TIMEOUT):
+        if self.exe_process:
+            force_cleanup = self._abort_requested or not close_sent
+            if not force_cleanup:
+                exit_code = self.exe_process.poll()
+                if exit_code is None:
+                    force_cleanup = not self._wait_for_worker_exit(_WORKER_SHUTDOWN_TIMEOUT)
+                else:
+                    force_cleanup = exit_code != 0
+            # A failed launcher may have exited while ranks still hold its process group.
+            if force_cleanup:
                 self._kill_worker_processes()
                 self._wait_for_worker_exit(_WORKER_KILL_TIMEOUT)
 

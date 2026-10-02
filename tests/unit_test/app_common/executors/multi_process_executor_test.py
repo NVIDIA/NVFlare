@@ -22,6 +22,7 @@ from unittest.mock import Mock, call
 import pytest
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -183,3 +184,28 @@ def test_end_run_timeout_reply_forces_cleanup_without_a_grace_period(executor):
     executor.engine.client.cell.broadcast_request.assert_called_once()
     module.os.killpg.assert_called_once_with(executor.exe_process.pid, signal.SIGKILL)
     executor.exe_process.wait.assert_called_once_with(timeout=module._WORKER_KILL_TIMEOUT)
+
+
+def test_run_aborted_between_tasks_skips_end_run_handshake_and_grace_period(executor):
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, True, private=True, sticky=False)
+
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+
+    executor.engine.client.cell.broadcast_request.assert_not_called()
+    executor.engine.client.cell.fire_and_forget.assert_called_once()
+    assert executor.engine.client.cell.fire_and_forget.call_args.kwargs["topic"] == MultiProcessCommandNames.CLOSE
+    module.os.killpg.assert_called_once_with(executor.exe_process.pid, signal.SIGKILL)
+    executor.exe_process.wait.assert_called_once_with(timeout=module._WORKER_KILL_TIMEOUT)
+
+
+def test_failed_launcher_exit_during_grace_still_cleans_up_rank_group(executor):
+    executor.exe_process.wait.side_effect = [1, 1]
+
+    executor.finalize(FLContext())
+
+    module.os.killpg.assert_called_once_with(executor.exe_process.pid, signal.SIGKILL)
+    assert executor.exe_process.wait.call_args_list == [
+        call(timeout=module._WORKER_SHUTDOWN_TIMEOUT),
+        call(timeout=module._WORKER_KILL_TIMEOUT),
+    ]
