@@ -26,6 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
+from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -277,6 +278,8 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
 
 class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
+
+    launch_mode = LauncherMode.SLURM.value
 
     EXE_MODULE: Optional[str] = None
     SUPPORTS_ADDITIONAL_NODE_COMMAND = False

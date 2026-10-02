@@ -41,6 +41,7 @@ class JobProcessArgs:
     STARTUP_CONFIG_FILE = "startup_config_file"
     RESTORE_SNAPSHOT = "restore_snapshot"
     OPTIONS = "options"
+    LAUNCH_MODE = "launch_mode"
 
 
 class JobProcessEnv:
@@ -112,6 +113,11 @@ class JobHandleSpec(ABC):
 
 
 class JobLauncherSpec(FLComponent, ABC):
+    # Built-in launchers set this to a LauncherMode value. It is optional for
+    # job-based compatibility, but task execution requires a declared mode so
+    # the CJ can reject a mismatched TaskLauncher before launching compute.
+    launch_mode = None
+
     @abstractmethod
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.

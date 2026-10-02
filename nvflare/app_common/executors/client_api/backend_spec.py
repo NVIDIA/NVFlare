@@ -17,12 +17,15 @@
 Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes",
 "Client API Backends"). One ClientAPIExecutor delegates to one mode-specific backend:
 
-- in_process: trainer runs inside the Client Job (CJ) process over DataBus
+- in_process: trainer runs inside the Client Job (CJ) process over DataBus,
+  or inside a disposable task worker using its runtime-injected backend
 - external_process: NVFlare launches and owns the trainer process tree over Cell
 - attach: externally owned trainer rendezvous over Cell
 
 This module is internal to NVFlare. It is not a user extension point; users configure
-``ClientAPIExecutor(execution_mode=...)`` only.
+``ClientAPIExecutor(execution_mode=...)`` and the job's execution lifetime.
+Trusted runtimes may inject an internal factory through
+``CLIENT_API_BACKEND_FACTORY``; submitted bootstrap properties cannot set it.
 """
 
 from abc import ABC, abstractmethod
@@ -35,6 +38,8 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.utils.argv_utils import CommandArg
+
+CLIENT_API_BACKEND_FACTORY = "__client_api_backend_factory__"
 
 if TYPE_CHECKING:
     # Import for typing only; avoids a runtime import cycle
@@ -111,6 +116,11 @@ class ClientAPIBackendSpec(ABC):
       owned and must never be signalled, terminated, or waited on by the backend.
     """
 
+    # Disposable runtimes must fail the attempt on script/setup/finalizer
+    # exceptions rather than commit an EXECUTION_EXCEPTION reply as completion.
+    # Existing job-based backends retain their error-reply/panic behavior.
+    failure_is_fatal = False
+
     @abstractmethod
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
         """Prepares the backend for the run. Called once when the executor handles START_RUN.
@@ -134,6 +144,9 @@ class ClientAPIBackendSpec(ABC):
         ``finalize()`` on a backend whose ``initialize()`` raised, because ``finalize()`` cannot
         assume a consistently half-initialized backend. Own your own rollback.
 
+        A runtime-injected backend with ``failure_is_fatal=True`` propagates
+        setup failures instead of converting them into job-scoped system_panic.
+
         Args:
             context: the frozen backend configuration and executor back-reference.
             fl_ctx: the FLContext of the START_RUN event.
@@ -154,6 +167,9 @@ class ClientAPIBackendSpec(ABC):
         exceptions that do escape are converted to EXECUTION_EXCEPTION replies by the executor,
         except UnsafeJobError which the executor lets propagate so ClientRunner can apply its
         dedicated UNSAFE_JOB handling.
+
+        Disposable backends with ``failure_is_fatal=True`` propagate failures
+        so the worker records a failed attempt, not a successful completion.
 
         Args:
             task_name: name of the task.
@@ -182,7 +198,9 @@ class ClientAPIBackendSpec(ABC):
         shutdown_timeout and stop_grace_period, and pending payload terminal state) for
         external_process.
 
-        Contract: must be idempotent and must not raise. Not called if ``initialize()`` raised
+        Contract: must be idempotent. Job-based backends must not raise; disposable
+        backends propagate cleanup failures to prevent a completion commit.
+        Not called if ``initialize()`` raised
         (see the cleanup-on-failure contract on ``initialize()``).
 
         Args:

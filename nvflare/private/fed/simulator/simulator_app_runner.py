@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -26,6 +27,9 @@ class SimulatorClientRunManager(ClientRunManager):
 
 
 class SimulatorClientAppRunner(ClientAppRunner):
+    def get_job_launcher_mode(self, args):
+        return LauncherMode.PROCESS.value
+
     def create_run_manager(self, args, conf, federated_client, workspace):
         run_manager = SimulatorClientRunManager(
             client_name=args.client_name,

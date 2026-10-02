@@ -225,6 +225,11 @@ class Recipe(ABC):
         """
         pass
 
+    def set_execution_lifetime(self, execution_lifetime: str):
+        """Select job-based or fresh-per-task client application execution."""
+        self._job.set_execution_lifetime(execution_lifetime)
+        return self
+
     def set_per_site_config(self, config: Dict[str, Dict]) -> None:
         """Set helper-provided per-site configuration for this recipe.
 

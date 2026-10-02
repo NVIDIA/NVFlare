@@ -162,9 +162,6 @@
     "ModelLearnerExecutor": [
         "nvflare.app_common.executors.model_learner_executor"
     ],
-    "MultiProcessExecutor": [
-        "nvflare.app_common.executors.multi_process_executor"
-    ],
     "SplitNNLearnerExecutor": [
         "nvflare.app_common.executors.splitnn_learner_executor"
     ],
@@ -465,9 +462,6 @@
     ],
     "PTFileModelPersistor": [
         "nvflare.app_opt.pt.file_model_persistor"
-    ],
-    "PTMultiProcessExecutor": [
-        "nvflare.app_opt.pt.multi_process_executor"
     ],
     "JoblibModelParamPersistor": [
         "nvflare.app_opt.sklearn.joblib_model_param_persistor"

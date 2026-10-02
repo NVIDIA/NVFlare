@@ -27,7 +27,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandNames,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger, validate_site_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -239,11 +239,16 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         contribution_task_name = data.get_header(FLContextKey.TASK_NAME)
         task_id = data.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
         self.logger.debug(f"Submit_result processing time: {time.time() - start_time} for client: {client.name}")
-        return ""
+        reply = make_reply(ReturnCode.OK)
+        reply.set_header(
+            ReservedHeaderKey.TASK_RESULT_ACCEPTED, fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        )
+        return reply
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
         engine = fl_ctx.get_engine()

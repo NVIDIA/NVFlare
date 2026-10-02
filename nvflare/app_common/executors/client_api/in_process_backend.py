@@ -42,10 +42,13 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.script_utils import (
+    close_script_api,
+    create_script_binding,
+    prepare_task_metadata,
+)
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey
-from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -102,11 +105,6 @@ class InProcessBackend(ClientAPIBackendSpec):
             raise ValueError(f"invalid task_script_path '{task_script_path}': in_process mode requires a .py script")
 
         try:
-            register_framework_decomposers(
-                context.params_exchange_format,
-                context.server_expected_format,
-                self.logger,
-            )
             self._engine = fl_ctx.get_engine()
 
             self._data_bus = DataBus()
@@ -118,18 +116,15 @@ class InProcessBackend(ClientAPIBackendSpec):
 
             workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-            custom_dir = workspace.get_app_custom_dir(job_id)
-            self._task_fn_wrapper = TaskScriptRunner(
-                custom_dir=custom_dir, script_path=task_script_path, script_args=context.task_script_args
+            self._client_api, self._task_fn_wrapper = create_script_binding(
+                context,
+                self._prepare_task_meta(fl_ctx, None),
+                workspace.get_app_custom_dir(job_id),
+                lambda metadata: InProcessClientAPI(
+                    task_metadata=metadata, result_check_interval=_RESULT_POLL_INTERVAL
+                ),
+                self.logger,
             )
-
-            meta = self._prepare_task_meta(fl_ctx, None)
-            self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=_RESULT_POLL_INTERVAL)
-            self._client_api.init()
-            if context.memory_gc_rounds > 0:
-                self._client_api.configure_memory_management(
-                    gc_rounds=context.memory_gc_rounds, cuda_empty_cache=context.cuda_empty_cache
-                )
             # this is how the trainer script's flare.init() finds the API instance
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
 
@@ -285,17 +280,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         """
         # Close the API first so it detaches its subscriptions and blocks late publications
         # from an abandoned trainer while the remaining cleanup runs.
-        if self._client_api is not None:
-            try:
-                self._client_api.close()
-            except Exception:
-                self.logger.error(secure_format_traceback())
-            try:
-                if self._data_bus is not None and self._data_bus.get_data(CLIENT_API_KEY) is self._client_api:
-                    # Clear only the entry still owned by this backend.
-                    self._data_bus.put_data(CLIENT_API_KEY, None)
-            except Exception:
-                self.logger.error(secure_format_traceback())
+        close_script_api(self._client_api, self._data_bus, on_error=self.logger.error)
         if self._data_bus is not None and self._subscribed:
             for topic, callback in (
                 (TOPIC_LOCAL_RESULT, self._local_result_callback),
@@ -311,23 +296,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._client_api = None
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:
-        context = self._context
-        return {
-            FLMetaKey.SITE_NAME: fl_ctx.get_identity_name(),
-            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
-            ConfigKey.TASK_NAME: task_name,
-            ConfigKey.TASK_EXCHANGE: {
-                ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                # The backend only transports the declared representation contract. The
-                # trainer-side Client API adapts at receive/send and computes DIFF natively.
-                ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
-                ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
-                ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
-                ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
-                ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
-                ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,
-            },
-        }
+        return prepare_task_metadata(self._context, fl_ctx.get_identity_name(), fl_ctx.get_job_id(), task_name)
 
     def _trainer_thread_is_alive(self) -> bool:
         thread = self._task_fn_thread

@@ -16,7 +16,13 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from nvflare.apis.shareable import Shareable
+import pytest
+
+from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.private.fed.server.server_commands import SubmitUpdateCommand
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_runner import ServerRunner
 
@@ -100,3 +106,33 @@ class TestLateSubmissionAdmission:
         thread.join(timeout=1.0)
         runner._report_client_active.assert_not_called()
         fl_ctx.set_prop.assert_not_called()
+
+
+def _submission_command_context(runner):
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+    data = Shareable()
+    data.set_peer_context(FLContext())
+    data.set_header(ServerCommandKey.FL_CLIENT, Client("site-1", "token"))
+    data.set_header(FLContextKey.TASK_NAME, "train")
+    data.add_cookie(FLContextKey.TASK_ID, "task-1")
+    return fl_ctx, data
+
+
+def test_submit_update_does_not_acknowledge_a_result_dropped_after_task_check():
+    runner = _make_server_runner_for_submission(status="done")
+    fl_ctx, data = _submission_command_context(runner)
+    reply = SubmitUpdateCommand().process(data, fl_ctx)
+    assert reply.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED) is False
+    runner._report_client_active.assert_not_called()
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_submit_update_acknowledgement_requires_workflow_admission(accepted):
+    runner = MagicMock()
+    fl_ctx, data = _submission_command_context(runner)
+    runner.process_submission.side_effect = lambda *_args: fl_ctx.set_prop(
+        FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False
+    )
+    reply = SubmitUpdateCommand().process(data, fl_ctx)
+    assert reply.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED) is accepted

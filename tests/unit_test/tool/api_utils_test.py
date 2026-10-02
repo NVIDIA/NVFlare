@@ -558,7 +558,7 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
     monkeypatch.setattr(admin_api.AdminAPI, "logout", lambda self: self.close())
     monkeypatch.setattr(flare_api.Session, "get_system_info", lambda self: info)
     monkeypatch.setattr(api_utils, "Session", construct)
-    elapsed = _synchronize_probe_start(monkeypatch, entered)
+    _synchronize_probe_start(monkeypatch, entered)
     try:
         kwargs = dict(second_to_wait=0, timeout_in_sec=0.1, poll_interval=0.01, secure_mode=True)
         if recovers:
@@ -567,7 +567,10 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
         else:
             with pytest.raises(api_utils.SystemStartTimeout, match="certificate service temporarily unavailable"):
                 api_utils.wait_for_system_start(1, str(tmp_path), **kwargs)
-        assert elapsed() < 0.5
+        # This case checks retry/renewal semantics, not scheduler latency.
+        # Separate blocked-operation tests verify the caller's time budget.
+        assert entered.is_set()
+        assert len(workers) == 1  # One worker owns all attempts and cleanup.
     finally:
         for worker in workers:
             worker.join(1)

@@ -63,8 +63,7 @@ class InProcessClientAPI(APISpec):
         super().__init__()  # Initialize memory management from base class
 
         self.data_bus = DataBus()
-        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
-        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
+        self._subscribe_to_data_bus()
 
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
@@ -83,6 +82,10 @@ class InProcessClientAPI(APISpec):
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
         self._receive_error: Optional[Exception] = None
+
+    def _subscribe_to_data_bus(self):
+        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
+        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -208,7 +211,7 @@ class InProcessClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
+        self._publish_result(shareable)
 
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -275,7 +278,13 @@ class InProcessClientAPI(APISpec):
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
-        self.event_manager.fire_event(TOPIC_LOG_DATA, msg)
+        self._publish_log(msg)
+
+    def _publish_result(self, shareable: Shareable):
+        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
+
+    def _publish_log(self, message: dict):
+        self.event_manager.fire_event(TOPIC_LOG_DATA, message)
 
     def clear(self):
         self.fl_model = None
@@ -309,23 +318,26 @@ class InProcessClientAPI(APISpec):
 
     def __receive_callback(self, topic, data, databus):
         try:
-            if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
-                raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-            fl_model = FLModelUtils.from_shareable(data)
-            exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
-            fl_model.params = convert_params(
-                fl_model.params,
-                self.client_config.get_server_expected_format(),
-                exchange,
-                self._params_conversion_state,
-                self.logger,
-            )
-            self.fl_model = fl_model
+            self._set_received_shareable(data)
         except Exception as e:
             # DataBus callbacks run in a worker and publish() does not propagate their
             # exceptions. Surface conversion failures from flare.receive() instead.
             self._receive_error = e
+
+    def _set_received_shareable(self, data: Shareable):
+        """Apply the shared receive conversion for a transport-provided assignment."""
+        if not isinstance(data, Shareable):
+            raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
+        fl_model = FLModelUtils.from_shareable(data)
+        exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+        fl_model.params = convert_params(
+            fl_model.params,
+            self.client_config.get_server_expected_format(),
+            exchange,
+            self._params_conversion_state,
+            self.logger,
+        )
+        self.fl_model = fl_model
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:

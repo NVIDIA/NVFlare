@@ -28,6 +28,7 @@ from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
     generate_client_command,
     generate_server_command,
+    get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
@@ -76,6 +77,22 @@ class TestCredentialEnv:
         command = generate(fl_ctx)
         assert "secret-" not in command
         assert "/ws" in command
+
+
+def test_client_job_command_includes_selected_launcher_mode():
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(
+        FLContextKey.JOB_PROCESS_ARGS,
+        {
+            JobProcessArgs.EXE_MODULE: ("-m", "some.module"),
+            JobProcessArgs.LAUNCH_MODE: ("--launch_mode", "process"),
+        },
+        private=True,
+        sticky=False,
+    )
+
+    assert JobProcessArgs.LAUNCH_MODE in get_client_job_args()
+    assert generate_client_command(fl_ctx) == f"{sys.executable} -m some.module --launch_mode process"
 
 
 class TestValidateDockerJobLauncherSpec:

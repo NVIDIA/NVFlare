@@ -21,7 +21,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus, TaskPropKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -41,6 +41,7 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+_CLIENT_TASK_RESULT_ACCEPTED = "___result_accepted"
 _COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
 
 
@@ -83,9 +84,10 @@ class _DeadClientStatus:
 
 
 class _CompletedClientTaskInfo:
-    def __init__(self, client_name: str, task_name: str):
+    def __init__(self, client_name: str, task_name: str, accepted: bool):
         self.client_name = client_name
         self.task_name = task_name
+        self.accepted = accepted
 
 
 class WFCommServer(FLComponent, WFCommSpec):
@@ -399,7 +401,9 @@ class WFCommServer(FLComponent, WFCommSpec):
             return
 
         self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
-            client_name=client_task.client.name, task_name=client_task.task.name
+            client_name=client_task.client.name,
+            task_name=client_task.task.name,
+            accepted=client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False),
         )
         self._completed_client_task_map.move_to_end(client_task.id)
         while len(self._completed_client_task_map) > _COMPLETED_CLIENT_TASK_CACHE_SIZE:
@@ -445,6 +449,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         if not isinstance(result, Shareable):
             raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
 
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
@@ -458,6 +463,9 @@ class WFCommServer(FLComponent, WFCommSpec):
                 and completed_client_task.task_name == task_name
             ):
                 self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                fl_ctx.set_prop(
+                    FLContextKey.TASK_RESULT_ACCEPTED, completed_client_task.accepted, private=True, sticky=False
+                )
                 return
 
             # cannot find a standing task for the submission
@@ -485,18 +493,26 @@ class WFCommServer(FLComponent, WFCommSpec):
             if task.name != task_name:
                 raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
 
-            if task.completion_status is not None:
-                # the task is already finished - drop the result
-                self.log_info(fl_ctx, "task is already finished - submission dropped")
-                return
-
             if client_task.result_received_time is not None:
                 self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                fl_ctx.set_prop(
+                    FLContextKey.TASK_RESULT_ACCEPTED,
+                    client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False),
+                    private=True,
+                    sticky=False,
+                )
+                return
+
+            if task.completion_status is not None:
+                # A finished task without a previously processed result is not
+                # evidence of acceptance. Matching retries keep their outcome.
+                self.log_info(fl_ctx, "task is already finished - submission dropped")
                 return
 
             # do client task CB processing outside the lock
             # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
+            accepted = result.get_return_code() != ReturnCode.TASK_RESULT_FILTER_ERROR
 
             manager = task.props[_TASK_KEY_MANAGER]
             manager.check_task_result(result, client_task, fl_ctx)
@@ -519,10 +535,13 @@ class WFCommServer(FLComponent, WFCommSpec):
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
+                    accepted = False
             else:
                 self.log_debug(fl_ctx, "no result_received_cb")
 
             client_task.result_received_time = time.time()
+            client_task.props[_CLIENT_TASK_RESULT_ACCEPTED] = accepted
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
 
     def _schedule_task(
         self,

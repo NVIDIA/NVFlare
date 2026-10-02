@@ -41,6 +41,7 @@ from nvflare.private.fed.utils.identity_utils import (
     TokenVerifier,
     load_crt_chain_bytes,
 )
+from nvflare.private.fed.utils.task_execution_utils import RUNTIME_CAPABILITIES, TASK_RUNTIME_CAPABILITY
 
 MISSING_CLIENT_FQCN = ""
 
@@ -212,6 +213,8 @@ class Authenticator:
         local_ip = _get_client_ip()
         shareable = Shareable()
         shareable.set_peer_context(shared_fl_ctx)
+        if self.client_type == private_defs.ClientType.REGULAR:
+            shareable[RUNTIME_CAPABILITIES] = [TASK_RUNTIME_CAPABILITY]
 
         token_verifier = None
         if self.secure_mode:
