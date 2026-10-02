@@ -17,6 +17,10 @@ In config_fed_server.json and config_fed_client.json (for details see :ref:`appl
 task_result_filters and task_data_filters can be configured for processing data at the points
 highlighted in the image below:
 
+Filter task lists support the same ``*`` wildcard matching as executors. An exact task name takes precedence over
+matching patterns, and otherwise the first configured matching pattern is used. Omitting filters leaves messages
+unchanged.
+
 .. image:: ../resources/Filters.png
     :height: 350px
 
