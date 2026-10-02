@@ -32,7 +32,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -650,20 +650,21 @@ class JobExecutor(ClientExecutor):
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
+            # Every terminal result resolves the server's pending client outcome, including success.
             failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
             try:
                 request = new_cell_message(
                     headers={},
                     payload={
-                        JobFailureMsgKey.JOB_ID: job_id,
-                        JobFailureMsgKey.CODE: return_code,
-                        JobFailureMsgKey.REASON: failure_reason,
+                        JobOutcomeMsgKey.JOB_ID: job_id,
+                        JobOutcomeMsgKey.CODE: return_code,
+                        JobOutcomeMsgKey.REASON: failure_reason,
                     },
                 )
                 reply = self.client.send_request_before_shutdown(
                     target=FQCN.ROOT_SERVER,
                     channel=CellChannel.SERVER_MAIN,
-                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                    topic=CellChannelTopic.REPORT_JOB_OUTCOME,
                     request=request,
                     timeout=self.job_query_timeout,
                     optional=True,
