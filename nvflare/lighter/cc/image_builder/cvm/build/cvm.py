@@ -17,6 +17,7 @@
 import contextlib
 import hashlib
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -37,7 +38,7 @@ from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
 from ..common.linux import lock, run
 from ..common.policy import compose
-from ..common.references import snp_guest_policy
+from ..common.references import SNP_POLICY_SINGLE_SOCKET, snp_guest_policy
 from ..host.launcher import cbit_position, qemu_command, vfio_gpus
 from ..host.platforms import host_capabilities, select_platform
 from . import config
@@ -47,6 +48,7 @@ from .storage import build_verity, linux_root, sidecar
 RUNTIME_KEYS = (
     "gpu",
     "gpu_count",
+    "snp_single_socket",
     "bootstrap_egress",
     "kbs_url",
     "token_algorithm",
@@ -62,6 +64,40 @@ RUNTIME_KEYS = (
 # stack dumps off the host-visible serial port. The sysctl file installed by the
 # provisioner completes this with kexec, SysRq and kernel-memory restrictions.
 HARDENING_PARAMETERS = "lockdown=integrity module.sig_enforce=1 loglevel=3 printk.console_no_auto_verbose=1"
+
+SNP_LAUNCH_START_ERROR = re.compile(
+    r"^(?:\S*/)?qemu-system-[^:\s]+: sev_snp_launch_start:\s+SNP_LAUNCH_START ret=(-?\d+)" r"(?:\s+fw_error=(-?\d+))?"
+)
+
+
+def reference_boot_failure(manifest, log_text):
+    """Return a safe, actionable error when QEMU cannot start an SNP reference VM."""
+    if manifest.get("platform") != "amd_sev_snp":
+        return "Reference VM exited; inspect reference-boot.log"
+
+    for line in log_text.splitlines():
+        match = SNP_LAUNCH_START_ERROR.match(line)
+        if not match:
+            continue
+
+        ret, fw_error = match.groups()
+        status = f"ret={ret}" + (f", fw_error={fw_error}" if fw_error is not None else "")
+        message = f"AMD SEV-SNP SNP_LAUNCH_START failed ({status})"
+        policy = manifest.get("launch_shape", {}).get("snp_policy")
+        if type(policy) is int and policy >= 0:
+            message += f" for guest policy 0x{policy:x}"
+            if policy & SNP_POLICY_SINGLE_SOCKET:
+                message += (
+                    ". The approved policy enables SINGLE_SOCKET; confirm host firmware support, or, if the approved "
+                    "policy permits it, set snp_single_socket to false and rebuild"
+                )
+            else:
+                message += ". Confirm host firmware support for the requested SNP guest policy"
+        else:
+            message += ". Confirm host firmware support for the requested SNP guest policy"
+        return message + "; see reference-boot.log for full diagnostics"
+
+    return "Reference VM exited; inspect reference-boot.log"
 
 
 def contract(profile, source=config.SOURCE):
@@ -425,7 +461,9 @@ def collect_reference(manifest, directory, *, gpu=None, timeout=300):
                         verify_reference(platform, evidence)
                         write_json(directory / "reference-evidence.json", evidence)
                         return evidence["measurements"]
-                    require(process.poll() is None, "Reference VM exited; inspect reference-boot.log")
+                    if process.poll() is not None:
+                        final_text = log.read_text(errors="replace")
+                        raise BuildError(reference_boot_failure(manifest, final_text))
                     time.sleep(1)
         raise BuildError("Timed out collecting reference evidence; inspect reference-boot.log")
 

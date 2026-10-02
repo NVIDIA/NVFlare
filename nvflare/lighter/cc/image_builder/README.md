@@ -97,7 +97,7 @@ sudo ./cvmctl build --approval-key inputs/acceptance-signing.key
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvmctl build config/cvm_profile.yml -p amd_sev_snp --defer-measurements
-sudo ./cvmctl finalize target/cvm_cpu-2026.09-r4/amd_sev_snp
+sudo ./cvmctl finalize target/cvm_cpu-2026.09-r5/amd_sev_snp
 ```
 
 The builder sends a fixed, source-hashed payload to a plain construction VM. A
