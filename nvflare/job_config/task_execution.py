@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from nvflare.apis.task_execution import ExecutionLifetime
+from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config
+from nvflare.fuel.utils.component_builder import ConfigType
 
 EXECUTION_LIFETIME_KEY = "execution_lifetime"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"
@@ -56,28 +59,49 @@ def _collect_reference_values(value, result):
             _collect_reference_values(item, result)
 
 
-def _referenced_component_ids(config, component_ids):
+def _is_component_config(config):
+    if config.get("config_type", ConfigType.COMPONENT) != ConfigType.COMPONENT:
+        return False
+    try:
+        # Resolve aliases from the static class table, never by importing job code.
+        get_class_path_from_config(
+            config, resolve_name=lambda name: ModuleScanner(["nvflare"], ["app"], True).get_module_name(name)
+        )
+    except ConfigError:
+        return False
+    return True
+
+
+def _referenced_component_ids(config, component_ids, force_component=False):
     values = set()
     if isinstance(config, dict):
-        declared = config.get("component_dependencies", [])
-        if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
-            raise ValueError("component_dependencies must be a list of component IDs")
-        missing = set(declared).difference(component_ids)
-        if missing:
-            raise ValueError(f"unknown component_dependencies: {sorted(missing)}")
-        values.update(declared)
-        args = config.get("args", {})
-        if not isinstance(args, dict):
-            raise ValueError("component args must be a dict")
-        for name, value in args.items():
-            if name.endswith(("_id", "_ids")):
-                _collect_reference_values(value, values)
-        for value in config.values():
+        if force_component or _is_component_config(config):
+            declared = config.get("component_dependencies", [])
+            if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
+                raise ValueError("component_dependencies must be a list of component IDs")
+            missing = set(declared).difference(component_ids)
+            if missing:
+                raise ValueError(f"unknown component_dependencies: {sorted(missing)}")
+            values.update(declared)
+            args = config.get("args", {})
+            if not isinstance(args, dict):
+                raise ValueError("component args must be a dict")
+            for name, value in args.items():
+                if name.endswith(("_id", "_ids")):
+                    _collect_reference_values(value, values)
+            # Arguments are a container. Do not classify the whole mapping as
+            # another component when a constructor argument is named path/name.
+            children = args.values()
+        elif config.get("config_type") == ConfigType.DICT:
+            return values
+        else:
+            children = config.values()
+        for value in children:
             if isinstance(value, (dict, list)):
                 values.update(_referenced_component_ids(value, component_ids))
     elif isinstance(config, list):
         for value in config:
-            values.update(_referenced_component_ids(value, component_ids))
+            values.update(_referenced_component_ids(value, component_ids, force_component=force_component))
     return values.intersection(component_ids)
 
 
@@ -89,16 +113,18 @@ def _validate_timeout(name, value):
     return value
 
 
-def _component_dependency_closure(config, component_by_id):
+def _component_dependency_closure(config, component_by_id, force_component=False):
     component_ids = set(component_by_id)
-    pending = list(_referenced_component_ids(config, component_ids))
+    pending = list(_referenced_component_ids(config, component_ids, force_component=force_component))
     result = set()
     while pending:
         component_id = pending.pop()
         if component_id in result:
             continue
         result.add(component_id)
-        pending.extend(_referenced_component_ids(component_by_id[component_id], component_ids) - result)
+        pending.extend(
+            _referenced_component_ids(component_by_id[component_id], component_ids, force_component=True) - result
+        )
     return result
 
 
@@ -169,7 +195,7 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
             result_wait_timeout = _validate_timeout(
                 "Client API task result_wait_timeout", executor_config.get("args", {}).get("result_wait_timeout")
             )
-        executor_ids = _component_dependency_closure(executor_config, component_by_id)
+        executor_ids = _component_dependency_closure(executor_config, component_by_id, force_component=True)
         worker_component_ids.update(executor_ids)
         executor_worker_component_ids.append(executor_ids)
         executor_worker_timeouts.append(worker_timeout)
@@ -183,7 +209,7 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
         )
 
     job_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in worker_component_ids)
-    job_references = _component_dependency_closure(list(job_components), component_by_id)
+    job_references = _component_dependency_closure(list(job_components), component_by_id, force_component=True)
     shared_ids = worker_component_ids.intersection(job_references)
     if shared_ids:
         raise ValueError(

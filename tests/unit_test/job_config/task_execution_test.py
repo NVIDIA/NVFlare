@@ -331,6 +331,47 @@ def test_job_widget_cannot_reference_worker_owned_component():
         prepare_task_execution(config)
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"args": [1, 2]},
+        {"name": "ordinary-data", "args": [1, 2]},
+        {"path": "/data/model", "args": [1, 2]},
+        {"config_type": "dict", "path": "example.Data", "args": [1, 2]},
+        {"component_dependencies": "ordinary-data", "nested": {"args": [1, 2]}},
+    ],
+)
+def test_ordinary_nested_argument_dictionaries_are_not_component_specs(options):
+    config = {
+        "execution_lifetime": "task",
+        "executors": [{"executor": {"path": "example.Executor", "args": {"options": options}}}],
+        "components": [_component("unused")],
+    }
+    plan = prepare_task_execution(config)
+    assert plan.executors[0].executor["args"]["options"] == options
+    assert not plan.executors[0].components
+    assert plan.job_components[0]["id"] == "unused"
+
+
+def test_declared_nonstandard_reference_selects_transitive_worker_dependencies():
+    config = {
+        "execution_lifetime": "task",
+        "executors": [
+            {
+                "executor": {
+                    "path": "example.Executor",
+                    "args": {"source_model": "model"},
+                    "component_dependencies": ["model"],
+                }
+            }
+        ],
+        "components": [_component("model", weights_id="weights"), _component("weights"), _component("widget")],
+    }
+    plan = prepare_task_execution(config)
+    assert [component["id"] for component in plan.executors[0].components] == ["model", "weights"]
+    assert [component["id"] for component in plan.job_components] == ["widget"]
+
+
 @pytest.mark.parametrize("dependencies", ["state", [None], ["missing"]])
 def test_explicit_component_dependencies_are_validated(dependencies):
     config = {

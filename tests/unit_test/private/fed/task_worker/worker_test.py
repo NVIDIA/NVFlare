@@ -42,6 +42,7 @@ from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+from nvflare.job_config.task_execution import prepare_task_execution
 from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
@@ -103,6 +104,17 @@ class ProbeExecutor(Executor):
 class RaiseExecutor(ProbeExecutor):
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         raise ValueError("deliberate worker failure")
+
+
+class ReferenceExecutor(Executor):
+    def __init__(self, source_model, options):
+        super().__init__()
+        self.source_model = source_model
+        self.options = options
+
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        component = fl_ctx.get_engine().get_component(self.source_model)
+        return Shareable({"value": component.value + shareable["value"], "options": self.options})
 """ % (
     JobProcessEnv.ALL,
 )
@@ -208,6 +220,38 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert completion.completed_at >= completion.started_at
     assert completion.diagnostics["user_cpu_seconds"] >= 0
     assert store.read_input(identity)["value"] == 3
+
+
+def test_declared_source_model_and_ordinary_options_work_in_a_real_task_process(tmp_path):
+    workspace_root = _workspace(tmp_path)
+    options = {"args": [1, 2], "name": "ordinary-data"}
+    plan = prepare_task_execution(
+        {
+            "execution_lifetime": "task",
+            "executors": [
+                {
+                    "executor": {
+                        "path": "worker_components.ReferenceExecutor",
+                        "component_dependencies": ["model"],
+                        "args": {"source_model": "model", "options": options},
+                    }
+                }
+            ],
+            "components": [{"id": "model", "path": "worker_components.ValueComponent", "args": {"value": 4}}],
+        }
+    ).executors[0]
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("nonstandard-reference")
+    bootstrap_path = _stage(
+        store, identity, workspace_root, plan.executor, Shareable({"value": 3}), components=plan.components
+    )
+
+    process = _run_process(bootstrap_path)
+
+    assert process.returncode == 0, process.stderr
+    result, _completion = store.read_result(identity)
+    assert result["value"] == 7
+    assert result["options"] == options
 
 
 def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_path):

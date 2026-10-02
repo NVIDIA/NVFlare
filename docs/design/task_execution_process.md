@@ -50,6 +50,24 @@ their transitive references. For nonstandard/dynamic wiring, declare a
 referenced by both the worker graph and a CJ filter, widget, or other retained
 component is rejected rather than silently removed from the CJ.
 
+Nonstandard references such as `source_model` require an explicit dependency
+declaration. Task placement cannot infer whether an arbitrary string is a
+component ID or ordinary application data without importing application code.
+For example, an Executor that looks up `engine.get_component(self.source_model)`
+declares that reference on its specification:
+
+```json
+{
+  "path": "custom.Trainer",
+  "component_dependencies": ["model"],
+  "args": {"source_model": "model"}
+}
+```
+
+The same rule applies to nonstandard references in filters, retained CJ
+components and transitive worker dependencies. Nested argument dictionaries
+remain ordinary data unless they are actual component specifications.
+
 Task-lifetime jobs require client runtimes advertising `task_execution_process_v1`.
 The server rejects deployment to clients without that capability; it does not
 silently fall back to job lifetime. The server and client must both support this

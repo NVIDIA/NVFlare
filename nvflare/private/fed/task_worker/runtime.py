@@ -76,9 +76,7 @@ class TaskRuntime:
         captured = False
         for observer in self._event_observers:
             captured = observer(event_type, fl_ctx) or captured
-        if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION:
-            if captured:
-                return
+        if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION and not captured:
             self._unsupported("federated events")
         if event_type == EventType.FATAL_SYSTEM_ERROR and self._fatal_error is None:
             self._fatal_error = fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error"

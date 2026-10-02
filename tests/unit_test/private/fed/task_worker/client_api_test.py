@@ -97,7 +97,9 @@ def test_received_model_includes_job_and_site_metadata_and_starts_result_clock()
 def test_ordinary_executor_analytics_use_the_client_durable_event_binding():
     runtime = TaskRuntime(None, "site", "job")
     sender = AnalyticsSender()
-    runtime.set_compute_graph({"sender": sender}, FLComponent())
+    observer = FLComponent()
+    observer.handle_event = Mock()
+    runtime.set_compute_graph({"sender": sender, "observer": observer}, FLComponent())
     fl_ctx = runtime.new_context()
     records = []
     client_api.bind_client_task_context(
@@ -117,6 +119,9 @@ def test_ordinary_executor_analytics_use_the_client_durable_event_binding():
     )
     runtime.fire_event(ANALYTIC_EVENT_TYPE, fl_ctx)
     assert records[-1]["federated"] is True
+    assert len(records) == 2
+    observer.handle_event.assert_called_with(ANALYTIC_EVENT_TYPE, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION
 
 
 def test_task_adapter_rejects_custom_client_api_subclass():
