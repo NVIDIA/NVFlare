@@ -7,6 +7,15 @@ owner; a checksum sent beside the file does not authenticate it.
 Do not edit the manifest. If anything must change, return the request to the
 workload owner, who creates a new release and new authorization.
 
+The same launch procedure applies to SNP-only, SNP+GPU, TDX-only and TDX+GPU.
+First prepare the cluster for the handoff's selected runtime using
+[the cluster installation guide](README.md). CPU-only handoffs use
+`kata-qemu-snp` or `kata-qemu-tdx` and allocate no GPU; they do not require
+GPU Operator or NVIDIA hardware. GPU handoffs use the corresponding
+`kata-qemu-nvidia-gpu-*` runtime and require one confidential pGPU.
+Do not change the runtime or add/remove a GPU in the received YAML: those
+choices are bound to the independently approved profile and release policy.
+
 ## Inspect, launch, and verify
 
 ```bash
@@ -18,9 +27,19 @@ sha256sum RELEASE-pod.yaml
 The launcher rejects a mutable image tag, wrong registry/runtime, host
 namespaces, volumes, interactive I/O, service-account token, privilege,
 capabilities, missing digest, or an embedded policy that permits exec/streaming
-or policy replacement by default. The service independently refuses the image
-key unless attestation and release policy match the authorized image digest,
-command vector, init-data digest, CPU/GPU claims, and resource paths.
+or policy replacement by default. KBS independently checks the attested InitData
+digest, selected CPU claims (plus GPU claims for a GPU release), and requested
+resource path against the release authorization. Its image-digest and command
+checks compare policy-derived metadata bound into InitData, not a direct
+observation of the image actually pulled/decrypted or the running process.
+
+Digest-pinned pulls, signature verification, encrypted layers, and guest-policy
+checks still apply, but exact-image authorization has an unresolved coverage
+limitation: another image signed by the accepted key in the permitted repository
+has not been shown to be rejected solely because its digest differs while
+InitData remains unchanged. Do not assume that every image substitution is
+denied. See the architecture's
+[image authorization analysis](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
 
 `70-verify-running-workload.sh` re-checks the live Pod against the same
 authenticated manifest: runtime class, image digest, command, and init-data

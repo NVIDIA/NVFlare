@@ -372,7 +372,16 @@ def decode_initdata(encoded):
     return data
 
 
-def validate_workload_pod(pod, expected_context, command):
+def validate_workload_pod(pod, expected_context, command, *, runtime_class="kata-qemu-nvidia-gpu-snp"):
+    # The expected runtime comes from the trusted provisioning configuration,
+    # never from the generated Pod. Existing deployment callers retain SNP/GPU.
+    runtime_gpu = {
+        "kata-qemu-nvidia-gpu-snp": True,
+        "kata-qemu-snp": False,
+        "kata-qemu-nvidia-gpu-tdx": True,
+        "kata-qemu-tdx": False,
+    }
+    require(isinstance(runtime_class, str) and runtime_class in runtime_gpu, "unsupported approved runtime")
     require(isinstance(pod, dict) and set(pod) <= {"apiVersion", "kind", "metadata", "spec"}, "unexpected Pod fields")
     require(pod.get("apiVersion") == "v1" and pod.get("kind") == "Pod", "expected a v1 Pod")
     spec = pod.get("spec", {})
@@ -391,7 +400,7 @@ def validate_workload_pod(pod, expected_context, command):
         },
         "unapproved Pod spec field",
     )
-    require(spec.get("runtimeClassName") == "kata-qemu-nvidia-gpu-snp", "unapproved runtime")
+    require(spec.get("runtimeClassName") == runtime_class, "unapproved runtime")
     for name in ("hostNetwork", "hostPID", "hostIPC"):
         require(spec.get(name, False) is False, "host namespaces are forbidden")
     require(
@@ -411,9 +420,18 @@ def validate_workload_pod(pod, expected_context, command):
         container.get("command") == command and container.get("imagePullPolicy") == "Always",
         "unexpected workload command or pull policy",
     )
-    resources = normalize_resources(container.get("resources", {}))
+    resources = container.get("resources", {})
     require(
-        resources == {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}, "unapproved resources"
+        isinstance(resources, dict)
+        and set(resources) <= {"limits", "requests"}
+        and all(isinstance(quantities, dict) for quantities in resources.values()),
+        "unapproved resources",
+    )
+    resources = normalize_resources(resources)
+    expected_resources = {"nvidia.com/pgpu": "1"} if runtime_gpu[runtime_class] else {}
+    require(
+        resources.get("limits", {}) == expected_resources and resources.get("requests", {}) == expected_resources,
+        "unapproved resources",
     )
     metadata = pod.get("metadata", {})
     require(

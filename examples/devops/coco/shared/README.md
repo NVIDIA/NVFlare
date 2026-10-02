@@ -35,7 +35,7 @@ Changes to these package sources must be committed before assembly as well.
 `workload_security.py` supplies strict application-context approval, handoff
 snapshot authentication, and generated guest OCI validation. Assembly places
 it in all four role libraries; do not maintain separate implementations.
-See the [v3 contract](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
+See the [application security-context contract](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
 for migration, the collector exception and the pinned runtime's seccomp limitation.
 
 The admin generator, final approved-profile validation and CoCo launch preflight

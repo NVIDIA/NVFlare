@@ -1,7 +1,7 @@
 # Installing a workload-owner handoff
 
 This is the confidential per-workload handoff, not the trusted system's
-five-value platform handoff or CoCo's public runtime kit. Complete secure-services
+SNP/TDX platform-reference handoff or CoCo's public runtime kit. Complete secure-services
 installation before running the installer below.
 
 The input is the `trusted-service/` directory created on `admin`. It contains
@@ -32,7 +32,11 @@ sha256sum --check --strict SHA256SUMS
 Authenticate the checksum independently with the workload owner. A checksum
 inside the same directory detects corruption but does not authenticate who sent
 it. Review `release-authorization.json`, including its immutable image digest,
-complete command/argument vector, lowercase-hex init-data, and resource paths.
+complete command/argument vector, CPU type, GPU requirement, canonical
+`init_data_sha256`, hardware `init_data_claim`, and exact resource paths.
+New handoffs use authorization v2. TDX's claim is the 32-byte digest plus
+16 zero bytes for MRCONFIGID; SNP uses the unpadded 32-byte digest. A CPU-only
+release must not accidentally authorize a GPU-required workload or another TEE.
 
 ## Install
 
@@ -45,9 +49,11 @@ EXPECTED_MANIFEST_SHA256='<pin received from the workload owner over an authenti
 The installer requires the independently authenticated SHA-256 of `SHA256SUMS`.
 A checksum carried only inside the handoff does not authenticate its sender.
 Stage 40 on the provisioning node prints the pin for that separate exchange.
-Use matching reviewed role-kit revisions on both machines. Regenerate older,
-not-yet-installed handoffs with the updated provisioning kit; do not weaken the
-service template to accept an old fragment. Already installed immutable releases
+Use matching reviewed role-kit revisions on both machines. Authenticated legacy
+v1 handoffs are accepted only as SNP+GPU and upgraded to the independently
+generated CPU/GPU-type-bound fragment. Prefer regenerating older not-yet-installed
+handoffs; do not weaken the service template to accept an unknown fragment.
+Already installed immutable releases
 are not rewritten by updating these scripts.
 The installer snapshots all six regular files into a private temporary directory,
 validates the pin and every payload digest, then uses only those checked bytes.
@@ -76,3 +82,21 @@ owner. Do not send any handoff file or backup to CoCo IT.
 After successful installation, tell the workload owner only that the named
 immutable release is authorized. The owner then manually gives CoCo IT the
 separate one-file Pod YAML handoff.
+
+## Inspect a fresh workload release
+
+After CoCo IT launches a fresh Pod, use a time window containing that launch:
+
+```bash
+./13-verify-workload-release.sh RELEASE 5m \
+  "$HOME/incoming/RELEASE/release-authorization.json"
+```
+
+Use the reviewed authorization file retained with the installed handoff, not a
+file from CoCo IT. Supplying it selects SNP/TDX and CPU-only/GPU expectations.
+Omitting the third argument retains the historical SNP+GPU expectation; do not
+omit it for TDX or CPU-only releases. The check inspects appraisals and the three
+resource paths. It is diagnostic: separate success lines in a log window are
+not cryptographic correlation of one attestation session to one key request.
+Confirm authenticated application execution and peer-proof verification too.
+Never expose guest workload logs or relax policy for this diagnostic.

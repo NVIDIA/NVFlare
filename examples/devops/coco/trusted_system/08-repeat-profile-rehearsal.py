@@ -31,6 +31,21 @@ import yaml
 
 os.umask(0o077)
 profile = Path(sys.argv[1]).resolve(strict=True)
+# The original one-argument CLI remains valid for SNP. TDX stage 07 records the
+# trusted configuration path; repeat still reloads and validates the baseline.
+tdx_config = profile / "tdx-rehearsal-config.json"
+if tdx_config.is_file():
+    inputs = json.loads(tdx_config.read_text())
+    os.execv(
+        sys.executable,
+        [
+            sys.executable,
+            str(Path(__file__).with_name("tdx-reference.py")),
+            "repeat",
+            inputs["config"],
+            inputs["approval"],
+        ],
+    )
 first = profile / "rehearsal-collector-build"
 out = profile / "repeat-rehearsal"
 out.mkdir(mode=0o700)
@@ -127,7 +142,11 @@ try:
                     str(Path(__file__).with_name("capture-running-launch.py")),
                     namespace,
                     pod["metadata"]["name"],
-                    "/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml",
+                    "/opt/kata/share/defaults/kata-containers/"
+                    + {
+                        "kata-qemu-snp": "configuration-qemu-snp.toml",
+                        "kata-qemu-nvidia-gpu-snp": "configuration-qemu-nvidia-gpu-snp.toml",
+                    }[pod["spec"]["runtimeClassName"]],
                     str(out / "actual-launch.json"),
                 ]
             )

@@ -13,7 +13,11 @@ explicit containerd binary location, corrected Helm version comparison,
 cri-tools installation and private kubeadm initialization logs. Shared helpers
 are reduced to cluster installation, require an explicit target hostname,
 validate network configuration and prohibit checksum bypass. This package
-supports AMD SNP plus NVIDIA confidential GPU; TDX setup is not included.
+selects AMD SNP or Intel TDX, with optional NVIDIA confidential GPU passthrough.
+TDX firmware, a compatible host kernel, Intel platform provisioning and a pinned
+QGS installation are external prerequisites; preflight checks them instead of
+silently installing or trusting an unreviewed quote service. See the
+[target prerequisites](../../RUNTIME-VARIANTS.md).
 
 The first Kata installation uses the separately received, hash-checked public
 chart and the immutable amd64 image digest from `../public/kata-platform.env`.

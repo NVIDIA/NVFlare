@@ -11,6 +11,11 @@ CONFIG_FILE="$(realpath -- "$1")"
 [[ -s "${CONFIG_FILE}" ]] || { printf 'Missing configuration: %s\n' "${CONFIG_FILE}" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "${CONFIG_FILE}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+case "${RUNTIME_CLASS:-}" in
+    kata-qemu-tdx|kata-qemu-nvidia-gpu-tdx)
+        exec python3 "$SCRIPT_DIR/tdx-reference.py" prepare "$CONFIG_FILE" ;;
+esac
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }

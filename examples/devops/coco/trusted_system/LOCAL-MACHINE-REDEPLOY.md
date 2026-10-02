@@ -25,7 +25,7 @@ from another role just to make paths match.
 
 Follow the dependency order and destination table in CONFIGURATION.md. The
 provisioning node coordinates transfer of the trusted system's outputs. Secure
-services receives only its five-value JSON; admin receives its separate launch
+services receives only its SNP/TDX reference JSON; admin receives its separate launch
 contract. CoCo receives only the public chart/pins, registry CA, and final Pod
 YAML, with its hash authenticated separately.
 

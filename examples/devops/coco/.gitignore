@@ -31,6 +31,8 @@ workload-source.yaml
 *.bin
 *.log
 *.lock
+!trusted_system/tdx-verifier/Cargo.lock
+
 *.pyc
 __pycache__/
 .venv/
@@ -58,3 +60,9 @@ docs/*.pptx
 !trusted_system/lib/
 !coco/lib/
 !service/lib/
+!coco/bootstrap/lib/
+!trusted_system/bootstrap/lib/
+
+# Keep generated Python import caches excluded after the source allowlists.
+__pycache__/
+*.py[cod]

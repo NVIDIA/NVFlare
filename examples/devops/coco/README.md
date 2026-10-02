@@ -1,9 +1,41 @@
 # Confidential workload deployment
 
-A sanitized, role-separated runnable example for AMD SEV-SNP and NVIDIA
-confidential GPUs. Scripts, policies, dependencies and configuration templates
+A sanitized, role-separated deployment example for AMD SEV-SNP or Intel TDX,
+with an optional NVIDIA confidential GPU. Scripts, policies, dependencies and configuration templates
 are included; deployment credentials, certificates, measurements, private
 evidence and generated handoffs are not.
+
+For security guarantees, trust boundaries, threats, residual risks and the
+attestation/key-release protocol, start with the comprehensive
+[CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+The role guides below provide operational procedures, not separate security
+models. Follow the architecture's implementation-scope and validation notes.
+
+For a collaboration-level starting point, read
+[one model owner and two data owners](FL-DEPLOYMENT.md): roles and approvals,
+machine prerequisites, the guest/application distinction, reference rehearsal,
+ordered handoffs, and the dataset integrations users must supply.
+
+**TDX support is experimental pending hardware acceptance.** It extends the
+existing SNP+GPU deployment framework. The tested TDX platform generated a
+real quote, but its outdated firmware/TCB baseline was rejected with
+`TDX verification rejected: Intel DCAP TCB is not UpToDate`; both launch and
+current TCB were `OutOfDate`. Encrypted NVFlare execution, attestation-gated key
+release, and peer-proof generation/verification have not passed end to end on
+that platform. See [support status and the exact test boundary](RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+
+Choose the target using [runtime variants and deployment requirements](RUNTIME-VARIANTS.md).
+The role scripts select SNP-only, SNP+GPU, TDX-only or TDX+GPU explicitly; they
+do not infer trust from the cluster operator's runtime name. TDX host firmware,
+kernel, SGX provisioning and pinned quote-generation services must already be
+installed and reviewed. For the implementation/security contract, see
+[runtime implementation details](RUNTIME-PORTING.md). TDX hardware validation
+must be completed on the intended platform; offline tests are not that proof.
+
+For a worked deployment with one model owner and two data owners, follow the
+[two-site FL example](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#coco-security-two-site-example).
+It explains responsibilities, machine prerequisites and setup order, including
+the application-specific dataset and persistence integration you must supply.
 
 Start with [CONFIGURATION.md](CONFIGURATION.md) for required inputs, configuration
 commands, transfer boundaries and execution order. Read
@@ -49,7 +81,7 @@ not included. No separate NVFlare clone is required by the cluster installer.
 ## Package capabilities, not live state
 
 For protected NVFlare servers and clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
-It requires a new trusted rehearsal and v3 admin contract; old measurements and
+It requires a new trusted rehearsal and v4 admin contract; old measurements and
 contracts are not silently reused.
 The [approved security context](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
 pins application IDs, privileges, capabilities and rootfs mode. NVFlare's writable

@@ -16,14 +16,21 @@ It installs `cri-tools` so the rehearsal can associate the actual QEMU process
 with the correct Kubernetes Pod sandbox through `crictl`.
 
 Prepare `config.env` from the example, set the intended `EXPECTED_HOSTNAME`,
-keep `TEE_PLATFORM=snp`, and invoke from this bootstrap directory:
+and select the approved `RUNTIME_CLASS` using the
+[four-runtime guide](../../RUNTIME-VARIANTS.md). Set `TEE_PLATFORM=snp` for
+either SNP runtime or `TEE_PLATFORM=tdx` for either TDX runtime. GPU count is
+derived from the runtime: zero for CPU-only, one for a GPU target. TDX also
+requires the reviewed QGS installation and configuration pins described there.
+Invoke from this bootstrap directory:
 
 ```bash
 bash ../02-install-kubernetes.sh
 ```
 
-Kata and GPU Operator installation are performed separately using the trusted
-profile's pinned artifacts. Make bootstrap changes in the shared source.
+Kata installation is performed separately using the trusted profile's pinned
+artifacts. GPU Operator is installed only for GPU targets; CPU-only rehearsal
+does not require NVIDIA hardware or GPU passthrough. Make bootstrap changes in
+the shared source.
 
 The shared configuration loader is reduced to cluster-only inputs and rejects
 checksum bypass. The host-specific live configuration is not packaged.

@@ -44,17 +44,16 @@ if p.get("guest_token_api") != runtime_profile["CAPABILITY"]:
     raise SystemExit("Rehearse a new profile with the guest-local token API enabled")
 runtime_profile["require_token_api"](p["kata_config"]["hypervisor"]["qemu"].get("kernel_params"))
 runtime_profile["require_token_api"](a["launch_inputs"].get("kernel_command_line"))
-if (
-    p["runtime_class"] != runtime
-    or runtime != "kata-qemu-nvidia-gpu-snp"
-    or version != "3.29.0"
-    or not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", image)
-):
+target = runtime_profile["require_runtime_target"](p, runtime)
+runtime_profile["require_runtime_target"](a, runtime)
+if p["runtime_class"] != runtime or version != "3.29.0" or not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", image):
     raise SystemExit("Unsupported runtime profile")
-expected_resources = {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
-resources = {kind: {k: str(v) for k, v in values.items()} for kind, values in p["pod_resources"].items()}
+expected_resources = (
+    {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}} if target["gpu_count"] else {}
+)
+resources = {kind: values for kind, values in security["normalize_resources"](p["pod_resources"]).items() if values}
 if resources != expected_resources or a["pod_resources"] != [p["pod_resources"]]:
-    raise SystemExit("Only the rehearsed single-GPU, omitted-CPU/memory profile is supported")
+    raise SystemExit("Only the rehearsed target resource profile, without CPU/memory overrides, is supported")
 if a["artifacts"]["kata_config"]["sha256"] != p["kata_config_sha256"]:
     raise SystemExit("Approved configuration differs from captured launch")
 inputs_hash = hashlib.sha256(json.dumps(a["launch_inputs"], sort_keys=True).encode()).hexdigest()
@@ -68,7 +67,9 @@ if a["launch_inputs"]["smp"].split(",")[0] != str(vcpus) or a["launch_inputs"]["
 print(
     json.dumps(
         {
-            "schema": security["SCHEMA"],
+            "schema": runtime_profile["PROFILE_SCHEMA_V4"],
+            "cpu_tee": target["cpu_tee"],
+            "gpu": target["gpu"],
             "workload_security_context": context,
             "guest_token_api": runtime_profile["CAPABILITY"],
             "profile_id": profile_id,
@@ -80,8 +81,8 @@ print(
             "vm_defaults": {"vcpus": vcpus, "memory_mib": memory},
             "pod_constraints": {
                 "container_count": 1,
-                "gpu_resource": "nvidia.com/pgpu",
-                "gpu_count": 1,
+                "gpu_resource": "nvidia.com/pgpu" if target["gpu_count"] else None,
+                "gpu_count": target["gpu_count"],
                 "cpu_memory_resources": "omitted",
                 "host_namespaces": False,
                 "allowed_annotations": ["io.katacontainers.config.hypervisor.cc_init_data"],

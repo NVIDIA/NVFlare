@@ -13,6 +13,10 @@ on-premises IP protection deployment. Read it before provisioning with
 :ref:`cvm_builder`, because the guarantees below depend on who operates each
 component, not only on the hardware.
 
+This is the standalone CVM Builder root-and-vault architecture. For Kubernetes Pods using Kata Confidential Containers,
+read :ref:`coco_security_architecture` instead. The two deployment paths share NVFlare participant-attestation components,
+but their image formats, launch controls, and key-release bindings differ.
+
 The authoritative engineering documents live with the builder in the NVFlare source
 tree; see `Reference guides`_ for links to each one.
 
@@ -168,8 +172,11 @@ Runtime attestation
 
 NVFlare's ``CCManager`` and its ``CCAuthorizer`` components provide a separate
 application-level layer. They generate and cross-verify participant tokens for the
-lifetime of the system, and a site that fails validation is removed from the
-federation. See :ref:`confidential_computing_attestation` for that workflow.
+lifetime of the system. A failed client registration is rejected; a cross-site
+validation failure invokes server-wide shutdown on the server or exits the detecting
+client. This is not selective removal or quarantine of one peer. The initial
+scheduling-related check and periodic checks are described in
+:ref:`confidential_computing_attestation`.
 
 The split matters because CVM-level reauthorization protects local vault access,
 while NVFlare participant attestation decides whether remote peers remain admitted
