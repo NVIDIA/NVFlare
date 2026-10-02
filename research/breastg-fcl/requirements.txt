@@ -1,0 +1,21 @@
+# Core ML stack
+# For CUDA-specific PyTorch wheels, install torch from the
+# matching PyTorch index first, then install the remaining packages here.
+torch>=2.0
+
+# Federated execution
+nvflare==2.9.0
+
+# Numerical computing and plotting
+numpy>=1.23
+pandas>=1.5
+matplotlib>=3.7
+seaborn>=0.12
+
+# Dataset and utility dependencies
+requests>=2.28
+easydict>=1.10
+
+# TCIA official radiogenomics workbooks
+openpyxl==3.1.5
+xlrd==2.0.2

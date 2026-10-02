@@ -1,0 +1,2 @@
+# Trailing tabs in TSV records encode empty fields and must be preserved.
+TCGA-BRCA/metadata/*.tsv text eol=lf whitespace=-blank-at-eol
