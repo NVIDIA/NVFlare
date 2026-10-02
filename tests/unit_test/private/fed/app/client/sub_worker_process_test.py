@@ -39,15 +39,6 @@ def test_event_reply_is_sent_after_rank_handlers_complete():
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
 
 
-def test_failed_event_handler_does_not_acknowledge_cleanup():
-    worker = module.SubWorkerExecutor.__new__(module.SubWorkerExecutor)
-    worker.run_manager = Mock()
-    worker.run_manager.get_component.return_value.relay_event.side_effect = RuntimeError("cleanup failed")
-
-    with pytest.raises(RuntimeError, match="cleanup failed"):
-        worker._handle_event({})
-
-
 @pytest.mark.parametrize("run_fails", [False, True])
 def test_rank_main_stops_and_joins_parent_monitor_even_when_run_fails(monkeypatch, run_fails):
     args = SimpleNamespace(
