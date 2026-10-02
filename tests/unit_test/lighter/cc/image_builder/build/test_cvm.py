@@ -58,12 +58,19 @@ class ReferenceBootFailureTests(unittest.TestCase):
         self.assertIn("Confirm host firmware support", error)
         self.assertNotIn("snp_single_socket to false", error)
 
-    def test_collect_reference_surfaces_snp_launch_error(self):
+    def test_collect_reference_reads_final_log_once_after_process_exits(self):
         @contextlib.contextmanager
         def failed_process(command, log):
-            Path(log).write_text(self.log_text)
+            Path(log).write_text("")
             process = Mock()
-            process.poll.return_value = 1
+
+            def poll():
+                if process.poll.call_count == 1:
+                    return None
+                Path(log).write_text(self.log_text)
+                return 1
+
+            process.poll.side_effect = poll
             yield process
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -75,11 +82,14 @@ class ReferenceBootFailureTests(unittest.TestCase):
                 patch("cvm.build.cvm.qemu_command", return_value=["qemu-system-x86_64"]),
                 patch("cvm.build.cvm.cbit_position", return_value=51),
                 patch("cvm.build.cvm.owned_process", side_effect=failed_process),
+                patch("cvm.build.cvm.time.sleep"),
+                patch("cvm.build.cvm.reference_boot_failure", wraps=reference_boot_failure) as diagnostic,
                 self.assertRaises(BuildError) as raised,
             ):
                 collect_reference(self.manifest, directory, timeout=1)
 
         error = str(raised.exception)
+        diagnostic.assert_called_once_with(self.manifest, self.log_text)
         self.assertIn("SNP_LAUNCH_START failed (ret=-22, fw_error=0)", error)
         self.assertIn(f"guest policy 0x{self.policy:x}", error)
         self.assertNotIn("SECRET_SENTINEL", error)

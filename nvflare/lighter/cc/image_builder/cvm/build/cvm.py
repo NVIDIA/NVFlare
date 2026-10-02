@@ -461,7 +461,9 @@ def collect_reference(manifest, directory, *, gpu=None, timeout=300):
                         verify_reference(platform, evidence)
                         write_json(directory / "reference-evidence.json", evidence)
                         return evidence["measurements"]
-                    require(process.poll() is None, reference_boot_failure(manifest, text))
+                    if process.poll() is not None:
+                        final_text = log.read_text(errors="replace")
+                        raise BuildError(reference_boot_failure(manifest, final_text))
                     time.sleep(1)
         raise BuildError("Timed out collecting reference evidence; inspect reference-boot.log")
 
