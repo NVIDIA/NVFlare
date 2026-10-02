@@ -119,7 +119,7 @@ class ClientAppRunner(Runner):
         conf.configure()
 
         runner_config = conf.runner_config
-        configure_task_launchers(runner_config, job_launcher_mode=self.get_job_launcher_mode(args))
+        configure_task_launchers(runner_config, job_launcher_mode=self.get_job_launcher_mode(args), workspace=workspace)
 
         # configure privacy control!
         privacy_manager = create_privacy_manager(workspace, names_only=False)

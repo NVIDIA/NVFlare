@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 1
-WORKER_MODULE = "nvflare.private.fed.task_worker.worker"
+WORKER_MODULE = "nvflare.private.fed.app.client.task_worker_process"
 _MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 _MAX_IDENTITY_VALUE_LENGTH = 4096
 

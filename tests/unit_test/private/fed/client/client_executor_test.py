@@ -213,9 +213,13 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
         )
 
 
-def test_start_app_passes_selected_job_launcher_mode_to_client_job(tmp_path):
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_start_app_passes_selected_job_launcher_mode_only_to_task_client_job(tmp_path, lifetime):
     job_id = "job-1"
     job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    config_dir = tmp_path / job_id / "app_site-1" / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config_fed_client.json").write_text(json.dumps({"execution_lifetime": lifetime}))
     executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
     launcher = MagicMock()
     launcher.launch_mode = "docker"
@@ -241,7 +245,10 @@ def test_start_app_passes_selected_job_launcher_mode_to_client_job(tmp_path):
         for call in fl_ctx.set_prop.call_args_list
         if call.kwargs.get("key") == FLContextKey.JOB_PROCESS_ARGS
     )
-    assert job_args[JobProcessArgs.LAUNCH_MODE] == ("--launch_mode", "docker")
+    if lifetime == "task":
+        assert job_args[JobProcessArgs.LAUNCH_MODE] == ("--launch_mode", "docker")
+    else:
+        assert JobProcessArgs.LAUNCH_MODE not in job_args
 
 
 @pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])

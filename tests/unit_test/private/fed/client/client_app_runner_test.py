@@ -52,7 +52,9 @@ def test_client_runner_injects_site_launcher_with_selected_job_backend(tmp_path,
 
     assert runner.create_client_runner(str(tmp_path), args, "config", client, False) is client_runner
     conf.configure.assert_called_once()
-    inject.assert_called_once_with(config, job_launcher_mode=mode)
+    assert inject.call_args.args == (config,)
+    assert inject.call_args.kwargs["job_launcher_mode"] == mode
+    assert inject.call_args.kwargs["workspace"].get_root_dir() == str(tmp_path)
     assert client.runner_config is config
     manager.add_handler.assert_called_once_with(client_runner)
 

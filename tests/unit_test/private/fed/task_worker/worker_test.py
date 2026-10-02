@@ -171,6 +171,7 @@ def _run_process(bootstrap_path, extra_env=None):
         capture_output=True,
         text=True,
         timeout=30,
+        start_new_session=True,
     )
 
 
@@ -588,7 +589,7 @@ def test_task_runtime_owns_local_context_and_component_views():
     assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) is None
     assert fl_ctx.get_process_type() is None
     runtime.fire_event("local", fl_ctx)
-    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True)
+    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True, sticky=False)
     with pytest.raises(UnsupportedTaskRuntimeService, match="federated events"):
         runtime.fire_event("federated", fl_ctx)
 
@@ -687,7 +688,13 @@ def test_invalid_executor_result_still_finalizes_compute_graph(tmp_path, monkeyp
     monkeypatch.setattr(worker, "_fire_checked", lambda _engine, event, _ctx: events.append(event))
     with pytest.raises(TypeError, match="instead of Shareable"):
         worker._execute(bootstrap, Shareable(), workspace, None)
-    assert events == [EventType.START_RUN, EventType.BEFORE_TASK_EXECUTION, EventType.END_RUN]
+    assert events == [
+        EventType.ABOUT_TO_START_RUN,
+        EventType.START_RUN,
+        EventType.BEFORE_TASK_EXECUTION,
+        EventType.ABOUT_TO_END_RUN,
+        EventType.END_RUN,
+    ]
 
 
 def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(tmp_path, monkeypatch):

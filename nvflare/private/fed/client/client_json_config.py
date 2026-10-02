@@ -83,6 +83,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             parent_url = sp_url
 
         sys_vars = {
+            **self.cmd_vars,
             SystemVarName.JOB_ID: args.job_id,
             SystemVarName.SITE_NAME: args.client_name,
             SystemVarName.WORKSPACE: args.workspace,
@@ -104,18 +105,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             sys_vars=sys_vars,
         )
 
-        try:
-            self.task_execution_config = prepare_task_execution(self.config_data)
-        except (TypeError, ValueError) as e:
-            raise ConfigError(str(e)) from e
-        if self.task_execution_config is not None:
-            # Worker-owned components must not be constructed in the job-based
-            # CJ. Keep the submitted job config unchanged on disk and apply the
-            # placement plan only to this runtime copy.
-            self.config_data["components"] = [
-                copy.deepcopy(component) for component in self.task_execution_config.job_components
-            ]
-
+        self.task_execution_config = None
         self.config_files = [config_file_name]
 
         self.runner_config = None
@@ -123,6 +113,20 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.current_exe = None
         self.current_exe_index = None
         self._default_task_fetch_interval = 0.5
+
+    def start_config(self, config_ctx: ConfigContext):
+        # The existing configurator invokes this after variable resolution and
+        # before any component construction. Both placement and worker specs
+        # must use that resolved runtime copy, not the submitted template.
+        super().start_config(config_ctx)
+        try:
+            self.task_execution_config = prepare_task_execution(self.config_data)
+        except (TypeError, ValueError) as e:
+            raise ConfigError(str(e)) from e
+        if self.task_execution_config is not None:
+            self.config_data["components"] = [
+                copy.deepcopy(component) for component in self.task_execution_config.job_components
+            ]
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
@@ -164,7 +168,12 @@ class ClientJsonConfigurator(FedJsonConfigurator):
     def _authorize_and_create_task_supervisor(self, config_ctx: ConfigContext, node: Node) -> TaskWorkerExecutor:
         """Authorize inert application specs, then create the internal supervisor."""
         index = self.current_exe_index
-        if index is None or index < 0 or index >= len(self.task_execution_config.executors):
+        if (
+            self.task_execution_config is None
+            or index is None
+            or index < 0
+            or index >= len(self.task_execution_config.executors)
+        ):
             raise ConfigError(f"missing task execution plan for executor index {index}")
 
         task_config = self.task_execution_config.executors[index]
@@ -179,6 +188,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             executor=copy.deepcopy(task_config.executor),
             components=[copy.deepcopy(component) for component in task_config.components],
             worker_timeout=task_config.worker_timeout,
+            result_wait_timeout=task_config.result_wait_timeout,
         )
         self.handlers.append(supervisor)
         return supervisor

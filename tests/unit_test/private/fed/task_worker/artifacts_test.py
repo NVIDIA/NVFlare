@@ -83,6 +83,28 @@ def test_durable_script_send_is_distinct_from_final_hook_modified_result(tmp_pat
     assert store.read_completion(identity) == completion
 
 
+def test_result_wait_markers_are_durable_exclusive_and_identity_bound(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    assert store.result_wait_state(identity) == (None, None)
+    store.mark_result_wait_started(identity)
+    started, sent = store.result_wait_state(identity)
+    assert isinstance(started, float)
+    assert sent is None
+    with pytest.raises(FileExistsError):
+        store.mark_result_wait_started(identity)
+    store.stage_script_result(identity, Shareable())
+    assert store.result_wait_state(identity)[1] >= started
+    marker = os.path.join(directory, "result_wait_started.json")
+    record = artifacts._read_json(marker)
+    record["identity"]["task_id"] = "another-task"
+    with open(marker, "w") as stream:
+        json.dump(record, stream)
+    with pytest.raises(ValueError, match="stale.*identity"):
+        store.result_wait_state(identity)
+
+
 def test_round_trip_binds_complete_attempt_identity_and_survives_writer(tmp_path):
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity()

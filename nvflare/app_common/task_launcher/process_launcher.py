@@ -257,8 +257,9 @@ class ProcessTaskLauncher(TaskLauncherSpec):
 
     This backend has no CPU, memory, or GPU admission authority. It rejects
     non-empty resource requests rather than treating environment visibility as
-    a reservation. An argv can still launch a multi-process group (for example,
-    ``torchrun``) when admission is handled by a future site mechanism.
+    a reservation. Multi-process applications are supported only when every
+    descendant remains in the owned group. Launchers such as ``torchrun`` that
+    start ranks in separate sessions are outside this containment contract.
     Descendants must remain in the owned POSIX session; deliberate ``setsid``
     detachment is unsupported and cannot be included in settlement proof.
     """

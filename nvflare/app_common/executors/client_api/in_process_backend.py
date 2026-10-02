@@ -33,7 +33,7 @@ import threading
 import time
 from typing import Optional
 
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply

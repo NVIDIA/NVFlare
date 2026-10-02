@@ -50,6 +50,22 @@ def is_python_greater_than_309():
 
 
 class TestComponentBuilder:
+    @pytest.mark.parametrize("argument_name", ["path", "class_path", "name"])
+    def test_authorization_walker_never_classifies_the_argument_container_as_a_component(self, argument_name):
+        builder = MockComponentBuilder()
+        config = {
+            "path": "builtins.dict",
+            "args": {
+                argument_name: "builtins.dict",
+                "helper": {"path": "builtins.list", "args": {}},
+            },
+        }
+        node = Node(config)
+        node.paths = ["root"]
+        seen = []
+        builder.authorize_component_config_tree(config, node, lambda _cfg, child: seen.append(child.path()))
+        assert seen == ["root", "root.args.helper"]
+
     def test_authorization_walker_preserves_argument_and_component_list_paths(self):
         builder = MockComponentBuilder()
         config = {

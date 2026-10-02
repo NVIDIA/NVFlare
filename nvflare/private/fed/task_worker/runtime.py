@@ -40,6 +40,7 @@ class TaskRuntime:
         self._workspace = workspace
         self._components = {}
         self._handlers = []
+        self._event_observers = []
         self._fatal_error = None
         self.abort_signal = Signal()
         self._context_manager = FLContextManager(
@@ -67,8 +68,17 @@ class TaskRuntime:
     def new_context(self) -> FLContext:
         return self._context_manager.new_context()
 
+    def add_event_observer(self, observer):
+        """Bind a role-specific durable event sink without importing a job engine."""
+        self._event_observers.append(observer)
+
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        captured = False
+        for observer in self._event_observers:
+            captured = observer(event_type, fl_ctx) or captured
         if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION:
+            if captured:
+                return
             self._unsupported("federated events")
         if event_type == EventType.FATAL_SYSTEM_ERROR and self._fatal_error is None:
             self._fatal_error = fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error"

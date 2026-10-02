@@ -30,12 +30,13 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskLauncherSpec, TaskLaunchRequest, TaskResourceRequest
@@ -59,6 +60,8 @@ _PASSTHROUGH_ENVIRONMENT_NAMES = {
     "LANG",
     "LC_ALL",
     "LD_LIBRARY_PATH",
+    "FL_LOG_LEVEL",
+    "NVFLARE_SECURE_LOGGING",
     "PATH",
     "PYTHONHASHSEED",
     "PYTHONHOME",
@@ -86,6 +89,7 @@ class TaskWorkerExecutor(Executor):
         components: list,
         worker_timeout: Optional[float] = None,
         poll_interval: float = 0.05,
+        result_wait_timeout: Optional[float] = None,
     ):
         super().__init__()
         if worker_timeout is not None and (
@@ -111,6 +115,14 @@ class TaskWorkerExecutor(Executor):
         self.executor_spec = copy.deepcopy(executor)
         self.component_specs = copy.deepcopy(components)
         self.worker_timeout = None if worker_timeout is None else float(worker_timeout)
+        if result_wait_timeout is not None and (
+            isinstance(result_wait_timeout, bool)
+            or not isinstance(result_wait_timeout, (int, float))
+            or not math.isfinite(result_wait_timeout)
+            or result_wait_timeout < 0
+        ):
+            raise ValueError("result_wait_timeout must be a finite nonnegative number or None")
+        self.result_wait_timeout = result_wait_timeout
         self.poll_interval = float(poll_interval)
         self._launcher = None
         self._environment_variables = ()
@@ -118,7 +130,9 @@ class TaskWorkerExecutor(Executor):
         self._state_lock = threading.RLock()
         self._diagnostic_lock = threading.Lock()
         self._active_handle = None
+        self._active_abort_signal = None
         self._stopping = False
+        self._settlement_panic_reported = False
         self._pending_publication = {}
         self._artifact_cleanup = TaskArtifactCleanup.JOB
         self._retained_attempts = {}
@@ -172,28 +186,38 @@ class TaskWorkerExecutor(Executor):
         if event_type == EventType.START_RUN:
             with self._state_lock:
                 self._stopping = False
+                self._settlement_panic_reported = False
                 self._job_cleanup_requested = False
         elif event_type == EventType.ABORT_TASK:
-            self._cancel_active()
+            self._cancel_active(fl_ctx)
         elif event_type == EventType.END_RUN:
             with self._state_lock:
                 self._stopping = True
                 self._job_cleanup_requested = True
-            self._cancel_active()
+            self._cancel_active(fl_ctx)
             self._cleanup_job_payloads(fl_ctx)
         elif event_type == EventType.AFTER_SEND_TASK_RESULT:
             self._record_publication_outcome(fl_ctx)
 
-    def _cancel_active(self):
+    def _cancel_active(self, fl_ctx=None):
         with self._state_lock:
             handle = self._active_handle
+            if self._active_abort_signal is not None:
+                self._active_abort_signal.trigger(True)
         if handle is not None:
             try:
                 handle.cancel()
             except Exception:
-                with self._state_lock:
-                    self._stopping = True
+                self._fail_unconfirmed_settlement(fl_ctx)
                 raise
+
+    def _fail_unconfirmed_settlement(self, fl_ctx):
+        with self._state_lock:
+            self._stopping = True
+            if fl_ctx is None or self._settlement_panic_reported:
+                return
+            self._settlement_panic_reported = True
+        self.system_panic("Task worker process settlement is unconfirmed; stopping the job", fl_ctx)
 
     def _cleanup_job_payloads(self, fl_ctx):
         """Release owned attempts only after END_RUN and all worker/read activity settles.
@@ -355,9 +379,13 @@ class TaskWorkerExecutor(Executor):
             raise TypeError("task worker input must be a Shareable")
         if not self._execution_lock.acquire(blocking=False):
             raise RuntimeError("this task supervisor already has an active task worker")
+        with self._state_lock:
+            self._active_abort_signal = abort_signal
         try:
             return self._execute(task_name, shareable, fl_ctx, abort_signal)
         finally:
+            with self._state_lock:
+                self._active_abort_signal = None
             self._execution_lock.release()
             self._cleanup_job_payloads(fl_ctx)
 
@@ -367,6 +395,8 @@ class TaskWorkerExecutor(Executor):
             raise RuntimeError("task execution requires a current task ID")
         with self._state_lock:
             if self._stopping or abort_signal.triggered:
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
                 raise RuntimeError("Client Job is stopping and rejects a new task worker")
         self._validate_cpu_only_runtime(fl_ctx)
         launcher = self._get_task_launcher()
@@ -407,7 +437,7 @@ class TaskWorkerExecutor(Executor):
             site_name=site_name,
             task_id=task_id,
             attempt_id=identity.attempt_id,
-            argv=(sys.executable, "-m", WORKER_MODULE, "--bootstrap", bootstrap_path),
+            argv=(sys.executable, "-m", WORKER_MODULE, "--bootstrap", bootstrap_path, "--parent_pid", str(os.getpid())),
             environment=self._worker_environment(self._environment_variables),
             cwd=self._workspace(fl_ctx).get_run_dir(job_id),
             resources=TaskResourceRequest(),
@@ -431,6 +461,13 @@ class TaskWorkerExecutor(Executor):
                     status = handle.cancel()
                     break
                 remaining = None if deadline is None else deadline - time.monotonic()
+                if self.result_wait_timeout is not None:
+                    wait_started, result_sent = store.result_wait_state(identity)
+                    if wait_started is not None and (
+                        result_sent is None or result_sent > wait_started + self.result_wait_timeout
+                    ):
+                        result_remaining = wait_started + self.result_wait_timeout - time.monotonic()
+                        remaining = result_remaining if remaining is None else min(remaining, result_remaining)
                 if remaining is not None and remaining <= 0:
                     cancellation_reason = "timed out"
                     status = handle.cancel()
@@ -449,6 +486,8 @@ class TaskWorkerExecutor(Executor):
             self._append_diagnostic(runtime_root, {**diagnostic, "event": "settled", "status": status.phase.value})
             if not status.settled:
                 raise RuntimeError(f"task worker did not settle: {status.failure_reason or status}")
+            if cancellation_reason == "aborted" or (cancellation_reason is None and status.cancel_requested):
+                return make_reply(ReturnCode.TASK_ABORTED)
             if cancellation_reason:
                 raise RuntimeError(f"task worker {cancellation_reason}")
             if not status.succeeded:
@@ -472,9 +511,20 @@ class TaskWorkerExecutor(Executor):
             for message in store.read_analytics(identity, completion):
                 try:
                     message = dict(message)
-                    message["tag"] = message.pop("key")
-                    dxo = create_analytic_dxo(**message)
-                    send_analytic_dxo(self, dxo, fl_ctx, event_type=ANALYTIC_EVENT_TYPE, fire_fed_event=False)
+                    if "event_type" in message:
+                        if message["event_type"] != ANALYTIC_EVENT_TYPE or not isinstance(message["federated"], bool):
+                            raise ValueError("unsupported task worker analytics event")
+                        send_analytic_dxo(
+                            self,
+                            from_shareable(message["data"]),
+                            fl_ctx,
+                            event_type=message["event_type"],
+                            fire_fed_event=message["federated"],
+                        )
+                    else:
+                        message["tag"] = message.pop("key")
+                        dxo = create_analytic_dxo(**message)
+                        send_analytic_dxo(self, dxo, fl_ctx, event_type=ANALYTIC_EVENT_TYPE, fire_fed_event=False)
                 except Exception as e:
                     self.log_error(fl_ctx, f"failed to emit task worker analytics: {e}")
             with self._state_lock:
@@ -488,8 +538,7 @@ class TaskWorkerExecutor(Executor):
                 if not observed.settled:
                     handle.cancel()
             except BaseException:
-                with self._state_lock:
-                    self._stopping = True
+                self._fail_unconfirmed_settlement(fl_ctx)
                 raise
             raise
         finally:
@@ -502,6 +551,8 @@ class TaskWorkerExecutor(Executor):
                     self._active_handle = None
                 elif not settled:
                     self._stopping = True
+            if not settled:
+                self._fail_unconfirmed_settlement(fl_ctx)
 
     def _record_publication_outcome(self, fl_ctx: FLContext):
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)

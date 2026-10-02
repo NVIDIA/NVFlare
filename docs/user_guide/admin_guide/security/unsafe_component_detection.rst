@@ -88,9 +88,9 @@ classes for non-BYOC jobs.
 
 The check is applied to every component config built through the NVFLARE JSON configuration flow, including component configs
 nested at any depth inside another component's ``args``. It also checks component configs inside dictionaries and lists before
-they can be built later by runtime builders such as the multi-process executor or ``engine.build_component()``. The
-multi-process executor's ``components`` entries are checked even if an entry sets ``"config_type": "dict"``, because those
-entries are still built as components later. The authorizer can also be called directly with
+they can be built later by runtime builders such as the private task-worker component builder or
+``engine.build_component()``. The task worker rechecks its selected component graph against the site's policy before
+importing application classes. The authorizer can also be called directly with
 ``authorize_component_config(...)`` by code that wants to validate a component config without firing an event.
 
 When BYOC is enabled for the job, this built-in class allow-list check is skipped because BYOC authorization already permits

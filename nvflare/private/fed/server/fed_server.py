@@ -843,6 +843,18 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
+                    from nvflare.private.fed.utils.task_execution_utils import RUNTIME_CAPABILITIES
+
+                    capabilities = data.get(RUNTIME_CAPABILITIES, [])
+                    if (
+                        client_type == ClientType.REGULAR
+                        and isinstance(capabilities, list)
+                        and len(capabilities) <= 32
+                        and all(isinstance(value, str) and len(value) <= 128 for value in capabilities)
+                    ):
+                        client.set_prop(RUNTIME_CAPABILITIES, tuple(capabilities))
+                    else:
+                        client.set_prop(RUNTIME_CAPABILITIES, ())
                     accepted_site_config = client.get_site_config()
                     if accepted_site_config:
                         self.logger.info(

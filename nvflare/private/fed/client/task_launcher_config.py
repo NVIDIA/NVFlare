@@ -15,14 +15,13 @@
 """Build and inject the site-owned task launcher into client-job supervisors."""
 
 import copy
+import json
 from typing import Optional
 
-from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.launcher import LauncherMode
 from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskLauncherSpec
 from nvflare.fuel.utils.class_loader import load_class
-from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 
 TASK_LAUNCHER_CONFIG = "task_launcher"
@@ -31,19 +30,23 @@ TASK_LAUNCHER_ARGS = "args"
 DEFAULT_TASK_LAUNCHER_PATH = "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher"
 
 
-def _site_resources():
-    resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
-    if resources is not None and not isinstance(resources, dict):
+def _site_resources(workspace):
+    if workspace is None:
+        return {}
+    path = workspace.get_resources_file_path()
+    if path is None:
+        return {}
+    # Do not use ConfigService/ConfigFactory: their recursive filename search
+    # can select a job's resources.json before the site's resources.json.default.
+    with open(path, encoding="utf-8") as stream:
+        resources = json.load(stream)
+    if not isinstance(resources, dict):
         raise TypeError("the site resources configuration must be a dict")
-    return resources or {}
+    return resources
 
 
-def _site_task_launcher_config():
-    return _site_resources().get(TASK_LAUNCHER_CONFIG, {})
-
-
-def _site_artifact_cleanup():
-    config = _site_resources().get("task_execution", {})
+def _site_artifact_cleanup(resources):
+    config = resources.get("task_execution", {})
     if not isinstance(config, dict):
         raise TypeError("task_execution must be a dict")
     unknown = set(config).difference({"artifact_cleanup"})
@@ -52,7 +55,7 @@ def _site_artifact_cleanup():
     return TaskArtifactCleanup.validate(config.get("artifact_cleanup", TaskArtifactCleanup.JOB))
 
 
-def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
+def build_task_launcher(config: Optional[dict] = None, workspace=None) -> TaskLauncherSpec:
     """Build the launcher selected by trusted site/runtime configuration.
 
     If ``config`` is omitted, ``task_launcher`` is read only from the site's
@@ -60,7 +63,7 @@ def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
     backend, which keeps simulator and basic local deployments working.
     """
     if config is None:
-        config = _site_task_launcher_config()
+        config = _site_resources(workspace).get(TASK_LAUNCHER_CONFIG, {})
 
     if not isinstance(config, dict):
         raise TypeError(f"{TASK_LAUNCHER_CONFIG} must be a dict but got {type(config)}")
@@ -82,7 +85,7 @@ def build_task_launcher(config: Optional[dict] = None) -> TaskLauncherSpec:
     return launcher_type(**copy.deepcopy(args))
 
 
-def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[TaskLauncherSpec]:
+def configure_task_launchers(runner_config, job_launcher_mode=None, workspace=None) -> Optional[TaskLauncherSpec]:
     """Inject a matching site-owned launcher into all framework task supervisors."""
     task_router = getattr(runner_config, "task_router", None)
     task_table = getattr(task_router, "task_table", {})
@@ -98,8 +101,10 @@ def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[
     if not supervisors:
         return None
 
-    artifact_cleanup = _site_artifact_cleanup()
-    launcher = build_task_launcher()
+    resources = _site_resources(workspace)
+    artifact_cleanup = _site_artifact_cleanup(resources)
+    launcher_config = resources.get(TASK_LAUNCHER_CONFIG, {})
+    launcher = build_task_launcher(launcher_config)
     job_mode = LauncherMode.validate(job_launcher_mode, "selected JobLauncher mode")
     task_mode = LauncherMode.validate(launcher.launch_mode, "configured TaskLauncher mode")
     if job_mode != task_mode:
@@ -110,7 +115,7 @@ def configure_task_launchers(runner_config, job_launcher_mode=None) -> Optional[
     for supervisor in supervisors:
         supervisor.set_task_launcher(
             launcher,
-            environment_variables=_site_task_launcher_config().get("environment_variables", []),
+            environment_variables=launcher_config.get("environment_variables", []),
             artifact_cleanup=artifact_cleanup,
         )
 

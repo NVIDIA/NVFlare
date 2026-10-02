@@ -22,7 +22,7 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
@@ -378,7 +378,7 @@ def test_supervisor_abort_signal_cancels_worker_and_retains_attempt(tmp_path):
 
     def run():
         try:
-            executor.execute("train", Shareable(), fl_ctx, abort_signal)
+            outcome.append(executor.execute("train", Shareable(), fl_ctx, abort_signal))
         except BaseException as e:
             outcome.append(e)
 
@@ -401,7 +401,7 @@ def test_supervisor_abort_signal_cancels_worker_and_retains_attempt(tmp_path):
     thread.join(timeout=5)
 
     assert not thread.is_alive()
-    assert outcome and "aborted" in str(outcome[0])
+    assert outcome[0].get_return_code() == ReturnCode.TASK_ABORTED
     with pytest.raises(ProcessLookupError):
         os.kill(worker_pid, 0)
     attempt_dir = os.path.join(
@@ -640,6 +640,8 @@ def test_supervisor_rejects_invalid_completion_or_unsettled_execution(tmp_path, 
 @pytest.mark.parametrize("failure", ["cancel", "poll"])
 def test_supervisor_keeps_runtime_stopped_if_cleanup_cannot_confirm_settlement(tmp_path, monkeypatch, failure):
     executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+    panic = Mock()
+    monkeypatch.setattr(executor, "system_panic", panic)
     monkeypatch.setattr(executor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
     if failure == "cancel":
         handle.poll.return_value = TaskExecutionStatus(TaskExecutionPhase.RUNNING)
@@ -650,6 +652,53 @@ def test_supervisor_keeps_runtime_stopped_if_cleanup_cannot_confirm_settlement(t
         executor.execute("train", Shareable(), fl_ctx, Signal())
     assert executor._stopping
     assert executor._active_handle is handle
+    assert panic.call_count >= 1
+
+
+def test_local_abort_during_launch_is_latched_and_returns_task_aborted(tmp_path, monkeypatch):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+
+    def abort_during_launch(_request):
+        assert executor._active_handle is None
+        executor.handle_event(EventType.ABORT_TASK, fl_ctx)
+        return handle
+
+    monkeypatch.setattr(executor._get_task_launcher(), "launch_task", abort_during_launch)
+    assert executor.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.TASK_ABORTED
+    handle.cancel.assert_called_once()
+    assert executor._active_handle is None
+    assert executor._active_abort_signal is None
+    assert not executor._pending_publication
+
+
+def test_framework_secure_logging_policy_is_forwarded_without_site_opt_in(monkeypatch):
+    monkeypatch.setenv("NVFLARE_SECURE_LOGGING", "true")
+    monkeypatch.setenv("FL_LOG_LEVEL", "INFO")
+    environment = TaskWorkerExecutor._worker_environment()
+    assert environment["NVFLARE_SECURE_LOGGING"] == "true"
+    assert environment["FL_LOG_LEVEL"] == "INFO"
+
+
+def test_result_timeout_excludes_worker_startup_and_post_send_finalizers(tmp_path, monkeypatch):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+    executor.result_wait_timeout = 1
+    handle.poll.side_effect = [
+        TaskExecutionStatus(TaskExecutionPhase.RUNNING),
+        TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True),
+        TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True),
+    ]
+    monkeypatch.setattr(FileTaskArtifactStore, "result_wait_state", Mock(side_effect=[(None, None), (0, 0.5)]))
+    assert executor.execute("train", Shareable(), fl_ctx, Signal())["result"] == 1
+    handle.cancel.assert_not_called()
+
+
+def test_result_timeout_cancels_after_script_receive(tmp_path, monkeypatch):
+    executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
+    executor.result_wait_timeout = 1
+    monkeypatch.setattr(FileTaskArtifactStore, "result_wait_state", lambda *_args: (0, None))
+    with pytest.raises(RuntimeError, match="timed out"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    handle.cancel.assert_called_once()
 
 
 def test_malformed_analytics_cannot_discard_successful_task_result(tmp_path, monkeypatch):
@@ -742,8 +791,7 @@ def test_execution_finally_completes_deferred_job_cleanup_after_cancel_settles(t
         return handle
 
     monkeypatch.setattr(executor._get_task_launcher(), "launch_task", end_job_while_launching)
-    with pytest.raises(RuntimeError, match="aborted"):
-        executor.execute("train", Shareable(), fl_ctx, Signal())
+    assert executor.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.TASK_ABORTED
     handle.cancel.assert_called_once()
     assert executor._active_handle is None
     assert not executor._retained_attempts

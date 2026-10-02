@@ -14,8 +14,8 @@
 
 """Execute one staged assignment without a federation Cell or live job engine."""
 
-import argparse
 import copy
+import logging
 import os
 import resource
 import sys
@@ -23,11 +23,12 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
@@ -120,6 +121,8 @@ def _raise_event_errors(fl_ctx: FLContext, event_type: str):
 
 def _fire_checked(runtime: TaskRuntime, event_type: str, fl_ctx: FLContext):
     fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
+    fl_ctx.remove_prop(FLContextKey.EVENT_DATA, force_removal=True)
+    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.LOCAL, private=True, sticky=False)
     runtime.fire_event(event_type, fl_ctx)
     _raise_event_errors(fl_ctx, event_type)
     runtime.raise_if_failed()
@@ -151,6 +154,7 @@ def _execute(
     started = False
     try:
         started = True
+        _fire_checked(runtime, EventType.ABOUT_TO_START_RUN, fl_ctx)
         _fire_checked(runtime, EventType.START_RUN, fl_ctx)
         fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
         _fire_checked(runtime, EventType.BEFORE_TASK_EXECUTION, fl_ctx)
@@ -163,15 +167,18 @@ def _execute(
         return result, analytics
     finally:
         if started:
-            _fire_checked(runtime, EventType.END_RUN, fl_ctx)
+            try:
+                _fire_checked(runtime, EventType.ABOUT_TO_END_RUN, fl_ctx)
+            finally:
+                _fire_checked(runtime, EventType.END_RUN, fl_ctx)
 
 
 def run_worker(bootstrap_path: str) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
-    # Task workers have no federation authority. Strip every CJ bootstrap
-    # credential before importing job custom code, even if a launcher was
-    # accidentally given a broader environment than its explicit request.
+    # Strip CJ bootstrap credentials from the environment before importing job
+    # custom code. This is not filesystem isolation: Process workers share the
+    # site's UID and workspace, which can contain credential files.
     pop_credential_env()
     # This entry point serves CJ today. Role-specific bindings stay outside
     # TaskRuntime and the compute pipeline; a future SJ entry can supply its own.
@@ -184,6 +191,10 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
     workspace = Workspace(bootstrap.workspace_root, site_name=identity.site_name)
     old_sys_path = sys.path.copy()
     try:
+        if workspace.get_log_config_file_path():
+            configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
+        else:
+            logging.basicConfig(level=logging.INFO)
         custom_dir = workspace.get_app_custom_dir(identity.job_id)
         if os.path.isdir(custom_dir):
             sys.path.insert(0, custom_dir)
@@ -235,10 +246,9 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Execute one staged NVFlare task assignment")
-    parser.add_argument("--bootstrap", required=True, help="absolute path to the worker bootstrap JSON")
-    args = parser.parse_args()
-    run_worker(args.bootstrap)
+    from nvflare.private.fed.app.client.task_worker_process import main as process_main
+
+    process_main()
 
 
 if __name__ == "__main__":

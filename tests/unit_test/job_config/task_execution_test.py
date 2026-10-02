@@ -250,7 +250,9 @@ def test_client_api_result_timeout_is_carried_to_worker_supervision():
             }
         ],
     }
-    assert prepare_task_execution(config).executors[0].worker_timeout == 15
+    plan = prepare_task_execution(config).executors[0]
+    assert plan.result_wait_timeout == 15
+    assert plan.worker_timeout is None
 
 
 @pytest.mark.parametrize("config", [None, []])
@@ -300,10 +302,44 @@ def test_client_api_task_timeout_is_validated(timeout):
 def test_component_closure_handles_cycles_without_duplicate_placement():
     config = {
         "execution_lifetime": "task",
-        "executors": [{"executor": {"path": "example.Executor", "args": {"ids": ["a", "b"]}}}],
-        "components": [_component("a", dependency="b"), _component("b", dependency="a")],
+        "executors": [{"executor": {"path": "example.Executor", "args": {"component_ids": ["a", "b"]}}}],
+        "components": [_component("a", dependency_id="b"), _component("b", dependency_id="a")],
     }
     assert len(prepare_task_execution(config).executors[0].components) == 2
+
+
+def test_ordinary_string_does_not_move_a_component_out_of_the_job():
+    config = {
+        "execution_lifetime": "task",
+        "executors": [{"executor": {"path": "example.Executor", "args": {"label": "state"}}}],
+        "components": [_component("state")],
+    }
+    plan = prepare_task_execution(config)
+    assert not plan.executors[0].components
+    assert plan.job_components[0]["id"] == "state"
+    config["executors"][0]["executor"]["component_dependencies"] = ["state"]
+    assert prepare_task_execution(config).executors[0].components[0]["id"] == "state"
+
+
+def test_job_widget_cannot_reference_worker_owned_component():
+    config = {
+        "execution_lifetime": "task",
+        "executors": [{"executor": {"path": "example.Executor", "args": {"state_id": "state"}}}],
+        "components": [_component("state"), _component("widget", state_id="state")],
+    }
+    with pytest.raises(ValueError, match="CJ components.*state"):
+        prepare_task_execution(config)
+
+
+@pytest.mark.parametrize("dependencies", ["state", [None], ["missing"]])
+def test_explicit_component_dependencies_are_validated(dependencies):
+    config = {
+        "execution_lifetime": "task",
+        "executors": [{"executor": {"path": "example.Executor", "component_dependencies": dependencies}}],
+        "components": [_component("state")],
+    }
+    with pytest.raises(ValueError, match="component_dependencies"):
+        prepare_task_execution(config)
 
 
 def test_task_resource_validation_handles_nested_defaults_and_non_mapping_settings():

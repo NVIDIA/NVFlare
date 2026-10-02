@@ -116,13 +116,17 @@ class ComponentBuilder(ABC):
         ``config_type: dict``. Policy and authorization scope belong to the
         runtime calling this walker, not to the generic builder.
         """
-        if isinstance(element, dict):
-            if force_current or self._is_authorizable_component_config(element, node):
-                authorize(element, node)
-                args = element.get("args")
-                if isinstance(args, (dict, list)):
-                    self.authorize_component_config_tree(args, self._make_child_node(node, args, "args"), authorize)
+        if isinstance(element, dict) and (force_current or self._is_authorizable_component_config(element, node)):
+            authorize(element, node)
+            args = element.get("args")
+            if not isinstance(args, (dict, list)):
                 return
+            # ``args`` is an argument container, not itself a component,
+            # even if an ordinary argument is named ``path`` or ``name``.
+            # Inspect every argument before any component can be imported.
+            node = self._make_child_node(node, args, "args")
+            element = args
+        if isinstance(element, dict):
             children = element.items()
         elif isinstance(element, list):
             children = ((f"#{i + 1}", item) for i, item in enumerate(element))

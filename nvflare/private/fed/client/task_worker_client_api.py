@@ -14,9 +14,12 @@
 
 """Client-specific context and Client API binding for a disposable task worker."""
 
+import copy
 from functools import partial
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind, from_shareable
+from nvflare.apis.fl_constant import EventScope, FLContextKey, FLMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY, ClientAPIBackendSpec
@@ -45,6 +48,31 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
         private=True,
         sticky=True,
     )
+    fl_ctx.get_engine().add_event_observer(partial(_capture_analytics, analytics))
+
+
+def _capture_analytics(records, event_type, fl_ctx):
+    # Only the standard analytics channel crosses this boundary. An application
+    # event carrying a DXO must not become an arbitrary CJ lifecycle event.
+    if event_type != ANALYTIC_EVENT_TYPE:
+        return False
+    data = fl_ctx.get_prop(FLContextKey.EVENT_DATA)
+    if not isinstance(data, Shareable):
+        return False
+    try:
+        dxo = from_shareable(data)
+    except (ValueError, TypeError):
+        return False
+    if dxo.data_kind != DataKind.ANALYTIC:
+        return False
+    records.append(
+        {
+            "event_type": event_type,
+            "data": copy.deepcopy(data),
+            "federated": fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION,
+        }
+    )
+    return True
 
 
 class TaskClientAPI(InProcessClientAPI):
@@ -62,6 +90,7 @@ class TaskClientAPI(InProcessClientAPI):
         self._identity = identity
         self._result_reference = None
         self._current_round = None
+        self._result_wait_started = False
         self.analytics = [] if analytics is None else analytics
 
     def _subscribe_to_data_bus(self):
@@ -70,6 +99,8 @@ class TaskClientAPI(InProcessClientAPI):
 
     def stage_input(self, data: Shareable):
         self._current_round = data.get_header(AppConstants.CURRENT_ROUND)
+        data.set_header(FLMetaKey.JOB_ID, self._identity.job_id)
+        data.set_header(FLMetaKey.SITE_NAME, self._identity.site_name)
         self._set_received_shareable(data)
 
     def _publish_result(self, shareable: Shareable):
@@ -87,6 +118,9 @@ class TaskClientAPI(InProcessClientAPI):
     def receive(self, timeout=None):
         if self._result_reference is not None:
             return None
+        if not self._result_wait_started:
+            self._store.mark_result_wait_started(self._identity)
+            self._result_wait_started = True
         return super().receive(timeout)
 
     def get_result(self) -> Shareable:

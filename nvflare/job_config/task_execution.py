@@ -34,6 +34,7 @@ class TaskExecutorConfig:
     executor: dict
     components: tuple[dict, ...]
     worker_timeout: Optional[float] = None
+    result_wait_timeout: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -44,21 +45,48 @@ class TaskExecutionConfig:
     job_components: tuple[dict, ...]
 
 
-def _collect_strings(value, result):
+def _collect_reference_values(value, result):
     if isinstance(value, str):
         result.add(value)
     elif isinstance(value, dict):
         for item in value.values():
-            _collect_strings(item, result)
+            _collect_reference_values(item, result)
     elif isinstance(value, list):
         for item in value:
-            _collect_strings(item, result)
+            _collect_reference_values(item, result)
 
 
 def _referenced_component_ids(config, component_ids):
     values = set()
-    _collect_strings(config, values)
+    if isinstance(config, dict):
+        declared = config.get("component_dependencies", [])
+        if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
+            raise ValueError("component_dependencies must be a list of component IDs")
+        missing = set(declared).difference(component_ids)
+        if missing:
+            raise ValueError(f"unknown component_dependencies: {sorted(missing)}")
+        values.update(declared)
+        args = config.get("args", {})
+        if not isinstance(args, dict):
+            raise ValueError("component args must be a dict")
+        for name, value in args.items():
+            if name.endswith(("_id", "_ids")):
+                _collect_reference_values(value, values)
+        for value in config.values():
+            if isinstance(value, (dict, list)):
+                values.update(_referenced_component_ids(value, component_ids))
+    elif isinstance(config, list):
+        for value in config:
+            values.update(_referenced_component_ids(value, component_ids))
     return values.intersection(component_ids)
+
+
+def _validate_timeout(name, value):
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
+    ):
+        raise ValueError(f"{name} must be finite and >= 0 or None")
+    return value
 
 
 def _component_dependency_closure(config, component_by_id):
@@ -118,12 +146,14 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
     worker_component_ids = set()
     executor_worker_component_ids = []
     executor_worker_timeouts = []
+    executor_result_timeouts = []
     for executor_def in executors:
         if not isinstance(executor_def, dict) or not isinstance(executor_def.get("executor"), dict):
             raise ValueError("each client executor entry must contain an executor component config")
         executor_config = executor_def["executor"]
         configured_path = executor_config.get("path", executor_config.get("class_path", executor_config.get("name")))
-        worker_timeout = None
+        worker_timeout = _validate_timeout("worker_timeout", executor_def.get("worker_timeout"))
+        result_wait_timeout = None
         if configured_path == TASK_EXECUTOR_PATH:
             raise ValueError(
                 "TaskWorkerExecutor is framework-managed and cannot be selected by a job; "
@@ -136,18 +166,14 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
                     "execution_lifetime='task' currently supports ClientAPIExecutor in_process scripts only; "
                     "external_process and attach require job-based execution"
                 )
-            worker_timeout = executor_config.get("args", {}).get("result_wait_timeout")
-            if worker_timeout is not None and (
-                isinstance(worker_timeout, bool)
-                or not isinstance(worker_timeout, (int, float))
-                or not math.isfinite(worker_timeout)
-                or worker_timeout < 0
-            ):
-                raise ValueError("Client API task result_wait_timeout must be finite and >= 0 or None")
+            result_wait_timeout = _validate_timeout(
+                "Client API task result_wait_timeout", executor_config.get("args", {}).get("result_wait_timeout")
+            )
         executor_ids = _component_dependency_closure(executor_config, component_by_id)
         worker_component_ids.update(executor_ids)
         executor_worker_component_ids.append(executor_ids)
         executor_worker_timeouts.append(worker_timeout)
+        executor_result_timeouts.append(result_wait_timeout)
 
     shared_ids = worker_component_ids.intersection(filter_component_ids)
     if shared_ids:
@@ -157,9 +183,16 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
         )
 
     job_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in worker_component_ids)
+    job_references = _component_dependency_closure(list(job_components), component_by_id)
+    shared_ids = worker_component_ids.intersection(job_references)
+    if shared_ids:
+        raise ValueError(
+            "task execution cannot place components referenced by both an Executor and CJ components: "
+            f"{sorted(shared_ids)}"
+        )
     task_executors = []
-    for executor_def, executor_component_ids, worker_timeout in zip(
-        executors, executor_worker_component_ids, executor_worker_timeouts
+    for executor_def, executor_component_ids, worker_timeout, result_wait_timeout in zip(
+        executors, executor_worker_component_ids, executor_worker_timeouts, executor_result_timeouts
     ):
         executor_config = executor_def["executor"]
         worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in executor_component_ids)
@@ -168,6 +201,7 @@ def prepare_task_execution(client_config: dict) -> Optional[TaskExecutionConfig]
                 executor=copy.deepcopy(executor_config),
                 components=worker_components,
                 worker_timeout=worker_timeout,
+                result_wait_timeout=result_wait_timeout,
             )
         )
 

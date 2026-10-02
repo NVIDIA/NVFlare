@@ -43,6 +43,18 @@ In task mode it runs on the worker's main thread, with one assignment per worker
 Every worker starts with fresh Python state: applications requiring persistent
 optimizer or other task-local state must save and reload that state explicitly.
 
+Component dependencies use constructor arguments named `*_id` / `*_ids` and
+their transitive references. For nonstandard/dynamic wiring, declare a
+`component_dependencies` list on the relevant component specification (outside
+`args`). Ordinary string values are not dependency declarations. A component
+referenced by both the worker graph and a CJ filter, widget, or other retained
+component is rejected rather than silently removed from the CJ.
+
+Task-lifetime jobs require client runtimes advertising `task_execution_process_v1`.
+The server rejects deployment to clients without that capability; it does not
+silently fall back to job lifetime. The server and client must both support this
+feature. Default job-lifetime jobs keep the existing launch arguments.
+
 ## Site-owned launch backend
 
 The site, not the job, selects the TaskLauncher. An optional top-level entry in
@@ -65,6 +77,8 @@ the site's `resources.json` configures it:
 }
 ```
 
+Policy is read only from the canonical site resources file, including its
+`resources.json.default` fallback, never from job-supplied resources files.
 Omitting the entry selects the Process launcher. Custom site launchers implement
 `nvflare.apis.task_launcher_spec.TaskLauncherSpec` and declare `launch_mode`.
 The CJ validates that this mode matches the actual selected JobLauncher before
@@ -107,8 +121,10 @@ parent/job engine-interface restructuring remain future work.
 
 ## Lifecycle and support boundaries
 
-Workers are launched without federation credentials; they do not connect to the
-federation. Startup also clears credential environment variables defensively,
+Worker argv and environments omit federation bootstrap credentials; workers do
+not create a federation connection. This is not credential filesystem isolation:
+Process workers run under the site's UID and share its workspace, including
+credential files such as `job.key`. Startup clears credential environment variables defensively,
 before importing application code, in case a launcher forwarded them incorrectly.
 Workers receive inert bootstrap configuration and eager local FOBS input artifacts.
 Result artifacts are immutable and validated against the attempt identity and digest.
@@ -120,7 +136,17 @@ A failure after `send()` therefore cannot publish a successful result.
 Likewise, `system_panic()` triggers the attempt's abort signal and fails the
 attempt even if its Executor returns a Shareable. Compute finalizers still run;
 the worker does not write successful completion after a fatal event.
-The script's `result_wait_timeout` becomes the worker timeout.
+The script's `result_wait_timeout` starts at its first `flare.receive()` and ends
+at durable `flare.send()`: process startup, imports before receive, and finalizers
+are not charged to that result-wait budget. An optional `worker_timeout` on the
+executor entry (next to `tasks` and `executor`) bounds the entire attempt,
+including startup and finalization; its default is `None`.
+
+The worker uses the site's logging configuration with an attempt-specific file
+prefix. `NVFLARE_SECURE_LOGGING` and `FL_LOG_LEVEL` are inherited as framework
+logging settings. Client API logs and ordinary Executor analytics on the standard
+`analytix_log_stats` channel are staged
+locally and replayed by the CJ only after successful settlement and finalization.
 
 The Process launcher owns a POSIX process group, observes descendants, and
 escalates cancellation from SIGTERM to SIGKILL. Zombie-only groups are settled
@@ -129,6 +155,14 @@ uninspectable member still prevents settlement. The CJ requires confirmed
 settlement before reading completion, forwarding analytics or returning a result
 to ClientRunner. A worker must not detach descendants into another POSIX session;
 process-group containment is not a hostile-code sandbox.
+A small guardian in the same group cleans up on CJ loss or worker exit, including
+remaining descendants. The CLI bypasses Python's unbounded exit-time thread and
+child joins only after compute finalization and durable completion. Log flushing
+is attempted with a two-second bound so a stray thread holding a logging lock
+cannot prevent process exit.
+Unconfirmed settlement fails the job and retains the handle and artifacts.
+`torchrun` modes that detach ranks into separate sessions are unsupported by this
+task-worker profile; job-based external-process multi-GPU execution is unchanged.
 
 The site controls bulky input, staged/final result, analytics and bootstrap
 retention with `task_execution.artifact_cleanup` in `resources.json`:
@@ -137,8 +171,10 @@ retention with `task_execution.artifact_cleanup` in `resources.json`:
   `END_RUN`, after worker settlement and artifact reads finish. This does not
   depend on server acceptance and includes settled failed/unaccepted attempts.
 - `accepted`: release each settled attempt after both a successful result send
-  and explicit server acknowledgement of workflow admission (or a previously
-  received matching client task). Failed/unaccepted attempts remain.
+  and explicit server acknowledgement of successful workflow result processing
+  (or a previously accepted matching client task). Server result-filter and
+  result-callback failures are not acknowledged as accepted, including retries.
+  Failed/unaccepted attempts remain.
 - `retain`: do not automatically release task payloads, even at job end.
 
 All policies retain completion/failure records and lifecycle diagnostics under
@@ -148,7 +184,7 @@ Abrupt CJ termination can leave artifacts for later site-managed cleanup; this
 slice does not add crash recovery or a background retention service. `retain`
 does not prevent an administrator from removing the whole job workspace.
 
-Acceptance is workflow admission, not a durable aggregation/checkpoint guarantee.
+Acceptance is successful workflow result processing, not a durable aggregation/checkpoint guarantee.
 Transport OK without an admission acknowledgement (including replies from older
 servers) does not trigger the optional `accepted` policy. It does not affect
 the default `job` policy.
@@ -157,7 +193,7 @@ This launcher does not reserve CPU, memory or GPU resources and rejects explicit
 resource requests it cannot honor. CPU task execution must not inherit a job-long
 GPU reservation. Component placement follows serialized component-ID references
 and their transitive dependencies; components shared between workers and CJ
-filters are rejected. Dynamic component lookup and additional component/event
+filters or retained components are rejected. Dynamic component lookup and additional component/event
 combinations need explicit qualification.
 
 ## Integration checks

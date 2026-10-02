@@ -32,7 +32,7 @@ import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
@@ -398,6 +398,8 @@ class TestExecute:
             # the round travels back on the result for workflow bookkeeping
             assert result.get_header(AppConstants.CURRENT_ROUND) == 3
             assert len(received_tasks) == 1 and isinstance(received_tasks[0], Shareable)
+            assert received_tasks[0].get_header(FLMetaKey.JOB_ID) == "job-1"
+            assert received_tasks[0].get_header(FLMetaKey.SITE_NAME) == "site-1"
         finally:
             backend.finalize(FLContext())
 

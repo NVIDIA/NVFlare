@@ -199,4 +199,4 @@ def test_job_cannot_select_framework_supervisor(tmp_path):
             tmp_path,
             _task_config({"path": TASK_EXECUTOR_PATH, "args": {}}),
             allow_list=[TASK_EXECUTOR_PATH],
-        )
+        ).configure()

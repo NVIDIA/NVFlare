@@ -191,3 +191,55 @@ def test_task_config_prevalidation_does_not_import_original_executor_in_cj(tmp_p
     configurator.configure()
 
     assert not import_marker.exists()
+
+
+def test_task_plan_uses_resolved_variables_and_command_overrides(tmp_path):
+    config = {
+        "format_version": 2,
+        "execution_lifetime": "{lifetime}",
+        "lifetime": "task",
+        "app_script": "train.py",
+        "exec_mode": "in_process",
+        "learning_rate": 1,
+        "component_ref": "learner",
+        "executors": [
+            {
+                "tasks": ["train"],
+                "executor": {
+                    "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+                    "args": {
+                        "execution_mode": "{exec_mode}",
+                        "task_script_path": "{app_script}",
+                        "task_script_args": ["{JOB_CUSTOM_DIR}", "--lr={learning_rate}"],
+                    },
+                    "component_dependencies": ["{component_ref}"],
+                },
+            }
+        ],
+        "components": [{"id": "learner", "path": "job.NotImported", "args": {"delta": "{learning_rate}"}}],
+    }
+    config_file = tmp_path / "config_fed_client.json"
+    config_file.write_text(json.dumps(config))
+    args = Namespace(
+        sp_scheme="grpc",
+        sp_target="localhost:8002",
+        client_name="site-1",
+        parent_url=None,
+        job_id="job-1",
+        workspace=str(tmp_path),
+    )
+    workspace = SimpleNamespace(
+        get_app_custom_dir=lambda _job: str(tmp_path / "custom"),
+        get_app_config_dir=lambda _job: str(tmp_path / "config"),
+    )
+    configurator = ClientJsonConfigurator(
+        workspace, str(config_file), args, str(tmp_path), kv_list=["learning_rate=7", "app_script=overridden.py"]
+    )
+    configurator.configure()
+    plan = configurator.task_execution_config.executors[0]
+    assert plan.executor["args"]["execution_mode"] == "in_process"
+    assert plan.executor["args"]["task_script_path"] == "overridden.py"
+    assert plan.executor["args"]["task_script_args"] == [str(tmp_path / "custom"), "--lr=7"]
+    assert plan.components[0]["args"]["delta"] == 7
+    assert not configurator.runner_config.components
+    assert json.loads(config_file.read_text()) == config

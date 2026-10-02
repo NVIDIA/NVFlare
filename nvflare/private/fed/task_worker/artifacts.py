@@ -16,6 +16,7 @@
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import stat
@@ -331,7 +332,37 @@ class FileTaskArtifactStore:
         Task hooks can modify the returned Shareable. Only the result written
         after those hooks and END_RUN is eligible for the completion record.
         """
-        return self._write_payload(identity, _SCRIPT_RESULT_KIND, data)
+        reference = self._write_payload(identity, _SCRIPT_RESULT_KIND, data)
+        self._write_result_wait_marker(identity, "result_sent")
+        return reference
+
+    def _write_result_wait_marker(self, identity, name):
+        _write_json_exclusive(
+            self.attempt_dir(identity),
+            name + ".json",
+            {"schema_version": SCHEMA_VERSION, "identity": identity.to_dict(), "monotonic": time.monotonic()},
+        )
+
+    def mark_result_wait_started(self, identity: TaskAttemptIdentity):
+        """Start the Client API result clock only when the script receives input."""
+        self._write_result_wait_marker(identity, "result_wait_started")
+
+    def result_wait_state(self, identity: TaskAttemptIdentity):
+        values = []
+        for name in ("result_wait_started", "result_sent"):
+            try:
+                record = _read_json(os.path.join(self.attempt_dir(identity), name + ".json"))
+            except IncompleteTaskArtifactError:
+                values.append(None)
+                continue
+            self._identity_from_record(record, identity)
+            if record.get("schema_version") != SCHEMA_VERSION:
+                raise ValueError("unsupported result-wait marker schema")
+            value = record.get("monotonic")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError("invalid result-wait monotonic timestamp")
+            values.append(value)
+        return tuple(values)
 
     def read_script_result(self, identity: TaskAttemptIdentity, reference: ArtifactReference) -> Shareable:
         if not isinstance(reference, ArtifactReference) or reference.kind != _SCRIPT_RESULT_KIND:
