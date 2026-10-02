@@ -14,6 +14,7 @@
 
 import os
 import shlex
+import signal
 import subprocess
 import threading
 import time
@@ -47,6 +48,10 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
+
+# Allow rank cleanup, MPM shutdown, and launcher polling before forced termination.
+_WORKER_SHUTDOWN_TIMEOUT = 15.0
+_WORKER_KILL_TIMEOUT = 5.0
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -163,6 +168,8 @@ class MultiProcessExecutor(Executor):
         self.logger = get_obj_logger(self)
         self.conn_clients = []
         self.exe_process = None
+        self.targets = []
+        self._abort_requested = False
 
         self.stop_execute = False
         self.relay_threads = []
@@ -194,7 +201,14 @@ class MultiProcessExecutor(Executor):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
-            self.finalize(fl_ctx)
+            if not self.finalized:
+                if fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED, False):
+                    self._abort_requested = True
+                # Aborted runs must not wait for rank handlers or normal launcher exit.
+                if not self._abort_requested:
+                    self._pass_event_to_rank_processes(event_type, fl_ctx)
+                self.finalize(fl_ctx)
+            return
 
         self._pass_event_to_rank_processes(event_type, fl_ctx)
 
@@ -212,13 +226,31 @@ class MultiProcessExecutor(Executor):
                         }
                         # send the init data to all the child processes
                         request = new_cell_message({}, data)
-                        self.engine.client.cell.fire_and_forget(
-                            targets=self.targets,
-                            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
-                            topic=MultiProcessCommandNames.FIRE_EVENT,
-                            message=request,
-                        )
+                        if event_type == EventType.END_RUN:
+                            replies = self.engine.client.cell.broadcast_request(
+                                targets=self.targets,
+                                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                                topic=MultiProcessCommandNames.FIRE_EVENT,
+                                request=request,
+                                timeout=_WORKER_SHUTDOWN_TIMEOUT,
+                            )
+                            if any(
+                                target not in replies
+                                or replies[target].get_header(MessageHeaderKey.RETURN_CODE) != F3ReturnCode.OK
+                                for target in self.targets
+                            ):
+                                self._abort_requested = True
+                                self.log_warning(fl_ctx, "Rank END_RUN cleanup did not complete.", fire_event=False)
+                        else:
+                            self.engine.client.cell.fire_and_forget(
+                                targets=self.targets,
+                                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                                topic=MultiProcessCommandNames.FIRE_EVENT,
+                                message=request,
+                            )
                     except Exception:
+                        if event_type == EventType.END_RUN:
+                            self._abort_requested = True
                         # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
                         self.log_warning(
                             fl_ctx,
@@ -373,6 +405,7 @@ class MultiProcessExecutor(Executor):
     ) -> Shareable:
 
         if abort_signal.triggered:
+            self._abort_requested = True
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.OK)
 
@@ -396,34 +429,70 @@ class MultiProcessExecutor(Executor):
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
+    def _wait_for_worker_exit(self, timeout):
+        try:
+            return self.exe_process.wait(timeout=timeout) == 0
+        except subprocess.TimeoutExpired:
+            self.logger.warning(f"Multi-process launcher did not exit within {timeout} seconds.")
+        except Exception as ex:
+            self.logger.warning(f"Could not reap multi-process launcher: {secure_format_exception(ex)}")
+        return False
+
+    def _kill_worker_processes(self):
+        try:
+            # The launcher starts a new session, so its PID is also the process-group ID.
+            # Keep that ID even if the launcher exits just before this signal.
+            os.killpg(self.exe_process.pid, signal.SIGKILL)
+        except Exception as ex:
+            self.logger.warning(f"Could not kill multi-process group: {secure_format_exception(ex)}")
+            try:
+                self.exe_process.kill()
+            except ProcessLookupError:
+                pass
+            except Exception as ex:
+                self.logger.warning(f"Could not kill multi-process launcher: {secure_format_exception(ex)}")
+
     def finalize(self, fl_ctx: FLContext):
-        """This is called when exiting/aborting the executor."""
+        """Close ranks and reap their launcher, with bounded forced cleanup on failure."""
         if self.finalized:
             return
 
         self.finalized = True
         self.stop_execute = True
 
-        request = new_cell_message({}, None)
-        self.engine.client.cell.fire_and_forget(
-            targets=self.targets,
-            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
-            topic=MultiProcessCommandNames.CLOSE,
-            message=request,
-        )
-
-        try:
-            os.killpg(os.getpgid(self.exe_process.pid), 9)
-            self.logger.debug("kill signal sent")
-        except Exception:
-            pass
+        # Ranks may still be reachable even if their launcher has already exited.
+        close_sent = False
+        if self.engine and self.targets:
+            try:
+                errors = self.engine.client.cell.fire_and_forget(
+                    targets=self.targets,
+                    channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                    topic=MultiProcessCommandNames.CLOSE,
+                    message=new_cell_message({}, None),
+                )
+                close_sent = not errors or not any(errors.values())
+                if not close_sent:
+                    self.logger.warning("Could not close all rank processes.")
+            except Exception as ex:
+                self.logger.warning(f"Could not close rank processes: {secure_format_exception(ex)}")
 
         if self.exe_process:
-            self.exe_process.terminate()
+            force_cleanup = self._abort_requested or not close_sent
+            if not force_cleanup:
+                exit_code = self.exe_process.poll()
+                if exit_code is None:
+                    force_cleanup = not self._wait_for_worker_exit(_WORKER_SHUTDOWN_TIMEOUT)
+                else:
+                    force_cleanup = exit_code != 0
+            # A failed launcher may have exited while ranks still hold its process group.
+            if force_cleanup:
+                self._kill_worker_processes()
+                self._wait_for_worker_exit(_WORKER_KILL_TIMEOUT)
 
-        # wait for all relay threads to join!
         for t in self.relay_threads:
             if t.is_alive():
-                t.join()
+                t.join(timeout=_WORKER_KILL_TIMEOUT)
+                if t.is_alive():
+                    self.logger.warning("Multi-process relay thread did not stop before finalization.")
 
         self.log_info(fl_ctx, "Multi-Process Executor finalized!", fire_event=False)

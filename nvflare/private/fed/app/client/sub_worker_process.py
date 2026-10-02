@@ -290,6 +290,7 @@ class SubWorkerExecutor(Runner):
         """
         event_relayer = self.run_manager.get_component(CommunicationMetaData.RELAYER)
         event_relayer.relay_event(self.run_manager, data)
+        return make_reply(ReturnCode.OK)
 
     def _close(self, data):
         self.done = True
@@ -340,7 +341,11 @@ def main(args):
     job_id = args.job_id
     logger = get_script_logger()
 
-    sub_executor.run()
+    try:
+        sub_executor.run()
+    finally:
+        stop_event.set()
+        thread.join(timeout=2.0)
 
     AuditService.close()
     err = create_stats_pool_files_for_job(workspace, job_id, prefix=prefix)
