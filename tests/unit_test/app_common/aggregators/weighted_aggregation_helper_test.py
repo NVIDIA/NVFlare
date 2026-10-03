@@ -533,10 +533,6 @@ class TestAggregationStats:
         assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
-
-
 class TestContributionShapeValidation:
     @pytest.mark.parametrize("backend", [np.asarray, torch.as_tensor], ids=["numpy", "torch"])
     @pytest.mark.parametrize("bad_shape", [(1,), (), (1, 2)], ids=["singleton", "scalar", "extra_axis"])
@@ -609,3 +605,7 @@ class TestContributionShapeValidation:
         combined.load_state_dict(helper.get_result())
         inputs = torch.tensor([[1.0, 0.0], [0.0, 1.0], [2.0, 3.0]])
         torch.testing.assert_close(combined(inputs), (first(inputs) + 3 * second(inputs)) / 4)
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
