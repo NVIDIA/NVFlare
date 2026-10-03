@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 import numpy as np
 import pytest
 import torch
@@ -533,3 +535,77 @@ class TestAggregationStats:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestContributionShapeValidation:
+    @pytest.mark.parametrize("backend", [np.asarray, torch.as_tensor], ids=["numpy", "torch"])
+    @pytest.mark.parametrize("bad_shape", [(1,), (), (1, 2)], ids=["singleton", "scalar", "extra_axis"])
+    def test_rejects_broadcasting_before_any_round_state_changes(self, backend, bad_shape):
+        helper = WeightedAggregationHelper(exclude_vars="excluded")
+        first = {"bias": backend([1.0, 2.0]), "weight": backend([[1.0, 2.0], [3.0, 4.0]])}
+        helper.add(first, 2.0, "first", 0)
+        before = copy.deepcopy(
+            (helper.total, helper.counts, helper.history, helper.key_contribution_counts, helper.skipped_keys)
+        )
+        bad = {
+            "new_parameter": backend([50.0]),
+            "excluded": backend([4.0]),
+            "weight": backend([[9.0, 9.0], [9.0, 9.0]]),
+            "bias": backend(np.ones(bad_shape)),
+        }
+        with pytest.raises(ValueError, match="bias.*shape"):
+            helper.add(bad, 3.0, "invalid", 0)
+        assert set(helper.total) == set(before[0])
+        for name in helper.total:
+            np.testing.assert_array_equal(helper.total[name], before[0][name])
+        assert (helper.counts, helper.history, helper.key_contribution_counts, helper.skipped_keys) == before[1:]
+        helper.add({"bias": backend([7.0, 10.0]), "weight": backend([[3.0, 4.0], [5.0, 6.0]])}, 1.0, "valid", 0)
+        result = helper.get_result()
+        np.testing.assert_allclose(result["bias"], [3.0, 14.0 / 3.0])
+        np.testing.assert_allclose(result["weight"], [[5.0 / 3.0, 8.0 / 3.0], [11.0 / 3.0, 14.0 / 3.0]])
+        np.testing.assert_array_equal(first["bias"], [1.0, 2.0])
+        assert helper.last_aggregation_stats[AggregationStatsKey.CONTRIBUTORS] == ["first", "valid"]
+
+    def test_shape_checks_preserve_partial_keys_scalars_and_exclusions(self):
+        helper = WeightedAggregationHelper(exclude_vars="excluded", weigh_by_local_iter=False)
+        helper.add({"bias": np.array([2.0, 4.0]), "metric": 1.0, "empty": np.empty((0, 2))}, 2.0, "a", 0)
+        helper.add({"bias": np.array([6.0, 8.0]), "excluded": np.zeros((7,)), "metric": 5.0}, 2.0, "b", 0)
+        result = helper.get_result()
+        np.testing.assert_array_equal(result["bias"], [2.0, 3.0])
+        assert result["metric"] == 1.5
+        assert result["empty"].shape == (0, 2)
+        assert "excluded" not in result
+
+    def test_valid_lazy_tensors_are_materialized_once_and_not_retained(self):
+        class LazyValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def materialize(self):
+                self.calls += 1
+                return self.value
+
+        helper = WeightedAggregationHelper()
+        values = [LazyValue(torch.tensor([1.0, 3.0])), LazyValue(torch.tensor([5.0, 7.0]))]
+        for index, value in enumerate(values):
+            helper.add({"weight": value}, 1.0, str(index), 0)
+        torch.testing.assert_close(helper.get_result()["weight"], torch.tensor([3.0, 5.0]))
+        assert [value.calls for value in values] == [1, 1]
+
+    def test_aggregated_linear_models_match_weighted_predictions(self):
+        first, second = torch.nn.Linear(2, 1), torch.nn.Linear(2, 1)
+        with torch.no_grad():
+            first.weight.copy_(torch.tensor([[1.0, 2.0]]))
+            first.bias.fill_(3.0)
+            second.weight.copy_(torch.tensor([[5.0, 6.0]]))
+            second.bias.fill_(7.0)
+        helper = WeightedAggregationHelper()
+        helper.add(first.state_dict(), 1.0, "first", 0)
+        with pytest.raises(ValueError, match="weight.*shape"):
+            helper.add({"weight": torch.tensor([9.0, 10.0]), "bias": torch.tensor([11.0])}, 2.0, "invalid", 0)
+        helper.add(second.state_dict(), 3.0, "second", 0)
+        combined = torch.nn.Linear(2, 1)
+        combined.load_state_dict(helper.get_result())
+        inputs = torch.tensor([[1.0, 0.0], [0.0, 1.0], [2.0, 3.0]])
+        torch.testing.assert_close(combined(inputs), (first(inputs) + 3 * second(inputs)) / 4)

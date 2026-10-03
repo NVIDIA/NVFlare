@@ -153,6 +153,11 @@ class WeightedAggregationHelper(object):
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights.
 
+        Raises:
+            ValueError: A repeated key exposes a shape different from its running
+                total. Exposed shapes are checked before any round state changes;
+                lazy values without shape metadata retain their streaming behavior.
+
         Note:
             Contributions accumulate in call (result-arrival) order: each weighted contribution is
             added into a running per-key total (in place on backends that support it). Floating-point
@@ -160,6 +165,20 @@ class WeightedAggregationHelper(object):
             ulp-level differences between runs; bitwise reproducibility is not guaranteed for >=2 clients.
         """
         with self.lock:
+            # Check exposed shapes before updating any round state. Do not eagerly
+            # materialize lazy values: they may be streamed to bound model memory.
+            for k, v in data.items():
+                if self.exclude_vars is not None and self.exclude_vars.search(k):
+                    continue
+                current_shape = getattr(self.total.get(k), "shape", None)
+                incoming_shape = getattr(v, "shape", None)
+                if current_shape is not None and incoming_shape is not None:
+                    if tuple(current_shape) != tuple(incoming_shape):
+                        raise ValueError(
+                            f"Contribution for {k!r} has shape {tuple(incoming_shape)}, "
+                            f"expected {tuple(current_shape)}"
+                        )
+
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     self.skipped_keys.add(k)
