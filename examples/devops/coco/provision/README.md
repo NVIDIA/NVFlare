@@ -7,6 +7,12 @@ image for each participant. Without a server `cc_config`, the server receives
 an ordinary kit that verifies protected clients. FL console admins receive
 ordinary startup kits. CoCo IT is not an FL project admin.
 
+For an ordinary server with TDX CPU-only `site-1` and SNP+NVIDIA GPU `site-2`,
+use the complete [mixed project](mixed-tdx-snp/README.md). It includes both CC
+configs, separate build contexts, per-site GPU constraints and a finite baked
+validation job. The server verifies both clients; no additional client is
+needed to observe their normal workflow.
+
 Relative `cc_config` paths resolve beside the source project YAML, not the
 process working directory. POC preparation preserves absolute CC-config paths
 when saving its project in the workspace. Python API callers must pass
@@ -184,11 +190,13 @@ An ordinary server verifies without attesting itself. When the server is
 protected, ordinary clients also receive verifier-only configuration to check
 its proof. The pinned public-key path is relative to the CC YAML. Protected
 participants in one project must share that key, token expiration, check frequency,
-and manager timeouts. `cc_gpu: nvidia` declares the GPU deployment profile;
-it is not a per-site GPU requirement in the token-driven authorizer.
-That authorizer checks the CPU type in the signed EAR and verifies every present
-CPU/GPU appraisal. KBS must independently enforce each workload's CPU/GPU
-requirements before releasing its keys. Invalid configuration
+and manager timeouts. `cc_gpu: nvidia` declares the GPU deployment profile.
+To require GPU appraisal at the NVFlare peer boundary as well, include
+`gpu_required: true` for that logical site in the common `workload_constraints`
+mapping; `false` requires CPU-only evidence. The authorizer checks those
+constraints against the signed EAR and verifies every present CPU/GPU
+appraisal. KBS independently enforces each workload's CPU/GPU requirements
+before releasing its keys. Invalid configuration
 aborts provisioning. Mixing other CC compute environments into this project is
 not supported yet. See [the checks and limitations](CCMANAGER.md).
 

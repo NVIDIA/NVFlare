@@ -10,10 +10,31 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{env, fs, io::Read, path::Path};
-use verifier::{tdx::Tdx, InitDataHash, ReportData, Verifier};
+use key_value_storage::{KvStorageProvider, StorageBackendConfig};
+use verifier::{to_verifier, InitDataHash, ReportData, VerifierConfig};
 
 const TRUSTEE_REVISION: &str = "338610fbfed57b66c61a8a3a60e0e4386bdce793";
 const MAX_INPUT: u64 = 32 * 1024 * 1024;
+
+const CHANNEL_ENV: &str = "NVFLARE_TDX_TCB_UPDATE_TYPE";
+
+fn collateral_channel(value: Option<&str>) -> Result<&str> {
+    let channel = value.unwrap_or("early");
+    ensure!(matches!(channel, "early" | "standard"), "{CHANNEL_ENV} must be early or standard");
+    Ok(channel)
+}
+
+fn channel_config(channel: &str) -> Result<VerifierConfig> {
+    let selected = collateral_channel(Some(channel))?;
+    // This is an independently supplied operator setting. Never infer it from
+    // quote contents, TCB status, or an earlier failed appraisal.
+    serde_json::from_value(serde_json::json!({
+        "dcap_verifier": {
+            "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
+            "tcb_update_type": selected
+        }
+    })).context("construct pinned Intel collateral configuration")
+}
 
 fn bounded_read(path: &Path) -> Result<Vec<u8>> {
     let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
@@ -50,17 +71,40 @@ fn require_evidence(value: &Value) -> Result<()> {
     Ok(())
 }
 
+// Diagnostics disclose only bounded, verified status labels; never full claims,
+// raw evidence, token responses, measurements, or key-bearing fields.
+fn diagnostic_status(claims: &Value, name: &str) -> String {
+    match claims.get(name) {
+        None => "<absent>".to_owned(),
+        Some(Value::String(value))
+            if !value.is_empty()
+                && value.len() <= 128
+                && value.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') =>
+        {
+            value.clone()
+        }
+        _ => "<invalid>".to_owned(),
+    }
+}
+
 fn require_baseline(claims: &Value) -> Result<()> {
     ensure!(
         claims["tcb_status"] == "UpToDate",
-        "Intel DCAP TCB is not UpToDate"
+        "Intel DCAP TCB rejected: verified tcb_status={}; verified tcb_status_current={}; expected=UpToDate",
+        diagnostic_status(claims, "tcb_status"),
+        diagnostic_status(claims, "tcb_status_current")
     );
     ensure!(
         claims["collateral_expiration_status"] == "0",
         "Intel DCAP collateral is expired or has no verified expiration status"
     );
     if let Some(current) = claims.get("tcb_status_current") {
-        ensure!(current == "UpToDate", "Intel current TCB is not UpToDate");
+        ensure!(
+            current == "UpToDate",
+            "Intel current TCB rejected: verified tcb_status={}; verified tcb_status_current={}; expected=UpToDate",
+            diagnostic_status(claims, "tcb_status"),
+            diagnostic_status(claims, "tcb_status_current")
+        );
     }
     ensure!(
         claims["td_attributes"]["debug"] == Value::Bool(false),
@@ -90,6 +134,12 @@ fn require_initdata(initdata: &[u8]) -> Result<()> {
 }
 
 async fn run() -> Result<()> {
+    let configured_channel = match env::var(CHANNEL_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => anyhow::bail!("{CHANNEL_ENV} must be early or standard"),
+    };
+    let channel = collateral_channel(configured_channel.as_deref())?;
     let args: Vec<_> = env::args_os().collect();
     if args.len() == 2 && args[1] == "--version" {
         println!("tdx-evidence-verify 0.1.0 trustee={TRUSTEE_REVISION}");
@@ -117,7 +167,14 @@ async fn run() -> Result<()> {
     let init_hash = Sha256::digest(&initdata);
     // TDX's MRCONFIGID is 48 bytes. Trustee pads this exact 32-byte SHA256
     // digest with 16 zero bytes; it does NOT compare a textual hash.
-    let results = Tdx::default()
+    eprintln!("Intel DCAP collateral channel selected: {channel}");
+    let tee = serde_json::from_value(serde_json::json!("tdx"))?;
+    let selected = to_verifier(
+        &tee,
+        Some(channel_config(channel)?),
+        KvStorageProvider::new(StorageBackendConfig::default()),
+    ).await?;
+    let results = selected
         .evaluate(
             evidence,
             &ReportData::Value(&challenge),
@@ -152,6 +209,23 @@ mod tests {
     fn baseline() -> Value {
         json!({"tcb_status": "UpToDate", "collateral_expiration_status": "0",
             "td_attributes": {"debug": false}, "uefi_event_logs": [{}]})
+    }
+
+    #[test]
+    fn independent_collateral_channel_defaults_and_validation() {
+        assert_eq!(collateral_channel(None).unwrap(), "early");
+        for (channel, debug_variant) in [("early", "Early"), ("standard", "Standard")] {
+            assert_eq!(collateral_channel(Some(channel)).unwrap(), channel);
+            assert!(format!("{:?}", channel_config(channel).unwrap()).contains(debug_variant));
+            assert!(require_baseline(&baseline()).is_ok());
+            let mut claims = baseline();
+            claims["tcb_status"] = json!("OutOfDate");
+            assert!(require_baseline(&claims).is_err());
+        }
+        for invalid in ["", "Early", "STANDARD", "standard\n", "auto", "../standard"] {
+            assert!(collateral_channel(Some(invalid)).is_err());
+            assert!(channel_config(invalid).is_err());
+        }
     }
 
     #[test]
@@ -233,6 +307,26 @@ insecure = false
         let mut claims = baseline();
         claims["collateral_expiration_status"] = json!("1");
         assert!(require_baseline(&claims).is_err());
+    }
+
+    #[test]
+    fn reports_only_bounded_verified_tcb_diagnostics_without_accepting_them() {
+        let mut claims = baseline();
+        claims["tcb_status"] = json!("OutOfDate");
+        claims["tcb_status_current"] = json!("SWHardeningNeeded");
+        let error = require_baseline(&claims).unwrap_err().to_string();
+        assert!(error.contains("verified tcb_status=OutOfDate"));
+        assert!(error.contains("verified tcb_status_current=SWHardeningNeeded"));
+        assert!(error.contains("expected=UpToDate"));
+        claims["tcb_status"] = json!("UpToDate");
+        let error = require_baseline(&claims).unwrap_err().to_string();
+        assert!(error.contains("verified tcb_status_current=SWHardeningNeeded"));
+        claims["tcb_status_current"] = json!("secret\nraw-token");
+        assert_eq!(diagnostic_status(&claims, "tcb_status_current"), "<invalid>");
+        assert!(!require_baseline(&claims).unwrap_err().to_string().contains("secret"));
+        assert_eq!(diagnostic_status(&claims, "nonexistent"), "<absent>");
+        claims["tcb_status_current"] = json!("a".repeat(129));
+        assert_eq!(diagnostic_status(&claims, "tcb_status_current"), "<invalid>");
     }
 
     #[test]
