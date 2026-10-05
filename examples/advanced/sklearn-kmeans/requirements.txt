@@ -3,3 +3,4 @@ pandas~=2.3
 scikit-learn
 joblib
 tensorboard
+torch
