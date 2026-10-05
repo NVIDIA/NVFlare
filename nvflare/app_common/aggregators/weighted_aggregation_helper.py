@@ -152,15 +152,24 @@ class WeightedAggregationHelper(object):
 
     def _validate_shapes(self, data, contributor_name, contribution_round):
         """Check exposed shapes without materializing lazy values or changing round state."""
-        for k, v in data.items():
+        # Materializing mappings can expose get_shape(key) to avoid reading tensor data here.
+        get_shape_fn = getattr(data, "get_shape", None)
+        if callable(get_shape_fn):
+            items = ((k, None) for k in data.keys())
+        else:
+            items = data.items()
+
+        for k, v in items:
             if self.exclude_vars is not None and self.exclude_vars.search(k):
                 continue
             if k not in self.total:
                 continue
 
             expected_shape = getattr(self.total[k], "shape", None)
-            received_shape = getattr(v, "shape", None)
-            if expected_shape is None or received_shape is None:
+            if expected_shape is None:
+                continue
+            received_shape = get_shape_fn(k) if callable(get_shape_fn) else getattr(v, "shape", None)
+            if received_shape is None:
                 continue
 
             expected_shape = tuple(expected_shape)

@@ -197,6 +197,34 @@ class TestLazyTensorDict:
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
         assert set(ltd.keys()) == set(tensors.keys())
 
+    @pytest.mark.parametrize("has_metadata", [False, True])
+    def test_get_shape_uses_metadata_without_loading_tensors(self, temp_safetensors, monkeypatch, has_metadata):
+        key_to_file, temp_dir, tensors = temp_safetensors
+        # FOBS item IDs can differ from the tensor key in the safetensors file.
+        tensor = tensors["layer1.weight"]
+        metadata = {"item-id": tensor_metadata(tensor)} if has_metadata else None
+        ltd = LazyTensorDict(
+            key_to_file={"item-id": key_to_file["layer1.weight"]}, temp_dir=temp_dir, metadata=metadata
+        )
+        header_reads = []
+        original_read_metadata = lazy_tensor_dict.read_safetensors_metadata
+
+        def read_metadata(path):
+            header_reads.append(path)
+            return original_read_metadata(path)
+
+        def unexpected_getitem(mapping, key):
+            raise AssertionError("Shape lookup must not load tensor data")
+
+        monkeypatch.setattr(lazy_tensor_dict, "read_safetensors_metadata", read_metadata)
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", unexpected_getitem)
+
+        assert ltd.get_shape("item-id") == tuple(tensor.shape)
+        assert ltd.get_shape("item-id") == tuple(tensor.shape)
+        assert header_reads == ([] if has_metadata else [key_to_file["layer1.weight"][0]])
+        with pytest.raises(KeyError):
+            ltd.get_shape("nonexistent")
+
     def test_iter_yields_keys(self, temp_safetensors):
         key_to_file, temp_dir, tensors = temp_safetensors
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
@@ -246,6 +274,58 @@ class TestLazyTensorDict:
 
 
 class TestAggregationHelperWithLazyRefs:
+    @pytest.mark.parametrize("has_previous_contribution", [False, True])
+    def test_materializing_mapping_reads_each_tensor_once(
+        self, temp_safetensors, monkeypatch, has_previous_contribution
+    ):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper()
+        if has_previous_contribution:
+            helper.add({key: value + 1.0 for key, value in tensors.items()}, 2.0, "site-1", 0)
+        reads = []
+        original_getitem = LazyTensorDict.__getitem__
+
+        def getitem(mapping, key):
+            reads.append(key)
+            return original_getitem(mapping, key)
+
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", getitem)
+        helper.add(ltd, 3.0, "site-2", 0)
+
+        assert reads == list(tensors)
+        result = helper.get_result()
+        for key, value in tensors.items():
+            expected = value + 0.4 if has_previous_contribution else value
+            torch.testing.assert_close(result[key], expected)
+
+    def test_materializing_mapping_mismatch_is_rejected_before_tensor_reads(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+        accepted = {key: value.clone() for key, value in tensors.items() if "bias" not in key}
+        accepted["layer2.weight"] = torch.ones(1)
+        helper.add(accepted, 2.0, "site-1", 0)
+        previous_stats = helper.get_aggregation_stats()
+
+        def unexpected_getitem(mapping, key):
+            raise AssertionError("Shape validation must not load tensor data")
+
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", unexpected_getitem)
+        # Even metadata for an excluded key must not be read.
+        os.remove(key_to_file["layer1.bias"][0])
+        with pytest.raises(ValueError, match="layer2.weight"):
+            helper.add(ltd, 3.0, "site-2", 0)
+
+        assert helper.get_aggregation_stats() == previous_stats
+        assert helper.counts == {key: 2.0 for key in accepted}
+        for key, value in helper.get_result().items():
+            torch.testing.assert_close(value, accepted[key])
+
     def test_helper_materializes_lazy_refs(self, temp_safetensors):
         """WeightedAggregationHelper materializes _LazyRef via duck-typed materialize()."""
         key_to_file, temp_dir, tensors = temp_safetensors
