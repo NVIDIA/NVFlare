@@ -261,3 +261,54 @@ class TestAggregationHelperWithLazyRefs:
         result = helper.get_result()
         for name, expected in tensors.items():
             assert torch.allclose(result[name], expected, atol=1e-6)
+
+    def test_repeated_lazy_refs_are_aggregated_one_at_a_time(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+        helper.add({key: value + 1.0 for key, value in tensors.items()}, 2.0, "site-1", 0)
+        loaded = []
+        original_materialize = _LazyRef.materialize
+
+        def materialize(ref):
+            if loaded:
+                previous = loaded[-1]
+                torch.testing.assert_close(helper.total[previous], 5.0 * tensors[previous] + 2.0)
+            loaded.append(ref.key)
+            return original_materialize(ref)
+
+        monkeypatch.setattr(_LazyRef, "materialize", materialize)
+        helper.add({key: ltd.make_lazy_ref(key) for key in ltd.keys()}, 3.0, "site-2", 0)
+
+        expected_keys = [key for key in tensors if "bias" not in key]
+        assert loaded == expected_keys
+        result = helper.get_result()
+        assert list(result) == expected_keys
+        for key in expected_keys:
+            torch.testing.assert_close(result[key], tensors[key] + 0.4)
+
+    def test_late_shape_mismatch_does_not_materialize_earlier_refs(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper()
+        helper.add(tensors, 1.0, "site-1", 0)
+
+        def unexpected_materialize(ref):
+            raise AssertionError("Shape validation must finish before materialization")
+
+        monkeypatch.setattr(_LazyRef, "materialize", unexpected_materialize)
+        with pytest.raises(ValueError, match="layer2.weight"):
+            helper.add(
+                {"layer1.weight": ltd.make_lazy_ref("layer1.weight"), "layer2.weight": torch.ones(1)},
+                1.0,
+                "site-2",
+                0,
+            )
+
+        assert helper.get_len() == 1
+        for key, value in helper.get_result().items():
+            torch.testing.assert_close(value, tensors[key])
