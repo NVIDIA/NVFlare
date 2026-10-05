@@ -14,6 +14,8 @@
 
 import argparse
 import json
+import os
+import subprocess
 from datetime import datetime, timedelta
 
 import pytest
@@ -179,6 +181,56 @@ def _run_prepare(kit, output, config):
     prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
 
 
+def _run_docker_start_with_stub(tmp_path, probe_output, probe_exit=0):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(kit, output, {"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}})
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_log = tmp_path / "docker.log"
+    docker_stub = bin_dir / "docker"
+    docker_stub.write_text(
+        """#!/bin/sh
+printf '%s\\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+    info) exit 0 ;;
+    network)
+        if [ "$2" = ls ]; then printf '%s\\n' nvflare-network; fi
+        exit 0 ;;
+    run)
+        case "$*" in
+            *'--entrypoint stat '*) exit 90 ;;
+            *'--entrypoint /usr/local/bin/python3 '*)
+                printf '%s' "$PROBE_OUTPUT"
+                exit "$PROBE_EXIT" ;;
+        esac
+        exit 0 ;;
+esac
+exit 1
+"""
+    )
+    docker_stub.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "DOCKER_LOG": str(docker_log),
+            "PROBE_OUTPUT": probe_output,
+            "PROBE_EXIT": str(probe_exit),
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    runs = [line for line in docker_log.read_text().splitlines() if line.startswith("run ")]
+    return result, runs
+
+
 def _component(resources, component_id):
     return next(c for c in resources["components"] if c["id"] == component_id)
 
@@ -262,6 +314,27 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
     assert (output / "local" / "study_data.yaml").exists()
+
+
+@pytest.mark.parametrize("socket_gid", ["0", "991"])
+def test_prepare_docker_start_uses_socket_group_without_stat(tmp_path, socket_gid):
+    result, runs = _run_docker_start_with_stub(tmp_path, socket_gid)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert len(runs) == 2
+    assert "--entrypoint /usr/local/bin/python3" in runs[0]
+    assert 'os.stat("/var/run/docker.sock")' in runs[0]
+    assert f"--group-add {socket_gid}" in runs[1]
+
+
+@pytest.mark.parametrize("probe_output, probe_exit", [("invalid", 0), ("", 0), ("991", 7)])
+def test_prepare_docker_start_stops_before_parent_on_bad_probe(tmp_path, probe_output, probe_exit):
+    result, runs = _run_docker_start_with_stub(tmp_path, probe_output, probe_exit)
+
+    assert result.returncode != 0
+    assert len(runs) == 1
+    assert "--entrypoint /usr/local/bin/python3" in runs[0]
+    assert "ERROR:" in result.stdout
 
 
 @pytest.mark.parametrize(
