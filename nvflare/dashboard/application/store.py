@@ -34,6 +34,8 @@ _PROJECT_WRITABLE = {
     "cc_mode",
 }
 
+_SELF_ASSIGNABLE_ROLES = {"", "lead", "member"}
+
 
 def check_role(id, claims, requester):
     is_creator = requester == Store._get_email_by_id(id)
@@ -288,7 +290,7 @@ class Store(object):
         return add_ok({})
 
     @classmethod
-    def create_user(cls, req, seeding=False):
+    def create_user(cls, req, seeding=False, created_by_project_admin=False):
         name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
@@ -296,11 +298,14 @@ class Store(object):
         organization = req.get("organization", "")
         role_name = req.get("role", "")
         description = req.get("description", "")
+        if not isinstance(role_name, str):
+            log.error(f"create_user cannot create role with type: {type(role_name).__name__}")
+            return None
         if seeding:
             approval_state = 200
         else:
-            if role_name == "project_admin":
-                log.error("Non-seeding create_user cannot create project_admin")
+            if not created_by_project_admin and role_name not in _SELF_ASSIGNABLE_ROLES:
+                log.error("Non-seeding create_user cannot create requested role")
                 return None
             approval_state = 0
         org = get_or_create(db.session, Organization, name=organization)
@@ -381,7 +386,7 @@ class Store(object):
         user = User.query.get(id)
         _ = req.pop("approval_state", None)
         role = req.pop("role", None)
-        if role == "project_admin":
+        if role is not None and (not isinstance(role, str) or role not in _SELF_ASSIGNABLE_ROLES):
             return {"status": "error"}
         if role is not None and user.role.name == "":
             role = get_or_create(db.session, Role, name=role)
