@@ -54,16 +54,17 @@ class AzureCCDeployment(CCDeployment):
     @staticmethod
     def authorizer(plan, *, issuer):
         target = plan.mode_config["deployment_target"]
-        endpoint = urlsplit(plan.attestation_service.values["endpoint"]).netloc
+        endpoint = urlsplit(plan.attestation_service.values["endpoint"]).netloc.lower()
+        suffix = hashlib.sha256(endpoint.encode()).hexdigest()[:12]
         if target == "confidential_vm":
             return {
-                "id": "az_cvm_authorizer",
+                "id": f"az_cvm_authorizer_{suffix}",
                 "path": "nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer",
                 "args": {"maa_endpoint": endpoint},
                 "token_expiration": plan.attestation_service.values["token_expiration_seconds"],
             }
         return {
-            "id": "aci_authorizer",
+            "id": f"aci_authorizer_{suffix}",
             "path": "nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer",
             "args": {"maa_endpoint": endpoint},
             "token_expiration": plan.attestation_service.values["token_expiration_seconds"],

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import json
 import shlex
 import shutil
@@ -207,11 +208,80 @@ def test_builder_writes_azure_authorizer_manager_and_allow_list(tmp_path):
     builder.build(project, ctx)
 
     local = Path(ctx.get_local_dir(server))
-    authorizer = json.loads((local / "az_cvm_authorizer__p_resources.json").read_text())["components"][0]
     manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]
+    authorizer_id = manager["args"]["required_site_verifier_ids"]["server"][0]
+    authorizer = json.loads((local / f"{authorizer_id}__p_resources.json").read_text())["components"][0]
     assert authorizer["args"]["maa_endpoint"] == "sharedeus2.eus2.attest.azure.net"
-    assert manager["args"]["required_site_verifier_ids"] == {"server": ["az_cvm_authorizer"]}
+    assert authorizer_id.startswith("az_cvm_authorizer_")
     assert json.loads(resources.read_text())["class_allow_list"] == ["example.components.ReviewedExecutor"]
+
+
+def test_azure_participants_with_different_maa_endpoints_get_distinct_verifiers(tmp_path):
+    services = {
+        "east": {
+            "type": "azure_maa",
+            "endpoint": "https://sharedeus2.eus2.attest.azure.net",
+            "token_expiration_seconds": 100,
+            "check_frequency_seconds": 60,
+        },
+        "west": {
+            "type": "azure_maa",
+            "endpoint": "https://sharedwus2.wus2.attest.azure.net",
+            "token_expiration_seconds": 100,
+            "check_frequency_seconds": 60,
+        },
+    }
+    _write(tmp_path / "cc_project.yml", {"schema_version": 1, "attestation_services": services})
+    participant = {
+        "schema_version": 1,
+        "cc_deployment_mode": "azure_cc",
+        "cpu_tee": "amd_sev_snp",
+        "gpu_tee": "none",
+        "workload": {"source": {"type": "external"}},
+        "azure_cc": {"deployment_target": "confidential_vm"},
+    }
+    for name, service in (("server", "east"), ("site", "west")):
+        _write(tmp_path / f"cc_{name}.yml", {**participant, "attestation": {"service": service}})
+    project = prepare_project(
+        {
+            "api_version": 3,
+            "name": "azure-multi-maa",
+            "cc_project_config": "cc_project.yml",
+            "participants": [
+                {
+                    "type": "server",
+                    "name": "server.example.com",
+                    "org": "example",
+                    "cc_config": "cc_server.yml",
+                },
+                {"type": "client", "name": "site-1", "org": "example", "cc_config": "cc_site.yml"},
+            ],
+            "packager": {"path": CC_PACKAGER_PATH},
+        },
+        project_file=tmp_path / "project.yml",
+    )
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for party in (project.get_server(), *project.get_clients()):
+        _resources(ctx, party)
+    builder = CCBuilder()
+
+    builder.initialize(project, ctx)
+    builder.build(project, ctx)
+
+    manager_path = Path(ctx.get_local_dir(project.get_server())) / "cc_manager__p_resources.json"
+    manager = json.loads(manager_path.read_text())["components"][0]
+    required = manager["args"]["required_site_verifier_ids"]
+    east_id = required["server"][0]
+    west_id = required["site-1"][0]
+    assert east_id != west_id
+    assert manager["args"]["cc_verifier_ids"] == [east_id, west_id]
+    for authorizer_id, endpoint in (
+        (east_id, "sharedeus2.eus2.attest.azure.net"),
+        (west_id, "sharedwus2.wus2.attest.azure.net"),
+    ):
+        path = Path(ctx.get_local_dir(project.get_server())) / f"{authorizer_id}__p_resources.json"
+        authorizer = json.loads(path.read_text())["components"][0]
+        assert authorizer["args"]["maa_endpoint"] == endpoint
 
 
 @pytest.mark.parametrize(
@@ -523,13 +593,18 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
 
 def test_bare_metal_deployment_returns_common_artifact_result(tmp_path):
     deployment = BareMetalCVMDeployment()
+    external = tmp_path / "external-output"
+    external.mkdir()
+    archive = external / "delivery.oci.tar"
+    archive.write_bytes(b"reviewed CVM delivery")
+    archive_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
     adapter = SimpleNamespace(
         build=lambda ctx, source_dirs: [
             {
                 "artifacts": [
                     {
-                        "path": str(tmp_path / "delivery.oci.tar"),
-                        "archive_sha256": "a" * 64,
+                        "path": str(archive),
+                        "archive_sha256": archive_sha256,
                         "platform": "intel_tdx",
                         "manifest_digest": "sha256:" + "b" * 64,
                         "cvm_build_id": "reviewed-build",
@@ -552,6 +627,8 @@ def test_bare_metal_deployment_returns_common_artifact_result(tmp_path):
 
     assert result.mode is CCDeploymentMode.BARE_METAL_CVM
     assert result.artifacts[0].path == "delivery.oci.tar"
+    assert (tmp_path / "public/delivery.oci.tar").read_bytes() == archive.read_bytes()
+    assert result.artifacts[0].sha256 == archive_sha256
     assert result.artifacts[0].metadata["manifest_digest"] == "sha256:" + "b" * 64
 
 

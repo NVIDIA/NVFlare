@@ -16,6 +16,7 @@
 
 import hashlib
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -36,6 +37,14 @@ from nvflare.lighter.constants import PropKey
 def _declared_path(config_path, value):
     path = Path(value).expanduser()
     return path.resolve() if path.is_absolute() else (Path(config_path).parent / path).resolve()
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 class BareMetalCVMDeployment(CCDeployment):
@@ -183,17 +192,33 @@ class BareMetalCVMDeployment(CCDeployment):
 
     def package(self, plan, private_kit, public_output, ctx):
         legacy = self.adapters[plan.participant_name].build(ctx, source_dirs={plan.participant_name: private_kit})[0]
-        return CCDeploymentResult(
-            participant_name=plan.participant_name,
-            mode=plan.mode,
-            cpu_tee=plan.cpu_tee,
-            gpu_tee=plan.gpu_tee,
-            attestation_service=plan.attestation_service.name,
-            artifacts=tuple(
+        if public_output.is_symlink():
+            raise ValueError(f"Invalid CVM public output directory: {public_output}")
+        public_output.mkdir(mode=0o755, exist_ok=True)
+        if not public_output.is_dir():
+            raise ValueError(f"Invalid CVM public output directory: {public_output}")
+        artifacts = []
+        for item in legacy["artifacts"]:
+            declared_source = Path(item["path"])
+            if declared_source.is_symlink():
+                raise ValueError(f"Invalid CVM OCI artifact: {declared_source}")
+            source = declared_source.resolve(strict=True)
+            if not source.is_file():
+                raise ValueError(f"Invalid CVM OCI artifact: {source}")
+            destination = public_output / source.name
+            if source != destination.resolve():
+                if destination.exists() or destination.is_symlink():
+                    raise ValueError(f"CVM public artifact already exists: {destination}")
+                shutil.copyfile(source, destination)
+            digest = _sha256(destination)
+            if digest != item["archive_sha256"]:
+                destination.unlink(missing_ok=True)
+                raise ValueError(f"CVM public artifact checksum mismatch: {destination}")
+            artifacts.append(
                 CCArtifact(
                     artifact_type="cvm_oci",
-                    path=Path(item["path"]).name,
-                    sha256=item["archive_sha256"],
+                    path=destination.name,
+                    sha256=digest,
                     metadata={
                         "platform": item["platform"],
                         "manifest_digest": item["manifest_digest"],
@@ -201,6 +226,12 @@ class BareMetalCVMDeployment(CCDeployment):
                         "resource": item["resource"],
                     },
                 )
-                for item in legacy["artifacts"]
-            ),
+            )
+        return CCDeploymentResult(
+            participant_name=plan.participant_name,
+            mode=plan.mode,
+            cpu_tee=plan.cpu_tee,
+            gpu_tee=plan.gpu_tee,
+            attestation_service=plan.attestation_service.name,
+            artifacts=tuple(artifacts),
         )
