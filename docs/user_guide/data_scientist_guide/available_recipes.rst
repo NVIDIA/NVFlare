@@ -744,9 +744,11 @@ SVM FedAvg
 
 Federated SVM using support record pooling. Clients send exact support feature
 rows and labels to the server; the server selects a subset and sends those
-records to every client. This recipe requires permission to share those records.
-Despite its name, it does not average model parameters. Round 0 trains local
-and server SVCs; round 1 validates the selected records at each client.
+records to the clients sampled for round 1. The two rounds sample clients
+independently, so recipients may differ from the round-0 contributors. This
+recipe requires permission to share those records. Despite its name, it does
+not average model parameters. Round 0 trains local and server SVCs; in round 1,
+sampled clients fit on the selected records and validate on their local data.
 
 .. code-block:: python
 

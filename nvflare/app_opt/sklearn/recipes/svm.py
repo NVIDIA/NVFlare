@@ -50,13 +50,14 @@ class SVMFedAvgRecipe(FedAvgRecipe):
     This recipe implements two stages of SVM training by pooling support records.
     Each local SVC selects exact training feature rows and their labels, which
     are sent to the server. The server fits an SVC on the pooled records and
-    sends its selected support rows and labels to all clients. Use this recipe
-    only when these records may be shared with the server and other clients.
+    sends its selected support rows and labels to clients sampled for round 1.
+    The round-1 cohort can differ from the round-0 contributors. Use this recipe
+    only when these records may be shared with the server and round-1 clients.
     It does not provide differential privacy or secure aggregation. Despite
     the recipe name, it does not average SVM model parameters.
 
-    - Round 0: Clients fit local SVCs; the server refits on their support records.
-    - Round 1: Clients refit on server-selected support records and validate.
+    - Round 0: Sampled clients fit local SVCs; the server refits on their support records.
+    - Round 1: Sampled clients refit on server-selected support records and validate locally.
 
     The recipe configures:
     - A federated job with kernel parameter
@@ -65,15 +66,15 @@ class SVMFedAvgRecipe(FedAvgRecipe):
     - Script runners for client-side training execution
 
     Training Process:
-    - Round 0 (Training): Each client fits a local SVC and sends its selected
+    - Round 0 (Training): Each sampled client fits a local SVC and sends its selected
       training feature rows and labels. The server fits an SVC on the pooled
       records and extracts its support rows and labels.
-    - Round 1 (Validation): Each client fits an SVC on the global support records
-      and validates against its local data.
+    - Round 1 (Validation): Each sampled client fits an SVC on the global support
+      records and validates against its local validation data.
 
     Args:
         name: Name of the federated learning job. Defaults to "svm_fedavg".
-        min_clients: Minimum number of clients required to start a training round.
+        min_clients: Minimum number of clients required to start and number sampled per round.
         kernel: Kernel type for SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
             Defaults to 'rbf'.
         model_path: Absolute path to a saved model file (.joblib).
