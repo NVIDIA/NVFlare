@@ -47,11 +47,17 @@ class SVMFedAvgRecipe(FedAvgRecipe):
     must never contain actual secrets. Read secrets from site environment variables or mounted
     files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
-    This recipe implements federated SVM training using support vector aggregation.
-    Unlike iterative algorithms, SVM training only requires one round:
-    - Round 0: Each client trains a local SVM and sends their support vectors
-    - Server aggregates all support vectors and trains a global SVM
-    - Round 1: Clients validate using the global support vectors
+    This recipe implements two stages of SVM training by pooling support records.
+    Each local SVC selects exact training feature rows and their labels, which
+    are sent to the server. The server fits an SVC on the pooled records and
+    sends its selected support rows and labels to clients sampled for round 1.
+    The round-1 cohort can differ from the round-0 contributors. Use this recipe
+    only when these records may be shared with the server and round-1 clients.
+    It does not provide differential privacy or secure aggregation. Despite
+    the recipe name, it does not average SVM model parameters.
+
+    - Round 0: Sampled clients fit local SVCs; the server refits on their support records.
+    - Round 1: Sampled clients refit on server-selected support records and validate locally.
 
     The recipe configures:
     - A federated job with kernel parameter
@@ -60,14 +66,15 @@ class SVMFedAvgRecipe(FedAvgRecipe):
     - Script runners for client-side training execution
 
     Training Process:
-    - Round 0 (Training): Each client trains a local SVM on their data and extracts
-      support vectors. The server collects all support vectors, trains a global SVM,
-      and extracts the global support vectors.
-    - Round 1 (Validation): Each client validates using the global support vectors.
+    - Round 0 (Training): Each sampled client fits a local SVC and sends its selected
+      training feature rows and labels. The server fits an SVC on the pooled
+      records and extracts its support rows and labels.
+    - Round 1 (Validation): Each sampled client fits an SVC on the global support
+      records and validates against its local validation data.
 
     Args:
         name: Name of the federated learning job. Defaults to "svm_fedavg".
-        min_clients: Minimum number of clients required to start a training round.
+        min_clients: Minimum number of clients required to start and number sampled per round.
         kernel: Kernel type for SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
             Defaults to 'rbf'.
         model_path: Absolute path to a saved model file (.joblib).
@@ -129,10 +136,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         ```
 
     Note:
-        This recipe uses CollectAndAssembleModelAggregator with SVMAssembler for
-        support vector aggregation. The training only requires one round since SVM
-        is not an iterative algorithm in the federated setting. A second round is
-        included for validation purposes.
+        This recipe uses CollectAndAssembleModelAggregator with SVMAssembler to
+        pool support records. Both SVM training stages occur in round 0; round 1
+        is used for validation.
     """
 
     def __init__(

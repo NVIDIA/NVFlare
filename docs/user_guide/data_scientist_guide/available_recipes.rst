@@ -718,7 +718,15 @@ Sklearn Specialized Recipes
 K-Means FedAvg
 --------------
 
-Federated K-Means clustering.
+Federated K-Means with count-weighted center aggregation. With the example client,
+round 0 sends ``n_clusters`` exact training feature rows selected by k-means++ to
+the server, without labels. The server fits KMeans to pooled seeds and sends
+global centers to clients. Later rounds send local centroids and per-center
+update counts; the server combines these with historical global centers and
+counts. Centroids can still disclose individual rows, for example with singleton
+clusters. Use this workflow only where sharing those rows and statistics is
+permitted; it provides no built-in differential privacy, secure aggregation, or
+minimum cluster-size protection. ``num_rounds`` includes initialization.
 
 .. code-block:: python
 
@@ -742,7 +750,13 @@ Federated K-Means clustering.
 SVM FedAvg
 ----------
 
-Federated Support Vector Machine.
+Federated SVM using support record pooling. Clients send exact support feature
+rows and labels to the server; the server selects a subset and sends those
+records to the clients sampled for round 1. The two rounds sample clients
+independently, so recipients may differ from the round-0 contributors. This
+recipe requires permission to share those records. Despite its name, it does
+not average model parameters. Round 0 trains local and server SVCs; in round 1,
+sampled clients fit on the selected records and validate on their local data.
 
 .. code-block:: python
 
@@ -752,7 +766,6 @@ Federated Support Vector Machine.
     recipe = SVMFedAvgRecipe(
         name="svm",
         min_clients=2,
-        num_rounds=5,
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
