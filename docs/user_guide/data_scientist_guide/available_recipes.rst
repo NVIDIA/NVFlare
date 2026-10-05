@@ -718,7 +718,15 @@ Sklearn Specialized Recipes
 K-Means FedAvg
 --------------
 
-Federated K-Means clustering.
+Federated K-Means with count-weighted center aggregation. With the example client,
+round 0 sends ``n_clusters`` exact training feature rows selected by k-means++ to
+the server, without labels. The server fits KMeans to pooled seeds and sends
+global centers to clients. Later rounds send local centroids and per-center
+update counts; the server combines these with historical global centers and
+counts. Centroids can still disclose individual rows, for example with singleton
+clusters. Use this workflow only where sharing those rows and statistics is
+permitted; it provides no built-in differential privacy, secure aggregation, or
+minimum cluster-size protection. ``num_rounds`` includes initialization.
 
 .. code-block:: python
 
