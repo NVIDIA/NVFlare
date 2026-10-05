@@ -181,9 +181,10 @@ def _run_job_cell(parent_url, pki, cert_name, fqcn, wait, result_q):
             DriverParams.CLIENT_KEY.value: pki[f"{cert_name}.key"],
             DriverParams.CONNECTION_SECURITY.value: "mtls",
         }
+        # Connect only to the parent; using its URL as root_url creates a second connector.
         cell = Cell(
             fqcn,
-            parent_url,
+            "",
             secure=True,
             credentials=credentials,
             create_internal_listener=False,
