@@ -18,6 +18,33 @@ cd docker-runtime/examples/docker
 
 From a source checkout, use `cd examples/docker` instead.
 
+### Apple Silicon Mac with Colima
+
+Colima supplies a Linux Docker daemon without Docker Desktop. Homebrew's
+`docker` package supplies the standalone CLI. Use Colima's VZ VM for CPU
+execution on Apple Silicon:
+
+```bash
+brew install colima docker
+colima start --profile nvflare-docker --activate=false --vm-type vz --cpu 4 --memory 8 --disk 40 \
+  --runtime docker --mount "$(cd ../.. && pwd):w"
+export DOCKER_CONTEXT=colima-nvflare-docker
+unset DOCKER_HOST
+docker info
+```
+
+The writable mount must cover the source checkout (or downloaded example)
+and its workspace. Keep this shell for the remaining commands. The generated
+startup script probes the socket inside the daemon VM to obtain its group ID.
+If you choose another profile name, update `DOCKER_CONTEXT` accordingly.
+If port 8002 is occupied, copy `project.yml`, choose a free `fed_learn_port`,
+and provision with that copy in Step 1.
+
+For `hello-pt-docker`, use the job copy without a GPU resource requirement in
+Step 5. The client uses CUDA when available and CPU otherwise; it does not
+select MPS. This VZ configuration is intended for CPU execution. Other Colima
+GPU backends and MPS execution have not been validated with this example.
+
 ## Step 0: Build Docker images
 
 ```bash
@@ -79,7 +106,7 @@ The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
 and a `local/study_runtime.yaml` template. The generated start script creates
 the Docker network if needed.
 
-## Step 3: Add /etc/hosts entries (if needed)
+## Step 3: Configure host admin connectivity
 
 Skip this step if `server` already resolves via your DNS. Otherwise, add the following
 to `/etc/hosts` so the admin CLI can reach the server container by name:
@@ -87,6 +114,24 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 ```
 127.0.0.1  server
 ```
+
+On macOS, the admin kit can instead use the published loopback port without
+editing `/etc/hosts` (including when `server` already resolves to another host):
+
+```bash
+python - <<'PYADMIN'
+import json
+from pathlib import Path
+
+path = Path("workspace/docker_test_project/prod_00/admin@nvidia.com/startup/fed_admin.json")
+config = json.loads(path.read_text())
+config["admin"]["host"] = "127.0.0.1"
+path.write_text(json.dumps(config, indent=2) + "\n")
+PYADMIN
+```
+
+The server's certificate identity remains the provisioned server name. Both
+Docker clients use the server's Docker network name; keep their kit addresses.
 
 ## Step 4: Start server and clients
 
@@ -96,13 +141,19 @@ The server and both clients run in Docker mode. Their parent containers use
 The first `start_docker.sh` command creates `nvflare-network` if it does not
 already exist, so no separate `docker network create` command is required.
 
-Start all three parent processes from the `examples/docker` directory:
+Start the server from the `examples/docker` directory:
 
 ```bash
 (
   cd workspace/docker_test_project/prepared/server
   nohup bash startup/start_docker.sh > server.log 2>&1 < /dev/null &
 )
+```
+
+Wait for the server container to start (`docker inspect --format
+'{{.State.Running}}' server` should print `true`), then start both clients:
+
+```bash
 (
   cd workspace/docker_test_project/prepared/site-1
   nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
@@ -122,6 +173,13 @@ tail -f \
   workspace/docker_test_project/prepared/site-2/site-2.log
 ```
 
+Before submitting a job, confirm both clients are connected:
+
+```bash
+nvflare system status \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
 ## Step 5: Submit a job
 
 ```bash
@@ -130,13 +188,60 @@ nvflare job submit \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
+The original `hello-pt-docker` requests one GPU per client. On any platform, create a
+copy without that resource requirement to allow CPU execution when CUDA is
+unavailable, preserving the client's existing device selection:
+
+```bash
+python - <<'PYCPU'
+import json
+import shutil
+from pathlib import Path
+
+shutil.copytree("jobs/hello-pt-docker", "workspace/hello-pt-docker-cpu", dirs_exist_ok=True)
+path = Path("workspace/hello-pt-docker-cpu/meta.json")
+meta = json.loads(path.read_text())
+meta["resource_spec"] = {}
+path.write_text(json.dumps(meta, indent=4) + "\n")
+PYCPU
+nvflare job submit \
+  -j workspace/hello-pt-docker-cpu \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
+The job image provides a writable `/var/tmp/nvflare/data` CIFAR-10 cache for
+non-root job users. To override it, set `NVFL_CIFAR10_ROOT` in
+`job_launcher.default_job_env` in `docker.yaml` before preparing both client
+kits, and choose a directory writable inside their job containers. Exporting
+this variable only on the host does not configure the Docker jobs. Data uses
+torchvision's standard CIFAR-10 download URL and checksum validation.
+
+Use the returned job ID to check completion:
+
+```bash
+nvflare job wait JOB_ID \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
 Available jobs:
 
 | Job | Description |
 |-----|-------------|
 | `hello-numpy-docker` | Basic numpy federated averaging |
-| `hello-pt-docker` | PyTorch CIFAR-10 federated training |
+| `hello-pt-docker` | PyTorch CIFAR-10 training; requests one GPU by default |
 | `pt-ddp-docker` | Multi-GPU DDP training with torchrun |
+
+## Step 6: Stop the example
+
+After jobs finish, shut down this federation:
+
+```bash
+nvflare system shutdown all --force --timeout 60 \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
+```
+
+When finished with the dedicated Colima VM, run
+`colima stop --profile nvflare-docker`.
 
 ## Notes
 
