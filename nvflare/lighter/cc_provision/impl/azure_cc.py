@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE
+from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE
 from nvflare.lighter.cc_provision.deployment import (
     CCArtifact,
     CCDeployment,
@@ -60,13 +62,13 @@ class AzureCCDeployment(CCDeployment):
             return {
                 "id": f"az_cvm_authorizer_{suffix}",
                 "path": "nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer",
-                "args": {"maa_endpoint": endpoint},
+                "args": {"maa_endpoint": endpoint, "namespace": f"{AZ_CVM_NAMESPACE}-{suffix}"},
                 "token_expiration": plan.attestation_service.values["token_expiration_seconds"],
             }
         return {
             "id": f"aci_authorizer_{suffix}",
             "path": "nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer",
-            "args": {"maa_endpoint": endpoint},
+            "args": {"maa_endpoint": endpoint, "namespace": f"{ACI_NAMESPACE}-{suffix}"},
             "token_expiration": plan.attestation_service.values["token_expiration_seconds"],
         }
 

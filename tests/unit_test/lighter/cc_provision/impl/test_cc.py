@@ -18,13 +18,17 @@ import shlex
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
+from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE, AZCVMAuthorizer
+from nvflare.app_opt.confidential_computing.cc_manager import CCManager
 from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
@@ -197,6 +201,19 @@ def test_unified_azure_config_creates_immutable_plan(tmp_path):
         plan.internal["site_name"] = "other-site"
 
 
+@pytest.mark.parametrize(
+    "authorizer_class,default_namespace",
+    [(AZCVMAuthorizer, AZ_CVM_NAMESPACE), (ACIAuthorizer, ACI_NAMESPACE)],
+)
+def test_azure_authorizers_accept_endpoint_scoped_namespace(authorizer_class, default_namespace):
+    assert authorizer_class().get_namespace() == default_namespace
+    assert (
+        authorizer_class(namespace=f"{default_namespace}-endpoint").get_namespace() == f"{default_namespace}-endpoint"
+    )
+    with pytest.raises(ValueError, match="namespace"):
+        authorizer_class(namespace="")
+
+
 def test_builder_writes_azure_authorizer_manager_and_allow_list(tmp_path):
     project = _azure_project(tmp_path)
     ctx = ProvisionContext(str(tmp_path / "workspace"), project)
@@ -282,6 +299,18 @@ def test_azure_participants_with_different_maa_endpoints_get_distinct_verifiers(
         path = Path(ctx.get_local_dir(project.get_server())) / f"{authorizer_id}__p_resources.json"
         authorizer = json.loads(path.read_text())["components"][0]
         assert authorizer["args"]["maa_endpoint"] == endpoint
+        assert authorizer["args"]["namespace"].startswith("x-az-cvm-")
+
+    components = {}
+    for authorizer_id in (east_id, west_id):
+        path = Path(ctx.get_local_dir(project.get_server())) / f"{authorizer_id}__p_resources.json"
+        component = json.loads(path.read_text())["components"][0]
+        components[authorizer_id] = AZCVMAuthorizer(**component["args"])
+    runtime_manager = CCManager(**manager["args"])
+    fl_ctx = Mock(spec=FLContext)
+    fl_ctx.get_engine.return_value.get_component.side_effect = components.get
+    runtime_manager._setup_cc_authorizers(fl_ctx)
+    assert set(runtime_manager.cc_verifiers) == {component.get_namespace() for component in components.values()}
 
 
 @pytest.mark.parametrize(
