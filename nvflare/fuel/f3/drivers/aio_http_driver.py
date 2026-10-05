@@ -93,7 +93,7 @@ class AioHttpDriver(BaseDriver):
         self.loop = self.aio_context.get_event_loop()
         self.ssl_context = None
         self.stop_event = self.loop.create_future()
-        self._shutdown_lock = asyncio.Lock()
+        self.shutdown_lock = asyncio.Lock()
         self.app = None
         self.site = None
         self.runner = None
@@ -198,7 +198,7 @@ class AioHttpDriver(BaseDriver):
 
     async def _async_shutdown(self):
         # Keep completion behind cleanup, including when shutdown calls overlap.
-        async with self._shutdown_lock:
+        async with self.shutdown_lock:
             self.close_all()
 
             # Detach before awaiting so repeated shutdowns cannot clean up the same site.
