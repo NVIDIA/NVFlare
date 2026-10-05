@@ -23,7 +23,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.recipe.run import Run
-from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module
+from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module, run_hello_pt_export
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
@@ -101,7 +101,12 @@ def test_environment_selection_uses_the_same_client_count(tmp_path):
     assert prod_env.username == "researcher@example.com"
 
 
-def test_default_recipe_forwards_only_application_selection(monkeypatch):
+@pytest.mark.parametrize(
+    "environment_args",
+    [[], ["--env", "poc"], ["--env", "prod", "--startup-kit", "/tmp/admin"]],
+    ids=["sim", "poc", "prod"],
+)
+def test_application_recipe_is_independent_of_environment(monkeypatch, environment_args):
     job_module = _load_job_module()
     calls = []
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
@@ -116,7 +121,7 @@ def test_default_recipe_forwards_only_application_selection(monkeypatch):
         lambda value, tracking_type: calls.append(("tracking", value, tracking_type)),
     )
 
-    result = job_module.create_recipe(job_module.parse_args([]))
+    result = job_module.create_recipe(job_module.parse_args(environment_args))
 
     assert result is recipe
     assert recipe_kwargs["model"] == "model"
@@ -354,6 +359,7 @@ def test_copied_example_reports_missing_shared_application(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+@pytest.mark.xdist_group(name="hello_pt_cli_export")
 @pytest.mark.parametrize("env_name", ["sim", "poc", "prod"])
 def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name):
     command = [
@@ -373,13 +379,9 @@ def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name):
         kit = tmp_path / "admin"
         kit.mkdir()
         command.extend(["--startup-kit", str(kit)])
-    subprocess.run(
+    run_hello_pt_export(
         command,
         cwd=ADVANCED_DIR,
         env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
     )
     assert (tmp_path / "export" / "hello-pt" / "meta.json").is_file()
