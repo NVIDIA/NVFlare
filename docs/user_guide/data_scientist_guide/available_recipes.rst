@@ -742,7 +742,11 @@ Federated K-Means clustering.
 SVM FedAvg
 ----------
 
-Federated Support Vector Machine.
+Federated SVM using support record pooling. Clients send exact support feature
+rows and labels to the server; the server selects a subset and sends those
+records to every client. This recipe requires permission to share those records.
+Despite its name, it does not average model parameters. Round 0 trains local
+and server SVCs; round 1 validates the selected records at each client.
 
 .. code-block:: python
 
@@ -752,7 +756,7 @@ Federated Support Vector Machine.
     recipe = SVMFedAvgRecipe(
         name="svm",
         min_clients=2,
-        num_rounds=5,
+        kernel="rbf",
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)

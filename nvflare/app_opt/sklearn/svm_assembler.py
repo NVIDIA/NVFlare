@@ -23,7 +23,11 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class SVMAssembler(Assembler):
-    """Assembler for federated SVM using support vector aggregation.
+    """Assembler for federated SVM using support record pooling.
+
+    Support vectors here are exact client training feature rows with labels.
+    They are visible to the server, and the server-selected subset is sent to
+    all clients. This assembler does not average model parameters.
 
     This assembler implements the aggregation logic for federated SVM training.
     The approach is to:
@@ -33,8 +37,8 @@ class SVMAssembler(Assembler):
     4. Server trains a global SVM on the aggregated support vectors
     5. Server extracts final global support vectors and sends back to clients
 
-    This approach only requires one round of training since SVM is not an
-    iterative algorithm in the federated setting.
+    Both client and server fitting occur in round 0. Round 1 validates the
+    selected global support rows at each client.
 
     Args:
         kernel: Kernel type to use in SVM. Options include 'linear', 'poly', 'rbf', 'sigmoid'.

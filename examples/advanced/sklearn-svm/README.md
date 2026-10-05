@@ -1,5 +1,12 @@
 # Federated SVM with Scikit-learn
 
+> **Data-sharing notice:** This example sends selected training records to the server.
+> Each client's support vectors are exact feature rows from its training data, and
+> their labels are sent with them. The server selects a subset of the collected
+> rows and sends those rows and labels to every client. Use this workflow only
+> when participants are allowed to share those records with the server and one
+> another. The recipe does not add differential privacy or secure aggregation.
+
 Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
 
 ## Introduction to Scikit-learn, tabular data, and federated SVM
@@ -24,20 +31,21 @@ To load the data for each client, the following parameters are expected by local
 
 ### Federated SVM
 The machine learning algorithm shown in this example is [SVM for Classification (SVC)](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
-Under this setting, federated learning can be formulated in two steps:
-- local training: each client trains a local SVM model with their own data
-- global training: server collects the support vectors from all clients and
-  trains a global SVM model based on them
+This example uses two stages of SVM training, followed by validation:
 
-Unlike other iterative federated algorithms, federated SVM only involves
-these two training steps. Hence, in the server config, we have
-```
-"num_rounds": 2
-```
-The first round is the training round, performing local training and global aggregation.
-Next, the global model will be sent back to clients for the second round,
-performing model validation and local model update.
-If this number is set to a number greater than 2, the system will report an error and exit.
+1. Each client fits an SVC on its local training data. It uses `support_` to
+   select `X_train[support_indices]` and `y_train[support_indices]`, then sends
+   these exact feature rows and labels to the server.
+2. The server concatenates the submitted rows, fits another SVC on them, and
+   selects that SVC's support rows and labels. These selected records form the
+   global payload sent to all clients.
+3. In the validation round, each client fits an SVC on the global payload and
+   evaluates it against its local validation data.
+
+`SVMFedAvgRecipe` is the recipe's API name; this workflow pools support records
+and refits SVCs. It does not average SVM parameters or combine predictions from
+the local models. The recipe fixes `num_rounds` at 2: round 0 performs both
+training stages, and round 1 validates the result.
 
 ## Data preparation
 This example uses the breast cancer dataset available from Scikit-learn's dataset API.
@@ -209,14 +217,15 @@ The recipe automatically handles:
 - Server-side component configuration (controller, aggregator, persistor, SVMAssembler)
 - Client-side executor setup
 - Job packaging and deployment
-- Two-round training cycle (train + validate)
+- Two-round cycle (local and server training, then client validation)
 
 ### Understanding SVM Training
 
-Unlike iterative algorithms, federated SVM only requires one training round:
-- **Round 0 (Training)**: Each client trains a local SVM and sends support vectors to the server.
-  The server aggregates all support vectors and trains a global SVM.
-- **Round 1 (Validation)**: Clients validate the global model using the global support vectors.
+This recipe has one federated training round and one validation round:
+- **Round 0 (Training)**: Clients send exact support feature rows and labels.
+  The server fits an SVC to their pooled rows and selects global support rows.
+- **Round 1 (Validation)**: Clients receive the selected rows and labels, fit
+  an SVC locally, and report a validation metric.
 
 This is automatically configured by the recipe!
 
