@@ -212,7 +212,9 @@ nvflare job submit \
 The job image provides a writable `/var/tmp/nvflare/data` CIFAR-10 cache for
 non-root job users. To override it, set `NVFL_CIFAR10_ROOT` in
 `job_launcher.default_job_env` in `docker.yaml` before preparing both client
-kits, and choose a directory writable inside their job containers. Exporting
+kits, and choose a directory writable inside their job containers, such as
+`/var/tmp/nvflare/workspace/cifar10`. The job mounts `local` and `startup`
+as read-only directories, so keep the cache outside those directories. Exporting
 this variable only on the host does not configure the Docker jobs. Data uses
 torchvision's standard CIFAR-10 download URL and checksum validation.
 
