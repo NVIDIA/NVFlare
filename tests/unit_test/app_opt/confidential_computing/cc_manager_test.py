@@ -731,7 +731,10 @@ class TestCCManager:
         stop = Mock()
         stop.wait.return_value = True
         manager.cross_validation_stop_event = stop
-        with patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0):
+        with (
+            patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+            patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=100),
+        ):
             manager._cross_site_validation_loop(context)
         stop.wait.assert_called_once_with(timeout=manager.cross_validation_interval)
 
@@ -784,3 +787,436 @@ class TestCCManager:
         assert len(cc_info) == 1
         assert cc_info["server"][0][CC_TOKEN] == VALID_TOKEN
         assert cc_info["server"][0][CC_NAMESPACE] == TDX_NAMESPACE
+
+
+@pytest.mark.parametrize("server", [True, False])
+def test_initial_missing_membership_waits_without_generating_proofs(server):
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server" if server else "site-1"
+    manager._startup_deadline = 700
+    engine = Mock(spec=ServerEngineSpec) if server else Mock()
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = engine
+    manager.engine = engine
+    if server:
+        engine.get_clients.return_value = []
+    else:
+        engine.get_cell.return_value.send_request.return_value = new_cell_message(
+            {MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"sites": []}
+        )
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=100),
+        patch.object(manager, "_generate_fresh_tokens_for_validation") as generate,
+    ):
+        assert manager._startup_membership_pending(context) is True
+    generate.assert_not_called()
+    assert manager.cross_validation_run_once is False
+    assert manager._initial_membership_validated is False
+
+
+@pytest.mark.parametrize(
+    "response",
+    [None, {"sites": "invalid"}, {"sites": [["site-1"]]}, {"sites": [("site-1", "site-1"), ("site-1", "site-1")]}],
+)
+def test_initial_discovery_failure_is_not_a_missing_membership_grace(response):
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "site-1"
+    manager._startup_deadline = 700
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = Mock()
+    cell = context.get_engine().get_cell()
+    cell.send_request.return_value = (
+        None if response is None else new_cell_message({MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, response)
+    )
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=100):
+        with pytest.raises(RuntimeError):
+            manager._startup_membership_pending(context)
+
+
+def test_startup_discovery_timeout_and_wait_do_not_extend_deadline():
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "site-1"
+    manager._startup_deadline = 700
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = Mock()
+    context.get_engine().get_cell().send_request.return_value = new_cell_message(
+        {MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"sites": []}
+    )
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=699):
+        assert manager._startup_membership_pending(context) is True
+    assert context.get_engine().get_cell().send_request.call_args.kwargs["timeout"] == 1
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=700):
+        assert manager._startup_membership_pending(context) is False
+
+
+def test_missing_membership_after_success_or_deadline_gets_no_grace():
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 700
+    context = Mock(spec=FLContext)
+    for complete, clock in ((True, 200), (False, 700)):
+        manager._initial_membership_validated = complete
+        with (
+            patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=clock),
+            patch.object(manager, "_get_all_sites") as discover,
+        ):
+            assert manager._startup_membership_pending(context) is False
+        discover.assert_not_called()
+
+
+def test_complete_initial_discovery_does_not_skip_full_validation_or_latch_success():
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 700
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = Mock(spec=ServerEngineSpec)
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=100),
+        patch.object(manager, "_get_all_sites", return_value=[("site-1", "site-1"), ("site-2", "site-2")]),
+    ):
+        assert manager._startup_membership_pending(context) is False
+    assert manager._initial_membership_validated is False
+    with (
+        patch.object(manager, "_collect_all_site_tokens", return_value={"site-1": [], "site-2": []}),
+        patch.object(manager, "_shutdown_system") as shutdown,
+    ):
+        assert manager._perform_cross_site_validation(context) is False
+    assert shutdown.called and manager._initial_membership_validated is False
+
+
+def test_prejob_validation_failure_explicitly_blocks_job_without_success_latch():
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    context = FLContext()
+    with patch.object(manager, "_perform_cross_site_validation", return_value=False) as validation:
+        manager.handle_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, context)
+    validation.assert_called_once_with(context)
+    assert context.get_prop(FLContextKey.JOB_BLOCK_REASON) == "CC participant validation failed"
+    assert manager.cross_validation_run_once is False
+    assert manager._initial_membership_validated is False
+
+
+def test_startup_anchor_is_once_per_manager_and_not_reset_by_thread_restart():
+    manager = CCManager([], [], verify_frequency=120)
+    context = Mock(spec=FLContext)
+    fake_thread = Mock()
+    fake_thread.is_alive.return_value = False
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", side_effect=[100, 500]),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.threading.Thread", return_value=fake_thread),
+    ):
+        manager._start_cross_site_validation(context)
+        assert manager._startup_deadline == 700
+        manager._start_cross_site_validation(context)
+        assert manager._startup_deadline == 700
+
+
+def test_periodic_missing_membership_is_bounded_and_cannot_mark_validation_complete():
+    import threading
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 600
+    manager.cross_validation_thread = threading.current_thread()
+    context = Mock(spec=FLContext)
+    manager.engine = Mock(spec=ServerEngineSpec)
+    context.get_engine.return_value = manager.engine
+    manager.engine.get_clients.return_value = []
+    manager.engine.get_cell = Mock(return_value=Mock())
+    clock = [0]
+    waits = []
+    stop = Mock()
+    stop.is_set.return_value = False
+
+    def wait(timeout):
+        waits.append(timeout)
+        clock[0] += timeout
+        return False
+
+    stop.wait.side_effect = wait
+    manager.cross_validation_stop_event = stop
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", side_effect=lambda: clock[0]),
+        patch.object(manager, "_shutdown_system") as shutdown,
+        patch.object(manager, "_generate_fresh_tokens_for_validation", return_value=[]) as generate,
+    ):
+        manager._cross_site_validation_loop(context)
+    assert clock[0] == 600 and waits == [120, 120, 120, 120, 120]
+    shutdown.assert_called_once()
+    assert "Missing required CC participants" in shutdown.call_args.args[0]
+    # Generation happens only for the final strict attempt, never during grace.
+    generate.assert_called_once()
+    assert manager.cross_validation_run_once is False and manager._initial_membership_validated is False
+
+
+@pytest.mark.parametrize("start", [590, 600, 650])
+def test_periodic_lock_contention_at_startup_deadline_waits_before_strict_retry(start):
+    import threading
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager._startup_deadline = 600
+    manager.cross_validation_thread = threading.current_thread()
+    manager.lock = Mock()
+    manager.lock.acquire.side_effect = [False, False, True]
+    context = Mock(spec=FLContext)
+    clock = [start]
+    waits = []
+    stop = Mock()
+    stop.is_set.return_value = False
+
+    def wait(timeout):
+        waits.append(timeout)
+        clock[0] += timeout
+        return False
+
+    stop.wait.side_effect = wait
+    manager.cross_validation_stop_event = stop
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", side_effect=lambda: clock[0]),
+        patch.object(manager, "_perform_cross_site_validation", return_value=False) as validate,
+    ):
+        manager._cross_site_validation_loop(context)
+    assert waits == [max(0, 600 - start), 1.0, 1.0]
+    validate.assert_called_once_with(context)
+    manager.lock.release.assert_called_once()
+    assert manager._startup_deadline == 600
+    assert manager.cross_validation_run_once is False and manager._initial_membership_validated is False
+
+
+def test_periodic_lock_backoff_can_be_interrupted_by_shutdown():
+    import threading
+
+    manager = CCManager([], [], verify_frequency=120)
+    manager._startup_deadline = 600
+    manager.cross_validation_thread = threading.current_thread()
+    manager.lock = Mock()
+    manager.lock.acquire.return_value = False
+    stop = Mock()
+    stop.is_set.return_value = False
+    stop.wait.side_effect = [False, True]
+    manager.cross_validation_stop_event = stop
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=600),
+        patch.object(manager, "_perform_cross_site_validation") as validate,
+    ):
+        manager._cross_site_validation_loop(Mock(spec=FLContext))
+    assert [call.kwargs["timeout"] for call in stop.wait.call_args_list] == [0, 1.0]
+    manager.lock.acquire.assert_called_once_with(blocking=False)
+    manager.lock.release.assert_not_called()
+    validate.assert_not_called()
+
+
+def test_full_membership_with_bad_generation_or_proof_fails_without_startup_deferral():
+    import threading
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 600
+    manager.cross_validation_thread = threading.current_thread()
+    context = Mock(spec=FLContext)
+    manager.engine = Mock(spec=ServerEngineSpec)
+    context.get_engine.return_value = manager.engine
+    stop = Mock()
+    stop.is_set.return_value = False
+    stop.wait.return_value = False
+    manager.cross_validation_stop_event = stop
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=120),
+        patch.object(manager, "_get_all_sites", return_value=[("site-1", "site-1"), ("site-2", "site-2")]),
+        patch.object(manager, "_collect_all_site_tokens", return_value={"site-1": [], "site-2": []}),
+        patch.object(manager, "_shutdown_system") as shutdown,
+    ):
+        manager._cross_site_validation_loop(context)
+    shutdown.assert_called_once()
+    assert manager._initial_membership_validated is False and manager.cross_validation_run_once is False
+    stop.wait.assert_called_once()
+
+
+def test_success_then_required_participant_loss_cannot_reenter_startup_grace():
+    from nvflare.app_opt.confidential_computing.cc_manager import VerificationResult
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 600
+    context = Mock(spec=FLContext)
+    with (
+        patch.object(manager, "_collect_all_site_tokens", return_value={"site-1": [], "site-2": []}),
+        patch.object(manager, "_verify_participants_tokens", return_value=VerificationResult({}, [])),
+    ):
+        assert manager._perform_cross_site_validation(context) is True
+    assert manager._initial_membership_validated is True
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=130):
+        assert manager._startup_membership_pending(context) is False
+    with (
+        patch.object(manager, "_collect_all_site_tokens", return_value={"site-1": []}),
+        patch.object(manager, "_shutdown_system") as shutdown,
+    ):
+        assert manager._perform_cross_site_validation(context) is False
+    shutdown.assert_called_once()
+
+
+def test_scheduler_never_checks_resources_after_failed_cc_job_gate():
+    from nvflare.apis.job_def import Job
+    from nvflare.app_common.job_schedulers.job_scheduler import SCHEDULE_RESULT_NO_RESOURCE, DefaultJobScheduler
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    engine = Mock(spec=ServerEngineSpec)
+    engine.get_clients.return_value = [Mock(name="unused")]
+    engine.get_clients.return_value[0].name = "site-1"
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    job = Job(job_id="public-test-job", resource_spec={}, deploy_map={"app": ["site-1"]}, meta={})
+    scheduler = DefaultJobScheduler()
+    with (
+        patch.object(scheduler, "fire_event", side_effect=manager.handle_event),
+        patch.object(manager, "_perform_cross_site_validation", return_value=False),
+        patch.object(scheduler, "_check_client_resources") as resources,
+        patch("nvflare.app_common.job_schedulers.job_scheduler.StudyRegistryService.get_registry", return_value=None),
+    ):
+        result, dispatch, reason = scheduler._try_job(job, context)
+    assert result == SCHEDULE_RESULT_NO_RESOURCE and dispatch is None and reason == "CC participant validation failed"
+    resources.assert_not_called()
+    assert manager.cross_validation_run_once is False
+
+
+def test_startup_unavailable_cell_is_not_missing_membership_grace():
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "site-1"
+    manager._startup_deadline = 700
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = Mock()
+    context.get_engine().get_cell.return_value = None
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", return_value=100):
+        with pytest.raises(RuntimeError, match="Cell not available"):
+            manager._startup_membership_pending(context)
+
+
+def test_async_shutdown_after_previous_pass_cannot_authorize_another_job():
+    from nvflare.apis.job_def import Job
+    from nvflare.app_common.job_schedulers.job_scheduler import SCHEDULE_RESULT_NO_RESOURCE, DefaultJobScheduler
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager.cross_validation_run_once = True
+    manager._initial_membership_validated = True
+    engine = Mock(spec=ServerEngineSpec)
+    engine.run_processes = {}
+    engine.server = Mock()
+    engine.get_clients.return_value = [Mock()]
+    engine.get_clients.return_value[0].name = "site-1"
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.Connection"),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.TrainingCommandModule"),
+    ):
+        manager._shutdown_system("fixed-test-required-participant-loss", context)
+    assert manager._validation_failed is True
+    job = Job(job_id="public-test-after-loss", resource_spec={}, deploy_map={"app": ["site-1"]}, meta={})
+    scheduler = DefaultJobScheduler()
+    with (
+        patch.object(scheduler, "fire_event", side_effect=manager.handle_event),
+        patch.object(manager, "_perform_cross_site_validation") as validation,
+        patch.object(scheduler, "_check_client_resources") as resources,
+        patch("nvflare.app_common.job_schedulers.job_scheduler.StudyRegistryService.get_registry", return_value=None),
+    ):
+        result, dispatch, reason = scheduler._try_job(job, context)
+    assert result == SCHEDULE_RESULT_NO_RESOURCE and dispatch is None and reason == "CC participant validation failed"
+    validation.assert_not_called()
+    resources.assert_not_called()
+
+
+def test_first_periodic_pass_ends_grace_and_loss_fails_at_next_original_interval():
+    import threading
+
+    from nvflare.app_opt.confidential_computing.cc_manager import VerificationResult
+
+    manager = CCManager([], [], verify_frequency=120, cc_enabled_sites=["site-1", "site-2"])
+    manager.site_name = "server"
+    manager._startup_deadline = 600
+    manager.cross_validation_thread = threading.current_thread()
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value = Mock(spec=ServerEngineSpec)
+    clock = [0]
+    waits = []
+    stop = Mock()
+    stop.is_set.return_value = False
+
+    def wait(timeout):
+        waits.append(timeout)
+        clock[0] += timeout
+        return False
+
+    stop.wait.side_effect = wait
+    manager.cross_validation_stop_event = stop
+    with (
+        patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0),
+        patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", side_effect=lambda: clock[0]),
+        patch.object(manager, "_get_all_sites", return_value=[("site-1", "site-1"), ("site-2", "site-2")]) as discover,
+        patch.object(manager, "_collect_all_site_tokens", side_effect=[{"site-1": [], "site-2": []}, {"site-1": []}]),
+        patch.object(manager, "_verify_participants_tokens", return_value=VerificationResult({}, [])),
+        patch.object(manager, "_shutdown_system") as shutdown,
+    ):
+        manager._cross_site_validation_loop(context)
+    assert clock[0] == 240 and waits == [120, 120]
+    discover.assert_called_once()
+    shutdown.assert_called_once()
+    assert "Missing required CC participants" in shutdown.call_args.args[0]
+    assert manager._initial_membership_validated is True
+
+
+@pytest.mark.parametrize("site_name", ["server", "site-1", "site-2"])
+def test_two_protected_clients_and_ordinary_server_validate_without_observer(site_name):
+    """Every participant validates the complete protected set through the CC channel."""
+    manager = CCManager(
+        [],
+        ["coco_authorizer"],
+        cc_enabled_sites=["site-1", "site-2"],
+        required_site_verifier_ids={"site-1": ["coco_authorizer"], "site-2": ["coco_authorizer"]},
+        require_site_binding=True,
+    )
+    manager.site_name = site_name
+    manager.required_site_namespaces = {"site-1": {"coco"}, "site-2": {"coco"}}
+    verifier = Mock(spec=CCAuthorizer)
+    verifier.verify_for_site.side_effect = lambda token, expected: token == f"proof-{expected}"
+    manager.cc_verifiers = {"coco": verifier}
+    tokens = {name: [{CC_TOKEN: f"proof-{name}", CC_NAMESPACE: "coco"}] for name in manager.cc_enabled_sites}
+    if site_name != "server":
+        issuer = Mock(spec=CCAuthorizer)
+        issuer.generate_with_retry.return_value = f"proof-{site_name}"
+        issuer.get_namespace.return_value = "coco"
+        manager.cc_issuers = {issuer: 300}
+
+    engine = Mock(spec=ServerEngineSpec) if site_name == "server" else Mock()
+    manager.engine = engine
+    clients = []
+    for name in manager.cc_enabled_sites:
+        client = Mock()
+        client.name = name
+        client.get_fqcn.return_value = name
+        clients.append(client)
+    engine.get_clients.return_value = clients
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    cell = Mock()
+    engine.get_cell = Mock(return_value=cell)
+
+    def respond(**kwargs):
+        if kwargs["topic"] == "get_sites":
+            payload = {"sites": [(name, name) for name in manager.cc_enabled_sites]}
+        else:
+            target = kwargs["target"]
+            payload = {"site_name": target, "cc_info": tokens[target]}
+        return new_cell_message({MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, payload)
+
+    cell.send_request.side_effect = respond
+    with patch.object(manager, "_shutdown_system") as shutdown:
+        assert manager._perform_cross_site_validation(context) is True
+    shutdown.assert_not_called()
+    assert manager._initial_membership_validated is True
+    assert {call.args[1] for call in verifier.verify_for_site.call_args_list} == {"site-1", "site-2"}
+    assert verifier.verify_for_site.call_count == 2
+    assert all(call.kwargs["target"] != "site-observer" for call in cell.send_request.call_args_list)

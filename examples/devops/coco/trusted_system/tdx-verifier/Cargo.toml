@@ -15,3 +15,6 @@ sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 toml = "1.1.2"
 verifier = { git = "https://github.com/confidential-containers/trustee", rev = "338610fbfed57b66c61a8a3a60e0e4386bdce793", default-features = false, features = ["tdx-verifier"] }
+
+# Factory storage is required by Trustee; this is the same revision already used transitively.
+key-value-storage = { git = "https://github.com/confidential-containers/trustee", rev = "338610fbfed57b66c61a8a3a60e0e4386bdce793", default-features = false }

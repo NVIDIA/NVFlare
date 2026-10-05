@@ -46,17 +46,24 @@ still fails. Ordinary participants outside the required set do not acquire an
 attestation requirement.
 
 The first periodic round waits one configured verification interval plus
-0–20% jitter for coordinated startup. Before checking job resources, the server
-performs cross-validation only if no cross-validation has run yet; this check
-does not wait for the periodic interval and cannot pass with missing attestations.
-Once a periodic or scheduling-related round has run, later jobs do not force a
-new round. Continued validation is periodic, not fresh hardware attestation for
-every job. All required sites must be connected and able to attest by that first
-round and remain available thereafter. An omitted/offline site
-is a validation failure, not an implicit membership removal, and follows the
-existing federation-shutdown policy. Coordinate startup and review the configured
-validation interval; changing federation membership requires trusted
-reprovisioning rather than accepting a shorter server-provided list.
+0–20% jitter for coordinated startup. During initial startup, periodic discovery
+can wait for missing required registrations for at most 600 seconds from the
+local validation-thread start. This grace applies only to missing registration:
+malformed discovery, failed services and invalid proofs still fail closed. Once
+a complete membership has passed validation, later loss of a required site
+follows the federation-shutdown path immediately rather than restarting a grace
+period. Missing sites never become optional members.
+
+The 600-second grace is not a wall-clock limit for collecting or verifying all
+proofs: discovery, token generation and peer requests retain their own configured
+budgets. An external coordinated-launch/acceptance deadline is separate. Before
+checking job resources, the server performs immediate strict cross-validation
+if no cross-validation has run yet; that job check receives no registration
+grace and cannot pass with missing required attestations. Once a periodic or
+scheduling-related round has run, later jobs do not force a new round. Continued
+validation is periodic, not fresh hardware attestation for every job. Coordinate
+startup and review all budgets; changing required federation membership requires
+trusted reprovisioning rather than accepting a shorter server-provided list.
 
 ### Per-participant attestation namespaces
 
@@ -511,10 +518,12 @@ verifier = CoCoAuthorizer(
         "site-1": {
             "init_data": approved_init_data_sha256,  # 64 lowercase hex characters
             "cpu_tee": "snp",
+            "gpu_required": True,
             "measurement": approved_snp_measurement,  # SNP-only; 96 lowercase hex
         },
         "site-2": {
             "cpu_tee": "tdx",
+            "gpu_required": False,
             "init_data": approved_tdx_init_data_sha256,  # canonical 64 lowercase hex
             "tdx_mr_td": approved_tdx_mr_td,  # 96 lowercase hex characters
             "tdx_rtmr_0": approved_tdx_rtmr_0,
@@ -528,7 +537,10 @@ verifier = CoCoAuthorizer(
 
 Both options default to `None` for the existing Trustee flow. With constraints
 configured, every verified subject must have an entry; all configured claims
-must match signed CPU evidence. Choose the needed typed constraints; `measurement`
+must match the signed appraisals. `gpu_required: true` requires a valid signed
+`gpu0` appraisal; `false` requires CPU-only appraisals. The value must be a
+boolean. Omitting it preserves acceptance of either mode, with any present GPU
+appraisal still required to pass. Choose the needed typed constraints; `measurement`
 remains SNP-only and cannot pin TDX MRTD. TDX fields require signed TDX evidence
 and canonical 96-character lowercase hex values. Cross-TEE or mixed constraints
 fail closed. `init_data` remains a canonical 32-byte digest for either TEE;
@@ -546,9 +558,11 @@ DNS name. For example, inside the existing issuer's `args`:
 workload_constraints:
   site-1:
     cpu_tee: tdx
+    gpu_required: false
     tdx_mr_td: '<approved 96-character lowercase MRTD>'
   server:
     cpu_tee: snp
+    gpu_required: true
     measurement: '<approved 96-character lowercase SNP measurement>'
 ```
 
@@ -572,9 +586,10 @@ the separate KBS release policy authorizes access to the workload's resources.
 
 The authorizer deliberately accepts SNP or TDX, with either CPU-only or
 CPU-plus-GPU evidence by default. An explicit `cpu_tee` constraint can restrict
-a site to one CPU TEE; the authorizer does not enforce a per-site GPU requirement.
-CPU-only evidence means no GPU
-was attested in that token, not that the machine has no GPU. `generate()` applies
+a site to one CPU TEE; `gpu_required: true` additionally requires that site's
+signed GPU appraisal, while `false` requires CPU-only evidence. Omitting the
+constraint preserves the default acceptance of either mode. CPU-only evidence
+means no GPU was attested in that token, not that the machine has no GPU. `generate()` applies
 the same checks to the EAR returned by the guest API; it neither requests a
 CPU-only mode nor strips GPU claims (which would invalidate the AS signature).
 
@@ -582,8 +597,10 @@ Core provisioning and the supplied deployment scripts accept all four combinatio
 Each release's KBS policy selects the approved CPU TEE and requires either CPU
 alone or CPU plus GPU; accepting a CPU-only NVFlare proof cannot satisfy a GPU
 release's KBS policy. Deployments
-requiring GPU attestation at the FL participant boundary also need an independent
-GPU requirement; the token-driven authorizer alone does not provide one.
+requiring GPU attestation at the FL participant boundary must configure the
+site's `gpu_required: true` constraint in the shared mapping. The
+[mixed example](mixed-tdx-snp/README.md) does this for its SNP GPU client and
+sets `false` for its TDX CPU-only client.
 
 CCManager binds a protected client's registration envelope to `CLIENT_NAME`,
 the same asserted name that ClientManager must authenticate against its
@@ -613,6 +630,27 @@ restart; it is not a fresh response to a verifier-issued challenge. Consult the
 for the resulting revocation, cross-verifier replay and application-trust limits.
 
 ## Verification status
+
+### Mixed encrypted-workload functional run (2026-10-04)
+
+An ordinary trusted server and two protected clients completed the full positive
+functional chain: TDX CPU-only `site-1` and SNP+NVIDIA GPU `site-2` launched as
+real Kata guests from separately signed/encrypted images, registered, passed
+`coco_authorizer` verification and newly observed periodic CCManager rounds,
+and completed a finite job. Both returned the current nonce and values 3 and
+7; aggregate 10 with zero errors. The shared per-site constraints required
+CPU-only evidence for TDX and both CPU/GPU appraisal for SNP. The job computed
+CPU arithmetic and did not benchmark or train on the GPU.
+
+The [normal mixed workflow](mixed-tdx-snp/README.md) uses the ordinary server's
+CCManager for client verification; it does not require another client. The
+historical records below retain their original, narrower scopes. This later
+functional run does not qualify the protected-server or TDX+GPU configurations,
+a 15-minute renewal sequence, confidentiality enforcement, or mandatory
+hardware denial cases. See the separate
+[runtime validation status](../RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+
+### Historical authorizer checks
 
 Offline tests cover real cryptographic signatures, RSA/EC TEE proof keys,
 SNP/TDX CPU-only and CPU-plus-GPU proofs, rejected CPU-type/GPU-claim tampering, malformed
@@ -653,10 +691,11 @@ authorization path before deployment. Deployment-specific certificates,
 measurements, node identities and private operational artifacts are not
 included in this public example.
 
-The later peer-binding, mixed-client registration, and protected-server
-provisioning changes are covered by offline regression tests, not that historical
-live test. Re-run a complete registration and periodic-validation rehearsal for
-the selected ordinary-server or protected-server deployment before use. Protected
+The September live test does not cover the later peer-binding, mixed-client
+registration, or protected-server provisioning changes. The October mixed run
+above establishes the ordinary-server positive functional path; protected-server
+provisioning remains covered by offline regression tests here. Repeat registration
+and periodic-validation rehearsal for the selected deployment before use. Protected
 server testing must also cover its own encrypted image-key authorization,
 stable network endpoint, and rejection of missing or invalid server proofs.
 

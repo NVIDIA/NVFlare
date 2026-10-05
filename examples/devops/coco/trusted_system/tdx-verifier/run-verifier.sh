@@ -2,11 +2,17 @@
 # Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 set -Eeuo pipefail
+CHANNEL="${NVFLARE_TDX_TCB_UPDATE_TYPE-early}"
+case "${CHANNEL}" in
+    early|standard) ;;
+    *) printf 'NVFLARE_TDX_TCB_UPDATE_TYPE must be early or standard\n' >&2; exit 2 ;;
+esac
 IMAGE_ID='@VERIFIER_IMAGE_ID@'
 [[ ${IMAGE_ID} =~ ^sha256:[0-9a-f]{64}$ ]] || { printf 'Run build.sh first\n' >&2; exit 1; }
 DOCKER=(docker)
 if ! docker info >/dev/null 2>&1; then DOCKER=(sudo -n docker); fi
 OPTIONS=(--rm --read-only --cap-drop ALL --security-opt no-new-privileges
+    --env "NVFLARE_TDX_TCB_UPDATE_TYPE=${CHANNEL}"
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --user "$(id -u):$(id -g)")
 if [[ $# == 1 && $1 == --version ]]; then
     exec "${DOCKER[@]}" run "${OPTIONS[@]}" --network none "${IMAGE_ID}" --version

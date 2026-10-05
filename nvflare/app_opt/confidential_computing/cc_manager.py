@@ -65,6 +65,11 @@ class VerificationResult(NamedTuple):
 CC_CHANNEL = "cc_validation"
 CC_TOPIC_REQUEST_TOKEN = "request_fresh_token"
 CC_TOPIC_GET_SITES = "get_sites"
+_CC_STARTUP_GRACE_SECONDS = 600.0
+
+
+class _RequiredCCParticipantsMissing(RuntimeError):
+    """Discovery is well formed, but required participants have not all registered."""
 
 
 class CCManager(FLComponent):
@@ -173,6 +178,10 @@ class CCManager(FLComponent):
         self.cross_validation_thread = None
         self.cross_validation_interval = int(verify_frequency)
         self.cross_validation_stop_event = threading.Event()
+        # A local startup bound; an orchestration deadline may be stricter.
+        self._startup_deadline = None
+        self._initial_membership_validated = False
+        self._validation_failed = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
@@ -214,9 +223,18 @@ class CCManager(FLComponent):
             # Server side: job scheduler check client resources
             # Perform cross-site validation before scheduling jobs
             with self.lock:
-                if not self.cross_validation_run_once:
-                    self._perform_cross_site_validation(fl_ctx)
-                    self.cross_validation_run_once = True
+                if not self._validation_failed and not self.cross_validation_run_once:
+                    if self._perform_cross_site_validation(fl_ctx):
+                        self.cross_validation_run_once = True
+                    else:
+                        self._validation_failed = True
+                if self._validation_failed:
+                    fl_ctx.set_prop(
+                        key=FLContextKey.JOB_BLOCK_REASON,
+                        value="CC participant validation failed",
+                        sticky=False,
+                        private=True,
+                    )
         elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
             client_resource_result = fl_ctx.get_prop(FLContextKey.RESOURCE_CHECK_RESULT)
             if client_resource_result:
@@ -363,6 +381,7 @@ class CCManager(FLComponent):
                 return False
             else:
                 self.logger.info("Cross-site validation passed")
+                self._initial_membership_validated = True
                 return True
 
         except Exception as e:
@@ -417,13 +436,17 @@ class CCManager(FLComponent):
                 self.logger.warning(msg)
                 raise RuntimeError(msg)
 
-    def _request_sites_from_server(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
+    def _request_sites_from_server(
+        self, fl_ctx: FLContext, timeout=None, strict_response=False
+    ) -> list[Tuple[str, str]]:
         """Client side: Request current list of participating sites from server."""
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
 
         if not cell:
             self.logger.error("Cell not available")
+            if strict_response:
+                raise RuntimeError("Cell not available for CC participant discovery")
             return []
 
         try:
@@ -434,7 +457,7 @@ class CCManager(FLComponent):
                 channel=CC_CHANNEL,
                 topic=CC_TOPIC_GET_SITES,
                 request=request_message,
-                timeout=self.get_site_request_timeout,
+                timeout=self.get_site_request_timeout if timeout is None else timeout,
                 optional=True,
             )
 
@@ -444,13 +467,17 @@ class CCManager(FLComponent):
                     payload = response.payload
                     if isinstance(payload, dict):
                         sites = payload.get("sites")
-                        if sites and isinstance(sites, list):
+                        if (sites or strict_response) and isinstance(sites, list):
                             return sites
 
+            if strict_response:
+                raise RuntimeError("Invalid CC participant discovery response")
             return []
 
         except Exception as e:
             self.logger.exception(f"Error requesting sites from server: {e}")
+            if strict_response:
+                raise
             return []
 
     def _start_cross_site_validation(self, fl_ctx: FLContext):
@@ -460,6 +487,8 @@ class CCManager(FLComponent):
             return
 
         self.cross_validation_stop_event.clear()
+        if self._startup_deadline is None:
+            self._startup_deadline = time.monotonic() + _CC_STARTUP_GRACE_SECONDS
 
         self.cross_validation_thread = threading.Thread(
             target=self._cross_site_validation_loop, args=[fl_ctx], daemon=True, name="CCManager-CrossSiteValidation"
@@ -476,17 +505,62 @@ class CCManager(FLComponent):
             self.cross_validation_thread = None
             self.logger.info("Cross-site validation stopped")
 
+    def _check_required_participant_discovery(self, all_sites):
+        # Discovery supplies routes, never the attestation requirement. In
+        # particular, a server must not remove itself or another required peer.
+        if not isinstance(all_sites, list) or any(
+            not isinstance(site, (list, tuple))
+            or len(site) != 2
+            or any(not isinstance(value, str) or not value for value in site)
+            for site in all_sites
+        ):
+            raise RuntimeError("Invalid CC participant discovery response")
+        names = [name for _, name in all_sites]
+        routes = [fqcn for fqcn, _ in all_sites]
+        if len(set(names)) != len(names) or len(set(routes)) != len(routes):
+            raise RuntimeError("Duplicate CC participant names or routes")
+        if any((name == FQCN.ROOT_SERVER) != (fqcn == FQCN.ROOT_SERVER) for fqcn, name in all_sites):
+            raise RuntimeError("CC root-server route/identity mismatch")
+        missing = set(self.cc_enabled_sites) - {self.site_name} - set(names)
+        if missing:
+            raise _RequiredCCParticipantsMissing(f"Missing required CC participants: {sorted(missing)}")
+
+    def _startup_membership_pending(self, fl_ctx):
+        """Wait only for absent registration, never for bad proofs or failed services."""
+        if self._initial_membership_validated:
+            return False
+        remaining = self._startup_deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        engine = fl_ctx.get_engine()
+        if isinstance(engine, ServerEngineSpec):
+            all_sites = self._get_all_sites()
+        else:
+            all_sites = self._request_sites_from_server(
+                fl_ctx, timeout=min(self.get_site_request_timeout, remaining), strict_response=True
+            )
+        try:
+            self._check_required_participant_discovery(all_sites)
+        except _RequiredCCParticipantsMissing:
+            if time.monotonic() >= self._startup_deadline:
+                raise
+            return True
+        return False
+
     def _cross_site_validation_loop(self, fl_ctx: FLContext):
         """Periodic cross-site validation - runs on ALL sites."""
         # Keep a reference to the current thread
         my_thread = threading.current_thread()
         stop_event = self.cross_validation_stop_event
 
-        # Allow one configured interval for the required federation to start.
-        # Pre-job validation remains immediate, so this bootstrap window never
-        # authorizes a job with missing attestations. Add jitter to avoid a herd.
+        # Pre-job validation stays immediate. Periodic discovery may wait for
+        # required registration during the bounded initial membership phase.
+        if self._startup_deadline is None:
+            self._startup_deadline = time.monotonic() + _CC_STARTUP_GRACE_SECONDS
         jitter = random.uniform(0, self.cross_validation_interval * 0.2)
         initial_delay = self.cross_validation_interval + jitter
+        if not self._initial_membership_validated:
+            initial_delay = min(initial_delay, max(0, self._startup_deadline - time.monotonic()))
         self.logger.info(f"First periodic cross-site validation in {initial_delay:.1f}s")
         if stop_event.wait(timeout=initial_delay):
             self.logger.info("Cross-site validation stopped before first run")
@@ -494,17 +568,35 @@ class CCManager(FLComponent):
 
         while not stop_event.is_set() and self.cross_validation_thread is my_thread:
             # Use lock to prevent concurrent validation on the same site
-            if not self.lock.acquire(blocking=False):
+            acquired = self.lock.acquire(blocking=False)
+            if not acquired:
                 self.logger.warning("Cross-site validation already in progress, skipping this cycle")
             else:
                 try:
-                    self.logger.info(f"Site {self.site_name} triggering periodic cross-site validation")
-                    validation_passed = self._perform_cross_site_validation(fl_ctx)
-                    self.cross_validation_run_once = True
+                    try:
+                        waiting = self._startup_membership_pending(fl_ctx)
+                    except Exception as e:
+                        self._shutdown_system(f"Exception in cross-site validation: {e}", fl_ctx)
+                        return
+                    if waiting:
+                        self.logger.info("Waiting for required CC participant registration")
+                    else:
+                        self.logger.info(f"Site {self.site_name} triggering periodic cross-site validation")
+                        if self._perform_cross_site_validation(fl_ctx):
+                            self.cross_validation_run_once = True
+                        else:
+                            return
                 finally:
                     self.lock.release()
-            # Wait for the interval or until stop_event is set
-            if stop_event.wait(timeout=self.cross_validation_interval):
+            # A pending membership wait cannot extend the startup deadline.
+            wait = self.cross_validation_interval
+            if not self._initial_membership_validated:
+                wait = min(wait, max(0, self._startup_deadline - time.monotonic()))
+            if not acquired and wait <= 0:
+                # The deadline still expires, but a concurrent validator must
+                # release the lock before we can make the strict attempt.
+                wait = 1.0
+            if stop_event.wait(timeout=wait):
                 self.logger.info("Cross-site validation stopped")
                 break
 
@@ -531,24 +623,7 @@ class CCManager(FLComponent):
 
         # Step 2: Get list of all sites (exclude self)
         all_sites = self._get_all_cc_enabled_sites(fl_ctx)
-        # Discovery supplies routes, never the attestation requirement. In
-        # particular, a server must not remove itself or another required peer.
-        if not isinstance(all_sites, list) or any(
-            not isinstance(site, (list, tuple))
-            or len(site) != 2
-            or any(not isinstance(value, str) or not value for value in site)
-            for site in all_sites
-        ):
-            raise RuntimeError("Invalid CC participant discovery response")
-        names = [name for _, name in all_sites]
-        routes = [fqcn for fqcn, _ in all_sites]
-        if len(set(names)) != len(names) or len(set(routes)) != len(routes):
-            raise RuntimeError("Duplicate CC participant names or routes")
-        if any((name == FQCN.ROOT_SERVER) != (fqcn == FQCN.ROOT_SERVER) for fqcn, name in all_sites):
-            raise RuntimeError("CC root-server route/identity mismatch")
-        missing = set(self.cc_enabled_sites) - {self.site_name} - set(names)
-        if missing:
-            raise RuntimeError(f"Missing required CC participants: {sorted(missing)}")
+        self._check_required_participant_discovery(all_sites)
         # use FQCN
         other_sites = [
             (fqcn, name) for fqcn, name in all_sites if name != self.site_name and name in self.cc_enabled_sites
@@ -719,6 +794,7 @@ class CCManager(FLComponent):
 
     def _shutdown_system(self, reason: str, fl_ctx: FLContext):
         """Shuts down the entire NVFlare system due to CC validation failure."""
+        self._validation_failed = True
         self.logger.critical(f"Shutting down site {self.site_name} due to: {reason}")
         engine = fl_ctx.get_engine()
 

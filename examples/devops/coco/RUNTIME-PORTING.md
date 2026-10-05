@@ -110,6 +110,9 @@ it does not need to run in CoCo or contact Trustee to verify it.
 
 Optional typed constraints include `cpu_tee`, `tdx_mr_td` and `tdx_rtmr_0`
 through `tdx_rtmr_3`. The legacy `measurement` field remains SNP-only.
+The optional boolean `gpu_required` binds each subject to CPU-only (`false`)
+or CPU+GPU (`true`) signed appraisals, preventing a GPU-required participant
+from presenting a CPU-only proof.
 `init_data` pins the canonical digest for either TEE, with strict TDX padding
 normalization. These are additional verifier restrictions, not substitutes for
 KBS release policy. See [CCManager configuration](provision/CCMANAGER.md).

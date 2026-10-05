@@ -87,7 +87,9 @@ class CoCoAuthorizer(CCAuthorizer):
         ear_audience optionally pins the inner EAR aud, independently of the
         required FL proof audience. workload_constraints optionally maps signed
         site subjects to init_data (SHA-256), cpu_tee (snp/tdx), SNP measurement,
-        and/or explicit TDX tdx_mr_td / tdx_rtmr_0..3 (SHA-384) pins. The legacy
+        and/or explicit TDX tdx_mr_td / tdx_rtmr_0..3 (SHA-384) pins. An optional
+        gpu_required boolean selects CPU-only or CPU+GPU signed appraisals for
+        that site; a required GPU cannot fall back to a CPU-only proof. The legacy
         measurement pin always means SNP; it is never reinterpreted as MRTD.
         TDX InitData is accepted only as SHA-256 zero-padded to MRCONFIGID width.
         Unlisted sites or missing claims fail closed when constraints are set.
@@ -148,7 +150,14 @@ class CoCoAuthorizer(CCAuthorizer):
                     or not isinstance(pins, dict)
                     or not pins
                     or set(pins)
-                    - {"init_data", "measurement", "cpu_tee", "tdx_mr_td", *(f"tdx_rtmr_{i}" for i in range(4))}
+                    - {
+                        "init_data",
+                        "measurement",
+                        "cpu_tee",
+                        "gpu_required",
+                        "tdx_mr_td",
+                        *(f"tdx_rtmr_{i}" for i in range(4)),
+                    }
                 ):
                     raise ValueError("Invalid site workload constraints")
                 tdx_pins = any(name.startswith("tdx_") for name in pins)
@@ -157,6 +166,10 @@ class CoCoAuthorizer(CCAuthorizer):
                 ):
                     raise ValueError("Conflicting CPU workload constraints")
                 for name, value in pins.items():
+                    if name == "gpu_required":
+                        if type(value) is not bool:
+                            raise ValueError("workload gpu_required must be a boolean")
+                        continue
                     if name == "cpu_tee":
                         if not isinstance(value, str) or value not in CPU_TRUST_VECTORS:
                             raise ValueError("Invalid workload cpu_tee pin")
@@ -440,6 +453,7 @@ class CoCoAuthorizer(CCAuthorizer):
                 actual = {
                     "cpu_tee": cpu_type,
                     "measurement": evidence.get("snp", {}).get("measurement"),
+                    "gpu_required": "gpu0" in ear["submods"],
                 }
                 if "init_data" in pins:
                     actual["init_data"] = normalized_init_data(evidence)

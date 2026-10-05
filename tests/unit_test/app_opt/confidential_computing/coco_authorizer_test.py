@@ -208,6 +208,11 @@ def test_tdx_cannot_satisfy_snp_measurement_constraint(material):
         {"site-1": {"cpu_tee": "sample"}},
         {"site-1": {"cpu_tee": True}},
         {"site-1": {"cpu_tee": "TDX"}},
+        {"site-1": {"gpu_required": None}},
+        {"site-1": {"gpu_required": 0}},
+        {"site-1": {"gpu_required": 1}},
+        {"site-1": {"gpu_required": "true"}},
+        {"site-1": {"gpu_required": []}},
         {"site-1": {"tdx_mr_td": "a" * 64}},
         {"site-1": {"tdx_rtmr_0": "A" * 96}},
         {"site-1": {"tdx_rtmr_1": None}},
@@ -231,6 +236,29 @@ def test_cpu_tee_constraint_pins_signed_platform(material, cpu_tee):
     assert verifier.verify_for_site(generate(), "site-1") is (cpu_tee in evidence)
 
 
+@pytest.mark.parametrize("gpu_required", [False, True])
+@pytest.mark.parametrize("gpu_present", [False, True])
+def test_site_gpu_requirement_matches_signed_appraisals(material, gpu_required, gpu_present):
+    claims, _, verifier, generate, _ = material
+    if not gpu_present:
+        claims["submods"].pop("gpu0")
+    verifier.workload_constraints = {"site-1": {"gpu_required": gpu_required}}
+    token = generate(workload_constraints=verifier.workload_constraints)
+    assert verifier.verify_for_site(token, "site-1") is (gpu_present == gpu_required)
+
+
+def test_gpu_required_site_cannot_use_another_sites_cpu_only_permission(material):
+    claims, _, verifier, generate, _ = material
+    claims["submods"].pop("gpu0")
+    verifier.workload_constraints = {
+        "site-1": {"gpu_required": True},
+        "site-2": {"gpu_required": False},
+    }
+    token = generate()
+    assert not verifier.verify_for_site(token, "site-1")
+    assert not verifier.verify_for_site(token, "site-2")
+
+
 def test_typed_constraints_are_accepted_at_construction(material):
     claims, _, _, generate, _ = material
     evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
@@ -243,6 +271,7 @@ def test_typed_constraints_are_accepted_at_construction(material):
             "init_data": "a" * 64,
             **{f"tdx_{name}": body[name] for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3")},
         }
+    pins["gpu_required"] = True
     assert generate(workload_constraints={"site-1": pins})
 
 
