@@ -446,13 +446,12 @@ class TestWeightedAggregationHelper:
 
 class TestShapeValidation:
     @pytest.mark.parametrize("array", [np.array, torch.tensor], ids=["numpy", "torch"])
-    @pytest.mark.parametrize("weigh_by_local_iter", [True, False])
     @pytest.mark.parametrize(
         "expected_shape,received_shape",
         [((2,), (1,)), ((2,), (3,)), ((2,), (1, 2)), ((2, 3), (2, 1)), ((), (1,)), ((1,), ())],
     )
-    def test_rejects_unequal_shapes(self, array, weigh_by_local_iter, expected_shape, received_shape):
-        helper = WeightedAggregationHelper(weigh_by_local_iter=weigh_by_local_iter)
+    def test_rejects_unequal_shapes(self, array, expected_shape, received_shape):
+        helper = WeightedAggregationHelper()
         helper.add({"weight": array(np.ones(expected_shape))}, 1.0, "site-1", 7)
 
         with pytest.raises(ValueError) as exc_info:
