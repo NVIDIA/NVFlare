@@ -16,13 +16,19 @@ For a collaboration-level starting point, read
 machine prerequisites, the guest/application distinction, reference rehearsal,
 ordered handoffs, and the dataset integrations users must supply.
 
-**TDX support is experimental pending hardware acceptance.** It extends the
-existing SNP+GPU deployment framework. The tested TDX platform generated a
-real quote, but its outdated firmware/TCB baseline was rejected with
-`TDX verification rejected: Intel DCAP TCB is not UpToDate`; both launch and
-current TCB were `OutOfDate`. Encrypted NVFlare execution, attestation-gated key
-release, and peer-proof generation/verification have not passed end to end on
-that platform. See [support status and the exact test boundary](RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+**A mixed TDX CPU-only and SNP+NVIDIA GPU functional run passed on
+2026-10-04.** An ordinary trusted server authenticated both real Kata clients
+with `coco_authorizer`, and a finite job received both nonce-bound results
+(3 and 7, aggregate 10). The SNP client required CPU and GPU appraisal; the job
+itself performed CPU arithmetic. This establishes the tested functional chain,
+not full security qualification or TDX+GPU coverage. Renewal, confidentiality
+and hardware denial acceptance remain incomplete. See
+[support status and the exact test boundary](RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+
+For that normal server/two-client configuration, start with the complete
+[mixed TDX/SNP project](provision/mixed-tdx-snp/README.md). The ordinary server
+verifies clients directly; an additional observation client is unnecessary for
+the deployment workflow.
 
 Choose the target using [runtime variants and deployment requirements](RUNTIME-VARIANTS.md).
 The role scripts select SNP-only, SNP+GPU, TDX-only or TDX+GPU explicitly; they
@@ -63,6 +69,10 @@ service and observe exposed metadata and workload output. These scripts do
 not establish absolute protection against every hardware/software flaw.
 
 ## Local validation
+
+For the CPU-only TDX acceptance harness, both federation topologies, the baked
+validation application, and private evidence recording, see
+[TDX acceptance](acceptance/README.md).
 
 ```bash
 python3 validate-package.py

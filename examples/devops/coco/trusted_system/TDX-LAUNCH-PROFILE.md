@@ -70,6 +70,16 @@ records the verifier path/hash in the private derived configuration. No host
 Rust compiler or separately installed DCAP verifier is required. Review its
 source/pins and the platform artifacts before accepting its result.
 
+The verifier defaults to Intel's `early` collateral channel. An independently
+reviewed `NVFLARE_TDX_TCB_UPDATE_TYPE=standard` setting selects the `standard`
+channel; only these two values are accepted. This setting belongs to the
+verifier, separately from the quote service's QCNL configuration and the Rego
+policy. Record the selected channel and pin it in the installed profile wrapper
+before recording that wrapper's hash. Preserve an `early` wrapper to revert
+future runs. Use a fresh profile after changing the channel; preserve previous
+evidence and approvals. Both channels still require `UpToDate`, unexpired
+collateral, and every cryptographic and measured-boot check below.
+
 Set `TDX_SECURITY_BASELINE_APPROVED=1` only after the platform authority
 approves this strict baseline: verified DCAP quote, `UpToDate` TCB result,
 unexpired collateral, debug disabled, measured-boot replay against all four

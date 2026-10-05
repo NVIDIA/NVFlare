@@ -130,9 +130,17 @@ def memory_file(data, *, sealed=False):
             stream.flush()
         os.lseek(fd, 0, os.SEEK_SET)
         if sealed:
-            fcntl.fcntl(
-                fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+            # Python builds using older Linux headers can omit these constants.
+            # The Linux UAPI values still request the same mandatory kernel seals;
+            # an unsupported operation raises before the descriptor is yielded.
+            add_seals = getattr(fcntl, "F_ADD_SEALS", 1033)
+            seals = (
+                getattr(fcntl, "F_SEAL_WRITE", 0x0008)
+                | getattr(fcntl, "F_SEAL_GROW", 0x0004)
+                | getattr(fcntl, "F_SEAL_SHRINK", 0x0002)
+                | getattr(fcntl, "F_SEAL_SEAL", 0x0001)
             )
+            fcntl.fcntl(fd, add_seals, seals)
         yield fd
     finally:
         if not sealed:

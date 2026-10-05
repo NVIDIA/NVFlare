@@ -19,15 +19,40 @@ measurements or launch contract for a different row.
 
 ## Support status and hardware validation
 
-**TDX-only and TDX+GPU are experimental pending successful hardware acceptance.**
-The additional implementation follows the existing SNP+GPU framework: separate
-trusted rehearsal, approved platform references, signed/encrypted participant
-images, InitData-bound workload authorization, and CoCoAuthorizer peer proofs.
-It generalizes those paths to explicit CPU/GPU targets and adds Intel-specific
-quote verification and measured-boot appraisal. Code review and offline tests
-support the expectation that the remaining integration should work on a
-compliant, correctly configured TDX CoCo cluster; they are not proof of an
-end-to-end deployment or a guarantee that no integration defects remain.
+A **mixed TDX CPU-only and SNP+NVIDIA GPU functional run passed on
+2026-10-04** using real Kata RuntimeClasses and an ordinary trusted NVFlare
+server. Trusted provisioning built separate signed/encrypted client images,
+published ciphertext to an independent registry, installed release-specific
+resources and default-deny KBS authorization, and delivered only Pod YAML to
+compute operators. Both clients registered, passed attestation-backed peer
+validation, and completed a finite job with distinct nonce-bound results
+(3 and 7, aggregate 10). SNP CPU and GPU appraisal were required; the workload
+performed CPU arithmetic, not GPU training or a performance benchmark.
+
+| Validation area | Recorded scope |
+| --- | --- |
+| TDX CPU-only and SNP+GPU launch | Encrypted images launched in approved Kata guests; correct profiles and zero unexpected restarts |
+| Appraisal and resource release | Approved CPU evidence and required SNP GPU appraisal; release-specific resources authorized through KBS |
+| NVFlare authorization | Authenticated registration and newly observed periodic CCManager validation using `coco_authorizer` |
+| Application execution | Both protected clients returned the current nonce and expected values; aggregate 10, zero errors |
+| Full security qualification | Incomplete: renewal acceptance, confidentiality controls and mandatory hardware denial cases remain outstanding |
+| TDX+GPU and protected-server topology | Not qualified by this mixed ordinary-server run |
+
+Secure-services log matches remain diagnostics, not cryptographic correlation
+of separate requests. Newly signed peer proofs can carry cached EARs and do not
+establish a fresh hardware quote on every validation round. The complete
+[mixed project](provision/mixed-tdx-snp/README.md) describes the normal deployment
+without an additional observation client. Hardware identities, measurement
+approvals, keys and private evidence are not published here or reusable as
+approval for another installation.
+
+The exact effective-image-digest comparison remains an unresolved source-level
+binding property. Distinct per-image encryption keys and release-specific KBS
+policy prevent the simple cross-release key substitution scenario; the missing
+comparison alone is not evidence of an exploitable bypass. Characterize this
+property with isolated approved fixtures before claiming full qualification.
+
+### Earlier TDX TCB rejection
 
 In the recorded CPU-only TDX hardware test on **2026-09-29**, Kubernetes and
 the pinned Kata runtime were installed and a real collector quote was obtained.
@@ -49,12 +74,10 @@ remediation and a fresh strict attestation pass. A firmware update alone is
 not evidence that this acceptance requirement has been met.
 
 No approved reference was exported from that failed test, and the attestation
-requirements were not weakened. Successful encrypted NVFlare execution,
-attestation-gated workload-key release, and in-Pod CoCoAuthorizer generation
-with peer verification remain **unverified end to end on TDX**, including the
-TDX+GPU variant. A working collector or passing unit tests do not imply those
-later stages succeeded. The tested failure is not a claim that all TDX hardware
-is affected, nor a reason to accept `OutOfDate` evidence.
+requirements were not weakened. The later functional pass used an independently
+approved platform baseline and fresh strict rehearsal; it does not retroactively
+make the rejected evidence acceptable. The earlier failure is not a claim that
+all TDX hardware is affected, nor a reason to accept `OutOfDate` evidence.
 
 Users deploying into their own TDX CoCo-enabled Kubernetes cluster must first
 satisfy the host prerequisites below and complete
