@@ -89,6 +89,8 @@ sudo docker run --rm \
 sudo chown -R "$(id -u):$(id -g)" "${PRIVATE_DIR}"
 
 REGISTRY_PASSWORD="$(<"${REGISTRY_PASSWORD_PATH}")"
+mkdir -p "${REGISTRY_SECRET_DIR}"
+chmod 0700 "${REGISTRY_SECRET_DIR}"
 printf '%s' "${REGISTRY_PASSWORD}" | skopeo login \
     --authfile "${REGISTRY_AUTH_FILE}" \
     --username "${REGISTRY_USERNAME}" --password-stdin "$(registry_base)"
@@ -108,10 +110,10 @@ IMAGE_REF="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
 
 export DOCKER_CONFIG="${REGISTRY_SECRET_DIR}"
 COSIGN_PASSWORD="$(<"${COSIGN_PASSWORD_PATH}")" \
-    cosign sign --yes --tlog-upload=false --registry-cacert "${PUBLIC_DIR}/registry-ca.crt" \
+    cosign sign --yes --tlog-upload=false --registry-cacert "${REGISTRY_CA_FILE}" \
         --key "${COSIGN_KEY_PATH}" "${IMAGE_REF}"
 unset COSIGN_PASSWORD
-cosign verify --registry-cacert "${PUBLIC_DIR}/registry-ca.crt" \
+cosign verify --registry-cacert "${REGISTRY_CA_FILE}" \
     --key "${COSIGN_PUB_PATH}" --insecure-ignore-tlog \
     "${IMAGE_REF}" > "${OUTPUT_DIR}/publisher-cosign-verification.json"
 

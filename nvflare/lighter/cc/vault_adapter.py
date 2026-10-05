@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 import yaml
 
-from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey, ProvFileName
+from nvflare.lighter.constants import CtxKey, ParticipantType, ProvFileName
 from nvflare.lighter.utils import verify_folder_signature
 
 PLATFORMS = {"amd_sev_snp", "intel_tdx"}
@@ -368,9 +368,6 @@ class VaultAdapter:
                     "output": output,
                 }
             )
-        # VaultSignatureBuilder signs selected workspaces during finalization.
-        for plan in self.plans:
-            plan["participant"].set_prop(PropKey.CVM_VAULT, True)
 
     def _path(self, value, directory=False, must_exist=True):
         _require(isinstance(value, str) and value, "Expected a non-empty cvm_vault path")
@@ -616,13 +613,15 @@ class VaultAdapter:
         )
         return profile
 
-    def _network(self, plan, ctx):
+    def _network(self, plan, ctx, source=None):
         participant = plan["participant"]
         app = plan["app"]
         server_ports = {ctx[CtxKey.FED_LEARN_PORT], ctx[CtxKey.ADMIN_PORT]}
         outgoing = _ports(app["allowed_out_ports"]) | _ports(list(server_ports))
         incoming = _ports(app["allowed_ports"])
-        kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / participant.name / "startup"
+        kit = (
+            Path(source) if source is not None else Path(ctx[CtxKey.CURRENT_PROD_DIR]) / participant.name
+        ) / "startup"
         config = _read_json(kit / f"fed_{participant.type}.json")
         for server in config.get("servers", []):
             endpoint = urlparse("//" + server["service"]["target"])
@@ -662,11 +661,11 @@ class VaultAdapter:
         app["allowed_out_ports"] = sorted(outgoing)
         app["container"]["ports"] = [{"host": port, "container": port} for port in sorted(incoming)]
 
-    def build(self, ctx):
+    def build(self, ctx, source_dirs=None):
         prod = ctx.get(CtxKey.CURRENT_PROD_DIR)
         _require(
-            ctx.get(CtxKey.PROVISION_SUCCESS) is True and prod and Path(prod).is_dir(),
-            "No successfully finalized production directory",
+            not ctx.get(CtxKey.BUILD_ERROR) and prod and Path(prod).is_dir(),
+            "No finalized production directory",
         )
         prod = Path(prod).resolve()
         _require(
@@ -675,8 +674,12 @@ class VaultAdapter:
         )
         # Validate every completed kit before any privileged build starts.
         for plan in self.plans:
-            source = prod / plan["participant"].name
-            _require(source.is_dir() and source.parent == prod, "Missing participant workspace")
+            source = (
+                Path(source_dirs[plan["participant"].name]).resolve()
+                if source_dirs and plan["participant"].name in source_dirs
+                else prod / plan["participant"].name
+            )
+            _require(source.is_dir(), "Missing participant workspace")
             _check_tree(source)
             for name in ("sub_start.sh", "rootCA.pem"):
                 _require((source / "startup" / name).is_file(), f"Missing startup/{name}")
@@ -689,7 +692,7 @@ class VaultAdapter:
                 ),
                 f"Finalized workspace for {plan['participant'].name} has missing or invalid signatures",
             )
-            self._network(plan, ctx)
+            self._network(plan, ctx, source)
             _require(
                 not plan["inputs"].exists() and (plan["output"] is None or not plan["output"].exists()),
                 "Vault build staging already exists",
@@ -706,7 +709,11 @@ class VaultAdapter:
             inputs.mkdir(mode=0o700)
             application = inputs / "application"
             application.mkdir(mode=0o700)
-            source = prod / plan["participant"].name
+            source = (
+                Path(source_dirs[plan["participant"].name]).resolve()
+                if source_dirs and plan["participant"].name in source_dirs
+                else prod / plan["participant"].name
+            )
             destination = application / "workspace"
             shutil.copytree(source, destination, copy_function=shutil.copy2)
             _require(

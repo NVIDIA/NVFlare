@@ -13,7 +13,9 @@ On-Premises Confidential Computing Key Backend
 ----------------------------------------------
 
 In FLARE 2.9.0, the on-premises Confidential Federated AI deployment uses CVM
-Builder and the ``cvm_vault`` provisioning section. This replaces the previous
+Builder through the unified confidential-computing provisioning interface. A
+participant selects ``cc_deployment_mode: bare_metal_cvm`` in its ``cc_config``
+and the project supplies a shared ``cc_project_config``. This replaces the previous
 on-premises HashiCorp Vault plus Trustee KBS deployment. CVM Builder stores
 binding-addressed vault keys directly in Trustee resource storage, so HashiCorp
 Vault is no longer part of the key path.
@@ -22,7 +24,7 @@ Impact:
 
 - Existing HashiCorp Vault secrets, measurements and deliveries are not imported.
   There is no in-place upgrade of an existing deployment.
-- Before switching a project to ``cvm_vault``, deploy the supported upstream
+- Before switching a project to ``bare_metal_cvm``, deploy the supported upstream
   Trustee, publish the approved generic CVM references and policies, and build
   fresh application vaults.
 - Previously delivered CVMs keep working against their existing backend until you

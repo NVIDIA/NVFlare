@@ -82,22 +82,22 @@ Target profiles and implementation scope
      - Implementation scope
    * - SNP, CPU-only
      - ``kata-qemu-snp``
-     - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: none``
+     - ``cpu_tee: amd_sev_snp``; ``gpu_tee: none``
      - CPU only
      - Implemented in ``2.9``
    * - SNP with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-snp``
-     - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: nvidia``
+     - ``cpu_tee: amd_sev_snp``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
      - Implemented in ``2.9``
    * - TDX, CPU-only
      - ``kata-qemu-tdx``
-     - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: none``
+     - ``cpu_tee: intel_tdx``; ``gpu_tee: none``
      - CPU only
      - Implemented in ``2.9``; experimental
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
-     - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: nvidia``
+     - ``cpu_tee: intel_tdx``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
      - Implemented in ``2.9``; experimental
 
@@ -491,7 +491,7 @@ Provision two separate client releases
 --------------------------------------
 
 Start from the complete ``provision/project.yaml``. Retain its server and FL
-admin participants, builder order and ``CoCoPackager``; replace the placeholder
+admin participants, builder order and common ``CCPackager``; replace the placeholder
 server/admin names with the actual identities and configure reachable server
 DNS/port before provisioning. Replace its one-client participant entry
 with these two entries within ``participants`` (this fragment is not a complete
@@ -509,8 +509,8 @@ project file):
      cc_config: cc_site-2.yml
 
 Copy/adapt ``cc_site-1.yml`` to ``cc_site-2.yml`` and supply the reviewed
-application contexts. Keep ``compute_env: confidential_containers``,
-``cc_cpu_mechanism: amd_sev_snp``, ``cc_gpu: nvidia`` and ``role: client``.
+application contexts. Keep ``cc_deployment_mode: coco``, select the required
+``cpu_tee`` and ``gpu_tee``, and let the participant ``type`` supply the role.
 Use these distinct packaging values:
 
 .. list-table:: Per-client packaging inputs
@@ -520,21 +520,21 @@ Use these distinct packaging values:
    * - Field
      - ``cc_site-1.yml``
      - ``cc_site-2.yml``
-   * - ``image_build.context``
+   * - ``workload.source.context``
      - ``./site-1``
      - ``./site-2``
-   * - ``image_build.dockerfile``
+   * - ``workload.source.dockerfile``
      - ``Dockerfile``
      - ``Dockerfile``
-   * - ``release_name``
+   * - ``coco.release_name``
      - ``site-1-v1``
      - ``site-2-v1``
-   * - ``registry_repository``
+   * - ``coco.registry_repository``
      - ``workloads/site-1``
      - ``workloads/site-2``
 
-Use the same authenticated AS public key and identical project-wide
-attestation timing/manager settings. Each ``platform_config`` must reference a
+Both participants select the same named Trustee service from ``cc_project.yml``.
+Each ``coco.platform_config_file`` must reference a
 file named ``platform.env`` inside a complete prepared admin kit directory for
 its destination. Use separate admin kit directories when launch contracts,
 cluster service environment or trust inputs differ. Use reviewed, fully
@@ -1425,7 +1425,7 @@ unlisted sites or missing/mismatched required claims fail. The legacy
 SHA-256, with strict TDX padding normalization. These restrictions narrow
 accepted peers but do not replace AS appraisal or KBS resource authorization.
 
-The outer audience is project-specific (generated as ``nvflare-coco:<project>``).
+The outer audience is project-specific (generated as ``nvflare-trustee:<project>``).
 It is different from the optional inner ``ear_audience`` constraint. By default
 there is no independent expected EAR audience or AS policy identifier. A
 successful proof is not by itself proof that one particular application is

@@ -7,7 +7,7 @@ LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=platform.sh
 source "${LIB_DIR}/platform.sh"
 
-readonly WORK_ROOT REGISTRY_HOST REGISTRY_PORT REGISTRY_USERNAME KBS_URL
+readonly WORK_ROOT
 readonly KATA_VERSION KATA_TOOLS_SHA256 KATA_TOOLS_URL
 readonly COSIGN_VERSION COSIGN_SHA256 COSIGN_URL KEYPROVIDER_IMAGE
 readonly RUNTIME_CLASS KUBERNETES_SERVICE_HOST KUBERNETES_SERVICE_PORT
@@ -41,9 +41,39 @@ APP_READ_ONLY_ROOT_FILESYSTEM="${APP_READ_ONLY_ROOT_FILESYSTEM:-true}"
     || die "APP_READ_ONLY_ROOT_FILESYSTEM must be true or false"
 
 for required in RELEASE_NAME BUILD_CONTEXT DOCKERFILE REGISTRY_REPOSITORY \
-    APP_COMMAND_JSON APP_UID APP_GID; do
+    REGISTRY_ENDPOINT REGISTRY_CA_FILE REGISTRY_USERNAME_FILE REGISTRY_PASSWORD_FILE \
+    KBS_URL APP_COMMAND_JSON APP_UID APP_GID; do
     [[ -n "${!required:-}" ]] || die "missing ${required} in ${OWNER_CONFIG}"
 done
+
+mapfile -t REGISTRY_PARTS < <(python3 - "${REGISTRY_ENDPOINT}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+value = sys.argv[1]
+parsed = urlsplit("https://" + value)
+if not parsed.hostname or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+    raise SystemExit("invalid REGISTRY_ENDPOINT")
+print(parsed.hostname)
+print(parsed.port or 443)
+PY
+)
+[[ ${#REGISTRY_PARTS[@]} -eq 2 ]] || die "invalid REGISTRY_ENDPOINT"
+REGISTRY_HOST="${REGISTRY_PARTS[0]}"
+REGISTRY_PORT="${REGISTRY_PARTS[1]}"
+REGISTRY_USERNAME_PATH="$(readlink -f -- "${REGISTRY_USERNAME_FILE}")"
+REGISTRY_PASSWORD_PATH="$(readlink -f -- "${REGISTRY_PASSWORD_FILE}")"
+REGISTRY_CA_FILE="$(readlink -f -- "${REGISTRY_CA_FILE}")"
+need_file "${REGISTRY_USERNAME_PATH}"
+need_file "${REGISTRY_PASSWORD_PATH}"
+need_file "${REGISTRY_CA_FILE}"
+REGISTRY_USERNAME="$(tr -d '\r\n' < "${REGISTRY_USERNAME_PATH}")"
+[[ -n "${REGISTRY_USERNAME}" ]] || die "registry username is empty"
+readonly REGISTRY_HOST REGISTRY_PORT REGISTRY_USERNAME KBS_URL
+
+registry_base() {
+    printf '%s:%s' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
+}
 
 [[ "${RELEASE_NAME}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] \
     || die "RELEASE_NAME must be a lowercase DNS label"
@@ -87,8 +117,7 @@ IMAGE_KEY_PATH="${PRIVATE_DIR}/image_key"
 COSIGN_KEY_PATH="${SIGNING_DIR}/cosign.key"
 COSIGN_PUB_PATH="${SIGNING_DIR}/cosign.pub"
 COSIGN_PASSWORD_PATH="${SIGNING_DIR}/cosign.password"
-REGISTRY_USERNAME_PATH="${REGISTRY_SECRET_DIR}/username"
-REGISTRY_PASSWORD_PATH="${REGISTRY_SECRET_DIR}/password"
+REGISTRY_SECRET_DIR="${PRIVATE_DIR}/registry-auth"
 REGISTRY_AUTH_FILE="${REGISTRY_SECRET_DIR}/config.json"
 
 KBS_IMAGE_KEY_PATH="default/image-key/${RELEASE_NAME}"
@@ -103,4 +132,4 @@ RULES="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers
 SETTINGS="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers/genpolicy-settings.json"
 
 need_file "${PUBLIC_DIR}/trustee.crt"
-need_file "${PUBLIC_DIR}/registry-ca.crt"
+need_file "${REGISTRY_CA_FILE}"

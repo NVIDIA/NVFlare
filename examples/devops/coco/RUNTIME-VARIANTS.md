@@ -6,14 +6,14 @@ stack, authenticated launch contract and secure-services approvals must still
 match the selected target. TDX hardware end-to-end validation must be performed
 on the intended platform; unit/static tests do not establish that result.
 
-| Target | `cc_cpu_mechanism` | `cc_gpu` | `RUNTIME_CLASS` | GPU allocation |
+| Target | `cpu_tee` | `gpu_tee` | `RUNTIME_CLASS` | GPU allocation |
 | --- | --- | --- | --- | --- |
 | SNP-only | `amd_sev_snp` | `none` | `kata-qemu-snp` | None |
-| SNP+GPU | `amd_sev_snp` | `nvidia` | `kata-qemu-nvidia-gpu-snp` | One `nvidia.com/pgpu` |
+| SNP+GPU | `amd_sev_snp` | `nvidia_cc` | `kata-qemu-nvidia-gpu-snp` | One `nvidia.com/pgpu` |
 | TDX-only | `intel_tdx` | `none` | `kata-qemu-tdx` | None |
-| TDX+GPU | `intel_tdx` | `nvidia` | `kata-qemu-nvidia-gpu-tdx` | One `nvidia.com/pgpu` |
+| TDX+GPU | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` | One `nvidia.com/pgpu` |
 
-`kata-qemu-tdx-gpu` is not an alias. Keep `cc_gpu` explicit: missing values,
+`kata-qemu-tdx-gpu` is not an alias. Keep `gpu_tee` explicit: missing values,
 YAML null and unknown mechanisms fail closed. Do not reuse the SNP+GPU
 measurements or launch contract for a different row.
 
@@ -68,7 +68,7 @@ investigating failures.
 ## CPU-only deployments
 
 CPU-only is an explicit supported target for both protected clients and servers,
-not a fallback when GPU attestation fails. Select `cc_gpu: none` in each
+not a fallback when GPU attestation fails. Select `gpu_tee: none` in each
 participant's CC YAML and use `kata-qemu-snp` or `kata-qemu-tdx` consistently in
 the trusted rehearsal, provisioning-node platform configuration and CoCo kit.
 Set `GPU_COUNT=0` in the host bootstrap configuration. The source workload Pod
@@ -180,26 +180,28 @@ authenticate its [approved launch contract](admin/APPROVED-LAUNCH-PROFILE.md).
 Set its immutable `RUNTIME_CLASS` to the matching table row. Keep the same
 registry trust, signature/encryption requirements and secure-services TLS.
 
-For a TDX-only client, the beginning of its `cc_site-1.yml` is:
+For a TDX-only client, its `cc_site-1.yml` includes:
 
 ```yaml
-compute_env: confidential_containers
-cc_cpu_mechanism: intel_tdx
-cc_gpu: none
-role: client
+schema_version: 1
+cc_deployment_mode: coco
+cpu_tee: intel_tdx
+gpu_tee: none
+attestation:
+  service: trustee
 ```
 
-Use `cc_gpu: nvidia` for TDX+GPU, `amd_sev_snp` for SNP, or `role: server`
-for a protected server. Keep the rest of the reviewed example's image-build,
-CCManager and key configuration from [provision/README.md](provision/README.md).
-Set top-level `platform_config` to that participant's prepared admin
-`platform.env`. Keep the supplied image runner:
+Use `gpu_tee: nvidia_cc` for TDX+GPU or `cpu_tee: amd_sev_snp` for SNP.
+The participant type selects server or client. Keep the rest of the reviewed
+workload source and `coco` block from [provision/README.md](provision/README.md).
+Set `coco.platform_config_file` to that participant's prepared admin
+`platform.env`. Configure the supplied image runner once in `cc_project.yml`:
 
 ```yaml
-packager:
-  path: nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager
-  args:
-    build_image_cmd: ../admin/build_coco_image.sh
+build_tools:
+  coco:
+    build_command: ../admin/build_coco_image.sh
+    build_timeout_seconds: 3600
 ```
 
 Run from the project directory in the reviewed NVFlare environment:

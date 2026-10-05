@@ -27,8 +27,8 @@ import pytest
 import yaml
 
 from nvflare.lighter.cc_provision import kbs_audience
-from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
-from nvflare.lighter.cc_provision.impl.coco_packager import CoCoPackager
+from nvflare.lighter.cc_provision.impl.coco_packager import _CoCoReleasePackager
+from nvflare.lighter.cc_provision.impl.coco_release import _validate_coco_release_config
 from nvflare.lighter.cc_provision.workload_security import HANDOFF_FILES, authenticate_handoff, validate_policy
 from tests.unit_test.lighter.cc_provision.impl.test_coco import setup_project, write_fake_result
 from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import IMAGE, context, policy, policy_data
@@ -85,13 +85,13 @@ def test_unbounded_class_grants_rejected(tmp_path, grant):
     _, config = setup_project(tmp_path)
     config["class_allow_list"] = grant
     with pytest.raises(ValueError, match="class_allow_list"):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 def test_reviewed_explicit_class_is_allowed(tmp_path):
     _, config = setup_project(tmp_path)
     config["class_allow_list"] = ["my_app.executor.ReviewedExecutor"]
-    validate_coco_config(config)
+    _validate_coco_release_config(config)
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def test_packager_rejects_unapproved_builder_output(tmp_path, attack):
     write_fake_result(request)
     path = tmp_path / "protected-pod.yaml"
     pod = yaml.safe_load(path.read_text())
-    CoCoPackager.validate_pod(path, config)
+    _CoCoReleasePackager.validate_pod(path, config)
     spec = pod["spec"]
     container = spec["containers"][0]
     annotation = "io.katacontainers.config.hypervisor.cc_init_data"
@@ -159,7 +159,7 @@ def test_packager_rejects_unapproved_builder_output(tmp_path, attack):
         pod["metadata"]["annotations"][annotation] = base64.b64encode(gzip.compress(raw.encode())).decode()
     path.write_text(yaml.safe_dump(pod))
     with pytest.raises((ValueError, KeyError)):
-        CoCoPackager.validate_pod(path, config)
+        _CoCoReleasePackager.validate_pod(path, config)
 
 
 @pytest.mark.parametrize("attack", ["uid", "args", "caps", "nnp", "root", "image", "expansion"])

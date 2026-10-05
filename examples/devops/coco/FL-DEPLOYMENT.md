@@ -89,12 +89,12 @@ owner-controlled dataset services outside the untrusted clusters.
 Choose one row per protected participant and use it consistently in the
 rehearsal, its CC YAML, admin kit and compute-host configuration:
 
-| Target | `cc_cpu_mechanism` | `cc_gpu` | `RUNTIME_CLASS` |
+| Target | `cpu_tee` | `gpu_tee` | `RUNTIME_CLASS` |
 | --- | --- | --- | --- |
 | SNP-only | `amd_sev_snp` | `none` | `kata-qemu-snp` |
-| SNP+GPU | `amd_sev_snp` | `nvidia` | `kata-qemu-nvidia-gpu-snp` |
+| SNP+GPU | `amd_sev_snp` | `nvidia_cc` | `kata-qemu-nvidia-gpu-snp` |
 | TDX-only | `intel_tdx` | `none` | `kata-qemu-tdx` |
-| TDX+GPU | `intel_tdx` | `nvidia` | `kata-qemu-nvidia-gpu-tdx` |
+| TDX+GPU | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` |
 
 CPU-only profiles set bootstrap `GPU_COUNT=0`, allocate no GPU, and need no GPU
 Operator or CUDA libraries. GPU profiles set `GPU_COUNT=1`, allocate exactly
@@ -192,21 +192,21 @@ and replace its single client with:
 ```
 
 Copy/adapt [cc_site-1.yml](provision/cc_site-1.yml) for site-2 and provide both
-reviewed build contexts. Keep `compute_env: confidential_containers` and
-`role: client`; select `cc_cpu_mechanism` and `cc_gpu` from the table above.
+reviewed build contexts. Keep `cc_deployment_mode: coco`; select `cpu_tee` and
+`gpu_tee` from the table above. The participant type supplies the client role.
 
 | Per-client input | Site A | Site B |
 | --- | --- | --- |
-| `image_build.context` | `./site-1` | `./site-2` |
-| `image_build.dockerfile` | `Dockerfile` | `Dockerfile` |
-| `release_name` | `site-1-v1` | `site-2-v1` |
-| `registry_repository` | `workloads/site-1` | `workloads/site-2` |
+| `workload.source.context` | `./site-1` | `./site-2` |
+| `workload.source.dockerfile` | `Dockerfile` | `Dockerfile` |
+| `coco.release_name` | `site-1-v1` | `site-2-v1` |
+| `coco.registry_repository` | `workloads/site-1` | `workloads/site-2` |
 
-Each `platform_config` points to a file named `platform.env` inside its prepared
+Each `coco.platform_config_file` points to a file named `platform.env` inside its prepared
 admin kit, with the matching authenticated v4 launch contract. Use separate
 admin kits when profiles or trust inputs differ. Mixed targets may share one
-project, but protected participants must share the pinned AS public key and
-project-wide attestation settings described in [CCManager](provision/CCMANAGER.md).
+project. Both participants select the same named Trustee service in
+`cc_project.yml`; its public key and attestation timing apply project-wide.
 Reusing approved application code does not permit sharing site identities or keys.
 
 ## Execute the approvals and handoffs in order

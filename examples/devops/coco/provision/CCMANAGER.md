@@ -7,6 +7,11 @@ API examples and scoped verification records together. KBS workload-key release
 and NVFlare participant verification are separate enforcement points; neither
 replaces the other.
 
+The [unified CC deployment guide](../../../../docs/user_guide/confidential_computing/deployment.rst)
+is the authoritative configuration reference for CoCo, bare-metal CVM, and
+Azure CC. This file explains CoCo runtime behavior and does not define a second
+configuration schema.
+
 This runbook documents the 2.9 integration for AMD SEV-SNP or Intel TDX, with or
 without an NVIDIA confidential GPU, including the typed verifier constraints
 described below. Select and approve each target using the
@@ -72,11 +77,11 @@ For example, a CoCo server and one CoCo client require the combined CoCo
 authorizer namespace for each participant:
 
 ```json
-"cc_verifier_ids": ["coco_authorizer"],
+"cc_verifier_ids": ["trustee_authorizer"],
 "cc_enabled_sites": ["server", "site-1"],
 "required_site_verifier_ids": {
-  "server": ["coco_authorizer"],
-  "site-1": ["coco_authorizer"]
+  "server": ["trustee_authorizer"],
+  "site-1": ["trustee_authorizer"]
 }
 ```
 
@@ -86,7 +91,9 @@ CoCoAuthorizer. No extra GPU token namespace is required. The deployment
 scripts support AMD SEV-SNP or Intel TDX with optional NVIDIA confidential GPU
 for protected servers and clients. Select and approve the target using the
 [runtime-variant guide](../RUNTIME-VARIANTS.md). Mixing other CC compute
-environments into the project is not supported.
+environments in one project is supported through the unified interface; every
+protected participant still receives the verifier matrix for the complete
+protected set.
 
 Re-run provisioning and distribute the regenerated kits to fix heterogeneous
 deployments. Existing hand-written/previously generated configurations without
@@ -186,8 +193,8 @@ participants' kits are packaged separately into encrypted images:
 
 | File under `local/` | Protected client | Protected server | Ordinary verifier participant |
 | --- | --- | --- | --- |
-| `coco_authorizer__p_resources.json` | Pinned public key, audience, client site name, loopback API, EAR age limit | Same trust, audience and limits; site name `server`; guest loopback API | Same trust, audience and limits; no issuing site name |
-| `cc_manager__p_resources.json` | `coco_authorizer` is issuer and verifier; required protected-site set | `coco_authorizer` is issuer and verifier; same required set | No issuers; verifier `coco_authorizer`; same required set |
+| `trustee_authorizer__p_resources.json` | Pinned public key, audience, client site name, loopback API, EAR age limit | Same trust, audience and limits; site name `server`; guest loopback API | Same trust, audience and limits; no issuing site name |
+| `cc_manager__p_resources.json` | `trustee_authorizer` is issuer and verifier; required protected-site set | `trustee_authorizer` is issuer and verifier; same required set | No issuers; verifier `trustee_authorizer`; same required set |
 
 NVFlare loads these component fragments alongside `resources.json.default`.
 An ordinary server is not marked CC-enabled and does not request a guest token.
@@ -198,8 +205,8 @@ their existing configuration is preserved. All protected participants generate
 proofs and verify one another; each generated verifier checks the required
 protected-site set, including the server when enabled.
 
-`token_expiration` is the maximum accepted EAR age (1–300 seconds), not a
-request to change AS token lifetime. `check_frequency` must be positive and
+`token_expiration_seconds` is the maximum accepted EAR age (1–300 seconds), not a
+request to change AS token lifetime. `check_frequency_seconds` must be positive and
 smaller than that limit (defaults: 300/120 seconds). The outer proof lifetime is
 configured separately by the authorizer constructor argument `proof_lifetime_seconds`
 (positive integer, default 300). Generation sets `exp = iat + proof_lifetime_seconds`;
@@ -243,25 +250,13 @@ it must still be unexpired and within the normal proof-age/lifetime limits.
 This change does not extend those limits. Increasing the proof lifetime alone
 would not fix rejection of a future-issued proof.
 
-Configure the new option under `cc_issuers[].args` in every protected
-participant's `cc_config` YAML:
-
-```yaml
-cc_issuers:
-  - id: coco_authorizer
-    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
-    token_expiration: 300
-    args:
-      trustee_public_key_file: ./trustee-as-public.pem
-      token_url: http://127.0.0.1:8006/aa/token
-      proof_iat_leeway_seconds: 180
-```
-
-Use the same value on all protected participants in the project. Provisioning
-checks this agreement and also writes the value into ordinary participants'
-generated verifier configurations. Omitting it selects 180. This provisioning
-option controls only the outer proof's future issue-time allowance, not the
-EAR leeway or proof lifetime described above.
+Configure `proof_iat_leeway_seconds` once in the named Trustee service in
+`cc_project.yml`; see the
+[common project configuration](../../../../docs/user_guide/confidential_computing/deployment.rst#common-project-configuration).
+Provisioning installs the same policy in protected issuers and ordinary
+verifiers. Omitting it selects 180. The option controls only the outer proof's
+future issue-time allowance, not the EAR leeway or proof lifetime described
+above.
 
 To deploy the updated authorizer or change the allowance, update the trusted
 provisioning inputs, run `nvflare provision -p project.yaml`, and rebuild, sign,
@@ -306,36 +301,15 @@ manager shares the generation budget across its issuers; legacy authorizers
 retain their existing single-attempt implementation and are not given CoCo's
 bounded worker or retry classification.
 
-Set the authorizer retry options under `cc_issuers[].args` and the CCManager
-timeouts under `cc_attestation` in each protected participant's `cc_config` YAML
-referenced by `project.yaml` (see `cc_site-1.yml` and `cc_server.yml`). For example,
-these optional fields explicitly
-select a 30-second refresh budget; omit it to use the derived default:
-
-```yaml
-cc_issuers:
-  - id: coco_authorizer
-    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
-    token_expiration: 300
-    args:
-      trustee_public_key_file: ./trustee-as-public.pem
-      token_url: http://127.0.0.1:8006/aa/token
-      retry_max_attempts: 10
-      retry_initial_delay: 1.0
-      retry_max_delay: 15.0
-      retry_backoff_multiplier: 2.0
-      retry_jitter_ratio: 0.5
-cc_attestation:
-  check_frequency: 120
-  registration_token_timeout: 300
-  refresh_token_timeout: 30
-  get_token_request_timeout: 45
-```
+Set retry and manager timing once in the named Trustee service in
+`cc_project.yml`. The unified guide defines the `_seconds` names and the
+`retry` mapping; participant files select the service by name and cannot
+override its policy.
 
 Run `nvflare provision -p project.yaml` again. Provisioning writes the authorizer
 settings into each protected participant's resources and the manager timeouts
-into every generated manager. All CoCo participants in the project must
-share the manager timeouts; their authorizer backoff settings may differ.
+into every generated manager. All bare-metal CVM and CoCo participants that
+select the service share these settings.
 The same names are constructor arguments when configuring components directly.
 
 Delays must satisfy `0 < retry_initial_delay <= retry_max_delay`; the multiplier
@@ -384,7 +358,7 @@ methods return `True` or `False`; reject on `False`. The compatible
 
 For a standalone integration, load the public key authenticated by the
 secure-services owner. Use the same project audience on both sides; provisioned
-kits use `nvflare-coco:` followed by the project name. For example, inside the
+kits use `nvflare-trustee:` followed by the project name. For example, inside the
 CoCo client:
 
 ```python
@@ -394,7 +368,7 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorize
 
 client = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
-    audience="nvflare-coco:example-project",
+    audience="nvflare-trustee:example-project",
     site_name="site-1",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
@@ -421,7 +395,7 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorize
 
 verifier = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
-    audience="nvflare-coco:example-project",
+    audience="nvflare-trustee:example-project",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
     proof_iat_leeway_seconds=180,
@@ -505,7 +479,7 @@ that needs additional FL-side restrictions can configure a verifier directly:
 ```python
 verifier = CoCoAuthorizer(
     trustee_public_key=as_public_key_pem,
-    audience="nvflare-coco:my_project",
+    audience="nvflare-trustee:my_project",
     ear_audience="my-reviewed-as-audience",  # only if AS actually emits this aud
     workload_constraints={
         "site-1": {
@@ -536,21 +510,12 @@ TDX normalization also checks the quoted MRCONFIGID agrees and has exactly
 16 zero padding bytes. Obtain
 values from the trusted platform and workload owner, never from the CoCo host.
 An absent/mismatched configured EAR audience or workload claim fails closed.
-To provision platform pins, put the same complete `workload_constraints` mapping
-under `cc_issuers[0].args` in every protected participant's CC YAML. Provisioning
-validates it and installs that mapping in protected participants and ordinary
-verifier-only kits. Use logical `server` as the protected server key, not its
-DNS name. For example, inside the existing issuer's `args`:
-
-```yaml
-workload_constraints:
-  site-1:
-    cpu_tee: tdx
-    tdx_mr_td: '<approved 96-character lowercase MRTD>'
-  server:
-    cpu_tee: snp
-    measurement: '<approved 96-character lowercase SNP measurement>'
-```
+To provision platform pins, put one complete `workload_constraints` mapping in
+the named Trustee service in `cc_project.yml`. Provisioning validates it and
+installs that mapping in protected participants and ordinary verifier-only
+kits. Use logical `server` as the protected server key, not its DNS name. The
+unified guide contains the YAML example; the mapping must cover exactly every
+protected participant that selects the service.
 
 Replace placeholders with authenticated references before provisioning. Every
 protected subject must have the applicable entry, and all participants must

@@ -23,7 +23,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from nvflare.lighter.cc_provision.impl.coco import COCO_STARTUP_PROLOGUE, coco_runtime_class, validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco_release import (
+    COCO_STARTUP_PROLOGUE,
+    _coco_runtime_class,
+    _validate_coco_release_config,
+)
 from nvflare.lighter.cc_provision.utils import resolve_cc_config
 from nvflare.lighter.cc_provision.workload_security import read_pod, validate_workload_pod
 from nvflare.lighter.constants import PropKey, ProvFileName
@@ -47,7 +51,7 @@ def copy_private_tree(source, destination):
     destination.chmod(0o700)
 
 
-class CoCoPackager(Packager):
+class _CoCoReleasePackager(Packager):
     def __init__(self, build_image_cmd, build_timeout=3600):
         if not isinstance(build_image_cmd, str) or not build_image_cmd:
             raise ValueError("build_image_cmd must name a trusted executable")
@@ -65,14 +69,14 @@ class CoCoPackager(Packager):
                 continue
             config_path = Path(resolve_cc_config(project, cc_path))
             config = load_yaml(config_path)
-            validate_coco_config(config)
+            _validate_coco_release_config(config)
             if participant.type not in ("client", "server") or config["role"] != participant.type:
                 raise ValueError("CoCo role must match participant type (client or server)")
             if not participant.get_prop(PropKey.CC_ENABLED) or participant.get_prop(PropKey.CC_CONFIG_DICT) != config:
                 raise ValueError("CoCo participant was not configured by CCBuilder, or configuration changed")
             selected.append((participant, config_path, config))
         if not selected:
-            raise ValueError("CoCoPackager requires at least one CoCo participant")
+            raise ValueError("Internal CoCo release packager requires at least one CoCo participant")
 
         # Keep every selected plaintext kit outside prod before any external
         # build starts. On failure no selected participant's directory can be
@@ -131,7 +135,7 @@ class CoCoPackager(Packager):
                 raise
 
     def prepare(self, owner, config_path, config):
-        runtime_class = coco_runtime_class(config)
+        runtime_class = _coco_runtime_class(config)
         base = config_path.parent
         context = (base / config["image_build"]["context"]).resolve()
         dockerfile = (context / config["image_build"]["dockerfile"]).resolve()
@@ -216,7 +220,7 @@ class CoCoPackager(Packager):
 
     @staticmethod
     def validate_pod(path, config):
-        runtime_class = coco_runtime_class(config)
+        runtime_class = _coco_runtime_class(config)
         pod = read_pod(path)
         validate_workload_pod(
             pod,

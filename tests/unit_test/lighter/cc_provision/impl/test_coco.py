@@ -18,7 +18,6 @@ import gzip
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,16 +28,15 @@ import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from nvflare.lighter.cc_provision.impl.cc import CCBuilder
-from nvflare.lighter.cc_provision.impl.coco import (
+from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, _CoCoReleasePackager
+from nvflare.lighter.cc_provision.impl.coco_release import (
     COCO_STARTUP_PROLOGUE,
-    CoCoBuilder,
-    coco_runtime_class,
+    _coco_runtime_class,
+    _CoCoReleaseBuilder,
+    _validate_coco_release_config,
     resolve_cc_config,
-    validate_coco_config,
 )
-from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, CoCoPackager
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
@@ -99,15 +97,49 @@ def setup_project(tmp_path):
                 {"type": "client", "name": "site-1", "org": "example", "cc_config": "cc_site-1.yml"},
                 {"type": "client", "name": "plain-client", "org": "example"},
             ],
-            "packager": {"path": "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager"},
+            "packager": {"path": "nvflare.lighter.cc_provision.impl.coco_packager._CoCoReleasePackager"},
         }
     )
     project.set_prop("_project_file", str(tmp_path / "project.yaml"))
+    client = project.get_clients()[0]
+    client.set_prop(PropKey.CC_ENABLED, True)
+    client.set_prop(PropKey.CC_CONFIG_DICT, config)
+    client.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
     return project, config
 
 
+class LegacyCoCoTestBuilder(_CoCoReleaseBuilder):
+    """Exercise the retained low-level release worker with pre-unification data."""
+
+    def initialize(self, project, ctx):
+        for participant in project.get_all_participants():
+            ref = participant.get_prop(PropKey.CC_CONFIG)
+            if ref:
+                config = yaml.safe_load(Path(resolve_cc_config(project, ref)).read_text())
+                participant.set_prop(PropKey.CC_ENABLED, True)
+                participant.set_prop(PropKey.CC_CONFIG_DICT, config)
+                participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
+        super().initialize(project, ctx)
+
+    def build(self, project, ctx):
+        super().build(project, ctx)
+        for participant in project.get_all_participants():
+            config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
+            extra = config.get("class_allow_list", [])
+            if not extra:
+                continue
+            path = Path(ctx.get_local_dir(participant)) / ProvFileName.RESOURCES_JSON_DEFAULT
+            resources = json.loads(path.read_text())
+            for class_path in extra:
+                if class_path not in resources["class_allow_list"]:
+                    resources["class_allow_list"].append(class_path)
+            path.write_text(json.dumps(resources, indent=2) + "\n")
+
+
 def builders():
-    return [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()]
+    # These tests retain direct coverage of the lower-level CoCo release
+    # worker. Unified dispatch is covered in test_cc.py.
+    return [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), LegacyCoCoTestBuilder(), SignatureBuilder()]
 
 
 def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
@@ -207,11 +239,16 @@ def setup_server_project(tmp_path, with_cc_client=True):
     )
     (tmp_path / "cc_server.yml").write_text(yaml.safe_dump(server_config))
     project.get_server().set_prop(PropKey.CC_CONFIG, "cc_server.yml")
+    project.get_server().set_prop(PropKey.CC_ENABLED, True)
+    project.get_server().set_prop(PropKey.CC_CONFIG_DICT, server_config)
+    project.get_server().set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
     configs = {project.get_server().name: server_config}
     if with_cc_client:
         configs["site-1"] = client_config
     else:
         project.get_clients()[0].set_prop(PropKey.CC_CONFIG, None)
+        project.get_clients()[0].set_prop(PropKey.CC_ENABLED, False)
+        project.get_clients()[0].set_prop(PropKey.CC_CONFIG_DICT, {})
     return project, configs
 
 
@@ -248,7 +285,7 @@ def test_provision_server_signed_kit_and_client_verifiers(
         write_fake_result(request, config)
 
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
     assert set(seen) == set(configs)
     result = Path(ctx.get_result_location())
@@ -326,7 +363,7 @@ def test_protected_entrypoint_is_silent_and_verifies_kit_before_starting(
         write_fake_result(request, configs[request.parent.name])
 
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
     kit = tmp_path / "workspace/test_project/state/coco-private/prod_00" / participant / "build-context/.nvflare-kit"
     assert verify_folder_signature(
@@ -433,7 +470,7 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry, cpu, gpu
         seen.append(request)
         write_fake_result(request)
 
-    provisioner = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh"))
+    provisioner = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh"))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
         ctx = provisioner.provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR)
@@ -504,7 +541,7 @@ def test_invalid_config_is_fail_closed(tmp_path, field, value):
     project, config = setup_project(tmp_path)
     config[field] = value
     (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
-    ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
 
@@ -523,14 +560,14 @@ def test_invalid_provisioning_retry_timeout(tmp_path, field, value):
     _, config = setup_project(tmp_path)
     config["cc_attestation"][field] = value
     with pytest.raises(ValueError):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 def test_explicit_conflicting_provisioning_timeout_is_rejected(tmp_path):
     _, config = setup_project(tmp_path)
     config["cc_attestation"].update(get_token_request_timeout=10, refresh_token_timeout=30)
     with pytest.raises(ValueError, match="must exceed"):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 def test_invalid_backoff_fails_before_packaging(tmp_path):
@@ -538,7 +575,7 @@ def test_invalid_backoff_fails_before_packaging(tmp_path):
     config["cc_issuers"][0]["args"]["retry_jitter_ratio"] = 2
     (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     runner.assert_not_called()
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
@@ -550,7 +587,7 @@ def test_invalid_proof_iat_leeway_fails_before_packaging(tmp_path, value):
     config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = value
     (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     assert "proof_iat_leeway_seconds" in str(ctx.get_errors())
     runner.assert_not_called()
@@ -562,7 +599,7 @@ def test_provisioning_accepts_proof_iat_leeway_bounds(tmp_path, value):
     project, config = setup_project(tmp_path)
     config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = value
     project.get_clients()[0].set_prop(PropKey.CC_CONFIG_DICT, config)
-    builder = CoCoBuilder()
+    builder = _CoCoReleaseBuilder()
     builder.initialize(project, None)
     assert builder.settings["site-1"][0]["proof_iat_leeway_seconds"] == value
 
@@ -575,7 +612,7 @@ def test_protected_server_and_client_must_share_proof_iat_leeway(tmp_path):
             config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = 30 if participant.type == "server" else 60
             participant.set_prop(PropKey.CC_CONFIG_DICT, config)
     with pytest.raises(ValueError, match="attestation timing"):
-        CoCoBuilder().initialize(project, None)
+        _CoCoReleaseBuilder().initialize(project, None)
 
 
 def test_explicit_default_proof_iat_leeway_matches_omitted_default(tmp_path):
@@ -584,7 +621,7 @@ def test_explicit_default_proof_iat_leeway_matches_omitted_default(tmp_path):
     for participant in project.get_all_participants():
         if participant.name in configs:
             participant.set_prop(PropKey.CC_CONFIG_DICT, configs[participant.name])
-    builder = CoCoBuilder()
+    builder = _CoCoReleaseBuilder()
     builder.initialize(project, None)
     assert builder.settings[project.get_server().name][0]["proof_iat_leeway_seconds"] == 180
     assert "proof_iat_leeway_seconds" not in builder.settings["site-1"][0]
@@ -610,7 +647,7 @@ def test_typed_workload_constraints_reach_protected_and_ordinary_verifiers(tmp_p
         write_fake_result(request, configs[request.parent.name])
 
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
     result = Path(ctx.get_result_location())
     for participant in project.get_all_participants():
@@ -638,7 +675,7 @@ def test_invalid_workload_constraints_fail_before_packaging(tmp_path, constraint
     config["cc_issuers"][0]["args"]["workload_constraints"] = constraints
     (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     runner.assert_not_called()
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
@@ -657,7 +694,7 @@ def test_protected_participants_cannot_have_different_workload_constraints(tmp_p
                 }
             participant.set_prop(PropKey.CC_CONFIG_DICT, config)
     with pytest.raises(ValueError, match="verifier policy"):
-        CoCoBuilder().initialize(project, None)
+        _CoCoReleaseBuilder().initialize(project, None)
 
 
 def test_explicit_none_workload_constraints_matches_omitted_default(tmp_path):
@@ -666,7 +703,7 @@ def test_explicit_none_workload_constraints_matches_omitted_default(tmp_path):
     for participant in project.get_all_participants():
         if participant.name in configs:
             participant.set_prop(PropKey.CC_CONFIG_DICT, configs[participant.name])
-    CoCoBuilder().initialize(project, None)
+    _CoCoReleaseBuilder().initialize(project, None)
 
 
 @pytest.mark.parametrize("different_timeout", [False, True])
@@ -681,7 +718,7 @@ def test_clients_may_vary_backoff_but_must_share_manager_timeouts(tmp_path, diff
     second.set_prop(PropKey.CC_CONFIG_DICT, other)
     second.set_prop(PropKey.CC_CONFIG, "cc_site-2.yml")
     (tmp_path / "cc_site-2.yml").write_text(yaml.safe_dump(other))
-    builder = CoCoBuilder()
+    builder = _CoCoReleaseBuilder()
     if different_timeout:
         with pytest.raises(ValueError, match="attestation timing"):
             builder.initialize(project, None)
@@ -694,19 +731,19 @@ def test_missing_gpu_and_unknown_fields_rejected(tmp_path):
     _, config = setup_project(tmp_path)
     config.pop("cc_gpu")
     with pytest.raises(ValueError, match="cc_gpu"):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
     config["cc_gpu"] = "nvidia"
     config["unknown_field"] = []
     with pytest.raises(ValueError, match="fields"):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 @pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
 def test_explicit_runtime_combinations(tmp_path, cpu, gpu, runtime):
     _, config = setup_project(tmp_path)
     config.update(cc_cpu_mechanism=cpu, cc_gpu=gpu)
-    validate_coco_config(config)
-    assert coco_runtime_class(config) == runtime
+    _validate_coco_release_config(config)
+    assert _coco_runtime_class(config) == runtime
 
 
 @pytest.mark.parametrize("field", ["cc_gpu", "cc_cpu_mechanism"])
@@ -715,7 +752,7 @@ def test_runtime_selection_rejects_invalid_types_and_implicit_choices(tmp_path, 
     _, config = setup_project(tmp_path)
     config[field] = value
     with pytest.raises(ValueError, match=field):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_path):
@@ -737,7 +774,7 @@ def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_pa
             "api_version": 3,
             "name": "test_project",
             "participants": participants,
-            "packager": {"path": "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager"},
+            "packager": {"path": "nvflare.lighter.cc_provision.impl.coco_packager._CoCoReleasePackager"},
         },
         project_file=tmp_path / "project.yaml",
     )
@@ -749,7 +786,7 @@ def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_pa
         write_fake_result(request)
 
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR)
     assert len(requests) == 4
     result = Path(ctx.get_result_location())
@@ -782,10 +819,10 @@ def test_pod_runtime_must_match_configured_cpu_and_gpu(tmp_path, cpu, gpu, runti
     path = tmp_path / "pod.yaml"
     path.write_text(yaml.safe_dump(pod))
     if runtime == pod_runtime:
-        CoCoPackager.validate_pod(path, config)
+        _CoCoReleasePackager.validate_pod(path, config)
     else:
         with pytest.raises(ValueError, match="runtime"):
-            CoCoPackager.validate_pod(path, config)
+            _CoCoReleasePackager.validate_pod(path, config)
 
 
 @pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
@@ -824,10 +861,10 @@ def test_pod_resources_match_approved_zero_or_one_gpu_shape(tmp_path, cpu, gpu, 
         else [{}, {"limits": {}, "requests": {}}]
     )
     if resources in valid:
-        CoCoPackager.validate_pod(path, config)
+        _CoCoReleasePackager.validate_pod(path, config)
     else:
         with pytest.raises(ValueError, match="resource"):
-            CoCoPackager.validate_pod(path, config)
+            _CoCoReleasePackager.validate_pod(path, config)
 
 
 def test_missing_packager_rejected_before_plaintext_release(tmp_path):
@@ -839,7 +876,7 @@ def test_missing_packager_rejected_before_plaintext_release(tmp_path):
 
 def test_silent_startup_is_generated_before_signature_finalization(tmp_path):
     project, _ = setup_project(tmp_path)
-    pipeline = [WorkspaceBuilder(), SignatureBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder()]
+    pipeline = [WorkspaceBuilder(), SignatureBuilder(), StaticFileBuilder(), CertBuilder(), LegacyCoCoTestBuilder()]
 
     ctx = Provisioner(str(tmp_path / "workspace"), pipeline).provision(project)
 
@@ -870,11 +907,17 @@ def test_packager_rejects_changed_signed_startup_before_build(tmp_path, role, re
                 content += "\necho changed-after-signing\n"
             script.write_text(content)
 
-    pipeline = [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), ChangedSignatureBuilder()]
+    pipeline = [
+        WorkspaceBuilder(),
+        StaticFileBuilder(),
+        CertBuilder(),
+        LegacyCoCoTestBuilder(),
+        ChangedSignatureBuilder(),
+    ]
     error = "discard host-visible output" if remove_redirection else "signature verification failed"
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
         with pytest.raises(ValueError, match=error):
-            Provisioner(str(tmp_path / "workspace"), pipeline, CoCoPackager("build.sh")).provision(project)
+            Provisioner(str(tmp_path / "workspace"), pipeline, _CoCoReleasePackager("build.sh")).provision(project)
     runner.assert_not_called()
     assert not (tmp_path / "workspace/test_project/prod_00" / participant.name).exists()
 
@@ -886,7 +929,7 @@ def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):
         side_effect=subprocess.CalledProcessError(1, ["build.sh"]),
     ):
         with pytest.raises(subprocess.CalledProcessError):
-            Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+            Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     root = tmp_path / "workspace/test_project"
     assert not (root / "prod_00/site-1").exists()
     assert (root / "state/coco-private/prod_00/site-1/startup-kit/startup/client.key").is_file()
@@ -910,7 +953,7 @@ def test_server_and_client_kits_are_private_before_first_build_failure(tmp_path,
     error_type = ValueError if failure_stage == "prepare" else subprocess.CalledProcessError
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner) as build:
         with pytest.raises(error_type):
-            Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+            Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     if failure_stage == "prepare":
         build.assert_not_called()
     else:
@@ -924,16 +967,16 @@ def test_server_and_client_kits_are_private_before_first_build_failure(tmp_path,
 @pytest.mark.parametrize("timeout", [None, True, False, 0, -1, 1.5, "60"])
 def test_invalid_build_timeout_rejected(timeout):
     with pytest.raises(ValueError, match="build_timeout"):
-        CoCoPackager(build_image_cmd="reviewed-builder", build_timeout=timeout)
+        _CoCoReleasePackager(build_image_cmd="reviewed-builder", build_timeout=timeout)
 
 
 def test_build_timeout_preserves_private_kit_without_public_handoff(tmp_path):
     project, _ = setup_project(tmp_path)
     (tmp_path / "build.sh").write_text(f"#!{sys.executable}\nimport time\ntime.sleep(60)\n")
     with pytest.raises(subprocess.TimeoutExpired) as error:
-        Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh", build_timeout=1)).provision(
-            project
-        )
+        Provisioner(
+            str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh", build_timeout=1)
+        ).provision(project)
     # subprocess may report the remaining deadline after process startup.
     assert 0 < error.value.timeout <= 1
     root = tmp_path / "workspace/test_project"
@@ -954,7 +997,7 @@ def test_reused_private_stage_must_be_a_regular_directory(tmp_path, kind):
             target.mkdir()
         private.symlink_to(target, target_is_directory=True)
     with pytest.raises(ValueError, match="regular private stage directory"):
-        Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     if kind == "file":
         assert private.read_text() == "retain this file"
     else:
@@ -965,7 +1008,7 @@ def test_context_symlink_rejected(tmp_path):
     project, _ = setup_project(tmp_path)
     (tmp_path / "site-1/leak").symlink_to(tmp_path / "admin/platform.env")
     with pytest.raises(ValueError, match="regular files"):
-        Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
 
 
 def test_non_coco_regression_and_missing_config_fail_closed(tmp_path):
@@ -983,7 +1026,7 @@ def test_config_role_must_match_participant_type(tmp_path, participant_type):
     config["role"] = "client" if participant_type == "server" else "server"
     (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     assert "role" in " ".join(ctx.get_errors()).lower()
     runner.assert_not_called()
@@ -1002,7 +1045,7 @@ def test_packager_revalidates_participant_role(tmp_path, participant_type):
     (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
         with pytest.raises(ValueError, match="role must match participant type"):
-            CoCoPackager("build.sh").package(project, ctx)
+            _CoCoReleasePackager("build.sh").package(project, ctx)
     runner.assert_not_called()
 
 
@@ -1011,91 +1054,15 @@ def test_unsupported_coco_roles_are_rejected(tmp_path, role):
     _, config = setup_project(tmp_path)
     config["role"] = role
     with pytest.raises(ValueError, match="role"):
-        validate_coco_config(config)
+        _validate_coco_release_config(config)
 
 
 def test_client_name_cannot_shadow_server_runtime_identity(tmp_path):
     project, _ = setup_server_project(tmp_path)
     project.add_client("server", "example", {})
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
-        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), _CoCoReleasePackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     assert "reserved server runtime identity" in " ".join(ctx.get_errors())
     runner.assert_not_called()
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
-
-
-@pytest.mark.parametrize("first_build_fails", [False, True])
-def test_cli_reprovision_retains_private_stages_from_other_directory(tmp_path, first_build_fails):
-    project, _ = setup_project(tmp_path)
-    definition = {
-        "api_version": 3,
-        "name": "test_project",
-        "participants": [
-            {"name": "server.example.com", "type": "server", "org": "example"},
-            {"name": "site-1", "type": "client", "org": "example", "cc_config": "cc_site-1.yml"},
-        ],
-        "builders": [
-            {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
-            {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder"},
-            {"path": "nvflare.lighter.impl.cert.CertBuilder"},
-            {"path": "nvflare.lighter.cc_provision.impl.cc.CCBuilder"},
-            {"path": "nvflare.lighter.impl.signature.SignatureBuilder"},
-        ],
-        "packager": {
-            "path": "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager",
-            "args": {"build_image_cmd": "build.sh"},
-        },
-    }
-    (tmp_path / "project.yaml").write_text(yaml.safe_dump(definition))
-    # Trusted fixture runner: publish no image and generate only a fake receipt.
-    pod = coco_pod("kata-qemu-nvidia-gpu-snp", "nvidia", "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64)
-    (tmp_path / "build.sh").write_text(
-        f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
-        "request = json.loads(Path(sys.argv[1]).read_text())\n"
-        "out = Path(request['result_file'])\npod = out.parent / 'pod.yaml'\n"
-        f"pod.write_text({json.dumps(json.dumps(pod))})\n"
-        "out.write_text(json.dumps({'schema': 'nvflare-coco-build-result/v1', 'release_name': 'site-1-v1', 'pod_yaml': str(pod)}))\n"
-    )
-    command = [
-        str(Path(sys.executable).parent / "nvflare"),
-        "provision",
-        "-p",
-        str(tmp_path / "project.yaml"),
-        "-w",
-        str(tmp_path / "workspace"),
-        "--force",
-    ]
-    good_runner = (tmp_path / "build.sh").read_text()
-    if first_build_fails:
-        (tmp_path / "build.sh").write_text("#!/bin/sh\nexit 99\n")
-    root = tmp_path / "workspace/test_project"
-    private = root / "state/coco-private/prod_00"
-    retained = []
-    for attempt in range(3):
-        if attempt:
-            # Only remove the generated prod directory in this test's private
-            # temporary workspace, matching the documented stage-reuse path.
-            shutil.rmtree(root / "prod_00")
-            (tmp_path / "build.sh").write_text(good_runner)
-        result = subprocess.run(command, cwd=tmp_path.parent, text=True, capture_output=True, timeout=30)
-        public = root / "prod_00/site-1"
-        if attempt == 0 and first_build_fails:
-            assert result.returncode != 0
-            assert not public.exists()
-        else:
-            assert result.returncode == 0, result.stdout + result.stderr
-            assert sorted(p.name for p in public.iterdir()) == ["site-1-v1-pod.yaml"]
-        assert (private / "site-1/startup-kit/startup/client.key").is_file()
-        assert not (private / "retained-marker.txt").exists()
-        archives = sorted(private.parent.glob("prod_00.superseded-*"))
-        assert len(archives) == attempt
-        for archive in archives:
-            assert archive.stat().st_mode & 0o777 == 0o700
-            previous = archive / "prod_00"
-            index = int((previous / "retained-marker.txt").read_text())
-            assert {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()} == retained[
-                index
-            ]
-        (private / "retained-marker.txt").write_text(str(attempt))
-        retained.append({p.relative_to(private): p.read_bytes() for p in private.rglob("*") if p.is_file()})

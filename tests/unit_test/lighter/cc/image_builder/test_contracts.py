@@ -413,6 +413,11 @@ class GuestProvisioningTests(unittest.TestCase):
         self.assertEqual((self.root / "etc/cvm_build_id").read_text(), self.config["build_id"] + "\n")
         self.assertEqual((self.root / "etc/modules-load.d/cvm.conf").read_text().splitlines()[0], "tdx_guest")
         self.assertTrue((self.root / "usr/lib/cvm/bin/kbs-client").stat().st_mode & stat.S_IXUSR)
+        self.assertEqual(
+            (self.root / "usr/bin/kbs-client").read_bytes(),
+            (self.root / "usr/lib/cvm/bin/kbs-client").read_bytes(),
+        )
+        self.assertTrue((self.root / "usr/bin/kbs-client").stat().st_mode & stat.S_IXUSR)
         fstab = (self.root / "etc/fstab").read_text()
         self.assertNotIn("/vault ", fstab)
         self.assertNotIn(" swap ", fstab)
