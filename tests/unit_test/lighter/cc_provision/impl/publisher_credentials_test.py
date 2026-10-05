@@ -120,7 +120,7 @@ install() {
 }
 source "$INSTALLER" "$RECEIVED" "$DESTINATION"
 if [[ $VERIFY_RELEASE == 1 ]]; then
-    source "$SCRIPT_DIR/lib/release.sh"
+    source "$(dirname -- "$INSTALLER")/lib/release.sh"
     need_file "$REGISTRY_USERNAME_PATH"
     need_file "$REGISTRY_PASSWORD_PATH"
     printf 'RELEASE_USERNAME_PATH=%s\nRELEASE_PASSWORD_PATH=%s\n' "$REGISTRY_USERNAME_PATH" "$REGISTRY_PASSWORD_PATH"
@@ -140,7 +140,7 @@ fi
     return subprocess.run([credential_bash, "-c", prelude], env=env, capture_output=True, text=True, timeout=10)
 
 
-def test_installs_credential_in_configured_work_root(credential_bash, credential_kit):
+def test_installs_credential_at_explicit_destination(credential_bash, credential_kit):
     _, work_root, _ = credential_kit
     result = run_installer(credential_bash, credential_kit, verify_release=True)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -219,17 +219,17 @@ def test_existing_credentials_are_never_overwritten(credential_bash, credential_
         assert not (destination / "must-not-create").exists()
 
 
-@pytest.mark.parametrize("invalid", ["missing", "hostname", "root"])
-def test_installer_requires_reviewed_platform_configuration(credential_bash, credential_kit, invalid):
+@pytest.mark.parametrize("platform_change", ["missing", "hostname", "root"])
+def test_installer_does_not_derive_destination_from_platform_config(credential_bash, credential_kit, platform_change):
     kit, _, _ = credential_kit
     config = kit / "platform.env"
-    if invalid == "missing":
+    if platform_change == "missing":
         config.unlink()
-    elif invalid == "hostname":
+    elif platform_change == "hostname":
         config.write_text(config.read_text() + "EXPECTED_HOSTNAME=wrong-machine\n")
     else:
         config.write_text(config.read_text() + "WORK_ROOT=/tmp\n")
     result = run_installer(credential_bash, credential_kit)
-    assert result.returncode != 0
-    assert "INSTALL_DESTINATION=" not in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "INSTALL_DESTINATION=" in result.stdout
     assert PASSWORD not in result.stdout + result.stderr

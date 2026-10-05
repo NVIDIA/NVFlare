@@ -7,7 +7,7 @@ API examples and scoped verification records together. KBS workload-key release
 and NVFlare participant verification are separate enforcement points; neither
 replaces the other.
 
-The [unified CC deployment guide](../../../../docs/user_guide/confidential_computing/deployment.rst)
+The [unified CC deployment guide](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html)
 is the authoritative configuration reference for CoCo, bare-metal CVM, and
 Azure CC. This file explains CoCo runtime behavior and does not define a second
 configuration schema.
@@ -252,7 +252,7 @@ would not fix rejection of a future-issued proof.
 
 Configure `proof_iat_leeway_seconds` once in the named Trustee service in
 `cc_project.yml`; see the
-[common project configuration](../../../../docs/user_guide/confidential_computing/deployment.rst#common-project-configuration).
+[common project configuration](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html#common-project-configuration).
 Provisioning installs the same policy in protected issuers and ordinary
 verifiers. Omitting it selects 180. The option controls only the outer proof's
 future issue-time allowance, not the EAR leeway or proof lifetime described

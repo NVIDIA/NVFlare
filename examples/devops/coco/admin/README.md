@@ -90,14 +90,16 @@ Install the publisher credential without placing its password on a command line
 or in shell history:
 
 ```bash
-./05-install-publisher-credential.sh /path/to/authenticated/received-credential
+./05-install-publisher-credential.sh /path/to/authenticated/received-credential \
+  "$HOME/coco-workload-owner/secrets/registry"
 ```
 
 The received directory must contain exactly `username` and `password`. The
 installer does not display the password and refuses to overwrite an existing
-credential. It loads the reviewed `platform.env` and installs both files under
-`${WORK_ROOT}/secrets/registry/`, the same location used by stage 20. Set
-`WORK_ROOT` before installation; the default is `$HOME/coco-workload-owner`.
+credential. Supply the destination explicitly; it must contain the credential
+files named by `publisher_username_file` and `publisher_password_file` in the
+unified `cc_project.yml` and by the generated workload request. The command
+above preserves the role kit's conventional location.
 Securely remove the received copy after installation.
 
 The persistent Cosign signing key is created on first publication under

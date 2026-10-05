@@ -129,7 +129,8 @@ must be `coco-publisher`. Do not display the password.
 ```bash
 chmod 0700 /path/to/received-publisher
 chmod 0600 /path/to/received-publisher/{username,password}
-./05-install-publisher-credential.sh /path/to/received-publisher
+./05-install-publisher-credential.sh /path/to/received-publisher \
+  "$HOME/coco-workload-owner/secrets/registry"
 ```
 
 The installed destination is
