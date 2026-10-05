@@ -279,6 +279,52 @@ def test_definitively_rejected_result_never_promotes_candidate_state(tmp_path):
     assert os.path.exists(os.path.join(attempt["store"].attempt_dir(outcome.identity), "state.fobs"))
 
 
+@pytest.mark.parametrize("admitted", [None, False, True])
+def test_never_submitted_state_is_rejected_without_stopping_or_advancing_state(tmp_path, admitted):
+    supervisor = TaskSupervisor()
+    attempt, _ = _declared_state_attempt(tmp_path)
+    outcome = supervisor.run(**attempt)
+
+    supervisor.acknowledge(outcome.identity, sent=False, admitted=admitted, submission_attempted=False)
+
+    assert not supervisor._stopping
+    assert not supervisor._pending_publication
+    assert attempt["state_store"].snapshot() == (0, {})
+    assert _records(attempt)[-1]["publication_outcome"] == "not_submitted"
+    assert _records(attempt)[-1]["submission_attempted"] is False
+    next_attempt, _ = _declared_state_attempt(tmp_path, identity=replace(outcome.identity, attempt_id="attempt-2"))
+    next_outcome = supervisor.run(**next_attempt)
+    supervisor.acknowledge(next_outcome.identity, sent=True, admitted=True, submission_attempted=True)
+    assert next_attempt["state_store"].snapshot()[0] == 1
+    supervisor.end_run()
+    assert not os.path.exists(os.path.join(attempt["store"].attempt_dir(outcome.identity), "state.fobs"))
+    assert _records(attempt)[-1]["event"] == "publication"
+
+
+@pytest.mark.parametrize("admitted", [None, False])
+def test_failed_send_after_submission_still_retains_state_and_stops(tmp_path, admitted):
+    supervisor = TaskSupervisor()
+    attempt, _ = _declared_state_attempt(tmp_path)
+    outcome = supervisor.run(**attempt)
+    with pytest.raises(RuntimeError, match="state admission is unconfirmed"):
+        supervisor.acknowledge(outcome.identity, sent=False, admitted=admitted, submission_attempted=True)
+    assert supervisor._stopping
+    assert outcome.identity in supervisor._pending_publication
+    supervisor.end_run()
+    assert os.path.exists(os.path.join(attempt["store"].attempt_dir(outcome.identity), "state.fobs"))
+
+
+def test_contradictory_no_submission_and_send_success_preserves_candidate_and_stops(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, _ = _declared_state_attempt(tmp_path)
+    outcome = supervisor.run(**attempt)
+    with pytest.raises(RuntimeError, match="state admission is unconfirmed"):
+        supervisor.acknowledge(outcome.identity, sent=True, admitted=True, submission_attempted=False)
+    assert supervisor._stopping
+    assert outcome.identity in supervisor._pending_publication
+    assert attempt["state_store"].snapshot() == (0, {})
+
+
 @pytest.mark.parametrize("sent,admitted", [(False, False), (False, True), (True, None), (True, 1), (True, "true")])
 def test_unconfirmed_state_admission_preserves_candidate_and_halts_instead_of_using_stale_state(
     tmp_path, sent, admitted

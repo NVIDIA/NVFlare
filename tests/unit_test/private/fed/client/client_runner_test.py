@@ -397,6 +397,50 @@ def test_send_task_result_retries_after_transport_failure(monkeypatch):
     runner.log_error.assert_called_once()
 
 
+@pytest.mark.parametrize("reason", ["task_gone", "abort"])
+@pytest.mark.parametrize("submitted", [False, True])
+def test_send_task_result_distinguishes_no_submit_from_lost_ack(monkeypatch, reason, submitted):
+    runner = _runner()
+    fl_ctx = FLContext()
+    # Facts from an earlier result must not leak into a new publication.
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
+    checks = [_TASK_CHECK_RESULT_OK, _TASK_CHECK_RESULT_TASK_GONE] if submitted else [_TASK_CHECK_RESULT_TASK_GONE]
+    runner._check_task_once = MagicMock(side_effect=checks)
+
+    def lose_ack(*_args, **_kwargs):
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is True
+        if reason == "abort":
+            runner.run_abort_signal.trigger(True)
+        return False
+
+    runner.engine.send_task_result.side_effect = lose_ack
+    if reason == "abort" and not submitted:
+        runner.run_abort_signal.trigger(True)
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+
+    assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is submitted
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    assert runner.engine.send_task_result.call_count == int(submitted)
+
+
+def test_abort_during_successful_readiness_check_does_not_handoff_result():
+    runner = _runner()
+    fl_ctx = FLContext()
+
+    def ready_then_abort(*_args):
+        runner.run_abort_signal.trigger(True)
+        return _TASK_CHECK_RESULT_OK
+
+    runner._check_task_once = MagicMock(side_effect=ready_then_abort)
+    assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    runner.engine.send_task_result.assert_not_called()
+    runner._check_task_once.assert_called_once()
+
+
 def test_task_check_and_control_handlers():
     runner = _runner()
     fl_ctx = FLContext()

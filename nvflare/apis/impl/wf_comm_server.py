@@ -377,6 +377,12 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
             client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
             client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+            # Controllers may forward a received result as a new task's data.
+            # Rebind reserved cookies on this protected per-client copy so the
+            # prior assignment cannot conflict with the new authority headers.
+            client_data.add_cookie(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
+            client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, client_data

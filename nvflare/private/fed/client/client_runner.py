@@ -600,6 +600,11 @@ class ClientRunner(TBI):
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # This fact spans retries: False proves the result never reached the
+        # submission transport; send success alone cannot distinguish that from
+        # an upload whose acknowledgement was lost before abort/task removal.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, False, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, None, private=True, sticky=False)
         try_count = 1
         while True:
             self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
@@ -637,8 +642,14 @@ class ClientRunner(TBI):
                 # try again
                 time.sleep(self.task_check_interval)
 
+        # Readiness checking may race an abort. Do not hand an already
+        # cancelled publication to transport or mark it as an attempted send.
+        if self.run_abort_signal.triggered:
+            return _TASK_CHECK_RESULT_TASK_GONE
+
         # try to send the result
         self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")

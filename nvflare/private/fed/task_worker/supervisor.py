@@ -394,25 +394,45 @@ class TaskSupervisor:
                     self._fail_unconfirmed_settlement()
 
     def acknowledge(
-        self, identity: TaskAttemptIdentity, *, sent: bool, admitted: Optional[bool], result_succeeded: bool = True
+        self,
+        identity: TaskAttemptIdentity,
+        *,
+        sent: bool,
+        admitted: Optional[bool],
+        submission_attempted: Optional[bool] = None,
+        result_succeeded: bool = True,
     ):
-        """Record caller publication facts for exactly one physical attempt."""
+        """Record publication facts; only explicit False proves no submit occurred.
+
+        A failed send can otherwise mean the server processed the result but its
+        acknowledgement was lost. Missing submission facts remain conservative.
+        """
         if not isinstance(identity, TaskAttemptIdentity):
             raise TypeError("identity must be a TaskAttemptIdentity")
         with self._retention_lock:
             try:
-                self._acknowledge(identity, sent=sent, admitted=admitted, result_succeeded=result_succeeded)
+                self._acknowledge(
+                    identity,
+                    sent=sent,
+                    admitted=admitted,
+                    submission_attempted=submission_attempted,
+                    result_succeeded=result_succeeded,
+                )
             finally:
                 self.cleanup_job_payloads()
 
-    def _acknowledge(self, identity, *, sent, admitted, result_succeeded):
+    def _acknowledge(self, identity, *, sent, admitted, submission_attempted, result_succeeded):
         with self._state_lock:
             pending = self._pending_publication.pop(identity, None)
         if pending is None:
             return
         store, runtime_root, diagnostic = pending.store, pending.runtime_root, pending.diagnostic
         completion, state_store = pending.completion, pending.state_store
-        if state_store is not None and (sent is not True or not isinstance(admitted, bool)):
+        not_submitted = submission_attempted is False and sent is False
+        if state_store is not None and (
+            (submission_attempted is False and sent is not False)
+            or (not not_submitted and (sent is not True or not isinstance(admitted, bool)))
+        ):
             with self._state_lock:
                 self._pending_publication[identity] = pending
                 self._stopping = True
@@ -427,7 +447,10 @@ class TaskSupervisor:
                     self._stopping = True
                 raise
         diagnostic["publication_timestamp"] = time.time()
-        diagnostic["publication_outcome"] = "accepted" if succeeded else "not_accepted"
+        diagnostic["submission_attempted"] = submission_attempted
+        diagnostic["publication_outcome"] = (
+            "not_submitted" if not_submitted else ("accepted" if succeeded else "not_accepted")
+        )
         try:
             self._append_diagnostic(runtime_root, {**diagnostic, "event": "publication"})
         except Exception as e:

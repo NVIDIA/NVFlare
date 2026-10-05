@@ -186,6 +186,44 @@ def test_attempt_fence_is_checked_before_fatal_return_codes_filters_or_callbacks
     assignment.task.result_received_cb.assert_not_called()
 
 
+@pytest.mark.parametrize("swept", [False, True])
+@pytest.mark.parametrize("submission", ["first", "wrong_attempt", "wrong_peer", "wrong_job", "accepted", "rejected"])
+def test_first_authenticated_late_fatal_result_panics_but_forged_or_decided_attempts_cannot(submission, swept):
+    runner, assignment, fl_ctx = _fenced_runner()
+    runner.log_error = MagicMock()
+    communicator = runner.current_wf.controller.communicator
+    assignment.props["___job_id"] = "job-1"
+    assignment.task.completion_status = TaskCompletionStatus.TIMEOUT
+    if submission in ("accepted", "rejected"):
+        assignment.result_received_time = 1.0
+        assignment.props["___result_accepted"] = submission == "accepted"
+    if swept:
+        communicator._remember_completed_client_task(assignment)
+        communicator._client_task_map.pop(assignment.id)
+    result = make_reply(ReturnCode.UNSAFE_JOB)
+    result.set_header(
+        ReservedHeaderKey.TASK_ATTEMPT_ID, "forged" if submission == "wrong_attempt" else assignment.attempt_id
+    )
+    if submission == "wrong_peer":
+        fl_ctx.set_peer_context(FLContextManager(identity_name="other-site", job_id="job-1").new_context())
+    elif submission == "wrong_job":
+        fl_ctx.set_peer_context(
+            FLContextManager(identity_name=assignment.client.name, job_id="other-job").new_context()
+        )
+    with (
+        patch("nvflare.private.fed.server.server_runner.apply_filters") as filters,
+        patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
+    ):
+        runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
+    if submission == "first":
+        runner.system_panic.assert_called_once()
+        assert "UNSAFE_JOB" in runner.system_panic.call_args.kwargs["reason"]
+    else:
+        runner.system_panic.assert_not_called()
+    filters.assert_not_called()
+    assignment.task.result_received_cb.assert_not_called()
+
+
 def test_result_filter_replacement_preserves_admitted_attempt_and_duplicate_skips_filter():
     runner, assignment, fl_ctx = _fenced_runner()
     result = Shareable({"original": True})

@@ -25,10 +25,74 @@ from nvflare.private.fed.task_worker import worker
 @pytest.mark.parametrize("lost", ["worker", "job"])
 def test_guardian_kills_the_owned_group_when_either_parent_is_lost(monkeypatch, lost):
     monkeypatch.setattr(process.os, "getppid", Mock(side_effect=[123, 1] if lost == "worker" else [123]))
+    task_worker = Mock()
+    task_worker.ppid.return_value = 456 if lost == "worker" else 1
+    task_worker.status.return_value = process.psutil.STATUS_SLEEPING
     parent = Mock()
-    parent.ppid.return_value = 456 if lost == "worker" else 1
-    monkeypatch.setattr(process.psutil, "Process", lambda _pid: parent)
+    parent.status.return_value = process.psutil.STATUS_SLEEPING
+    monkeypatch.setattr(process.psutil, "Process", lambda pid: task_worker if pid == 123 else parent)
     monkeypatch.setattr(process.time, "sleep", Mock())
+    kill = Mock()
+    monkeypatch.setattr(process.os, "killpg", kill)
+    monkeypatch.setattr(process.os, "_exit", Mock(side_effect=SystemExit(1)))
+    with pytest.raises(SystemExit):
+        process._watch_parent(456, 123)
+    task_worker.kill.assert_called_once()
+    kill.assert_called_once_with(123, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("lost", ["worker_zombie", "parent_zombie", "worker_identity", "parent_identity"])
+def test_guardian_rejects_unreaped_or_reused_processes_without_reparenting(monkeypatch, lost):
+    task_worker = Mock()
+    task_worker.ppid.return_value = 456
+    task_worker.status.return_value = (
+        process.psutil.STATUS_ZOMBIE if lost == "worker_zombie" else process.psutil.STATUS_SLEEPING
+    )
+    task_worker.is_running.return_value = lost != "worker_identity"
+    parent = Mock()
+    parent.status.return_value = (
+        process.psutil.STATUS_ZOMBIE if lost == "parent_zombie" else process.psutil.STATUS_SLEEPING
+    )
+    parent.is_running.return_value = lost != "parent_identity"
+    monkeypatch.setattr(process.os, "getppid", lambda: 123)
+    monkeypatch.setattr(process.psutil, "Process", lambda pid: task_worker if pid == 123 else parent)
+    sleep = Mock()
+    monkeypatch.setattr(process.time, "sleep", sleep)
+    events = []
+    task_worker.kill.side_effect = lambda: events.append("worker")
+    monkeypatch.setattr(process.os, "killpg", lambda pid, sig: events.append((pid, sig)))
+    monkeypatch.setattr(process.os, "_exit", Mock(side_effect=SystemExit(1)))
+    with pytest.raises(SystemExit):
+        process._watch_parent(456, 123)
+    sleep.assert_not_called()
+    assert events == ["worker", (123, signal.SIGKILL)]
+
+
+@pytest.mark.parametrize("missing", ["worker", "parent"])
+def test_guardian_still_cleans_owned_group_if_process_lookup_fails(monkeypatch, missing):
+    task_worker = Mock()
+
+    def lookup(pid):
+        if pid == (123 if missing == "worker" else 456):
+            raise process.psutil.NoSuchProcess(pid)
+        return task_worker
+
+    monkeypatch.setattr(process.psutil, "Process", lookup)
+    kill = Mock()
+    monkeypatch.setattr(process.os, "killpg", kill)
+    monkeypatch.setattr(process.os, "_exit", Mock(side_effect=SystemExit(1)))
+    with pytest.raises(SystemExit):
+        process._watch_parent(456, 123)
+    kill.assert_called_once_with(123, signal.SIGKILL)
+    assert task_worker.kill.call_count == (0 if missing == "worker" else 1)
+
+
+def test_guardian_still_cleans_group_if_worker_is_already_gone(monkeypatch):
+    task_worker = Mock()
+    task_worker.is_running.return_value = False
+    task_worker.kill.side_effect = process.psutil.NoSuchProcess(123)
+    monkeypatch.setattr(process.os, "getppid", lambda: 123)
+    monkeypatch.setattr(process.psutil, "Process", lambda _pid: task_worker)
     kill = Mock()
     monkeypatch.setattr(process.os, "killpg", kill)
     monkeypatch.setattr(process.os, "_exit", Mock(side_effect=SystemExit(1)))

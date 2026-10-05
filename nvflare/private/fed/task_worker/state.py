@@ -14,7 +14,6 @@
 
 """Local declared-state promotion, separate from disposable attempt retention."""
 
-import fcntl
 import json
 import os
 import re
@@ -26,6 +25,13 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.task_state import MAX_TASK_STATE_BYTES, TaskState
 
 from .protocol import TaskAttemptIdentity
+
+try:
+    import fcntl
+except ImportError:
+    # Ordinary client configuration imports this module even without declared
+    # task state. Only the Process/local-file state store requires POSIX locks.
+    fcntl = None
 
 
 class StaleTaskStateError(RuntimeError):
@@ -51,6 +57,8 @@ class FileTaskStateStore:
 
     @contextmanager
     def _locked(self):
+        if fcntl is None:
+            raise RuntimeError("Process task state requires POSIX file locking (fcntl)")
         os.makedirs(self.root_dir, mode=0o700, exist_ok=True)
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(os.path.join(self.root_dir, "promotion.lock"), flags, 0o600)

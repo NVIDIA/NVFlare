@@ -129,6 +129,7 @@ class FLContextKey:
     TASK_DATA = ReservedKey.TASK_DATA
     TASK_RESULT = ReservedKey.TASK_RESULT
     TASK_RESULT_SEND_SUCCESS = "__task_result_send_success__"
+    TASK_RESULT_SUBMISSION_ATTEMPTED = "__task_result_submission_attempted__"
     TASK_RESULT_ACCEPTED = "__task_result_accepted__"
     TASK_ID = ReservedKey.TASK_ID
     TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID

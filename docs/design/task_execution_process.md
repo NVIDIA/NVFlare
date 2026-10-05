@@ -119,9 +119,14 @@ only an exact, successful server admission acknowledgement promotes that pair.
 Promotion revalidates both payload digests and uses a file-locked revision
 compare-and-swap: stale or conflicting attempts cannot overwrite newer state.
 The checkpoint is independent of attempt-payload cleanup. Failure results and
-rejected results do not promote state. An unconfirmed acknowledgement or failed
-promotion stops the runtime and preserves the candidate for diagnosis; it does
-not silently continue with old state.
+rejected results do not promote state. If task removal or abort prevents any
+submission, the candidate is discarded from promotion without stopping the job;
+its payload still follows the site retention policy. The CJ records whether it
+handed the result to the submission transport, preserving that fact across
+retries. Once submission has been attempted, an unconfirmed acknowledgement or
+failed promotion stops the runtime and preserves the candidate for diagnosis;
+it does not silently continue with old state. A missing submission fact is not
+proof that nothing was submitted.
 Result callbacks can return literal `False` to veto admission, including after
 consuming the result. Existing callbacks returning `None` retain default
 successful-result admission; no callback can override a failed result or task.

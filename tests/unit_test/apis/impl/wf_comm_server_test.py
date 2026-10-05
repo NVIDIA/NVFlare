@@ -299,8 +299,15 @@ def test_exact_first_late_assigned_result_reaches_unknown_hook_once(status, swep
 
 
 @pytest.mark.parametrize("task_name", [AppConstants.TASK_SUBMIT_MODEL, AppConstants.TASK_VALIDATION])
-def test_cross_site_model_eval_stores_exact_late_assigned_contribution_once(tmp_path, task_name):
-    wf, assigned, fl_ctx, result = _retired_assignment(task_name=task_name)
+@pytest.mark.parametrize("swept", [False, True])
+@pytest.mark.parametrize("cookie_only", [False, True])
+def test_cross_site_model_eval_stores_exact_late_assigned_contribution_once(tmp_path, task_name, swept, cookie_only):
+    wf, assigned, fl_ctx, result = _retired_assignment(task_name=task_name, swept=swept)
+    if cookie_only:
+        # Existing job clients echo cookies without adding an attempt header.
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, None)
+        result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+        result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
     controller = CrossSiteModelEval()
     controller.fire_event = Mock()
     controller._send_validation_task = Mock()
@@ -463,6 +470,51 @@ def test_server_resend_preserves_authority_issued_attempt_identity():
     assert first_data.get_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED) is True
     assert first_id != first_data.get_task_attempt_id()
     assert len(client_task.task.client_tasks) == 1
+
+
+@pytest.mark.parametrize("forwarded_header", [False, True])
+def test_forwarded_result_data_rebinds_assignment_cookies_without_mutating_source(forwarded_header):
+    wf, client_task, fl_ctx = _assignment()
+    forwarded = Shareable({"model": "forwarded"})
+    forwarded.add_cookie(ReservedHeaderKey.TASK_ID, "prior-task")
+    forwarded.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "prior-attempt")
+    forwarded.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+    forwarded.add_cookie("application-cookie", "preserved")
+    if forwarded_header:
+        forwarded.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "prior-attempt")
+    client_task.task.data = forwarded
+    client_task.task.props["___mgr"].check_task_send.return_value = TaskCheckStatus.SEND
+    wf._client_task_map.clear()
+    wf._tasks = [client_task.task]
+
+    _, first_id, first_data = wf.process_task_request(client_task.client, fl_ctx)
+    _, second_id, second_data = wf.process_task_request(Client("site-2", "token-2"), fl_ctx)
+    _, resend_id, resend_data = wf.process_task_request(client_task.client, fl_ctx)
+
+    for task_id, data in ((first_id, first_data), (second_id, second_data), (resend_id, resend_data)):
+        assigned = wf._client_task_map[task_id]
+        # ServerRunner reads this before GetTaskCommand can stamp wire cookies.
+        assert data.get_task_attempt_id() == assigned.attempt_id
+        assert data.get_cookie(ReservedHeaderKey.TASK_ID) == task_id
+        assert data.get_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED) is True
+        assert data.get_cookie("application-cookie") == "preserved"
+        assert data["model"] == "forwarded"
+    assert first_id != second_id
+    assert first_data.get_task_attempt_id() != second_data.get_task_attempt_id()
+    assert resend_id == first_id
+    assert resend_data.get_task_attempt_id() == first_data.get_task_attempt_id()
+    assert forwarded.get_task_attempt_id() == "prior-attempt"
+    assert forwarded.get_cookie(ReservedHeaderKey.TASK_ID) == "prior-task"
+    assert forwarded.get_cookie("application-cookie") == "preserved"
+
+    # Rebinding outbound task data must not normalize a forged incoming result.
+    forged = Shareable()
+    forged.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, first_data.get_task_attempt_id())
+    forged.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "prior-attempt")
+    first_assignment = wf._client_task_map[first_id]
+    wf.process_submission(first_assignment.client, "train", first_id, forged, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    first_assignment.task.result_received_cb.assert_not_called()
 
 
 @pytest.mark.parametrize("completed", [False, True])

@@ -28,17 +28,38 @@ import psutil
 def _watch_parent(parent_pid: int, worker_pid: int):
     # This tiny guardian stays in the owned group, including after the worker
     # exits. A thread would disappear at os._exit and could leave descendants
-    # orphaned if CJ dies before its launcher finishes settlement. Checking
-    # parent relationships observes reparenting without trusting reusable PIDs.
+    # orphaned if CJ dies before its launcher finishes settlement.
+    # Relationship and identity checks observe loss without trusting reusable
+    # PIDs. An exited, unreaped parent can retain its relationship, so zombies
+    # are not live owners.
+    worker = None
     try:
         worker = psutil.Process(worker_pid)
-        while os.getppid() == worker_pid and worker.ppid() == parent_pid:
+        parent = psutil.Process(parent_pid)
+        while (
+            os.getppid() == worker_pid
+            and worker.is_running()
+            and worker.status() != psutil.STATUS_ZOMBIE
+            and worker.ppid() == parent_pid
+            and parent.is_running()
+            and parent.status() != psutil.STATUS_ZOMBIE
+        ):
             time.sleep(0.05)
     finally:
         try:
-            os.killpg(worker_pid, signal.SIGKILL)
+            # Stop the identity-checked leader first. On some POSIX systems a
+            # killpg from within the group can kill this guardian before the
+            # signal reaches the leader. Group cleanup still covers descendants.
+            if worker is not None:
+                try:
+                    worker.kill()
+                except psutil.NoSuchProcess:
+                    pass
         finally:
-            os._exit(1)
+            try:
+                os.killpg(worker_pid, signal.SIGKILL)
+            finally:
+                os._exit(1)
 
 
 def _start_parent_guard(parent_pid: int):

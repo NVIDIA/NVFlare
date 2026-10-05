@@ -15,6 +15,8 @@
 import json
 import os
 import stat
+import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
@@ -70,6 +72,35 @@ def _rewrite_checkpoint(store, checkpoint):
 def test_state_root_must_be_an_absolute_string(root):
     with pytest.raises(ValueError, match="absolute path"):
         FileTaskStateStore(root, [])
+
+
+def test_client_configuration_import_does_not_require_posix_state_locking(tmp_path):
+    script = """
+import sys
+sys.modules["fcntl"] = None
+from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+from nvflare.private.fed.task_worker.state import FileTaskStateStore
+assert ClientJsonConfigurator is not None
+store = FileTaskStateStore(sys.argv[1], ["optimizer"])
+try:
+    store.snapshot()
+except RuntimeError as error:
+    assert "POSIX file locking" in str(error)
+else:
+    raise AssertionError("declared state must not use an unlocked fallback")
+"""
+    state_root = tmp_path / "state"
+    result = subprocess.run([sys.executable, "-c", script, str(state_root)], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert not state_root.exists()
+
+
+def test_missing_posix_locking_fails_before_creating_state_files(tmp_path, monkeypatch):
+    state, _artifacts = _stores(tmp_path)
+    monkeypatch.setattr(state_module, "fcntl", None)
+    with pytest.raises(RuntimeError, match="POSIX file locking"):
+        state.snapshot()
+    assert not os.path.exists(state.root_dir)
 
 
 def test_state_revision_promotes_result_and_candidate_then_survives_payload_cleanup(tmp_path):

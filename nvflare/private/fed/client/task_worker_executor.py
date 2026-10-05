@@ -404,6 +404,7 @@ class TaskWorkerExecutor(Executor):
                 identity,
                 sent=fl_ctx.get_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS) is True,
                 admitted=fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED),
+                submission_attempted=fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED),
                 result_succeeded=result_succeeded,
             )
         except Exception as e:

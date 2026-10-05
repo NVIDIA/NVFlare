@@ -41,6 +41,7 @@ from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLaunche
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+from nvflare.private.fed.client.client_runner import _TASK_CHECK_RESULT_TASK_GONE, ClientRunner
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.state import FileTaskStateStore
@@ -990,9 +991,47 @@ def test_client_adapter_skips_state_promotion_for_failed_or_invalid_filtered_res
     assert not executor._supervisor._stopping
 
 
+@pytest.mark.parametrize("reason", ["task_gone", "abort"])
+def test_client_adapter_discards_never_submitted_state_without_panicking(tmp_path, monkeypatch, reason):
+    workspace = _workspace(tmp_path)
+    executor = _executor("StatefulExecutor", state_names=("counter",))
+    fl_ctx = _context(workspace)
+    result = executor.execute("train", Shareable(), fl_ctx, Signal())
+    panic = Mock()
+    monkeypatch.setattr(executor, "system_panic", panic)
+    runner = ClientRunner.__new__(ClientRunner)
+    runner.run_abort_signal = Signal()
+    runner.log_debug = Mock()
+    runner.log_info = Mock()
+    runner._check_task_once = Mock(return_value=_TASK_CHECK_RESULT_TASK_GONE)
+    runner.engine = SimpleNamespace(send_task_result=Mock())
+    if reason == "abort":
+        runner.run_abort_signal.trigger(True)
+
+    sent = runner._send_task_result(result, "task-1", fl_ctx)
+    assert sent is False
+    runner.engine.send_task_result.assert_not_called()
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, sent)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+
+    panic.assert_not_called()
+    assert not executor._supervisor._stopping
+    assert not executor._supervisor._pending_publication
+    state_store = FileTaskStateStore(os.path.join(executor._runtime_paths(fl_ctx)[0], "state"), ("counter",))
+    assert state_store.snapshot() == (0, {})
+    next_context = _context(workspace, "task-2")
+    assert executor.execute("train", Shareable(), next_context, Signal())["counter"] == 1
+    next_context.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    next_context.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, next_context)
+    executor.handle_event(EventType.END_RUN, next_context)
+    assert not list((tmp_path / "workspace").rglob("state.fobs"))
+
+
+@pytest.mark.parametrize("submission_attempted", [None, True])
 @pytest.mark.parametrize("sent,admitted", [(False, None), (True, None), (True, "true")])
 def test_client_adapter_panics_and_retains_candidate_for_ambiguous_state_admission(
-    tmp_path, monkeypatch, sent, admitted
+    tmp_path, monkeypatch, sent, admitted, submission_attempted
 ):
     workspace = _workspace(tmp_path)
     executor = _executor("StatefulExecutor", state_names=("counter",))
@@ -1002,6 +1041,7 @@ def test_client_adapter_panics_and_retains_candidate_for_ambiguous_state_admissi
     monkeypatch.setattr(executor, "system_panic", panic)
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, sent)
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, admitted)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, submission_attempted, private=True, sticky=False)
     with pytest.raises(RuntimeError, match="state admission is unconfirmed"):
         executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
     panic.assert_called_once()
