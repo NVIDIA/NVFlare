@@ -27,6 +27,7 @@ from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
@@ -38,6 +39,7 @@ from .protocol import WorkerBootstrap, read_bootstrap
 from .runtime import TaskRuntime
 
 _PROTECTED_CONTEXT_KEYS = {
+    TASK_STATE_KEY,
     FLContextKey.APP_ROOT,
     FLContextKey.CURRENT_JOB_ID,
     FLContextKey.CURRENT_RUN,
@@ -46,6 +48,8 @@ _PROTECTED_CONTEXT_KEYS = {
     FLContextKey.RUN_ABORT_SIGNAL,
     FLContextKey.TASK_DATA,
     FLContextKey.TASK_ID,
+    FLContextKey.TASK_ATTEMPT_ID,
+    FLContextKey.TASK_ATTEMPT_REQUIRED,
     FLContextKey.TASK_NAME,
     FLContextKey.TASK_RESULT,
     FLContextKey.WORKSPACE_OBJECT,
@@ -69,16 +73,24 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_con
     runtime = TaskRuntime(workspace, identity.site_name, identity.job_id)
     fl_ctx = runtime.new_context()
     built_ins = {
+        TASK_STATE_KEY: TaskState.from_wire(bootstrap.state_names, dict(bootstrap.state_records)),
         FLContextKey.APP_ROOT: app_root,
         FLContextKey.CURRENT_JOB_ID: identity.job_id,
         FLContextKey.JOB_META: _read_job_meta(workspace, identity.job_id),
         FLContextKey.TASK_ID: identity.task_id,
+        FLContextKey.TASK_ATTEMPT_ID: identity.attempt_id,
+        FLContextKey.TASK_ATTEMPT_REQUIRED: True,
         FLContextKey.TASK_NAME: identity.task_name,
         FLContextKey.WORKSPACE_OBJECT: workspace,
         FLContextKey.WORKSPACE_ROOT: workspace.get_root_dir(),
     }
     for name, value in built_ins.items():
-        fl_ctx.set_prop(name, value, private=True, sticky=name not in (FLContextKey.TASK_ID, FLContextKey.TASK_NAME))
+        fl_ctx.set_prop(
+            name,
+            value,
+            private=True,
+            sticky=name not in (FLContextKey.TASK_ID, FLContextKey.TASK_NAME, FLContextKey.TASK_ATTEMPT_ID),
+        )
     protected = _PROTECTED_CONTEXT_KEYS | set(protected_context_keys)
     for name, prop in bootstrap.context_properties.items():
         if name in protected:
@@ -164,26 +176,22 @@ def _execute(
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
         _fire_checked(runtime, EventType.AFTER_TASK_EXECUTION, fl_ctx)
-        return result, analytics
     finally:
         if started:
             try:
                 _fire_checked(runtime, EventType.ABOUT_TO_END_RUN, fl_ctx)
             finally:
                 _fire_checked(runtime, EventType.END_RUN, fl_ctx)
+    return result, analytics, fl_ctx.get_prop(TASK_STATE_KEY).to_wire()
 
 
-def run_worker(bootstrap_path: str) -> TaskCompletion:
+def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
     # Strip CJ bootstrap credentials from the environment before importing job
     # custom code. This is not filesystem isolation: Process workers share the
     # site's UID and workspace, which can contain credential files.
     pop_credential_env()
-    # This entry point serves CJ today. Role-specific bindings stay outside
-    # TaskRuntime and the compute pipeline; a future SJ entry can supply its own.
-    from nvflare.private.fed.client.task_worker_client_api import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
-
     started_at = time.time()
     bootstrap = read_bootstrap(bootstrap_path)
     identity = bootstrap.identity
@@ -200,13 +208,13 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             sys.path.insert(0, custom_dir)
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
         data = store.read_input(identity)
-        result, analytics = _execute(
+        result, analytics, state_records = _execute(
             bootstrap,
             data,
             workspace,
             store,
-            context_binding=bind_client_task_context,
-            protected_context_keys=CLIENT_TASK_CONTEXT_KEYS,
+            context_binding=context_binding,
+            protected_context_keys=protected_context_keys,
         )
         usage = resource.getrusage(resource.RUSAGE_SELF)
         completed_at = time.time()
@@ -218,6 +226,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
         }
         if analytics:
             diagnostics["analytics"] = store.write_analytics(identity, analytics).to_dict()
+        state = store.stage_state(identity, state_records) if bootstrap.state_names else None
         return store.commit_result(
             identity,
             result,
@@ -226,6 +235,8 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             started_at=started_at,
             completed_at=completed_at,
             diagnostics=diagnostics,
+            state=state,
+            state_revision=bootstrap.state_revision,
         )
     except BaseException as e:
         try:

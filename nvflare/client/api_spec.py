@@ -53,6 +53,14 @@ class APISpec(ABC):
             cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
             self._memory_logger.info(f"Memory cleanup performed at round {self._round_count}")
 
+    def get_state(self):
+        """Return explicitly declared local application state when supported.
+
+        The initial implementation supports in-process job/task execution.
+        External-process/attach adapters do not silently emulate persistence.
+        """
+        raise RuntimeError("declared application state is not supported by this Client API backend")
+
     @abstractmethod
     def init(self, rank: Optional[str] = None):
         """Initializes NVFlare Client API environment.

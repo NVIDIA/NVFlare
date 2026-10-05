@@ -81,6 +81,12 @@ def test_context_property_rejects_malformed_records(value):
         ({"components": [{"id": "same"}, {"id": "same"}]}, ValueError),
         ({"context_properties": []}, TypeError),
         ({"context_properties": {"value": 3}}, TypeError),
+        ({"state_revision": -1}, ValueError),
+        ({"state_revision": True}, ValueError),
+        ({"state_revision": 1.5}, ValueError),
+        ({"state_records": []}, TypeError),
+        ({"state_records": [("counter", {"encoding": "json", "value": 1})]}, TypeError),
+        ({"state_names": ["counter"], "state_records": {"other": {"encoding": "json", "value": 1}}}, KeyError),
     ],
 )
 def test_bootstrap_rejects_invalid_fields(bootstrap, changes, error):
@@ -99,6 +105,22 @@ def test_bootstrap_rejects_invalid_context_mapping(bootstrap):
     record["context_properties"] = []
     with pytest.raises(TypeError, match="context_properties"):
         WorkerBootstrap.from_dict(record)
+
+
+def test_bootstrap_round_trips_declared_state_and_reads_legacy_defaults(tmp_path, bootstrap):
+    stateful = replace(
+        bootstrap,
+        state_names=("counter",),
+        state_revision=3,
+        state_records={"counter": {"encoding": "json", "value": 4}},
+    )
+    path = str(tmp_path / "state-bootstrap.json")
+    protocol.write_bootstrap(path, stateful)
+    assert protocol.read_bootstrap(path) == stateful
+    legacy = bootstrap.to_dict()
+    for field in ("state_names", "state_revision", "state_records"):
+        legacy.pop(field)
+    assert WorkerBootstrap.from_dict(legacy) == bootstrap
 
 
 def test_bootstrap_rejects_non_json_values_and_oversized_records(tmp_path, bootstrap, monkeypatch):

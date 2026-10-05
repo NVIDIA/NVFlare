@@ -21,6 +21,8 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.apis.task_execution import ExecutionLifetime
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -104,6 +106,15 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         is_leaf = client_config.get("is_leaf", True)
 
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+        config_data = getattr(conf, "config_data", {})
+        state_config = config_data.get("task_state", {}) if isinstance(config_data, dict) else {}
+        if not isinstance(state_config, dict) or set(state_config) - {"names"}:
+            raise ValueError("task_state must contain only a names declaration")
+        state_names = TaskState.validate_names(state_config.get("names", ()))
+        # Task-lifetime state belongs to the worker graph and its checkpoint,
+        # not an unrelated, mutable shadow copy visible to CJ filters/handlers.
+        if not isinstance(config_data, dict) or config_data.get("execution_lifetime") != ExecutionLifetime.TASK:
+            job_ctx_props[TASK_STATE_KEY] = TaskState(state_names)
         job_ctx_props.update(
             {
                 FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB,

@@ -21,6 +21,7 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_constant import EventScope, FLContextKey, FLMetaKey
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.task_state import get_task_state
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY, ClientAPIBackendSpec
 from nvflare.app_common.executors.client_api.script_utils import (
@@ -84,8 +85,10 @@ class TaskClientAPI(InProcessClientAPI):
     finish. No federation connection or job-long trainer thread is created.
     """
 
-    def __init__(self, metadata: dict, store: FileTaskArtifactStore, identity: TaskAttemptIdentity, analytics=None):
-        super().__init__(task_metadata=metadata)
+    def __init__(
+        self, metadata: dict, store: FileTaskArtifactStore, identity: TaskAttemptIdentity, analytics=None, state=None
+    ):
+        super().__init__(task_metadata=metadata, task_state=state)
         self._store = store
         self._identity = identity
         self._result_reference = None
@@ -157,7 +160,9 @@ class TaskClientAPIBackend(ClientAPIBackendSpec):
             context,
             prepare_task_metadata(context, self._identity.site_name, self._identity.job_id, self._identity.task_name),
             fl_ctx.get_workspace().get_app_custom_dir(self._identity.job_id),
-            lambda metadata: TaskClientAPI(metadata, self._store, self._identity, self._analytics),
+            lambda metadata: TaskClientAPI(
+                metadata, self._store, self._identity, self._analytics, state=get_task_state(fl_ctx)
+            ),
             executor.logger,
         )
 

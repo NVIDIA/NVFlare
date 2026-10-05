@@ -45,6 +45,52 @@ def _identity(attempt_id="attempt-1"):
     )
 
 
+def test_state_and_result_are_paired_in_completion_and_cleaned_independently_of_diagnostics(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    records = {"counter": {"encoding": "json", "value": 4}}
+    reference = store.stage_state(identity, records)
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+    completion = store.commit_result(identity, Shareable({"output": 1}), state=reference, state_revision=3)
+    assert store.read_completion(identity) == completion
+    assert store.read_state(identity, completion.state) == records
+    store.release_payloads(identity)
+    assert not os.path.exists(os.path.join(directory, "state.fobs"))
+    assert store.read_completion(identity) == completion
+
+
+@pytest.mark.parametrize("state", [object(), ArtifactReference("input", "input.fobs", 0, "0" * 64)])
+def test_completion_rejects_non_state_artifact_references(state):
+    with pytest.raises(TypeError, match="state ArtifactReference"):
+        TaskCompletion(_identity(), ArtifactReference("result", "result.fobs", 0, "0" * 64), 1, 0, 1, 2, state=state)
+
+
+@pytest.mark.parametrize("revision", [-1, True, 1.5])
+def test_completion_rejects_invalid_state_revisions(revision):
+    with pytest.raises(ValueError, match="state_revision"):
+        TaskCompletion(
+            _identity(), ArtifactReference("result", "result.fobs", 0, "0" * 64), 1, 0, 1, 2, state_revision=revision
+        )
+
+
+@pytest.mark.parametrize("reference", [None, ArtifactReference("result", "result.fobs", 0, "0" * 64)])
+def test_read_state_rejects_wrong_reference_kind(tmp_path, reference):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    with pytest.raises(ValueError, match="state artifact reference"):
+        store.read_state(_identity(), reference)
+
+
+def test_read_state_rejects_non_mapping_records(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    store.create_attempt(identity)
+    reference = store.stage_state(identity, [])
+    with pytest.raises(ValueError, match="named records"):
+        store.read_state(identity, reference)
+
+
 def test_result_is_not_readable_until_completion_is_installed(tmp_path):
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity()
@@ -102,6 +148,30 @@ def test_result_wait_markers_are_durable_exclusive_and_identity_bound(tmp_path):
     with open(marker, "w") as stream:
         json.dump(record, stream)
     with pytest.raises(ValueError, match="stale.*identity"):
+        store.result_wait_state(identity)
+
+
+@pytest.mark.parametrize(
+    "field,value,error",
+    [
+        ("schema_version", 2, "marker schema"),
+        ("monotonic", True, "monotonic timestamp"),
+        ("monotonic", "1.0", "monotonic timestamp"),
+        ("monotonic", None, "monotonic timestamp"),
+        ("monotonic", float("inf"), "monotonic timestamp"),
+    ],
+)
+def test_result_wait_markers_reject_invalid_schema_and_clocks(tmp_path, field, value, error):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = store.create_attempt(identity)
+    store.mark_result_wait_started(identity)
+    marker = os.path.join(directory, "result_wait_started.json")
+    record = artifacts._read_json(marker)
+    record[field] = value
+    with open(marker, "w") as stream:
+        json.dump(record, stream)
+    with pytest.raises(ValueError, match=error):
         store.result_wait_state(identity)
 
 

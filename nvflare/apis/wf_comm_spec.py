@@ -275,6 +275,18 @@ class WFCommSpec(ABC):
         """Called after process_task_request returns, but exception occurs before task is sent out."""
         raise NotImplementedError
 
+    def check_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Validate attempt admission before task-result filters and callbacks.
+
+        Return ``True`` only for a submission that needs application processing.
+        A matching completed retry may set the previous acceptance decision in
+        ``fl_ctx`` and return ``False``. Legacy communicators may process unfenced
+        submissions; authorities issuing attempt IDs must implement their fence.
+        """
+        return result.get_task_attempt_id() is None
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called by the Engine to process the submitted result from a client.
 

@@ -223,14 +223,21 @@ class ClientRunner(TBI):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
+        cookie_jar = task.data.get_cookie_jar() if isinstance(task.data, Shareable) else None
+        cookie_jar = dict(cookie_jar) if cookie_jar else None
         reply = self._do_process_task(task, fl_ctx)
+        # Bind the actual outgoing reply on every path, including an early
+        # filter failure that replaced a previously successful executor result.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
-        cookie_jar = task.data.get_cookie_jar()
         if cookie_jar:
             reply.set_cookie_jar(cookie_jar)
 
         reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
         reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+        if task.attempt_id is not None:
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task.attempt_id)
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
         return reply
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
@@ -264,6 +271,10 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=task.attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.WORKFLOW, value=task.data.get_cookie(ReservedHeaderKey.WORKFLOW), private=True, sticky=False
+        )
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
         add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
@@ -651,6 +662,11 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"checking task with {self.parent_target} ...")
         task_check_req = Shareable()
         task_check_req.set_header(ReservedKey.TASK_ID, task_id)
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        if attempt_id is not None:
+            task_check_req.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            task_check_req.set_header(ReservedHeaderKey.TASK_NAME, fl_ctx.get_prop(FLContextKey.TASK_NAME))
+            task_check_req.set_header(ReservedHeaderKey.WORKFLOW, fl_ctx.get_prop(FLContextKey.WORKFLOW))
         resp = self.engine.send_aux_request(
             targets=[self.parent_target],
             topic=ReservedTopic.TASK_CHECK,

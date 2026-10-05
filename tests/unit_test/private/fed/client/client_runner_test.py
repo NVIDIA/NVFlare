@@ -22,6 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -141,6 +142,44 @@ def test_process_task_preserves_cookie_and_assignment_headers():
     assert reply.get_header(ReservedHeaderKey.TASK_ID) == "task-1"
 
 
+def test_task_assignment_and_result_preserve_authority_issued_attempt():
+    runner = _runner()
+    data = Shareable()
+    data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "server-attempt")
+    task = _task(data=data)
+    runner._do_process_task = MagicMock(return_value=Shareable())
+    reply = runner._process_task(task, FLContext())
+    assert task.attempt_id == "server-attempt"
+    assert reply.get_task_attempt_id() == "server-attempt"
+    assert reply.get_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED) is True
+
+
+def test_task_assignment_rejects_missing_required_authority_attempt():
+    data = Shareable()
+    data.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+    with pytest.raises(ValueError, match="requires a task attempt ID"):
+        _task(data=data)
+
+
+def test_process_task_preserves_assignment_cookies_when_data_filter_replaces_shareable():
+    runner = _runner()
+    data = Shareable()
+    data.set_cookie_jar(
+        {ReservedHeaderKey.TASK_ID: "task-1", ReservedHeaderKey.TASK_ATTEMPT_ID: "server-attempt", "cookie": "value"}
+    )
+    task = _task(data=data)
+
+    def replace_data(_task, _fl_ctx):
+        _task.data = Shareable({"filtered": True})
+        return Shareable()
+
+    runner._do_process_task = MagicMock(side_effect=replace_data)
+    reply = runner._process_task(task, FLContext())
+    assert reply.get_cookie(ReservedHeaderKey.TASK_ID) == "task-1"
+    assert reply.get_cookie("cookie") == "value"
+    assert reply.get_task_attempt_id() == "server-attempt"
+
+
 def test_do_process_task_short_circuits_unsafe_job():
     runner = _runner()
     fl_ctx = FLContext()
@@ -215,6 +254,53 @@ def test_do_task_reports_abort_during_filter_materialization(filter_direction):
 
     assert reply.get_return_code() == ReturnCode.TASK_ABORTED
     runner.log_exception.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "filter_failure, expected",
+    [
+        ("exception", ReturnCode.TASK_RESULT_FILTER_ERROR),
+        ("invalid_result", ReturnCode.TASK_RESULT_FILTER_ERROR),
+        ("abort", ReturnCode.TASK_ABORTED),
+        ("unsafe", ReturnCode.UNSAFE_JOB),
+    ],
+)
+def test_process_task_binds_final_failure_reply_after_successful_executor_result(filter_failure, expected):
+    runner = _runner()
+    success = Shareable({"successful_execution": True})
+    executor = MagicMock()
+    executor.execute.return_value = success
+    runner.task_router.add_executor(["train"], executor)
+    peer_ctx = FLContext()
+    peer_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.set_peer_context(peer_ctx)
+
+    def fail_result_filter(_filter_name, data, _fl_ctx, _filters, _task_name, direction, **kwargs):
+        if direction == FilterKey.IN:
+            return data
+        # Reproduce the stale-OK context specifically, rather than mocking the
+        # entire task processor: these paths return before AFTER_RESULT_FILTER.
+        assert data is success
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT) is success
+        if filter_failure == "invalid_result":
+            return object()
+        if filter_failure == "abort":
+            kwargs["abort_signal"].trigger(True)
+        elif filter_failure == "unsafe":
+            raise UnsafeJobError("unsafe result filter")
+        raise RuntimeError("result filter failed")
+
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
+        patch("nvflare.private.fed.client.client_runner.apply_filters", side_effect=fail_result_filter),
+    ):
+        reply = runner._process_task(_task(), fl_ctx)
+
+    assert reply.get_return_code() == expected
+    assert reply is not success
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT) is reply
+    assert runner.running_tasks == {}
 
 
 @pytest.mark.parametrize(

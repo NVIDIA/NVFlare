@@ -61,6 +61,52 @@ class TraceFilter(Filter):
         return shareable
 """
 
+_STATE_TRACE_SOURCE = """
+import json
+import os
+import time
+from pathlib import Path
+
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.task_state import get_task_state
+from nvflare.app_common.np.np_trainer import NPTrainer
+
+
+def trace(fl_ctx, **fields):
+    workspace = fl_ctx.get_engine().get_workspace()
+    path = Path(workspace.get_run_dir(fl_ctx.get_job_id())) / "state-trace.jsonl"
+    with path.open("a") as stream:
+        stream.write(json.dumps({
+            "pid": os.getpid(),
+            "task_id": fl_ctx.get_prop(FLContextKey.TASK_ID),
+            "attempt_id": fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
+            "timestamp": time.time(),
+            **fields,
+        }) + "\\n")
+
+
+class StatefulNPTrainer(NPTrainer):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        state = get_task_state(fl_ctx)
+        previous = state.get("steps", {"count": 0})["count"]
+        state["steps"] = {"count": previous + 1}
+        trace(fl_ctx, phase="steps", previous_steps=previous, steps=previous + 1)
+        # Only the declared state/trace is added: model training is unchanged.
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
+
+
+class ScopeTrace(FLComponent):
+    def __init__(self, scope):
+        super().__init__()
+        self.scope = scope
+
+    def handle_event(self, event_type, fl_ctx):
+        if event_type in (EventType.START_RUN, EventType.END_RUN):
+            trace(fl_ctx, phase="component", scope=self.scope, event=event_type)
+"""
+
 
 def _run_simulator(job_dir, workspace, output_path):
     env = os.environ.copy()
@@ -262,3 +308,97 @@ def test_filters_stay_in_cj_and_result_filter_follows_worker_settlement(tmp_path
             assert all(event["pid"] == record["supervisor_pid"] for event in task_events)
             assert task_events[0]["timestamp"] <= record["launch_timestamp"]
             assert record["settled_timestamp"] <= task_events[1]["timestamp"] <= record["publication_timestamp"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The initial ProcessTaskLauncher requires POSIX process groups")
+@pytest.mark.timeout(180)
+def test_declared_state_survives_three_cold_starts_and_explicit_component_scope(tmp_path):
+    from nvflare.apis.event_type import EventType
+
+    job_dir = tmp_path / "hello-numpy-with-state"
+    shutil.copytree(FIXTURE, job_dir)
+    custom_dir = job_dir / "app/custom"
+    custom_dir.mkdir(exist_ok=True)
+    (custom_dir / "state_trace.py").write_text(_STATE_TRACE_SOURCE)
+    meta_path = job_dir / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["byoc"] = True  # This test adds an ordinary Executor wrapper and event probes.
+    meta_path.write_text(json.dumps(meta))
+    client_path = job_dir / "app/config/config_fed_client.json"
+    client = json.loads(client_path.read_text())
+    client["execution_lifetime"] = "task"
+    client["task_state"] = {"names": ["steps"]}
+    client["executors"][0]["executor"]["path"] = "state_trace.StatefulNPTrainer"
+    client["components"] = [
+        {"id": "worker_trace", "path": "state_trace.ScopeTrace", "args": {"scope": "task"}},
+        {
+            "id": "job_trace",
+            "path": "state_trace.ScopeTrace",
+            "args": {"scope": "job"},
+            "execution_scope": "job",
+        },
+    ]
+    # Neither probe is referenced by an executor/filter: the default worker
+    # graph and explicit job placement must not depend on ID heuristics.
+    assert "execution_scope" not in client["components"][0]
+    client_path.write_text(json.dumps(client))
+    assert (job_dir / "app/config/config_fed_server.json").read_bytes() == (
+        FIXTURE / "app/config/config_fed_server.json"
+    ).read_bytes()
+
+    workspace = tmp_path / "workspace"
+    _configure_site_process_launcher(workspace)
+    _run_simulator(job_dir, workspace, tmp_path / "simulator.log")
+    publications = _assert_task_worker_records(workspace)
+    expected_model = np.arange(1, 10).reshape(3, 3) + 3
+    models = list((workspace / "server").rglob("server.npy"))
+    assert len(models) == 1
+    np.testing.assert_array_equal(np.load(models[0], allow_pickle=False), expected_model)
+    for site_name in ("site-1", "site-2"):
+        site_root = workspace / site_name
+        site_models = list(site_root.rglob("best_numpy.npy"))
+        assert len(site_models) == 1
+        np.testing.assert_array_equal(np.load(site_models[0], allow_pickle=False), expected_model)
+        trace_paths = list(site_root.rglob("state-trace.jsonl"))
+        assert len(trace_paths) == 1
+        traces = [json.loads(line) for line in trace_paths[0].read_text().splitlines()]
+        steps = [trace for trace in traces if trace["phase"] == "steps"]
+        assert [trace["previous_steps"] for trace in steps] == [0, 1, 2]
+        assert [trace["steps"] for trace in steps] == [1, 2, 3]
+        site_publications = [record for record in publications if record["site_name"] == site_name]
+        assert {trace["pid"] for trace in steps} == {record["worker_pid"] for record in site_publications}
+        runtime_root = next(site_root.rglob("diagnostics.jsonl")).parent
+        previous_publication = None
+        for step, record in zip(steps, site_publications):
+            assert (step["task_id"], step["attempt_id"]) == (record["task_id"], record["attempt_id"])
+            if previous_publication is not None:
+                # The next cold start consumes the prior exact-ACK promotion.
+                assert previous_publication <= step["timestamp"]
+            previous_publication = record["publication_timestamp"]
+            attempt_dir = runtime_root / "attempts" / record["attempt_id"]
+            completion = json.loads((attempt_dir / "completion.json").read_text())
+            assert completion["identity"] == {
+                key: record[key] for key in ("job_id", "site_name", "task_id", "task_name", "attempt_id")
+            }
+            assert completion["state_revision"] == step["steps"] - 1
+            assert completion["state"]["kind"] == "state"
+            assert completion["state"]["file_name"] == "state.fobs"
+            assert not (attempt_dir / "state.fobs").exists()
+        # Job state survives independently of cleaned transient input/result/
+        # candidate-state payloads; immutable completion/diagnostics survive.
+        checkpoint = json.loads((runtime_root / "state/current.json").read_text())
+        assert checkpoint["revision"] == 3
+        assert checkpoint["names"] == ["steps"]
+        assert checkpoint["records"] == {"steps": {"encoding": "json", "value": {"count": 3}}}
+        assert checkpoint["identity"] == completion["identity"]
+        assert checkpoint["result_sha256"] == completion["result"]["sha256"]
+        assert checkpoint["state_sha256"] == completion["state"]["sha256"]
+        job_events = [trace for trace in traces if trace.get("scope") == "job"]
+        assert [trace["event"] for trace in job_events] == [EventType.START_RUN, EventType.END_RUN]
+        assert all(trace["pid"] == site_publications[0]["supervisor_pid"] for trace in job_events)
+        worker_events = [trace for trace in traces if trace.get("scope") == "task"]
+        assert len(worker_events) == 6
+        for step in steps:
+            events = [trace for trace in worker_events if trace["attempt_id"] == step["attempt_id"]]
+            assert [trace["event"] for trace in events] == [EventType.START_RUN, EventType.END_RUN]
+            assert all(trace["pid"] == step["pid"] for trace in events)

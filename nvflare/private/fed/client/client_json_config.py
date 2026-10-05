@@ -189,6 +189,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             components=[copy.deepcopy(component) for component in task_config.components],
             worker_timeout=task_config.worker_timeout,
             result_wait_timeout=task_config.result_wait_timeout,
+            state_names=task_config.state_names,
         )
         self.handlers.append(supervisor)
         return supervisor

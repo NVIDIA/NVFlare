@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,6 +20,7 @@ import pytest
 from nvflare.apis.fl_constant import ProcessType, ReservedKey, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.task_state import TASK_STATE_KEY
 from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
@@ -27,6 +29,36 @@ class _DummyRunManager:
     def __init__(self):
         self.all_clients = None
         self.name_to_clients = {}
+
+
+def test_declared_state_is_job_local_and_shared_by_ordinary_job_contexts(monkeypatch):
+    monkeypatch.setattr(ClientRunManager, "create_job_processing_context_properties", lambda *_args: {})
+    client = SimpleNamespace(client_args={}, client_name="site-1")
+    conf = SimpleNamespace(config_data={"task_state": {"names": ["optimizer"]}})
+    manager = ClientRunManager("site-1", "job-1", None, client, {}, handlers=[], conf=conf)
+    first = manager.new_context()
+    state = first.get_prop(TASK_STATE_KEY)
+    state["optimizer"] = b"explicitly serialized selected state"
+    assert manager.new_context().get_prop(TASK_STATE_KEY) is state
+    other = ClientRunManager("site-1", "job-2", None, client, {}, handlers=[], conf=conf)
+    assert len(other.new_context().get_prop(TASK_STATE_KEY)) == 0
+
+
+def test_task_mode_does_not_expose_unrelated_shadow_state_to_cj_handlers(monkeypatch):
+    monkeypatch.setattr(ClientRunManager, "create_job_processing_context_properties", lambda *_args: {})
+    client = SimpleNamespace(client_args={}, client_name="site-1")
+    conf = SimpleNamespace(config_data={"execution_lifetime": "task", "task_state": {"names": ["optimizer"]}})
+    manager = ClientRunManager("site-1", "job", None, client, {}, handlers=[], conf=conf)
+    assert manager.new_context().get_prop(TASK_STATE_KEY) is None
+
+
+@pytest.mark.parametrize("declaration", [None, {"snapshot": True}, {"names": ["invalid name"]}])
+def test_job_runtime_validates_new_explicit_state_declarations(monkeypatch, declaration):
+    monkeypatch.setattr(ClientRunManager, "create_job_processing_context_properties", lambda *_args: {})
+    client = SimpleNamespace(client_args={}, client_name="site-1")
+    conf = SimpleNamespace(config_data={"task_state": declaration})
+    with pytest.raises(ValueError, match="task_state"):
+        ClientRunManager("site-1", "job", None, client, {}, handlers=[], conf=conf)
 
 
 def test_get_job_clients_raises_if_job_clients_missing():

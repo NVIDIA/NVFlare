@@ -22,6 +22,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
@@ -53,12 +54,14 @@ class InProcessClientAPI(APISpec):
         self,
         task_metadata: dict,
         result_check_interval: float = 2.0,
+        task_state: Optional[TaskState] = None,
     ):
         """Initializes the InProcessClientAPI.
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
+            task_state (TaskState): explicitly declared local state bound by the runtime.
         """
         super().__init__()  # Initialize memory management from base class
 
@@ -82,6 +85,7 @@ class InProcessClientAPI(APISpec):
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
         self._receive_error: Optional[Exception] = None
+        self._task_state = task_state
 
     def _subscribe_to_data_bus(self):
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
@@ -123,6 +127,15 @@ class InProcessClientAPI(APISpec):
     def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
         self._receive_error = None
+        if fl_ctx is not None:
+            self._task_state = fl_ctx.get_prop(TASK_STATE_KEY)
+
+    def get_state(self):
+        if self.closed:
+            raise RuntimeError("declared state is unavailable after Client API finalization")
+        if not isinstance(self._task_state, TaskState):
+            raise RuntimeError("no declared application state was bound by this runtime")
+        return self._task_state
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.

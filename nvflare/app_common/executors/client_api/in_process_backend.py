@@ -38,6 +38,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_state import TASK_STATE_KEY
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
@@ -121,7 +122,9 @@ class InProcessBackend(ClientAPIBackendSpec):
                 self._prepare_task_meta(fl_ctx, None),
                 workspace.get_app_custom_dir(job_id),
                 lambda metadata: InProcessClientAPI(
-                    task_metadata=metadata, result_check_interval=_RESULT_POLL_INTERVAL
+                    task_metadata=metadata,
+                    result_check_interval=_RESULT_POLL_INTERVAL,
+                    task_state=fl_ctx.get_prop(TASK_STATE_KEY),
                 ),
                 self.logger,
             )
@@ -179,7 +182,7 @@ class InProcessBackend(ClientAPIBackendSpec):
             fl_ctx.set_prop("abort_signal", abort_signal)
 
             meta = self._prepare_task_meta(fl_ctx, task_name)
-            self._client_api.set_meta(meta)
+            self._client_api.set_meta(meta, fl_ctx=fl_ctx)
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())

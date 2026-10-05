@@ -11,7 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Common contracts for launching disposable task execution units."""
+"""Experimental contracts for launching disposable task execution units.
+
+The initial CPU/Process slice uses a command-shaped workload. Backend-specific
+workload fields will be introduced with the first non-Process implementation,
+not selected by untrusted job configuration.
+"""
 
 import math
 from abc import ABC, abstractmethod
@@ -71,7 +76,12 @@ class TaskResourceRequest:
 
 @dataclass(frozen=True)
 class TaskLaunchRequest:
-    """Backend-independent request for one physical task attempt.
+    """Experimental request for one physical task attempt.
+
+    ``argv``/``cwd`` currently describe the Process workload. They do not imply
+    that a future container launcher must use the supervisor's host interpreter
+    or filesystem; backend-specific materialization belongs to trusted runtime
+    policy, not application jobs.
 
     ``environment`` is the complete environment passed to the execution unit;
     launchers do not implicitly copy the parent process environment. This
@@ -185,7 +195,7 @@ class TaskHandleSpec(ABC):
 
 
 class TaskLauncherSpec(FLComponent, ABC):
-    """Launch backend for disposable task execution units."""
+    """Experimental launch backend for disposable task execution units."""
 
     launch_mode = None
 

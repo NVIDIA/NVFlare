@@ -84,9 +84,10 @@ class _DeadClientStatus:
 
 
 class _CompletedClientTaskInfo:
-    def __init__(self, client_name: str, task_name: str, accepted: bool):
+    def __init__(self, client_name: str, task_name: str, attempt_id: str, accepted: bool):
         self.client_name = client_name
         self.task_name = task_name
+        self.attempt_id = attempt_id
         self.accepted = accepted
 
 
@@ -367,6 +368,8 @@ class WFCommServer(FLComponent, WFCommSpec):
                 client_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
 
             client_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
+            client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, client_data
@@ -394,7 +397,23 @@ class WFCommServer(FLComponent, WFCommSpec):
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
-            return self._client_task_map.get(task_id, None)
+            client_task = self._client_task_map.get(task_id, None)
+            attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+            if attempt_id is None:
+                # Preserve the active-only check used by legacy protocols.
+                return client_task
+            peer_ctx = fl_ctx.get_peer_context()
+            client_name = peer_ctx.get_identity_name() if isinstance(peer_ctx, FLContext) else None
+            if client_task is not None:
+                if client_task.attempt_id == attempt_id and client_task.client.name == client_name:
+                    return client_task
+                return None
+            completed = self._get_completed_client_task_info(task_id)
+            if completed and completed.attempt_id == attempt_id and completed.client_name == client_name:
+                # Let a lost-ACK retry reach the recorded decision even after
+                # the standing task is swept, without rerunning application code.
+                return completed
+            return None
 
     def _remember_completed_client_task(self, client_task: ClientTask):
         if client_task.result_received_time is None:
@@ -403,6 +422,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
             client_name=client_task.client.name,
             task_name=client_task.task.name,
+            attempt_id=client_task.attempt_id,
             accepted=client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False),
         )
         self._completed_client_task_map.move_to_end(client_task.id)
@@ -438,6 +458,55 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._controller_lock:
             self._do_process_submission(client, task_name, task_id, result, fl_ctx)
 
+    def check_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Fence current attempts and replay recorded decisions before filters.
+
+        A server-issued attempt has one immutable result publication. A second
+        submission for that attempt never replaces the first, even if it carries
+        a different payload. Unfenced unknown-task handling remains available for
+        legacy ordinary job protocols, but cannot admit an attempt-fenced result.
+        """
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
+        try:
+            attempt_id = result.get_task_attempt_id()
+        except ValueError as e:
+            self.log_warning(fl_ctx, f"invalid task attempt identity: {e}")
+            return False
+        with self._task_lock:
+            client_task = self._client_task_map.get(task_id)
+            completed = self._get_completed_client_task_info(task_id) if client_task is None else None
+            if client_task is None:
+                if completed is None:
+                    return attempt_id is None
+                if attempt_id is None and (completed.client_name != client.name or completed.task_name != task_name):
+                    # Keep the established unknown-task hook for genuinely
+                    # legacy unfenced protocols, not fenced late results.
+                    return True
+                if (
+                    completed.client_name == client.name
+                    and completed.task_name == task_name
+                    and completed.attempt_id == attempt_id
+                ):
+                    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, completed.accepted, private=True, sticky=False)
+                return False
+            if (
+                client_task.client.name != client.name
+                or client_task.task.name != task_name
+                or client_task.attempt_id != attempt_id
+            ):
+                return False
+            if client_task.result_received_time is not None:
+                fl_ctx.set_prop(
+                    FLContextKey.TASK_RESULT_ACCEPTED,
+                    client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False),
+                    private=True,
+                    sticky=False,
+                )
+                return False
+            return client_task.task.completion_status is None
+
     def _do_process_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ):
@@ -448,6 +517,9 @@ class WFCommServer(FLComponent, WFCommSpec):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
         if not isinstance(result, Shareable):
             raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
+
+        if not self.check_submission(client, task_name, task_id, result, fl_ctx):
+            return
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         with self._task_lock:
@@ -512,10 +584,20 @@ class WFCommServer(FLComponent, WFCommSpec):
             # do client task CB processing outside the lock
             # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
-            accepted = result.get_return_code() != ReturnCode.TASK_RESULT_FILTER_ERROR
+            # Controllers still receive handled failures, but only a successful
+            # result may acknowledge admission for named-state promotion.
+            accepted = result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK
 
             manager = task.props[_TASK_KEY_MANAGER]
-            manager.check_task_result(result, client_task, fl_ctx)
+            try:
+                manager.check_task_result(result, client_task, fl_ctx)
+            except Exception:
+                # Preserve the exception for the runner, but fence this physical
+                # attempt: a retry must not repeat partially applied side effects.
+                client_task.result_received_time = time.time()
+                client_task.props[_CLIENT_TASK_RESULT_ACCEPTED] = False
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
+                raise
 
             if task.result_received_cb is not None:
                 try:
@@ -539,6 +621,16 @@ class WFCommServer(FLComponent, WFCommSpec):
             else:
                 self.log_debug(fl_ctx, "no result_received_cb")
 
+            # Managers and callbacks may mark the result as failed without
+            # raising. Check their final decision before allowing state to
+            # advance. Normal callbacks may clear/consume client_task.result.
+            accepted = (
+                accepted
+                and result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK
+                and task.completion_status != TaskCompletionStatus.ERROR
+            )
+            if isinstance(client_task.result, Shareable):
+                accepted = accepted and client_task.result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK
             client_task.result_received_time = time.time()
             client_task.props[_CLIENT_TASK_RESULT_ACCEPTED] = accepted
             fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)

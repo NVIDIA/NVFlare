@@ -77,9 +77,14 @@ def main():
     _start_parent_guard(parent_pid)
     exit_code = 1
     try:
+        from nvflare.private.fed.client.task_worker_client_api import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
         from nvflare.private.fed.task_worker.worker import run_worker
 
-        run_worker(args.bootstrap)
+        run_worker(
+            args.bootstrap,
+            context_binding=bind_client_task_context,
+            protected_context_keys=CLIENT_TASK_CONTEXT_KEYS,
+        )
         exit_code = 0
     except BaseException as e:
         from nvflare.security.logging import secure_format_exception

@@ -18,6 +18,7 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.private.fed.app.client import task_worker_process as process
+from nvflare.private.fed.client.task_worker_client_api import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
 from nvflare.private.fed.task_worker import worker
 
 
@@ -48,7 +49,10 @@ def test_cli_arms_guard_before_compute_and_exits_without_atexit_joins(monkeypatc
     monkeypatch.setattr("nvflare.apis.job_launcher_spec.pop_credential_env", lambda: events.append("strip_credentials"))
     monkeypatch.setattr(process, "_start_parent_guard", lambda _parent: events.append("guard"))
 
-    def compute(_path):
+    def compute(path, *, context_binding, protected_context_keys):
+        assert path == "/attempt/bootstrap.json"
+        assert context_binding is bind_client_task_context
+        assert protected_context_keys is CLIENT_TASK_CONTEXT_KEYS
         events.append("compute")
         if fails:
             raise RuntimeError("compute failure")

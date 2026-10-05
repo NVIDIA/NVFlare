@@ -41,6 +41,7 @@ from nvflare.app_opt.sklearn.recipes import KMeansFedAvgRecipe, SklearnFedAvgRec
 from nvflare.client.config import TransferType
 from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.task_execution import prepare_task_execution
 from nvflare.recipe import set_per_site_config, set_recipe_meta
 from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
@@ -1387,6 +1388,33 @@ class TestFedAvgRecipeInitialCkpt:
 
 class TestFedAvgRecipeDictConfigJobExport:
     """Test that dict model config works end-to-end with job export."""
+
+    @pytest.mark.parametrize("lifetime", ["job", "task"])
+    def test_recipe_retains_analytics_converter_in_job_graph(self, tmp_path, lifetime):
+        train_script = tmp_path / "train.py"
+        train_script.write_text("# Dummy train script\n")
+        recipe = FedAvgRecipe(
+            name="converter-export",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script=str(train_script),
+            min_clients=2,
+        )
+        recipe.set_execution_lifetime(lifetime)
+        recipe._ensure_client_apps_prepared()
+        recipe._job.to_clients(FLComponent(), id="compute")
+        recipe.export(str(tmp_path / "export"))
+
+        config_path = next((tmp_path / "export" / recipe.name).rglob("config_fed_client.json"))
+        config = json.loads(config_path.read_text())
+        components = {component["id"]: component for component in config["components"]}
+        assert components["event_to_fed"]["execution_scope"] == "job"
+        assert "execution_scope" not in components["compute"]
+        plan = prepare_task_execution(config)
+        if lifetime == "job":
+            assert plan is None
+        else:
+            assert [component["id"] for component in plan.job_components] == ["event_to_fed"]
+            assert [component["id"] for component in plan.executors[0].components] == ["compute"]
 
     def test_dict_config_job_export(self, tmp_path):
         """Test that a recipe with dict config can export a valid job."""

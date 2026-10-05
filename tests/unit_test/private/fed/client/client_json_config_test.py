@@ -163,7 +163,14 @@ def test_task_config_prevalidation_does_not_import_original_executor_in_cj(tmp_p
                         "executor": {"path": "malicious_probe.ProbeExecutor", "args": {}},
                     }
                 ],
-                "components": [],
+                "components": [
+                    {"id": "dynamic_compute", "path": "malicious_probe.ComputeComponent"},
+                    {
+                        "id": "cj_widget",
+                        "path": "nvflare.apis.fl_component.FLComponent",
+                        "execution_scope": "job",
+                    },
+                ],
                 "task_data_filters": [],
                 "task_result_filters": [],
             }
@@ -191,6 +198,8 @@ def test_task_config_prevalidation_does_not_import_original_executor_in_cj(tmp_p
     configurator.configure()
 
     assert not import_marker.exists()
+    assert [c["id"] for c in configurator.task_execution_config.executors[0].components] == ["dynamic_compute"]
+    assert set(configurator.runner_config.components) == {"cj_widget"}
 
 
 def test_task_plan_uses_resolved_variables_and_command_overrides(tmp_path):
@@ -202,6 +211,8 @@ def test_task_plan_uses_resolved_variables_and_command_overrides(tmp_path):
         "exec_mode": "in_process",
         "learning_rate": 1,
         "component_ref": "learner",
+        "state_name": "optimizer",
+        "task_state": {"names": ["{state_name}"]},
         "executors": [
             {
                 "tasks": ["train"],
@@ -241,5 +252,7 @@ def test_task_plan_uses_resolved_variables_and_command_overrides(tmp_path):
     assert plan.executor["args"]["task_script_path"] == "overridden.py"
     assert plan.executor["args"]["task_script_args"] == [str(tmp_path / "custom"), "--lr=7"]
     assert plan.components[0]["args"]["delta"] == 7
+    assert plan.state_names == ("optimizer",)
+    assert configurator.executors[0].executor.state_names == ("optimizer",)
     assert not configurator.runner_config.components
     assert json.loads(config_file.read_text()) == config

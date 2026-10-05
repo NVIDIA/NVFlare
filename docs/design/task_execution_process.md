@@ -8,7 +8,7 @@ worker runs the application's Executor for each assignment.
 This increment supports ordinary Executors and the exact `ClientAPIExecutor`
 class with `execution_mode="in_process"`, on CPU with the Process backend. It
 does not add Docker, Kubernetes or Slurm task launchers, GPU admission, automatic
-application-state transfer, external-process/attach Client API adapters, retries
+Python-process snapshots, external-process/attach Client API adapters, retries
 or restart recovery.
 
 ## Job configuration
@@ -41,32 +41,95 @@ expanded, and a job cannot select the supervisor explicitly.
 An in-process Client API script uses the same `client.py` for either lifetime.
 In task mode it runs on the worker's main thread, with one assignment per worker.
 Every worker starts with fresh Python state: applications requiring persistent
-optimizer or other task-local state must save and reload that state explicitly.
+optimizer or Scaffold state must explicitly select, serialize and restore it.
+The runtime transfers only declared records, not arbitrary Python objects.
 
-Component dependencies use constructor arguments named `*_id` / `*_ids` and
-their transitive references. For nonstandard/dynamic wiring, declare a
-`component_dependencies` list on the relevant component specification (outside
-`args`). Ordinary string values are not dependency declarations. A component
-referenced by both the worker graph and a CJ filter, widget, or other retained
-component is rejected rather than silently removed from the CJ.
+### Explicit placement
 
-Nonstandard references such as `source_model` require an explicit dependency
-declaration. Task placement cannot infer whether an arbitrary string is a
-component ID or ordinary application data without importing application code.
-For example, an Executor that looks up `engine.get_component(self.source_model)`
-declares that reference on its specification:
+In task mode, all application `components` default to the worker. Filters stay
+in the CJ. Mark components that require a live federation engine, such as
+receivers or communication-facing widgets, with `"execution_scope": "job"`:
 
 ```json
 {
-  "path": "custom.Trainer",
-  "component_dependencies": ["model"],
-  "args": {"source_model": "model"}
+  "id": "receiver",
+  "path": "custom.FederationReceiver",
+  "execution_scope": "job",
+  "args": {}
 }
 ```
 
-The same rule applies to nonstandard references in filters, retained CJ
-components and transitive worker dependencies. Nested argument dictionaries
-remain ordinary data unless they are actual component specifications.
+Worker components are reconstructed for every task and receive attempt-scoped
+start/end events. Trackers and other components with job-long side effects must
+declare job scope. There is no worker-to-CJ object sharing or automatic replay of
+job handlers in workers. Nested component specifications inherit their enclosing
+scope; a nested specification cannot choose a different scope.
+Recipe helpers explicitly retain the federation analytics bridge and client-side
+tracking receivers in the CJ. This is declared ownership at registration, not a
+placement heuristic based on component types or IDs.
+
+The Job API exposes the same config-only marker after registering a component:
+
+```python
+receiver_id = job.to_clients(receiver, id="receiver")
+job.set_component_execution_scope(receiver_id, "job")
+# For a named client app, pass target="site-1" used when registering it.
+```
+
+`component_dependencies` remains an optional explicit list of component IDs,
+outside `args`. It validates known IDs and rejects cross-scope dependencies; it
+does not choose placement. Constructor names such as `dataset_id`, `run_id` or
+`source_model`, and arbitrary strings, are never interpreted as ownership rules.
+Dynamic lookup can access every task-scoped component without reference-chain
+inference. Ordinary argument dictionaries remain ordinary data.
+
+### Declared state
+
+Declare a small set of names in the client configuration, in either lifetime:
+
+```json
+"task_state": {"names": ["optimizer", "metrics"]}
+```
+
+Or declare them before export through `job.set_task_state(["optimizer", "metrics"])`.
+The setting applies to existing and subsequently added client apps; no state
+declaration is exported by default.
+
+Client API scripts use `flare.get_state()`; ordinary Executors use
+`nvflare.apis.task_state.get_task_state(fl_ctx)`:
+
+```python
+state = flare.get_state()
+metrics = state.get("metrics", {"steps": 0})
+metrics["steps"] += 1
+state["metrics"] = metrics
+```
+
+Only declared names can be written. Values are JSON-compatible data or bytes
+explicitly serialized by the application. Reads return copies; assign a value
+back to stage a change. The contract permits at most 64 names and 1 MiB of total
+encoded records. It does not automatically serialize optimizer objects, tensors,
+CUDA state, DataLoaders, component instances or the Python process. Applications
+choose their own safe encoding for selected optimizer/algorithm state.
+
+In task mode, the supervisor stages the last committed state revision with the
+input. After compute hooks and all finalizers succeed, one completion record
+names both the immutable result and candidate state. After worker settlement,
+only an exact, successful server admission acknowledgement promotes that pair.
+Promotion revalidates both payload digests and uses a file-locked revision
+compare-and-swap: stale or conflicting attempts cannot overwrite newer state.
+The checkpoint is independent of attempt-payload cleanup. Failure results and
+rejected results do not promote state. An unconfirmed acknowledgement or failed
+promotion stops the runtime and preserves the candidate for diagnosis; it does
+not silently continue with old state.
+Declared task state belongs to the worker compute graph; CJ-only filters and
+handlers do not receive an independently mutable shadow copy of that state.
+
+In job mode, the same API exposes explicitly declared, job-local state in the
+continuing in-process runtime. No checkpoint of the job's arbitrary memory is
+performed. External-process and attach Client API backends do not yet bind this
+state API. Local state promotion is not a distributed aggregation transaction or
+restart-recovery protocol.
 
 Task-lifetime jobs require client runtimes advertising `task_execution_process_v1`.
 The server rejects deployment to clients without that capability; it does not
@@ -111,11 +174,19 @@ jobs, bootstrap files or diagnostics. Jobs cannot expand this policy. Federation
 bootstrap credentials, Client API bootstrap paths and GPU visibility variables
 cannot be forwarded through it; unapproved variables remain excluded.
 
-TaskLauncher/TaskHandle contracts are public extension points in `nvflare.apis`.
-The Process backend lives in `nvflare.app_common.task_launcher`. The supervisor
-in `nvflare.private.fed.client.task_worker_executor` is internal runtime code,
-not an application customization or subclassing point. Future backends can use
-the same supervisor through site/runtime injection.
+TaskLauncher/TaskHandle contracts are **experimental** public extension points
+in `nvflare.apis`. The current workload is `argv`/`environment`/`cwd`, sufficient
+for Process launch. A typed backend extension for image, mounts or labels will
+be designed with the first Docker/Kubernetes implementation, not guessed here.
+The Process backend lives in `nvflare.app_common.task_launcher`.
+
+The plain `nvflare.private.fed.task_worker.supervisor.TaskSupervisor` owns staging,
+launch, cancellation, settlement, completion validation, state promotion and
+retention. It is side-neutral: no Executor inheritance, client engine, FLContext
+or federation-event handling. `nvflare.private.fed.client.task_worker_executor`
+is its client Executor adapter for context, policy, analytics and publication.
+Both are internal runtime code, not application subclassing points. A future
+server adapter can reuse the same core without copying client glue.
 
 The legacy `MultiProcessExecutor`/`PTMultiProcessExecutor` stack and its rank
 sub-worker runtime have been removed, without compatibility aliases. Old job
@@ -136,6 +207,8 @@ and compute pipeline. The Client API adapters share metadata, API/script setup
 and owned DataBus cleanup with the job-based in-process backend; only their
 transport and execution lifetimes differ. Server-side worker integration and
 parent/job engine-interface restructuring remain future work.
+The shared worker receives role bindings explicitly from its client entrypoint;
+it does not import or select the client adapter itself.
 
 ## Lifecycle and support boundaries
 
@@ -146,6 +219,22 @@ credential files such as `job.key`. Startup clears credential environment variab
 before importing application code, in case a launcher forwarded them incorrectly.
 Workers receive inert bootstrap configuration and eager local FOBS input artifacts.
 Result artifacts are immutable and validated against the attempt identity and digest.
+The scheduling server issues a physical attempt UUID separately from the client
+assignment UUID. Resending an assignment preserves that attempt; a new physical
+launch requires a new authority-issued ID. The CJ never invents attempt IDs.
+Server admission validates peer, task name, assignment and attempt before fatal
+return-code handling, result filters or callbacks. A duplicate cannot replace
+the first result or invoke its callbacks again. The acknowledgement echoes the
+exact assignment/attempt pair; transport success alone is not admission.
+
+Active/completed workflow decisions and a bounded, job-local receipt cache allow
+lost-ACK retries across workflow transitions without reprocessing results. The
+cache is in memory (at most 10,000 receipts), ends with the server job process,
+and does not provide durable recovery or lease expiry. Evicted receipts cannot
+be replayed after their workflow is gone. This slice supports one physical
+attempt per server-issued assignment; it does not add a retry scheduler. Peer
+auxiliary-task execution needs its own authority-issued attempt integration
+before it can use task workers.
 For Client API scripts, `flare.send()` durably stages `script_result.fobs`. The
 runtime-injected Client API backend returns a Shareable through the same Executor
 pipeline as ordinary Executors, including task hooks and finalization. The final
@@ -188,6 +277,8 @@ retention with `task_execution.artifact_cleanup` in `resources.json`:
 - `job` (default): retain payloads during the job; release owned attempts at
   `END_RUN`, after worker settlement and artifact reads finish. This does not
   depend on server acceptance and includes settled failed/unaccepted attempts.
+  Pending declared-state candidates remain until a definitive admission decision;
+  checkpoint promotion finishes before their payload cleanup.
 - `accepted`: release each settled attempt after both a successful result send
   and explicit server acknowledgement of successful workflow result processing
   (or a previously accepted matching client task). Server result-filter and
@@ -195,6 +286,8 @@ retention with `task_execution.artifact_cleanup` in `resources.json`:
   Failed/unaccepted attempts remain.
 - `retain`: do not automatically release task payloads, even at job end.
 
+State candidates are also covered by these payload policies, after their
+promotion/rejection decision. Committed state is retained separately for the job.
 All policies retain completion/failure records and lifecycle diagnostics under
 `<run_dir>/.nvflare/task-execution/`. Jobs cannot override site retention policy.
 No policy deletes payloads while a worker is live or settlement is unconfirmed.
@@ -202,22 +295,27 @@ Abrupt CJ termination can leave artifacts for later site-managed cleanup; this
 slice does not add crash recovery or a background retention service. `retain`
 does not prevent an administrator from removing the whole job workspace.
 
-Acceptance is successful workflow result processing, not a durable aggregation/checkpoint guarantee.
+Acceptance requires an OK result and successful workflow result processing, not
+a durable server aggregation/checkpoint guarantee. Error results can be handled
+by controllers but are not acknowledged as successful admissions.
 Transport OK without an admission acknowledgement (including replies from older
 servers) does not trigger the optional `accepted` policy. It does not affect
-the default `job` policy.
+the default `job` policy for attempts without declared state.
 
 This launcher does not reserve CPU, memory or GPU resources and rejects explicit
 resource requests it cannot honor. CPU task execution must not inherit a job-long
-GPU reservation. Component placement follows serialized component-ID references
-and their transitive dependencies; components shared between workers and CJ
-filters or retained components are rejected. Dynamic component lookup and additional component/event
-combinations need explicit qualification.
+GPU reservation. CJ ownership remains per job, and handoff remains local files.
+Per-site agents and artifact/network services are deferred until concurrent-job
+cost measurements or a container launcher justify them. Additional component,
+event and algorithm-state combinations need explicit qualification; lifecycle
+tests alone do not establish training equivalence for stateful optimizers.
 
 ## Integration checks
 
 The NumPy Process simulator tests cover job-based and task execution, Job API
-export, CJ-owned filters, process settlement and publication cleanup:
+export, CJ-owned filters, process settlement and publication cleanup. They also
+verify declared JSON state across three fresh workers per site, exact-ACK
+promotion, retained checkpoints and explicit worker/CJ component placement:
 
 ```bash
 python -m pytest -q tests/integration_test/fast/task_worker_process_e2e_test.py

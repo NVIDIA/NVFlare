@@ -21,8 +21,9 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
+from nvflare.apis.task_state import TaskState
+
 SCHEMA_VERSION = 1
-WORKER_MODULE = "nvflare.private.fed.app.client.task_worker_process"
 _MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 _MAX_IDENTITY_VALUE_LENGTH = 4096
 
@@ -72,7 +73,12 @@ def _atomic_publish(path: str, encoded: bytes):
 
 @dataclass(frozen=True)
 class TaskAttemptIdentity:
-    """Logical and physical identity that every artifact for an attempt must match."""
+    """Assignment plus authority-issued physical attempt; artifacts must match both.
+
+    The client adapter receives attempt_id from the scheduling server, never
+    invents it. Local unit-level supervisors can be driven by another trusted
+    scheduling authority. A new physical attempt requires a new authority ID.
+    """
 
     job_id: str
     site_name: str
@@ -131,11 +137,11 @@ class ContextProperty:
 
 @dataclass(frozen=True)
 class WorkerBootstrap:
-    """Everything a fresh worker may receive from the job-based client process.
+    """Inert configuration and declared state for a fresh task worker.
 
     ``executor`` and ``components`` retain normal NVFlare JSON component shapes.
     The worker builds only this selected compute graph; it does not reconstruct a
-    live ClientRunManager or replay the job-based job's handler graph.
+    live job engine or replay the supervising job's handler graph.
     """
 
     identity: TaskAttemptIdentity
@@ -144,6 +150,9 @@ class WorkerBootstrap:
     executor: Mapping[str, Any]
     components: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     context_properties: Mapping[str, ContextProperty] = field(default_factory=dict)
+    state_names: Sequence[str] = field(default_factory=tuple)
+    state_revision: int = 0
+    state_records: Mapping[str, Any] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self):
@@ -171,6 +180,12 @@ class WorkerBootstrap:
             _require_text("context property name", name)
             if not isinstance(prop, ContextProperty):
                 raise TypeError(f"context property {name!r} must be a ContextProperty")
+        object.__setattr__(self, "state_names", TaskState.validate_names(self.state_names))
+        if isinstance(self.state_revision, bool) or not isinstance(self.state_revision, int) or self.state_revision < 0:
+            raise ValueError("state_revision must be a nonnegative integer")
+        if not isinstance(self.state_records, Mapping):
+            raise TypeError("state_records must be a mapping")
+        TaskState.from_wire(self.state_names, dict(self.state_records))
 
     def to_dict(self) -> dict:
         return {
@@ -181,6 +196,9 @@ class WorkerBootstrap:
             "executor": dict(self.executor),
             "components": [dict(component) for component in self.components],
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
+            "state_names": list(self.state_names),
+            "state_revision": self.state_revision,
+            "state_records": dict(self.state_records),
         }
 
     @classmethod
@@ -188,7 +206,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties"}
+        optional = {"components", "context_properties", "state_names", "state_revision", "state_records"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -202,6 +220,9 @@ class WorkerBootstrap:
             executor=value["executor"],
             components=tuple(value.get("components", ())),
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
+            state_names=value.get("state_names", ()),
+            state_revision=value.get("state_revision", 0),
+            state_records=value.get("state_records", {}),
         )
 
 

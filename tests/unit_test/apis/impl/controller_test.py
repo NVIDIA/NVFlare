@@ -214,6 +214,24 @@ def get_ready(thread, sleep_time=0.1):
     time.sleep(sleep_time)
 
 
+def _submit_result(communicator, **kwargs):
+    """Model the real client's unchanged echo of its assignment identity.
+
+    These controller tests submit directly instead of crossing GetTask and
+    ClientRunner. Legacy unknown-task fixtures remain unfenced intentionally.
+    """
+    result = kwargs.get("result")
+    client = kwargs.get("client")
+    task_id = kwargs.get("task_id")
+    record = communicator._client_task_map.get(task_id) or communicator._completed_client_task_map.get(task_id)
+    if isinstance(result, Shareable) and isinstance(client, Client) and record is not None:
+        client_name = record.client.name if isinstance(record, ClientTask) else record.client_name
+        task_name = record.task.name if isinstance(record, ClientTask) else record.task_name
+        if client_name == client.name and task_name == kwargs.get("task_name"):
+            result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, record.attempt_id)
+    return communicator.process_submission(**kwargs)
+
+
 def _setup_system(num_clients=1):
     clients_list = [create_client(f"__test_client{i}") for i in range(num_clients)]
     mock_server_engine = Mock(spec=ServerEngineSpec)
@@ -416,8 +434,13 @@ class TestTaskManagement(TestController):
         result["result"] = "result"
 
         with pytest.raises(RuntimeError, match="Unknown task: __test_task from client __test_client0."):
-            controller.communicator.process_submission(
-                client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
+            _submit_result(
+                controller.communicator,
+                client=client,
+                task_name="__test_task",
+                task_id=client_task_id,
+                fl_ctx=fl_ctx,
+                result=result,
             )
 
         assert task.last_client_task_map["__test_client0"].result is None
@@ -654,7 +677,7 @@ class TestInvalidInput(TestController):
         controller, fl_ctx, clients = self.setup_system()
 
         with pytest.raises(error, match=msg):
-            controller.communicator.process_submission(**kwargs)
+            _submit_result(controller.communicator, **kwargs)
         self.teardown_system(controller, fl_ctx)
 
 
@@ -702,8 +725,8 @@ def clients_pull_and_submit_result(controller, ctx, clients, task_name):
 
     for client, client_task_id in zip(clients, client_task_ids):
         data = Shareable()
-        controller.communicator.process_submission(
-            client=client, task_name=task_name, task_id=client_task_id, fl_ctx=ctx, result=data
+        _submit_result(
+            controller.communicator, client=client, task_name=task_name, task_id=client_task_id, fl_ctx=ctx, result=data
         )
 
 
@@ -763,8 +786,13 @@ class TestCallback(TestController):
         )
         get_ready(launch_thread)
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
-        controller.communicator.process_submission(
-            client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
+        _submit_result(
+            controller.communicator,
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=data,
         )
 
         assert task.last_client_task_map[client_name].result["_test_data"] == client_name
@@ -808,8 +836,13 @@ class TestCallback(TestController):
         for client, client_task_id in zip(clients, client_task_ids):
             if client_task_id is not None:
                 if task_complete == "normal":
-                    controller.communicator.process_submission(
-                        client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
+                    _submit_result(
+                        controller.communicator,
+                        client=client,
+                        task_name="__test_task",
+                        task_id=client_task_id,
+                        fl_ctx=fl_ctx,
+                        result=result,
                     )
         if task_complete == "timeout":
             self.clock.advance(timeout)
@@ -878,8 +911,13 @@ class TestCallback(TestController):
 
         result = Shareable()
         result["__result"] = "__test_result"
-        controller.communicator.process_submission(
-            client=client1, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
+        _submit_result(
+            controller.communicator,
+            client=client1,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
         )
         assert task.last_client_task_map["__test_client0"].result == result
         assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
@@ -988,8 +1026,13 @@ class TestCallback(TestController):
             time.sleep(0.1)
         assert task_name_out == "__test_task"
 
-        controller.communicator.process_submission(
-            client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=ctx, result=data
+        _submit_result(
+            controller.communicator,
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=ctx,
+            result=data,
         )
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
@@ -1060,8 +1103,13 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         with pytest.raises(RuntimeError, match=f"Unknown task: {task_name} from client {client_name}."):
-            controller.communicator.process_submission(
-                client=client, task_name=task_name, task_id=str(uuid.uuid4()), fl_ctx=FLContext(), result=Shareable()
+            _submit_result(
+                controller.communicator,
+                client=client,
+                task_name=task_name,
+                task_id=str(uuid.uuid4()),
+                fl_ctx=FLContext(),
+                result=Shareable(),
             )
         self.teardown_system(controller, fl_ctx)
 
@@ -1116,8 +1164,13 @@ class TestBasic(TestController):
         result = Shareable()
         result["result"] = "result"
 
-        controller.communicator.process_submission(
-            client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
+        _submit_result(
+            controller.communicator,
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
         )
         assert task.last_client_task_map["__test_client0"].result == result
         launch_thread.join()
@@ -1144,7 +1197,8 @@ class TestBasic(TestController):
 
         forged_result = Shareable()
         forged_result["result"] = "forged"
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=other_client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1159,7 +1213,8 @@ class TestBasic(TestController):
 
         result = Shareable()
         result["result"] = "result"
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=assigned_client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1198,7 +1253,8 @@ class TestBasic(TestController):
 
         result = Shareable()
         result["result"] = "first"
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1208,7 +1264,8 @@ class TestBasic(TestController):
 
         # A retry may arrive before the completed task is swept from the active
         # map. It must acknowledge the first result without invoking its callback again.
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1223,7 +1280,8 @@ class TestBasic(TestController):
 
         duplicate_result = Shareable()
         duplicate_result["result"] = "duplicate"
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1259,7 +1317,8 @@ class TestBasic(TestController):
 
         result = Shareable()
         result["result"] = "result"
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=assigned_client,
             task_name="__test_task",
             task_id=client_task_id,
@@ -1270,7 +1329,8 @@ class TestBasic(TestController):
         assert client_task_id not in controller.communicator._client_task_map
 
         with pytest.raises(RuntimeError, match="Unknown task: __test_task from client __test_client1."):
-            controller.communicator.process_submission(
+            _submit_result(
+                controller.communicator,
                 client=other_client,
                 task_name="__test_task",
                 task_id=client_task_id,
@@ -1279,7 +1339,8 @@ class TestBasic(TestController):
             )
 
         with pytest.raises(RuntimeError, match="Unknown task: __wrong_task from client __test_client0."):
-            controller.communicator.process_submission(
+            _submit_result(
+                controller.communicator,
                 client=assigned_client,
                 task_name="__wrong_task",
                 task_id=client_task_id,
@@ -1525,7 +1586,8 @@ class TestBroadcastBehavior(TestController):
 
             result = Shareable()
             result["result"] = "result"
-            controller.communicator.process_submission(
+            _submit_result(
+                controller.communicator,
                 client=client,
                 task_name="__test_task",
                 task_id=client_task_id,
@@ -1609,8 +1671,13 @@ class TestBroadcastBehavior(TestController):
             result = Shareable()
             controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == 1
-            controller.communicator.process_submission(
-                client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
+            _submit_result(
+                controller.communicator,
+                client=client,
+                task_name="__test_task",
+                task_id=client_task_id,
+                result=result,
+                fl_ctx=fl_ctx,
             )
 
         controller.communicator.check_tasks()
@@ -1652,8 +1719,13 @@ class TestBroadcastBehavior(TestController):
 
         for client, client_task_id in zip(clients, client_task_ids):
             result = Shareable()
-            controller.communicator.process_submission(
-                client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
+            _submit_result(
+                controller.communicator,
+                client=client,
+                task_name="__test_task",
+                task_id=client_task_id,
+                result=result,
+                fl_ctx=fl_ctx,
             )
 
         controller.communicator.check_tasks()
@@ -1699,8 +1771,13 @@ class TestBroadcastBehavior(TestController):
             controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == 1
             result = Shareable()
-            controller.communicator.process_submission(
-                client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
+            _submit_result(
+                controller.communicator,
+                client=client,
+                task_name="__test_task",
+                task_id=client_task_id,
+                result=result,
+                fl_ctx=fl_ctx,
             )
 
         controller.communicator.check_tasks()
@@ -2161,8 +2238,13 @@ class TestRelayBehavior(TestController):
             for task_id in client_tasks_and_results.keys():
                 c, task_name, client_result = client_tasks_and_results[task_id]
                 task.data["result"] += client_result["result"]
-                controller.communicator.process_submission(
-                    client=c, task_name=task_name, task_id=task_id, result=client_result, fl_ctx=fl_ctx
+                _submit_result(
+                    controller.communicator,
+                    client=c,
+                    task_name=task_name,
+                    task_id=task_id,
+                    result=client_result,
+                    fl_ctx=fl_ctx,
                 )
                 assert task.last_client_task_map[c.name].result == client_result
             expected_client_index += 1
@@ -2235,7 +2317,8 @@ class TestRelayBehavior(TestController):
                 controller.communicator.check_tasks()
                 assert controller.get_num_standing_tasks() == 1
                 result = Shareable()
-                controller.communicator.process_submission(
+                _submit_result(
+                    controller.communicator,
                     client=expected_client_to_get_task,
                     task_name=task_name_out,
                     task_id=client_task_id,
@@ -2302,7 +2385,8 @@ class TestRelayBehavior(TestController):
 
         # then we get back first client's result
         result = Shareable()
-        controller.communicator.process_submission(
+        _submit_result(
+            controller.communicator,
             client=clients[0],
             task_name=task_name_out,
             task_id=client_task_id,
@@ -2594,8 +2678,13 @@ class TestSendBehavior(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
 
-        controller.communicator.process_submission(
-            client=clients[0], task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
+        _submit_result(
+            controller.communicator,
+            client=clients[0],
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=data,
         )
 
         controller.communicator.check_tasks()

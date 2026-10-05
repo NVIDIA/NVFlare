@@ -32,8 +32,8 @@ from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_j
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
-from nvflare.job_config.fed_app_config import FedAppConfig
-from nvflare.job_config.task_execution import EXECUTION_LIFETIME_KEY, prepare_task_execution
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+from nvflare.job_config.task_execution import EXECUTION_LIFETIME_KEY, EXECUTION_SCOPE_KEY, prepare_task_execution
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 
@@ -708,6 +708,9 @@ class FedJobConfig:
         if fed_app.client_app.additional_params:
             client_app.update(fed_app.client_app.additional_params)
 
+        if fed_app.client_app.task_state_names is not None:
+            client_app["task_state"] = {"names": list(fed_app.client_app.task_state_names)}
+
         execution_lifetime = fed_app.client_app.execution_lifetime
         if execution_lifetime != "job":
             client_app[EXECUTION_LIFETIME_KEY] = execution_lifetime
@@ -732,13 +735,14 @@ class FedJobConfig:
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
         for cid, component in app.components.items():
-            app_config["components"].append(
-                {
-                    "id": cid,
-                    "path": self._get_class_path(component, custom_dir),
-                    "args": self._get_args(component, custom_dir),
-                }
-            )
+            component_config = {
+                "id": cid,
+                "path": self._get_class_path(component, custom_dir),
+                "args": self._get_args(component, custom_dir),
+            }
+            if isinstance(app, ClientAppConfig) and cid in app.component_execution_scopes:
+                component_config[EXECUTION_SCOPE_KEY] = app.component_execution_scopes[cid]
+            app_config["components"].append(component_config)
 
         app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
         app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)

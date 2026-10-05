@@ -31,6 +31,7 @@ from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.task_state import TASK_STATE_KEY
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import ModelLearnable
@@ -52,8 +53,8 @@ from nvflare.private.fed.task_worker import (
     worker,
     write_bootstrap,
 )
-from nvflare.private.fed.task_worker.protocol import WORKER_MODULE
 from nvflare.private.fed.task_worker.runtime import TaskRuntime, UnsupportedTaskRuntimeService
+from nvflare.private.fed.task_worker.state import FileTaskStateStore
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 _PROBE_MODULE = """
@@ -155,7 +156,7 @@ def _identity(attempt_id, task_id="task-1", task_name="train"):
     )
 
 
-def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None):
+def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None, **state_fields):
     store.create_attempt(identity)
     store.write_input(identity, data)
     bootstrap = WorkerBootstrap(
@@ -165,6 +166,7 @@ def _stage(store, identity, workspace_root, executor, data, components=(), conte
         executor=executor,
         components=components,
         context_properties=context_properties or {},
+        **state_fields,
     )
     path = store.bootstrap_path(identity)
     write_bootstrap(path, bootstrap)
@@ -177,7 +179,7 @@ def _run_process(bootstrap_path, extra_env=None):
     env["PYTHONPATH"] = os.pathsep.join([repo_root, env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
     env.update(extra_env or {})
     return subprocess.run(
-        [sys.executable, "-m", WORKER_MODULE, "--bootstrap", bootstrap_path],
+        [sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap", bootstrap_path],
         cwd=repo_root,
         env=env,
         capture_output=True,
@@ -222,7 +224,8 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert store.read_input(identity)["value"] == 3
 
 
-def test_declared_source_model_and_ordinary_options_work_in_a_real_task_process(tmp_path):
+@pytest.mark.parametrize("declared_dependency", [False, True])
+def test_declared_source_model_and_ordinary_options_work_in_a_real_task_process(tmp_path, declared_dependency):
     workspace_root = _workspace(tmp_path)
     options = {"args": [1, 2], "name": "ordinary-data"}
     plan = prepare_task_execution(
@@ -232,7 +235,7 @@ def test_declared_source_model_and_ordinary_options_work_in_a_real_task_process(
                 {
                     "executor": {
                         "path": "worker_components.ReferenceExecutor",
-                        "component_dependencies": ["model"],
+                        **({"component_dependencies": ["model"]} if declared_dependency else {}),
                         "args": {"source_model": "model", "options": options},
                     }
                 }
@@ -252,6 +255,114 @@ def test_declared_source_model_and_ordinary_options_work_in_a_real_task_process(
     result, _completion = store.read_result(identity)
     assert result["value"] == 7
     assert result["options"] == options
+
+
+@pytest.mark.parametrize("client_api", [False, True])
+def test_explicit_state_survives_fresh_processes_only_after_result_promotion(tmp_path, client_api):
+    workspace = _workspace(tmp_path)
+    custom_dir = workspace / "job-1/app_site-1/custom"
+    if client_api:
+        (custom_dir / "stateful.py").write_text(
+            "import nvflare.client as flare\n"
+            "flare.init()\n"
+            "flare.receive()\n"
+            "state = flare.get_state()\n"
+            "state['counter'] = state.get('counter', 0) + 1\n"
+            "flare.send(flare.FLModel(metrics={'counter': state['counter']}))\n"
+            "state['counter'] += 10\n"
+        )
+        executor = {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {"execution_mode": "in_process", "task_script_path": "stateful.py"},
+        }
+        data = FLModelUtils.to_shareable(FLModel(metrics={"seed": 1}))
+    else:
+        (custom_dir / "stateful.py").write_text(
+            "from nvflare.apis.executor import Executor\n"
+            "from nvflare.apis.event_type import EventType\n"
+            "from nvflare.apis.shareable import Shareable\n"
+            "from nvflare.apis.task_state import get_task_state\n"
+            "class Stateful(Executor):\n"
+            "    def execute(self, task_name, shareable, fl_ctx, abort_signal):\n"
+            "        state = get_task_state(fl_ctx)\n"
+            "        state['counter'] = state.get('counter', 0) + 1\n"
+            "        return Shareable({'counter': state['counter']})\n"
+            "    def handle_event(self, event_type, fl_ctx):\n"
+            "        if event_type == EventType.END_RUN:\n"
+            "            get_task_state(fl_ctx)['counter'] += 10\n"
+        )
+        executor, data = {"path": "stateful.Stateful"}, Shareable()
+    artifacts = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    states = FileTaskStateStore(str(tmp_path / "state"), ("counter",))
+    pids = []
+    for index in range(2):
+        identity = _identity(f"state-{index}", task_id=f"task-{index}")
+        revision, records = states.snapshot()
+        path = _stage(
+            artifacts,
+            identity,
+            workspace,
+            executor,
+            data,
+            state_names=states.names,
+            state_revision=revision,
+            state_records=records,
+        )
+        process = _run_process(path)
+        assert process.returncode == 0, process.stderr
+        result, completion = artifacts.read_result(identity)
+        counter = FLModelUtils.from_shareable(result).metrics["counter"] if client_api else result["counter"]
+        assert counter == index * 11 + 1
+        assert completion.state_revision == index
+        pids.append(completion.worker_pid)
+        # Worker completion is only a candidate; the previous checkpoint is untouched.
+        assert states.snapshot() == (revision, records)
+        states.commit(identity, completion, artifacts)
+        artifacts.release_payloads(identity)
+        assert states.snapshot() == (index + 1, {"counter": {"encoding": "json", "value": (index + 1) * 11}})
+        assert states.commit(identity, completion, artifacts) == index + 1
+    assert pids[0] != pids[1]
+
+
+@pytest.mark.parametrize("failure", ["after_send", "finalizer"])
+def test_declared_state_is_not_committed_when_script_or_finalizer_fails(tmp_path, failure):
+    workspace = _workspace(tmp_path)
+    custom_dir = workspace / "job-1/app_site-1/custom"
+    (custom_dir / "stateful.py").write_text(
+        "import nvflare.client as flare\n"
+        "flare.init()\nflare.receive()\nflare.get_state()['counter'] = 7\n"
+        "flare.send(flare.FLModel(metrics={'counter': 7}))\n"
+        + ("raise RuntimeError('failed after send')\n" if failure == "after_send" else "")
+    )
+    (custom_dir / "state_hook.py").write_text(
+        "from nvflare.apis.event_type import EventType\n"
+        "from nvflare.apis.fl_component import FLComponent\n"
+        "class StateHook(FLComponent):\n"
+        "    def handle_event(self, event_type, fl_ctx):\n"
+        "        if event_type == EventType.END_RUN:\n"
+        "            raise RuntimeError('failed finalizer')\n"
+    )
+    artifacts = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    states = FileTaskStateStore(str(tmp_path / "state"), ("counter",))
+    identity = _identity("state-failure")
+    path = _stage(
+        artifacts,
+        identity,
+        workspace,
+        {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {"execution_mode": "in_process", "task_script_path": "stateful.py"},
+        },
+        FLModelUtils.to_shareable(FLModel(metrics={"seed": 1})),
+        components=({"id": "hook", "path": "state_hook.StateHook"},) if failure == "finalizer" else (),
+        state_names=states.names,
+    )
+    process = _run_process(path)
+    assert process.returncode != 0
+    assert f"failed {'after send' if failure == 'after_send' else 'finalizer'}" in process.stderr
+    with pytest.raises(IncompleteTaskArtifactError):
+        artifacts.read_completion(identity)
+    assert states.snapshot() == (0, {})
 
 
 def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_path):
@@ -360,6 +471,9 @@ def test_nested_component_is_authorized_before_any_component_import(tmp_path):
         FLContextKey.CLIENT_NAME,
         FLContextKey.PROCESS_TYPE,
         FLContextKey.RUN_ABORT_SIGNAL,
+        FLContextKey.TASK_ATTEMPT_ID,
+        FLContextKey.TASK_ATTEMPT_REQUIRED,
+        TASK_STATE_KEY,
     ],
 )
 def test_bootstrap_cannot_override_authoritative_runtime_properties(tmp_path, property_name):

@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import EventScope, FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.executors.client_api import script_utils
@@ -146,12 +147,14 @@ def task_backend(monkeypatch):
     identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
     api = Mock()
     api.get_result.return_value = Shareable({"result": 1})
-    monkeypatch.setattr(client_api, "TaskClientAPI", lambda *_args: api)
+    monkeypatch.setattr(client_api, "TaskClientAPI", lambda *_args, **_kwargs: api)
     runner = Mock()
     monkeypatch.setattr(script_utils, "TaskScriptRunner", lambda **_kwargs: runner)
     backend = TaskClientAPIBackend(Mock(), identity, [])
     executor = ClientAPIExecutor(execution_mode="in_process", task_script_path="train.py")
     fl_ctx = Mock()
+    state = TaskState()
+    fl_ctx.get_prop.side_effect = lambda name, default=None: state if name == TASK_STATE_KEY else default
     bus = DataBus()
     previous_api = bus.get_data(CLIENT_API_KEY)
     try:

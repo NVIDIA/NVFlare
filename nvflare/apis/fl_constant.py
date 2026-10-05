@@ -86,6 +86,8 @@ class ReservedKey:
     TASK_DATA = "__task_data__"
     TASK_RESULT = "__task_result__"
     TASK_ID = "__task_id__"
+    TASK_ATTEMPT_ID = "__task_attempt_id__"
+    TASK_ATTEMPT_REQUIRED = "__task_attempt_required__"
     EVENT_ID = "__event_id__"
     AUDIT_EVENT_ID = "__audit_event_id__"
     IS_RESEND = "__is_resend__"
@@ -129,6 +131,8 @@ class FLContextKey:
     TASK_RESULT_SEND_SUCCESS = "__task_result_send_success__"
     TASK_RESULT_ACCEPTED = "__task_result_accepted__"
     TASK_ID = ReservedKey.TASK_ID
+    TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
+    TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
     EVENT_ID = ReservedKey.EVENT_ID
     EVENT_ORIGIN = ReservedKey.EVENT_ORIGIN
     EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE

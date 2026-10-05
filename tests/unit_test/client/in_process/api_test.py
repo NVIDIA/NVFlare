@@ -18,7 +18,11 @@ from copy import deepcopy
 import pytest
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.client import get_state
+from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -66,6 +70,33 @@ class TestInProcessClientAPI(unittest.TestCase):
         # Test initialization with a custom result_check_interval
         client_api = InProcessClientAPI(self.task_metadata, result_check_interval=5.0)
         self.assertEqual(client_api.result_check_interval, 5.0)
+
+    def test_explicit_state_is_available_before_first_receive_and_across_tasks(self):
+        from types import SimpleNamespace
+
+        state = TaskState(("counter",))
+        client_api = InProcessClientAPI(self.task_metadata, task_state=state)
+        client_api.init()
+        ctx = SimpleNamespace(api=client_api)
+        assert get_state(ctx) is state
+        state["counter"] = 1
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(TASK_STATE_KEY, state)
+        client_api.set_meta(self.task_metadata, fl_ctx=fl_ctx)
+        assert client_api.get_state()["counter"] == 1
+        with pytest.raises(KeyError, match="not declared"):
+            state["undeclared"] = 1
+        client_api.close()
+        with pytest.raises(RuntimeError, match="finalization"):
+            client_api.get_state()
+
+    def test_state_without_runtime_binding_fails_clearly(self):
+        client_api = InProcessClientAPI(self.task_metadata)
+        with pytest.raises(RuntimeError, match="bound"):
+            client_api.get_state()
+        with pytest.raises(RuntimeError, match="not supported"):
+            APISpec.get_state(client_api)
+        client_api.close()
 
     def test_init_subscriptions(self):
         client_api = InProcessClientAPI(self.task_metadata)

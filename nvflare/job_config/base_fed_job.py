@@ -140,4 +140,7 @@ class BaseFedJob(FedJob):
 
     def set_up_client(self, target: str):
         """Setup client components."""
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
+        converter_id = self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
+        # Worker analytics are replayed by the CJ after the compute attempt
+        # settles. Federation conversion belongs to that job-long event graph.
+        self.set_component_execution_scope(converter_id, "job", target=target)

@@ -535,7 +535,22 @@ class Communicator:
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
         if return_code == ReturnCode.OK and isinstance(result.payload, Shareable):
             accepted = result.payload.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED)
-            if isinstance(accepted, bool):
+            try:
+                attempt_id = shareable.get_task_attempt_id()
+                task_id = shareable.get_cookie(FLContextKey.TASK_ID, shareable.get_header(ReservedHeaderKey.TASK_ID))
+                valid_identity = True
+            except ValueError:
+                attempt_id = None
+                task_id = None
+                valid_identity = False
+            if (
+                isinstance(accepted, bool)
+                and valid_identity
+                and isinstance(task_id, str)
+                and task_id
+                and result.payload.get_header(ReservedHeaderKey.TASK_ID) == task_id
+                and result.payload.get_header(ReservedHeaderKey.TASK_ATTEMPT_ID) == attempt_id
+            ):
                 fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
         size = task_message.get_header(MessageHeaderKey.PAYLOAD_LEN)
         self.logger.info(

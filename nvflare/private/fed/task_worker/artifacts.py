@@ -37,6 +37,7 @@ _INPUT_KIND = "input"
 _RESULT_KIND = "result"
 _SCRIPT_RESULT_KIND = "script_result"
 _ANALYTICS_KIND = "analytics"
+_STATE_KIND = "state"
 
 
 class IncompleteTaskArtifactError(RuntimeError):
@@ -122,8 +123,8 @@ class ArtifactReference:
     sha256: str
 
     def __post_init__(self):
-        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _SCRIPT_RESULT_KIND, _ANALYTICS_KIND):
-            raise ValueError("artifact kind must be input, result, script_result or analytics")
+        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _SCRIPT_RESULT_KIND, _ANALYTICS_KIND, _STATE_KIND):
+            raise ValueError("artifact kind must be input, result, script_result, analytics or state")
         if self.file_name != f"{self.kind}.fobs":
             raise ValueError("artifact payload name does not match its kind")
         if not isinstance(self.size, int) or self.size < 0:
@@ -154,6 +155,8 @@ class TaskCompletion:
     started_at: float
     completed_at: float
     diagnostics: Mapping[str, Any] = field(default_factory=dict)
+    state: Optional[ArtifactReference] = None
+    state_revision: int = 0
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self):
@@ -173,6 +176,10 @@ class TaskCompletion:
             raise ValueError("completed_at must not precede started_at")
         if not isinstance(self.diagnostics, Mapping):
             raise TypeError("completion diagnostics must be a mapping")
+        if self.state is not None and (not isinstance(self.state, ArtifactReference) or self.state.kind != _STATE_KIND):
+            raise TypeError("completion state must be a state ArtifactReference")
+        if isinstance(self.state_revision, bool) or not isinstance(self.state_revision, int) or self.state_revision < 0:
+            raise ValueError("state_revision must be a nonnegative integer")
 
     def to_dict(self) -> dict:
         return {
@@ -184,6 +191,8 @@ class TaskCompletion:
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "diagnostics": dict(self.diagnostics),
+            "state": None if self.state is None else self.state.to_dict(),
+            "state_revision": self.state_revision,
         }
 
     @classmethod
@@ -198,7 +207,8 @@ class TaskCompletion:
             "completed_at",
             "diagnostics",
         }
-        if not isinstance(value, Mapping) or set(value) != expected:
+        optional = {"state", "state_revision"}
+        if not isinstance(value, Mapping) or expected - set(value) or set(value) - expected - optional:
             raise ValueError("invalid task completion record")
         return cls(
             schema_version=value["schema_version"],
@@ -209,6 +219,8 @@ class TaskCompletion:
             started_at=value["started_at"],
             completed_at=value["completed_at"],
             diagnostics=value["diagnostics"],
+            state=None if value.get("state") is None else ArtifactReference.from_dict(value["state"]),
+            state_revision=value.get("state_revision", 0),
         )
 
 
@@ -308,6 +320,8 @@ class FileTaskArtifactStore:
         started_at: Optional[float] = None,
         completed_at: Optional[float] = None,
         diagnostics: Optional[Mapping[str, Any]] = None,
+        state: Optional[ArtifactReference] = None,
+        state_revision: int = 0,
     ) -> TaskCompletion:
         """Write the immutable result payload and install completion last."""
 
@@ -320,6 +334,8 @@ class FileTaskArtifactStore:
             started_at=started_at,
             completed_at=completed_at,
             diagnostics=diagnostics,
+            state=state,
+            state_revision=state_revision,
         )
 
     def stage_result(self, identity: TaskAttemptIdentity, data: Shareable) -> ArtifactReference:
@@ -335,6 +351,18 @@ class FileTaskArtifactStore:
         reference = self._write_payload(identity, _SCRIPT_RESULT_KIND, data)
         self._write_result_wait_marker(identity, "result_sent")
         return reference
+
+    def stage_state(self, identity: TaskAttemptIdentity, records: dict) -> ArtifactReference:
+        """Stage explicit records; the final completion commits state and result together."""
+        return self._write_payload(identity, _STATE_KIND, Shareable({"records": records}))
+
+    def read_state(self, identity: TaskAttemptIdentity, reference: ArtifactReference) -> dict:
+        if not isinstance(reference, ArtifactReference) or reference.kind != _STATE_KIND:
+            raise ValueError("state must be a state artifact reference")
+        records = self._read_payload(identity, reference).get("records")
+        if not isinstance(records, dict):
+            raise ValueError("state artifact must contain named records")
+        return records
 
     def _write_result_wait_marker(self, identity, name):
         _write_json_exclusive(
@@ -379,6 +407,8 @@ class FileTaskArtifactStore:
         started_at: Optional[float] = None,
         completed_at: Optional[float] = None,
         diagnostics: Optional[Mapping[str, Any]] = None,
+        state: Optional[ArtifactReference] = None,
+        state_revision: int = 0,
     ) -> TaskCompletion:
         """Install completion only after application code and finalization finish."""
         if not isinstance(reference, ArtifactReference) or reference.kind != _RESULT_KIND:
@@ -392,6 +422,8 @@ class FileTaskArtifactStore:
             started_at=now if started_at is None else started_at,
             completed_at=now if completed_at is None else completed_at,
             diagnostics={} if diagnostics is None else diagnostics,
+            state=state,
+            state_revision=state_revision,
         )
         try:
             _write_json_exclusive(self.attempt_dir(identity), "completion.json", completion.to_dict())
@@ -466,6 +498,7 @@ class FileTaskArtifactStore:
             "script_result.fobs",
             "result.fobs",
             "analytics.fobs",
+            "state.fobs",
         ):
             path = os.path.join(directory, name)
             try:

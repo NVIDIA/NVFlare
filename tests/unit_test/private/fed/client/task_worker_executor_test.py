@@ -21,14 +21,16 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_execution import TaskArtifactCleanup
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -41,6 +43,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
+from nvflare.private.fed.task_worker.state import FileTaskStateStore
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 _PROBE_MODULE = """
@@ -70,6 +73,21 @@ class SlowExecutor(Executor):
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         time.sleep(30)
         return Shareable()
+
+
+class StatefulExecutor(Executor):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        from nvflare.apis.task_state import get_task_state
+        state = get_task_state(fl_ctx)
+        state['counter'] = state.get('counter', 0) + 1
+        return Shareable({'counter': state['counter']})
+
+    def handle_event(self, event_type, fl_ctx):
+        from nvflare.apis.event_type import EventType
+        from nvflare.apis.task_state import get_task_state
+        if event_type == EventType.END_RUN:
+            state = get_task_state(fl_ctx)
+            state['counter'] = state['counter'] + 100
 """
 
 
@@ -101,6 +119,7 @@ def _context(workspace, task_id="task-1"):
     fl_ctx = manager.new_context()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=True)
     fl_ctx.set_prop(FLContextKey.TASK_ID, task_id, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"{task_id}-attempt", private=True, sticky=False)
     fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
     return fl_ctx
 
@@ -170,7 +189,8 @@ while flare.is_running():
 
     def record(comp, dxo, ctx, event_type, fire_fed_event):
         assert comp is executor
-        assert executor._active_handle.poll().settled
+        assert executor._supervisor._active_handle is None
+        assert _diagnostics(workspace)[-1]["event"] == "settled"
         assert event_type == "analytix_log_stats"
         assert fire_fed_event is False
         emitted.append(dxo.data)
@@ -518,7 +538,7 @@ def test_diagnostic_write_failure_cancels_launched_worker(tmp_path, monkeypatch)
         raise OSError("disk")
 
     monkeypatch.setattr(launcher, "launch_task", capture_handle)
-    monkeypatch.setattr(executor, "_append_diagnostic", fail_diagnostic)
+    monkeypatch.setattr(executor._supervisor, "_append_diagnostic", fail_diagnostic)
 
     with pytest.raises(OSError, match="disk"):
         executor.execute("train", Shareable(), _context(workspace), Signal())
@@ -526,7 +546,7 @@ def test_diagnostic_write_failure_cancels_launched_worker(tmp_path, monkeypatch)
     assert len(handles) == 1
     assert handles[0].poll().settled
     assert handles[0].poll().cancel_requested
-    assert executor._active_handle is None
+    assert executor._supervisor._active_handle is None
 
 
 @pytest.mark.parametrize("executor, components", [(None, []), ({}, {}), ({}, [None])])
@@ -539,15 +559,15 @@ def test_supervisor_rejects_invalid_launcher_and_halts_after_cancellation_failur
     executor = _executor()
     with pytest.raises(TypeError, match="TaskLauncherSpec"):
         executor.set_task_launcher(object())
-    executor._active_handle = Mock(cancel=Mock(side_effect=RuntimeError("cannot settle")))
+    executor._supervisor._active_handle = Mock(cancel=Mock(side_effect=RuntimeError("cannot settle")))
     with pytest.raises(RuntimeError, match="cannot settle"):
         executor.handle_event(EventType.ABORT_TASK, None)
-    assert executor._stopping
-    executor._active_handle = None
+    assert executor._supervisor._stopping
+    executor._supervisor._active_handle = None
     executor.handle_event(EventType.START_RUN, None)
-    assert not executor._stopping
+    assert not executor._supervisor._stopping
     executor.handle_event(EventType.END_RUN, None)
-    assert executor._stopping
+    assert executor._supervisor._stopping
 
 
 def test_supervisor_rejects_invalid_or_concurrent_assignment_before_launch(tmp_path):
@@ -555,12 +575,12 @@ def test_supervisor_rejects_invalid_or_concurrent_assignment_before_launch(tmp_p
     fl_ctx = _context(_workspace(tmp_path))
     with pytest.raises(TypeError, match="Shareable"):
         executor.execute("train", {}, fl_ctx, Signal())
-    executor._execution_lock.acquire()
+    executor._supervisor._execution_lock.acquire()
     try:
         with pytest.raises(RuntimeError, match="active task"):
             executor.execute("train", Shareable(), fl_ctx, Signal())
     finally:
-        executor._execution_lock.release()
+        executor._supervisor._execution_lock.release()
     fl_ctx.set_prop(FLContextKey.TASK_ID, None, private=True, sticky=False)
     with pytest.raises(RuntimeError, match="current task ID"):
         executor.execute("train", Shareable(), fl_ctx, Signal())
@@ -608,7 +628,7 @@ def test_supervisor_cancels_when_terminal_worker_fails_to_settle_before_timeout(
     with pytest.raises(RuntimeError, match="timed out"):
         executor.execute("train", Shareable(), fl_ctx, Signal())
     handle.cancel.assert_called_once()
-    assert executor._active_handle is None
+    assert executor._supervisor._active_handle is None
 
 
 @pytest.mark.parametrize("failure", ["unsettled", "signal", "pid", "duplicate"])
@@ -622,7 +642,8 @@ def test_supervisor_rejects_invalid_completion_or_unsettled_execution(tmp_path, 
     if failure == "pid":
         handle.process_group_id = 456
     elif failure == "duplicate":
-        executor._pending_publication["task-1"] = "earlier result"
+        identity = executor._attempt_identity("train", fl_ctx)
+        executor._supervisor._pending_publication[identity] = "earlier result"
     expected = {
         "unsettled": "did not settle",
         "signal": "termination signal",
@@ -633,8 +654,8 @@ def test_supervisor_rejects_invalid_completion_or_unsettled_execution(tmp_path, 
         executor.execute("train", Shareable(), fl_ctx, Signal())
     if failure == "unsettled":
         handle.cancel.assert_called_once()
-        assert executor._stopping
-        assert executor._active_handle is handle
+        assert executor._supervisor._stopping
+        assert executor._supervisor._active_handle is handle
 
 
 @pytest.mark.parametrize("failure", ["cancel", "poll"])
@@ -642,7 +663,7 @@ def test_supervisor_keeps_runtime_stopped_if_cleanup_cannot_confirm_settlement(t
     executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
     panic = Mock()
     monkeypatch.setattr(executor, "system_panic", panic)
-    monkeypatch.setattr(executor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
+    monkeypatch.setattr(executor._supervisor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
     if failure == "cancel":
         handle.poll.return_value = TaskExecutionStatus(TaskExecutionPhase.RUNNING)
         handle.cancel.side_effect = RuntimeError("cleanup failed")
@@ -650,8 +671,8 @@ def test_supervisor_keeps_runtime_stopped_if_cleanup_cannot_confirm_settlement(t
         handle.poll.side_effect = RuntimeError("status unavailable")
     with pytest.raises(RuntimeError, match="cleanup failed|status unavailable"):
         executor.execute("train", Shareable(), fl_ctx, Signal())
-    assert executor._stopping
-    assert executor._active_handle is handle
+    assert executor._supervisor._stopping
+    assert executor._supervisor._active_handle is handle
     assert panic.call_count >= 1
 
 
@@ -659,16 +680,16 @@ def test_local_abort_during_launch_is_latched_and_returns_task_aborted(tmp_path,
     executor, fl_ctx, handle = _fake_execution(tmp_path, monkeypatch)
 
     def abort_during_launch(_request):
-        assert executor._active_handle is None
+        assert executor._supervisor._active_handle is None
         executor.handle_event(EventType.ABORT_TASK, fl_ctx)
         return handle
 
     monkeypatch.setattr(executor._get_task_launcher(), "launch_task", abort_during_launch)
     assert executor.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.TASK_ABORTED
     handle.cancel.assert_called_once()
-    assert executor._active_handle is None
-    assert executor._active_abort_signal is None
-    assert not executor._pending_publication
+    assert executor._supervisor._active_handle is None
+    assert executor._supervisor._active_abort_signal is None
+    assert not executor._supervisor._pending_publication
 
 
 def test_framework_secure_logging_policy_is_forwarded_without_site_opt_in(monkeypatch):
@@ -721,7 +742,7 @@ def test_publication_cleanup_failures_preserve_evidence_and_are_logged(tmp_path,
     monkeypatch.setattr(FileTaskArtifactStore, "release_payloads", release)
     log = Mock()
     if failure == "diagnostics":
-        monkeypatch.setattr(executor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
+        monkeypatch.setattr(executor._supervisor, "_append_diagnostic", Mock(side_effect=OSError("disk failed")))
         monkeypatch.setattr(executor, "log_error", log)
     else:
         monkeypatch.setattr(executor, "log_warning", log)
@@ -736,7 +757,7 @@ def test_publication_cleanup_failures_preserve_evidence_and_are_logged(tmp_path,
 def test_site_cleanup_policy_controls_payloads_until_and_after_job_end(tmp_path, monkeypatch, accepted, policy):
     executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch, artifact_cleanup=policy)
     executor.execute("train", Shareable(), fl_ctx, Signal())
-    identity, store = next(iter(executor._retained_attempts.values()))
+    identity, store = next(iter(executor._supervisor._retained_attempts.values()))
     completion = store.commit_result(identity, Shareable({"result": 1}))
     result_path = os.path.join(store.attempt_dir(identity), "result.fobs")
     input_path = os.path.join(store.attempt_dir(identity), "input.fobs")
@@ -756,17 +777,17 @@ def test_site_cleanup_policy_controls_payloads_until_and_after_job_end(tmp_path,
 def test_job_cleanup_is_deferred_while_execution_gate_is_held_and_preserves_unowned_attempts(tmp_path, monkeypatch):
     executor, fl_ctx, _handle = _fake_execution(tmp_path, monkeypatch)
     executor.execute("train", Shareable(), fl_ctx, Signal())
-    identity, store = next(iter(executor._retained_attempts.values()))
+    identity, store = next(iter(executor._supervisor._retained_attempts.values()))
     other = type(identity)("job-1", "site-1", "other-task", "train", "other-attempt")
     store.create_attempt(other)
     store.write_input(other, Shareable())
-    executor._execution_lock.acquire()
+    executor._supervisor._execution_lock.acquire()
     try:
         executor.handle_event(EventType.END_RUN, fl_ctx)
         assert os.path.exists(os.path.join(store.attempt_dir(identity), "input.fobs"))
     finally:
-        executor._execution_lock.release()
-    executor._cleanup_job_payloads(fl_ctx)
+        executor._supervisor._execution_lock.release()
+    executor._supervisor.cleanup_job_payloads()
     assert not os.path.exists(os.path.join(store.attempt_dir(identity), "input.fobs"))
     assert os.path.exists(os.path.join(store.attempt_dir(other), "input.fobs"))
 
@@ -787,14 +808,14 @@ def test_execution_finally_completes_deferred_job_cleanup_after_cancel_settles(t
 
     def end_job_while_launching(_request):
         executor.handle_event(EventType.END_RUN, fl_ctx)
-        assert executor._retained_attempts  # Execution owns the read/cleanup gate.
+        assert executor._supervisor._retained_attempts  # Execution owns the read/cleanup gate.
         return handle
 
     monkeypatch.setattr(executor._get_task_launcher(), "launch_task", end_job_while_launching)
     assert executor.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.TASK_ABORTED
     handle.cancel.assert_called_once()
-    assert executor._active_handle is None
-    assert not executor._retained_attempts
+    assert executor._supervisor._active_handle is None
+    assert not executor._supervisor._retained_attempts
 
 
 def test_job_cleanup_failures_are_logged_and_remain_retryable(tmp_path, monkeypatch):
@@ -806,10 +827,10 @@ def test_job_cleanup_failures_are_logged_and_remain_retryable(tmp_path, monkeypa
     monkeypatch.setattr(executor, "log_warning", log)
     executor.handle_event(EventType.END_RUN, fl_ctx)
     log.assert_called_once()
-    assert executor._retained_attempts
+    assert executor._supervisor._retained_attempts
     release.side_effect = None
     executor.handle_event(EventType.END_RUN, fl_ctx)
-    assert not executor._retained_attempts
+    assert not executor._supervisor._retained_attempts
 
 
 def test_supervisor_rejects_invalid_cleanup_policy_or_reconfiguration():
@@ -818,3 +839,172 @@ def test_supervisor_rejects_invalid_cleanup_policy_or_reconfiguration():
         executor.set_task_launcher(executor._get_task_launcher(), artifact_cleanup="task")
     with pytest.raises(RuntimeError, match="already been configured"):
         executor.set_task_launcher(executor._get_task_launcher(), artifact_cleanup=TaskArtifactCleanup.RETAIN)
+
+
+@pytest.mark.parametrize("attempt_id", [None, "", 42])
+def test_client_adapter_requires_authority_attempt_identity_before_staging(tmp_path, attempt_id):
+    workspace = _workspace(tmp_path)
+    executor = _executor()
+    fl_ctx = _context(workspace)
+    fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, attempt_id, private=True, sticky=False)
+    with pytest.raises(RuntimeError, match="server-issued task attempt ID"):
+        executor.execute("train", Shareable(), fl_ctx, Signal())
+    assert not os.path.exists(executor._runtime_paths(fl_ctx)[0])
+
+
+def test_client_adapter_never_applies_stale_publication_facts_to_another_attempt(tmp_path, monkeypatch):
+    executor, first_context, _ = _fake_execution(tmp_path, monkeypatch, artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
+    workspace = first_context.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    executor.execute("train", Shareable(), first_context, Signal())
+    second_context = _context(workspace)
+    second_context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "newer-attempt", private=True, sticky=False)
+    executor.execute("train", Shareable(), second_context, Signal())
+    identities = set(executor._supervisor._pending_publication)
+    assert {identity.attempt_id for identity in identities} == {"task-1-attempt", "newer-attempt"}
+    release = Mock()
+    monkeypatch.setattr(FileTaskArtifactStore, "release_payloads", release)
+    first_context.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    first_context.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True)
+    first_context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "newer-attempt", private=True, sticky=False)
+
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, first_context)
+
+    release.assert_not_called()
+    assert set(executor._supervisor._pending_publication) == identities
+    first_context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "task-1-attempt", private=True, sticky=False)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, first_context)
+    assert {identity.attempt_id for identity in executor._supervisor._pending_publication} == {"newer-attempt"}
+    release.assert_called_once()
+
+
+def test_client_adapter_carries_declared_state_and_captures_finalizers_across_fresh_workers(tmp_path):
+    workspace = _workspace(tmp_path)
+    executor = _executor("StatefulExecutor", state_names=("counter",), artifact_cleanup=TaskArtifactCleanup.ACCEPTED)
+    first_context = _context(workspace)
+    first_result = executor.execute("train", Shareable(), first_context, Signal())
+    assert first_result["counter"] == 1
+    state_root = os.path.join(executor._runtime_paths(first_context)[0], "state")
+    state_store = FileTaskStateStore(state_root, ("counter",))
+    assert state_store.snapshot() == (0, {})
+    first_context.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    first_context.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, first_context)
+    assert state_store.snapshot() == (1, {"counter": {"encoding": "json", "value": 101}})
+
+    second_context = _context(workspace, "task-2")
+    second_result = executor.execute("train", Shareable(), second_context, Signal())
+    assert second_result["counter"] == 102
+    second_context.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    second_context.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, second_context)
+    assert state_store.snapshot() == (2, {"counter": {"encoding": "json", "value": 202}})
+    executor.handle_event(EventType.END_RUN, second_context)
+    assert os.path.exists(state_store.path)
+
+
+def test_client_adapter_panics_and_retains_candidate_if_admitted_state_promotion_fails(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    executor = _executor("StatefulExecutor", state_names=("counter",))
+    fl_ctx = _context(workspace)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    monkeypatch.setattr(FileTaskStateStore, "commit", Mock(side_effect=OSError("state promotion failed")))
+    panic = Mock()
+    monkeypatch.setattr(executor, "system_panic", panic)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True)
+
+    with pytest.raises(OSError, match="state promotion failed"):
+        executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+
+    panic.assert_called_once()
+    assert "state promotion failed" in panic.call_args.args[0]
+    assert executor._supervisor._stopping
+    assert executor._supervisor._pending_publication
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    assert list((tmp_path / "workspace").rglob("state.fobs"))
+
+
+@pytest.mark.parametrize("names", [None, "PATH", [123], ["INVALID-NAME"], [""]])
+def test_client_adapter_rejects_invalid_environment_policy_shapes(names):
+    with pytest.raises(ValueError, match="variable name"):
+        TaskWorkerExecutor.validate_environment_variables(names)
+
+
+def test_client_adapter_pretriggered_abort_does_not_prepare_worker_or_state(tmp_path):
+    workspace = _workspace(tmp_path)
+    executor = _executor(state_names=("counter",))
+    abort_signal = Signal()
+    abort_signal.trigger(True)
+    assert (
+        executor.execute("train", Shareable(), _context(workspace), abort_signal).get_return_code()
+        == ReturnCode.TASK_ABORTED
+    )
+    assert not os.path.exists(executor._runtime_paths(_context(workspace))[0])
+
+
+@pytest.mark.parametrize("federated", [True, False])
+def test_client_adapter_replays_captured_analytics_with_original_dispatch_scope(tmp_path, monkeypatch, federated):
+    executor, fl_ctx, _ = _fake_execution(tmp_path, monkeypatch)
+    dxo = create_analytic_dxo("loss", 0.5, AnalyticsDataType.SCALAR)
+    record = {"event_type": ANALYTIC_EVENT_TYPE, "federated": federated, "data": dxo.to_shareable()}
+    monkeypatch.setattr(FileTaskArtifactStore, "read_analytics", lambda *_args: [record])
+    emit = Mock()
+    monkeypatch.setattr("nvflare.private.fed.client.task_worker_executor.send_analytic_dxo", emit)
+    assert executor.execute("train", Shareable(), fl_ctx, Signal())["result"] == 1
+    emit.assert_called_once()
+    assert emit.call_args.args[0] is executor
+    assert emit.call_args.args[1].data == dxo.data
+    assert emit.call_args.kwargs == {"event_type": ANALYTIC_EVENT_TYPE, "fire_fed_event": federated}
+
+
+@pytest.mark.parametrize(
+    "record", [{"event_type": "not-analytics", "federated": False}, {"event_type": ANALYTIC_EVENT_TYPE, "federated": 1}]
+)
+def test_invalid_captured_analytics_scope_cannot_discard_successful_result(tmp_path, monkeypatch, record):
+    executor, fl_ctx, _ = _fake_execution(tmp_path, monkeypatch)
+    monkeypatch.setattr(FileTaskArtifactStore, "read_analytics", lambda *_args: [record])
+    log = Mock()
+    monkeypatch.setattr(executor, "log_error", log)
+    assert executor.execute("train", Shareable(), fl_ctx, Signal())["result"] == 1
+    log.assert_called_once()
+
+
+@pytest.mark.parametrize("effective_result", [make_reply(ReturnCode.EXECUTION_EXCEPTION), {}])
+def test_client_adapter_skips_state_promotion_for_failed_or_invalid_filtered_result(
+    tmp_path, monkeypatch, effective_result
+):
+    workspace = _workspace(tmp_path)
+    executor = _executor("StatefulExecutor", state_names=("counter",))
+    fl_ctx = _context(workspace)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    commit = Mock()
+    panic = Mock()
+    monkeypatch.setattr(FileTaskStateStore, "commit", commit)
+    monkeypatch.setattr(executor, "system_panic", panic)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, True)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT, effective_result, private=True, sticky=False)
+    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+    commit.assert_not_called()
+    panic.assert_not_called()
+    assert not executor._supervisor._stopping
+
+
+@pytest.mark.parametrize("sent,admitted", [(False, None), (True, None), (True, "true")])
+def test_client_adapter_panics_and_retains_candidate_for_ambiguous_state_admission(
+    tmp_path, monkeypatch, sent, admitted
+):
+    workspace = _workspace(tmp_path)
+    executor = _executor("StatefulExecutor", state_names=("counter",))
+    fl_ctx = _context(workspace)
+    executor.execute("train", Shareable(), fl_ctx, Signal())
+    panic = Mock()
+    monkeypatch.setattr(executor, "system_panic", panic)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, sent)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, admitted)
+    with pytest.raises(RuntimeError, match="state admission is unconfirmed"):
+        executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+    panic.assert_called_once()
+    assert executor._supervisor._stopping
+    executor.handle_event(EventType.END_RUN, fl_ctx)
+    assert list((tmp_path / "workspace").rglob("state.fobs"))
