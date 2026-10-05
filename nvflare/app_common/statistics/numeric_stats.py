@@ -28,14 +28,16 @@ logger = get_module_logger(name=__name__)
 def get_global_feature_data_types(
     client_feature_dts: Dict[str, Dict[str, List[Feature]]],
 ) -> Dict[str, Dict[str, DataType]]:
+    """Return reported feature types for every dataset without discarding earlier clients."""
     global_feature_data_types = {}
     for client_name in client_feature_dts:
         ds_features: Dict[str, List[Feature]] = client_feature_dts[client_name]
         for ds_name in ds_features:
-            global_feature_data_types[ds_name] = {}
+            if ds_name not in global_feature_data_types:
+                global_feature_data_types[ds_name] = {}
             features = ds_features[ds_name]
             for f in features:
-                if f.feature_name not in global_feature_data_types:
+                if f.feature_name not in global_feature_data_types[ds_name]:
                     global_feature_data_types[ds_name][f.feature_name] = f.data_type
 
     return global_feature_data_types
