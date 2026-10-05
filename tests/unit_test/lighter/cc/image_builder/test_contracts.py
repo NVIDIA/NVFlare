@@ -15,6 +15,7 @@
 """Security and application-neutral contracts, runnable without a guest."""
 
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -156,6 +157,25 @@ class BindingTests(unittest.TestCase):
                 os.write(fd, b"x")
             with self.assertRaises(OSError):
                 os.ftruncate(fd, 0)
+
+    def test_frozen_memfd_without_python_seal_constants(self):
+        with patch.dict(fcntl.__dict__):
+            for name in ("F_ADD_SEALS", "F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"):
+                fcntl.__dict__.pop(name, None)
+            with memory_file(b"verified header", sealed=True) as fd:
+                self.assertEqual(os.read(fd, 15), b"verified header")
+                with self.assertRaises(OSError):
+                    os.write(fd, b"x")
+                with self.assertRaises(OSError):
+                    os.ftruncate(fd, 0)
+                with self.assertRaises(OSError):
+                    os.ftruncate(fd, 16)
+
+    def test_sealing_failure_never_yields_descriptor(self):
+        with patch("cvm.common.linux.fcntl.fcntl", side_effect=OSError("sealing unavailable")):
+            with self.assertRaises(OSError):
+                with memory_file(b"verified header", sealed=True):
+                    self.fail("A sealing failure must not yield an unsealed descriptor")
 
     def test_tdx_report_and_nonce(self):
         nonce = os.urandom(64)

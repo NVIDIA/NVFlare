@@ -208,7 +208,10 @@ fields are not renamed by mode.
 fail-closed Trustee verifier policy at project scope. When constraints are
 present, their keys must be exactly the protected participants that select the
 service. The root server uses logical key `server`; clients use participant
-names. Both deployment modes receive the same validated policy.
+names. Both deployment modes receive the same validated policy. The public
+mapping must not contain `gpu_required`; provisioning derives that internal
+boolean from each participant's `gpu_tee`, making `nvidia_cc` require CPU plus
+GPU evidence and `none` require CPU-only evidence.
 
 `attestation_token_endpoint` is the token API exposed by the CoCo
 Attestation Agent inside each confidential guest. The loopback address is

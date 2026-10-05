@@ -321,6 +321,14 @@ def _validate_service(name, value, config_path):
                 minimum=1,
             )
             _number(retry.get("jitter_ratio"), f"attestation_services.{name}.retry.jitter_ratio", minimum=0, maximum=1)
+        constraints = service.get("workload_constraints")
+        if isinstance(constraints, dict) and any(
+            isinstance(pins, dict) and "gpu_required" in pins for pins in constraints.values()
+        ):
+            raise ValueError(
+                f"attestation_services.{name}.workload_constraints must not set gpu_required; "
+                "it is derived from each participant's gpu_tee"
+            )
         # Reuse the runtime verifier's strict key and policy validation so the
         # project fails before it emits any signed startup kits.
         CoCoAuthorizer(

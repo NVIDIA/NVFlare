@@ -16,9 +16,15 @@ and authenticate public certificate/key distribution.
 Registry write access permits delivery disruption, deletion and replacement
 attempts. Retain independent digest, signature and release checks. Exact binding
 of the authorized image digest to the image actually decrypted and mounted
-remains an unresolved coverage limitation, including same-key/same-repository
-substitution. Do not describe these checks as universal image-substitution
-rejection.
+remains an unresolved coverage limitation. Each independently provisioned
+release has its own encryption key and exact resource authorization: one
+release's key cannot decrypt another release's encryption material, and the
+other key must be denied under the first release's InitData. Repository-scoped
+signature acceptance alone does not bypass those checks. Any replacement would
+still need an accepted signature, authorized decryption resources, and all
+guest-policy checks. A successful substitution has not been demonstrated;
+retain the exact-digest assurance limitation without treating it as a proven
+per-release key bypass.
 
 ## Approve platform references and workload releases separately
 

@@ -1,0 +1,21 @@
+# GPU appraisal is derived from gpu_tee; do not duplicate gpu_required in the
+# shared Trustee workload constraints.
+schema_version: 1
+cc_deployment_mode: coco
+cpu_tee: intel_tdx
+gpu_tee: none
+attestation:
+  service: trustee
+class_allow_list:
+  - tdx_acceptance.AcceptanceController
+  - tdx_acceptance.AcceptanceExecutor
+workload:
+  source:
+    type: docker_build
+    context: ./site-1
+    dockerfile: Dockerfile
+coco:
+  release_name: site-1-v1
+  registry: coco_workloads
+  registry_repository: workloads/site-1
+  platform_config_file: ../../admin-tdx-cpu/platform.env

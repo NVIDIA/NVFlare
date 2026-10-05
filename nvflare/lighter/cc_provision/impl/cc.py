@@ -18,13 +18,12 @@ import json
 import os
 from dataclasses import replace
 from pathlib import Path
-from types import MappingProxyType
 
 from nvflare.apis.fl_constant import SiteType
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
 from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
-from nvflare.lighter.cc_provision.deployment import CCDeploymentMode
+from nvflare.lighter.cc_provision.deployment import GPUTEE, CCDeploymentMode, immutable_data, plain_data
 from nvflare.lighter.cc_provision.impl.azure_cc import AzureCCDeployment
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.coco import CoCoDeployment
@@ -116,20 +115,29 @@ class CCBuilder(Builder):
         }
         if len(trustee_services) > 1:
             raise ValueError("Bare-metal CVM and CoCo participants must resolve the same named Trustee service")
+        derived_constraints = {}
         for service_name in trustee_services:
             service = self.project_config["attestation_services"][service_name]
             constraints = service.get("workload_constraints")
+            participants = [
+                participant
+                for participant in selected
+                if normalized[participant.name]["attestation_service"].name == service_name
+            ]
+            expected_sites = {_site_name(participant) for participant in participants}
             if constraints is not None:
-                expected_sites = {
-                    _site_name(participant)
-                    for participant in selected
-                    if normalized[participant.name]["attestation_service"].name == service_name
-                }
                 if set(constraints) != expected_sites:
                     raise ValueError(
                         f"attestation_services.{service_name}.workload_constraints must contain exactly "
                         f"the protected sites: {', '.join(sorted(expected_sites))}"
                     )
+            derived_constraints[service_name] = {
+                _site_name(participant): {
+                    **plain_data((constraints or {}).get(_site_name(participant), {})),
+                    "gpu_required": normalized[participant.name]["gpu_tee"] is GPUTEE.NVIDIA_CC,
+                }
+                for participant in participants
+            }
         releases = [
             value["mode_config"]["release_name"]
             for value in normalized.values()
@@ -146,11 +154,16 @@ class CCBuilder(Builder):
             # same logical server identity and project audience.
             plan = replace(
                 plan,
-                internal=MappingProxyType(
+                internal=immutable_data(
                     {
                         **plan.internal,
                         "project_name": project.name,
                         "site_name": _site_name(participant),
+                        **(
+                            {"workload_constraints": derived_constraints[plan.attestation_service.name]}
+                            if plan.attestation_service.service_type == "trustee"
+                            else {}
+                        ),
                     }
                 ),
             )

@@ -77,11 +77,7 @@ class CoCoDeployment(CCDeployment):
                 if "proof_iat_leeway_seconds" in service.values
                 else {}
             ),
-            **(
-                {"workload_constraints": plain_data(service.values["workload_constraints"])}
-                if "workload_constraints" in service.values
-                else {}
-            ),
+            "workload_constraints": plain_data(plan.internal["workload_constraints"]),
         }
         return {
             "id": "trustee_authorizer",

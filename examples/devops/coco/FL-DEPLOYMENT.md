@@ -4,11 +4,13 @@ Model owner **M** runs an FL server. Data owner **A** participates as `site-1`,
 and data owner **B** as `site-2`, each in a confidential guest on a separately
 operated, untrusted compute cluster. This guide connects the deployment roles
 to that federation; follow the linked runbooks for the installation commands.
-It is a deployment recipe, not a supplied training application or a claim that
-this complete two-site deployment has passed hardware acceptance.
+A finite mixed TDX CPU-only/SNP+GPU functional run passed on 2026-10-04;
+that test is not a supplied training application or complete security qualification.
+The [complete mixed project](provision/mixed-tdx-snp/README.md) supplies the normal
+ordinary-server/two-client configuration and a baked validation application.
 
 Choose SNP-only, SNP+GPU, TDX-only or TDX+GPU for each protected participant.
-**TDX is experimental pending acceptance on the intended hardware.** See
+Approve and validate the intended hardware independently. See
 [target validation status](RUNTIME-VARIANTS.md#support-status-and-hardware-validation). Dataset
 delivery also has a separate security gate described [below](#dataset-delivery-and-persistence).
 
@@ -174,7 +176,9 @@ complete guest rootfs integrity.
 Start from a clean, reviewed source revision and assemble the
 [complete role kits](README.md#assemble-self-contained-role-kits). Use
 [CONFIGURATION.md](CONFIGURATION.md) for private inputs and transfer boundaries.
-The snippets below adapt the complete example; they are not replacement files.
+For TDX CPU-only `site-1`, SNP+GPU `site-2`, and an ordinary server, use the
+[complete mixed example](provision/mixed-tdx-snp/README.md). The snippets below
+also show how to adapt the original single-client example.
 
 Retain the server, FL admin, builder order and packager in
 [provision/project.yaml](provision/project.yaml), set real server/admin identities,
@@ -183,11 +187,11 @@ and replace its single client with:
 ```yaml
   - name: site-1
     type: client
-    org: data-owner-a
+    org: data_owner_a
     cc_config: cc_site-1.yml
   - name: site-2
     type: client
-    org: data-owner-b
+    org: data_owner_b
     cc_config: cc_site-2.yml
 ```
 
@@ -208,6 +212,13 @@ admin kits when profiles or trust inputs differ. Mixed targets may share one
 project. Both participants select the same named Trustee service in
 `cc_project.yml`; its public key and attestation timing apply project-wide.
 Reusing approved application code does not permit sharing site identities or keys.
+Put one complete `workload_constraints` mapping in the named Trustee service:
+require `cpu_tee: tdx` for `site-1` and `cpu_tee: snp` for `site-2`. Select
+`gpu_tee: none` and `gpu_tee: nvidia_cc` in their respective participant files;
+provisioning derives the internal GPU evidence requirements. Add independently
+approved platform measurement pins when required. The generated ordinary server inherits
+these constraints, the AS public key, project audience, and required-participant
+mapping. It verifies the two clients directly and issues no CC proof itself.
 
 ## Execute the approvals and handoffs in order
 
@@ -265,8 +276,10 @@ Reusing approved application code does not permit sharing site identities or key
    ```
 
    The runner invokes admin **10 → plaintext-image approval → 20 → 25 → 30 →
-   40** per protected participant. Review generated identities, required CC
-   sites, image digest and policy before delivery. Outputs are separate signed
+   40** per protected participant. Each release uses its own decryption key;
+   the registry receives ciphertext and signatures, while the private service
+   handoff supplies keys separately to KBS. Review generated identities,
+   required CC sites, image digest and policy before delivery. Outputs are separate signed
    kits, encrypted images, release policies and handoffs. Retain all plaintext
    and recovery/build state privately.
 
@@ -295,7 +308,11 @@ Reusing approved application code does not permit sharing site identities or key
    ./70-verify-running-workload.sh site-1-v1-pod.yaml EXPECTED_SHA256
    ```
 
-   Repeat for site-2. For a protected server, authorize and launch its separate
+   Stage 50 invokes `kubectl apply -f` on the authenticated, unchanged Pod YAML;
+   stage 70 verifies the actual running workload. Each guest communicates
+   directly with the registry, Trustee and the NVFlare server; the provisioner
+   or control workstation is not a network relay. Repeat for site-2. For a
+   protected server, authorize and launch its separate
    release too. Coordinate participant startup with the required proof interval.
    From the service kit, verify each release with a window containing its launch:
 
@@ -336,7 +353,12 @@ authorization and guest boot/rootfs integrity coverage, then test recipient
 authorization before sending sensitive data. The unresolved exact-image-digest
 and rootfs coverage concerns are discussed in the
 [security architecture companion review](https://github.com/NVIDIA/NVFlare/pull/5351).
-Successful CPU/GPU appraisal or key release does not close them.
+Successful CPU/GPU appraisal or key release does not close them. The absence
+of a direct effective-image-digest check does not by itself demonstrate a
+cross-release substitution: another image encrypted with its own key cannot be
+decrypted with this release's key, and its key request must satisfy its own KBS
+policy. Treat the documented comparison gap and a demonstrated bypass as
+separate findings; use isolated fixtures to test the actual enforcement path.
 
 The current packager rejects volumes, including dataset `hostPath` and PVC
 mounts. Writable guest-local state is ephemeral; it is not a durable encrypted

@@ -25,11 +25,17 @@ storage design; its guarantees must not be imported into this CoCo deployment.
    `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_, extending the
    SNP-plus-GPU framework to all four explicit SNP/TDX CPU-only/GPU targets.
    This architecture change documents that implementation; it adds no runtime
-   support itself. **TDX remains experimental pending hardware acceptance.**
-   The recorded real-quote test was rejected because both launch and current
-   TCB were ``OutOfDate``. Encrypted NVFlare execution, attestation-gated
-   key release and peer-proof generation/verification have not passed end to
-   end on the tested TDX platform. See
+   support itself. **TDX remains experimental pending full security qualification.**
+   The September 29, 2026 real-quote test was rejected because both launch and
+   current TCB were ``OutOfDate``; that failure remains part of the record.
+   On October 4, 2026, a separate mixed functional deployment passed with an
+   ordinary trusted server, a CPU-only TDX client, and an SNP plus NVIDIA GPU
+   client. Approved Kata guests launched encrypted images, obtained release
+   resources, registered with required peer proofs, and completed a finite
+   job with both clients. The job used CPU arithmetic; GPU appraisal was
+   required for the SNP client. That result does not qualify TDX plus GPU,
+   sustained renewal, confidentiality denial tests, or the complete negative
+   test matrix. See
    :github_nvflare_link:`support status and hardware validation <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`.
    Implemented targets and passing offline tests are not hardware acceptance.
 
@@ -941,7 +947,11 @@ CPU-only release rules require exactly
 successful appraisals of both. A failed or
 missing GPU cannot silently downgrade a GPU-required release. Conversely,
 installing a GPU verifier does not make GPU evidence mandatory for every
-workload or establish a per-site GPU requirement in NVFlare's peer authorizer.
+workload. Unified provisioning derives the peer verifier's internal GPU
+requirement from each participant's ``gpu_tee``. ``nvidia_cc`` requires signed
+CPU and GPU appraisals; ``none`` requires CPU-only evidence. Operators do not
+repeat an internal ``gpu_required`` boolean in ``workload_constraints``. Peer
+verification remains separate from the release's KBS CPU/GPU requirements.
 
 Measurement coverage must be demonstrated
 -----------------------------------------
@@ -1192,14 +1202,25 @@ digest in the current implementation:
   ``signedIdentity: matchRepository``. That is not an independent allowlist of
   exactly one approved manifest digest.
 
+The provisioner creates a separate encryption key and resource path for each
+immutable release. For independently provisioned images A and B with different
+keys, A's key cannot decrypt B's encryption material. Requesting B's key while
+retaining A's InitData must fail B's exact resource authorization rule. Changing
+InitData invokes the other release's independently installed authorization;
+it does not inherit A's approval. Repository-scoped signature acceptance alone
+does not bypass these controls. Registry write access also does not supply a
+signing key or a decryption key.
+
 .. warning::
 
    Exact-image-digest authorization is an unresolved coverage limitation.
-   Another image signed by the accepted key in the permitted repository is
-   not shown to be rejected solely because its digest differs. It must still
-   satisfy decryption and all other guest checks. This is a source-review
-   finding, not a demonstrated successful substitution or key-extraction
-   attack. Add an explicit effective-image binding and a negative test before
+   A direct comparison of the effective image digest with the approved digest
+   has not been demonstrated. Any proposed replacement must still have an
+   accepted signature, be decryptable using authorized resources, and satisfy
+   every other guest check. The missing comparison is a source-review finding,
+   not a demonstrated bypass of per-release encryption or a successful
+   substitution/key-extraction attack. Add an explicit effective-image binding
+   and a negative test before
    claiming that every image-field substitution is blocked.
 
 .. list-table:: Image substitutions have different failure paths
@@ -1411,12 +1432,10 @@ against its exact vector. Unknown CPU types, unknown submodules, malformed
 claims, and failed GPU appraisal are rejected. Stripping GPU claims from an
 EAR breaks the AS signature.
 
-Default peer verification **does not require GPU evidence for a
-particular site**, nor directly compare its image digest or command. It trusts
-the configured AS signer and its accepted claims. Workload-specific key
-authorization remains KBS's job. A deployment requiring GPU attestation at the
-FL participant boundary needs an additional independently reviewed requirement;
-token-driven CPU/GPU selection alone does not establish it.
+Peer verification requires GPU evidence exactly when that protected
+participant selects ``gpu_tee: nvidia_cc`` and requires CPU-only evidence for
+``gpu_tee: none``. It does not directly compare the participant's image digest
+or command. Workload-specific key authorization remains KBS's job.
 
 ``workload_constraints`` can pin each protected site's InitData digest,
 SNP measurement, CPU TEE and TDX MRTD/RTMR values. With constraints enabled,
@@ -1544,7 +1563,7 @@ real boundary, not merely trusting an installer's preflight.
      - Each accepted state still needs independent approval; event-log consistency alone is not approval.
    * - Omit GPU or submit failed GPU evidence
      - GPU release policy requires exactly CPU+GPU and both exact vectors; present failed GPU proofs are rejected.
-     - The authorizer also accepts valid CPU-only proofs; per-site GPU requirements need additional controls.
+     - Select ``gpu_tee: nvidia_cc`` for the participant. Provisioning derives the bound peer-verifier requirement; ``gpu_tee: none`` requires CPU-only evidence.
    * - Request another workload's decryption key
      - KBS checks the actual exact path plus that release's platform/workload constraints on every request.
      - Knowing a path or passing CPU appraisal grants no store-wide access. A permissive global policy defeats isolation.

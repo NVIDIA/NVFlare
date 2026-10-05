@@ -1,0 +1,21 @@
+# gpu_tee: nvidia_cc requires a signed GPU appraisal at the FL peer boundary
+# and selects the NVIDIA confidential-GPU Kata runtime.
+schema_version: 1
+cc_deployment_mode: coco
+cpu_tee: amd_sev_snp
+gpu_tee: nvidia_cc
+attestation:
+  service: trustee
+class_allow_list:
+  - tdx_acceptance.AcceptanceController
+  - tdx_acceptance.AcceptanceExecutor
+workload:
+  source:
+    type: docker_build
+    context: ./site-2
+    dockerfile: Dockerfile
+coco:
+  release_name: site-2-v1
+  registry: coco_workloads
+  registry_repository: workloads/site-2
+  platform_config_file: ../../admin-snp-gpu/platform.env

@@ -278,13 +278,23 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
     plan = builder.plans["site-1"]
     args = builder.deployments[plan.mode].authorizer(plan, issuer=False)["args"]
     assert args["proof_iat_leeway_seconds"] == 90
-    assert args["workload_constraints"] == {"site-1": {"cpu_tee": "snp", "init_data": "a" * 64}}
+    assert args["workload_constraints"] == {"site-1": {"cpu_tee": "snp", "init_data": "a" * 64, "gpu_required": True}}
+    with pytest.raises(TypeError):
+        builder.plans["site-1"].internal["workload_constraints"]["site-1"]["gpu_required"] = False
 
     config = yaml.safe_load((tmp_path / "cc_project.yml").read_text())
     config["attestation_services"]["trustee"]["workload_constraints"]["site-1"]["init_data"] = "not-a-digest"
     _write(tmp_path / "cc_project.yml", config)
     with pytest.raises(ValueError, match="Invalid workload init_data pin"):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "invalid"), project))
+
+    config["attestation_services"]["trustee"]["workload_constraints"]["site-1"] = {
+        "cpu_tee": "snp",
+        "gpu_required": False,
+    }
+    _write(tmp_path / "cc_project.yml", config)
+    with pytest.raises(ValueError, match="derived from each participant's gpu_tee"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
 
 
 def test_cc_builder_reserves_logical_server_identity(tmp_path):

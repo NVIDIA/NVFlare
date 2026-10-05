@@ -11,6 +11,12 @@ the workload source, TEE selection, release name, repository path, and approved
 platform profile. To protect the server, uncomment its `cc_config` in
 [`project.yaml`](project.yaml).
 
+For an ordinary server with a TDX CPU-only client and an SNP plus NVIDIA
+confidential-GPU client, use the complete
+[mixed TDX/SNP project](mixed-tdx-snp/README.md). Its shared Trustee policy
+contains CPU and measurement pins; each participant's `gpu_tee` determines
+whether the generated peer verifier requires a signed GPU appraisal.
+
 Before provisioning, prepare the admin and Trustee inputs described by the
 parent CoCo runbooks, replace all placeholder paths and endpoints, and install
 the authenticated Trustee AS signing key as `trustee-as-public.pem`. Then run

@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping, Tuple
 
 from nvflare.lighter.ctx import ProvisionContext
@@ -53,6 +54,16 @@ def plain_data(value):
         return {key: plain_data(item) for key, item in value.items()}
     if isinstance(value, tuple):
         return [plain_data(item) for item in value]
+    return value
+
+
+def immutable_data(value):
+    """Recursively freeze normalized configuration data."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: immutable_data(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(immutable_data(item) for item in value)
     return value
 
 

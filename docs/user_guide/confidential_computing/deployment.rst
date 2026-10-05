@@ -118,7 +118,10 @@ If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts
 0 through 180 and defaults to 180. Constraint values pin signed Trustee EAR
-claims; obtain them from authenticated reference measurements.
+claims; obtain them from authenticated reference measurements. Do not set
+``gpu_required`` in this mapping. Provisioning derives that internal signed-claim
+constraint from each participant's ``gpu_tee``: ``nvidia_cc`` requires CPU plus
+GPU evidence and ``none`` requires CPU-only evidence.
 
 Common participant fields
 -------------------------
@@ -136,7 +139,8 @@ Every ``cc_config`` starts with these fields:
    class_allow_list: []
 
 ``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. ``gpu_tee`` is ``none`` or
-``nvidia_cc``. An empty ``class_allow_list`` adds no custom classes; it never
+``nvidia_cc`` and also controls the peer attestation GPU requirement. An empty
+``class_allow_list`` adds no custom classes; it never
 means unrestricted. Entries must be complete reviewed Python class paths.
 
 Workload sources form a closed enum:

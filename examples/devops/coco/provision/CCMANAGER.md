@@ -535,20 +535,20 @@ CoCo's implementation enforces its bounded request/retry budget explicitly.
 Successful peer verification is not workload authorization or image-key release;
 the separate KBS release policy authorizes access to the workload's resources.
 
-The authorizer deliberately accepts SNP or TDX, with either CPU-only or
-CPU-plus-GPU evidence by default. An explicit `cpu_tee` constraint can restrict
-a site to one CPU TEE; the authorizer does not enforce a per-site GPU requirement.
-CPU-only evidence means no GPU
-was attested in that token, not that the machine has no GPU. `generate()` applies
-the same checks to the EAR returned by the guest API; it neither requests a
-CPU-only mode nor strips GPU claims (which would invalidate the AS signature).
+The authorizer accepts SNP or TDX. Unified provisioning also derives each
+site's internal GPU constraint from its participant `gpu_tee`: `nvidia_cc`
+requires signed CPU plus GPU appraisals and `none` requires CPU-only evidence.
+Do not add `gpu_required` to project workload constraints. CPU-only evidence
+means no GPU was attested in that token, not that the machine has no GPU.
+`generate()` applies the same checks to the EAR returned by the guest API; it
+neither requests a CPU-only mode nor strips GPU claims, which would invalidate
+the AS signature.
 
 Core provisioning and the supplied deployment scripts accept all four combinations.
 Each release's KBS policy selects the approved CPU TEE and requires either CPU
 alone or CPU plus GPU; accepting a CPU-only NVFlare proof cannot satisfy a GPU
-release's KBS policy. Deployments
-requiring GPU attestation at the FL participant boundary also need an independent
-GPU requirement; the token-driven authorizer alone does not provide one.
+release's KBS policy. The derived peer constraint and the KBS release rule must
+both match the intended CPU/GPU profile.
 
 CCManager binds a protected client's registration envelope to `CLIENT_NAME`,
 the same asserted name that ClientManager must authenticate against its

@@ -631,8 +631,8 @@ def test_typed_workload_constraints_reach_protected_and_ordinary_verifiers(tmp_p
     project, configs = setup_server_project(tmp_path)
     configs[project.get_server().name].update(cc_cpu_mechanism="intel_tdx", cc_gpu="none")
     constraints = {
-        "server": {"cpu_tee": "tdx", "tdx_mr_td": "a" * 96, "tdx_rtmr_0": "b" * 96},
-        "site-1": {"cpu_tee": "snp", "measurement": "c" * 96},
+        "server": {"cpu_tee": "tdx", "tdx_mr_td": "a" * 96, "tdx_rtmr_0": "b" * 96, "gpu_required": False},
+        "site-1": {"cpu_tee": "snp", "measurement": "c" * 96, "gpu_required": True},
     }
     for participant in project.get_all_participants():
         if participant.name in configs:
@@ -664,6 +664,8 @@ def test_typed_workload_constraints_reach_protected_and_ordinary_verifiers(tmp_p
         "site-1",
         {"site-1": {}},
         {"site-1": {"cpu_tee": "sgx"}},
+        {"site-1": {"gpu_required": None}},
+        {"site-1": {"gpu_required": "true"}},
         {"site-1": {"tdx_mr_td": "short"}},
         {"site-1": {"cpu_tee": "tdx", "measurement": "a" * 96}},
         {"site-1": {"cpu_tee": "snp", "tdx_mr_td": "a" * 96}},
@@ -758,6 +760,10 @@ def test_runtime_selection_rejects_invalid_types_and_implicit_choices(tmp_path, 
 def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_path):
     _, base_config = setup_project(tmp_path)
     participants = [{"type": "server", "name": "server.example.com", "org": "example"}]
+    constraints = {
+        f"site-{i}": {"cpu_tee": "snp" if cpu == "amd_sev_snp" else "tdx", "gpu_required": gpu == "nvidia"}
+        for i, (cpu, gpu, _) in enumerate(RUNTIME_CASES, 1)
+    }
     for i, (cpu, gpu, _) in enumerate(RUNTIME_CASES, 1):
         config = copy.deepcopy(base_config)
         config.update(
@@ -766,6 +772,7 @@ def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_pa
             release_name=f"site-{i}-v1",
             registry_repository=f"workloads/site-{i}",
         )
+        config["cc_issuers"][0]["args"]["workload_constraints"] = copy.deepcopy(constraints)
         config_file = f"cc_site-{i}.yml"
         (tmp_path / config_file).write_text(yaml.safe_dump(config))
         participants.append({"type": "client", "name": f"site-{i}", "org": "example", "cc_config": config_file})
@@ -792,6 +799,7 @@ def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_pa
     result = Path(ctx.get_result_location())
     server_local = result / "server.example.com/local"
     server_auth = json.loads((server_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
+    assert server_auth["workload_constraints"] == constraints
     manager = json.loads((server_local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
     assert manager["cc_enabled_sites"] == [f"site-{i}" for i in range(1, 5)]
     for i, (_, gpu, runtime) in enumerate(RUNTIME_CASES, 1):
@@ -809,6 +817,7 @@ def test_mixed_platform_clients_share_verifier_and_keep_separate_handoffs(tmp_pa
         assert client_auth["site_name"] == f"site-{i}"
         assert client_auth["trustee_public_key"] == server_auth["trustee_public_key"]
         assert client_auth["audience"] == server_auth["audience"]
+        assert client_auth["workload_constraints"] == constraints
 
 
 @pytest.mark.parametrize("cpu,gpu,runtime", RUNTIME_CASES)
