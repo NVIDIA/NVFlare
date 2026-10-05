@@ -84,6 +84,127 @@ class TestMassAssignment:
         assert resp.json["user"]["approval_state"] == 0
 
 
+class TestAdminRoleAssignment:
+    """Only ordinary roles may be self-assigned; other roles require the project administrator."""
+
+    @pytest.mark.parametrize("role", ["org_admin", "project_admin", "custom_admin"])
+    def test_public_registration_cannot_request_admin_role(self, client, role):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": f"register-{role}@test.com", "password": "p", "name": "x", "role": role},
+        )
+
+        assert resp.status_code == 409
+
+    def test_public_registration_rejects_non_string_role(self, client):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "malformed-role@test.com", "password": "p", "name": "x", "role": {"name": "member"}},
+        )
+
+        assert resp.status_code == 409
+
+    @pytest.mark.parametrize("token", ["", "undefined", "null"])
+    def test_public_registration_accepts_malformed_bearer_token(self, client, token):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": f"malformed-token-{token}@test.com", "password": "p", "name": "x", "role": "member"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json["user"]["role"] == "member"
+
+    def test_malformed_bearer_token_cannot_request_admin_role(self, client):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "malformed-token-admin@test.com", "password": "p", "name": "x", "role": "org_admin"},
+            headers={"Authorization": "Bearer undefined"},
+        )
+
+        assert resp.status_code == 409
+
+    @pytest.mark.parametrize("role", ["org_admin", "project_admin", "custom_admin"])
+    def test_user_cannot_self_assign_admin_role(self, client, auth_header, role):
+        email = f"self-assign-{role}@test.com"
+        resp = client.post(NS + "/api/v1/users", json={"email": email, "password": "p", "name": "x"})
+        assert resp.status_code == 201
+        user_id = resp.json["user"]["id"]
+
+        resp = client.post(NS + "/api/v1/login", json={"email": email, "password": "p"})
+        assert resp.status_code == 200
+        token = resp.json["access_token"]
+
+        resp = client.patch(
+            NS + f"/api/v1/users/{user_id}",
+            json={"organization": "target-org", "role": role},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json["status"] == "error"
+
+        resp = client.get(NS + f"/api/v1/users/{user_id}", headers=auth_header)
+        assert resp.json["user"]["role"] == ""
+        assert resp.json["user"]["organization"] == ""
+
+    @pytest.mark.parametrize("role", ["member", "lead"])
+    def test_user_can_self_assign_ordinary_role(self, client, role):
+        email = f"self-assign-{role}@test.com"
+        resp = client.post(NS + "/api/v1/users", json={"email": email, "password": "p", "name": "x"})
+        assert resp.status_code == 201
+        user_id = resp.json["user"]["id"]
+
+        resp = client.post(NS + "/api/v1/login", json={"email": email, "password": "p"})
+        assert resp.status_code == 200
+
+        resp = client.patch(
+            NS + f"/api/v1/users/{user_id}",
+            json={"role": role},
+            headers={"Authorization": f"Bearer {resp.json['access_token']}"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json["status"] == "ok"
+        assert resp.json["user"]["role"] == role
+
+    def test_project_admin_can_assign_org_admin_role(self, client, auth_header):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "admin-assigned@test.com", "password": "p", "name": "x"},
+        )
+        assert resp.status_code == 201
+        user_id = resp.json["user"]["id"]
+
+        resp = client.patch(
+            NS + f"/api/v1/users/{user_id}",
+            json={"organization": "approved-org", "role": "org_admin"},
+            headers=auth_header,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json["user"]["role"] == "org_admin"
+        assert resp.json["user"]["organization"] == "approved-org"
+
+    def test_unapproved_project_admin_cannot_create_admin_role(self, client, auth_header):
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "pending-admin@test.com", "password": "p", "name": "x", "role": "project_admin"},
+            headers=auth_header,
+        )
+        assert resp.status_code == 201
+
+        resp = client.post(NS + "/api/v1/login", json={"email": "pending-admin@test.com", "password": "p"})
+        assert resp.status_code == 200
+
+        resp = client.post(
+            NS + "/api/v1/users",
+            json={"email": "pending-created@test.com", "password": "p", "name": "x", "role": "org_admin"},
+            headers={"Authorization": f"Bearer {resp.json['access_token']}"},
+        )
+
+        assert resp.status_code == 409
+
+
 class TestApprovalEnforcement:
     """Issue 2: unapproved/denied users should have restricted access."""
 
