@@ -756,7 +756,6 @@ and server SVCs; round 1 validates the selected records at each client.
     recipe = SVMFedAvgRecipe(
         name="svm",
         min_clients=2,
-        kernel="rbf",
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
