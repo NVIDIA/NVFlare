@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
+from nvflare.apis.dxo import DXO, DataKind, from_file
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.impl.task_manager import TaskCheckStatus
@@ -25,6 +28,8 @@ from nvflare.apis.impl.wf_comm_server import WFCommServer, _DeadClientStatus
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 
 
 def _make_wf_comm(clients, dead_names, min_sites=1, required_sites=None):
@@ -191,6 +196,37 @@ def test_final_hook_outcome_gates_state_admission_without_restricting_consumed_r
     client_task.task.result_received_cb.assert_called_once()
 
 
+@pytest.mark.parametrize("callback_result", [False, None, True])
+@pytest.mark.parametrize("failure", [None, "return_code", "task_error"])
+@pytest.mark.parametrize("completed", [False, True])
+def test_explicit_callback_rejection_survives_consumed_results_and_receipt_replay(callback_result, failure, completed):
+    wf, assigned, fl_ctx = _assignment()
+    first = Shareable()
+    first.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+
+    def callback(**kwargs):
+        current = kwargs["client_task"]
+        if failure == "return_code":
+            current.result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+        elif failure == "task_error":
+            current.task.completion_status = TaskCompletionStatus.ERROR
+        current.result = None
+        return callback_result
+
+    assigned.task.result_received_cb.side_effect = callback
+    wf.process_submission(assigned.client, "train", assigned.id, first, fl_ctx)
+    expected = callback_result is not False and failure is None
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    if completed:
+        wf._remember_completed_client_task(assigned)
+        wf._client_task_map.pop(assigned.id)
+    duplicate = Shareable()
+    duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    assigned.task.result_received_cb.assert_called_once()
+
+
 def test_manager_exception_is_rethrown_but_attempt_retries_do_not_repeat_side_effects():
     wf, client_task, fl_ctx = _assignment()
     error = RuntimeError("manager failed after a side effect")
@@ -217,6 +253,202 @@ def test_unknown_attempt_fenced_result_cannot_use_legacy_unknown_handler():
     wf.controller.process_result_of_unknown_task.assert_not_called()
     wf.process_submission(client_task.client, "train", "unknown", Shareable(), fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_called_once()
+
+
+def _retired_assignment(task_name="train", status=TaskCompletionStatus.TIMEOUT, swept=True):
+    wf, original, _ = _assignment()
+    fl_ctx = FLContextManager(identity_name="server", job_id="job-1").new_context()
+    fl_ctx.set_peer_context(FLContextManager(identity_name=original.client.name, job_id="job-1").new_context())
+    wf._engine = Mock()
+    wf._engine.new_context.return_value = fl_ctx
+    wf._client_task_map.clear()
+    original.task.name = task_name
+    original.task.props["___mgr"].check_task_send.return_value = TaskCheckStatus.SEND
+    wf._tasks = [original.task]
+    _, task_id, data = wf.process_task_request(original.client, fl_ctx)
+    assigned = wf._client_task_map[task_id]
+    assigned.task.completion_status = status
+    if swept:
+        wf.check_tasks()
+        assert wf.get_num_standing_tasks() == 0
+    result = Shareable({"late": True})
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, data.get_task_attempt_id())
+    return wf, assigned, fl_ctx, result
+
+
+@pytest.mark.parametrize("swept", [False, True])
+@pytest.mark.parametrize("status", [TaskCompletionStatus.TIMEOUT, TaskCompletionStatus.CANCELLED])
+def test_exact_first_late_assigned_result_reaches_unknown_hook_once(status, swept):
+    wf, assigned, fl_ctx, result = _retired_assignment(status=status, swept=swept)
+    assert wf.check_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_called_once_with(
+        assigned.client, "train", assigned.id, result, fl_ctx
+    )
+    assigned.task.result_received_cb.assert_not_called()
+    # A void legacy hook does not invent successful named-state admission.
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    duplicate = Shareable({"replacement": True})
+    duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
+    if not swept:
+        wf.check_tasks()
+        wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_called_once()
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+
+
+@pytest.mark.parametrize("task_name", [AppConstants.TASK_SUBMIT_MODEL, AppConstants.TASK_VALIDATION])
+def test_cross_site_model_eval_stores_exact_late_assigned_contribution_once(tmp_path, task_name):
+    wf, assigned, fl_ctx, result = _retired_assignment(task_name=task_name)
+    controller = CrossSiteModelEval()
+    controller.fire_event = Mock()
+    controller._send_validation_task = Mock()
+    controller._cross_val_models_dir = str(tmp_path)
+    controller._cross_val_results_dir = str(tmp_path)
+    wf.controller = controller
+    data = {"weight": 1.0} if task_name == AppConstants.TASK_SUBMIT_MODEL else {"accuracy": 0.8}
+    kind = DataKind.WEIGHTS if task_name == AppConstants.TASK_SUBMIT_MODEL else DataKind.METRICS
+    DXO(kind, data).update_shareable(result)
+    result.add_cookie(AppConstants.MODEL_OWNER, "model-1")
+    wf.process_submission(assigned.client, task_name, assigned.id, result, fl_ctx)
+    if task_name == AppConstants.TASK_SUBMIT_MODEL:
+        path = controller._client_models[assigned.client.name]
+        controller._send_validation_task.assert_called_once_with(assigned.client.name, fl_ctx)
+    else:
+        path = controller._val_results[assigned.client.name]["model-1"]
+    assert from_file(path).data == data
+    saved = Path(path).read_bytes()
+    DXO(kind, {"replacement": 2.0}).update_shareable(result)
+    wf.process_submission(assigned.client, task_name, assigned.id, result, fl_ctx)
+    assert Path(path).read_bytes() == saved
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+
+
+@pytest.mark.parametrize(
+    "mismatch", ["peer_missing", "peer_name", "peer_job", "context_job", "client", "task_name", "task_id", "attempt"]
+)
+def test_late_assigned_results_require_exact_authority_and_authenticated_job(mismatch):
+    wf, assigned, fl_ctx, result = _retired_assignment()
+    client, task_name, task_id = assigned.client, "train", assigned.id
+    if mismatch == "peer_missing":
+        fl_ctx.set_peer_context(None)
+    elif mismatch == "peer_name":
+        fl_ctx.set_peer_context(FLContextManager(identity_name="other-site", job_id="job-1").new_context())
+    elif mismatch == "peer_job":
+        fl_ctx.set_peer_context(FLContextManager(identity_name=client.name, job_id="other-job").new_context())
+    elif mismatch == "context_job":
+        fl_ctx = FLContextManager(identity_name="server", job_id="other-job").new_context()
+        fl_ctx.set_peer_context(FLContextManager(identity_name=client.name, job_id="job-1").new_context())
+    elif mismatch == "client":
+        client = Client("other-site", "token")
+    elif mismatch == "task_name":
+        task_name = "other-task"
+    elif mismatch == "task_id":
+        task_id = "unrecognized-assignment"
+    else:
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "stale-attempt")
+    wf.process_submission(client, task_name, task_id, result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_not_called()
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+
+
+@pytest.mark.parametrize("admitted", [False, True])
+@pytest.mark.parametrize("failure", [None, "return_code", "exception"])
+def test_late_hook_records_explicit_rc_gated_admission_and_never_repeats(admitted, failure):
+    wf, assigned, fl_ctx, result = _retired_assignment()
+
+    def hook(*_args):
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, admitted, private=True, sticky=False)
+        if failure == "return_code":
+            result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+        elif failure == "exception":
+            raise RuntimeError("late hook failed after a side effect")
+
+    wf.controller.process_result_of_unknown_task.side_effect = hook
+    if failure == "exception":
+        with pytest.raises(RuntimeError, match="late hook failed"):
+            wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    else:
+        wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    expected = admitted and failure is None
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    duplicate = Shareable()
+    duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    wf.controller.process_result_of_unknown_task.assert_called_once()
+
+
+@pytest.mark.parametrize("peer_job, context_job", [("job-1", "job-1"), ("other", "job-1"), ("job-1", "other")])
+@pytest.mark.parametrize("swept", [False, True])
+def test_retired_pending_assignment_task_check_requires_issued_job_and_peer(peer_job, context_job, swept):
+    wf, assigned, _, result = _retired_assignment(swept=swept)
+    fl_ctx = FLContextManager(identity_name="server", job_id=context_job).new_context()
+    fl_ctx.set_peer_context(FLContextManager(identity_name=assigned.client.name, job_id=peer_job).new_context())
+    fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, result.get_task_attempt_id(), private=True, sticky=False)
+    retired = wf.process_task_check(assigned.id, fl_ctx)
+    if peer_job == context_job == "job-1":
+        assert retired is not None
+        assert retired.accepted is None
+    else:
+        assert retired is None
+
+
+def test_late_result_without_captured_issuing_job_cannot_use_unknown_hook():
+    wf, assigned, fl_ctx, result = _retired_assignment()
+    wf._completed_client_task_map[assigned.id].job_id = None
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_not_called()
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+
+
+@pytest.mark.parametrize("attempt", [None, "", "conflicting"])
+def test_missing_or_conflicting_late_attempt_cannot_downgrade_issued_assignment(attempt):
+    wf, assigned, fl_ctx, result = _retired_assignment()
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+    if attempt == "conflicting":
+        result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "other-attempt")
+    else:
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt)
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_not_called()
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+
+
+@pytest.mark.parametrize("swept", [False, True])
+@pytest.mark.parametrize(
+    "event", [EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK]
+)
+def test_late_event_failure_records_rejection_before_a_retry_can_repeat_hooks(event, swept):
+    wf, assigned, fl_ctx, result = _retired_assignment(swept=swept)
+
+    def fire(event_type, _fl_ctx):
+        if event_type == event:
+            raise RuntimeError("late event failed")
+
+    wf.fire_event = Mock(side_effect=fire)
+    with pytest.raises(RuntimeError, match="late event failed"):
+        wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    assert wf.controller.process_result_of_unknown_task.call_count == (
+        0 if event == EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK else 1
+    )
+    assert wf.fire_event.call_count == (1 if event == EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK else 2)
+
+
+def test_retired_assignment_cache_is_bounded_and_evicted_fenced_results_stay_unrecognized(monkeypatch):
+    monkeypatch.setattr("nvflare.apis.impl.wf_comm_server._COMPLETED_CLIENT_TASK_CACHE_SIZE", 2)
+    wf, assigned, fl_ctx, result = _retired_assignment()
+    for _ in range(2):
+        other = ClientTask(assigned.client, Task("train", Shareable()))
+        other.props["___job_id"] = "job-1"
+        wf._remember_completed_client_task(other)
+    assert len(wf._completed_client_task_map) == 2
+    assert assigned.id not in wf._completed_client_task_map
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_not_called()
 
 
 def test_server_resend_preserves_authority_issued_attempt_identity():

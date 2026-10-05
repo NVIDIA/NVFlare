@@ -22,6 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.wf_comm_server import _CompletedClientTaskInfo
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -658,15 +659,27 @@ class ServerRunner(TBI):
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
-                if (
+                rejected_active = (
                     isinstance(admitted_client_task, ClientTask)
                     and admitted_client_task.id == task_id
                     and admitted_client_task.attempt_id == attempt_id
                     and admitted_client_task.client.name == client.name
                     and admitted_client_task.task.name == task_name
                     and admitted_client_task.result_received_time is not None
-                    and fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
-                ):
+                )
+                rejected_retired = (
+                    isinstance(admitted_client_task, _CompletedClientTaskInfo)
+                    and admitted_client_task.accepted is False
+                    and admitted_client_task.attempt_id == attempt_id
+                    and admitted_client_task.client_name == client.name
+                    and admitted_client_task.task_name == task_name
+                    and admitted_client_task.job_id == self.job_id
+                )
+                if (rejected_active or rejected_retired) and fl_ctx.get_prop(
+                    FLContextKey.TASK_RESULT_ACCEPTED
+                ) is False:
+                    # Late hooks claim their retired assignment before side
+                    # effects; preserve rejection across workflow teardown too.
                     self._remember_result_receipt(client, task_name, task_id, attempt_id, workflow.id, False)
                 self.log_exception(
                     fl_ctx,

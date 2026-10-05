@@ -28,7 +28,12 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture, StreamTargetUnreachable
+from nvflare.fuel.f3.streaming.stream_types import (
+    BlobSizeError,
+    DownloadCancelled,
+    StreamFuture,
+    StreamTargetUnreachable,
+)
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -105,8 +110,16 @@ class Adapter:
         if (channel, topic) in self.cell.decode_pass_through_topics:
             passthrough = True
         decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
+        req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
+        secure = request.get_header(MessageHeaderKey.SECURE, False)
         try:
             decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
+        except DownloadCancelled as ex:
+            self.logger.debug(f"request download cancelled locally: {secure_format_exception(ex)}")
+            self._send_response(
+                make_reply(ReturnCode.SERVICE_UNAVAILABLE), stream_req_id, req_id, channel, topic, origin, secure
+            )
+            return
         except Exception as ex:
             if (
                 channel == CellChannel.SERVER_COMMAND
@@ -123,8 +136,6 @@ class Adapter:
         request.set_header(MessageHeaderKey.TOPIC, topic)
         self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
-        req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
-        secure = request.get_header(MessageHeaderKey.SECURE, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):

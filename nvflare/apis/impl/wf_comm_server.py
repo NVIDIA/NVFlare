@@ -42,6 +42,7 @@ _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
 _CLIENT_TASK_RESULT_ACCEPTED = "___result_accepted"
+_CLIENT_TASK_JOB_ID = "___job_id"
 _COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
 
 
@@ -84,11 +85,16 @@ class _DeadClientStatus:
 
 
 class _CompletedClientTaskInfo:
-    def __init__(self, client_name: str, task_name: str, attempt_id: str, accepted: bool):
+    """Bounded retired authority metadata; None denotes no result decision yet."""
+
+    def __init__(
+        self, client_name: str, task_name: str, attempt_id: str, accepted: Optional[bool], job_id: Optional[str] = None
+    ):
         self.client_name = client_name
         self.task_name = task_name
         self.attempt_id = attempt_id
         self.accepted = accepted
+        self.job_id = job_id
 
 
 class WFCommServer(FLComponent, WFCommSpec):
@@ -356,6 +362,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_task_to_send.task_send_count += 1
 
             if not resend_task:
+                client_task_to_send.props[_CLIENT_TASK_JOB_ID] = fl_ctx.get_job_id()
                 task.last_client_task_map[client.name] = client_task_to_send
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
@@ -406,28 +413,62 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_name = peer_ctx.get_identity_name() if isinstance(peer_ctx, FLContext) else None
             if client_task is not None:
                 if client_task.attempt_id == attempt_id and client_task.client.name == client_name:
+                    if client_task.task.completion_status is not None and client_task.result_received_time is None:
+                        completed = self._remember_completed_client_task(client_task)
+                        return (
+                            completed
+                            if self._matches_retired_assignment(
+                                completed, client_name, completed.task_name, attempt_id, fl_ctx
+                            )
+                            else None
+                        )
                     return client_task
                 return None
             completed = self._get_completed_client_task_info(task_id)
             if completed and completed.attempt_id == attempt_id and completed.client_name == client_name:
-                # Let a lost-ACK retry reach the recorded decision even after
-                # the standing task is swept, without rerunning application code.
+                if (
+                    completed.accepted is None or completed.job_id is not None
+                ) and not self._matches_retired_assignment(
+                    completed, client_name, completed.task_name, attempt_id, fl_ctx
+                ):
+                    return None
+                # A recognized first late result, as well as a lost-ACK retry,
+                # must be allowed past the client's pre-send task check.
                 return completed
             return None
 
     def _remember_completed_client_task(self, client_task: ClientTask):
-        if client_task.result_received_time is None:
-            return
-
-        self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
-            client_name=client_task.client.name,
-            task_name=client_task.task.name,
-            attempt_id=client_task.attempt_id,
-            accepted=client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False),
-        )
+        if client_task.id not in self._completed_client_task_map:
+            self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
+                client_name=client_task.client.name,
+                task_name=client_task.task.name,
+                attempt_id=client_task.attempt_id,
+                accepted=(
+                    client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False)
+                    if client_task.result_received_time is not None
+                    else None
+                ),
+                job_id=client_task.props.get(_CLIENT_TASK_JOB_ID),
+            )
         self._completed_client_task_map.move_to_end(client_task.id)
         while len(self._completed_client_task_map) > _COMPLETED_CLIENT_TASK_CACHE_SIZE:
             self._completed_client_task_map.popitem(last=False)
+        return self._completed_client_task_map[client_task.id]
+
+    @staticmethod
+    def _matches_retired_assignment(completed, client_name, task_name, attempt_id, fl_ctx):
+        peer_ctx = fl_ctx.get_peer_context()
+        return (
+            completed.client_name == client_name
+            and completed.task_name == task_name
+            and completed.attempt_id == attempt_id
+            and isinstance(completed.job_id, str)
+            and bool(completed.job_id)
+            and fl_ctx.get_job_id() == completed.job_id
+            and isinstance(peer_ctx, FLContext)
+            and peer_ctx.get_identity_name() == client_name
+            and peer_ctx.get_job_id() == completed.job_id
+        )
 
     def _get_completed_client_task_info(self, task_id: str):
         completed_client_task = self._completed_client_task_map.get(task_id)
@@ -466,7 +507,8 @@ class WFCommServer(FLComponent, WFCommSpec):
         A server-issued attempt has one immutable result publication. A second
         submission for that attempt never replaces the first, even if it carries
         a different payload. Unfenced unknown-task handling remains available for
-        legacy ordinary job protocols, but cannot admit an attempt-fenced result.
+        legacy ordinary job protocols. A recognized expired assignment can use
+        that hook once, but an unrecognized attempt-fenced result cannot.
         """
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         try:
@@ -489,6 +531,11 @@ class WFCommServer(FLComponent, WFCommSpec):
                     and completed.task_name == task_name
                     and completed.attempt_id == attempt_id
                 ):
+                    if completed.accepted is None or completed.job_id is not None:
+                        if not self._matches_retired_assignment(completed, client.name, task_name, attempt_id, fl_ctx):
+                            return False
+                    if completed.accepted is None:
+                        return True
                     fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, completed.accepted, private=True, sticky=False)
                 return False
             if (
@@ -505,7 +552,12 @@ class WFCommServer(FLComponent, WFCommSpec):
                     sticky=False,
                 )
                 return False
-            return client_task.task.completion_status is None
+            if client_task.task.completion_status is not None:
+                completed = self._remember_completed_client_task(client_task)
+                return completed.accepted is None and self._matches_retired_assignment(
+                    completed, client.name, task_name, attempt_id, fl_ctx
+                )
+            return True
 
     def _do_process_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
@@ -525,6 +577,9 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
+            retired_client_task = None
+            if client_task is not None and client_task.task.completion_status is not None:
+                retired_client_task, client_task = client_task, None
             completed_client_task = self._get_completed_client_task_info(task_id) if client_task is None else None
             self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
 
@@ -534,22 +589,43 @@ class WFCommServer(FLComponent, WFCommSpec):
                 and completed_client_task.client_name == client.name
                 and completed_client_task.task_name == task_name
             ):
-                self.log_info(fl_ctx, "client task result is already received - submission dropped")
-                fl_ctx.set_prop(
-                    FLContextKey.TASK_RESULT_ACCEPTED, completed_client_task.accepted, private=True, sticky=False
-                )
-                return
+                if completed_client_task.accepted is not None:
+                    self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                    fl_ctx.set_prop(
+                        FLContextKey.TASK_RESULT_ACCEPTED, completed_client_task.accepted, private=True, sticky=False
+                    )
+                    return
 
             # cannot find a standing task for the submission
             self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
 
-            self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK")
-            self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
-
-            self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
-
-            self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK")
-            self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+            late_assignment = completed_client_task if result.get_task_attempt_id() is not None else None
+            accepted = False
+            result_succeeded = result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK
+            if late_assignment is not None:
+                # Claim the one publication before application/event side
+                # effects. An exception must leave a rejected replay receipt.
+                late_assignment.accepted = False
+            try:
+                self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK")
+                self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+                self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
+                self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK")
+                self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+                # The established void hook does not imply acceptance. Only
+                # explicit successful admission may advance declared state.
+                accepted = (
+                    result_succeeded
+                    and result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK
+                    and fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+                )
+            finally:
+                if late_assignment is not None:
+                    late_assignment.accepted = accepted
+                    if retired_client_task is not None:
+                        retired_client_task.result_received_time = time.time()
+                        retired_client_task.props[_CLIENT_TASK_RESULT_ACCEPTED] = accepted
+                    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
             return
 
         task = client_task.task
@@ -602,7 +678,10 @@ class WFCommServer(FLComponent, WFCommSpec):
             if task.result_received_cb is not None:
                 try:
                     self.log_debug(fl_ctx, "invoking result_received_cb ...")
-                    task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
+                    callback_result = task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
+                    # Explicit rejection survives callbacks that consume and
+                    # clear the result; ordinary void callbacks stay compatible.
+                    accepted = accepted and callback_result is not False
                 except Exception as e:
                     # this task cannot proceed anymore
                     error_log_ctx = fl_ctx

@@ -18,14 +18,18 @@ import torch
 from safetensors.torch import load, save
 
 import nvflare.fuel.utils.fobs.dots as dots
-from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_CONTEXT,
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    TensorDiskOffloadContext,
+)
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
 from ...fuel.f3.cellnet.cell import Cell
-from .lazy_tensor_dict import LazyTensorDict
+from .lazy_tensor_dict import LazyTensorDict, _LazyRef
 from .tensor_downloader import TensorDownloadable, download_tensors, download_tensors_to_disk
 
 
@@ -42,6 +46,10 @@ class TensorDecomposer(ViaDownloaderDecomposer):
 
     def supported_type(self):
         return torch.Tensor
+
+    def supported_aliases(self):
+        # Disk-backed lazy refs travel the wire as the tensors they stand for.
+        return [_LazyRef]
 
     def get_download_dot(self) -> int:
         return dots.TENSOR_DOWNLOAD
@@ -77,6 +85,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
                 _TENSOR_DISK_OFFLOAD_ROOT_DIR,
                 cell_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
             ),
+            offload_context=fobs_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT, cell_ctx.get(_TENSOR_DISK_OFFLOAD_CONTEXT)),
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
@@ -95,6 +104,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        offload_context: Optional[TensorDiskOffloadContext] = None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
         if use_disk:
             return download_tensors_to_disk(
@@ -103,6 +113,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
                 per_request_timeout=per_request_timeout,
                 cell=cell,
                 root_dir=root_dir,
+                offload_context=offload_context,
                 secure=secure,
                 optional=optional,
                 abort_signal=abort_signal,
@@ -120,6 +131,8 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         )
 
     def native_decompose(self, target: torch.Tensor, manager: DatumManager = None) -> bytes:
+        if isinstance(target, _LazyRef):
+            raise ValueError("disk-backed tensors require an active Cell and tensor streaming")
         # save the tensor to bytes using safetensors
         dummy = {"t": target}
         return save(dummy)

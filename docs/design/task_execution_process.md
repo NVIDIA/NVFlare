@@ -122,6 +122,10 @@ The checkpoint is independent of attempt-payload cleanup. Failure results and
 rejected results do not promote state. An unconfirmed acknowledgement or failed
 promotion stops the runtime and preserves the candidate for diagnosis; it does
 not silently continue with old state.
+Result callbacks can return literal `False` to veto admission, including after
+consuming the result. Existing callbacks returning `None` retain default
+successful-result admission; no callback can override a failed result or task.
+Built-in aggregation callbacks propagate their definitive acceptance decision.
 Declared task state belongs to the worker compute graph; CJ-only filters and
 handlers do not receive an independently mutable shadow copy of that state.
 
@@ -235,6 +239,13 @@ be replayed after their workflow is gone. This slice supports one physical
 attempt per server-issued assignment; it does not add a retry scheduler. Peer
 auxiliary-task execution needs its own authority-issued attempt integration
 before it can use task workers.
+The communicator also retains bounded identity metadata for retired assignments
+whose result has not arrived. A matching authenticated peer/job/assignment/attempt
+can invoke the controller's established late-result hook once while that metadata
+remains. Unrecognized or evicted fenced results stay rejected. A void late hook
+does not imply successful admission; it must explicitly acknowledge acceptance
+to permit state promotion. Hook failures record rejection before a retry can
+repeat side effects, including after workflow teardown.
 For Client API scripts, `flare.send()` durably stages `script_result.fobs`. The
 runtime-injected Client API backend returns a Shareable through the same Executor
 pipeline as ordinary Executors, including task hooks and finalization. The final

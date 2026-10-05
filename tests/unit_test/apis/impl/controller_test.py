@@ -229,6 +229,13 @@ def _submit_result(communicator, **kwargs):
         task_name = record.task.name if isinstance(record, ClientTask) else record.task_name
         if client_name == client.name and task_name == kwargs.get("task_name"):
             result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, record.attempt_id)
+            fl_ctx = kwargs.get("fl_ctx")
+            if isinstance(fl_ctx, FLContext):
+                # Recognized late submissions model the authenticated peer/job
+                # that the real ServerRunner validates before invoking this API.
+                fl_ctx.set_peer_context(
+                    FLContextManager(identity_name=client.name, job_id=fl_ctx.get_job_id()).new_context()
+                )
     return communicator.process_submission(**kwargs)
 
 
@@ -1479,6 +1486,7 @@ class TestBasic(TestController):
         from nvflare.fuel.f3.cellnet.defs import ReturnCode
         from nvflare.fuel.f3.cellnet.utils import make_reply
         from nvflare.fuel.f3.streaming.download_service import ProduceRC
+        from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 
         class BlockingDownloadCell:
             def __init__(self, chunk: bytes, root_dir: str):
@@ -1524,12 +1532,15 @@ class TestBasic(TestController):
         result_holder = {}
 
         def run_download():
-            result_holder["value"] = tensor_downloader.download_tensors_to_disk(
-                from_fqcn="client",
-                ref_id="ref",
-                per_request_timeout=0.1,
-                cell=cell,
-            )
+            try:
+                tensor_downloader.download_tensors_to_disk(
+                    from_fqcn="client",
+                    ref_id="ref",
+                    per_request_timeout=0.1,
+                    cell=cell,
+                )
+            except DownloadCancelled as ex:
+                result_holder["cancelled"] = ex
 
         download_thread = threading.Thread(target=run_download)
         download_thread.start()
@@ -1544,7 +1555,7 @@ class TestBasic(TestController):
         download_thread.join(5.0)
 
         assert not download_thread.is_alive()
-        assert result_holder["value"][0]
+        assert isinstance(result_holder.get("cancelled"), DownloadCancelled)
 
 
 @pytest.mark.parametrize("method", ["broadcast", "broadcast_and_wait"])

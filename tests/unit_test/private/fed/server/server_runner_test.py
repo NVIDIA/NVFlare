@@ -20,7 +20,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode, ServerCommandKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.impl.wf_comm_server import WFCommServer
@@ -399,3 +400,99 @@ def test_job_result_receipts_are_bounded_and_never_replace_a_recorded_decision(m
     runner._remember_result_receipt(assignment.client, "train", assignment.id, "second", "workflow", True)
     key = runner._result_receipt_key("site-1", "train", assignment.id, "second", "workflow")
     assert runner._result_receipts[key] is False
+
+
+@pytest.mark.parametrize("failure_phase", ["late_hook", "before_process"])
+def test_failed_late_result_receipt_survives_workflow_transition_only_after_hook_claim(failure_phase):
+    runner, assignment, fl_ctx = _fenced_runner()
+    communicator = runner.current_wf.controller.communicator
+    # Model an issued assignment swept before its first result arrived.
+    assignment.props["___job_id"] = "job-1"
+    retired = communicator._remember_completed_client_task(assignment)
+    communicator._client_task_map.pop(assignment.id)
+    communicator.fire_event = MagicMock()
+    communicator.controller = MagicMock()
+    hook = communicator.controller.process_result_of_unknown_task
+    hook.side_effect = RuntimeError("late hook failed after side effects")
+    if failure_phase == "before_process":
+
+        def fail_before_process(event, *_args):
+            if event == EventType.BEFORE_PROCESS_SUBMISSION:
+                raise RuntimeError("before late hook")
+
+        runner.fire_event.side_effect = fail_before_process
+
+    result = Shareable({"model": "unchanged"})
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assignment.attempt_id)
+    result.add_cookie(ReservedHeaderKey.WORKFLOW, "workflow")
+    key = runner._result_receipt_key("site-1", "train", assignment.id, assignment.attempt_id, "workflow")
+    with (
+        patch("nvflare.private.fed.server.server_runner.apply_filters", return_value=result) as filters,
+        patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
+    ):
+        runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+        if failure_phase == "before_process":
+            assert retired.accepted is None
+            assert key not in runner._result_receipts
+            hook.assert_not_called()
+            return
+        assert retired.accepted is False
+        assert runner._result_receipts[key] is False
+        runner.current_wf = SimpleNamespace(id="next", controller=MagicMock())
+        runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
+
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    filters.assert_called_once()
+    hook.assert_called_once()
+    runner.current_wf.controller.communicator.process_submission.assert_not_called()
+
+
+@pytest.mark.parametrize("swept", [False, True])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_first_late_result_reaches_hook_once_and_replays_after_workflow_transition(swept, accepted):
+    runner, assignment, fl_ctx = _fenced_runner()
+    communicator = runner.current_wf.controller.communicator
+    assignment.props["___job_id"] = "job-1"
+    assignment.task.completion_status = TaskCompletionStatus.TIMEOUT
+    if swept:
+        communicator._remember_completed_client_task(assignment)
+        communicator._client_task_map.pop(assignment.id)
+    communicator.fire_event = MagicMock()
+    communicator.controller = MagicMock()
+
+    def late_hook(*_args):
+        if accepted:
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
+
+    hook = communicator.controller.process_result_of_unknown_task
+    hook.side_effect = late_hook
+    request = Shareable()
+    request.set_header(ReservedHeaderKey.TASK_NAME, "train")
+    request.set_header(ReservedHeaderKey.TASK_ID, assignment.id)
+    request.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assignment.attempt_id)
+    request.set_header(ReservedHeaderKey.WORKFLOW, "workflow")
+    assert runner._handle_task_check("task_check", request, fl_ctx).get_return_code() == ReturnCode.OK
+
+    result = Shareable({"original": True})
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assignment.attempt_id)
+    result.add_cookie(ReservedHeaderKey.WORKFLOW, "workflow")
+    replacement = Shareable({"filtered": True})
+    with (
+        patch("nvflare.private.fed.server.server_runner.apply_filters", return_value=replacement) as filters,
+        patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
+    ):
+        runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is accepted
+        assert replacement.get_task_attempt_id() == assignment.attempt_id
+        runner.current_wf = SimpleNamespace(id="next", controller=MagicMock())
+        result.set_return_code(ReturnCode.UNSAFE_JOB)
+        runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
+        assert runner._handle_task_check("task_check", request, fl_ctx).get_return_code() == ReturnCode.OK
+
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is accepted
+    filters.assert_called_once()
+    hook.assert_called_once_with(assignment.client, "train", assignment.id, replacement, fl_ctx)
+    assignment.task.result_received_cb.assert_not_called()
+    runner.system_panic.assert_not_called()
+    runner.current_wf.controller.communicator.process_submission.assert_not_called()

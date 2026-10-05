@@ -41,15 +41,26 @@ class _KMeansValidator(BaseModel):
 
 
 class KMeansFedAvgRecipe(FedAvgRecipe):
-    """A recipe for Federated K-Means Clustering with Scikit-learn.
+    """Federated K-Means with seed sharing and count-weighted center aggregation.
 
     Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
     must never contain actual secrets. Read secrets from site environment variables or mounted
     files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
-    This recipe implements federated K-Means clustering using a mini-batch aggregation
-    strategy. The aggregation follows the scheme defined in MiniBatchKMeans where each
-    client's results are treated as a mini-batch for updating global centers.
+    A FedAvg controller coordinates rounds, while a custom KMeansAssembler
+    combines cluster centers using per-center update counts and historical
+    global counts. This is a mini-batch-style running average of corresponding
+    centers and does not guarantee equivalence to centralized KMeans.
+
+    Data sharing with the example client:
+        Round-zero k-means++ seeds are exact local training feature rows sent
+        to the server without labels. Later rounds send centroids and update
+        counts, plus a validation metric and training-size metadata. Centers
+        can still disclose individual rows, for example with singleton clusters.
+        The server sends global centers to clients and persists them. Use this
+        workflow only where sharing these rows and statistics is permitted;
+        it provides no differential privacy, secure aggregation, or minimum
+        cluster-size protection.
 
     The recipe configures:
     - A federated job with initial n_clusters parameter
@@ -58,18 +69,19 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
     - CollectAndAssembleModelAggregator for combining client updates
     - Script runners for client-side training execution
 
-    Training Process:
-    - Round 0: Each client generates initial centers using k-means++. The server
-      collects all initial centers and performs one round of k-means to generate
-      the initial global centers.
-    - Subsequent rounds: Each client trains a local MiniBatchKMeans model starting
-      from global centers. The server aggregates center and count information to
-      update global centers using the mini-batch update rule.
+    Training process with the example client:
+    - Round 0: Each client selects n_clusters feature rows using k-means++.
+      The server fits KMeans to the pooled seeds to initialize global centers.
+    - Subsequent rounds: Each client fits a local MiniBatchKMeans model starting
+      from global centers, with reassignment disabled to preserve center indices.
+      The server updates global centers using local centers and per-center counts.
+      These counts describe sampled assignments and can include repeated rows.
 
     Args:
         name: Name of the federated learning job. Defaults to "kmeans_fedavg".
         min_clients: Minimum number of clients required to start a training round.
-        num_rounds: Number of federated training rounds to execute. Defaults to 5.
+        num_rounds: Total federated rounds, including round-zero initialization.
+            Defaults to 5 (one initialization round and four training rounds).
         n_clusters: Number of clusters for K-Means. Defaults to 3.
         model_path: Absolute path to a saved model file (.joblib).
             If provided, the file must exist at runtime. Used to load previously
@@ -134,7 +146,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
     Note:
         This recipe uses a custom KMeansAssembler that implements the mini-batch
         K-Means aggregation logic. The assembler maintains historical center and
-        count information across rounds for proper weighted averaging.
+        count information across rounds for count-weighted center updates.
     """
 
     def __init__(

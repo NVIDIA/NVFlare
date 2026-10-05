@@ -99,6 +99,7 @@ class Task:
                 It needs to follow the after_task_sent_cb_signature.
             result_received_cb: If provided, this callback would be called when controller receives results from clients.
                 It needs to follow the result_received_cb_signature.
+                Returning literal False rejects admission; None preserves the default successful-result admission.
             task_done_cb: If provided, this callback would be called when task is done.
                 It needs to follow the task_done_cb_signature.
             operator: task operator that describes the operation of the task
@@ -237,6 +238,10 @@ def result_received_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
     Args:
         client_task: the client task that the result is for
         fl_ctx: the FL context that comes with the client's result submission
+
+    Returns:
+        Literal False to reject admission. None preserves default admission for a successful result;
+        no return value can override a failed result or task.
 
     """
     pass
