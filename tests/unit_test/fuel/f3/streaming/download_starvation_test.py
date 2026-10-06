@@ -64,6 +64,13 @@ CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 # so deadlocked workers unblock and the process exits cleanly.
 _stop_delay = threading.Event()
 
+# Real Cell instances and intentional pool starvation can keep an instrumented
+# xdist worker alive after test teardown. Every normal unit-test matrix job
+# still runs both integration scenarios.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("COV_CORE_SOURCE")), reason="incompatible with coverage instrumentation"
+)
+
 
 class ChunkedDownloadable(Downloadable):
     def __init__(self, data: bytes, chunk_size: int):
@@ -234,9 +241,6 @@ class TestDownloadWithFix:
 # ======================================================================== #
 # Test 2: Simulate pre-fix -- should FAIL with starvation
 # ======================================================================== #
-# The intentional deadlock can strand an instrumented xdist worker during
-# fixture teardown. Every normal unit-test matrix job still runs this test.
-@pytest.mark.skipif(bool(os.environ.get("COV_CORE_SOURCE")), reason="incompatible with coverage instrumentation")
 @pytest.mark.timeout(120)
 class TestDownloadPreFixStarvation:
 
