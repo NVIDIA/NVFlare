@@ -390,9 +390,9 @@ def test_settlement_distinguishes_zombies_from_live_group_members(tmp_path, monk
     )
     monkeypatch.setattr(os, "killpg", lambda *_args: None)
     monkeypatch.setattr(os, "getpgid", lambda _pid: 1234)
-    monkeypatch.setattr(
-        psutil, "process_iter", lambda: [Mock(pid=i, status=lambda s=s: s) for i, s in enumerate(statuses)]
-    )
+    processes = {i: Mock(pid=i, status=lambda s=s: s, create_time=lambda: 1.0) for i, s in enumerate(statuses)}
+    monkeypatch.setattr(psutil, "pids", lambda: list(processes))
+    monkeypatch.setattr(psutil, "Process", processes.__getitem__)
     assert handle.poll().settled is settled
 
 
@@ -408,7 +408,8 @@ def test_group_inspection_permission_failure_does_not_claim_settlement(tmp_path,
     )
     monkeypatch.setattr(os, "killpg", lambda *_args: None)
     monkeypatch.setattr(os, "getpgid", lambda _pid: 1234)
-    monkeypatch.setattr(psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(psutil, "pids", lambda: [process.pid])
+    monkeypatch.setattr(psutil, "Process", lambda _pid: process)
     assert handle.poll().settled is False
 
 
@@ -421,7 +422,7 @@ def test_process_enumeration_permission_failure_does_not_claim_settlement(tmp_pa
         poll_interval=0.01,
     )
     monkeypatch.setattr(os, "killpg", lambda *_args: None)
-    monkeypatch.setattr(psutil, "process_iter", Mock(side_effect=PermissionError("cannot enumerate processes")))
+    monkeypatch.setattr(psutil, "pids", Mock(side_effect=PermissionError("cannot enumerate processes")))
     assert handle.poll().settled is False
 
 
@@ -452,6 +453,98 @@ def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_pa
         process.wait(timeout=5)
 
 
+@requires_waitid
+@pytest.mark.parametrize("settle_with", ["wait", "cancel"])
+def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path, monkeypatch, settle_with):
+    # The test remains the live parent of both children. Put them in one group
+    # in our session so a zombie sibling survives the owned leader's reap,
+    # without requiring PID 1 or the test parent to reap it for settlement.
+    release = tmp_path / "leader.release"
+    code = "import pathlib, sys, time; p = pathlib.Path(sys.argv[1]); "
+    code += 'exec("while not p.exists():\\n time.sleep(0.01)")'
+    leader_pid = os.posix_spawn(
+        sys.executable, [sys.executable, "-c", code, str(release)], dict(os.environ), setpgroup=0
+    )
+    sibling_pid = None
+    owned = _OwnedProcessAdapter(ProcessAdapter(pid=leader_pid))
+    try:
+        sibling_pid = os.posix_spawn(
+            sys.executable, [sys.executable, "-c", "pass"], dict(os.environ), setpgroup=leader_pid
+        )
+        assert os.getpgid(leader_pid) == leader_pid
+        sibling = psutil.Process(sibling_pid)
+        deadline = time.monotonic() + 5
+        while sibling.status() != psutil.STATUS_ZOMBIE:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        release.write_text("exit")
+        while owned.poll() is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        handle = ProcessTaskHandle(
+            _request(tmp_path, "unreaped-zombie-member", "pass"),
+            owned,
+            stop_grace_period=0.1,
+            descendant_settle_timeout=0.1,
+            poll_interval=0.01,
+        )
+        probe = Mock(wraps=os.killpg)
+        monkeypatch.setattr(os, "killpg", probe)
+        status = handle.wait_for_settlement(timeout=1) if settle_with == "wait" else handle.cancel()
+        assert status.succeeded
+        assert owned.reaped
+        assert sibling.status() == psutil.STATUS_ZOMBIE
+        if sys.platform == "linux":
+            # Darwin removes a zombie's PGID before its parent reaps it.
+            assert os.getpgid(sibling_pid) == leader_pid
+        assert all(call.args[1] == 0 for call in probe.call_args_list)
+        assert handle.poll() == status
+        assert handle.wait_for_settlement(timeout=0) == status
+        assert handle.cancel() == status
+        with pytest.raises(ChildProcessError):
+            os.waitpid(leader_pid, os.WNOHANG)
+    finally:
+        if not owned.reaped:
+            try:
+                os.killpg(leader_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            os.waitpid(leader_pid, 0)
+        if sibling_pid is not None:
+            os.waitpid(sibling_pid, 0)
+
+
+@pytest.mark.parametrize("churn", ["new-zombie", "reused-pid", "vanished-before-inspection"])
+def test_unstable_dead_member_snapshots_do_not_prove_settlement(tmp_path, monkeypatch, churn):
+    handle = _mock_handle(tmp_path)
+    handle._adapter.owns_exited_leader = True
+    monkeypatch.setattr(os, "killpg", lambda *_args: None)
+    monkeypatch.setattr(os, "getpgid", lambda _pid: 1234)
+    member = Mock(status=lambda: psutil.STATUS_ZOMBIE, create_time=Mock(return_value=1.0))
+    monkeypatch.setattr(psutil, "Process", lambda _pid: member)
+    snapshots = Mock(side_effect=[[5678], [5678, 5679]]) if churn == "new-zombie" else Mock(return_value=[5678])
+    monkeypatch.setattr(psutil, "pids", snapshots)
+    if churn == "reused-pid":
+        member.create_time.side_effect = [1.0, 2.0]
+    elif churn == "vanished-before-inspection":
+        monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(5678)))
+    assert not handle.poll().settled
+    handle._adapter.reap.assert_not_called()
+
+
+def test_terminal_member_with_missing_group_id_is_confirmed_twice(tmp_path, monkeypatch):
+    handle = _mock_handle(tmp_path)
+    handle._adapter.owns_exited_leader = True
+    monkeypatch.setattr(os, "killpg", Mock(side_effect=PermissionError()))
+    monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
+    monkeypatch.setattr(psutil, "pids", lambda: [1234, 5678])
+    member = Mock(status=lambda: psutil.STATUS_ZOMBIE, create_time=lambda: 1.0)
+    inspect = Mock(return_value=member)
+    monkeypatch.setattr(psutil, "Process", inspect)
+    assert handle.poll().settled
+    assert inspect.call_count == 2
+
+
 def _mock_handle(tmp_path):
     return ProcessTaskHandle(
         _request(tmp_path, "fault", "pass"),
@@ -475,11 +568,11 @@ def test_group_inspection_tolerates_process_exit_between_enumeration_and_probe(t
     handle = _mock_handle(tmp_path)
     monkeypatch.setattr(os, "killpg", lambda *_args: None)
     monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
-    monkeypatch.setattr(psutil, "process_iter", lambda: [Mock(pid=10)])
+    monkeypatch.setattr(psutil, "pids", lambda: [10])
     assert handle._group_exists() is True  # No observed dead members: fail closed.
 
 
-@pytest.mark.parametrize("members", [[], [Mock(pid=10)]])
+@pytest.mark.parametrize("members", [[], [10]])
 def test_group_disappearing_during_inspection_is_settled(tmp_path, monkeypatch, members):
     handle = _mock_handle(tmp_path)
     # The initial signal probe succeeds, but init reaps the last member before
@@ -487,7 +580,11 @@ def test_group_disappearing_during_inspection_is_settled(tmp_path, monkeypatch, 
     probe = Mock(side_effect=[None, ProcessLookupError()])
     monkeypatch.setattr(os, "killpg", probe)
     monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
-    monkeypatch.setattr(psutil, "process_iter", lambda: members)
+    monkeypatch.setattr(psutil, "pids", lambda: members)
+    if members:
+        # A vanished unidentified parent is uncertain until the next probe
+        # confirms that the whole group disappeared.
+        assert not handle.poll().settled
     assert handle.poll().settled
     assert probe.call_count == 2
 
@@ -496,7 +593,7 @@ def test_group_disappearing_during_inspection_is_settled(tmp_path, monkeypatch, 
 def test_empty_process_snapshot_does_not_prove_settlement(tmp_path, monkeypatch, result):
     handle = _mock_handle(tmp_path)
     monkeypatch.setattr(os, "killpg", Mock(side_effect=[None, result]))
-    monkeypatch.setattr(psutil, "process_iter", lambda: [])
+    monkeypatch.setattr(psutil, "pids", lambda: [])
     assert not handle.poll().settled
 
 
@@ -683,10 +780,73 @@ def test_external_reaper_prevents_group_signals_and_settlement(tmp_path, monkeyp
 
 
 @requires_waitid
+@pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, monkeypatch, backend):
+    request = _request(tmp_path, "external-reap-race", "pass")
+    if backend == "posix_spawn":
+        request = replace(request, cwd=None)
+    process = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+    if backend == "posix_spawn" and process.process is not None:
+        process.wait()
+        pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
+    owned = _OwnedProcessAdapter(process)
+    handle = ProcessTaskHandle(request, owned, stop_grace_period=0.1, descendant_settle_timeout=0.1, poll_interval=0.01)
+    waitpid = os.waitpid
+    stolen = False
+    try:
+        deadline = time.monotonic() + 5
+        while owned.poll() is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+        def reap_elsewhere_then_wait(pid, flags):
+            nonlocal stolen
+            assert pid == process.pid
+            waitpid(pid, 0)
+            stolen = True
+            return waitpid(pid, flags)
+
+        monkeypatch.setattr(os, "waitpid", reap_elsewhere_then_wait)
+        wrapped_poll = Mock(wraps=process.poll)
+        monkeypatch.setattr(process, "poll", wrapped_poll)
+        probe = Mock(wraps=os.killpg)
+        monkeypatch.setattr(os, "killpg", probe)
+        status = handle.poll()
+        assert stolen
+        assert not status.settled
+        assert status.exit_code == 0
+        assert status.termination_signal is None
+        assert "externally reaped" in status.failure_reason
+        assert not owned.reaped
+        wrapped_poll.assert_not_called()
+        # Lost ownership remains final even if a reused numeric PID becomes
+        # observable as another child. Never signal or inspect it again.
+        observation = Mock(return_value=Mock(si_pid=process.pid, si_status=0, si_code=os.CLD_EXITED))
+        monkeypatch.setattr(os, "waitid", observation)
+        with pytest.raises(TaskSettlementError, match="ownership is lost"):
+            handle.cancel()
+        assert not handle.poll().settled
+        observation.assert_not_called()
+        assert all(call.args[1] == 0 for call in probe.call_args_list)
+    finally:
+        monkeypatch.setattr(os, "waitpid", waitpid)
+        if not stolen:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.wait()
+
+
+@requires_waitid
 def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, monkeypatch):
-    process = Mock(pid=1234, poll=Mock(return_value=23))
+    process = ProcessAdapter(pid=1234)
+    poll = Mock(wraps=process.poll)
+    monkeypatch.setattr(process, "poll", poll)
     adapter = _OwnedProcessAdapter(process)
     monkeypatch.setattr(os, "waitid", Mock(return_value=Mock(si_pid=1234, si_status=23, si_code=os.CLD_EXITED)))
+    reap = Mock(return_value=(1234, 23 << 8))
+    monkeypatch.setattr(os, "waitpid", reap)
     handle = ProcessTaskHandle(
         _request(tmp_path, "reap-order", "pass"),
         adapter,
@@ -694,15 +854,18 @@ def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, 
         descendant_settle_timeout=0.1,
         poll_interval=0.01,
     )
-    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, True, False, False]))
+    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, True, False]))
 
     assert handle.poll().exit_code == 23
     assert not handle.poll().settled
-    process.poll.assert_not_called()
+    reap.assert_not_called()
+    poll.assert_not_called()
     assert handle.poll().settled
-    process.poll.assert_called_once()
+    reap.assert_called_once_with(1234, os.WNOHANG)
+    assert process.poll() == 23
+    poll.assert_called_once()  # Only this explicit adapter poll uses the wrapper.
     assert handle.cancel().settled
-    process.poll.assert_called_once()
+    reap.assert_called_once()
 
 
 @pytest.mark.parametrize("missing", ["waitid", "WNOWAIT"])
@@ -797,10 +960,12 @@ def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch,
 @requires_waitid
 @pytest.mark.parametrize("observed_exit", [256, 23])
 def test_completed_reap_is_final_even_when_observed_exit_differs(tmp_path, monkeypatch, observed_exit):
-    process = Mock(pid=1234, poll=Mock(return_value=0))
+    process = ProcessAdapter(pid=1234)
     adapter = _OwnedProcessAdapter(process)
     observation = Mock(return_value=Mock(si_pid=1234, si_status=observed_exit, si_code=os.CLD_EXITED))
     monkeypatch.setattr(os, "waitid", observation)
+    reap = Mock(return_value=(1234, 0))
+    monkeypatch.setattr(os, "waitpid", reap)
     handle = ProcessTaskHandle(
         _request(tmp_path, "completed-reap", "pass"),
         adapter,
@@ -815,15 +980,18 @@ def test_completed_reap_is_final_even_when_observed_exit_differs(tmp_path, monke
     assert adapter.reap() == 0
     observation.assert_called()
     assert observation.call_count == 2
-    process.poll.assert_called_once()
+    reap.assert_called_once_with(1234, os.WNOHANG)
+    assert process.poll() == 0
     assert handle.cancel().succeeded
 
 
 @requires_waitid
-def test_membership_churn_requires_group_absence_after_reaping(tmp_path, monkeypatch):
-    process = Mock(pid=1234, poll=Mock(return_value=0))
+def test_membership_churn_retains_leader_for_group_cleanup(tmp_path, monkeypatch):
+    process = ProcessAdapter(pid=1234)
     adapter = _OwnedProcessAdapter(process)
     monkeypatch.setattr(os, "waitid", Mock(return_value=Mock(si_pid=1234, si_status=0, si_code=os.CLD_EXITED)))
+    reap = Mock(return_value=(1234, 0))
+    monkeypatch.setattr(os, "waitpid", reap)
     handle = ProcessTaskHandle(
         _request(tmp_path, "fork-during-snapshot", "pass"),
         adapter,
@@ -833,27 +1001,25 @@ def test_membership_churn_requires_group_absence_after_reaping(tmp_path, monkeyp
     )
     # The snapshot omits a child forked by a disappearing parent. The retained
     # leader's terminal state cannot make that snapshot a settlement proof.
-    monkeypatch.setattr(psutil, "process_iter", lambda: [Mock(pid=5678)])
+    monkeypatch.setattr(psutil, "pids", lambda: [5678])
+    monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(5678)))
     monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
     probe = Mock()
     monkeypatch.setattr(os, "killpg", probe)
     assert not handle.poll().settled
-    assert adapter.reaped
-    process.poll.assert_called_once()
-    with pytest.raises(TaskSettlementError, match="no longer reserved") as error:
-        handle.cancel()
-    assert not error.value.status.settled
-    assert all(call.args[1] == 0 for call in probe.call_args_list)
+    assert not adapter.reaped
+    reap.assert_not_called()
+    handle._signal_group(signal.SIGTERM)
+    probe.assert_called_with(1234, signal.SIGTERM)
 
-    # Only disappearance of the remaining (possibly reused) numeric group is
-    # proof. No signals are permitted after the child identity is released.
+    # The leader is reaped only after the owned group is confirmed settled.
     probe.side_effect = ProcessLookupError()
     status = handle.poll()
     assert status.settled
-    assert not status.succeeded
+    assert status.succeeded
     assert handle.wait_for_settlement(timeout=0) == status
     assert handle.cancel() == status
-    process.poll.assert_called_once()
+    reap.assert_called_once()
 
 
 @pytest.mark.parametrize("capacity", [None, True, 0, -1, 1.5, "10"])
@@ -904,10 +1070,10 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             assert time.monotonic() < deadline
             time.sleep(0.01)
         forker = psutil.Process(int(fork_ready.read_text()))
-        process_iter = psutil.process_iter
+        pids = psutil.pids
 
         def fork_during_snapshot():
-            snapshot = list(process_iter())
+            snapshot = pids()
             fork_now.write_text("fork")
             _wait_for_file(child_pid_path)
             deadline = time.monotonic() + 5
@@ -919,9 +1085,9 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
                     break
                 assert time.monotonic() < deadline
                 time.sleep(0.01)
-            return iter(snapshot)
+            return snapshot
 
-        monkeypatch.setattr(psutil, "process_iter", fork_during_snapshot)
+        monkeypatch.setattr(psutil, "pids", fork_during_snapshot)
         probe = Mock(wraps=os.killpg)
         monkeypatch.setattr(os, "killpg", probe)
         status = handle.poll()
@@ -930,10 +1096,11 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
         assert psutil.Process(child_pid).status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
         assert not status.settled
         assert not status.succeeded
+        assert not owned.reaped
+        assert handle.cancel().settled
+        _assert_pid_not_running(child_pid)
         assert owned.reaped
-        with pytest.raises(TaskSettlementError, match="no longer reserved"):
-            handle.cancel()
-        assert all(call.args[1] == 0 for call in probe.call_args_list)
+        assert any(call.args[1] == signal.SIGTERM for call in probe.call_args_list)
     finally:
         if child_pid is None and child_pid_path.exists():
             child_pid = int(child_pid_path.read_text())
@@ -941,9 +1108,8 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
         elif child_pid is not None:
-            # The test owns this fixture's known worker. The launcher correctly
-            # refuses to signal an uncertain numeric group after releasing its
-            # leader, so fixture teardown terminates the known child directly.
+            # Fallback teardown for an assertion failure: successful cleanup
+            # above must be performed by the handle, not by this fixture.
             try:
                 os.kill(child_pid, signal.SIGKILL)
             except ProcessLookupError:

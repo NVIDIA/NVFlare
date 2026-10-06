@@ -63,11 +63,15 @@ class _OwnedProcessAdapter:
         self.pid = adapter.pid
         self._return_code = None
         self.reaped = False
+        self._ownership_lost = False
 
     def _observe(self):
+        if self._ownership_lost:
+            raise TaskLauncherError("task leader was externally reaped; process-group ownership is lost")
         try:
             return os.waitid(os.P_PID, self.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
         except ChildProcessError as e:
+            self._ownership_lost = True
             raise TaskLauncherError("task leader was externally reaped; process-group ownership is lost") from e
 
     def poll(self) -> Optional[int]:
@@ -90,18 +94,28 @@ class _OwnedProcessAdapter:
         return self._return_code is not None and not self.reaped
 
     def reap(self) -> int:
-        # Reap after no live group members were observed; the caller must then
-        # confirm group absence. Populate the wrapped Popen/ProcessAdapter
-        # return code so its finalizer cannot reap again.
+        # The caller confirms settlement while the leader still reserves its
+        # identity. Reap directly: ProcessAdapter.poll() masks ECHILD with a
+        # fallback status, and Popen.poll() also tolerates external reapers.
         if not self.reaped:
             self.verify_identity()
-            return_code = self._adapter.poll()
-            if return_code is None:
+            try:
+                pid, status = os.waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError as e:
+                self._ownership_lost = True
+                raise TaskLauncherError("task leader was externally reaped; process-group ownership is lost") from e
+            if pid == 0:
                 raise TaskLauncherError("task leader did not exit during reaping")
+            return_code = os.waitstatus_to_exitcode(status)
             # A completed reap is final. Its canonical waitpid/Popen return
             # code is authoritative; never try to observe the released PID.
             self._return_code = return_code
             self.reaped = True
+            # Populate both caches so the wrapped adapter and Popen finalizer
+            # cannot wait on a released (possibly reused) PID.
+            self._adapter._return_code = return_code
+            if self._adapter.process is not None:
+                self._adapter.process.returncode = return_code
         return self._return_code
 
 
@@ -144,6 +158,41 @@ class ProcessTaskHandle(TaskHandleSpec):
     def process_group_id(self) -> int:
         return self._process_group_id
 
+    def _dead_group_snapshot(self) -> Optional[set[tuple[int, float]]]:
+        """Return dead member identities, or None for live/uncertain membership."""
+        dead_members = set()
+        try:
+            # Inspect the raw PID snapshot ourselves. process_iter() silently
+            # omits processes that vanish during Process construction; one of
+            # those could have forked a worker absent from that PID snapshot.
+            for pid in psutil.pids():
+                if pid == self._process_group_id and self._adapter.owns_exited_leader is True:
+                    # waitid proves this retained child is terminal, including
+                    # on Darwin where its PGID can disappear before reaping.
+                    continue
+                try:
+                    try:
+                        if os.getpgid(pid) != self._process_group_id:
+                            continue
+                    except ProcessLookupError:
+                        # Darwin drops zombie PGIDs before removing their PID
+                        # entries. Include such terminal identities in both
+                        # scans even when their former group is unknowable.
+                        pass
+                    process = psutil.Process(pid)
+                    if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                        self._group_members[pid] = process
+                        return None
+                    dead_members.add((pid, process.create_time()))
+                except (ProcessLookupError, psutil.NoSuchProcess, PermissionError, psutil.AccessDenied):
+                    # An unidentified vanished parent may have left a child
+                    # that was born after the snapshot. Retain ownership and
+                    # retry rather than treating that omission as proof.
+                    return None
+        except (PermissionError, psutil.AccessDenied):
+            return None
+        return dead_members
+
     def _group_exists(self) -> bool:
         # Remember observed members by psutil identity (PID plus creation
         # time). Darwin can drop a dying member's PGID before status reports
@@ -171,35 +220,22 @@ class ProcessTaskHandle(TaskHandleSpec):
                 return True
 
         if self._adapter.reaped is True:
-            # The last scan was non-atomic: a descendant might have forked a
-            # worker after its PID snapshot. Only group absence can finalize
-            # settlement after releasing the leader. A remaining/reused group
-            # is uncertain, including when its snapshot shows only zombies.
+            # A released leader cannot reserve an unconfirmed numeric group.
             return True
 
         # killpg also sees unreaped zombies. They cannot execute or hold compute
-        # resources and cannot be removed with signals. Ignore a group only
-        # when all observed members are dead; uncertain observations fail closed.
-        dead_member_seen = self._adapter.owns_exited_leader is True
-        try:
-            for process in psutil.process_iter():
-                try:
-                    if os.getpgid(process.pid) != self._process_group_id:
-                        continue
-                    if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                        self._group_members[process.pid] = process
-                        live_member_seen = True
-                    else:
-                        dead_member_seen = True
-                except (ProcessLookupError, psutil.NoSuchProcess):
-                    continue
-                except (PermissionError, psutil.AccessDenied):
-                    return True
-        except (PermissionError, psutil.AccessDenied):
+        # resources and cannot be removed with signals. Confirm two matching
+        # dead-only snapshots before releasing the leader. A member that turns
+        # into a zombie during the first scan cannot fork afterwards; its last
+        # child must appear in the second scan. A new dead member or a vanished
+        # unidentified PID means churn, so settlement must be retried.
+        first = self._dead_group_snapshot()
+        if live_member_seen or first is None:
             return True
-        if live_member_seen:
+        second = self._dead_group_snapshot()
+        if second is None or first != second:
             return True
-        if not dead_member_seen:
+        if not second and self._adapter.owns_exited_leader is not True:
             # The last member can disappear between killpg and enumeration.
             # Confirm absence afresh instead of retaining the stale probe.
             try:
@@ -208,7 +244,8 @@ class ProcessTaskHandle(TaskHandleSpec):
                 return False
             except PermissionError:
                 return True
-        return not dead_member_seen
+            return True
+        return False
 
     def _signal_group(self, sig: int) -> None:
         with self._lock:
@@ -269,12 +306,6 @@ class ProcessTaskHandle(TaskHandleSpec):
                     exit_code=reaped_code if reaped_code >= 0 else None,
                     termination_signal=-reaped_code if reaped_code < 0 else None,
                 )
-                # Reaping releases numeric identity. Do not signal this group
-                # again, and do not trust another non-atomic member snapshot.
-                # A fresh absent-group probe closes the membership-churn race.
-                status = replace(status, settled=not self._group_exists())
-                if not status.settled:
-                    return status
             # Settlement is final for this physical execution. Never reopen
             # its scope because a later scan is uncertain or its PGID is reused.
             self._settled_status = status
@@ -398,6 +429,8 @@ class ProcessTaskLauncher(TaskLauncherSpec):
     descendant remains in the owned process group. Changing group or session
     is unsupported, including a different group in the same POSIX session.
     Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
+    Settlement confirms two stable dead-only member scans before reaping the
+    leader. Zombie members need not be reaped by their parent or an init.
 
     Attempt identities are retained for this launcher's lifetime and never
     evicted. Once ``max_attempt_identities`` is reached, new launches fail
