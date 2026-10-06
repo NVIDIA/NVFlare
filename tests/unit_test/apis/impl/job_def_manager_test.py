@@ -115,7 +115,10 @@ class TestJobManager(unittest.TestCase):
             mock.patch("nvflare.apis.impl.job_def_manager.datetime") as clock,
         ):
             clock.datetime.fromisoformat.side_effect = datetime.datetime.fromisoformat
-            clock.datetime.now.return_value = end_time
+            # Honor tz like the real clock so naive/aware mixing still raises.
+            clock.datetime.now.side_effect = lambda tz=None: (
+                end_time.astimezone(tz) if tz else end_time.replace(tzinfo=None)
+            )
             clock.timezone.utc = datetime.timezone.utc
             self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
 

@@ -1903,6 +1903,8 @@ def test_campaign_workspace_lock_rejects_concurrent_same_job_lifecycle(tmp_path)
     job.write_text("print('job')\n", encoding="utf-8")
 
     with runner.locked_campaign_workspace(tmp_path, "evaluate"):
+        # Lock rejection uses only the standard library, before optional YAML
+        # imports are needed. Isolate the child from site initialization hooks.
         result = subprocess.run(
             [sys.executable, "-I", "-S", runner.__file__, "status", str(job)],
             check=False,

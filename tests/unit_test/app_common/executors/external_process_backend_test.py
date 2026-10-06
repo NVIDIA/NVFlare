@@ -2036,6 +2036,14 @@ class TestExecute:
         original_wait = task.result_ready.wait
         workers = []
         deliveries = []
+        now = [0.0]
+
+        def advance_clock():
+            now[0] += 0.01
+            return now[0]
+
+        def advance_sleep(delay):
+            now[0] += delay
 
         def wait_for_result(_timeout):
             wait_entered.set()
@@ -2068,12 +2076,16 @@ class TestExecute:
             env.cell.on_shutdown = lambda *_args: make_cell_reply(
                 CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: False}
             )
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            # A regression that skips the event wait reaches the deadline in
+            # simulated time; the worker/event handoff retains its real watchdog.
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ebp, "time", SimpleNamespace(monotonic=advance_clock, sleep=advance_sleep))
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
+            assert result.get_return_code() == ReturnCode.OK
             for worker in workers:
                 worker.join(5.0)
                 assert not worker.is_alive()
-            assert result.get_return_code() == ReturnCode.OK
             result_wait.assert_called_once()
             assert deliveries
             assert deliveries[0].get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
