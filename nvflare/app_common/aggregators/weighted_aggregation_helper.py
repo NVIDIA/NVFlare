@@ -154,6 +154,11 @@ class WeightedAggregationHelper(object):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
+    def validate_shapes(self, data, contributor_name, contribution_round):
+        """Check exposed shapes under the helper lock without accumulating the contribution."""
+        with self.lock:
+            self._validate_shapes(data, contributor_name, contribution_round)
+
     def _validate_shapes(self, data, contributor_name, contribution_round):
         """Check exposed shapes without materializing lazy values or changing round state."""
         # Materializing mappings can expose get_shape(key) to avoid reading tensor data here.

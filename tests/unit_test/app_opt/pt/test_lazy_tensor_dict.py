@@ -274,6 +274,48 @@ class TestLazyTensorDict:
 
 
 class TestAggregationHelperWithLazyRefs:
+    def test_collection_preflight_does_not_materialize_lazy_refs_until_accepted(self, temp_safetensors, monkeypatch):
+        from nvflare.apis.dxo import DXO, DataKind, from_shareable
+        from nvflare.apis.fl_constant import ReservedKey
+        from nvflare.apis.fl_context import FLContext
+        from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+        from nvflare.app_common.app_constant import AppConstants
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        lazy_refs = {key: ltd.make_lazy_ref(key) for key in ltd.keys()}
+        aggregator = InTimeAccumulateWeightedAggregator(
+            expected_data_kind={"weights": DataKind.WEIGHTS, "metrics": DataKind.METRICS}
+        )
+        aggregator._initialize(aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        def contribution(name, weights, metric):
+            members = {"weights": DXO(DataKind.WEIGHTS, weights), "metrics": DXO(DataKind.METRICS, {"loss": metric})}
+            shareable = DXO(DataKind.COLLECTION, members).to_shareable()
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: name})
+            shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            return shareable
+
+        assert aggregator.accept(contribution("site-1", tensors, torch.ones(2)), fl_ctx)
+        reads = []
+        original_materialize = _LazyRef.materialize
+
+        def materialize(ref):
+            reads.append(ref.key)
+            return original_materialize(ref)
+
+        monkeypatch.setattr(_LazyRef, "materialize", materialize)
+
+        assert not aggregator.accept(contribution("site-2", lazy_refs, torch.ones(1)), fl_ctx)
+        assert reads == []
+        assert aggregator.accept(contribution("site-2", lazy_refs, torch.ones(2)), fl_ctx)
+        assert reads == list(tensors)
+        result = from_shareable(aggregator.aggregate(fl_ctx))
+        for key, value in result.data["weights"].data.items():
+            torch.testing.assert_close(value, tensors[key])
+
     @pytest.mark.parametrize("has_previous_contribution", [False, True])
     def test_materializing_mapping_reads_each_tensor_once(
         self, temp_safetensors, monkeypatch, has_previous_contribution

@@ -72,17 +72,8 @@ class DXOAggregator(FLComponent):
         if self.aggregation_helper:
             self.aggregation_helper.reset_stats()
 
-    def accept(self, dxo: DXO, contributor_name, contribution_round, fl_ctx: FLContext) -> bool:
-        """Store DXO and update aggregator's internal state
-        Args:
-            dxo: information from contributor
-            contributor_name: name of the contributor
-            contribution_round: round of the contribution
-            fl_ctx: context provided by workflow
-        Returns:
-            The boolean to indicate if DXO is accepted. Incompatible exposed shapes are rejected.
-        """
-
+    def can_accept(self, dxo: DXO, contributor_name, contribution_round, fl_ctx: FLContext) -> bool:
+        """Check DXO eligibility and exposed shapes without accumulating or committing algorithm metadata."""
         if not isinstance(dxo, DXO):
             self.log_error(fl_ctx, f"Expected DXO but got {type(dxo)}")
             return False
@@ -96,16 +87,17 @@ class DXOAggregator(FLComponent):
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
-        if processed_algorithm is not None:
-            if self.processed_algorithm is None:
-                self.processed_algorithm = processed_algorithm
-            elif self.processed_algorithm != processed_algorithm:
-                self.log_error(
-                    fl_ctx,
-                    f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
-                    f"but got algorithm: {processed_algorithm}",
-                )
-                return False
+        if (
+            processed_algorithm is not None
+            and self.processed_algorithm is not None
+            and self.processed_algorithm != processed_algorithm
+        ):
+            self.log_error(
+                fl_ctx,
+                f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
+                f"but got algorithm: {processed_algorithm}",
+            )
+            return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if contribution_round != current_round:
@@ -132,6 +124,22 @@ class DXOAggregator(FLComponent):
                 )
                 return False
 
+        try:
+            self.aggregation_helper.validate_shapes(data, contributor_name, contribution_round)
+        except AggregationShapeError as e:
+            self.log_warning(fl_ctx, f"Discarding DXO: {e}")
+            return False
+        return True
+
+    def accept(self, dxo: DXO, contributor_name, contribution_round, fl_ctx: FLContext) -> bool:
+        """Store DXO and update aggregator's internal state.
+
+        Returns False for an ineligible DXO or incompatible exposed shapes. Algorithm metadata
+        is committed only after successful accumulation.
+        """
+        if not self.can_accept(dxo, contributor_name, contribution_round, fl_ctx):
+            return False
+        data = dxo.data
         n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
         if n_iter is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
@@ -168,6 +176,9 @@ class DXOAggregator(FLComponent):
             # Shape validation leaves the helper unchanged, so later contributions can still be accepted.
             self.log_warning(fl_ctx, f"Discarding DXO: {e}")
             return False
+        processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
+        if processed_algorithm is not None:
+            self.processed_algorithm = processed_algorithm
         self.log_debug(fl_ctx, "End accept")
         return True
 
