@@ -204,8 +204,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
-        # Accept expected DXO(s) in shareable
-        n_accepted = 0
+        # Resolve expected DXOs first so collection shape rejection is atomic:
+        # no earlier DXO may mutate its helper before a later DXO is found invalid.
+        resolved_dxos = []
         for key in self.expected_data_kind.keys():
             if key == self._single_dxo_key:  # expecting a single DXO
                 sub_dxo = dxo
@@ -214,14 +215,21 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             if not isinstance(sub_dxo, DXO):
                 self.log_warning(fl_ctx, f"Collection does not contain DXO for key {key} but {type(sub_dxo)}.")
                 continue
+            resolved_dxos.append((key, sub_dxo))
 
+        for key, sub_dxo in resolved_dxos:
+            if not self.dxo_aggregators[key].validate_shapes(sub_dxo, contributor_name, fl_ctx):
+                return False
+
+        # Shape-compatible contribution: now mutate each DXO aggregator.
+        n_accepted = 0
+        for key, sub_dxo in resolved_dxos:
             accepted = self.dxo_aggregators[key].accept(
                 dxo=sub_dxo, contributor_name=contributor_name, contribution_round=contribution_round, fl_ctx=fl_ctx
             )
             if not accepted:
                 return False
-            else:
-                n_accepted += 1
+            n_accepted += 1
 
         if n_accepted > 0:
             return True

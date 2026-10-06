@@ -163,6 +163,19 @@ class WeightedAggregationHelper(object):
             return getattr(metadata, "shape", None)
         return getattr(data[key], "shape", None)
 
+    def validate_shapes(self, data) -> None:
+        """Validate exposed parameter shapes without mutating aggregation state."""
+        for k in data.keys():
+            if self.exclude_vars is not None and self.exclude_vars.search(k):
+                continue
+            current_shape = getattr(self.total.get(k), "shape", None)
+            incoming_shape = self._shape_for_key(data, k)
+            if current_shape is not None and incoming_shape is not None:
+                if tuple(current_shape) != tuple(incoming_shape):
+                    raise ContributionShapeError(
+                        f"Contribution for {k!r} has shape {tuple(incoming_shape)}, " f"expected {tuple(current_shape)}"
+                    )
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights.
 
@@ -177,20 +190,8 @@ class WeightedAggregationHelper(object):
             ulp-level differences between runs; bitwise reproducibility is not guaranteed for >=2 clients.
         """
         with self.lock:
-            # Check exposed shapes before updating any round state. Iterate keys so
-            # disk-backed mappings can answer from safetensors header metadata instead
-            # of materializing every tensor once here and again during accumulation.
-            for k in data.keys():
-                if self.exclude_vars is not None and self.exclude_vars.search(k):
-                    continue
-                current_shape = getattr(self.total.get(k), "shape", None)
-                incoming_shape = self._shape_for_key(data, k)
-                if current_shape is not None and incoming_shape is not None:
-                    if tuple(current_shape) != tuple(incoming_shape):
-                        raise ContributionShapeError(
-                            f"Contribution for {k!r} has shape {tuple(incoming_shape)}, "
-                            f"expected {tuple(current_shape)}"
-                        )
+            # Validate the whole contribution before updating any round state.
+            self.validate_shapes(data)
 
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):

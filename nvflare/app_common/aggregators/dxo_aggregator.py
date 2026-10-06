@@ -72,6 +72,17 @@ class DXOAggregator(FLComponent):
         if self.aggregation_helper:
             self.aggregation_helper.reset_stats()
 
+    def validate_shapes(self, dxo: DXO, contributor_name: str, fl_ctx: FLContext) -> bool:
+        """Validate contribution shapes without changing aggregation state."""
+        if not isinstance(dxo, DXO) or dxo.data is None:
+            return True
+        try:
+            self.aggregation_helper.validate_shapes(dxo.data)
+        except ContributionShapeError as e:
+            self.log_warning(fl_ctx, f"discarding DXO from {contributor_name}: {e}")
+            return False
+        return True
+
     def accept(self, dxo: DXO, contributor_name, contribution_round, fl_ctx: FLContext) -> bool:
         """Store DXO and update aggregator's internal state
         Args:

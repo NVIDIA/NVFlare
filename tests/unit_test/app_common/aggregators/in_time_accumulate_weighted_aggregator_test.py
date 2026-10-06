@@ -301,6 +301,42 @@ class TestInTimeAccumulateWeightedAggregator:
         assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
         assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
 
+    def test_collection_shape_mismatch_rejects_atomically(self):
+        agg = InTimeAccumulateWeightedAggregator(
+            expected_data_kind={"a": DataKind.WEIGHT_DIFF, "b": DataKind.WEIGHT_DIFF}
+        )
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        def collection(client_name, a_values, b_values):
+            shareable = Shareable()
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
+            shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            return DXO(
+                DataKind.COLLECTION,
+                data={
+                    "a": DXO(
+                        DataKind.WEIGHT_DIFF,
+                        data={"weight": np.asarray(a_values)},
+                        meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                    ),
+                    "b": DXO(
+                        DataKind.WEIGHT_DIFF,
+                        data={"weight": np.asarray(b_values)},
+                        meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                    ),
+                },
+            ).update_shareable(shareable)
+
+        assert agg.accept(collection("site-1", [1.0, 3.0], [10.0, 30.0]), fl_ctx)
+        assert not agg.accept(collection("site-2", [100.0, 300.0], [9.0]), fl_ctx)
+        assert agg.accept(collection("site-3", [5.0, 7.0], [50.0, 70.0]), fl_ctx)
+
+        result = from_shareable(agg.aggregate(fl_ctx))
+        np.testing.assert_allclose(result.data["a"].data["weight"], [3.0, 5.0])
+        np.testing.assert_allclose(result.data["b"].data["weight"], [30.0, 50.0])
+
     def test_shape_mismatch_rejects_one_client_and_keeps_collecting(self):
         agg = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHT_DIFF)
         agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
