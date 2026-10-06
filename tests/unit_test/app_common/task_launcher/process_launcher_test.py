@@ -814,7 +814,13 @@ def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, mo
         probe = Mock(wraps=os.killpg)
         monkeypatch.setattr(os, "killpg", probe)
         status = handle.poll()
-        assert stolen
+        # Unrelated process-table churn can postpone the settlement proof.
+        # Wait until reaping actually reaches the injected ownership race.
+        while not stolen:
+            assert not status.settled
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+            status = handle.poll()
         assert not status.settled
         assert status.exit_code == 0
         assert status.termination_signal is None
@@ -832,9 +838,9 @@ def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, mo
         assert all(call.args[1] == 0 for call in probe.call_args_list)
     finally:
         monkeypatch.setattr(os, "waitpid", waitpid)
-        if not stolen:
+        if not stolen and owned.poll() is None:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.kill(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
         process.wait()
