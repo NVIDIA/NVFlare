@@ -518,6 +518,7 @@ def test_multi_participant_overrides(configuration, tmp_path, monkeypatch):
         ("data.pem", b"-----BEGIN PRIVATE KEY-----"),
         ("data.pem", b"a" * (1024 * 1024 - 12) + b"-----BEGIN RSA PRIVATE KEY-----"),
     ],
+    ids=["key-file", "pem-header", "pem-header-at-scan-limit"],
 )
 def test_private_keys_rejected_in_public_inputs(configuration, tmp_path, name, content):
     public = tmp_path / "public"
