@@ -39,10 +39,11 @@ readonly EXPECTED_GPU_COUNT
 APP_READ_ONLY_ROOT_FILESYSTEM="${APP_READ_ONLY_ROOT_FILESYSTEM:-true}"
 [[ "${APP_READ_ONLY_ROOT_FILESYSTEM}" == true || "${APP_READ_ONLY_ROOT_FILESYSTEM}" == false ]] \
     || die "APP_READ_ONLY_ROOT_FILESYSTEM must be true or false"
+KBS_CA_FILE="${KBS_CA_FILE:-${PUBLIC_DIR}/trustee.crt}"
 
 for required in RELEASE_NAME BUILD_CONTEXT DOCKERFILE REGISTRY_REPOSITORY \
     REGISTRY_ENDPOINT REGISTRY_CA_FILE REGISTRY_USERNAME_FILE REGISTRY_PASSWORD_FILE \
-    KBS_URL APP_COMMAND_JSON APP_UID APP_GID; do
+    KBS_URL KBS_CA_FILE APP_COMMAND_JSON APP_UID APP_GID; do
     [[ -n "${!required:-}" ]] || die "missing ${required} in ${OWNER_CONFIG}"
 done
 
@@ -64,12 +65,14 @@ REGISTRY_PORT="${REGISTRY_PARTS[1]}"
 REGISTRY_USERNAME_PATH="$(readlink -f -- "${REGISTRY_USERNAME_FILE}")"
 REGISTRY_PASSWORD_PATH="$(readlink -f -- "${REGISTRY_PASSWORD_FILE}")"
 REGISTRY_CA_FILE="$(readlink -f -- "${REGISTRY_CA_FILE}")"
+KBS_CA_FILE="$(readlink -f -- "${KBS_CA_FILE}")"
 need_file "${REGISTRY_USERNAME_PATH}"
 need_file "${REGISTRY_PASSWORD_PATH}"
 need_file "${REGISTRY_CA_FILE}"
+need_file "${KBS_CA_FILE}"
 REGISTRY_USERNAME="$(tr -d '\r\n' < "${REGISTRY_USERNAME_PATH}")"
 [[ -n "${REGISTRY_USERNAME}" ]] || die "registry username is empty"
-readonly REGISTRY_HOST REGISTRY_PORT REGISTRY_USERNAME KBS_URL
+readonly REGISTRY_HOST REGISTRY_PORT REGISTRY_USERNAME KBS_URL KBS_CA_FILE
 
 registry_base() {
     printf '%s:%s' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
@@ -131,5 +134,4 @@ GENPOLICY="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/bin/genpolicy"
 RULES="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers/rules.rego"
 SETTINGS="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers/genpolicy-settings.json"
 
-need_file "${PUBLIC_DIR}/trustee.crt"
 need_file "${REGISTRY_CA_FILE}"

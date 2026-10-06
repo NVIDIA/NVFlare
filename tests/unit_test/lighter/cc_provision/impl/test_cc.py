@@ -34,6 +34,7 @@ from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeployment
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
 from nvflare.lighter.cc_provision.impl.cc_packager import CCPackager
+from nvflare.lighter.cc_provision.impl.coco import CoCoDeployment
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.impl.cert import CertBuilder
@@ -559,6 +560,53 @@ def test_config_loaders_expose_declaring_paths(tmp_path):
     assert normalized["config_path"] == tmp_path / "cc_server.yml"
 
 
+def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypatch):
+    _coco_project(tmp_path)
+    home = tmp_path / "home"
+    credentials = home / "credentials"
+    credentials.mkdir(parents=True)
+    for name in ("ca.pem", "admin.jwt", "as.pem", "registry-ca.pem", "username", "password"):
+        shutil.copyfile(tmp_path / name, credentials / name)
+    (credentials / "approval.pub").write_text("approval")
+    config_path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(config_path.read_text())
+    service = config["attestation_services"]["trustee"]
+    for field, name in (
+        ("ca_cert_file", "ca.pem"),
+        ("admin_token_file", "admin.jwt"),
+        ("attestation_signing_public_key_file", "as.pem"),
+    ):
+        service[field] = f"~/credentials/{name}"
+    registry = config["container_registries"]["workloads"]
+    for field, name in (
+        ("ca_cert_file", "registry-ca.pem"),
+        ("publisher_username_file", "username"),
+        ("publisher_password_file", "password"),
+    ):
+        registry[field] = f"~/credentials/{name}"
+    config["approval"] = {"public_key_files": ["~/credentials/approval.pub"]}
+    _write(config_path, config)
+    monkeypatch.setenv("HOME", str(home))
+
+    project_config = load_project_config(config_path)
+    service = project_config["attestation_services"]["trustee"]
+    assert service["ca_cert_file"] == str(credentials / "ca.pem")
+    assert service["admin_token_file"] == str(credentials / "admin.jwt")
+    assert service["attestation_signing_public_key_file"] == str(credentials / "as.pem")
+    assert project_config["approval"]["public_key_files"] == [str(credentials / "approval.pub")]
+    assert project_config["container_registries"]["workloads"]["ca_cert_file"] == str(credentials / "registry-ca.pem")
+
+    normalized = load_participant_config(tmp_path / "cc_site.yml", project_config)
+    plan = SimpleNamespace(
+        attestation_service=normalized["attestation_service"],
+        internal={"project_name": "home-paths", "site_name": "site-1", "workload_constraints": {}},
+    )
+    coco_args = CoCoDeployment.authorizer(plan, issuer=False)["args"]
+    bare_metal_args = BareMetalCVMDeployment.authorizer(plan, issuer=True)["args"]
+    assert "BEGIN PUBLIC KEY" in coco_args["trustee_public_key"]
+    assert bare_metal_args["kbs_ca"] == "fixture"
+
+
 def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     project = prepare_project(
         {
@@ -724,6 +772,11 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
         )
         assert workload["REGISTRY_ENDPOINT"] == "registry.example.com:5000"
         assert workload["KBS_URL"] == "https://trustee.example.com:8443"
+        assert Path(workload["KBS_CA_FILE"]).read_text() == "fixture"
+        policy_script = (
+            Path(__file__).resolve().parents[5] / "examples/devops/coco/admin/30-generate-pod-and-policies.sh"
+        )
+        assert 'TRUSTEE_CERT="$(<"${KBS_CA_FILE}")"' in policy_script.read_text()
         assert Path(workload["BUILD_CONTEXT"]).joinpath(".nvflare-kit/signature.json").is_file()
         image = "registry.example.com:5000/workloads/site@sha256:" + "a" * 64
         pod = Path(request["result_file"]).with_name("pod.yaml")

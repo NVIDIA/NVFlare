@@ -103,6 +103,10 @@ def package_coco_plan(plan, private_kit, public_output, ctx):
                 value = project_path.parent / value
             stream.write(f"{key}={shlex.quote(str(value.resolve()))}\n")
         stream.write(f"KBS_URL={shlex.quote(plan.attestation_service.values['kbs_endpoint'])}\n")
+        kbs_ca = Path(plan.attestation_service.values["ca_cert_file"]).expanduser()
+        if not kbs_ca.is_absolute():
+            kbs_ca = project_path.parent / kbs_ca
+        stream.write(f"KBS_CA_FILE={shlex.quote(str(kbs_ca.resolve()))}\n")
     subprocess.run([str(runner), str(request)], cwd=plan.config_path.parent, check=True, timeout=packager.build_timeout)
     receipt = json.loads((owner / "result.json").read_text())
     if receipt.get("schema") != "nvflare-coco-build-result/v1" or receipt.get("release_name") != config["release_name"]:

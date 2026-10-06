@@ -78,9 +78,8 @@ class BareMetalCVMDeployment(CCDeployment):
     @staticmethod
     def authorizer(plan, *, issuer):
         service = plan.attestation_service
-        base = service.config_path.parent
-        key = (base / service.values["attestation_signing_public_key_file"]).resolve()
-        ca = (base / service.values["ca_cert_file"]).resolve()
+        key = Path(service.values["attestation_signing_public_key_file"])
+        ca = Path(service.values["ca_cert_file"])
         retry = service.values.get("retry", {})
         args = {
             "trustee_public_key": key.read_text(),
@@ -119,7 +118,6 @@ class BareMetalCVMDeployment(CCDeployment):
         """Prepare the legacy vault worker before a new prod directory exists."""
 
         service = plan.attestation_service
-        base = service.config_path.parent
         private = Path(ctx.get_state_dir()) / "cc-private-config"
         private.mkdir(mode=0o700, exist_ok=True)
         if private.is_symlink() or not private.is_dir():
@@ -129,15 +127,10 @@ class BareMetalCVMDeployment(CCDeployment):
         value = {
             "trustee": {
                 "url": service.values["kbs_endpoint"],
-                "ca": str((base / service.values["ca_cert_file"]).resolve()),
-                "admin_token_file": str((base / service.values["admin_token_file"]).resolve()),
+                "ca": service.values["ca_cert_file"],
+                "admin_token_file": service.values["admin_token_file"],
             },
-            "approval": {
-                "public_keys": [
-                    str((Path(project_config["_config_path"]).parent / item).resolve())
-                    for item in approval["public_key_files"]
-                ]
-            },
+            "approval": {"public_keys": list(approval["public_key_files"])},
         }
         project_text = yaml.safe_dump(value, sort_keys=False)
         config_id = hashlib.sha256(project_text.encode()).hexdigest()[:16]

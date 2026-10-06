@@ -192,7 +192,7 @@ policy = {
 Path(sys.argv[1]).write_text(json.dumps(policy, indent=2) + "\n")
 PY
 
-TRUSTEE_CERT="$(<"${PUBLIC_DIR}/trustee.crt")"
+TRUSTEE_CERT="$(<"${KBS_CA_FILE}")"
 REGISTRY_CA="$(<"${REGISTRY_CA_FILE}")"
 cat > "${POLICY_WORK_DIR}/base-initdata.toml" <<EOF
 algorithm = "sha256"

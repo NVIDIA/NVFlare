@@ -184,15 +184,16 @@ def load_project_config(config_path: Path) -> Dict[str, Any]:
         ):
             raise ValueError(f"container_registries.{name}.endpoint must be a registry host[:port]")
         for field in ("ca_cert_file", "publisher_username_file", "publisher_password_file"):
-            _path(config_path, registry[field], f"container_registries.{name}.{field}")
+            registry[field] = str(_path(config_path, registry[field], f"container_registries.{name}.{field}"))
 
     if "approval" in config:
         approval = _exact(config["approval"], {"public_key_files"}, "approval", required=("public_key_files",))
         keys = approval["public_key_files"]
         if not isinstance(keys, list) or not keys:
             raise ValueError("approval.public_key_files must be a non-empty list")
-        for value in keys:
-            _path(config_path, value, "approval.public_key_files entry")
+        approval["public_key_files"] = [
+            str(_path(config_path, value, "approval.public_key_files entry")) for value in keys
+        ]
 
     tools = _mapping(config.get("build_tools", {}), "build_tools")
     if set(tools) - {CCDeploymentMode.BARE_METAL_CVM.value, CCDeploymentMode.COCO.value}:
@@ -210,6 +211,7 @@ def load_project_config(config_path: Path) -> Dict[str, Any]:
             "build_tools.bare_metal_cvm.cvm_builder_dir",
             directory=True,
         )
+        settings["cvm_builder_dir"] = str(builder)
         _path(
             config_path,
             str(builder / "cvmctl"),
@@ -217,11 +219,13 @@ def load_project_config(config_path: Path) -> Dict[str, Any]:
             executable=True,
         )
         if "output_root" in settings:
-            _path(
-                config_path,
-                settings["output_root"],
-                "build_tools.bare_metal_cvm.output_root",
-                required=False,
+            settings["output_root"] = str(
+                _path(
+                    config_path,
+                    settings["output_root"],
+                    "build_tools.bare_metal_cvm.output_root",
+                    required=False,
+                )
             )
     if CCDeploymentMode.COCO.value in tools:
         settings = _exact(
@@ -230,7 +234,9 @@ def load_project_config(config_path: Path) -> Dict[str, Any]:
             "build_tools.coco",
             required=("build_command",),
         )
-        _path(config_path, settings["build_command"], "build_tools.coco.build_command", executable=True)
+        settings["build_command"] = str(
+            _path(config_path, settings["build_command"], "build_tools.coco.build_command", executable=True)
+        )
         if "build_timeout_seconds" in settings:
             _positive_int(settings["build_timeout_seconds"], "build_tools.coco.build_timeout_seconds")
     config["_config_path"] = config_path
@@ -275,7 +281,7 @@ def _validate_service(name, value, config_path):
                 "http://127.0.0.1:<port>/aa/token endpoint"
             )
         for field in ("ca_cert_file", "admin_token_file", "attestation_signing_public_key_file"):
-            _path(config_path, service[field], f"attestation_services.{name}.{field}")
+            service[field] = str(_path(config_path, service[field], f"attestation_services.{name}.{field}"))
         age = _positive_int(
             service["token_expiration_seconds"], f"attestation_services.{name}.token_expiration_seconds"
         )

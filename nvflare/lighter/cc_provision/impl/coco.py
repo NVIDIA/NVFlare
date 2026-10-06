@@ -14,6 +14,8 @@
 
 """CoCo implementation of the unified CC deployment interface."""
 
+from pathlib import Path
+
 from nvflare.lighter.cc_provision.deployment import CCDeployment, CCDeploymentMode, CCDeploymentPlan, plain_data
 from nvflare.lighter.cc_provision.impl.coco_release import _silence_coco_startup
 
@@ -55,7 +57,7 @@ class CoCoDeployment(CCDeployment):
     @staticmethod
     def authorizer(plan, *, issuer):
         service = plan.attestation_service
-        key = (service.config_path.parent / service.values["attestation_signing_public_key_file"]).resolve()
+        key = Path(service.values["attestation_signing_public_key_file"])
         retry = service.values.get("retry", {})
         args = {
             "trustee_public_key": key.read_text(),
