@@ -113,6 +113,10 @@ def compute_key_match_stats(contributions: Dict[str, Any]) -> dict:
     }
 
 
+class AggregationShapeError(ValueError):
+    """A contribution's exposed shape is incompatible, detected before accumulation changes state."""
+
+
 class WeightedAggregationHelper(object):
     def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.
@@ -175,7 +179,7 @@ class WeightedAggregationHelper(object):
             expected_shape = tuple(expected_shape)
             received_shape = tuple(received_shape)
             if received_shape != expected_shape:
-                raise ValueError(
+                raise AggregationShapeError(
                     f"Shape mismatch for parameter {k!r} from contributor {contributor_name!r} "
                     f"at round {contribution_round}: expected {expected_shape}, got {received_shape}"
                 )
@@ -184,7 +188,7 @@ class WeightedAggregationHelper(object):
         """Compute weighted sum and sum of weights.
 
         Raises:
-            ValueError: A non-excluded key has a different exposed shape from its running total.
+            AggregationShapeError: A non-excluded key has a different exposed shape from its running total.
                 These shape checks complete before any round state changes. Values without exposed
                 shape metadata, including lazy refs, retain their existing aggregation behavior;
                 failures during arithmetic or materialization are not rolled back.

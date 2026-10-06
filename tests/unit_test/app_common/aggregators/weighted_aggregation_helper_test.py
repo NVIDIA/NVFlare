@@ -19,6 +19,7 @@ import pytest
 import torch
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationShapeError,
     AggregationStatsKey,
     WeightedAggregationHelper,
     _is_aggregatable_metric_value,
@@ -454,7 +455,7 @@ class TestShapeValidation:
         helper = WeightedAggregationHelper()
         helper.add({"weight": array(np.ones(expected_shape))}, 1.0, "site-1", 7)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(AggregationShapeError) as exc_info:
             helper.add({"weight": array(np.ones(received_shape))}, 2.0, "site-2", 7)
 
         message = str(exc_info.value)

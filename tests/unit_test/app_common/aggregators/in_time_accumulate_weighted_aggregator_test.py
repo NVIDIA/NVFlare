@@ -23,12 +23,31 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
 
 
 class TestInTimeAccumulateWeightedAggregator:
+    def test_arithmetic_value_error_is_not_treated_as_shape_rejection(self):
+        class FailingValue:
+            shape = (2,)
+
+            def __mul__(self, weight):
+                raise ValueError("arithmetic failure")
+
+        aggregator = DXOAggregator()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        first = DXO(DataKind.WEIGHT_DIFF, {"early": np.ones(2), "late": np.ones(2)})
+        assert aggregator.accept(first, "site-1", 0, fl_ctx)
+        second = DXO(DataKind.WEIGHT_DIFF, {"early": np.ones(2), "late": FailingValue()})
+
+        # Arithmetic may fail after an earlier key was accumulated; it is not a safe rejection.
+        with pytest.raises(ValueError, match="arithmetic failure"):
+            aggregator.accept(second, "site-2", 0, fl_ctx)
+
     @pytest.mark.parametrize(
         "exclude_vars,aggregation_weights,expected_data_kind,error,error_msg,is_regex",
         [

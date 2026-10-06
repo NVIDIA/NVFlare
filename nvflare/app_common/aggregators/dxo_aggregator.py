@@ -17,7 +17,11 @@ from typing import Any, Dict, Optional
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey, WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationShapeError,
+    AggregationStatsKey,
+    WeightedAggregationHelper,
+)
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.log_utils import get_module_logger
 
@@ -76,7 +80,7 @@ class DXOAggregator(FLComponent):
             contribution_round: round of the contribution
             fl_ctx: context provided by workflow
         Returns:
-            The boolean to indicate if DXO is accepted.
+            The boolean to indicate if DXO is accepted. Incompatible exposed shapes are rejected.
         """
 
         if not isinstance(dxo, DXO):
@@ -158,7 +162,12 @@ class DXOAggregator(FLComponent):
             aggregation_weight = 1.0
 
         # aggregate
-        self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
+        try:
+            self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
+        except AggregationShapeError as e:
+            # Shape validation leaves the helper unchanged, so later contributions can still be accepted.
+            self.log_warning(fl_ctx, f"Discarding DXO: {e}")
+            return False
         self.log_debug(fl_ctx, "End accept")
         return True
 
