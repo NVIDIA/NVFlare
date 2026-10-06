@@ -16,6 +16,7 @@ from abc import ABC
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -285,6 +286,20 @@ class WFCommSpec(ABC):
         ``fl_ctx`` and return ``False``. Legacy communicators may process unfenced
         submissions; authorities issuing attempt IDs must implement their fence.
         """
+        return result.get_task_attempt_id() is None
+
+    def reject_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Record rejection without invoking result callbacks or late-result hooks.
+
+        Return True only when the submission may be rejected for the first time.
+        Invalid submissions and decided retries return False; matching retries
+        restore their recorded TASK_RESULT_ACCEPTED value in fl_ctx. Authorities
+        supporting fenced assignments must override this method to retain that
+        decision. The default preserves only unfenced legacy handling.
+        """
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         return result.get_task_attempt_id() is None
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):

@@ -29,6 +29,9 @@ task data or results; the client preserves the original assignment cookies and
 binds the final outgoing reply. Forwarding a received Shareable as new task data
 rebinds reserved cookies on a protected per-client copy and preserves application
 cookies. Incoming conflicts remain invalid.
+Server result-filter replacements also receive the already-validated task,
+attempt, required-attempt marker, and workflow in both headers and cookies;
+application cookies remain intact.
 
 ## Receipt versus admission
 
@@ -53,6 +56,9 @@ CrossSiteModelEval storage. A void late hook does not imply an accepted ACK; a
 custom hook can explicitly set `TASK_RESULT_ACCEPTED` to `True` for successful
 admission. A first authenticated late fatal result retains job-abort behavior.
 Forged or already-decided attempts cannot cause fatal effects.
+For an assigned attempt, fatal handling records rejection in the scheduling
+authority and job-local receipt before logging or panic handling can abort or
+tear down the workflow.
 
 ## Replay and retention
 

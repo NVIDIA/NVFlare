@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.wf_comm_spec import WFCommSpec
@@ -69,6 +70,10 @@ def test_unfenced_legacy_protocol_remains_supported_but_not_assumed_for_fenced_b
     data = Shareable()
     assert data.get_task_attempt_id() is None
     communicator = WFCommSpec()
-    assert communicator.check_submission(None, "legacy", "id", data, FLContext())
+    fl_ctx = FLContext()
+    assert communicator.check_submission(None, "legacy", "id", data, fl_ctx)
+    assert communicator.reject_submission(None, "legacy", "id", data, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
     data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "authority-attempt")
-    assert not communicator.check_submission(None, "fenced", "id", data, FLContext())
+    assert not communicator.check_submission(None, "fenced", "id", data, fl_ctx)
+    assert not communicator.reject_submission(None, "fenced", "id", data, fl_ctx)

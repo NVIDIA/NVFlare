@@ -564,6 +564,27 @@ class WFCommServer(FLComponent, WFCommSpec):
                 )
             return True
 
+    def reject_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Claim a rejected publication before fatal handling can abort the job."""
+        with self._controller_lock:
+            if not self.check_submission(client, task_name, task_id, result, fl_ctx):
+                return False
+            with self._task_lock:
+                client_task = self._client_task_map.get(task_id)
+                if client_task is not None:
+                    client_task.result_received_time = time.time()
+                    client_task.props[_CLIENT_TASK_RESULT_ACCEPTED] = False
+                    completed = self._remember_completed_client_task(client_task)
+                else:
+                    completed = self._get_completed_client_task_info(task_id)
+                if completed is not None:
+                    completed.accepted = False
+                # A genuinely unknown unfenced result has no assignment record;
+                # retain its legacy fatal handling without invoking a late hook.
+            return True
+
     def _do_process_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ):

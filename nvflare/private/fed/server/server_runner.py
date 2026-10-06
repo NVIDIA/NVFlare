@@ -582,6 +582,9 @@ class ServerRunner(TBI):
 
         rc = result.get_return_code(default=ReturnCode.OK)
         if rc in self.ABORT_RETURN_CODES:
+            if not communicator.reject_submission(client, task_name, task_id, result, fl_ctx):
+                return
+            self._remember_result_receipt(client, task_name, task_id, attempt_id, workflow.id, False)
             self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
             self.system_panic(
                 reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
@@ -632,11 +635,21 @@ class ServerRunner(TBI):
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+                result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
                 if attempt_id is not None:
-                    # A filter may replace the Shareable. Preserve the already
-                    # admitted fence for the communicator's second validation.
-                    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
-                    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+                    # A trusted filter may replace the Shareable with a prior
+                    # result. Rebind the full validated assignment in headers
+                    # and cookies before the communicator validates it again.
+                    for key, value in (
+                        (ReservedHeaderKey.TASK_ID, task_id),
+                        (ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id),
+                        (ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True),
+                        (ReservedHeaderKey.WORKFLOW, workflow.id),
+                    ):
+                        result.set_header(key, value)
+                        result.add_cookie(key, value)
+                else:
+                    result.set_header(ReservedHeaderKey.TASK_ID, task_id)
                 fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
                 self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
 

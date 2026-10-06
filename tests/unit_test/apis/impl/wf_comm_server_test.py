@@ -279,6 +279,62 @@ def _retired_assignment(task_name="train", status=TaskCompletionStatus.TIMEOUT, 
     return wf, assigned, fl_ctx, result
 
 
+@pytest.mark.parametrize("accepted", [False, True])
+@pytest.mark.parametrize("swept", [False, True])
+def test_rejection_cannot_overwrite_a_decided_publication(accepted, swept):
+    wf, assigned, fl_ctx = _assignment()
+    assigned.task.result_received_cb.return_value = accepted
+    result = Shareable({"first": True})
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    if swept:
+        wf._remember_completed_client_task(assigned)
+        wf._client_task_map.pop(assigned.id)
+    fatal = make_reply(ReturnCode.UNSAFE_JOB)
+    fatal.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    assert not wf.reject_submission(assigned.client, "train", assigned.id, fatal, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is accepted
+    assert assigned.result is result
+    assigned.task.result_received_cb.assert_called_once()
+
+
+@pytest.mark.parametrize("stage", ["active", "retired", "swept"])
+@pytest.mark.parametrize("mismatch", ["client", "task", "attempt", "missing_attempt"])
+def test_invalid_rejection_cannot_claim_an_assignment(stage, mismatch):
+    wf, assigned, fl_ctx, result = _retired_assignment(swept=stage == "swept")
+    if stage == "active":
+        assigned.task.completion_status = None
+    client = Client("other-site", "token") if mismatch == "client" else assigned.client
+    task_name = "other-task" if mismatch == "task" else "train"
+    if mismatch in ("attempt", "missing_attempt"):
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "other-attempt" if mismatch == "attempt" else None)
+    assert not wf.reject_submission(client, task_name, assigned.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert assigned.result_received_time is None
+    completed = wf._completed_client_task_map.get(assigned.id)
+    assert completed is None or completed.accepted is None
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    assert wf.reject_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    assert wf._completed_client_task_map[assigned.id].accepted is False
+    wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert assigned.result is None
+    assigned.task.result_received_cb.assert_not_called()
+    assigned.task.props["___mgr"].check_task_result.assert_not_called()
+    wf.controller.process_result_of_unknown_task.assert_not_called()
+
+
+def test_unknown_unfenced_rejection_retains_legacy_handling_without_fabricating_an_assignment():
+    wf, assigned, fl_ctx = _assignment()
+    result = Shareable()
+    assert wf.reject_submission(assigned.client, "train", "unknown", result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert not wf._completed_client_task_map
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    assert not wf.reject_submission(assigned.client, "train", "unknown", result, fl_ctx)
+    wf.controller.process_result_of_unknown_task.assert_not_called()
+
+
 @pytest.mark.parametrize("swept", [False, True])
 @pytest.mark.parametrize("status", [TaskCompletionStatus.TIMEOUT, TaskCompletionStatus.CANCELLED])
 def test_exact_first_late_assigned_result_reaches_unknown_hook_once(status, swept):
