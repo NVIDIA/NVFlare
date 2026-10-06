@@ -1773,7 +1773,7 @@ class TestHeartbeatAndOperationalLiveness:
             trainer.result_source_live.clear()
             backend.finalize(FLContext())
 
-    def test_missing_heartbeat_bounds_unlimited_result_wait(self, env):
+    def test_missing_heartbeat_bounds_unlimited_result_wait(self, env, monkeypatch):
         backend, fl_ctx = _initialized_backend(
             env,
             heartbeat_interval=0.02,
@@ -1781,12 +1781,30 @@ class TestHeartbeatAndOperationalLiveness:
             result_wait_timeout=None,
         )
         try:
-            start = time.monotonic()
+            trainer = backend._active_launch
+            task = ebp.CellTask(task_id="heartbeat-expiry")
+            silent_for = 0.0
+
+            def expire_heartbeat(_timeout):
+                nonlocal silent_for
+                # Advance liveness after entering the result wait, without sleeping.
+                # A second wait means heartbeat expiry failed to bound the loop.
+                if silent_for:
+                    pytest.fail("result wait continued after heartbeat expiry")
+                silent_for = 0.09
+                return False
+
+            monkeypatch.setattr(trainer, "peer_silent_for", lambda: silent_for)
+            monkeypatch.setattr(ebp, "CellTask", lambda **_kwargs: task)
+            result_wait = Mock(side_effect=expire_heartbeat)
+            monkeypatch.setattr(task.result_ready, "wait", result_wait)
+
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 1.0
+            result_wait.assert_called_once()
+            wait_timeout = result_wait.call_args.args[0]
+            assert wait_timeout is not None and 0 < wait_timeout < 1.0
             assert "heartbeat timed out" in backend._abort_reason
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
         finally:
@@ -1831,7 +1849,6 @@ class TestHeartbeatAndOperationalLiveness:
             backend.finalize(FLContext())
 
     def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
-        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
         # Heartbeat expiry is unrelated to this test and can win the race under a loaded CI worker.
         backend, fl_ctx = _initialized_backend(
             env,
@@ -1840,19 +1857,20 @@ class TestHeartbeatAndOperationalLiveness:
             result_wait_timeout=None,
         )
         try:
+            now = [0.0]
 
             def delayed_inline_reply(topic, target, request):
                 assert topic == Topic.TASK_READY
-                time.sleep(0.15)
+                now[0] = 0.15
                 return _task_accepted_reply()
 
             env.cell.on_request = delayed_inline_reply
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            # Replace only this module's clock, leaving logging and teardown alone.
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ebp, "time", SimpleNamespace(monotonic=lambda: now[0]))
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 1.0
             assert "TASK_READY timed out after 0.1s" in backend._abort_reason
             assert "TASK_READY was pending" in backend._abort_reason
         finally:
@@ -2010,10 +2028,23 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_result_arriving_asynchronously_wakes_the_wait(self, env):
-        """The timeout is below the polling interval to verify an event-driven wake."""
-        assert ebp._RESULT_POLL_INTERVAL >= 0.4, "the sub-poll-interval bound below depends on this"
+    def test_result_arriving_asynchronously_wakes_the_wait(self, env, monkeypatch):
+        """Deliver only after the result wait starts and verify event notification."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        task = ebp.CellTask(task_id="async-result")
+        wait_entered = threading.Event()
+        original_wait = task.result_ready.wait
+        workers = []
+        deliveries = []
+
+        def wait_for_result(_timeout):
+            wait_entered.set()
+            assert original_wait(5.0), "the result handler must notify the waiting event"
+            return True
+
+        result_wait = Mock(side_effect=wait_for_result)
+        monkeypatch.setattr(task.result_ready, "wait", result_wait)
+        monkeypatch.setattr(ebp, "CellTask", lambda **_kwargs: task)
         try:
 
             def handler(topic, target, request):
@@ -2023,20 +2054,33 @@ class TestExecute:
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
                     MsgKey.RESULT: _result_shareable(),
                 }
-                threading.Timer(0.05, env.cell.deliver, args=(Topic.RESULT_READY, target, result_payload)).start()
+
+                def deliver_after_wait_starts():
+                    if wait_entered.wait(5.0):
+                        deliveries.append(env.cell.deliver(Topic.RESULT_READY, target, result_payload))
+
+                worker = threading.Thread(target=deliver_after_wait_starts, daemon=True)
+                workers.append(worker)
+                worker.start()
                 return _task_accepted_reply()
 
             env.cell.on_request = handler
             env.cell.on_shutdown = lambda *_args: make_cell_reply(
                 CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: False}
             )
-            start = time.monotonic()
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
 
+            for worker in workers:
+                worker.join(5.0)
+                assert not worker.is_alive()
             assert result.get_return_code() == ReturnCode.OK
-            assert elapsed < 0.4, "the result event must WAKE the wait (< poll interval), not be polled up to 0.5s"
+            result_wait.assert_called_once()
+            assert deliveries
+            assert deliveries[0].get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
         finally:
+            wait_entered.set()
+            for worker in workers:
+                worker.join(5.0)
             backend.finalize(FLContext())
 
     def test_client_api_channel_takes_the_streaming_request_path(self):
@@ -2560,32 +2604,45 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_execute_bounded_by_result_wait_timeout(self, env):
-        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=0.05)
+    def test_execute_bounded_by_result_wait_timeout(self, env, monkeypatch):
+        backend, fl_ctx = _initialized_backend(env, heartbeat_timeout=0.0, result_wait_timeout=0.05)
         try:
             # trainer accepts the task but never sends a result
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            task = ebp.CellTask(task_id="result-timeout")
+            now = [0.0]
+
+            def advance_wait(timeout):
+                if now[0]:
+                    pytest.fail("result wait continued after its deadline")
+                now[0] += timeout
+                return False
+
+            result_wait = Mock(side_effect=advance_wait)
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ebp, "time", SimpleNamespace(monotonic=lambda: now[0]))
+                clock_patch.setattr(ebp, "CellTask", lambda **_kwargs: task)
+                clock_patch.setattr(task.result_ready, "wait", result_wait)
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5, "timeout must not be rounded up to the polling interval"
+            result_wait.assert_called_once_with(pytest.approx(0.05))
+            assert "result wait timed out" in backend._abort_reason
             # the trainer was told to stop the task
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
         finally:
             backend.finalize(FLContext())
 
-    def test_execute_after_timeout_fails_fast_with_accurate_rc(self, env):
+    def test_execute_after_timeout_fails_fast_with_accurate_rc(self, env, monkeypatch):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=0.05)
         try:
             first = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
-            start = time.monotonic()
+            create_task = Mock(side_effect=AssertionError("an aborted backend must not start another task"))
+            monkeypatch.setattr(ebp, "CellTask", create_task)
             second = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
             assert second.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 1.0, "post-abort tasks must fail at entry, not wait the poll loop"
+            create_task.assert_not_called()
         finally:
             backend.finalize(FLContext())
 

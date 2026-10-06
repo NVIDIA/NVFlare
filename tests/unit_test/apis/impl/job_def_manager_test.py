@@ -106,15 +106,22 @@ class TestJobManager(unittest.TestCase):
 
     def test_set_abnormal_status_records_duration_from_canonical_start(self):
         store = mock.MagicMock()
-        start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+        end_time = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        start_time = end_time - datetime.timedelta(seconds=1)
         store.get_meta.return_value = {JobMetaKey.START_TIME.value: start_time.isoformat()}
 
-        with mock.patch.object(self.job_manager, "_get_job_store", return_value=store):
+        with (
+            mock.patch.object(self.job_manager, "_get_job_store", return_value=store),
+            mock.patch("nvflare.apis.impl.job_def_manager.datetime") as clock,
+        ):
+            clock.datetime.fromisoformat.side_effect = datetime.datetime.fromisoformat
+            clock.datetime.now.return_value = end_time
+            clock.timezone.utc = datetime.timezone.utc
             self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
 
         meta = store.update_meta.call_args.kwargs["meta"]
         duration = datetime.timedelta(seconds=float(meta[JobMetaKey.DURATION.value].split(":")[-1]))
-        assert datetime.timedelta(seconds=0.9) <= duration <= datetime.timedelta(seconds=2)
+        assert duration == datetime.timedelta(seconds=1)
 
     def test_set_abnormal_status_records_duration(self):
         store = mock.MagicMock()

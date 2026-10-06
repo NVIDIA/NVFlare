@@ -1904,11 +1904,11 @@ def test_campaign_workspace_lock_rejects_concurrent_same_job_lifecycle(tmp_path)
 
     with runner.locked_campaign_workspace(tmp_path, "evaluate"):
         result = subprocess.run(
-            [sys.executable, runner.__file__, "status", str(job)],
+            [sys.executable, "-I", "-S", runner.__file__, "status", str(job)],
             check=False,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
 
     assert result.returncode == 2

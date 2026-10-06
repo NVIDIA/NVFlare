@@ -147,9 +147,8 @@ class FakeCell:
                 self._deliver_result(target, task)
             if self.lose_task_reply:
                 if self.hold_lost_task_reply_until_cancel:
-                    deadline = time.monotonic() + 1.0
-                    while time.monotonic() < deadline and not kwargs["abort_signal"].triggered:
-                        time.sleep(0.001)
+                    # The result was delivered synchronously above. Its acceptance
+                    # must cancel the pending confirmation without another wait.
                     assert kwargs["abort_signal"].triggered
                 raise RuntimeError("TASK_ACCEPTED reply lost")
             return _accepted(Topic.TASK_ACCEPTED)
@@ -371,13 +370,10 @@ def test_accepted_result_recovers_lost_task_confirmation_without_status_or_redel
     backend.initialize(_context(task_wait_timeout=600.0), fl_ctx)
     _wait_ready(backend)
 
-    start = time.monotonic()
     result = backend.execute("train", Shareable(), fl_ctx, Signal())
-    elapsed = time.monotonic() - start
     backend.finalize(fl_ctx)
 
     assert result["answer"] == 42
-    assert elapsed < 1.0
     assert cell.task_ready_count == 1
     assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
 
