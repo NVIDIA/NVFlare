@@ -1485,7 +1485,9 @@ def test_run_v1_lints_allows_benign_evaluator_publication_metadata(tmp_path):
         "4 evaluation tasks (4 positive) from skill-evaluator-dataset-snapshot, evaluated with 1 attempt per task "
         "in local environment. <br>\n"
         "4 evaluation tasks (4 positive) from skill-evaluator-dataset-snapshot, evaluated with 3 attempts per task "
-        "in local environment. <br>\n",
+        "in local environment. <br>\n"
+        "22 evaluation tasks (22 positive), each run in an isolated sandbox pod. Evaluator version 1.5.6. <br>\n"
+        "17 evaluation tasks (17 positive), each in an isolated sandbox pod. Evaluator version: 1.5.6. <br>\n",
         encoding="utf-8",
     )
 
