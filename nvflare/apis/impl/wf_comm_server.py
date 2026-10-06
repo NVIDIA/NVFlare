@@ -527,6 +527,12 @@ class WFCommServer(FLComponent, WFCommSpec):
             completed = self._get_completed_client_task_info(task_id) if client_task is None else None
             if client_task is None:
                 if completed is None:
+                    if attempt_id is not None:
+                        self.log_info(
+                            fl_ctx,
+                            f"result submission dropped: unknown task assignment; client={client.name}, "
+                            f"task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                        )
                     return attempt_id is None
                 # A retained assignment remains fenced even if a sender strips
                 # the attempt and changes the site/task name. Only genuinely
@@ -538,16 +544,42 @@ class WFCommServer(FLComponent, WFCommSpec):
                 ):
                     if completed.accepted is None or completed.job_id is not None:
                         if not self._matches_retired_assignment(completed, client.name, task_name, attempt_id, fl_ctx):
+                            self.log_info(
+                                fl_ctx,
+                                f"result submission dropped: retired assignment peer or job mismatch; "
+                                f"client={client.name}, task={task_name}, task_id={task_id}, "
+                                f"attempt_id={attempt_id}, expected_job_id={completed.job_id}",
+                            )
                             return False
                     if completed.accepted is None:
                         return True
                     fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, completed.accepted, private=True, sticky=False)
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission already processed: replaying accepted={completed.accepted}; "
+                        f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                    )
+                else:
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission dropped: retired assignment identity mismatch; client={client.name}, "
+                        f"task={task_name}, task_id={task_id}, attempt_id={attempt_id}; "
+                        f"expected client={completed.client_name}, task={completed.task_name}, "
+                        f"attempt_id={completed.attempt_id}",
+                    )
                 return False
             if (
                 client_task.client.name != client.name
                 or client_task.task.name != task_name
                 or client_task.attempt_id != attempt_id
             ):
+                self.log_info(
+                    fl_ctx,
+                    f"result submission dropped: assignment identity mismatch; client={client.name}, "
+                    f"task={task_name}, task_id={task_id}, attempt_id={attempt_id}; "
+                    f"expected client={client_task.client.name}, task={client_task.task.name}, "
+                    f"attempt_id={client_task.attempt_id}",
+                )
                 return False
             if client_task.result_received_time is not None:
                 fl_ctx.set_prop(
@@ -556,12 +588,26 @@ class WFCommServer(FLComponent, WFCommSpec):
                     private=True,
                     sticky=False,
                 )
+                self.log_info(
+                    fl_ctx,
+                    f"result submission already processed: replaying "
+                    f"accepted={client_task.props.get(_CLIENT_TASK_RESULT_ACCEPTED, False)}; "
+                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                )
                 return False
             if client_task.task.completion_status is not None:
                 completed = self._remember_completed_client_task(client_task)
-                return completed.accepted is None and self._matches_retired_assignment(
+                can_process = completed.accepted is None and self._matches_retired_assignment(
                     completed, client.name, task_name, attempt_id, fl_ctx
                 )
+                if not can_process:
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission dropped: completed assignment is not eligible for a first late result; "
+                        f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}, "
+                        f"expected_job_id={completed.job_id}, accepted={completed.accepted}",
+                    )
+                return can_process
             return True
 
     def reject_submission(

@@ -483,6 +483,13 @@ class ServerRunner(TBI):
                     attempt_id = None
                     wf_id = None
                 if self._replay_result_receipt(client.name, task_name, task_id, attempt_id, wf_id, fl_ctx):
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission already processed: replaying job receipt "
+                        f"accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
+                        f"client={client.name}, task={task_name}, task_id={task_id}, "
+                        f"attempt_id={attempt_id}, workflow={wf_id}",
+                    )
                     return
             if self.status != "started" or self.current_wf is None:
                 self.log_info(
@@ -583,6 +590,11 @@ class ServerRunner(TBI):
         rc = result.get_return_code(default=ReturnCode.OK)
         if rc in self.ABORT_RETURN_CODES:
             if not communicator.reject_submission(client, task_name, task_id, result, fl_ctx):
+                self.log_info(
+                    fl_ctx,
+                    f"fatal result submission not claimed: accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
+                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                )
                 return
             self._remember_result_receipt(client, task_name, task_id, attempt_id, workflow.id, False)
             self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
@@ -667,7 +679,12 @@ class ServerRunner(TBI):
                     workflow.id,
                     fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED),
                 )
-                self.log_info(fl_ctx, "finished processing client result by {}".format(workflow.id))
+                self.log_info(
+                    fl_ctx,
+                    f"finished processing client result by {workflow.id}: "
+                    f"accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
+                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                )
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
