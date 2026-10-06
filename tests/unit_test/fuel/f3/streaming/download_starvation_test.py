@@ -32,6 +32,7 @@ Two test classes, each with their own Cell pair:
    With a 4-worker pool and 8 concurrent downloads -> deadlock.
 """
 
+import os
 import threading
 import time
 from typing import Any, Optional, Tuple
@@ -233,9 +234,9 @@ class TestDownloadWithFix:
 # ======================================================================== #
 # Test 2: Simulate pre-fix -- should FAIL with starvation
 # ======================================================================== #
-# Coverage instrumentation changes this timing-sensitive deadlock and can
-# strand an xdist worker; the normal unit-test matrix still runs the test.
-@pytest.mark.no_cover
+# The intentional deadlock can strand an instrumented xdist worker during
+# fixture teardown. Every normal unit-test matrix job still runs this test.
+@pytest.mark.skipif(bool(os.environ.get("COV_CORE_SOURCE")), reason="incompatible with coverage instrumentation")
 @pytest.mark.timeout(120)
 class TestDownloadPreFixStarvation:
 
