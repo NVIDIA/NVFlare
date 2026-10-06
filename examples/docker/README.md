@@ -11,12 +11,10 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
   in the job image.
 - Run all commands from the `examples/docker` directory unless noted otherwise
 
-### Apple Silicon Mac with Colima
+### Apple Silicon Mac
 
-Colima provides the Linux Docker daemon used by the parent and job containers.
-Docker Desktop is not required. The Homebrew `docker` package below provides
-the Docker CLI.
-These steps were tested on Apple Silicon with Colima's `vz` VM and CPU execution.
+Choose Docker Desktop or Colima below, then install the host CLI.
+Both runtimes were tested on Apple Silicon with CPU execution.
 For `hello-pt-docker`, use the job copy without a GPU requirement described in Step 5.
 The PyTorch client selects `cuda:0` when `torch.cuda.is_available()` is true,
 and `cpu` otherwise; it does not select `mps`.
@@ -24,15 +22,45 @@ and `cpu` otherwise; it does not select `mps`.
 [Colima's krunkit GPU support](https://github.com/abiosoft/colima#ai-models-gpu-accelerated)
 have not been tested with this example.
 
+#### Docker Desktop
+
+Start Docker Desktop, then select its Linux Docker daemon:
+
 ```bash
-brew install colima docker python@3.13
+unset DOCKER_HOST DOCKER_CONTEXT
+docker context use desktop-linux
+docker info
+```
+
+If a build reports that `docker-credential-desktop` cannot be found, add
+Docker Desktop's bundled tools to your shell's PATH:
+
+```bash
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+```
+
+#### Colima
+
+Colima provides the Linux Docker daemon used by the parent and job containers.
+Docker Desktop is not required. The Homebrew `docker` package below provides
+the Docker CLI. Colima's `vz` VM was tested.
+
+```bash
+brew install colima docker
 colima start --vm-type vz --cpu 4 --memory 8 --disk 40 --runtime docker \
   --mount "$(cd ../.. && pwd):w"
-unset DOCKER_HOST
+unset DOCKER_HOST DOCKER_CONTEXT
 docker context use colima
 docker info
+```
 
-# From the NVFlare repo root (Python 3.13 was tested):
+#### Host CLI setup
+
+After selecting either runtime, install NVFlare in a Python virtual environment.
+Run these commands from `examples/docker` in the same shell (Python 3.13 was tested):
+
+```bash
+brew install python@3.13
 cd ../..
 python3.13 -m venv .venv
 source .venv/bin/activate
@@ -40,9 +68,10 @@ python -m pip install -e .
 cd examples/docker
 ```
 
-Run the remaining steps in this shell. Colima must be able to mount the repo
-directory into its VM. The generated startup script discovers the socket group
-inside that VM and gives the parent containers access to launch job containers.
+Run the remaining steps in this shell. When using Colima, it must be able to
+mount the repo directory into its VM. The generated startup script discovers
+the daemon-mounted socket's group and gives the parent containers access to
+launch job containers.
 If host port 8002 is already in use, copy `project.yml` to a local file, set
 `fed_learn_port` to a free port (for example, 18002), and use that file in
 Step 1. The loopback setup in Step 3 reads the chosen port from the kit.
@@ -194,7 +223,7 @@ nvflare job submit \
 The original `hello-pt-docker` job requests one GPU for site-1. To remove that
 GPU requirement on any platform, create a copy as shown below. This allows
 the job to run on CPU when CUDA is unavailable to the clients, as in the
-Colima setup tested above. It preserves the client's existing device selection:
+macOS CPU setups above. It preserves the client's existing device selection:
 CUDA when available, CPU otherwise.
 
 ```bash
@@ -257,7 +286,7 @@ nvflare system shutdown all --force --timeout 60 \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
-On macOS, you can also run `colima stop` when you are finished using its containers.
+If using Colima, you can also run `colima stop` when you are finished using its containers.
 
 ## Optional: Run a hybrid federation
 
