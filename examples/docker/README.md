@@ -24,13 +24,22 @@ have not been tested with this example.
 
 #### Docker Desktop
 
-Start Docker Desktop, then select its Linux Docker daemon:
+Start Docker Desktop. In **Settings > Advanced**, enable
+**Allow the default Docker socket to be used** to match the tested setup.
+This creates the macOS `/var/run/docker.sock` symlink; see
+[Docker's Mac permission requirements](https://docs.docker.com/desktop/setup/install/mac-permission-requirements/).
+The generated startup scripts mount `/var/run/docker.sock` into the parent
+containers. Select Docker Desktop's Linux daemon and check the socket:
 
 ```bash
 unset DOCKER_HOST DOCKER_CONTEXT
 docker context use desktop-linux
 docker info
+test -S /var/run/docker.sock && echo "Docker socket is available"
 ```
+
+Continue after `docker info` succeeds and the socket check prints
+`Docker socket is available`.
 
 If a build reports that `docker-credential-desktop` cannot be found, add
 Docker Desktop's bundled tools to your shell's PATH:
