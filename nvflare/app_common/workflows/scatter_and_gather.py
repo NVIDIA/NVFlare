@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.fl_constant import ReturnCode
@@ -156,6 +158,10 @@ class ScatterAndGather(Controller):
         self._current_failed_clients = set()
         self._current_num_targets = 0
 
+        # Result callbacks may overlap, including callbacks for late/unknown tasks.
+        self._round_result_counts = {}
+        self._round_result_counts_lock = threading.Lock()
+
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
         if self._current_round is None:
@@ -281,6 +287,8 @@ class ScatterAndGather(Controller):
                 # Reset tracking for dynamic ignore_result_error mode
                 self._current_failed_clients = set()
                 self._current_num_targets = len(self._engine.get_clients())
+                with self._round_result_counts_lock:
+                    self._round_result_counts[self._current_round] = 0
 
                 self.broadcast_and_wait(
                     task=train_task,
@@ -291,6 +299,15 @@ class ScatterAndGather(Controller):
                 )
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
+                    return
+
+                with self._round_result_counts_lock:
+                    result_count = self._round_result_counts.get(self._current_round, 0)
+                if result_count == 0:
+                    self.system_panic(
+                        reason=f"No successful client results were received in round {self._current_round}.",
+                        fl_ctx=fl_ctx,
+                    )
                     return
 
                 self.log_info(fl_ctx, "Start aggregation.")
@@ -445,6 +462,9 @@ class ScatterAndGather(Controller):
         self.fire_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
 
         accepted = self.aggregator.accept(result, fl_ctx)
+        contribution_round = result.get_cookie(AppConstants.CONTRIBUTION_ROUND)
+        with self._round_result_counts_lock:
+            self._round_result_counts[contribution_round] = self._round_result_counts.get(contribution_round, 0) + 1
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
         self.log_info(
             fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator at round {self._current_round}."
