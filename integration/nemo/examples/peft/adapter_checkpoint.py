@@ -289,6 +289,25 @@ def tensor_specs(state_dict: Mapping[str, torch.Tensor]) -> dict[str, dict[str, 
     }
 
 
+def tensor_specs_match(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
+    """Compare tensor schemas, allowing only lossless FP16/BF16-to-FP32 exchange widening."""
+    if set(expected) != set(actual):
+        return False
+    for key, expected_spec in expected.items():
+        actual_spec = actual[key]
+        if not isinstance(expected_spec, Mapping) or set(expected_spec) != set(actual_spec):
+            return False
+        if expected_spec.get("shape") != actual_spec.get("shape"):
+            return False
+        expected_dtype = expected_spec.get("dtype")
+        actual_dtype = actual_spec.get("dtype")
+        if expected_dtype == actual_dtype:
+            continue
+        if (expected_dtype, actual_dtype) not in {("bfloat16", "float32"), ("float16", "float32")}:
+            return False
+    return True
+
+
 def state_hash(state_dict: Mapping[str, torch.Tensor]) -> str:
     """Hash tensors in sorted key order using dtype, shape, and contiguous CPU storage bytes."""
     digest = hashlib.sha256()
@@ -372,7 +391,7 @@ def validate_adapter_contract(
     state_dict = align_adapter_state_strict(state_dict, state_dict)
     if contract.get("tensor_count") != len(state_dict):
         raise ValueError("Adapter contract tensor count does not match the adapter tensors.")
-    if contract.get("expected_tensors") != tensor_specs(state_dict):
+    if not tensor_specs_match(contract.get("expected_tensors") or {}, tensor_specs(state_dict)):
         raise ValueError("Adapter contract tensor names, shapes, or dtypes do not match the adapter tensors.")
     for key, value in (expected or {}).items():
         if contract.get(key) != value:

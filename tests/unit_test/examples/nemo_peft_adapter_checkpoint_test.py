@@ -285,6 +285,21 @@ def test_adapter_contract_rejects_partial_and_stale_inputs():
         adapter_checkpoint.validate_adapter_contract(contract, state, {"tokenizer_revision": None})
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter contract tests")
+def test_adapter_contract_allows_lossless_fp32_exchange_widening():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    initial_state = {
+        "layer.lora_A.weight": torch.ones((2, 2), dtype=torch.bfloat16),
+        "layer.lora_B.weight": torch.zeros((2, 2), dtype=torch.bfloat16),
+    }
+    contract = adapter_checkpoint.build_adapter_manifest(initial_state, identity=_adapter_identity())
+    exchanged_state = {key: value.float() for key, value in initial_state.items()}
+
+    adapter_checkpoint.validate_adapter_contract(contract, exchanged_state)
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")
 def test_adapter_manifest_requires_one_complete_identity_mapping():
     adapter_checkpoint = _load_example_module("adapter_checkpoint")

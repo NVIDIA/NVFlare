@@ -180,11 +180,17 @@ def apply_bias(
     return biased_scores
 
 
-def summarize(rows: list[dict[str, str]], row_scores: list[dict[str, float]]) -> dict:
+def summarize(
+    rows: list[dict[str, str]],
+    row_scores: list[dict[str, float]],
+    likelihood_scores: list[dict[str, float]] | None = None,
+) -> dict:
+    if likelihood_scores is None:
+        likelihood_scores = row_scores
     predictions = []
-    for idx, (row, scores) in enumerate(zip(rows, row_scores)):
+    for idx, (row, scores, raw_scores) in enumerate(zip(rows, row_scores, likelihood_scores)):
         prediction = max(LABELS, key=scores.get)
-        gold_score = scores[row["expected"]]
+        gold_score = raw_scores[row["expected"]]
         gold_token_count = int(scores.get("__gold_response_token_count", 0))
         predictions.append(
             {
@@ -287,7 +293,7 @@ def best_bias(
         positive = round(positive_idx * step, 10)
         for negative_idx in range(steps + 1):
             negative = round(negative_idx * step, 10)
-            summary = summarize(rows, apply_bias(row_scores, positive, negative))
+            summary = summarize(rows, apply_bias(row_scores, positive, negative), row_scores)
             if best is None or summary["macro_f1"] > best["summary"]["macro_f1"]:
                 best = {"biases": {"positive": positive, "negative": negative}, "summary": summary}
     return best
@@ -491,12 +497,12 @@ def main():
         summary["fixed_bias"] = {
             "biases": {"positive": args.positive_bias, "negative": args.negative_bias},
             "validation": _summary_without_predictions(
-                summarize(val_rows, apply_bias(val_scores, args.positive_bias, args.negative_bias))
+                summarize(val_rows, apply_bias(val_scores, args.positive_bias, args.negative_bias), val_scores)
             ),
         }
         if test_rows is not None:
             summary["fixed_bias"]["test"] = _summary_without_predictions(
-                summarize(test_rows, apply_bias(test_scores, args.positive_bias, args.negative_bias))
+                summarize(test_rows, apply_bias(test_scores, args.positive_bias, args.negative_bias), test_scores)
             )
 
     if args.search_validation_bias:
@@ -510,6 +516,7 @@ def main():
                 summarize(
                     test_rows,
                     apply_bias(test_scores, bias["biases"]["positive"], bias["biases"]["negative"]),
+                    test_scores,
                 )
             )
 

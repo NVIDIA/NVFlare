@@ -87,6 +87,27 @@ def test_evaluate_sentiment_summarizes_scores_and_validation_bias():
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_evaluate_sentiment_bias_does_not_change_response_token_loss():
+    evaluate_sentiment = _load_evaluate_module()
+    rows = [{"sentence": "sales rose", "expected": "positive"}]
+    scores = [
+        {
+            "neutral": -1.0,
+            "positive": -2.0,
+            "negative": -3.0,
+            "__gold_response_token_count": 1,
+        }
+    ]
+
+    unbiased = evaluate_sentiment.summarize(rows, scores)
+    biased = evaluate_sentiment.summarize(rows, evaluate_sentiment.apply_bias(scores, 3.0, 0.0), scores)
+
+    assert unbiased["response_token_loss"] == pytest.approx(2.0)
+    assert biased["response_token_loss"] == pytest.approx(unbiased["response_token_loss"])
+    assert biased["predictions"][0]["gold_log_probability"] == pytest.approx(-2.0)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
 def test_evaluate_sentiment_parse_choice_map_validates_labels():
     evaluate_sentiment = _load_evaluate_module()
 

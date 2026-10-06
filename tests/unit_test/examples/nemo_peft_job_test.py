@@ -318,6 +318,22 @@ def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp
     assert resolved.tokenizer_revision == expected_revision
 
 
+def test_lightning35_profile_keeps_pinned_revisions_for_explicit_default_repository(tmp_path):
+    job_module = _load_job_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_name_or_path = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+    args.tokenizer_name_or_path = args.model_name_or_path
+    args.model_revision = None
+    args.tokenizer_revision = None
+
+    resolved = job_module.model_profiles.resolve_model_profile(args)
+
+    expected_revision = "a9904d24bcc1d289a1950fa9d2b978c47cf903b9"
+    assert resolved.model_revision == expected_revision
+    assert resolved.tokenizer_revision == expected_revision
+
+
 def test_lightning35_profile_does_not_apply_foreign_revisions_to_model_override(tmp_path):
     job_module = _load_job_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
