@@ -22,6 +22,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+from types import MappingProxyType
 from typing import Mapping, Optional
 
 from nvflare.apis.fl_component import FLComponent
@@ -83,7 +84,8 @@ class TaskLaunchRequest:
     or filesystem; backend-specific materialization belongs to trusted runtime
     policy, not application jobs.
 
-    ``environment`` is the complete environment passed to the execution unit;
+    ``environment`` is a validated, read-only snapshot of the complete
+    environment passed to the execution unit;
     launchers do not implicitly copy the parent process environment. This
     keeps credential and policy decisions with the supervising runtime.
     """
@@ -116,7 +118,7 @@ class TaskLaunchRequest:
                 raise ValueError("environment names must be non-empty strings without '=' or NUL")
             if not isinstance(value, str) or "\x00" in value:
                 raise ValueError("environment values must be strings without NUL")
-        object.__setattr__(self, "environment", environment)
+        object.__setattr__(self, "environment", MappingProxyType(environment))
 
         if self.cwd is not None and (not isinstance(self.cwd, str) or not self.cwd or "\x00" in self.cwd):
             raise ValueError("cwd must be a non-empty string without NUL or None")

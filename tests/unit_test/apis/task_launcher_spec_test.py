@@ -80,3 +80,15 @@ def test_handle_contract_has_no_fallback_implementation(name):
 def test_launcher_contract_has_no_fallback_implementation():
     with pytest.raises(NotImplementedError):
         TaskLauncherSpec.launch_task(None, None)
+
+
+def test_request_environment_is_an_immutable_snapshot():
+    environment = {"VALUE": "original"}
+    request = TaskLaunchRequest(
+        job_id="job", site_name="site", task_id="task", attempt_id="attempt", argv=("python",), environment=environment
+    )
+    environment["VALUE"] = "changed"
+    environment["LATER"] = "absent at launch"
+    assert dict(request.environment) == {"VALUE": "original"}
+    with pytest.raises(TypeError):
+        request.environment["VALUE"] = "mutated through request"

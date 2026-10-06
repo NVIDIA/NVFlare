@@ -13,10 +13,11 @@
 # limitations under the License.
 """Local process-group backend for disposable task execution.
 
-The owned execution scope is one POSIX session/process group. The command may
-launch any number of ranks inside that group. A task worker must not deliberately
-detach descendants into another session: a portable process launcher cannot
-discover or prove settlement of processes that escape its owned group.
+The owned execution scope is one POSIX process group. The command may launch
+any number of ranks inside that group. Moving descendants into another group,
+even within the same session, is unsupported and outside settlement proof.
+
+Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
 """
 
 import logging
@@ -50,7 +51,7 @@ def _positive_number(value, name: str) -> float:
 
 
 class _OwnedProcessAdapter:
-    """Observe the child without releasing its PID until its group settles.
+    """Retain the child PID through cleanup and until the final group probe.
 
     An unreaped leader reserves the numeric PID/PGID, including after exit.
     Only this adapter may reap the child; an external reaper invalidates the
@@ -61,6 +62,7 @@ class _OwnedProcessAdapter:
         self._adapter = adapter
         self.pid = adapter.pid
         self._return_code = None
+        self.reaped = False
 
     def _observe(self):
         try:
@@ -69,26 +71,38 @@ class _OwnedProcessAdapter:
             raise TaskLauncherError("task leader was externally reaped; process-group ownership is lost") from e
 
     def poll(self) -> Optional[int]:
+        if self.reaped:
+            return self._return_code
         observation = self._observe()
         if observation is not None and observation.si_pid:
             self._return_code = (
-                observation.si_status if observation.si_code == os.CLD_EXITED else -observation.si_status
+                observation.si_status & 0xFF if observation.si_code == os.CLD_EXITED else -observation.si_status
             )
         return self._return_code
 
     def verify_identity(self) -> None:
+        if self.reaped:
+            raise TaskLauncherError("task leader is already reaped; process-group ownership is no longer reserved")
         self._observe()
 
     @property
     def owns_exited_leader(self) -> bool:
-        return self._return_code is not None
+        return self._return_code is not None and not self.reaped
 
-    def reap(self) -> None:
-        # Reap only after all live group members are gone. Populate the wrapped
-        # Popen/ProcessAdapter return code so its finalizer cannot reap again.
-        self.verify_identity()
-        if self._adapter.poll() != self._return_code:
-            raise TaskLauncherError("task leader exit status changed during reaping")
+    def reap(self) -> int:
+        # Reap after no live group members were observed; the caller must then
+        # confirm group absence. Populate the wrapped Popen/ProcessAdapter
+        # return code so its finalizer cannot reap again.
+        if not self.reaped:
+            self.verify_identity()
+            return_code = self._adapter.poll()
+            if return_code is None:
+                raise TaskLauncherError("task leader did not exit during reaping")
+            # A completed reap is final. Its canonical waitpid/Popen return
+            # code is authoritative; never try to observe the released PID.
+            self._return_code = return_code
+            self.reaped = True
+        return self._return_code
 
 
 class ProcessTaskHandle(TaskHandleSpec):
@@ -155,6 +169,13 @@ class ProcessTaskHandle(TaskHandleSpec):
             # terminal state is known from waitid. Still inspect every member.
             if self._adapter.owns_exited_leader is not True:
                 return True
+
+        if self._adapter.reaped is True:
+            # The last scan was non-atomic: a descendant might have forked a
+            # worker after its PID snapshot. Only group absence can finalize
+            # settlement after releasing the leader. A remaining/reused group
+            # is uncertain, including when its snapshot shows only zombies.
+            return True
 
         # killpg also sees unreaped zombies. They cannot execute or hold compute
         # resources and cannot be removed with signals. Ignore a group only
@@ -238,10 +259,22 @@ class ProcessTaskHandle(TaskHandleSpec):
         )
         if status.settled:
             try:
-                self._adapter.reap()
+                reaped_code = self._adapter.reap()
             except TaskLauncherError as e:
                 self._failure_reason = str(e)
                 return replace(status, settled=False, failure_reason=self._failure_reason)
+            if self._adapter.reaped is True:
+                status = replace(
+                    status,
+                    exit_code=reaped_code if reaped_code >= 0 else None,
+                    termination_signal=-reaped_code if reaped_code < 0 else None,
+                )
+                # Reaping releases numeric identity. Do not signal this group
+                # again, and do not trust another non-atomic member snapshot.
+                # A fresh absent-group probe closes the membership-churn race.
+                status = replace(status, settled=not self._group_exists())
+                if not status.settled:
+                    return status
             # Settlement is final for this physical execution. Never reopen
             # its scope because a later scan is uncertain or its PGID is reused.
             self._settled_status = status
@@ -254,7 +287,7 @@ class ProcessTaskHandle(TaskHandleSpec):
     def _wait_for_group_exit(self, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
         while True:
-            # Observe without reaping until the group has no live members. A
+            # Observe without reaping while live group members are observed. A
             # zombie leader reserves identity but holds no compute resources.
             if self.poll().settled:
                 return True
@@ -362,10 +395,14 @@ class ProcessTaskLauncher(TaskLauncherSpec):
     This backend has no CPU, memory, or GPU admission authority. It rejects
     non-empty resource requests rather than treating environment visibility as
     a reservation. Multi-process applications are supported only when every
-    descendant remains in the owned group. Launchers such as ``torchrun`` that
-    start ranks in separate sessions are outside this containment contract.
-    Descendants must remain in the owned POSIX session; deliberate ``setsid``
-    detachment is unsupported and cannot be included in settlement proof.
+    descendant remains in the owned process group. Changing group or session
+    is unsupported, including a different group in the same POSIX session.
+    Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
+
+    Attempt identities are retained for this launcher's lifetime and never
+    evicted. Once ``max_attempt_identities`` is reached, new launches fail
+    closed. Use a new launcher for a new trusted scope instead of forgetting
+    identities and permitting physical relaunches within the existing scope.
     """
 
     launch_mode = "process"
@@ -375,11 +412,19 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         stop_grace_period: float = 2.0,
         descendant_settle_timeout: float = 0.25,
         poll_interval: float = 0.05,
+        max_attempt_identities: int = 10000,
     ):
         super().__init__()
         self.stop_grace_period = _positive_number(stop_grace_period, "stop_grace_period")
         self.descendant_settle_timeout = _positive_number(descendant_settle_timeout, "descendant_settle_timeout")
         self.poll_interval = _positive_number(poll_interval, "poll_interval")
+        if (
+            isinstance(max_attempt_identities, bool)
+            or not isinstance(max_attempt_identities, int)
+            or max_attempt_identities <= 0
+        ):
+            raise ValueError("max_attempt_identities must be a positive integer")
+        self._max_attempt_identities = max_attempt_identities
         self._attempt_identities = set()
         self._lock = threading.Lock()
 
@@ -398,6 +443,8 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         with self._lock:
             if request.identity in self._attempt_identities:
                 raise TaskLauncherError(f"task attempt identity was already launched: {request.identity!r}")
+            if len(self._attempt_identities) >= self._max_attempt_identities:
+                raise TaskLauncherError("task attempt identity capacity exhausted; use a new launcher for a new scope")
             self._attempt_identities.add(request.identity)
 
         try:

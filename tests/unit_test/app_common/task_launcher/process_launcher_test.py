@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -38,9 +39,13 @@ from nvflare.app_common.task_launcher.process_launcher import (
     ProcessTaskLauncher,
     _OwnedProcessAdapter,
 )
-from nvflare.utils.process_utils import ProcessAdapter
+from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="ProcessTaskLauncher requires POSIX process groups")
+requires_waitid = pytest.mark.skipif(
+    not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "P_PID", "WEXITED", "WNOHANG", "CLD_EXITED")),
+    reason="requires waitid/WNOWAIT (Linux, or macOS with Python >= 3.13)",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -134,6 +139,7 @@ def test_settlement_wait_preserves_valid_timeout_boundaries(timeout, tmp_path, m
     assert handle.wait_for_settlement(timeout=timeout).succeeded
 
 
+@requires_waitid
 def test_clean_exit_honors_exact_environment_and_working_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("SHOULD_NOT_LEAK", "resident-secret")
     output_path = tmp_path / "observation.json"
@@ -170,6 +176,7 @@ def test_clean_exit_honors_exact_environment_and_working_directory(tmp_path, mon
     assert handle.execution_id == f"process:{handle.process_group_id}"
 
 
+@requires_waitid
 def test_nonzero_and_signal_exits_are_distinct(tmp_path):
     launcher = ProcessTaskLauncher()
     nonzero = launcher.launch_task(_request(tmp_path, "attempt-nonzero", "import sys; sys.exit(23)"))
@@ -190,6 +197,7 @@ def test_nonzero_and_signal_exits_are_distinct(tmp_path):
     assert signal_status.succeeded is False
 
 
+@requires_waitid
 def test_cancel_terminates_leader_and_child_and_confirms_settlement(tmp_path):
     child_pid_path = tmp_path / "child.pid"
     ready_path = tmp_path / "leader.ready"
@@ -224,6 +232,7 @@ def test_cancel_terminates_leader_and_child_and_confirms_settlement(tmp_path):
     _assert_pid_not_running(child_pid)
 
 
+@requires_waitid
 def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
     child_pid_path = tmp_path / "lingering-child.pid"
     child_code = (
@@ -250,6 +259,7 @@ def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
     _assert_pid_not_running(child_pid)
 
 
+@requires_waitid
 def test_wait_timeout_does_not_claim_settlement_or_cancel(tmp_path):
     launcher = ProcessTaskLauncher(stop_grace_period=0.2, poll_interval=0.01)
     handle = launcher.launch_task(_request(tmp_path, "attempt-timeout", "import time; time.sleep(30)"))
@@ -264,6 +274,7 @@ def test_wait_timeout_does_not_claim_settlement_or_cancel(tmp_path):
     assert handle.cancel().settled is True
 
 
+@requires_waitid
 def test_indefinite_settlement_wait_does_not_block_concurrent_cancel(tmp_path):
     ready_path = tmp_path / "waiter.ready"
     code = "import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(30)"
@@ -304,6 +315,7 @@ def test_indefinite_settlement_wait_does_not_block_concurrent_cancel(tmp_path):
         TaskResourceRequest(gpu_count=1),
     ],
 )
+@requires_waitid
 def test_resource_requests_are_rejected_without_admission(resources, tmp_path):
     request = _request(tmp_path, f"resource-{resources}", "pass")
     request = TaskLaunchRequest(
@@ -321,6 +333,7 @@ def test_resource_requests_are_rejected_without_admission(resources, tmp_path):
         ProcessTaskLauncher().launch_task(request)
 
 
+@requires_waitid
 def test_attempt_identity_cannot_be_reused(tmp_path):
     launcher = ProcessTaskLauncher()
     request = _request(tmp_path, "attempt-once", "pass")
@@ -413,6 +426,7 @@ def test_process_enumeration_permission_failure_does_not_claim_settlement(tmp_pa
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux zombie process-group regression")
+@requires_waitid
 def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_path, monkeypatch):
     process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
     try:
@@ -587,8 +601,9 @@ def test_launcher_rejects_invalid_request_and_unsupported_platform(tmp_path, mon
         launcher.launch_task(_request(tmp_path, "unsupported", "pass"))
 
 
+@requires_waitid
 def test_spawn_failure_allows_retry_of_same_attempt(tmp_path, monkeypatch):
-    launcher = ProcessTaskLauncher()
+    launcher = ProcessTaskLauncher(max_attempt_identities=1)
     request = _request(tmp_path, "retry-spawn", "pass")
     monkeypatch.setattr(
         "nvflare.app_common.task_launcher.process_launcher.spawn_process", Mock(side_effect=OSError("spawn failed"))
@@ -600,6 +615,7 @@ def test_spawn_failure_allows_retry_of_same_attempt(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("bounded_wait", [False, True])
+@requires_waitid
 def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait):
     child_pid_path = tmp_path / "retained-child.pid"
     child_code = (
@@ -643,6 +659,7 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
 
 
 @pytest.mark.parametrize("return_code", [None, 0])
+@requires_waitid
 def test_external_reaper_prevents_group_signals_and_settlement(tmp_path, monkeypatch, return_code):
     adapter = _OwnedProcessAdapter(Mock(pid=1234))
     adapter._return_code = return_code
@@ -665,6 +682,7 @@ def test_external_reaper_prevents_group_signals_and_settlement(tmp_path, monkeyp
     killpg.assert_not_called()
 
 
+@requires_waitid
 def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, monkeypatch):
     process = Mock(pid=1234, poll=Mock(return_value=23))
     adapter = _OwnedProcessAdapter(process)
@@ -676,7 +694,7 @@ def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, 
         descendant_settle_timeout=0.1,
         poll_interval=0.01,
     )
-    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, True, False]))
+    monkeypatch.setattr(handle, "_group_exists", Mock(side_effect=[True, True, False, False]))
 
     assert handle.poll().exit_code == 23
     assert not handle.poll().settled
@@ -687,8 +705,9 @@ def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, 
     process.poll.assert_called_once()
 
 
-def test_missing_nonreaping_wait_support_is_rejected_before_spawn(tmp_path, monkeypatch):
-    monkeypatch.delattr(os, "WNOWAIT")
+@pytest.mark.parametrize("missing", ["waitid", "WNOWAIT"])
+def test_missing_nonreaping_wait_support_is_rejected_before_spawn(tmp_path, monkeypatch, missing):
+    monkeypatch.delattr(os, missing, raising=False)
     spawn = Mock()
     monkeypatch.setattr("nvflare.app_common.task_launcher.process_launcher.spawn_process", spawn)
     with pytest.raises(TaskLauncherError, match="waitid/WNOWAIT"):
@@ -706,6 +725,7 @@ def test_remembered_live_member_blocks_settlement_after_group_probe_disappears(t
     assert handle.poll().settled
 
 
+@requires_waitid
 def test_cancel_does_not_affect_an_unrelated_process_group(tmp_path):
     unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True)
     try:
@@ -721,6 +741,7 @@ def test_cancel_does_not_affect_an_unrelated_process_group(tmp_path):
         unrelated.wait(timeout=5)
 
 
+@requires_waitid
 def test_subprocess_imports_the_isolated_checkout(tmp_path):
     import nvflare
 
@@ -743,3 +764,197 @@ def test_subprocess_imports_the_isolated_checkout(tmp_path):
     )
     assert handle.wait_for_settlement(timeout=5).succeeded
     assert all(Path(path).resolve().is_relative_to(checkout) for path in json.loads(output.read_text()))
+
+
+@requires_waitid
+@pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+@pytest.mark.parametrize("exit_code", [-1, 256, 511, -257])
+def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch, backend, exit_code):
+    request = _request(tmp_path, "full-exit", f"import sys; sys.exit({exit_code})")
+    if backend == "posix_spawn":
+        request = replace(request, cwd=None)
+    handle = ProcessTaskLauncher().launch_task(request)
+    if backend == "posix_spawn" and handle._adapter._adapter.process is not None:
+        pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
+    assert (handle._adapter._adapter.process is None) == (backend == "posix_spawn")
+    reap = Mock(wraps=handle._adapter.reap)
+    monkeypatch.setattr(handle._adapter, "reap", reap)
+
+    status = handle.wait_for_settlement(timeout=5)
+
+    assert status.exit_code == exit_code & 0xFF
+    assert status.termination_signal is None
+    assert status.settled
+    assert status.succeeded == (exit_code & 0xFF == 0)
+    assert handle.poll() == status
+    assert handle.wait_for_settlement(timeout=0) == status
+    assert handle.cancel() == status
+    reap.assert_called_once()
+    with pytest.raises(ChildProcessError):
+        os.waitpid(handle.process_group_id, os.WNOHANG)
+
+
+@requires_waitid
+@pytest.mark.parametrize("observed_exit", [256, 23])
+def test_completed_reap_is_final_even_when_observed_exit_differs(tmp_path, monkeypatch, observed_exit):
+    process = Mock(pid=1234, poll=Mock(return_value=0))
+    adapter = _OwnedProcessAdapter(process)
+    observation = Mock(return_value=Mock(si_pid=1234, si_status=observed_exit, si_code=os.CLD_EXITED))
+    monkeypatch.setattr(os, "waitid", observation)
+    handle = ProcessTaskHandle(
+        _request(tmp_path, "completed-reap", "pass"),
+        adapter,
+        stop_grace_period=0.1,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+    monkeypatch.setattr(handle, "_group_exists", lambda: False)
+    assert handle.poll().succeeded
+    assert adapter.reaped
+    assert adapter.poll() == 0
+    assert adapter.reap() == 0
+    observation.assert_called()
+    assert observation.call_count == 2
+    process.poll.assert_called_once()
+    assert handle.cancel().succeeded
+
+
+@requires_waitid
+def test_membership_churn_requires_group_absence_after_reaping(tmp_path, monkeypatch):
+    process = Mock(pid=1234, poll=Mock(return_value=0))
+    adapter = _OwnedProcessAdapter(process)
+    monkeypatch.setattr(os, "waitid", Mock(return_value=Mock(si_pid=1234, si_status=0, si_code=os.CLD_EXITED)))
+    handle = ProcessTaskHandle(
+        _request(tmp_path, "fork-during-snapshot", "pass"),
+        adapter,
+        stop_grace_period=0.1,
+        descendant_settle_timeout=0.1,
+        poll_interval=0.01,
+    )
+    # The snapshot omits a child forked by a disappearing parent. The retained
+    # leader's terminal state cannot make that snapshot a settlement proof.
+    monkeypatch.setattr(psutil, "process_iter", lambda: [Mock(pid=5678)])
+    monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
+    probe = Mock()
+    monkeypatch.setattr(os, "killpg", probe)
+    assert not handle.poll().settled
+    assert adapter.reaped
+    process.poll.assert_called_once()
+    with pytest.raises(TaskSettlementError, match="no longer reserved") as error:
+        handle.cancel()
+    assert not error.value.status.settled
+    assert all(call.args[1] == 0 for call in probe.call_args_list)
+
+    # Only disappearance of the remaining (possibly reused) numeric group is
+    # proof. No signals are permitted after the child identity is released.
+    probe.side_effect = ProcessLookupError()
+    status = handle.poll()
+    assert status.settled
+    assert not status.succeeded
+    assert handle.wait_for_settlement(timeout=0) == status
+    assert handle.cancel() == status
+    process.poll.assert_called_once()
+
+
+@pytest.mark.parametrize("capacity", [None, True, 0, -1, 1.5, "10"])
+def test_identity_capacity_must_be_a_positive_integer(capacity):
+    with pytest.raises(ValueError, match="max_attempt_identities"):
+        ProcessTaskLauncher(max_attempt_identities=capacity)
+
+
+@requires_waitid
+def test_identity_capacity_is_bounded_without_evicting_settled_attempts(tmp_path, monkeypatch):
+    launcher = ProcessTaskLauncher(max_attempt_identities=1)
+    request = _request(tmp_path, "retained-at-capacity", "pass")
+    assert launcher.launch_task(request).wait_for_settlement(timeout=5).succeeded
+    spawn = Mock()
+    monkeypatch.setattr("nvflare.app_common.task_launcher.process_launcher.spawn_process", spawn)
+    with pytest.raises(TaskLauncherError, match="already launched"):
+        launcher.launch_task(request)
+    with pytest.raises(TaskLauncherError, match="capacity exhausted"):
+        launcher.launch_task(replace(request, attempt_id="new-attempt"))
+    assert launcher._attempt_identities == {request.identity}
+    spawn.assert_not_called()
+
+
+@requires_waitid
+def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, monkeypatch):
+    fork_ready = tmp_path / "forker.ready"
+    fork_now = tmp_path / "fork.now"
+    child_pid_path = tmp_path / "late-worker.pid"
+    forker_code = (
+        "import os, pathlib, subprocess, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); p = pathlib.Path(sys.argv[2]); "
+        'exec("while not p.exists():\\n time.sleep(0.01)"); '
+        "subprocess.Popen([sys.executable, '-c', "
+        "'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)', "
+        "sys.argv[3]]); p = pathlib.Path(sys.argv[3]); "
+        'exec("while not p.exists():\\n time.sleep(0.01)")'
+    )
+    leader_code = "import subprocess, sys; subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:]])"
+    request = _request(tmp_path, "real-churn", leader_code, forker_code, fork_ready, fork_now, child_pid_path)
+    process = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+    owned = _OwnedProcessAdapter(process)
+    handle = ProcessTaskHandle(request, owned, stop_grace_period=0.1, descendant_settle_timeout=0.1, poll_interval=0.01)
+    child_pid = None
+    try:
+        _wait_for_file(fork_ready)
+        deadline = time.monotonic() + 5
+        while owned.poll() is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        forker = psutil.Process(int(fork_ready.read_text()))
+        process_iter = psutil.process_iter
+
+        def fork_during_snapshot():
+            snapshot = list(process_iter())
+            fork_now.write_text("fork")
+            _wait_for_file(child_pid_path)
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    if not forker.is_running() or forker.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                        break
+                except psutil.NoSuchProcess:
+                    break
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            return iter(snapshot)
+
+        monkeypatch.setattr(psutil, "process_iter", fork_during_snapshot)
+        probe = Mock(wraps=os.killpg)
+        monkeypatch.setattr(os, "killpg", probe)
+        status = handle.poll()
+        child_pid = int(child_pid_path.read_text())
+        assert psutil.Process(child_pid).is_running()
+        assert psutil.Process(child_pid).status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+        assert not status.settled
+        assert not status.succeeded
+        assert owned.reaped
+        with pytest.raises(TaskSettlementError, match="no longer reserved"):
+            handle.cancel()
+        assert all(call.args[1] == 0 for call in probe.call_args_list)
+    finally:
+        if child_pid is None and child_pid_path.exists():
+            child_pid = int(child_pid_path.read_text())
+        if not owned.reaped:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+        elif child_pid is not None:
+            # The test owns this fixture's known worker. The launcher correctly
+            # refuses to signal an uncertain numeric group after releasing its
+            # leader, so fixture teardown terminates the known child directly.
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if child_pid is not None:
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    if psutil.Process(child_pid).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                        break
+                except psutil.NoSuchProcess:
+                    break
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
