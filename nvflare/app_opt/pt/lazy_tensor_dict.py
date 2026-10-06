@@ -268,6 +268,12 @@ class LazyTensorDict:
     def keys(self):
         return self._key_to_file.keys()
 
+    def get_shape(self, key) -> Tuple[int, ...]:
+        """Return a tensor's shape from cached metadata or its file header, without loading tensor data."""
+        metadata = self.make_lazy_ref(key).get_metadata()
+        self._metadata[key] = metadata
+        return metadata.shape
+
     def __iter__(self):
         return iter(self._key_to_file)
 
