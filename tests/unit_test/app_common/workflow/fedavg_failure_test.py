@@ -23,6 +23,7 @@ from nvflare.apis.controller_spec import ClientTask, TaskCompletionStatus
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
@@ -232,9 +233,11 @@ def test_custom_callback_failure_through_communicator_prevents_publication(monke
         comm.broadcast(task, controller.fl_ctx, targets=["good", "bad"])
         for name, value in (("good", 1.0), ("bad", 9.0)):
             client = Client(name, name)
-            task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+            task_name, task_id, task_data = comm.process_task_request(client, controller.fl_ctx)
             result = FLModelUtils.to_shareable(FLModel(params={"a": value}))
+            result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task_data.get_task_attempt_id())
             comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
+            assert controller.fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is (name == "good")
         # Actual task retirement follows callback completion under the communicator lock.
         comm.check_tasks()
         assert comm.get_num_standing_tasks() == 0

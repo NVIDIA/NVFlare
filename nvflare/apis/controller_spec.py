@@ -99,6 +99,7 @@ class Task:
                 It needs to follow the after_task_sent_cb_signature.
             result_received_cb: If provided, this callback would be called when controller receives results from clients.
                 It needs to follow the result_received_cb_signature.
+                Returning literal False rejects admission; None preserves the default successful-result admission.
             task_done_cb: If provided, this callback would be called when task is done.
                 It needs to follow the task_done_cb_signature.
             operator: task operator that describes the operation of the task
@@ -183,6 +184,9 @@ class ClientTask:
         self.client = client
         self.task = task
         self.id = str(uuid.uuid4())
+        # The scheduling authority issues the physical-attempt fence. Sending
+        # this assignment again does not authorize a new worker attempt.
+        self.attempt_id = str(uuid.uuid4())
         self.task_send_count = 0  # number of times the task is sent to the client
         self.task_sent_time = None  # last time the task was sent to the client
         self.result_received_time = None  # time when the result was received from the client
@@ -234,6 +238,10 @@ def result_received_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
     Args:
         client_task: the client task that the result is for
         fl_ctx: the FL context that comes with the client's result submission
+
+    Returns:
+        Literal False to reject admission. None preserves default admission for a successful result;
+        no return value can override a failed result or task.
 
     """
     pass

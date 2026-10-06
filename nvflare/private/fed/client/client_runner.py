@@ -223,14 +223,21 @@ class ClientRunner(TBI):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
+        cookie_jar = task.data.get_cookie_jar() if isinstance(task.data, Shareable) else None
+        cookie_jar = dict(cookie_jar) if cookie_jar else None
         reply = self._do_process_task(task, fl_ctx)
+        # Bind the actual outgoing reply on every path, including an early
+        # filter failure that replaced a previously successful executor result.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
-        cookie_jar = task.data.get_cookie_jar()
         if cookie_jar:
             reply.set_cookie_jar(cookie_jar)
 
         reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
         reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+        if task.attempt_id is not None:
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task.attempt_id)
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
         return reply
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
@@ -264,6 +271,10 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=task.attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.WORKFLOW, value=task.data.get_cookie(ReservedHeaderKey.WORKFLOW), private=True, sticky=False
+        )
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
         add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
@@ -581,13 +592,19 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
         self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-        self._send_task_result(task_reply, task.task_id, fl_ctx)
+        send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # This fact spans retries: False proves the result never reached the
+        # submission transport; send success alone cannot distinguish that from
+        # an upload whose acknowledgement was lost before abort/task removal.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, False, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, None, private=True, sticky=False)
         try_count = 1
         while True:
             self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
@@ -625,8 +642,14 @@ class ClientRunner(TBI):
                 # try again
                 time.sleep(self.task_check_interval)
 
+        # Readiness checking may race an abort. Do not hand an already
+        # cancelled publication to transport or mark it as an attempted send.
+        if self.run_abort_signal.triggered:
+            return _TASK_CHECK_RESULT_TASK_GONE
+
         # try to send the result
         self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
@@ -650,6 +673,11 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"checking task with {self.parent_target} ...")
         task_check_req = Shareable()
         task_check_req.set_header(ReservedKey.TASK_ID, task_id)
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        if attempt_id is not None:
+            task_check_req.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            task_check_req.set_header(ReservedHeaderKey.TASK_NAME, fl_ctx.get_prop(FLContextKey.TASK_NAME))
+            task_check_req.set_header(ReservedHeaderKey.WORKFLOW, fl_ctx.get_prop(FLContextKey.WORKFLOW))
         resp = self.engine.send_aux_request(
             targets=[self.parent_target],
             topic=ReservedTopic.TASK_CHECK,
