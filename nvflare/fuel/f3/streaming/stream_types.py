@@ -45,6 +45,10 @@ class StreamCancelled(StreamError):
     pass
 
 
+class DownloadCancelled(StreamError):
+    """An object download was cancelled locally by workflow cleanup."""
+
+
 class Stream(ABC):
     """A raw, read-only, seekable binary byte stream"""
 

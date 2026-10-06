@@ -1528,9 +1528,9 @@
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -1647,9 +1647,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -1661,6 +1661,13 @@
           },
           {
             "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_disk_aggregation",
             "type": "bool",
             "required": false,
             "default": false,
@@ -2895,9 +2902,9 @@
           },
           {
             "name": "server_expected_format",
-            "type": "ExchangeFormat",
+            "type": "Optional[ExchangeFormat]",
             "required": false,
-            "default": "numpy",
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3014,9 +3021,9 @@
           },
           {
             "name": "enable_tensor_disk_offload",
-            "type": "bool",
+            "type": "Optional[bool]",
             "required": false,
-            "default": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3038,6 +3045,13 @@
             "type": "float",
             "required": false,
             "default": 0.01,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_disk_aggregation",
+            "type": "bool",
+            "required": false,
+            "default": false,
             "kind": "keyword_only"
           }
         ],
@@ -3166,7 +3180,7 @@
     {
       "summary": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",
@@ -3177,7 +3191,7 @@
       },
       "detail": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",

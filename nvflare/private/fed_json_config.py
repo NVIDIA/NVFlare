@@ -102,6 +102,16 @@ class FedJsonConfigurator(JsonConfigurator):
             self.components[cid] = c
             return
 
+        # A filter chain is recognised at `task_*_filters.#<n>`, a path the scanner only
+        # produces for a list. Any other shape matches nothing here and registers no chain,
+        # so a filter a site configured would never run and nothing would say so.
+        if path in ("task_data_filters", "task_result_filters"):
+            if not isinstance(element, list):
+                raise ConfigError(
+                    '"{}" must be a list of filter chains but got {}'.format(path, type(element).__name__)
+                )
+            return
+
         # result filters
         if re.search(r"^task_result_filters\.#[0-9]+$", path):
             default_direction = FilterKey.IN if self.is_server else FilterKey.OUT
