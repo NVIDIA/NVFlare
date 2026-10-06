@@ -233,6 +233,9 @@ class TestDownloadWithFix:
 # ======================================================================== #
 # Test 2: Simulate pre-fix -- should FAIL with starvation
 # ======================================================================== #
+# Coverage instrumentation changes this timing-sensitive deadlock and can
+# strand an xdist worker; the normal unit-test matrix still runs the test.
+@pytest.mark.no_cover
 @pytest.mark.timeout(120)
 class TestDownloadPreFixStarvation:
 
