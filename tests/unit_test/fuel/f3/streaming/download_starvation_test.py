@@ -287,8 +287,9 @@ class TestDownloadPreFixStarvation:
             # unblocking any deadlocked workers still waiting on future.result()
             _stop_delay.set()
 
-            # Shut down the tiny pool (don't wait -- workers may be deadlocked)
-            tiny_pool.shutdown(wait=False)
+            # Cancel queued readers so workers blocked on their futures can
+            # unwind; waiting here would deadlock the intentional reproducer.
+            tiny_pool.shutdown(wait=False, cancel_futures=True)
 
             # Remove the tiny pool's deadlocked threads from Python's internal
             # atexit tracking so they don't block process exit.
