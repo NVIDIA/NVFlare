@@ -433,10 +433,13 @@ class TestExecute:
             sleep = Mock(side_effect=advance_sleep)
             with monkeypatch.context() as clock_patch:
                 clock_patch.setattr(ipb_module, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep))
-                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                # A valid task keeps trainer liveness independent of the timeout.
+                result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             sleep.assert_called_once_with(pytest.approx(0.05))
+            assert backend._client_api._receive_error is None
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
 
@@ -489,8 +492,9 @@ class TestExecute:
         TASK_ABORTED would be misleading (task never delivered, abort_signal never triggered)."""
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            first = backend.execute("train", _result_shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
 
             deliver = Mock()
             clean_databus.subscribe([TOPIC_GLOBAL_RESULT], deliver)
@@ -503,8 +507,9 @@ class TestExecute:
     def test_late_result_after_timeout_cannot_satisfy_next_task(self, clean_databus, custom_dir):
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            first = backend.execute("train", _result_shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
 
             clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
             second = backend.execute("evaluate", Shareable(), fl_ctx, Signal())
