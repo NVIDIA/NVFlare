@@ -642,15 +642,25 @@ def test_job_result_receipts_are_bounded_and_never_replace_a_recorded_decision(m
 
 
 @pytest.mark.parametrize("failure_phase", ["late_hook", "before_process"])
-def test_failed_late_result_receipt_survives_workflow_transition_only_after_hook_claim(failure_phase):
+@pytest.mark.parametrize("sweep_phase", ["before_filter", "during_filter"])
+def test_failed_late_result_receipt_survives_workflow_transition_only_after_hook_claim(failure_phase, sweep_phase):
     runner, assignment, fl_ctx = _fenced_runner()
     communicator = runner.current_wf.controller.communicator
-    # Model an issued assignment swept before its first result arrived.
     assignment.props["___job_id"] = "job-1"
-    retired = communicator._remember_completed_client_task(assignment)
-    communicator._client_task_map.pop(assignment.id)
+    assignment.task.client_tasks.append(assignment)
+    communicator._tasks.append(assignment.task)
+    communicator._engine = MagicMock()
+    communicator._engine.new_context.return_value = fl_ctx
     communicator.fire_event = MagicMock()
     communicator.controller = MagicMock()
+
+    def sweep():
+        assignment.task.completion_status = TaskCompletionStatus.TIMEOUT
+        communicator.check_tasks()
+        assert assignment.id not in communicator._client_task_map
+
+    if sweep_phase == "before_filter":
+        sweep()
     hook = communicator.controller.process_result_of_unknown_task
     hook.side_effect = RuntimeError("late hook failed after side effects")
     if failure_phase == "before_process":
@@ -665,12 +675,19 @@ def test_failed_late_result_receipt_survives_workflow_transition_only_after_hook
     result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assignment.attempt_id)
     result.add_cookie(ReservedHeaderKey.WORKFLOW, "workflow")
     key = runner._result_receipt_key("site-1", "train", assignment.id, assignment.attempt_id, "workflow")
+
+    def filter_result(_name, filtered, *_args, **_kwargs):
+        if sweep_phase == "during_filter":
+            sweep()
+        return filtered
+
     with (
-        patch("nvflare.private.fed.server.server_runner.apply_filters", return_value=result) as filters,
+        patch("nvflare.private.fed.server.server_runner.apply_filters", side_effect=filter_result) as filters,
         patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
     ):
         runner.process_submission(assignment.client, "train", assignment.id, result, fl_ctx)
         assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+        retired = communicator._completed_client_task_map[assignment.id]
         if failure_phase == "before_process":
             assert retired.accepted is None
             assert key not in runner._result_receipts
@@ -737,10 +754,38 @@ def test_first_late_result_reaches_hook_once_and_replays_after_workflow_transiti
     runner.current_wf.controller.communicator.process_submission.assert_not_called()
 
 
-@pytest.mark.parametrize("accepted", [False, True])
-def test_job_lifetime_executor_lost_ack_retry_uses_original_decision_after_teardown(monkeypatch, accepted):
+@pytest.mark.parametrize(
+    "result_path, accepted",
+    [("active", False), ("active", True), ("swept_late_failure", False), ("unclaimed_swept_late", None)],
+)
+def test_job_lifetime_executor_lost_ack_retry_preserves_claimed_decision_after_teardown(
+    monkeypatch, result_path, accepted
+):
     server, assignment, server_ctx = _fenced_runner()
     assignment.task.result_received_cb.return_value = accepted
+    workflow_communicator = server.current_wf.controller.communicator
+    late_effects = []
+    if result_path != "active":
+        assignment.props["___job_id"] = "job-1"
+        assignment.task.client_tasks.append(assignment)
+        workflow_communicator._tasks.append(assignment.task)
+        workflow_communicator._engine = MagicMock()
+        workflow_communicator._engine.new_context.return_value = server_ctx
+        workflow_communicator.fire_event = MagicMock()
+        workflow_communicator.controller = MagicMock()
+
+        def late_hook(*_args):
+            late_effects.append("applied")
+            raise RuntimeError("late hook failed after a side effect")
+
+        workflow_communicator.controller.process_result_of_unknown_task.side_effect = late_hook
+        if result_path == "unclaimed_swept_late":
+
+            def before_process(event, *_args):
+                if event == EventType.BEFORE_PROCESS_SUBMISSION:
+                    raise RuntimeError("failure before the late hook claimed the result")
+
+            server.fire_event.side_effect = before_process
     client_ctx = FLContextManager(identity_name=assignment.client.name, job_id="job-1").new_context()
     client_ctx.set_peer_context(FLContextManager(identity_name="server", job_id="job-1").new_context())
     client_ctx.set_prop(FLContextKey.SSID, "session", private=True, sticky=False)
@@ -767,6 +812,7 @@ def test_job_lifetime_executor_lost_ack_retry_uses_original_decision_after_teard
     communicator.cell = MagicMock()
     monkeypatch.setattr("nvflare.private.fed.client.communicator.determine_parent_fqcn", lambda *_args: "server")
     transport_calls = []
+    readiness = []
 
     def transport(**kwargs):
         message = kwargs["request"]
@@ -787,7 +833,16 @@ def test_job_lifetime_executor_lost_ack_retry_uses_original_decision_after_teard
         return rc == CellReturnCode.OK
 
     def check_task(**kwargs):
-        return {"server": server._handle_task_check(kwargs["topic"], kwargs["request"], server_ctx)}
+        reply = server._handle_task_check(kwargs["topic"], kwargs["request"], server_ctx)
+        readiness.append(reply.get_return_code())
+        return {"server": reply}
+
+    def filter_result(_name, result, *_args, **_kwargs):
+        if result_path != "active":
+            assignment.task.completion_status = TaskCompletionStatus.TIMEOUT
+            workflow_communicator.check_tasks()
+            assert assignment.id not in workflow_communicator._client_task_map
+        return result
 
     communicator.cell.send_request.side_effect = transport
     client_engine.send_task_result.side_effect = send_result
@@ -803,17 +858,37 @@ def test_job_lifetime_executor_lost_ack_retry_uses_original_decision_after_teard
         patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
         patch(
             "nvflare.private.fed.server.server_runner.apply_filters",
-            side_effect=lambda _name, result, *_a, **_k: result,
-        ),
+            side_effect=filter_result,
+        ) as filters,
     ):
         result = client._process_task(task, client_ctx)
-        assert client._send_task_result(result, assignment.id, client_ctx) is True
+        assert client._send_task_result(result, assignment.id, client_ctx) is (accepted is not None)
 
     assert executor.calls == 1
-    assert len(transport_calls) == 2
+    assert len(transport_calls) == (1 if accepted is None else 2)
+    assert readiness == [ReturnCode.OK, ReturnCode.TASK_UNKNOWN if accepted is None else ReturnCode.OK]
     assert client_engine.send_aux_request.call_count == 2
     assert client_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is True
     assert client_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is accepted
-    assert all(reply.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED) is accepted for reply in transport_calls)
-    assignment.task.result_received_cb.assert_called_once()
+    assert all(
+        reply.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED) is (accepted is True) for reply in transport_calls
+    )
+    filters.assert_called_once()
+    if result_path == "active":
+        assignment.task.result_received_cb.assert_called_once()
+    else:
+        assignment.task.result_received_cb.assert_not_called()
+        assignment.task.props["___mgr"].check_task_result.assert_not_called()
+        retired = workflow_communicator._completed_client_task_map[assignment.id]
+        assert retired.accepted is accepted
+        key = server._result_receipt_key("site-1", "train", assignment.id, assignment.attempt_id, "workflow")
+        if accepted is None:
+            assert not late_effects
+            assert key not in server._result_receipts
+            workflow_communicator.controller.process_result_of_unknown_task.assert_not_called()
+        else:
+            assert late_effects == ["applied"]
+            assert server._result_receipts[key] is False
+            workflow_communicator.controller.process_result_of_unknown_task.assert_called_once()
+        server.log_exception.assert_called_once()
     server.system_panic.assert_not_called()

@@ -689,12 +689,18 @@ class ServerRunner(TBI):
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
+                if attempt_id is not None:
+                    # Filtering may outlive the active assignment. Resolve its
+                    # final authority so a swept late-hook rejection is retained.
+                    final_client_task = communicator.process_task_check(task_id, fl_ctx)
+                    if final_client_task is not None:
+                        admitted_client_task = final_client_task
                 rejected_active = (
                     isinstance(admitted_client_task, ClientTask)
                     and admitted_client_task.id == task_id
                     and admitted_client_task.attempt_id == attempt_id
                     and admitted_client_task.client.name == client.name
-                    and admitted_client_task.task.name == task_name
+                    and getattr(admitted_client_task.task, "name", None) == task_name
                     and admitted_client_task.result_received_time is not None
                 )
                 rejected_retired = (
