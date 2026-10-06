@@ -39,7 +39,7 @@ class State:
 
 # These 64 MiB end-to-end transfers are timing-sensitive under coverage
 # instrumentation. Every normal unit-test matrix job still runs them.
-@pytest.mark.skipif(bool(os.environ.get("COV_CORE_SOURCE")), reason="incompatible with coverage instrumentation")
+@pytest.mark.skipif(bool(os.environ.get("NVFLARE_COVERAGE_RUN")), reason="incompatible with coverage instrumentation")
 class TestStreamCell:
     @pytest.fixture(scope="session")
     def port(self):

@@ -65,10 +65,10 @@ CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 _stop_delay = threading.Event()
 
 # Real Cell instances and intentional pool starvation can keep an instrumented
-# xdist worker alive after test teardown. Every normal unit-test matrix job
-# still runs both integration scenarios.
+# test process alive after teardown. Every normal unit-test matrix job still
+# runs both integration scenarios.
 pytestmark = pytest.mark.skipif(
-    bool(os.environ.get("COV_CORE_SOURCE")), reason="incompatible with coverage instrumentation"
+    bool(os.environ.get("NVFLARE_COVERAGE_RUN")), reason="incompatible with coverage instrumentation"
 )
 
 
