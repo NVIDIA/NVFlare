@@ -24,6 +24,18 @@ import pytest
 from nvflare.fuel.f3.streaming import download_service as ds_module
 
 
+def pytest_collection_modifyitems(config, items):
+    """Skip real-cell integration tests whenever pytest-cov is active."""
+    cov_sources = config.getoption("cov_source", default=[])
+    if not cov_sources or config.getoption("no_cov", default=False):
+        return
+
+    skip = pytest.mark.skip(reason="incompatible with coverage instrumentation")
+    for item in items:
+        if item.get_closest_marker("coverage_incompatible"):
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def confirm_switch_on():
     """Pin the receiver-confirm kill-switch ON for all streaming tests.

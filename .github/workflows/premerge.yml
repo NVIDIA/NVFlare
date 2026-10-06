@@ -183,8 +183,6 @@ jobs:
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test with coverage
-        env:
-          NVFLARE_COVERAGE_RUN: "1"
         run: python3 -m pytest -v --timeout=180 --timeout-method=signal --cov=nvflare --cov-report xml:cov.xml tests/unit_test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0

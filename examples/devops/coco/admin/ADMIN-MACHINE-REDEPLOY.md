@@ -130,12 +130,13 @@ must be `coco-publisher`. Do not display the password.
 chmod 0700 /path/to/received-publisher
 chmod 0600 /path/to/received-publisher/{username,password}
 ./05-install-publisher-credential.sh /path/to/received-publisher \
-  "$HOME/coco-workload-owner/secrets/registry"
+  "$PWD/secrets/registry"
 ```
 
-The installed destination is
-`$HOME/coco-workload-owner/secrets/registry/`. Remove the received staging copy
-after verification. Never transfer this credential to CoCo.
+The installed destination is `secrets/registry/` in the current admin kit,
+matching the relative publisher credential paths in its `cc_project.yml`.
+Remove the received staging copy after verification. Never transfer this
+credential to CoCo.
 
 ## 5. Prepare the supplied minimal example
 

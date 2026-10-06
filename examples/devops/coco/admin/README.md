@@ -91,7 +91,7 @@ or in shell history:
 
 ```bash
 ./05-install-publisher-credential.sh /path/to/authenticated/received-credential \
-  "$HOME/coco-workload-owner/secrets/registry"
+  "$PWD/secrets/registry"
 ```
 
 The received directory must contain exactly `username` and `password`. The
@@ -99,7 +99,8 @@ installer does not display the password and refuses to overwrite an existing
 credential. Supply the destination explicitly; it must contain the credential
 files named by `publisher_username_file` and `publisher_password_file` in the
 unified `cc_project.yml` and by the generated workload request. The command
-above preserves the role kit's conventional location.
+above installs them in the current admin kit at the location referenced by the
+supplied example configuration.
 Securely remove the received copy after installation.
 
 The persistent Cosign signing key is created on first publication under

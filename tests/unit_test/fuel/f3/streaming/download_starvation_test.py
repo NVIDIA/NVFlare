@@ -32,7 +32,6 @@ Two test classes, each with their own Cell pair:
    With a 4-worker pool and 8 concurrent downloads -> deadlock.
 """
 
-import os
 import threading
 import time
 from typing import Any, Optional, Tuple
@@ -67,9 +66,7 @@ _stop_delay = threading.Event()
 # Real Cell instances and intentional pool starvation can keep an instrumented
 # test process alive after teardown. Every normal unit-test matrix job still
 # runs both integration scenarios.
-pytestmark = pytest.mark.skipif(
-    bool(os.environ.get("NVFLARE_COVERAGE_RUN")), reason="incompatible with coverage instrumentation"
-)
+pytestmark = pytest.mark.coverage_incompatible
 
 
 class ChunkedDownloadable(Downloadable):

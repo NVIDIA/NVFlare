@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import threading
 from unittest.mock import patch
 
@@ -39,7 +38,7 @@ class State:
 
 # These 64 MiB end-to-end transfers are timing-sensitive under coverage
 # instrumentation. Every normal unit-test matrix job still runs them.
-@pytest.mark.skipif(bool(os.environ.get("NVFLARE_COVERAGE_RUN")), reason="incompatible with coverage instrumentation")
+@pytest.mark.coverage_incompatible
 class TestStreamCell:
     @pytest.fixture(scope="session")
     def port(self):
@@ -83,7 +82,7 @@ class TestStreamCell:
         assert bytes_sent == len(buffer)
 
         if not state.done.wait(timeout=WAIT_SEC):
-            raise Exception("Data not received after 30 seconds")
+            raise Exception(f"Data not received after {WAIT_SEC} seconds")
 
         assert buffer == state.result
 
@@ -103,7 +102,7 @@ class TestStreamCell:
         assert bytes_sent == len(buffer)
 
         if not state.done.wait(timeout=WAIT_SEC):
-            raise Exception("Data not received after 30 seconds")
+            raise Exception(f"Data not received after {WAIT_SEC} seconds")
 
         assert buffer == state.result
 

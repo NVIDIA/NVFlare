@@ -384,13 +384,13 @@ install -m 0644 ~/service-public/trustee.crt public/trustee.crt
 install -m 0644 ~/service-public/registry-ca.crt public/registry-ca.crt
 bash ./00-install-tools.sh
 bash ./05-install-publisher-credential.sh ~/incoming-registry-credential \
-  "$HOME/coco-workload-owner/secrets/registry"
+  "$PWD/secrets/registry"
 REGISTRY=secure-services.example.com:5000
 for cert_dir in /etc/docker/certs.d /etc/containers/certs.d; do
   sudo install -d -m 0755 "$cert_dir" "$cert_dir/$REGISTRY"
   sudo install -m 0644 ~/service-public/registry-ca.crt "$cert_dir/$REGISTRY/ca.crt"
 done
-SECRETS="$HOME/coco-workload-owner/secrets/registry"
+SECRETS="$PWD/secrets/registry"
 skopeo login --authfile "$SECRETS/config.json" \
   --username "$(<"$SECRETS/username")" --password-stdin "$REGISTRY" < "$SECRETS/password"
 chmod 0600 "$SECRETS/config.json"
