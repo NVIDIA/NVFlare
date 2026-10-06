@@ -301,6 +301,30 @@ class TestInTimeAccumulateWeightedAggregator:
         assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
         assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
 
+    def test_shape_mismatch_rejects_one_client_and_keeps_collecting(self):
+        agg = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHT_DIFF)
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        def contribution(client_name, values):
+            shareable = Shareable()
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
+            shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            dxo = DXO(
+                DataKind.WEIGHT_DIFF,
+                data={"weight": np.asarray(values)},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+            )
+            return dxo.update_shareable(shareable)
+
+        assert agg.accept(contribution("site-1", [1.0, 3.0]), fl_ctx)
+        assert not agg.accept(contribution("site-2", [9.0]), fl_ctx)
+        assert agg.accept(contribution("site-3", [5.0, 7.0]), fl_ctx)
+
+        result = from_shareable(agg.aggregate(fl_ctx))
+        np.testing.assert_allclose(result.data["weight"], [3.0, 5.0])
+
     @pytest.mark.parametrize("shape", [4, (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])
     def test_aggregate_random(self, shape, n_clients):

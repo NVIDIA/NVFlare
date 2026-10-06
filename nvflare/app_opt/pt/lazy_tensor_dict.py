@@ -265,6 +265,20 @@ class LazyTensorDict:
         except KeyError:
             return default
 
+    def get_metadata(self, key) -> TensorMetadata:
+        """Return tensor metadata without loading tensor data."""
+        if key not in self._key_to_file:
+            raise KeyError(key)
+        metadata = self._metadata.get(key)
+        if metadata is None:
+            file_path, st_key = self._key_to_file[key]
+            try:
+                metadata = read_safetensors_metadata(file_path)[st_key]
+            except KeyError as e:
+                raise ValueError(f"safetensors file '{file_path}' has no tensor '{st_key}'") from e
+            self._metadata[key] = metadata
+        return metadata
+
     def keys(self):
         return self._key_to_file.keys()
 

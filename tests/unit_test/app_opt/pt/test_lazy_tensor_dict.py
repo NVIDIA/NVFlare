@@ -221,6 +221,24 @@ class TestLazyTensorDict:
         for key, val in ltd.items():
             assert torch.allclose(val, tensors[key])
 
+    def test_get_metadata_does_not_materialize_tensor(self, temp_safetensors):
+        key_to_file, temp_dir, tensors = temp_safetensors
+
+        class CountingLazyTensorDict(LazyTensorDict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.materializations = 0
+
+            def __getitem__(self, key):
+                self.materializations += 1
+                return super().__getitem__(key)
+
+        ltd = CountingLazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        metadata = ltd.get_metadata("layer1.weight")
+
+        assert metadata.shape == tuple(tensors["layer1.weight"].shape)
+        assert ltd.materializations == 0
+
     def test_make_lazy_ref(self, temp_safetensors):
         key_to_file, temp_dir, tensors = temp_safetensors
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
@@ -243,6 +261,32 @@ class TestLazyTensorDict:
 
         with pytest.raises(KeyError):
             _ = ltd["nonexistent"]
+
+
+class TestAggregationHelperWithLazyTensorDict:
+    def test_helper_materializes_each_disk_tensor_once(self, temp_safetensors):
+        key_to_file, temp_dir, tensors = temp_safetensors
+
+        class CountingLazyTensorDict(LazyTensorDict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.materializations = 0
+
+            def __getitem__(self, key):
+                self.materializations += 1
+                return super().__getitem__(key)
+
+        ltd = CountingLazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        helper = WeightedAggregationHelper()
+        helper.add(data=ltd, weight=1.0, contributor_name="client1", contribution_round=0)
+
+        assert ltd.materializations == len(tensors)
+        result = helper.get_result()
+        for name, expected in tensors.items():
+            assert torch.allclose(result[name], expected, atol=1e-6)
 
 
 class TestAggregationHelperWithLazyRefs:

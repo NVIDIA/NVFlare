@@ -71,6 +71,10 @@ def filter_aggregatable_metrics(
     return filtered
 
 
+class ContributionShapeError(ValueError):
+    """Raised when a contribution exposes a shape incompatible with accumulated state."""
+
+
 class AggregationStatsKey:
     """Keys of the per-round aggregation stats dict produced by WeightedAggregationHelper and aggregators."""
 
@@ -150,13 +154,21 @@ class WeightedAggregationHelper(object):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
+    @staticmethod
+    def _shape_for_key(data, key):
+        """Return shape metadata without materializing disk-backed tensors when possible."""
+        get_metadata = getattr(data, "get_metadata", None)
+        if callable(get_metadata):
+            metadata = get_metadata(key)
+            return getattr(metadata, "shape", None)
+        return getattr(data[key], "shape", None)
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights.
 
         Raises:
-            ValueError: A repeated key exposes a shape different from its running
-                total. Exposed shapes are checked before any round state changes;
-                lazy values without shape metadata retain their streaming behavior.
+            ContributionShapeError: A repeated key exposes a shape different from its
+                running total. Exposed shapes are checked before any round state changes.
 
         Note:
             Contributions accumulate in call (result-arrival) order: each weighted contribution is
@@ -165,16 +177,17 @@ class WeightedAggregationHelper(object):
             ulp-level differences between runs; bitwise reproducibility is not guaranteed for >=2 clients.
         """
         with self.lock:
-            # Check exposed shapes before updating any round state. Do not eagerly
-            # materialize lazy values: they may be streamed to bound model memory.
-            for k, v in data.items():
+            # Check exposed shapes before updating any round state. Iterate keys so
+            # disk-backed mappings can answer from safetensors header metadata instead
+            # of materializing every tensor once here and again during accumulation.
+            for k in data.keys():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
                 current_shape = getattr(self.total.get(k), "shape", None)
-                incoming_shape = getattr(v, "shape", None)
+                incoming_shape = self._shape_for_key(data, k)
                 if current_shape is not None and incoming_shape is not None:
                     if tuple(current_shape) != tuple(incoming_shape):
-                        raise ValueError(
+                        raise ContributionShapeError(
                             f"Contribution for {k!r} has shape {tuple(incoming_shape)}, "
                             f"expected {tuple(current_shape)}"
                         )

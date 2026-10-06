@@ -17,7 +17,11 @@ from typing import Any, Dict, Optional
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey, WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
+    ContributionShapeError,
+    WeightedAggregationHelper,
+)
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.log_utils import get_module_logger
 
@@ -92,16 +96,17 @@ class DXOAggregator(FLComponent):
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
-        if processed_algorithm is not None:
-            if self.processed_algorithm is None:
-                self.processed_algorithm = processed_algorithm
-            elif self.processed_algorithm != processed_algorithm:
-                self.log_error(
-                    fl_ctx,
-                    f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
-                    f"but got algorithm: {processed_algorithm}",
-                )
-                return False
+        if (
+            processed_algorithm is not None
+            and self.processed_algorithm is not None
+            and self.processed_algorithm != processed_algorithm
+        ):
+            self.log_error(
+                fl_ctx,
+                f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
+                f"but got algorithm: {processed_algorithm}",
+            )
+            return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if contribution_round != current_round:
@@ -157,8 +162,16 @@ class DXOAggregator(FLComponent):
                     self.warning_count[contributor_name] = 0
             aggregation_weight = 1.0
 
-        # aggregate
-        self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
+        # Aggregate. Shape mismatches are invalid client contributions, not
+        # workflow-fatal exceptions: reject them and continue collecting peers.
+        try:
+            self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
+        except ContributionShapeError as e:
+            self.log_warning(fl_ctx, f"discarding DXO from {contributor_name}: {e}")
+            return False
+
+        if processed_algorithm is not None and self.processed_algorithm is None:
+            self.processed_algorithm = processed_algorithm
         self.log_debug(fl_ctx, "End accept")
         return True
 
