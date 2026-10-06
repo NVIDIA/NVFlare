@@ -87,6 +87,8 @@ class TrusteeAuthorizer(CoCoAuthorizer):
                 remaining = deadline - time.monotonic() if math.isfinite(deadline) else 60.0
                 if remaining <= 0:
                     raise CCTokenGenerateError("Token generation deadline exhausted")
+                environment = {name: value for name, value in os.environ.items() if not name.startswith("LD_")}
+                environment.update(RUST_LOG="off", LD_LIBRARY_PATH="/host/lib")
                 result = subprocess.run(
                     [
                         self.kbs_client,
@@ -103,7 +105,7 @@ class TrusteeAuthorizer(CoCoAuthorizer):
                     check=False,
                     text=True,
                     timeout=max(0.1, remaining),
-                    env={**os.environ, "RUST_LOG": "off"},
+                    env=environment,
                 )
             if result.returncode != 0 or not result.stdout.strip():
                 raise _TemporaryTokenError("CVM KBS attestation temporarily unavailable")

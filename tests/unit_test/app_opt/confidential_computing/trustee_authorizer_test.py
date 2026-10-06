@@ -69,6 +69,26 @@ def test_cvm_provider_uses_pinned_guest_kbs_client_and_ephemeral_key():
     assert argv[-1].startswith("/proc/self/fd/")
     assert run.call_args.kwargs["pass_fds"]
     assert run.call_args.kwargs["env"]["RUST_LOG"] == "off"
+    assert run.call_args.kwargs["env"]["LD_LIBRARY_PATH"] == "/host/lib"
+
+
+def test_cvm_provider_does_not_forward_loader_injection(monkeypatch):
+    authorizer = _authorizer(
+        "cvm",
+        kbs_url="https://trustee.example.org:8443",
+        kbs_ca="-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n",
+    )
+    monkeypatch.setenv("LD_PRELOAD", "/untrusted/injection.so")
+    monkeypatch.setenv("LD_AUDIT", "/untrusted/audit.so")
+    with patch(
+        "nvflare.app_opt.confidential_computing.trustee_authorizer.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, stdout="signed-ear\n", stderr=""),
+    ) as run:
+        authorizer._get_guest_token()
+
+    assert "LD_PRELOAD" not in run.call_args.kwargs["env"]
+    assert "LD_AUDIT" not in run.call_args.kwargs["env"]
+    assert run.call_args.kwargs["env"]["LD_LIBRARY_PATH"] == "/host/lib"
 
 
 @pytest.mark.parametrize("provider", ["", "legacy", None])

@@ -382,10 +382,11 @@ On **provisioning_node**, whose separate admin kit is at `~/coco-admin`:
 cd ~/coco-admin
 install -m 0644 ~/service-public/trustee.crt public/trustee.crt
 install -m 0644 ~/service-public/registry-ca.crt public/registry-ca.crt
-bash ./00-install-tools.sh
+REGISTRY=secure-services.example.com:5000
+KBS_URL=https://secure-services.example.com:8443
+bash ./00-install-tools.sh "$REGISTRY" "$PWD/public/registry-ca.crt" "$KBS_URL"
 bash ./05-install-publisher-credential.sh ~/incoming-registry-credential \
   "$PWD/secrets/registry"
-REGISTRY=secure-services.example.com:5000
 for cert_dir in /etc/docker/certs.d /etc/containers/certs.d; do
   sudo install -d -m 0755 "$cert_dir" "$cert_dir/$REGISTRY"
   sudo install -m 0644 ~/service-public/registry-ca.crt "$cert_dir/$REGISTRY/ca.crt"

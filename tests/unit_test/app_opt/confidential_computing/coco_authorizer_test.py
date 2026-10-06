@@ -42,6 +42,21 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import (
 from nvflare.app_opt.confidential_computing.trustee_claims import normalized_init_data
 
 
+def test_approved_trust_vectors_match_trustee_policy_contract():
+    expected = {
+        "executables": 3,
+        "hardware": 2,
+        "configuration": 2,
+        "file-system": 0,
+        "instance-identity": 0,
+        "runtime-opaque": 0,
+        "storage-opaque": 0,
+        "sourced-data": 0,
+    }
+    assert TRUST_VECTOR == expected
+    assert CPU_TRUST_VECTORS == {"snp": expected, "tdx": expected}
+
+
 @pytest.fixture(params=[("rsa", "snp"), ("ec", "snp"), ("rsa", "tdx"), ("ec", "tdx")])
 def material(request):
     key_type, cpu_type = request.param
@@ -880,10 +895,9 @@ def test_platform_vectors_do_not_accept_generic_success_threshold(material, subm
 
 
 @pytest.mark.parametrize("submod", ["cpu0", "gpu0"])
-def test_cpu_and_gpu_configuration_vectors_are_not_interchangeable(material, submod):
+def test_configuration_three_is_not_an_approved_trustee_claim(material, submod):
     claims, client, verifier, generate, key = material
-    vector = claims["submods"][submod]["ear.trustworthiness-vector"]
-    vector["configuration"] = 2 if vector["configuration"] == 3 else 3
+    claims["submods"][submod]["ear.trustworthiness-vector"]["configuration"] = 3
     with pytest.raises(CCTokenGenerateError):
         generate()
     with patch.object(client, "_ear", return_value=(claims, key.public_key())):

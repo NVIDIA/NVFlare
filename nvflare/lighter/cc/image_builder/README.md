@@ -290,8 +290,9 @@ Bootstrap and periodic appraisal queue allowlisted metadata for an independent, 
 
 The container receives `/vault/application` read-only, its `runtime/` and `data/`
 subdirectories writable, `/applog`, `/user_config` (read-only) and `/user_data`
-(read-only); the measured root's `/usr/bin` is mounted at `/host/bin` only when
-`container.host_bin` is true. The container starts with no capabilities and adds
+(read-only); the measured root's `/usr/bin` and system runtime libraries are
+mounted read-only at `/host/bin` and `/host/lib` only when `container.host_bin`
+is true. The container starts with no capabilities and adds
 back only explicitly requested `container.capabilities` (default: none), runs with
 `no-new-privileges` and a `pids_limit`, and defaults to a read-only container root
 with writable `/tmp` and `/run`. Set `container.user` to a non-root numeric UID

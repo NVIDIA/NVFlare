@@ -703,7 +703,7 @@ def application(path):
                 "Only application runtime/data may be writable",
             )
         require_config(
-            str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin"),
+            str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin", "/host/lib"),
             "Cannot replace mandatory mounts",
         )
     for port in container["ports"]:

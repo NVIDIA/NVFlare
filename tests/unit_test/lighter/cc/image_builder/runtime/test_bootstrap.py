@@ -386,6 +386,7 @@ class BootstrapTests(unittest.TestCase):
         app["container"].update(host_bin=True, read_only_rootfs=True, capabilities=["NET_BIND_SERVICE"], pids_limit=64)
         command = bootstrap.docker_argv(app, environment_file="/proc/self/fd/17")
         self.assertIn("type=bind,source=/usr/bin,target=/host/bin,readonly", command)
+        self.assertIn("type=bind,source=/usr/lib/x86_64-linux-gnu,target=/host/lib,readonly", command)
         self.assertIn("--read-only", command)
         self.assertEqual(
             [command[i + 1] for i, value in enumerate(command) if value == "--cap-add"], ["NET_BIND_SERVICE"]

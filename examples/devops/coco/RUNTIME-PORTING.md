@@ -91,7 +91,7 @@ The generator and secure-services installer independently derive the expected
 release-policy shape. CPU-only releases require exactly `cpu0`; GPU releases
 require exactly `cpu0` and `gpu0`. Signed CPU evidence must identify the approved
 TEE. Present failing GPU evidence cannot be ignored or downgraded to CPU-only.
-Expected EAR vectors are exact: SNP `(3,2,3)`, TDX `(3,2,2)`, NVIDIA GPU `(3,2,3)`
+Expected EAR vectors are exact: SNP, TDX, and NVIDIA GPU use `(3,2,2)`
 for executables/hardware/configuration; the other five fields are zero.
 
 Changing image digest, command, application security context, agent policy or

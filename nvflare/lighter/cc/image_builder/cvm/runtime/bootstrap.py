@@ -483,8 +483,10 @@ def docker_argv(app, *, device=None, defaults=None, environment_file=None):
         ("/user_data", "/user_data", True),
     ]
     if cfg.get("host_bin"):
-        # Opt-in only: exposes the measured root's tools to the container.
+        # Opt-in only: expose the measured root's tools and their exact runtime
+        # libraries. Trustee's GPU-enabled kbs-client links to pinned libnvat.
         mounts.append(("/usr/bin", "/host/bin", True))
+        mounts.append(("/usr/lib/x86_64-linux-gnu", "/host/lib", True))
     if app.get("nfs_mount") is not None:
         mounts.append((str(NFS_MOUNT), str(NFS_MOUNT), True))
     for source, target, ro in mounts:

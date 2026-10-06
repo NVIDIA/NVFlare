@@ -40,7 +40,7 @@ hardware := 2 if {
     input.snp.reported_tcb_microcode >= min_microcode
 }
 
-configuration := 3 if {
+configuration := 2 if {
     input.snp
     not input.tdx
     input.snp.policy_debug_allowed == false

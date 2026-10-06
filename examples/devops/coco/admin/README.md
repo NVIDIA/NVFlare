@@ -72,7 +72,9 @@ their fingerprints through an independent trusted channel before first use:
 cd /path/to/admin
 openssl x509 -in public/trustee.crt -noout -subject -issuer -dates -fingerprint -sha256
 openssl x509 -in public/registry-ca.crt -noout -subject -issuer -dates -fingerprint -sha256
-./00-install-tools.sh
+REGISTRY_ENDPOINT=secure-services.example.com:5000  # cc_project.yml registry.endpoint
+KBS_URL=https://secure-services.example.com:8443   # cc_project.yml Trustee kbs_endpoint
+./00-install-tools.sh "$REGISTRY_ENDPOINT" "$PWD/public/registry-ca.crt" "$KBS_URL"
 ```
 
 After registry certificate rotation, refresh the registry-specific CA

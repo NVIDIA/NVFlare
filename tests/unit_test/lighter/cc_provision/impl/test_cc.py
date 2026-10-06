@@ -733,6 +733,24 @@ def test_azure_end_to_end_provisioning_emits_common_manifest(tmp_path):
     assert (Path(ctx.get_state_dir()) / "cc-private" / output.name / "server.example.com/startup-kit").is_dir()
 
 
+def test_common_packager_hides_unsigned_kit_before_validation_failure(tmp_path):
+    project = _azure_project(tmp_path)
+    provisioner = Provisioner(
+        str(tmp_path / "output"),
+        [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder()],
+        CCPackager(),
+    )
+
+    with pytest.raises(ValueError, match="Invalid signed startup kit"):
+        provisioner.provision(project)
+
+    output = tmp_path / "output/unified/prod_00"
+    private_kit = tmp_path / "output/unified/state/cc-private/prod_00/server.example.com/startup-kit"
+    assert output.is_dir()
+    assert not (output / "server.example.com").exists()
+    assert (private_kit / "startup/server.key").is_file()
+
+
 def test_common_packager_retains_private_stage_when_prod_number_is_reused(tmp_path):
     project = _azure_project(tmp_path)
     root = tmp_path / "output/unified"

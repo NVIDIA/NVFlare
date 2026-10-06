@@ -19,7 +19,7 @@ import re
 TRUST_VECTOR = {
     "executables": 3,
     "hardware": 2,
-    "configuration": 3,
+    "configuration": 2,
     "file-system": 0,
     "instance-identity": 0,
     "runtime-opaque": 0,
@@ -27,11 +27,11 @@ TRUST_VECTOR = {
     "sourced-data": 0,
 }
 
-# Exact policy contracts, not thresholds over AR4SI values. The TDX policy
-# appraises an approved non-debug configuration as 2 rather than SNP's 3.
+# Exact policy contracts, not thresholds over AR4SI values. The shared Trustee
+# policy appraises an approved CPU or GPU configuration as 2.
 CPU_TRUST_VECTORS = {
     "snp": dict(TRUST_VECTOR),
-    "tdx": {**TRUST_VECTOR, "configuration": 2},
+    "tdx": dict(TRUST_VECTOR),
 }
 
 

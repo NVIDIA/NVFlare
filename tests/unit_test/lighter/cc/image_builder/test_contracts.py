@@ -773,6 +773,11 @@ class ApplicationTests(unittest.TestCase):
         self.value["container"]["volumes"] = [{"source": "/user_data/input", "target": "/input", "read_only": False}]
         with self.assertRaises(BuildError):
             self.load()
+        self.value["container"]["volumes"] = [
+            {"source": "/vault/application/data", "target": "/host/lib", "read_only": True}
+        ]
+        with self.assertRaises(BuildError):
+            self.load()
 
     def test_duplicate_yaml_keys_denied(self):
         path = self.root / "duplicate.yml"

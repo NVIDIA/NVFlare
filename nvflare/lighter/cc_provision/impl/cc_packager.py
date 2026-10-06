@@ -165,29 +165,6 @@ class CCPackager(Packager):
         if not plans:
             raise ValueError("CCPackager requires at least one confidential participant")
         result_root = Path(ctx.get_result_location()).resolve()
-        root_cert = ctx.get(CtxKey.ROOT_CERT)
-        if root_cert is None:
-            raise ValueError("CCPackager requires the project root certificate")
-        expected_root = root_cert.public_bytes(serialization.Encoding.PEM)
-
-        # Verify all kits before hiding any of them or starting a privileged or
-        # external build. A partial failure never publishes a plaintext kit.
-        for participant in project.get_all_participants():
-            if participant.name not in plans:
-                continue
-            kit = result_root / participant.name
-            if kit.is_symlink() or not kit.is_dir():
-                raise ValueError(f"Missing generated startup kit for {participant.name}")
-            if (kit / "startup/rootCA.pem").read_bytes() != expected_root:
-                raise ValueError(f"Startup kit for {participant.name} does not use the project root certificate")
-            if not verify_folder_signature(
-                str(kit),
-                str(kit / "startup/rootCA.pem"),
-                single_signer=True,
-                signature_file=ProvFileName.SIGNATURE_JSON,
-            ):
-                raise ValueError(f"Invalid signed startup kit for {participant.name}")
-
         private_root = Path(ctx.get_state_dir()) / "cc-private"
         private_root.mkdir(mode=0o700, exist_ok=True)
         if private_root.is_symlink() or not private_root.is_dir():
@@ -208,6 +185,31 @@ class CCPackager(Packager):
             source = result_root / name
             source.rename(owner / "startup-kit")
             sources[name] = owner / "startup-kit"
+
+        # Hide every protected kit before validation can fail. Provisioner has
+        # already finalized prod_NN and does not clean up packager exceptions,
+        # so validating the public paths would leave credentials distributable
+        # when SignatureBuilder was omitted or a signature was corrupted.
+        try:
+            root_cert = ctx.get(CtxKey.ROOT_CERT)
+            if root_cert is None:
+                raise ValueError("CCPackager requires the project root certificate")
+            expected_root = root_cert.public_bytes(serialization.Encoding.PEM)
+            for name, kit in sources.items():
+                if kit.is_symlink() or not kit.is_dir():
+                    raise ValueError(f"Missing generated startup kit for {name}")
+                if (kit / "startup/rootCA.pem").read_bytes() != expected_root:
+                    raise ValueError(f"Startup kit for {name} does not use the project root certificate")
+                if not verify_folder_signature(
+                    str(kit),
+                    str(kit / "startup/rootCA.pem"),
+                    single_signer=True,
+                    signature_file=ProvFileName.SIGNATURE_JSON,
+                ):
+                    raise ValueError(f"Invalid signed startup kit for {name}")
+        except Exception:
+            ctx.error(f"CC startup kit validation failed; private recovery inputs retained at {private}")
+            raise
 
         results = []
         deployments = ctx["cc_deployments"]

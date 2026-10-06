@@ -107,7 +107,9 @@ authorization must differ between clusters.
 Display/hash and run:
 
 ```bash
-./00-install-tools.sh
+REGISTRY_ENDPOINT=secure-services.example.com:5000  # cc_project.yml registry.endpoint
+KBS_URL=https://secure-services.example.com:8443   # cc_project.yml Trustee kbs_endpoint
+./00-install-tools.sh "$REGISTRY_ENDPOINT" "$PWD/public/registry-ca.crt" "$KBS_URL"
 ```
 
 This installs Docker, Go, Skopeo, OpenSSL, jq, YAML support, and zstd; installs
@@ -118,7 +120,7 @@ registry probe must receive HTTP 401 with Basic realm
 `CoCo registry publisher`; this proves the service is challenging the exact
 publisher origin. An anonymous HTTP 200 at this stage is a configuration
 error. The validated script SHA-256 is
-`1579dc93be163d697c530f1a5cfe6d71dbad33364d87cd12e3dfaafb627cb7c8`.
+`f71b73f8c67c4d692d0168999b5c66d71583c24f181bd938c8c962428932079f`.
 
 ## 4. Install the publisher credential
 
@@ -269,7 +271,7 @@ unique prefix derived from `RELEASE_NAME` and checks all of the following:
 | Request kind and path | Resource plugin and only `default/image-key/RELEASE`, `default/sig-public-key/RELEASE`, `default/security-policy/RELEASE` |
 | Submodules | Exactly `cpu0` for CPU-only; exactly `cpu0` and `gpu0` for GPU |
 | CPU evidence type | Exactly the approved signed `snp` or `tdx` evidence, never an unsigned runtime hint |
-| Trust vectors | SNP CPU `(3,2,3)`, TDX CPU `(3,2,2)`, NVIDIA GPU `(3,2,3)` for executables/hardware/configuration; all other fields zero |
+| Trust vectors | SNP CPU, TDX CPU, and NVIDIA GPU use `(3,2,2)` for executables/hardware/configuration; all other fields zero |
 | GPU type | GPU releases require nonempty NVIDIA evidence in `gpu0`; CPU-only releases require `gpu0` to be absent |
 | InitData | Exact SHA-256 claim for SNP; exact 48-byte zero-padded claim and matching quoted MRCONFIGID for TDX |
 | Image | Immutable encrypted digest appears in the validated image identifiers and the approved container OCI annotations |
