@@ -259,6 +259,22 @@ class TestProcessAdapterTerminate:
 class TestSpawnProcess:
     """Test the spawn_process utility function."""
 
+    def test_cwd_uses_new_session_without_preexec_or_parent_chdir(self, monkeypatch, tmp_path):
+        original_cwd = os.getcwd()
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", True)
+        posix_spawn = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", posix_spawn)
+        popen = mock.Mock(return_value=mock.Mock(pid=5555))
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen)
+        command = ["/bin/echo", "hello"]
+        environment = {"VALUE": "exact"}
+
+        spawn_process(command, environment, cwd=str(tmp_path))
+
+        posix_spawn.assert_not_called()
+        popen.assert_called_once_with(command, shell=False, env=environment, cwd=str(tmp_path), start_new_session=True)
+        assert os.getcwd() == original_cwd
+
     def test_spawn_uses_posix_spawn_when_available(self, monkeypatch):
         spawned = {}
 

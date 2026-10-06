@@ -364,7 +364,7 @@ def _new_session_kwargs(kwargs: dict) -> dict:
     return kwargs
 
 
-def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
+def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
     This method attempts to use os.posix_spawn with setsid=True to avoid fork() related issues
@@ -375,11 +375,13 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
     Args:
         cmd_args: The command arguments as a list of strings.
         env: The environment variables dictionary.
+        cwd: Optional working directory. Portable posix_spawn has no chdir
+            argument, so a working directory selects the subprocess fallback.
 
     Returns:
         ProcessAdapter: An adapter wrapping the launched process.
     """
-    if _POSIX_SPAWN_SUPPORTED and cmd_args:
+    if _POSIX_SPAWN_SUPPORTED and cmd_args and cwd is None:
         try:
             # Note: 'setsid' is a potential extension or patch in some python environments.
             # We wrap it in try-except to gracefully fallback if not supported.
@@ -396,7 +398,10 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
-    process = popen_in_new_session(cmd_args, shell=False, env=env)
+    popen_kwargs = {"shell": False, "env": env}
+    if cwd is not None:
+        popen_kwargs["cwd"] = cwd
+    process = popen_in_new_session(cmd_args, **popen_kwargs)
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)
