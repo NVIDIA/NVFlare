@@ -14,16 +14,16 @@ tests:
         "result":
           "type": "job_submit_success"
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Abort"
+          "type": "run_state"
+          "data": { "job_status": "FINISHED:ABORTED" }
         "actions": [ "mark_test_done" ]
         "result":
           "type": "run_state"
@@ -39,8 +39,8 @@ tests:
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "admin_user_name": "trainer@b.org"
         "result":
@@ -66,16 +66,16 @@ tests:
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "admin_user_name": "admin@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Abort"
+          "type": "run_state"
+          "data": { "job_status": "FINISHED:ABORTED" }
         "actions": [ "mark_test_done" ]
         "result":
           "type": "run_state"
@@ -91,8 +91,8 @@ tests:
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "admin_user_name": "admin@b.org"
         "result":
@@ -118,8 +118,8 @@ tests:
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "admin_user_name": "user@a.org"
         "result":
@@ -145,15 +145,15 @@ tests:
           "type": "run_state"
           "data": {}
       - "trigger":
-          "type": "server_log"
-          "data": "Started run"
+          "type": "run_state"
+          "data": { "job_status": "RUNNING" }
         "actions": [ "abort_job" ]
         "result":
           "type": "run_state"
           "data": { }
       - "trigger":
-          "type": "server_log"
-          "data": "Abort"
+          "type": "run_state"
+          "data": { "job_status": "FINISHED:ABORTED" }
         "actions": [ "mark_test_done" ]
         "result":
           "type": "run_state"
