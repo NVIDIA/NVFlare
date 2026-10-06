@@ -175,21 +175,34 @@ class CCPackager(Packager):
             archive = Path(tempfile.mkdtemp(prefix=f"{result_root.name}.superseded-", dir=private_root))
             private.rename(archive / result_root.name)
         private.mkdir(mode=0o700)
-        aggregate = result_root / ProvFileName.START_ALL_SH
-        if aggregate.exists():
-            aggregate.rename(private / ProvFileName.START_ALL_SH)
-        sources = {}
-        for name in plans:
-            owner = private / name
-            owner.mkdir(mode=0o700)
-            source = result_root / name
-            source.rename(owner / "startup-kit")
-            sources[name] = owner / "startup-kit"
 
-        # Hide every protected kit before validation can fail. Provisioner has
-        # already finalized prod_NN and does not clean up packager exceptions,
-        # so validating the public paths would leave credentials distributable
-        # when SignatureBuilder was omitted or a signature was corrupted.
+        # Atomically hide the complete finalized release first. Moving kits one
+        # at a time could leave later plaintext kits public if an earlier kit
+        # was missing or could not be moved. Restore nonprotected outputs only
+        # after every protected kit has reached private state.
+        finalized = private / "finalized-release"
+        result_root.rename(finalized)
+        try:
+            result_root.mkdir(mode=0o755)
+            aggregate = finalized / ProvFileName.START_ALL_SH
+            if aggregate.exists():
+                aggregate.rename(private / ProvFileName.START_ALL_SH)
+            sources = {}
+            for name in plans:
+                owner = private / name
+                owner.mkdir(mode=0o700)
+                source = finalized / name
+                source.rename(owner / "startup-kit")
+                sources[name] = owner / "startup-kit"
+            for source in finalized.iterdir():
+                source.rename(result_root / source.name)
+            finalized.rmdir()
+        except Exception:
+            ctx.error(f"CC private staging failed; recovery inputs retained at {private}")
+            raise
+
+        # Provisioner does not clean up packager exceptions, so validation must
+        # use only the private copies established above.
         try:
             root_cert = ctx.get(CtxKey.ROOT_CERT)
             if root_cert is None:

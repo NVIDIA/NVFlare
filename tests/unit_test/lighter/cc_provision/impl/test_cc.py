@@ -751,6 +751,29 @@ def test_common_packager_hides_unsigned_kit_before_validation_failure(tmp_path):
     assert (private_kit / "startup/server.key").is_file()
 
 
+def test_common_packager_atomically_hides_all_kits_when_one_is_missing(tmp_path):
+    output = tmp_path / "prod_00"
+    remaining_kit = output / "site-2/startup"
+    remaining_kit.mkdir(parents=True)
+    (remaining_kit / "client.key").write_text("private")
+    state = tmp_path / "state"
+    state.mkdir()
+    values = {CtxKey.CC_DEPLOYMENT_PLANS: {"site-1": object(), "site-2": object()}}
+    ctx = Mock()
+    ctx.get.side_effect = values.get
+    ctx.get_result_location.return_value = str(output)
+    ctx.get_state_dir.return_value = str(state)
+
+    with pytest.raises(FileNotFoundError):
+        CCPackager().package(Mock(), ctx)
+
+    private = state / "cc-private/prod_00"
+    assert output.is_dir()
+    assert not list(output.rglob("*.key"))
+    assert (private / "finalized-release/site-2/startup/client.key").read_text() == "private"
+    ctx.error.assert_called_once_with(f"CC private staging failed; recovery inputs retained at {private}")
+
+
 def test_common_packager_retains_private_stage_when_prod_number_is_reused(tmp_path):
     project = _azure_project(tmp_path)
     root = tmp_path / "output/unified"
