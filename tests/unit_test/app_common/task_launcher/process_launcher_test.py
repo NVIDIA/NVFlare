@@ -569,6 +569,7 @@ def test_group_inspection_tolerates_process_exit_between_enumeration_and_probe(t
     monkeypatch.setattr(os, "killpg", lambda *_args: None)
     monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
     monkeypatch.setattr(psutil, "pids", lambda: [10])
+    monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(10)))
     assert handle._group_exists() is True  # No observed dead members: fail closed.
 
 
@@ -581,6 +582,7 @@ def test_group_disappearing_during_inspection_is_settled(tmp_path, monkeypatch, 
     monkeypatch.setattr(os, "killpg", probe)
     monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError()))
     monkeypatch.setattr(psutil, "pids", lambda: members)
+    monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(10)))
     if members:
         # A vanished unidentified parent is uncertain until the next probe
         # confirms that the whole group disappeared.
