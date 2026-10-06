@@ -55,10 +55,10 @@ class BaseDriver(Driver, ABC):
 
     def close_all(self):
         with self.conn_lock:
-            for name in sorted(self.connections.keys()):
-                conn = self.connections[name]
-                log.debug(f"Closing connection: {self.get_name()}:{conn}")
-                conn.close()
+            connections = list(self.connections.values())
+        for conn in connections:
+            log.debug(f"Closing connection: {self.get_name()}:{conn}")
+            conn.close()
 
     def _notify_monitor(self, conn: Connection):
         if not self.conn_monitor:

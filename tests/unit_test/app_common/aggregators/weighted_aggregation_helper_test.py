@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 import numpy as np
 import pytest
 import torch
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationShapeError,
     AggregationStatsKey,
     WeightedAggregationHelper,
     _is_aggregatable_metric_value,
@@ -440,6 +443,123 @@ class TestWeightedAggregationHelper:
 
         result = helper.get_result()
         assert result["w"] == pytest.approx(3.0)
+
+
+class TestShapeValidation:
+    @pytest.mark.parametrize("array", [np.array, torch.tensor], ids=["numpy", "torch"])
+    @pytest.mark.parametrize(
+        "expected_shape,received_shape",
+        [((2,), (1,)), ((2,), (3,)), ((2,), (1, 2)), ((2, 3), (2, 1)), ((), (1,)), ((1,), ())],
+    )
+    def test_rejects_unequal_shapes(self, array, expected_shape, received_shape):
+        helper = WeightedAggregationHelper()
+        helper.add({"weight": array(np.ones(expected_shape))}, 1.0, "site-1", 7)
+
+        with pytest.raises(AggregationShapeError) as exc_info:
+            helper.add({"weight": array(np.ones(received_shape))}, 2.0, "site-2", 7)
+
+        message = str(exc_info.value)
+        assert "weight" in message
+        assert "site-2" in message
+        assert "round 7" in message
+        assert f"expected {expected_shape}" in message
+        assert f"got {received_shape}" in message
+
+    @pytest.mark.parametrize("array", [np.array, torch.tensor], ids=["numpy", "torch"])
+    @pytest.mark.parametrize("weigh_by_local_iter", [True, False])
+    @pytest.mark.parametrize("bad_shape", [(1,), (3,)])
+    def test_late_mismatch_preserves_round_state(self, array, weigh_by_local_iter, bad_shape):
+        helper = WeightedAggregationHelper(exclude_vars="bias", weigh_by_local_iter=weigh_by_local_iter)
+        helper.add({"previous": array([1.0])}, 1.0, "site-1", 6)
+        helper.get_result()
+        first = {"early": array([1.0, 2.0]), "late": array([3.0, 4.0])}
+        helper.add(first, 2.0, "site-1", 7)
+        rejected = {
+            "bias": array([0.0]),
+            "new": array([5.0]),
+            "early": array([10.0, 20.0]),
+            "late": array(np.ones(bad_shape)),
+        }
+        initial_inputs = copy.deepcopy((first, rejected))
+        initial_totals = copy.deepcopy(helper.total)
+        state_fields = ("counts", "history", "key_contribution_counts", "skipped_keys", "last_aggregation_stats")
+        initial_state = {name: copy.deepcopy(getattr(helper, name)) for name in state_fields}
+        initial_stats = helper.get_aggregation_stats()
+
+        with pytest.raises(ValueError, match="late"):
+            helper.add(rejected, 3.0, "site-2", 7)
+
+        assert helper.total.keys() == initial_totals.keys()
+        for key, value in initial_totals.items():
+            np.testing.assert_array_equal(helper.total[key], value)
+        for name, value in initial_state.items():
+            assert getattr(helper, name) == value
+        assert helper.get_aggregation_stats() == initial_stats
+        for actual, expected in zip((first, rejected), initial_inputs):
+            for key in actual:
+                np.testing.assert_array_equal(actual[key], expected[key])
+
+        # A rejected contribution must not affect a later valid contribution or its average.
+        helper.add(first, 3.0, "site-2", 7)
+        result = helper.get_result()
+        for key, value in first.items():
+            expected = value if weigh_by_local_iter else value * (2.0 / 5.0)
+            np.testing.assert_allclose(result[key], expected)
+            np.testing.assert_array_equal(value, initial_inputs[0][key])
+        assert helper.last_aggregation_stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
+        assert helper.last_aggregation_stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 2
+
+    def test_rejects_incompatible_linear_state_dicts(self):
+        helper = WeightedAggregationHelper()
+        helper.add(torch.nn.Linear(2, 2).state_dict(), 1.0, "site-1", 0)
+
+        with pytest.raises(ValueError, match="weight"):
+            helper.add(torch.nn.Linear(1, 2).state_dict(), 1.0, "site-2", 0)
+
+    def test_excluded_values_are_not_inspected(self):
+        class ExcludedValue:
+            @property
+            def shape(self):
+                raise AssertionError("Excluded shape was inspected")
+
+            def materialize(self):
+                raise AssertionError("Excluded value was materialized")
+
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+        for client in ("site-1", "site-2"):
+            helper.add({"weight": np.ones(2), "bias": ExcludedValue()}, 1.0, client, 0)
+
+        np.testing.assert_array_equal(helper.get_result()["weight"], np.ones(2))
+        assert helper.last_aggregation_stats[AggregationStatsKey.SKIPPED_KEYS] == 1
+
+    @pytest.mark.parametrize("scalar", [int, float, bool, np.float64, np.array, torch.tensor])
+    def test_scalar_metrics(self, scalar):
+        helper = WeightedAggregationHelper()
+        helper.add({"metric": scalar(1)}, 2.0, "site-1", 0)
+        helper.add({"metric": scalar(0)}, 3.0, "site-2", 0)
+
+        assert float(helper.get_result()["metric"]) == pytest.approx(0.4)
+
+    @pytest.mark.parametrize("first,second", [(1.0, np.array([3.0])), (np.array([1.0]), 3.0)])
+    def test_missing_shape_on_either_value_preserves_arithmetic(self, first, second):
+        helper = WeightedAggregationHelper()
+        helper.add({"metric": first}, 1.0, "site-1", 0)
+        helper.add({"metric": second}, 1.0, "site-2", 0)
+
+        np.testing.assert_array_equal(helper.get_result()["metric"], np.array([2.0]))
+
+    def test_equivalent_list_and_tuple_shapes(self):
+        class ListShapeValue:
+            shape = [2]
+
+            def __mul__(self, weight):
+                return np.array([3.0, 4.0]) * weight
+
+        helper = WeightedAggregationHelper()
+        helper.add({"weight": np.array([1.0, 2.0])}, 1.0, "site-1", 0)
+        helper.add({"weight": ListShapeValue()}, 1.0, "site-2", 0)
+
+        np.testing.assert_array_equal(helper.get_result()["weight"], np.array([2.0, 3.0]))
 
 
 class TestAggregationStats:
