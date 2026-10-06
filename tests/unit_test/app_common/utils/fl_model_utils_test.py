@@ -101,14 +101,19 @@ class TestFLModelUtils:
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_from_dxo_keeps_start_round(self, weights, num_rounds, current_round):
-        # from_dxo reads start_round back out, so to_dxo has to put it in
+        # from_dxo reads start_round back out, so to_dxo has to put it in.
+        # the two rounds differ so that carrying the wrong one still fails.
+        start_round = current_round + 2
         fl_model = FLModel(
             params=weights,
             params_type=ParamsType.FULL,
-            start_round=current_round,
+            start_round=start_round,
             current_round=current_round,
             total_rounds=num_rounds,
         )
         dxo = FLModelUtils.to_dxo(fl_model)
-        assert dxo.data[FLModelConst.START_ROUND] == current_round
-        assert FLModelUtils.from_dxo(dxo).start_round == current_round
+        assert dxo.data[FLModelConst.START_ROUND] == start_round
+
+        result = FLModelUtils.from_dxo(dxo)
+        assert result.start_round == start_round
+        assert result.current_round == current_round
