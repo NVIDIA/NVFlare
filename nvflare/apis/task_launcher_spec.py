@@ -32,6 +32,18 @@ class TaskLauncherError(RuntimeError):
     """Base error raised by a task launcher."""
 
 
+class TaskLaunchError(TaskLauncherError):
+    """Launch failed after acquiring an execution; its handle remains owned.
+
+    The attempt identity must remain fenced even if cleanup succeeds. Callers
+    can inspect ``handle`` and retry cleanup if settlement was not confirmed.
+    """
+
+    def __init__(self, message: str, handle: "TaskHandleSpec"):
+        super().__init__(message)
+        self.handle = handle
+
+
 class UnsupportedTaskResourceError(TaskLauncherError):
     """A launcher cannot provide admission and reservation for requested resources."""
 
@@ -181,7 +193,11 @@ class TaskHandleSpec(ABC):
 
     @abstractmethod
     def cancel(self) -> TaskExecutionStatus:
-        """Cancel the whole execution unit and return its resulting status."""
+        """Cancel the whole execution unit and return its resulting status.
+
+        Raises:
+            TaskSettlementError: If cleanup cannot confirm settlement.
+        """
         raise NotImplementedError()
 
     @abstractmethod
@@ -203,4 +219,11 @@ class TaskLauncherSpec(FLComponent, ABC):
 
     @abstractmethod
     def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
+        """Launch one physical attempt.
+
+        Raises:
+            TaskLaunchError: If launch fails after an execution was acquired.
+                Its handle retains cleanup responsibility and the attempt
+                identity must not be reused.
+        """
         raise NotImplementedError()

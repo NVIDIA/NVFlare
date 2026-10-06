@@ -18,6 +18,10 @@ any number of ranks inside that group. Moving descendants into another group,
 even within the same session, is unsupported and outside settlement proof.
 
 Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
+The handle must be the sole reaper of its leader. Global waitpid reapers,
+Popen polling/waiting outside this handle, and automatic SIGCHLD reaping are
+unsupported. Ownership checks detect violations; verification and group
+signalling are separate syscalls and cannot be atomic against another reaper.
 """
 
 import logging
@@ -36,12 +40,13 @@ from nvflare.apis.task_launcher_spec import (
     TaskExecutionStatus,
     TaskHandleSpec,
     TaskLauncherError,
+    TaskLaunchError,
     TaskLauncherSpec,
     TaskLaunchRequest,
     TaskSettlementError,
     UnsupportedTaskResourceError,
 )
-from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from nvflare.utils.process_utils import ProcessAdapter, ProcessSpawnError, spawn_process
 
 
 def _positive_number(value, name: str) -> float:
@@ -54,8 +59,11 @@ class _OwnedProcessAdapter:
     """Retain the child PID through cleanup and until the final group probe.
 
     An unreaped leader reserves the numeric PID/PGID, including after exit.
-    Only this adapter may reap the child; an external reaper invalidates the
-    ownership proof and must prevent further signals or successful settlement.
+    Only this adapter may reap the child. Detected external reaping invalidates
+    ownership and prevents subsequent signals or successful settlement. The
+    reservation guarantee assumes exclusive reaping: checking child ownership
+    and signalling the group are separate syscalls, so another reaper can act
+    between them before the violation is detected.
     """
 
     def __init__(self, adapter: ProcessAdapter):
@@ -120,7 +128,12 @@ class _OwnedProcessAdapter:
 
 
 class ProcessTaskHandle(TaskHandleSpec):
-    """Own and observe one task process group."""
+    """Own and observe one task process group under exclusive leader reaping.
+
+    An independent reaper can invalidate ownership between verification and
+    signalling; these operations are separate syscalls. Detected ownership
+    loss prevents further signalling and settlement, not an already sent signal.
+    """
 
     def __init__(
         self,
@@ -254,6 +267,8 @@ class ProcessTaskHandle(TaskHandleSpec):
             try:
                 # Keep the leader unreaped across this check and signal. The
                 # lock also excludes our own settlement/reaping in poll().
+                # Exclusive reaping is a caller obligation: this lock cannot
+                # exclude an independent waitpid between the two syscalls.
                 self._adapter.verify_identity()
             except TaskLauncherError as e:
                 self._failure_reason = str(e)
@@ -431,6 +446,8 @@ class ProcessTaskLauncher(TaskLauncherSpec):
     Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
     Settlement confirms two stable dead-only member scans before reaping the
     leader. Zombie members need not be reaped by their parent or an init.
+    The handle must exclusively reap its leader. External reaping is detected
+    when observed, but verify-and-signal is not atomic against another reaper.
 
     Attempt identities are retained for this launcher's lifetime and never
     evicted. Once ``max_attempt_identities`` is reached, new launches fail
@@ -480,11 +497,17 @@ class ProcessTaskLauncher(TaskLauncherSpec):
                 raise TaskLauncherError("task attempt identity capacity exhausted; use a new launcher for a new scope")
             self._attempt_identities.add(request.identity)
 
+        launch_error = None
         try:
             adapter = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+        except ProcessSpawnError as e:
+            # The execution already exists. Keep its attempt fenced and take
+            # responsibility for cleanup rather than retrying its spawn.
+            adapter = e.adapter
+            launch_error = e
         except Exception:
-            # No physical execution exists, so callers may correct a transient
-            # launch problem and submit this attempt identity again.
+            # spawn_process reports post-acquisition failures separately, so
+            # only a failure before process creation releases the identity.
             with self._lock:
                 self._attempt_identities.remove(request.identity)
             raise
@@ -496,5 +519,19 @@ class ProcessTaskLauncher(TaskLauncherSpec):
             descendant_settle_timeout=self.descendant_settle_timeout,
             poll_interval=self.poll_interval,
         )
-        self.logger.info("launched task attempt %r as %s", request.identity, handle.execution_id)
+        try:
+            if launch_error is not None:
+                raise launch_error
+            self.logger.info("launched task attempt %r as %s", request.identity, handle.execution_id)
+        except Exception as e:
+            try:
+                handle.cancel()
+            except Exception as cleanup_error:
+                raise TaskLaunchError(
+                    f"task launch failed after acquiring {handle.execution_id}; cleanup unconfirmed: {cleanup_error}",
+                    handle,
+                ) from e
+            raise TaskLaunchError(
+                f"task launch failed after acquiring {handle.execution_id}; execution settled during cleanup", handle
+            ) from e
         return handle

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -29,6 +30,7 @@ import pytest
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
     TaskLauncherError,
+    TaskLaunchError,
     TaskLaunchRequest,
     TaskResourceRequest,
     TaskSettlementError,
@@ -713,6 +715,105 @@ def test_spawn_failure_allows_retry_of_same_attempt(tmp_path, monkeypatch):
         assert request.identity not in launcher._attempt_identities
 
 
+@requires_waitid
+@pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+@pytest.mark.parametrize("log_target", ["spawn_helper", "launcher"])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_post_spawn_logging_fault_preserves_fence_and_cleanup_handle(
+    tmp_path, monkeypatch, backend, log_target, cleanup_fails
+):
+    class BrokenHandler(logging.Handler):
+        def emit(self, record):
+            raise OSError("injected post-spawn logging failure")
+
+    request = _request(tmp_path, "post-spawn-fault", "import time; time.sleep(30)")
+    if backend == "posix_spawn":
+        request = replace(request, cwd=None)
+    launcher = ProcessTaskLauncher(stop_grace_period=0.1, poll_interval=0.01)
+    created = []
+    popen = subprocess.Popen
+    posix_spawn = os.posix_spawn
+
+    def track_popen(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        created.append((process.pid, process))
+        return process
+
+    def track_posix_spawn(*args, **kwargs):
+        pid = posix_spawn(*args, **kwargs)
+        created.append((pid, None))
+        return pid
+
+    monkeypatch.setattr(subprocess, "Popen", track_popen)
+    monkeypatch.setattr(os, "posix_spawn", track_posix_spawn)
+    from nvflare.utils import process_utils
+
+    logger = process_utils.log if log_target == "spawn_helper" else launcher.logger
+    level = logger.level
+    handler = BrokenHandler()
+    cancel = ProcessTaskHandle.cancel
+    if cleanup_fails:
+        monkeypatch.setattr(ProcessTaskHandle, "cancel", Mock(side_effect=OSError("injected cleanup failure")))
+    handle = None
+    try:
+        logger.setLevel(logging.INFO)
+        logger.addHandler(handler)
+        with pytest.raises(TaskLaunchError, match="after acquiring") as caught:
+            launcher.launch_task(request)
+        handle = caught.value.handle
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+        assert len(created) == 1
+        assert handle.process_group_id == created[0][0]
+        if backend == "posix_spawn" and created[0][1] is not None:
+            pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
+        assert (created[0][1] is None) == (backend == "posix_spawn")
+        assert request.identity in launcher._attempt_identities
+        with pytest.raises(TaskLauncherError, match="already launched"):
+            launcher.launch_task(request)
+        assert len(created) == 1
+        if cleanup_fails:
+            assert "cleanup unconfirmed" in str(caught.value)
+            assert handle.poll().phase == TaskExecutionPhase.RUNNING
+            assert not handle.poll().settled
+        else:
+            assert "settled during cleanup" in str(caught.value)
+            assert handle.poll().settled
+            _assert_pid_not_running(handle.process_group_id)
+            with pytest.raises(ChildProcessError):
+                os.waitpid(handle.process_group_id, os.WNOHANG)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+        monkeypatch.setattr(ProcessTaskHandle, "cancel", cancel)
+        if handle is not None:
+            assert handle.cancel().settled
+        else:
+            # Teardown for a regression that loses the acquired handle.
+            for pid, process in created:
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                if process is not None:
+                    process.wait(timeout=5)
+                else:
+                    os.waitpid(pid, 0)
+
+
+@requires_waitid
+@pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+def test_real_process_creation_failure_releases_attempt_fence(tmp_path, backend):
+    request = replace(_request(tmp_path, "missing-command", "pass"), argv=(str(tmp_path / "missing-command"),))
+    if backend == "posix_spawn":
+        request = replace(request, cwd=None)
+    launcher = ProcessTaskLauncher(max_attempt_identities=1)
+    for _ in range(2):
+        with pytest.raises(OSError):
+            launcher.launch_task(request)
+        assert request.identity not in launcher._attempt_identities
+
+
 @pytest.mark.parametrize("bounded_wait", [False, True])
 @requires_waitid
 def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait):
@@ -844,6 +945,88 @@ def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, mo
             except ProcessLookupError:
                 pass
         process.wait()
+
+
+@requires_waitid
+@pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_path, monkeypatch, backend):
+    # This deliberately violates the exclusive-reaper contract. It documents
+    # fault detection without promising an atomic verify-and-signal syscall.
+    ready = tmp_path / "signal-boundary-child.pid"
+    child_code = "import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
+    leader_code = (
+        "import pathlib, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]]); "
+        "p = pathlib.Path(sys.argv[2]); "
+        'exec("while not p.exists():\\n time.sleep(0.01)")'
+    )
+    request = _request(tmp_path, "external-reaper-signal-boundary", leader_code, child_code, ready)
+    if backend == "posix_spawn":
+        request = replace(request, cwd=None)
+    process = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+    owned = _OwnedProcessAdapter(process)
+    handle = ProcessTaskHandle(request, owned, stop_grace_period=0.1, descendant_settle_timeout=0.1, poll_interval=0.01)
+    killpg = os.killpg
+    stolen = False
+    child = None
+    try:
+        if backend == "posix_spawn" and process.process is not None:
+            pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
+        _wait_for_file(ready)
+        child = psutil.Process(int(ready.read_text()))
+        deadline = time.monotonic() + 5
+        while owned.poll() is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        verify = owned.verify_identity
+
+        def verify_then_external_reap():
+            nonlocal stolen
+            verify()
+            _, exit_status = os.waitpid(process.pid, 0)
+            stolen = True
+            # The external reaper knows the exit status. Keep fixture Popen
+            # finalization from waiting on the released numeric PID again.
+            process._return_code = os.waitstatus_to_exitcode(exit_status)
+            if process.process is not None:
+                process.process.returncode = process._return_code
+
+        emitted = []
+
+        def signal_after_external_reap(pgid, sig):
+            assert stolen
+            assert pgid == os.getpgid(child.pid)
+            with pytest.raises(ChildProcessError):
+                os.waitid(os.P_PID, pgid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            emitted.append(sig)
+            killpg(pgid, sig)
+
+        monkeypatch.setattr(owned, "verify_identity", verify_then_external_reap)
+        monkeypatch.setattr(os, "killpg", signal_after_external_reap)
+        handle._signal_group(signal.SIGTERM)
+        assert emitted == [signal.SIGTERM]
+        status = handle.poll()
+        assert not status.settled
+        assert "externally reaped" in status.failure_reason
+        with pytest.raises(TaskSettlementError, match="ownership is lost"):
+            handle._signal_group(signal.SIGKILL)
+        assert emitted == [signal.SIGTERM]
+        while child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+    finally:
+        monkeypatch.setattr(os, "killpg", killpg)
+        if not stolen:
+            try:
+                killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        process.wait()
+        if child is not None:
+            try:
+                if child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    child.kill()
+            except psutil.NoSuchProcess:
+                pass
 
 
 @requires_waitid

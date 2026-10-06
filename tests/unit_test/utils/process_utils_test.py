@@ -22,6 +22,7 @@ import pytest
 
 from nvflare.utils.process_utils import (
     ProcessAdapter,
+    ProcessSpawnError,
     popen_in_new_session,
     prepare_subprocess_command,
     run_in_new_session,
@@ -306,6 +307,33 @@ class TestSpawnProcess:
         assert adapter.process is None
         assert spawned["setsid"] is True
         assert spawned["path"] == "/bin/echo"
+
+    @pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+    @pytest.mark.parametrize("error_type", [OSError, TypeError])
+    def test_post_spawn_logging_error_carries_ownership_without_fallback(self, monkeypatch, backend, error_type):
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", backend == "posix_spawn")
+        posix_spawn = mock.Mock(return_value=9999)
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", posix_spawn)
+        process = mock.Mock(pid=8888)
+        popen = mock.Mock(return_value=process)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen)
+        fault = error_type("logging failed after process creation")
+        monkeypatch.setattr("nvflare.utils.process_utils.log.info", mock.Mock(side_effect=fault))
+
+        with pytest.raises(ProcessSpawnError) as caught:
+            spawn_process(["/bin/echo", "hello"], {"PATH": "/usr/bin"})
+
+        assert caught.value.__cause__ is fault
+        if backend == "posix_spawn":
+            assert caught.value.adapter.pid == 9999
+            assert caught.value.adapter.process is None
+            posix_spawn.assert_called_once()
+            popen.assert_not_called()
+        else:
+            assert caught.value.adapter.pid == process.pid
+            assert caught.value.adapter.process is process
+            popen.assert_called_once()
+            posix_spawn.assert_not_called()
 
     def test_spawn_falls_back_on_posix_spawn_failure(self, monkeypatch):
         def failing_spawn(*args, **kwargs):

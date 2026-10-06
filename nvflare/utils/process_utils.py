@@ -364,6 +364,26 @@ def _new_session_kwargs(kwargs: dict) -> dict:
     return kwargs
 
 
+class ProcessSpawnError(RuntimeError):
+    """An execution was acquired before spawn finalization failed.
+
+    The caller owns ``adapter`` and must arrange its cleanup; this error must
+    never trigger another spawn as though process creation had failed.
+    """
+
+    def __init__(self, adapter: ProcessAdapter):
+        super().__init__(f"spawn finalization failed after acquiring process {adapter.pid}")
+        self.adapter = adapter
+
+
+def _finish_spawn(adapter: ProcessAdapter, backend: str) -> ProcessAdapter:
+    try:
+        log.info("Launch the job in process ID: %s (%s)", adapter.pid, backend)
+    except Exception as e:
+        raise ProcessSpawnError(adapter) from e
+    return adapter
+
+
 def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
@@ -380,6 +400,11 @@ def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> 
 
     Returns:
         ProcessAdapter: An adapter wrapping the launched process.
+
+    Raises:
+        ProcessSpawnError: If finalization fails after creating a process.
+            The caller retains ownership of the error's adapter and must
+            clean it up instead of retrying process creation.
     """
     if _POSIX_SPAWN_SUPPORTED and cmd_args and cwd is None:
         try:
@@ -387,8 +412,6 @@ def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> 
             # We wrap it in try-except to gracefully fallback if not supported.
             path = cmd_args[0]
             pid = os.posix_spawn(path, cmd_args, env, setsid=True)
-            log.info("Launch the job in process ID: %s (posix_spawn)", pid)
-            return ProcessAdapter(pid=pid)
         except (TypeError, NotImplementedError) as exc:
             # TypeError: this interpreter's posix_spawn does not accept the setsid keyword.
             # NotImplementedError: CPython was built without POSIX_SPAWN_SETSID (e.g. against glibc < 2.26,
@@ -397,11 +420,13 @@ def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> 
         except Exception as exc:
             # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
+        else:
+            # Once a child exists, errors must preserve ownership and must not
+            # enter the process-creation fallback above.
+            return _finish_spawn(ProcessAdapter(pid=pid), "posix_spawn")
 
     popen_kwargs = {"shell": False, "env": env}
     if cwd is not None:
         popen_kwargs["cwd"] = cwd
     process = popen_in_new_session(cmd_args, **popen_kwargs)
-    log.info("Launch the job in process ID: %s (subprocess)", process.pid)
-
-    return ProcessAdapter(process=process)
+    return _finish_spawn(ProcessAdapter(process=process), "subprocess")
