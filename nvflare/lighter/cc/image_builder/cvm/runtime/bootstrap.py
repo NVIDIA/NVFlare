@@ -38,7 +38,7 @@ from .audit import emit
 from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
 from .storage import close_vault, disk_device
-from .supervisor import supervise
+from .supervisor import PROOF_EXPIRY_MARGIN_SECONDS, periodic_timeout, supervise
 from .systemd import notify
 
 CONFIG = Path("/etc/cvm/runtime.json")
@@ -360,6 +360,7 @@ def reopen():
         verify_payload(config)
         mount_roles({"vault": "/dev/mapper/vault"})
         check_vault_manifest(config, platform, actual_uuid)
+        refresh_application_credentials(config, digest)
         readiness(config, True)
     except BaseException:
         # The supervisor also cleans up after killing a timed-out child, when
@@ -390,8 +391,7 @@ def finish_bootstrap(config, dev=False):
         (STATE / "platform.env").write_text("TEE_PLATFORM=none\nTEE_DEVICE=\nTEE_DEVICE_ARGS=\n")
     elif app["container"].get("attestation_credentials"):
         digest = bytes.fromhex(read_json(STATE / "binding.json")["digest"])
-        with authorized_key(config, digest, credentials_path=APP_ATTESTATION_CREDENTIALS):
-            pass
+        refresh_application_credentials(config, digest, app=app)
     mount_user_data()
     units = install_services()
     run(["systemctl", "daemon-reload"])
@@ -439,12 +439,28 @@ def periodic():
     verify_local_binding(config["platform"], digest)
     # Every supervisor tick requires a fresh positive appraisal AND current key
     # authorization; a valid signature or a cached EAR is insufficient.
-    app = read_json("/vault/config/application.json")
-    credentials_path = APP_ATTESTATION_CREDENTIALS if app["container"].get("attestation_credentials") else None
-    with authorized_key(config, digest, credentials_path=credentials_path):
-        pass
+    refresh_application_credentials(config, digest)
 
     readiness(config, True)
+
+
+def refresh_application_credentials(config, digest, *, app=None):
+    """Refresh current key authorization and any application-visible Trustee proof."""
+    app = read_json("/vault/config/application.json") if app is None else app
+    if app["container"].get("attestation_credentials"):
+        with authorized_key(
+            config,
+            digest,
+            credentials_path=APP_ATTESTATION_CREDENTIALS,
+            credentials_state_path=STATE / "application-proof.json",
+            minimum_credentials_validity=periodic_timeout(config) + PROOF_EXPIRY_MARGIN_SECONDS,
+        ):
+            pass
+    else:
+        # Key authorization is still mandatory even when the workload does not
+        # consume peer-proof credentials.
+        with authorized_key(config, digest):
+            pass
 
 
 def docker_argv(app, *, device=None, defaults=None, environment_file=None):

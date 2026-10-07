@@ -237,6 +237,11 @@ class BootstrapTests(unittest.TestCase):
                 ),
                 patch.object(bootstrap, "verify_payload", side_effect=lambda *a: events.append("verify")),
                 patch.object(bootstrap, "mount_roles", side_effect=lambda *a: events.append("mount")),
+                patch.object(
+                    bootstrap,
+                    "refresh_application_credentials",
+                    side_effect=lambda *a: events.append("credentials"),
+                ),
                 patch.object(bootstrap, "readiness", side_effect=lambda *a: events.append("ready")),
                 patch.object(bootstrap, "close_vault") as close,
             ):
@@ -246,11 +251,18 @@ class BootstrapTests(unittest.TestCase):
                     self.assertEqual(events, [])
                 else:
                     bootstrap.reopen()
-                    self.assertEqual(events, ["verify", "mount", "ready"])
+                    self.assertEqual(events, ["verify", "mount", "credentials", "ready"])
                 self.assertEqual(close.call_count, int(changed))
 
     def test_failed_reopen_cleans_up_each_partial_stage_before_retry(self):
-        for failed in ("open_vault", "verify_payload", "mount_roles", "check_vault_manifest", "readiness"):
+        for failed in (
+            "open_vault",
+            "verify_payload",
+            "mount_roles",
+            "check_vault_manifest",
+            "refresh_application_credentials",
+            "readiness",
+        ):
             active = [False]
 
             def opened(*args):
@@ -265,6 +277,7 @@ class BootstrapTests(unittest.TestCase):
                     "verify_payload",
                     "mount_roles",
                     "check_vault_manifest",
+                    "refresh_application_credentials",
                     "readiness",
                 ):
                     stack.enter_context(patch.object(bootstrap, name))
@@ -561,6 +574,11 @@ class BootstrapTests(unittest.TestCase):
         @contextlib.contextmanager
         def authorize(*args, **kwargs):
             self.assertEqual(kwargs["credentials_path"], bootstrap.APP_ATTESTATION_CREDENTIALS)
+            self.assertEqual(kwargs["credentials_state_path"], bootstrap.STATE / "application-proof.json")
+            self.assertEqual(
+                kwargs["minimum_credentials_validity"],
+                supervisor.CPU_PERIODIC_TIMEOUT_SECONDS + supervisor.PROOF_EXPIRY_MARGIN_SECONDS,
+            )
             events.append("credentials")
             yield 17
 
@@ -747,7 +765,7 @@ class SupervisorTests(unittest.TestCase):
                 supervisor.supervise({}, ["cvm_app.service", "app_test.service"], Path(directory))
             self.assertEqual(events, ["mask", "audit", "ready", "start", "tick", "mask"])
             self.assertEqual(start.call_args.args[0], ["systemctl", "start", "cvm_app.service", "app_test.service"])
-            self.assertEqual(wait.call_args.args, ({signal.SIGUSR1}, 300))
+            self.assertEqual(wait.call_args.args, ({signal.SIGUSR1}, supervisor.PERIODIC_INTERVAL_SECONDS))
 
     def test_cadence_accounts_for_startup_and_slow_appraisal(self):
         clock = [0]
@@ -776,8 +794,36 @@ class SupervisorTests(unittest.TestCase):
         ):
             with self.assertRaises(KeyboardInterrupt):
                 supervisor.supervise({}, ["cvm_app.service"], Path(directory))
-        self.assertEqual(starts, [300, 600, 900])
-        self.assertEqual(waits, [200, 60, 60])
+        self.assertEqual(starts, [240, 480, 720])
+        self.assertEqual(waits, [140, 0, 0])
+
+    def test_application_proof_deadline_reserves_the_full_renewal_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            write_json(state / "application-proof.json", {"expires_at": 1300})
+            with (
+                patch.object(supervisor.time, "time", return_value=1000),
+                patch.object(supervisor.time, "monotonic", return_value=100),
+            ):
+                gpu_deadline = supervisor.next_periodic_deadline({"gpu": "nvidia_cc"}, state)
+                cpu_deadline = supervisor.next_periodic_deadline({"gpu": "none"}, state)
+            self.assertEqual(gpu_deadline, 145)
+            self.assertEqual(cpu_deadline, 325)
+            self.assertEqual(
+                gpu_deadline - 100 + supervisor.GPU_PERIODIC_TIMEOUT_SECONDS + supervisor.PROOF_EXPIRY_MARGIN_SECONDS,
+                300,
+            )
+
+    def test_application_proof_without_a_full_renewal_window_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            write_json(state / "application-proof.json", {"expires_at": 1255})
+            with (
+                patch.object(supervisor.time, "time", return_value=1000),
+                patch.object(supervisor.time, "monotonic", return_value=100),
+                self.assertRaisesRegex(BuildError, "cannot be renewed"),
+            ):
+                supervisor.next_periodic_deadline({"gpu": "nvidia_cc"}, state)
 
     def test_requested_tick_and_overrun_do_not_add_a_full_sleep(self):
         clock = [0]
@@ -807,7 +853,7 @@ class SupervisorTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 supervisor.supervise({}, ["cvm_app.service"], Path(directory))
         self.assertEqual(starts, [20, 321])
-        self.assertEqual(waits, [300, 0])
+        self.assertEqual(waits, [240, 0])
 
     def test_sigusr1_queued_during_workload_start_runs_immediately(self):
         with (
@@ -835,7 +881,7 @@ class SupervisorTests(unittest.TestCase):
                 with self.assertRaises(BuildError):
                     supervisor.periodic_tick({"gpu": "nvidia_cc"}, state, 1)
                 readiness.assert_called_once_with({"gpu": "nvidia_cc"}, False)
-                self.assertEqual(execute.call_args.kwargs["timeout"], 300)
+                self.assertEqual(execute.call_args.kwargs["timeout"], supervisor.GPU_PERIODIC_TIMEOUT_SECONDS)
                 self.assertEqual(read_json(state / "periodic.json")["result"], "failed")
 
     def test_periodic_success_records_completion_and_drops_notify_socket(self):

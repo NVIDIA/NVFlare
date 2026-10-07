@@ -603,6 +603,7 @@ def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypat
     )
     coco_args = CoCoDeployment.authorizer(plan, issuer=False)["args"]
     bare_metal_args = BareMetalCVMDeployment.authorizer(plan, issuer=True)["args"]
+    assert CoCoDeployment.authorizer(plan, issuer=False) == BareMetalCVMDeployment.authorizer(plan, issuer=False)
     assert "BEGIN PUBLIC KEY" in coco_args["trustee_public_key"]
     assert bare_metal_args["kbs_ca"] == "fixture"
 

@@ -27,10 +27,12 @@ import pytest
 import yaml
 
 from nvflare.lighter.cc_provision import kbs_audience
-from nvflare.lighter.cc_provision.impl.coco_packager import _CoCoReleasePackager
-from nvflare.lighter.cc_provision.impl.coco_release import _validate_coco_release_config
+from nvflare.lighter.cc_provision.impl.cc import CCBuilder
+from nvflare.lighter.cc_provision.impl.coco_packager import CoCoPlanPackager
 from nvflare.lighter.cc_provision.workload_security import HANDOFF_FILES, authenticate_handoff, validate_policy
-from tests.unit_test.lighter.cc_provision.impl.test_coco import setup_project, write_fake_result
+from nvflare.lighter.ctx import ProvisionContext
+from tests.unit_test.lighter.cc_provision.impl.test_cc import _coco_project
+from tests.unit_test.lighter.cc_provision.impl.test_coco import coco_pod, make_plan
 from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import IMAGE, context, policy, policy_data
 
 
@@ -82,16 +84,22 @@ def test_handoff_rejects_untrusted_changes(tmp_path, handoff, attack):
 
 @pytest.mark.parametrize("grant", [["*"], ["nvflare."], [""], [None], "*", None, [1], ["a.*"]])
 def test_unbounded_class_grants_rejected(tmp_path, grant):
-    _, config = setup_project(tmp_path)
+    project = _coco_project(tmp_path)
+    path = tmp_path / "cc_site.yml"
+    config = yaml.safe_load(path.read_text())
     config["class_allow_list"] = grant
+    path.write_text(yaml.safe_dump(config))
     with pytest.raises(ValueError, match="class_allow_list"):
-        _validate_coco_release_config(config)
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
 
 
 def test_reviewed_explicit_class_is_allowed(tmp_path):
-    _, config = setup_project(tmp_path)
+    project = _coco_project(tmp_path)
+    path = tmp_path / "cc_site.yml"
+    config = yaml.safe_load(path.read_text())
     config["class_allow_list"] = ["my_app.executor.ReviewedExecutor"]
-    _validate_coco_release_config(config)
+    path.write_text(yaml.safe_dump(config))
+    CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
 
 
 @pytest.mark.parametrize(
@@ -115,13 +123,12 @@ def test_reviewed_explicit_class_is_allowed(tmp_path):
     ],
 )
 def test_packager_rejects_unapproved_builder_output(tmp_path, attack):
-    _, config = setup_project(tmp_path)
-    request = tmp_path / "request.json"
-    request.write_text(json.dumps({"result_file": str(tmp_path / "result.json")}))
-    write_fake_result(request)
+    plan = make_plan(tmp_path)
     path = tmp_path / "protected-pod.yaml"
-    pod = yaml.safe_load(path.read_text())
-    _CoCoReleasePackager.validate_pod(path, config)
+    image = "secure.unit.local:5000/workloads/site@sha256:" + "a" * 64
+    pod = coco_pod("kata-qemu-nvidia-gpu-snp", "nvidia", image)
+    path.write_text(yaml.safe_dump(pod))
+    CoCoPlanPackager.validate_pod(path, plan)
     spec = pod["spec"]
     container = spec["containers"][0]
     annotation = "io.katacontainers.config.hypervisor.cc_init_data"
@@ -159,7 +166,7 @@ def test_packager_rejects_unapproved_builder_output(tmp_path, attack):
         pod["metadata"]["annotations"][annotation] = base64.b64encode(gzip.compress(raw.encode())).decode()
     path.write_text(yaml.safe_dump(pod))
     with pytest.raises((ValueError, KeyError)):
-        _CoCoReleasePackager.validate_pod(path, config)
+        CoCoPlanPackager.validate_pod(path, plan)
 
 
 @pytest.mark.parametrize("attack", ["uid", "args", "caps", "nnp", "root", "image", "expansion"])

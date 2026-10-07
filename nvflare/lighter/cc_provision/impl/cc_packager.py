@@ -25,9 +25,9 @@ from pathlib import Path
 import yaml
 from cryptography.hazmat.primitives import serialization
 
-from nvflare.lighter.cc_provision.deployment import CCArtifact, CCDeploymentResult, plain_data
-from nvflare.lighter.cc_provision.impl.coco_packager import _CoCoReleasePackager
-from nvflare.lighter.cc_provision.impl.coco_release import _coco_runtime_class
+from nvflare.lighter.cc_provision.deployment import CCArtifact, CCDeploymentResult
+from nvflare.lighter.cc_provision.impl.coco_packager import CoCoPlanPackager
+from nvflare.lighter.cc_provision.impl.coco_release import coco_runtime_class
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Packager
 from nvflare.lighter.utils import verify_folder_signature
@@ -41,54 +41,14 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def _coco_config(plan):
-    source = plan.workload_source.values
-    mode = plan.mode_config
-    service = plan.attestation_service
-    return {
-        "compute_env": "confidential_containers",
-        "cc_cpu_mechanism": plan.cpu_tee.value,
-        "cc_gpu": "nvidia" if plan.gpu_tee.value == "nvidia_cc" else "none",
-        "role": plan.participant_type,
-        "image_build": {"context": str(source["context"]), "dockerfile": str(source["dockerfile"])},
-        "release_name": mode["release_name"],
-        "registry_repository": mode["registry_repository"],
-        "platform_config": str(mode["platform_config_file"]),
-        "class_allow_list": list(plan.class_allow_list),
-        "cc_issuers": [
-            {
-                "id": "coco_authorizer",
-                "path": "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer",
-                "token_expiration": service.values["token_expiration_seconds"],
-                "args": {
-                    "trustee_public_key_file": service.values["attestation_signing_public_key_file"],
-                    "token_url": service.values["attestation_token_endpoint"],
-                    **(
-                        {"proof_iat_leeway_seconds": service.values["proof_iat_leeway_seconds"]}
-                        if "proof_iat_leeway_seconds" in service.values
-                        else {}
-                    ),
-                    "workload_constraints": plain_data(plan.internal["workload_constraints"]),
-                },
-            }
-        ],
-        "cc_attestation": {"check_frequency": service.values["check_frequency_seconds"]},
-    }
-
-
 def package_coco_plan(plan, private_kit, public_output, ctx):
-    """Run the existing reviewed CoCo release pipeline for one normalized plan."""
+    """Run the reviewed CoCo release pipeline for one normalized plan."""
 
     tools = plan.internal["build_tools"]
     project_path = plan.attestation_service.config_path
-    runner_path = Path(tools["build_command"]).expanduser()
-    if not runner_path.is_absolute():
-        runner_path = project_path.parent / runner_path
-    packager = _CoCoReleasePackager(str(runner_path.resolve()), tools.get("build_timeout_seconds", 3600))
-    config = _coco_config(plan)
+    packager = CoCoPlanPackager(tools.get("build_timeout_seconds", 3600))
     owner = private_kit.parent
-    # The internal CoCo release worker expects this exact private layout.
-    request, runner = packager.prepare(owner, plan.config_path, config)
+    request, runner = packager.prepare(owner, plan)
     registry = plan.internal["registry"]
     workload = owner / "workload.env"
     with workload.open("a") as stream:
@@ -109,14 +69,15 @@ def package_coco_plan(plan, private_kit, public_output, ctx):
         stream.write(f"KBS_CA_FILE={shlex.quote(str(kbs_ca.resolve()))}\n")
     subprocess.run([str(runner), str(request)], cwd=plan.config_path.parent, check=True, timeout=packager.build_timeout)
     receipt = json.loads((owner / "result.json").read_text())
-    if receipt.get("schema") != "nvflare-coco-build-result/v1" or receipt.get("release_name") != config["release_name"]:
+    release_name = plan.mode_config["release_name"]
+    if receipt.get("schema") != "nvflare-coco-build-result/v1" or receipt.get("release_name") != release_name:
         raise ValueError("Invalid CoCo build result")
     pod = Path(receipt.get("pod_yaml", ""))
     if not pod.is_absolute() or pod.is_symlink() or not pod.is_file():
         raise ValueError("Build result must name an absolute regular Pod YAML")
-    packager.validate_pod(pod, config)
+    packager.validate_pod(pod, plan)
     public_output.mkdir(mode=0o755)
-    destination = public_output / f'{config["release_name"]}-pod.yaml'
+    destination = public_output / f"{release_name}-pod.yaml"
     shutil.copyfile(pod, destination)
     pod_data = json.loads(json.dumps(yaml.safe_load(destination.read_text())))
     image = pod_data["spec"]["containers"][0]["image"]
@@ -131,7 +92,7 @@ def package_coco_plan(plan, private_kit, public_output, ctx):
                 artifact_type="coco_pod",
                 path=destination.name,
                 sha256=_sha256(destination),
-                metadata={"image": image, "runtime_class": _coco_runtime_class(config)},
+                metadata={"image": image, "runtime_class": coco_runtime_class(plan)},
             ),
         ),
     )

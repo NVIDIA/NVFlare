@@ -29,8 +29,8 @@ from nvflare.lighter.cc_provision.deployment import (
     CCDeploymentMode,
     CCDeploymentPlan,
     CCDeploymentResult,
-    plain_data,
 )
+from nvflare.lighter.cc_provision.impl.trustee import trustee_authorizer
 from nvflare.lighter.constants import PropKey
 
 
@@ -78,42 +78,20 @@ class BareMetalCVMDeployment(CCDeployment):
     @staticmethod
     def authorizer(plan, *, issuer):
         service = plan.attestation_service
-        key = Path(service.values["attestation_signing_public_key_file"])
-        ca = Path(service.values["ca_cert_file"])
-        retry = service.values.get("retry", {})
-        args = {
-            "trustee_public_key": key.read_text(),
-            "audience": "nvflare-trustee:" + plan.internal["project_name"],
-            "max_token_age_seconds": service.values["token_expiration_seconds"],
-            "token_provider": "cvm" if issuer else "verifier",
-            **({"site_name": plan.internal["site_name"]} if issuer else {}),
-            **(
+        return trustee_authorizer(
+            plan,
+            issuer=issuer,
+            token_provider="cvm",
+            issuer_args=(
                 {
                     "kbs_url": service.values["kbs_endpoint"],
-                    "kbs_ca": ca.read_text(),
+                    "kbs_ca": Path(service.values["ca_cert_file"]).read_text(),
                     "guest_token_file": "/vault/application/runtime/trustee_token.json",
                 }
                 if issuer
-                else {}
+                else None
             ),
-            **({"retry_max_attempts": retry["max_attempts"]} if "max_attempts" in retry else {}),
-            **({"retry_initial_delay": retry["initial_delay_seconds"]} if "initial_delay_seconds" in retry else {}),
-            **({"retry_max_delay": retry["max_delay_seconds"]} if "max_delay_seconds" in retry else {}),
-            **({"retry_backoff_multiplier": retry["backoff_multiplier"]} if "backoff_multiplier" in retry else {}),
-            **({"retry_jitter_ratio": retry["jitter_ratio"]} if "jitter_ratio" in retry else {}),
-            **(
-                {"proof_iat_leeway_seconds": service.values["proof_iat_leeway_seconds"]}
-                if "proof_iat_leeway_seconds" in service.values
-                else {}
-            ),
-            "workload_constraints": plain_data(plan.internal["workload_constraints"]),
-        }
-        return {
-            "id": "trustee_authorizer",
-            "path": "nvflare.app_opt.confidential_computing.trustee_authorizer.TrusteeAuthorizer",
-            "args": args,
-            "token_expiration": service.values["token_expiration_seconds"],
-        }
+        )
 
     def bind(self, plan, project_config, project, ctx):
         """Prepare the legacy vault worker before a new prod directory exists."""

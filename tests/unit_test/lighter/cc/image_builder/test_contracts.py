@@ -58,7 +58,7 @@ from cvm.common.contracts import (
 from cvm.common.errors import BuildError
 from cvm.common.evidence import require_approved_tdx_tcb, serial_evidence, serial_frames, tdx_tcb
 from cvm.common.firewall import firewall_rules
-from cvm.common.io import canonical
+from cvm.common.io import canonical, read_json
 from cvm.common.linux import memory_file, validate_core_policy
 from cvm.common.luks import validate_luks_metadata, validate_mapping
 from cvm.common.measurements import measurements, validate_measurements
@@ -1138,6 +1138,78 @@ class RuntimeContractTests(unittest.TestCase):
             [call.kwargs["operation"] for call in execute.call_args_list],
             ["KBS quote/appraisal", "KBS resource retrieval/decryption"],
         )
+
+    def test_application_proof_publishes_protected_expiration_state(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        credentials = {"token": "token", "tee_keypair": "key"}
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    return_value=(credentials, {"exp": 1300}),
+                ),
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                ):
+                    pass
+            self.assertEqual(read_json(credentials_path), credentials)
+            self.assertEqual(read_json(state_path), {"expires_at": 1300})
+
+    def test_application_proof_rejects_a_token_that_cannot_survive_renewal(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1075}),
+                ),
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+                self.assertRaisesRegex(BuildError, "expires before"),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                ):
+                    pass
+            self.assertFalse(credentials_path.exists())
+            self.assertFalse(state_path.exists())
 
     def test_clock_gate_uses_bounded_chrony_correction(self):
         with patch("cvm.runtime.bootstrap.run") as execute:

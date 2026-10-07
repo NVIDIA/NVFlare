@@ -12,27 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Package signed server/client kits using the trusted provisioning-node CoCo workflow."""
+"""Package one normalized CoCo deployment plan on the trusted provisioning node."""
 
 import json
 import os
 import re
 import shlex
 import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
-from nvflare.lighter.cc_provision.impl.coco_release import (
-    COCO_STARTUP_PROLOGUE,
-    _coco_runtime_class,
-    _validate_coco_release_config,
-)
-from nvflare.lighter.cc_provision.utils import resolve_cc_config
+from nvflare.lighter.cc_provision.impl.coco_release import COCO_STARTUP_PROLOGUE, coco_runtime_class
 from nvflare.lighter.cc_provision.workload_security import read_pod, validate_workload_pod
-from nvflare.lighter.constants import PropKey, ProvFileName
-from nvflare.lighter.spec import Packager
-from nvflare.lighter.utils import load_yaml, verify_folder_signature
+from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.utils import verify_folder_signature
 
 COMMAND = ["/opt/nvflare/startup/sub_start.sh", "--once", "--verify"]
 
@@ -51,110 +43,37 @@ def copy_private_tree(source, destination):
     destination.chmod(0o700)
 
 
-class _CoCoReleasePackager(Packager):
-    def __init__(self, build_image_cmd, build_timeout=3600):
-        if not isinstance(build_image_cmd, str) or not build_image_cmd:
-            raise ValueError("build_image_cmd must name a trusted executable")
+class CoCoPlanPackager:
+    """Prepare and validate a CoCo release directly from ``CCDeploymentPlan``."""
+
+    def __init__(self, build_timeout=3600):
         if type(build_timeout) is not int or build_timeout <= 0:
             raise ValueError("build_timeout must be a positive integer number of seconds")
-        self.build_image_cmd = build_image_cmd
         self.build_timeout = build_timeout
 
-    def package(self, project, ctx):
-        result = Path(ctx.get_result_location()).resolve()
-        selected = []
-        for participant in project.get_all_participants():
-            cc_path = participant.get_prop(PropKey.CC_CONFIG)
-            if not cc_path:
-                continue
-            config_path = Path(resolve_cc_config(project, cc_path))
-            config = load_yaml(config_path)
-            _validate_coco_release_config(config)
-            if participant.type not in ("client", "server") or config["role"] != participant.type:
-                raise ValueError("CoCo role must match participant type (client or server)")
-            if not participant.get_prop(PropKey.CC_ENABLED) or participant.get_prop(PropKey.CC_CONFIG_DICT) != config:
-                raise ValueError("CoCo participant was not configured by CCBuilder, or configuration changed")
-            selected.append((participant, config_path, config))
-        if not selected:
-            raise ValueError("Internal CoCo release packager requires at least one CoCo participant")
-
-        # Keep every selected plaintext kit outside prod before any external
-        # build starts. On failure no selected participant's directory can be
-        # mistaken for a handoff. Never delete a kit as the CVM packager does.
-        private_root = Path(ctx.get_state_dir()) / "coco-private"
-        private_root.mkdir(mode=0o700, exist_ok=True)
-        private_root.chmod(0o700)
-        private = private_root / result.name
-        if private.is_symlink() or (private.exists() and not private.is_dir()):
-            raise ValueError(f"Expected a regular private stage directory: {private}")
-        if private.exists():
-            # Stage numbers can be reused after prod cleanup, including retries
-            # after a failed build. Reserve a unique private archive directory
-            # atomically; never overwrite or delete an earlier recovery tree.
-            archive = Path(tempfile.mkdtemp(prefix=f"{result.name}.superseded-", dir=private_root))
-            retained = archive / result.name
-            private.rename(retained)
-            ctx.info(f"Previous CoCo private stage retained at {retained}. Do not distribute state/.")
-        private.mkdir(mode=0o700)
-        # The aggregate launcher assumes every participant is a plaintext kit.
-        aggregate = result / ProvFileName.START_ALL_SH
-        if aggregate.exists():
-            aggregate.rename(private / ProvFileName.START_ALL_SH)
-        for participant, _, _ in selected:
-            owner = private / participant.name
-            owner.mkdir(mode=0o700)
-            source = result / participant.name
-            if source.is_symlink() or not source.is_dir():
-                raise ValueError("Expected a generated participant startup kit")
-            source.rename(owner / "startup-kit")
-            (owner / "startup-kit").chmod(0o700)
-
-        for participant, config_path, config in selected:
-            owner = private / participant.name
-            try:
-                request, runner = self.prepare(owner, config_path, config)
-                subprocess.run(
-                    [str(runner), str(request)], cwd=config_path.parent, check=True, timeout=self.build_timeout
-                )
-                receipt = json.loads((owner / "result.json").read_text())
-                if (
-                    receipt.get("schema") != "nvflare-coco-build-result/v1"
-                    or receipt.get("release_name") != config["release_name"]
-                ):
-                    raise ValueError("Invalid CoCo build result")
-                pod = Path(receipt["pod_yaml"])
-                if not pod.is_absolute() or pod.is_symlink() or not pod.is_file():
-                    raise ValueError("Build result must name an absolute regular Pod YAML")
-                self.validate_pod(pod, config)
-                public = result / participant.name
-                public.mkdir(mode=0o755)
-                shutil.copyfile(pod, public / f'{config["release_name"]}-pod.yaml')
-                ctx.info(f"CoCo IT handoff: {public}. Private build/receipt: {owner}. Do not distribute state/.")
-            except Exception:
-                ctx.error(f"CoCo packaging failed for {participant.name}; private recovery inputs retained at {owner}")
-                raise
-
-    def prepare(self, owner, config_path, config):
-        runtime_class = _coco_runtime_class(config)
-        base = config_path.parent
-        context = (base / config["image_build"]["context"]).resolve()
-        dockerfile = (context / config["image_build"]["dockerfile"]).resolve()
-        platform = (base / config["platform_config"]).resolve()
-        runner = (base / self.build_image_cmd).resolve()
+    def prepare(self, owner, plan):
+        runtime_class = coco_runtime_class(plan)
+        source = plan.workload_source.values
+        mode = plan.mode_config
+        context = Path(source["context"])
+        dockerfile = (context / source["dockerfile"]).resolve()
+        platform = Path(mode["platform_config_file"])
+        runner = Path(plan.internal["build_tools"]["build_command"])
         if not context.is_dir() or not dockerfile.is_file() or not platform.is_file():
             raise ValueError("Missing build context, Dockerfile, or platform configuration")
-        if owner.resolve().is_relative_to(context):
+        if owner.resolve().is_relative_to(context.resolve()):
             raise ValueError("Build context must not contain the provisioning workspace")
         if platform.name != "platform.env":
-            raise ValueError("platform_config must point to the prepared admin kit's platform.env")
+            raise ValueError("platform_config_file must point to the prepared admin kit's platform.env")
         if not runner.is_file() or not os.access(runner, os.X_OK):
             raise ValueError(f"Build command is not executable: {runner}")
         kit = owner / "startup-kit"
-        key_name = {"client": "client.key", "server": "server.key"}[config["role"]]
+        key_name = {"client": "client.key", "server": "server.key"}[plan.participant_type]
         for name in ("startup/sub_start.sh", "startup/rootCA.pem", f"startup/{key_name}", "signature.json"):
             if not (kit / name).is_file():
                 raise ValueError(
-                    f"Missing signed {config['role']} kit input: {name}; order CertBuilder/SignatureBuilder correctly"
+                    f"Missing signed {plan.participant_type} kit input: {name}; "
+                    "order CertBuilder/SignatureBuilder correctly"
                 )
         if not (kit / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE):
             raise ValueError("CoCo startup must discard host-visible output before startup-kit signing")
@@ -168,8 +87,6 @@ class _CoCoReleasePackager(Packager):
         build = owner / "build-context"
         copy_private_tree(context, build)
         copy_private_tree(kit, build / ".nvflare-kit")
-        # Append to the final application stage: the operator supplies all
-        # NVFlare/custom-code dependencies, we supply the freshly signed kit.
         private_write(
             build / "Dockerfile.coco",
             dockerfile.read_text().rstrip()
@@ -186,22 +103,18 @@ class _CoCoReleasePackager(Packager):
         ignore.write_text(existing.rstrip() + "\n!.nvflare-kit\n!.nvflare-kit/**\n!Dockerfile.coco\n")
         workload = owner / "workload.env"
         values = {
-            "RELEASE_NAME": config["release_name"],
-            "REGISTRY_REPOSITORY": config["registry_repository"],
-            # Describe the requested target to the trusted image runner without
-            # overriding its authority-approved, readonly RUNTIME_CLASS.
+            "RELEASE_NAME": mode["release_name"],
+            "REGISTRY_REPOSITORY": mode["registry_repository"],
             "COCO_RUNTIME_CLASS": runtime_class,
-            "COCO_GPU_COUNT": "1" if config["cc_gpu"] == "nvidia" else "0",
+            "COCO_GPU_COUNT": "1" if plan.gpu_tee.value == "nvidia_cc" else "0",
             "BUILD_CONTEXT": str(build),
             "DOCKERFILE": str(build / "Dockerfile.coco"),
             "APP_COMMAND_JSON": json.dumps(COMMAND),
             "APP_UID": "65532",
             "APP_GID": "65532",
-            # NVFlare writes logs/jobs into guest-local writable image storage.
-            # No hostPath/volume is added; genpolicy binds this exact setting.
             "APP_READ_ONLY_ROOT_FILESYSTEM": "false",
         }
-        private_write(workload, "".join(f"{k}={shlex.quote(v)}\n" for k, v in values.items()))
+        private_write(workload, "".join(f"{key}={shlex.quote(value)}\n" for key, value in values.items()))
         request = owner / "build-request.json"
         private_write(
             request,
@@ -219,8 +132,8 @@ class _CoCoReleasePackager(Packager):
         return request, runner
 
     @staticmethod
-    def validate_pod(path, config):
-        runtime_class = _coco_runtime_class(config)
+    def validate_pod(path, plan):
+        runtime_class = coco_runtime_class(plan)
         pod = read_pod(path)
         validate_workload_pod(
             pod,
@@ -243,20 +156,19 @@ class _CoCoReleasePackager(Packager):
         containers = spec.get("containers", [])
         if spec.get("runtimeClassName") != runtime_class or len(containers) != 1:
             raise ValueError(f"Expected one CoCo container using {runtime_class}")
-        c = containers[0]
-        expected_resources = {"nvidia.com/pgpu": "1"} if config["cc_gpu"] == "nvidia" else {}
-        resources = c.get("resources", {})
+        container = containers[0]
+        expected_resources = {"nvidia.com/pgpu": "1"} if plan.gpu_tee.value == "nvidia_cc" else {}
+        resources = container.get("resources", {})
         if (
-            c.get("command") != COMMAND
+            container.get("command") != COMMAND
             or not isinstance(resources, dict)
             or set(resources) - {"limits", "requests"}
             or resources.get("limits", {}) != expected_resources
             or resources.get("requests", {}) not in ({}, expected_resources)
         ):
             raise ValueError("Unexpected CoCo command or resource allocation")
-        if not re.fullmatch(
-            r"[^\s]+/" + re.escape(config["registry_repository"]) + r"@sha256:[0-9a-f]{64}", c.get("image", "")
-        ):
+        repository = plan.mode_config["registry_repository"]
+        if not re.fullmatch(r"[^\s]+/" + re.escape(repository) + r"@sha256:[0-9a-f]{64}", container.get("image", "")):
             raise ValueError("Pod image must be digest-pinned in the configured repository")
         if not pod.get("metadata", {}).get("annotations", {}).get("io.katacontainers.config.hypervisor.cc_init_data"):
             raise ValueError("Pod lacks measured init-data")
