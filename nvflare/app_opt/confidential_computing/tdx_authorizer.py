@@ -15,7 +15,7 @@
 import os
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
-from nvflare.utils.process_utils import popen_in_new_session
+from nvflare.utils.process_utils import run_in_new_session
 
 TDX_NAMESPACE = "x-tdx"
 TDX_CLI_CONFIG = "config.json"
@@ -47,7 +47,7 @@ class TDXAuthorizer(CCAuthorizer):
         err_out = open(error_file, "w")
 
         command = ["sudo", self.tdx_cli_command, "-c", self.config_file, "token", "--no-eventlog"]
-        popen_in_new_session(command, stdout=out, stderr=err_out).wait()
+        run_in_new_session(command, stdout=out, stderr=err_out)
 
         if not os.path.exists(error_file) or not os.path.exists(token_file):
             return ""
@@ -69,7 +69,7 @@ class TDXAuthorizer(CCAuthorizer):
         err_out = open(error_file, "w")
 
         command = [self.tdx_cli_command, "verify", "--config", self.config_file, "--token", token]
-        popen_in_new_session(command, stdout=out, stderr=err_out).wait()
+        run_in_new_session(command, stdout=out, stderr=err_out)
 
         if not os.path.exists(error_file):
             return False

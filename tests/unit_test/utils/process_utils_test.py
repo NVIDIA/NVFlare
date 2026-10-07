@@ -20,7 +20,13 @@ from unittest import mock
 
 import pytest
 
-from nvflare.utils.process_utils import ProcessAdapter, popen_in_new_session, prepare_subprocess_command, spawn_process
+from nvflare.utils.process_utils import (
+    ProcessAdapter,
+    popen_in_new_session,
+    prepare_subprocess_command,
+    run_in_new_session,
+    spawn_process,
+)
 
 
 class TestPrepareSubprocessCommand:
@@ -414,4 +420,47 @@ class TestPopenInNewSession:
         out, _ = process.communicate(timeout=30)
 
         sid, pid = out.split()
+        assert sid == pid
+
+
+class TestRunInNewSession:
+    def test_sets_start_new_session_and_passes_kwargs(self, monkeypatch):
+        run_mock = mock.Mock(return_value=mock.Mock())
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.run", run_mock)
+
+        run_in_new_session(["/bin/echo", "hi"], stdout=-1, stderr=-2)
+
+        run_mock.assert_called_once_with(["/bin/echo", "hi"], stdout=-1, stderr=-2, start_new_session=True)
+
+    def test_rejects_preexec_fn(self, monkeypatch):
+        run_mock = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.run", run_mock)
+
+        with pytest.raises(ValueError, match="preexec_fn"):
+            run_in_new_session(["/bin/echo"], preexec_fn=print)
+        run_mock.assert_not_called()
+
+    def test_kills_child_when_wait_is_interrupted(self, monkeypatch):
+        process = mock.MagicMock()
+        process.__enter__.return_value = process
+        process.communicate.side_effect = KeyboardInterrupt
+        popen_mock = mock.Mock(return_value=process)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        with pytest.raises(KeyboardInterrupt):
+            run_in_new_session(["/bin/sleep", "60"])
+
+        assert popen_mock.call_args[1]["start_new_session"] is True
+        process.kill.assert_called()
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_child_runs_in_new_session(self):
+        result = run_in_new_session(
+            [sys.executable, "-c", "import os; print(os.getsid(0), os.getpid())"],
+            stdout=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+
+        sid, pid = result.stdout.split()
         assert sid == pid

@@ -336,12 +336,32 @@ def popen_in_new_session(args, **kwargs) -> subprocess.Popen:
     Returns:
         subprocess.Popen: The started process.
     """
+    return subprocess.Popen(args, **_new_session_kwargs(kwargs))
+
+
+def run_in_new_session(args, **kwargs) -> subprocess.CompletedProcess:
+    """Run a command to completion as the leader of a new session, like subprocess.run.
+
+    Same as :func:`popen_in_new_session` but keeps subprocess.run's cleanup: if waiting is interrupted
+    (e.g. KeyboardInterrupt), the child is killed instead of being left running in its own session.
+
+    Args:
+        args: The command to run, as accepted by subprocess.run.
+        **kwargs: Other subprocess.run keyword arguments. ``preexec_fn`` is not allowed.
+
+    Returns:
+        subprocess.CompletedProcess: The completed process.
+    """
+    return subprocess.run(args, **_new_session_kwargs(kwargs))
+
+
+def _new_session_kwargs(kwargs: dict) -> dict:
     if "preexec_fn" in kwargs:
         raise ValueError(
             "preexec_fn is not allowed; it runs Python code in the forked child, which is unsafe with threads"
         )
     kwargs["start_new_session"] = True
-    return subprocess.Popen(args, **kwargs)
+    return kwargs
 
 
 def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
