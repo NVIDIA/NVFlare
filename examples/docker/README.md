@@ -6,7 +6,9 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 ## Prerequisites
 
 - Docker with a working daemon
-- NVFlare installed with the required extras
+- NVFlare installed on the host for provisioning and the admin CLI (from the
+  repo root: `python -m pip install -e .`). PyTorch and tracking dependencies
+  are installed in the job image.
 - Run all commands from the `examples/docker` directory unless noted otherwise
 
 Download the example without cloning NVFlare:
@@ -18,7 +20,42 @@ cd docker-runtime/examples/docker
 
 From a source checkout, use `cd examples/docker` instead.
 
-### Apple Silicon Mac with Colima
+### Apple Silicon Mac
+
+Choose Docker Desktop or Colima below, then install the host CLI.
+For `hello-pt-docker`, use the separate CPU job copy in Step 5 when CUDA is
+unavailable. The client selects CUDA when available and CPU otherwise; it
+does not select MPS. Other Colima GPU backends and MPS execution have not
+been validated with this main example.
+
+#### Docker Desktop
+
+Start Docker Desktop. In **Settings > Advanced**, enable
+**Allow the default Docker socket to be used**. This creates the macOS
+`/var/run/docker.sock` symlink; see
+[Docker's Mac permission requirements](https://docs.docker.com/desktop/setup/install/mac-permission-requirements/).
+The generated parent startup script mounts that socket from the Linux daemon
+into each parent container. Select Docker Desktop's Linux daemon and check
+connectivity before provisioning:
+
+```bash
+unset DOCKER_HOST DOCKER_CONTEXT
+docker context use desktop-linux
+docker info
+test -S /var/run/docker.sock && echo "Docker socket is available"
+```
+
+Continue after `docker info` succeeds and the socket check prints
+`Docker socket is available`.
+
+If a build reports that `docker-credential-desktop` cannot be found, add
+Docker Desktop's bundled tools to this shell's PATH:
+
+```bash
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+```
+
+#### Colima
 
 Colima supplies a Linux Docker daemon without Docker Desktop. Homebrew's
 `docker` package supplies the standalone CLI. Use Colima's VZ VM for CPU
@@ -34,16 +71,29 @@ docker info
 ```
 
 The writable mount must cover the source checkout (or downloaded example)
-and its workspace. Keep this shell for the remaining commands. The generated
-startup script probes the socket inside the daemon VM to obtain its group ID.
+and its workspace. The generated startup script probes the socket inside the daemon VM to obtain its group ID.
 If you choose another profile name, update `DOCKER_CONTEXT` accordingly.
+#### Host CLI setup
+
+After selecting either runtime, install the core host CLI in a virtual
+environment. From a source checkout, run these commands from `examples/docker`:
+
+```bash
+brew install python@3.13
+cd ../..
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+cd examples/docker
+```
+
+For a downloaded example, create and activate a virtual environment and install
+`nvflare` with `python -m pip install nvflare` before running
+`nvflare examples get docker-runtime` as shown above. The image build still
+uses the downloaded example's exact revision. Run the remaining steps in the
+same shell with the chosen Docker runtime and virtual environment active.
 If port 8002 is occupied, copy `project.yml`, choose a free `fed_learn_port`,
 and provision with that copy in Step 1.
-
-For `hello-pt-docker`, use the job copy without a GPU resource requirement in
-Step 5. The client uses CUDA when available and CPU otherwise; it does not
-select MPS. This VZ configuration is intended for CPU execution. Other Colima
-GPU backends and MPS execution have not been validated with this example.
 
 ## Step 0: Build Docker images
 
@@ -209,14 +259,52 @@ nvflare job submit \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
+The supplied FedAvg controller samples one client per round; the same site
+can be selected in both rounds. Checking both clients confirms availability,
+not that both train. The CPU copy changes only `resource_spec` and preserves
+that sampling behavior. A separate validation control can set the copied
+controller's `num_clients` to 2 to exercise both sites in every round.
+
 The job image provides a writable `/var/tmp/nvflare/data` CIFAR-10 cache for
 non-root job users. To override it, set `NVFL_CIFAR10_ROOT` in
 `job_launcher.default_job_env` in `docker.yaml` before preparing both client
-kits, and choose a directory writable inside their job containers, such as
-`/var/tmp/nvflare/workspace/cifar10`. The job mounts `local` and `startup`
-as read-only directories, so keep the cache outside those directories. Exporting
+kits, and choose a directory writable inside their job containers. Exporting
 this variable only on the host does not configure the Docker jobs. Data uses
 torchvision's standard CIFAR-10 download URL and checksum validation.
+
+The default image cache and the job's temporary workspace root disappear when
+the job container exits. For a reusable cache, configure writable study dataset
+mounts in both prepared client kits before starting them. This example keeps
+each client's cache in its prepared workspace on the host, which the Colima
+writable mount above covers:
+
+```bash
+python - <<'PYCACHE'
+import tempfile
+from pathlib import Path
+
+import yaml
+
+root = Path("workspace/docker_test_project/prepared").resolve()
+for site in ("site-1", "site-2"):
+    cache = root / site / "cifar10-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryFile(dir=cache):
+        pass
+    path = root / site / "local/study_runtime.yaml"
+    config = yaml.safe_load(path.read_text()) or {}
+    study = config.setdefault("studies", {}).setdefault("default", {})
+    study.setdefault("datasets", {})["cifar10"] = {"source": str(cache), "mode": "rw"}
+    study.setdefault("env", {})["NVFL_CIFAR10_ROOT"] = "/data/default/cifar10"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+print("Both persistent caches are writable and configured")
+PYCACHE
+```
+
+Each job mounts the corresponding host cache at `/data/default/cifar10`.
+This study environment overrides the site-wide cache variable. Job kit
+`local` and `startup` directories are read-only, so keep download/extraction
+caches outside those directories.
 
 Use the returned job ID to check completion:
 
@@ -242,7 +330,7 @@ nvflare system shutdown all --force --timeout 60 \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
-When finished with the dedicated Colima VM, run
+If using Colima, when finished with the dedicated VM, run
 `colima stop --profile nvflare-docker`.
 
 ## Notes
@@ -272,7 +360,9 @@ When finished with the dedicated Colima VM, run
   ```json
   "default_job_env": {"NCCL_P2P_DISABLE": "1"}
   ```
-- Workspace files are bind-mounted at `/var/tmp/nvflare/workspace` inside all containers.
+- Parent containers bind-mount the prepared workspace at `/var/tmp/nvflare/workspace`.
+  Job containers receive an isolated workspace with read-only kit files and
+  their own writable job directory; reusable data uses study dataset mounts.
 - Job containers run as the same UID/GID as the SP/CP so all workspace files remain
   readable and writable by the parent process.
 - To watch job container logs: `docker logs -f <site>-<job_id>`
