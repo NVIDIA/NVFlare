@@ -36,6 +36,7 @@ from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.wf_comm_spec import WFCommSpec
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
@@ -191,6 +192,54 @@ def _fenced_runner():
     fl_ctx = FLContextManager(identity_name="server", job_id="job-1").new_context()
     fl_ctx.set_peer_context(FLContextManager(identity_name="site-1", job_id="job-1").new_context())
     return runner, assignment, fl_ctx
+
+
+@pytest.mark.parametrize(
+    "receipt", [TaskResultReceipt.RECEIVED, TaskResultReceipt.RETRY, TaskResultReceipt.TASK_CLOSED, None]
+)
+@pytest.mark.parametrize("record", [None, object()])
+def test_fenced_readiness_uses_custom_communicator_receipt_without_inspecting_records(receipt, record):
+    runner, assigned, ctx = _fenced_runner()
+    ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+
+    class CustomCommunicator(WFCommSpec):
+        def client_is_active(self, client_name, reason, fl_ctx):
+            pass
+
+        def process_task_check(self, task_id, fl_ctx):
+            assert task_id == assigned.id
+            assert fl_ctx.get_prop(FLContextKey.TASK_NAME) == "train"
+            assert fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID) == assigned.attempt_id
+            if receipt is not None:
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
+            return record
+
+    runner.current_wf.controller.communicator = CustomCommunicator()
+    request = Shareable()
+    for key, value in (
+        (ReservedHeaderKey.TASK_ID, assigned.id),
+        (ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id),
+        (ReservedHeaderKey.TASK_NAME, "train"),
+        (ReservedHeaderKey.WORKFLOW, "workflow"),
+    ):
+        request.set_header(key, value)
+    reply = runner._handle_task_check("task_check", request, ctx)
+    expected = receipt or TaskResultReceipt.TASK_CLOSED
+    assert reply.get_task_result_receipt(assigned.id, assigned.attempt_id, "workflow") == expected
+    assert reply.get_return_code() == (
+        ReturnCode.TASK_UNKNOWN if expected == TaskResultReceipt.TASK_CLOSED else ReturnCode.OK
+    )
+
+
+def test_legacy_readiness_preserves_custom_communicator_task_presence():
+    runner, assigned, ctx = _fenced_runner()
+    runner.current_wf.controller.communicator = MagicMock(spec=WFCommSpec)
+    runner.current_wf.controller.communicator.process_task_check.return_value = object()
+    request = Shareable()
+    request.set_header(ReservedHeaderKey.TASK_ID, assigned.id)
+    reply = runner._handle_task_check("task_check", request, ctx)
+    assert reply.get_return_code() == ReturnCode.OK
+    assert reply.get_header(ReservedHeaderKey.TASK_RESULT_RECEIPT) is None
 
 
 def _result(assignment, rc=ReturnCode.OK):

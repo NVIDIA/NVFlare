@@ -342,10 +342,18 @@ class WFCommSpec(ABC):
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         """Called by the Engine to check whether a specified task still exists.
+
+        For an attempt-fenced check, fl_ctx contains TASK_NAME and TASK_ATTEMPT_ID,
+        plus the authenticated peer context. Validate this assignment and set
+        FLContextKey.TASK_RESULT_RECEIPT to RECEIVED, RETRY, or TASK_CLOSED.
+        The caller uses that receipt without inspecting the returned record.
+        TASK_CLOSED ends retries but does not establish whether an earlier
+        publication was received. Legacy unfenced checks use task presence.
+
         Args:
             task_id: the id of the task
             fl_ctx: the FLContext
-        Returns: the ClientTask object if exists; None otherwise
+        Returns: the authority's task record if available; None otherwise
         """
         raise NotImplementedError
 

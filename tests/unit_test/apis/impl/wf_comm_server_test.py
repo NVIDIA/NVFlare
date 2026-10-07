@@ -103,6 +103,7 @@ def _assignment():
     client_task.props["___job_id"] = "job-1"
     ctx = FLContextManager(identity_name="server", job_id="job-1").new_context()
     ctx.set_peer_context(FLContextManager(identity_name="site-1", job_id="job-1").new_context())
+    ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
     return wf, client_task, ctx
 
 
@@ -504,6 +505,7 @@ def test_retired_pending_assignment_task_check_requires_issued_job_and_peer(peer
     fl_ctx = FLContextManager(identity_name="server", job_id=context_job).new_context()
     fl_ctx.set_peer_context(FLContextManager(identity_name=assigned.client.name, job_id=peer_job).new_context())
     fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, result.get_task_attempt_id(), private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
     retired = wf.process_task_check(assigned.id, fl_ctx)
     if peer_job == context_job == "job-1":
         assert retired is not None
@@ -659,6 +661,35 @@ def test_forwarded_result_data_rebinds_assignment_cookies_without_mutating_sourc
     wf.process_submission(first_assignment.client, "train", first_id, forged, fl_ctx)
     assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
     first_assignment.task.result_received_cb.assert_not_called()
+
+
+@pytest.mark.parametrize("stage", ["active", "retired", "swept"])
+@pytest.mark.parametrize("received", [False, True])
+@pytest.mark.parametrize("task_name", ["train", "other"])
+def test_task_check_exposes_receipt_without_leaking_private_marker(stage, received, task_name, monkeypatch):
+    # A private marker rename must not change the public readiness contract.
+    monkeypatch.setattr("nvflare.apis.impl.wf_comm_server._CLIENT_TASK_RESULT_RECEIVED", "renamed-private-receipt")
+    wf, assigned, ctx = _assignment()
+    if received:
+        result = Shareable()
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+        assert wf.claim_submission(assigned.client, "train", assigned.id, result, ctx)
+        wf.finish_submission(assigned.id, ctx)
+    if stage != "active":
+        assigned.task.completion_status = TaskCompletionStatus.TIMEOUT
+    if stage == "swept":
+        wf._remember_completed_client_task(assigned)
+        wf._client_task_map.pop(assigned.id)
+    ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, assigned.attempt_id, private=True, sticky=False)
+    ctx.set_prop(FLContextKey.TASK_NAME, task_name, private=True, sticky=False)
+    record = wf.process_task_check(assigned.id, ctx)
+    if task_name == "train":
+        assert record is not None
+        expected = TaskResultReceipt.RECEIVED if received else TaskResultReceipt.RETRY
+    else:
+        assert record is None
+        expected = TaskResultReceipt.TASK_CLOSED
+    assert ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == expected
 
 
 @pytest.mark.parametrize("completed", [False, True])

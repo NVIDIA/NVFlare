@@ -631,6 +631,9 @@ class ServerRunner(TBI):
         except ValueError:
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
         fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.TASK_NAME, request.get_header(ReservedHeaderKey.TASK_NAME), private=True, sticky=False
+        )
 
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
@@ -652,19 +655,16 @@ class ServerRunner(TBI):
                 or (attempt_id is not None and workflow_id != self.current_wf.id)
             ):
                 return reply
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
             task = self.current_wf.controller.communicator.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
-            if task is None:
+            if attempt_id is not None:
+                receipt = fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT)
+                if receipt not in (TaskResultReceipt.RECEIVED, TaskResultReceipt.RETRY):
+                    return reply
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+            elif task is None:
                 self.log_info(fl_ctx, f"task {task_id} is not found")
                 return reply
-            if attempt_id is not None:
-                task_name = getattr(task, "task_name", None) or task.task.name
-                if request.get_header(ReservedHeaderKey.TASK_NAME) != task_name:
-                    return reply
-                received = task.props.get("___result_received", False) if hasattr(task, "props") else task.received
-                reply.set_header(
-                    ReservedHeaderKey.TASK_RESULT_RECEIPT,
-                    TaskResultReceipt.RECEIVED if received else TaskResultReceipt.RETRY,
-                )
             reply.set_return_code(ReturnCode.OK)
             return reply
 

@@ -20,6 +20,10 @@ check can recover a lost `RECEIVED` ACK without uploading the result again.
 Closure can race readiness and upload; the submission reply then reports
 `TASK_CLOSED`.
 
+`TASK_CLOSED` does not say whether an earlier upload of this attempt was received.
+An ACK can be lost before the workflow ends or its history entry is evicted. The
+client stops resending in either case, but closure is not evidence of non-receipt.
+
 Receipt says nothing about aggregation acceptance. Failed results, filter errors,
 callback rejection, and application exceptions still receive `RECEIVED` once the
 server owns the complete result. Aggregators keep their existing local decisions
@@ -51,6 +55,11 @@ unknown. Legacy readiness checks retain their active-assignment behavior.
 Unfenced custom communicators and genuinely unknown legacy results keep their
 established hooks; custom authorities issuing attempt IDs must implement receipt
 claims. No boolean aggregation-admission ACK is exposed.
+
+Readiness uses `WFCommSpec.process_task_check`: the communicator validates the
+requested task name, attempt, and authenticated peer, then reports the receipt
+through `FLContextKey.TASK_RESULT_RECEIPT`. The runner does not inspect the
+communicator's task records or private receipt markers.
 
 ## Ownership, retries, and lifetime
 
@@ -90,3 +99,5 @@ outstanding transfer readers to release the source. Worker supervision, launcher
 declared-state promotion, adapters, and recipes remain separate work in #5352.
 Its integration must consume this receipt contract and decide state promotion
 locally; it cannot gate promotion on a server aggregation-admission boolean.
+In particular, `TASK_CLOSED` cannot be interpreted as proof that an earlier result
+was not received or used; closure alone cannot decide state promotion.

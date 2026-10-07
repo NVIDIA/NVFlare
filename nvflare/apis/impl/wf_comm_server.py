@@ -415,24 +415,49 @@ class WFCommServer(FLComponent, WFCommSpec):
         self.log_error(fl_ctx, "task {} is cancelled due to exception".format(task.name))
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
         with self._task_lock:
             client_task = self._client_task_map.get(task_id)
             attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
             if attempt_id is None:
                 return client_task
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
             peer = fl_ctx.get_peer_context()
             client_name = peer.get_identity_name() if isinstance(peer, FLContext) else None
             if client_task is not None:
-                if client_task.attempt_id != attempt_id or client_task.client.name != client_name:
+                job_id = client_task.props.get(_CLIENT_TASK_JOB_ID)
+                if (
+                    client_task.attempt_id != attempt_id
+                    or client_task.client.name != client_name
+                    or client_task.task.name != task_name
+                    or not isinstance(peer, FLContext)
+                    or not job_id
+                    or fl_ctx.get_job_id() != job_id
+                    or peer.get_job_id() != job_id
+                ):
                     return None
                 if client_task.task.completion_status is None:
+                    fl_ctx.set_prop(
+                        FLContextKey.TASK_RESULT_RECEIPT,
+                        (
+                            TaskResultReceipt.RECEIVED
+                            if client_task.props.get(_CLIENT_TASK_RESULT_RECEIVED, False)
+                            else TaskResultReceipt.RETRY
+                        ),
+                        private=True,
+                        sticky=False,
+                    )
                     return client_task
                 completed = self._remember_completed_client_task(client_task)
             else:
                 completed = self._get_completed_client_task_info(task_id)
-            if completed and self._matches_retired_assignment(
-                completed, client_name, completed.task_name, attempt_id, fl_ctx
-            ):
+            if completed and self._matches_retired_assignment(completed, client_name, task_name, attempt_id, fl_ctx):
+                fl_ctx.set_prop(
+                    FLContextKey.TASK_RESULT_RECEIPT,
+                    TaskResultReceipt.RECEIVED if completed.received else TaskResultReceipt.RETRY,
+                    private=True,
+                    sticky=False,
+                )
                 return completed
             return None
 
