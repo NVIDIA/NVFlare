@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -113,6 +113,10 @@ def compute_key_match_stats(contributions: Dict[str, Any]) -> dict:
     }
 
 
+class AggregationShapeError(ValueError):
+    """A contribution's exposed shape is incompatible, detected before accumulation changes state."""
+
+
 class WeightedAggregationHelper(object):
     def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.
@@ -150,8 +154,49 @@ class WeightedAggregationHelper(object):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
+    def validate_shapes(self, data, contributor_name, contribution_round):
+        """Check exposed shapes under the helper lock without accumulating the contribution."""
+        with self.lock:
+            self._validate_shapes(data, contributor_name, contribution_round)
+
+    def _validate_shapes(self, data, contributor_name, contribution_round):
+        """Check exposed shapes without materializing lazy values or changing round state."""
+        # Materializing mappings can expose get_shape(key) to avoid reading tensor data here.
+        get_shape_fn = getattr(data, "get_shape", None)
+        if callable(get_shape_fn):
+            items = ((k, None) for k in data.keys())
+        else:
+            items = data.items()
+
+        for k, v in items:
+            if self.exclude_vars is not None and self.exclude_vars.search(k):
+                continue
+            if k not in self.total:
+                continue
+
+            expected_shape = getattr(self.total[k], "shape", None)
+            if expected_shape is None:
+                continue
+            received_shape = get_shape_fn(k) if callable(get_shape_fn) else getattr(v, "shape", None)
+            if received_shape is None:
+                continue
+
+            expected_shape = tuple(expected_shape)
+            received_shape = tuple(received_shape)
+            if received_shape != expected_shape:
+                raise AggregationShapeError(
+                    f"Shape mismatch for parameter {k!r} from contributor {contributor_name!r} "
+                    f"at round {contribution_round}: expected {expected_shape}, got {received_shape}"
+                )
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights.
+
+        Raises:
+            AggregationShapeError: A non-excluded key has a different exposed shape from its running total.
+                These shape checks complete before any round state changes. Values without exposed
+                shape metadata, including lazy refs, retain their existing aggregation behavior;
+                failures during arithmetic or materialization are not rolled back.
 
         Note:
             Contributions accumulate in call (result-arrival) order: each weighted contribution is
@@ -160,6 +205,7 @@ class WeightedAggregationHelper(object):
             ulp-level differences between runs; bitwise reproducibility is not guaranteed for >=2 clients.
         """
         with self.lock:
+            self._validate_shapes(data, contributor_name, contribution_round)
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     self.skipped_keys.add(k)
