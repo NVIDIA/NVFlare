@@ -19,7 +19,15 @@ import uuid
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReservedTopic,
+    ReturnCode,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -604,7 +612,7 @@ class ClientRunner(TBI):
         # submission transport; send success alone cannot distinguish that from
         # an upload whose acknowledgement was lost before abort/task removal.
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, False, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, None, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, None, private=True, sticky=False)
         try_count = 1
         while True:
             self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
@@ -635,6 +643,9 @@ class ClientRunner(TBI):
 
             rc = self._check_task_once(task_id, fl_ctx)
             if rc == _TASK_CHECK_RESULT_OK:
+                if fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED:
+                    delete_msg_root(msg_root_id)
+                    return _TASK_CHECK_RESULT_OK
                 break
             elif rc == _TASK_CHECK_RESULT_TASK_GONE:
                 return rc
@@ -651,7 +662,11 @@ class ClientRunner(TBI):
         self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
-        if reply_sent:
+        receipt = fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT)
+        if receipt == TaskResultReceipt.TASK_CLOSED:
+            delete_msg_root(msg_root_id)
+            return _TASK_CHECK_RESULT_TASK_GONE
+        if reply_sent and (receipt == TaskResultReceipt.RECEIVED or result.get_task_attempt_id() is None):
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
             delete_msg_root(msg_root_id)
             return _TASK_CHECK_RESULT_OK
@@ -694,7 +709,20 @@ class ClientRunner(TBI):
                 )
                 return _TASK_CHECK_RESULT_TRY_AGAIN
 
-            rc = reply.get_return_code()
+            try:
+                rc = reply.get_return_code()
+            except ValueError:
+                self.log_error(fl_ctx, "malformed task_check reply - will retry")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            if attempt_id is not None and rc in (ReturnCode.OK, ReturnCode.TASK_UNKNOWN):
+                receipt = reply.get_task_result_receipt(task_id, attempt_id, fl_ctx.get_prop(FLContextKey.WORKFLOW))
+                if receipt is None:
+                    return _TASK_CHECK_RESULT_TRY_AGAIN
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
+                if receipt == TaskResultReceipt.TASK_CLOSED:
+                    return _TASK_CHECK_RESULT_TASK_GONE
+                if rc != ReturnCode.OK:
+                    return _TASK_CHECK_RESULT_TRY_AGAIN
             if rc == ReturnCode.OK:
                 return _TASK_CHECK_RESULT_OK
             elif rc == ReturnCode.COMMUNICATION_ERROR:

@@ -19,7 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
-from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -488,9 +488,8 @@ class Communicator:
         self.pending_task = None
 
         start_time = time.time()
-        # Transport success alone is not proof the server admitted this result.
-        # Clear the previous attempt's acknowledgement, including on early exit.
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, None, private=True, sticky=False)
+        # Clear any earlier receipt; transport success alone cannot confirm delivery.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, None, private=True, sticky=False)
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_peer_context(shared_fl_ctx)
 
@@ -533,25 +532,23 @@ class Communicator:
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-        if return_code == ReturnCode.OK and isinstance(result.payload, Shareable):
-            accepted = result.payload.get_header(ReservedHeaderKey.TASK_RESULT_ACCEPTED)
+        if return_code == ReturnCode.OK:
             try:
                 attempt_id = shareable.get_task_attempt_id()
-                task_id = shareable.get_cookie(FLContextKey.TASK_ID, shareable.get_header(ReservedHeaderKey.TASK_ID))
-                valid_identity = True
             except ValueError:
-                attempt_id = None
-                task_id = None
-                valid_identity = False
-            if (
-                isinstance(accepted, bool)
-                and valid_identity
-                and isinstance(task_id, str)
-                and task_id
-                and result.payload.get_header(ReservedHeaderKey.TASK_ID) == task_id
-                and result.payload.get_header(ReservedHeaderKey.TASK_ATTEMPT_ID) == attempt_id
-            ):
-                fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
+                return ReturnCode.INVALID_REQUEST
+            if attempt_id is not None:
+                task_id = shareable.get_cookie(FLContextKey.TASK_ID, shareable.get_header(ReservedHeaderKey.TASK_ID))
+                workflow_id = shareable.get_cookie(ReservedHeaderKey.WORKFLOW)
+                receipt = (
+                    result.payload.get_task_result_receipt(task_id, attempt_id, workflow_id)
+                    if isinstance(result.payload, Shareable)
+                    else None
+                )
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
+                if receipt is None or receipt == TaskResultReceipt.RETRY:
+                    return_code = ReturnCode.COMM_ERROR
+                    self.logger.warning("result receipt is unresolved - retain result for retry")
         size = task_message.get_header(MessageHeaderKey.PAYLOAD_LEN)
         self.logger.info(
             f"SubmitUpdate to: {parent_fqcn}. size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"

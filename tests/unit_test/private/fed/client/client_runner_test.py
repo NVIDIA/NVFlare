@@ -20,7 +20,7 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -356,6 +356,74 @@ def test_check_task_once_classifies_server_replies(response, expected):
     assert runner._check_task_once("task-1", FLContext()) == expected
 
 
+@pytest.mark.parametrize(
+    "reply_case",
+    [
+        "received",
+        "closed",
+        "open",
+        "missing_receipt",
+        "wrong_task",
+        "wrong_attempt",
+        "wrong_workflow",
+        "malformed_headers",
+    ],
+)
+def test_fenced_readiness_requires_assignment_bound_receipt(reply_case):
+    runner = _runner()
+    ctx = FLContext()
+    ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, "attempt", private=True, sticky=False)
+    ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
+    ctx.set_prop(FLContextKey.WORKFLOW, "workflow", private=True, sticky=False)
+    reply = make_reply(ReturnCode.TASK_UNKNOWN if reply_case == "closed" else ReturnCode.OK)
+    for key, value, field in (
+        (ReservedHeaderKey.TASK_ID, "task", "wrong_task"),
+        (ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt", "wrong_attempt"),
+        (ReservedHeaderKey.WORKFLOW, "workflow", "wrong_workflow"),
+    ):
+        reply.set_header(key, "other" if reply_case == field else value)
+    receipt = (
+        TaskResultReceipt.TASK_CLOSED
+        if reply_case == "closed"
+        else TaskResultReceipt.RETRY if reply_case == "open" else TaskResultReceipt.RECEIVED
+    )
+    if reply_case != "missing_receipt":
+        reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+    if reply_case == "malformed_headers":
+        reply[ReservedHeaderKey.HEADERS] = "malformed"
+    runner.engine.send_aux_request.return_value = {"server": reply}
+    expected = (
+        _TASK_CHECK_RESULT_OK
+        if reply_case in ("received", "open")
+        else _TASK_CHECK_RESULT_TASK_GONE if reply_case == "closed" else _TASK_CHECK_RESULT_TRY_AGAIN
+    )
+    assert runner._check_task_once("task", ctx) == expected
+
+
+def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
+    runner = _runner()
+    runner._check_task_once = MagicMock(return_value=_TASK_CHECK_RESULT_OK)
+    ctx = FLContext()
+    saved = tmp_path / "result"
+    saved.write_bytes(b"finished task output")
+    result = Shareable({"result_file": str(saved)})
+    result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt")
+    observed = []
+
+    def send(current, fl_ctx, **kwargs):
+        observed.append(current)
+        assert saved.read_bytes() == b"finished task output"
+        receipt = TaskResultReceipt.RETRY if len(observed) == 1 else TaskResultReceipt.RECEIVED
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
+        return True
+
+    runner.engine.send_task_result.side_effect = send
+    assert runner._send_task_result(result, "task", ctx)
+    assert observed == [result, result]
+    assert all(current is result for current in observed)
+    assert ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+
+
 def test_try_send_result_once_sends_after_task_check(monkeypatch):
     runner = _runner()
     runner._check_task_once = MagicMock(return_value=_TASK_CHECK_RESULT_OK)
@@ -404,7 +472,7 @@ def test_send_task_result_distinguishes_no_submit_from_lost_ack(monkeypatch, rea
     fl_ctx = FLContext()
     # Facts from an earlier result must not leak into a new publication.
     fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
-    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, True, private=True, sticky=False)
     checks = [_TASK_CHECK_RESULT_OK, _TASK_CHECK_RESULT_TASK_GONE] if submitted else [_TASK_CHECK_RESULT_TASK_GONE]
     runner._check_task_once = MagicMock(side_effect=checks)
 
@@ -421,7 +489,7 @@ def test_send_task_result_distinguishes_no_submit_from_lost_ack(monkeypatch, rea
 
     assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
     assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is submitted
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) is None
     assert runner.engine.send_task_result.call_count == int(submitted)
 
 
@@ -436,7 +504,7 @@ def test_abort_during_successful_readiness_check_does_not_handoff_result():
     runner._check_task_once = MagicMock(side_effect=ready_then_abort)
     assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
     assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is False
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) is None
     runner.engine.send_task_result.assert_not_called()
     runner._check_task_once.assert_called_once()
 

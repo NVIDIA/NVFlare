@@ -35,7 +35,7 @@ import nvflare.apis.impl.seq_relay_manager as _seq_relay_manager_mod
 import nvflare.apis.impl.wf_comm_server as _wf_comm_server_mod
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
@@ -927,7 +927,7 @@ class TestCallback(TestController):
             result=result,
         )
         assert task.last_client_task_map["__test_client0"].result == result
-        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
 
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client2, fl_ctx)
         assert task_name_out == ""
@@ -1216,7 +1216,7 @@ class TestBasic(TestController):
         client_task = task.last_client_task_map[assigned_client.name]
         assert client_task.result is None
         assert client_task.result_received_time is None
-        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
 
         result = Shareable()
         result["result"] = "result"
@@ -1229,7 +1229,7 @@ class TestBasic(TestController):
             result=result,
         )
         assert client_task.result == result
-        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 
@@ -1280,7 +1280,7 @@ class TestBasic(TestController):
             result=Shareable({"result": "active-map duplicate"}),
         )
         assert result_count == 1
-        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
 
         controller.communicator.check_tasks()
         assert client_task_id not in controller.communicator._client_task_map
@@ -1299,7 +1299,7 @@ class TestBasic(TestController):
         client_task = task.last_client_task_map[client.name]
         assert result_count == 1
         assert client_task.result == result
-        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 
@@ -1346,7 +1346,7 @@ class TestBasic(TestController):
                 fl_ctx=fl_ctx,
                 result=Shareable(),
             )
-            assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+            assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
         assert task.last_client_task_map[assigned_client.name].result is result
 
         # A genuinely unknown unfenced protocol still reaches that legacy hook.

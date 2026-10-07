@@ -14,15 +14,12 @@
 
 import threading
 import time
-from collections import OrderedDict
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.wf_comm_server import _CompletedClientTaskInfo
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -30,14 +27,13 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-
-_MAX_TASK_RESULT_RECEIPTS = 10000
 
 
 class ServerRunnerConfig(object):
@@ -103,7 +99,7 @@ class ServerRunner(TBI):
         self.config = config
         self.engine = engine
         self.abort_signal = Signal()
-        # Submission admission and workflow teardown share this gate. It is
+        # Result receipt and workflow teardown share this gate. It is
         # reentrant because process_submission delegates to existing workflow
         # processing that already takes the same lock.
         self.wf_lock = threading.RLock()
@@ -114,9 +110,6 @@ class ServerRunner(TBI):
         # track tasks currently being processed (during filtering) to prevent duplicate assignments
         self._processing_tasks = {}  # client_name => task_id
         self._processing_tasks_lock = threading.Lock()  # protect _processing_tasks from race conditions
-        # Job-local replay receipts survive workflow teardown, not SJ exit.
-        # Their identity includes the original workflow and physical attempt.
-        self._result_receipts = OrderedDict()
         self._register_aux_message_handler(engine)
 
     def _register_aux_message_handler(self, engine):
@@ -212,7 +205,7 @@ class ServerRunner(TBI):
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"Error executing RUN: {secure_format_exception(e)}")
         finally:
-            # Close submission admission atomically with workflow teardown.
+            # Close result submissions atomically with workflow teardown.
             with self.wf_lock:
                 self.status = "done"
                 with self.engine.new_context() as fl_ctx:
@@ -457,87 +450,15 @@ class ServerRunner(TBI):
                 )
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        """Process task result submitted from a client.
-
-        NOTE: the Engine will create a new fl_ctx and call this method:
-
-            with engine.new_context() as fl_ctx:
-                name, id, data = runner.process_submission(client, fl_ctx)
-
-        Args:
-            client: Client object
-            task_name: task name
-            task_id: task id
-            result: task result
-            fl_ctx: FLContext
-        """
-        # A streamed result callback can be queued before teardown and execute
-        # after END_RUN. Keep the admission decision and all downstream state
-        # access under the same lock used to close the workflow.
+        """Confirm complete result receipt independently of application processing."""
         with self.wf_lock:
-            if isinstance(result, Shareable):
-                try:
-                    attempt_id = result.get_task_attempt_id()
-                    wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW)
-                except ValueError:
-                    attempt_id = None
-                    wf_id = None
-                if self._replay_result_receipt(client.name, task_name, task_id, attempt_id, wf_id, fl_ctx):
-                    self.log_info(
-                        fl_ctx,
-                        f"result submission already processed: replaying job receipt "
-                        f"accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
-                        f"client={client.name}, task={task_name}, task_id={task_id}, "
-                        f"attempt_id={attempt_id}, workflow={wf_id}",
-                    )
-                    return
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
             if self.status != "started" or self.current_wf is None:
-                self.log_info(
-                    fl_ctx,
-                    f"ignored result submission since server runner status is {self.status} "
-                    f"and current workflow is {self.current_wf}",
-                )
+                self.log_info(fl_ctx, f"result submission dropped: runner={self.status}, workflow={self.current_wf}")
                 return
             return self._process_submission(client, task_name, task_id, result, fl_ctx)
 
-    @staticmethod
-    def _result_receipt_key(client_name, task_name, task_id, attempt_id, workflow_id):
-        if any(
-            not isinstance(value, str) or not value
-            for value in (client_name, task_name, task_id, attempt_id, workflow_id)
-        ):
-            return None
-        return client_name, task_name, task_id, attempt_id, workflow_id
-
-    def _replay_result_receipt(self, client_name, task_name, task_id, attempt_id, workflow_id, fl_ctx):
-        key = self._result_receipt_key(client_name, task_name, task_id, attempt_id, workflow_id)
-        if key is None:
-            return False
-        accepted = self._result_receipts.get(key)
-        if not isinstance(accepted, bool):
-            return False
-        peer_ctx = fl_ctx.get_peer_context()
-        if (
-            not isinstance(peer_ctx, FLContext)
-            or peer_ctx.get_identity_name() != client_name
-            or peer_ctx.get_job_id() != self.job_id
-        ):
-            return False
-        self._result_receipts.move_to_end(key)
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, accepted, private=True, sticky=False)
-        return True
-
-    def _remember_result_receipt(self, client, task_name, task_id, attempt_id, workflow_id, accepted):
-        key = self._result_receipt_key(client.name, task_name, task_id, attempt_id, workflow_id)
-        if key is None or not isinstance(accepted, bool):
-            return
-        self._result_receipts.setdefault(key, accepted)
-        self._result_receipts.move_to_end(key)
-        while len(self._result_receipts) > _MAX_TASK_RESULT_RECEIPTS:
-            self._result_receipts.popitem(last=False)
-
     def _process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
         self._report_client_active("submitTaskResult", fl_ctx)
 
@@ -575,33 +496,32 @@ class ServerRunner(TBI):
             return
         fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=attempt_id, private=True, sticky=False)
         wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
-        if wf_id is not None and wf_id != self.current_wf.id:
+        if (attempt_id is not None or wf_id is not None) and wf_id != self.current_wf.id:
             self.log_info(fl_ctx, f"result workflow {wf_id} does not match {self.current_wf.id} - dropped")
-            return
-        # The scheduling authority must validate the physical attempt before
-        # fatal return codes, filters or callbacks can affect the current job.
-        # Exact completed retries replay only their recorded ACK decision.
-        if not self.current_wf.controller.communicator.check_submission(client, task_name, task_id, result, fl_ctx):
             return
         workflow = self.current_wf
         communicator = workflow.controller.communicator
-        admitted_client_task = communicator.process_task_check(task_id, fl_ctx) if attempt_id is not None else None
+        if not communicator.check_submission(client, task_name, task_id, result, fl_ctx):
+            return
+        # FOBS normally resolves streamed references before dispatch. Never
+        # acknowledge a forwarding envelope while the client still owns its bytes.
+        if contains_lazy_download_ref(result):
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RETRY, private=True, sticky=False)
+            self.log_warning(fl_ctx, "result payload is not fully downloaded - retry required")
+            return
+        if not communicator.claim_submission(client, task_name, task_id, result, fl_ctx):
+            return
 
         rc = result.get_return_code(default=ReturnCode.OK)
         if rc in self.ABORT_RETURN_CODES:
-            if not communicator.reject_submission(client, task_name, task_id, result, fl_ctx):
-                self.log_info(
-                    fl_ctx,
-                    f"fatal result submission not claimed: accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
-                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+            try:
+                self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
+                self.system_panic(
+                    reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
+                    fl_ctx=fl_ctx,
                 )
-                return
-            self._remember_result_receipt(client, task_name, task_id, attempt_id, workflow.id, False)
-            self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
-            self.system_panic(
-                reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
-                fl_ctx=fl_ctx,
-            )
+            finally:
+                communicator.finish_submission(task_id, fl_ctx)
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
@@ -671,56 +591,21 @@ class ServerRunner(TBI):
                 communicator.process_submission(
                     client=client, task_name=task_name, task_id=task_id, result=result, fl_ctx=fl_ctx
                 )
-                self._remember_result_receipt(
-                    client,
-                    task_name,
-                    task_id,
-                    attempt_id,
-                    workflow.id,
-                    fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED),
-                )
                 self.log_info(
                     fl_ctx,
-                    f"finished processing client result by {workflow.id}: "
-                    f"accepted={fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED)}; "
+                    f"finished processing received result by {workflow.id}; "
                     f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
                 )
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
-                if attempt_id is not None:
-                    # Filtering may outlive the active assignment. Resolve its
-                    # final authority so a swept late-hook rejection is retained.
-                    final_client_task = communicator.process_task_check(task_id, fl_ctx)
-                    if final_client_task is not None:
-                        admitted_client_task = final_client_task
-                rejected_active = (
-                    isinstance(admitted_client_task, ClientTask)
-                    and admitted_client_task.id == task_id
-                    and admitted_client_task.attempt_id == attempt_id
-                    and admitted_client_task.client.name == client.name
-                    and getattr(admitted_client_task.task, "name", None) == task_name
-                    and admitted_client_task.result_received_time is not None
-                )
-                rejected_retired = (
-                    isinstance(admitted_client_task, _CompletedClientTaskInfo)
-                    and admitted_client_task.accepted is False
-                    and admitted_client_task.attempt_id == attempt_id
-                    and admitted_client_task.client_name == client.name
-                    and admitted_client_task.task_name == task_name
-                    and admitted_client_task.job_id == self.job_id
-                )
-                if (rejected_active or rejected_retired) and fl_ctx.get_prop(
-                    FLContextKey.TASK_RESULT_ACCEPTED
-                ) is False:
-                    # Late hooks claim their retired assignment before side
-                    # effects; preserve rejection across workflow teardown too.
-                    self._remember_result_receipt(client, task_name, task_id, attempt_id, workflow.id, False)
                 self.log_exception(
                     fl_ctx,
-                    "Error processing client result by {}: {}".format(workflow.id, secure_format_exception(e)),
+                    "Error processing received client result by {}: {}".format(workflow.id, secure_format_exception(e)),
                 )
+            finally:
+                communicator.finish_submission(task_id, fl_ctx)
 
     def _report_client_active(self, reason: str, fl_ctx: FLContext):
         with self.wf_lock:
@@ -750,28 +635,38 @@ class ServerRunner(TBI):
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
         with self.wf_lock:
+            reply = make_reply(ReturnCode.TASK_UNKNOWN)
+            workflow_id = request.get_header(ReservedHeaderKey.WORKFLOW)
+            if attempt_id is not None:
+                reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
+                reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+                reply.set_header(ReservedHeaderKey.WORKFLOW, workflow_id)
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED)
             peer_ctx = fl_ctx.get_peer_context()
-            client_name = peer_ctx.get_identity_name() if isinstance(peer_ctx, FLContext) else None
-            if client_name and self._replay_result_receipt(
-                client_name,
-                request.get_header(ReservedHeaderKey.TASK_NAME),
-                task_id,
-                attempt_id,
-                request.get_header(ReservedHeaderKey.WORKFLOW),
-                fl_ctx,
+            if (
+                not isinstance(peer_ctx, FLContext)
+                or peer_ctx.get_job_id() != self.job_id
+                or self.status != "started"
+                or self.current_wf is None
+                or self.current_wf.controller is None
+                or (attempt_id is not None and workflow_id != self.current_wf.id)
             ):
-                return make_reply(ReturnCode.OK)
-            if self.current_wf is None or self.current_wf.controller is None:
-                self.log_info(fl_ctx, "no current workflow - dropped task_check.")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-
+                return reply
             task = self.current_wf.controller.communicator.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
-            if task:
-                self.log_debug(fl_ctx, f"task {task_id} is still good")
-                return make_reply(ReturnCode.OK)
-            else:
+            if task is None:
                 self.log_info(fl_ctx, f"task {task_id} is not found")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
+                return reply
+            if attempt_id is not None:
+                task_name = getattr(task, "task_name", None) or task.task.name
+                if request.get_header(ReservedHeaderKey.TASK_NAME) != task_name:
+                    return reply
+                received = task.props.get("___result_received", False) if hasattr(task, "props") else task.received
+                reply.set_header(
+                    ReservedHeaderKey.TASK_RESULT_RECEIPT,
+                    TaskResultReceipt.RECEIVED if received else TaskResultReceipt.RETRY,
+                )
+            reply.set_return_code(ReturnCode.OK)
+            return reply
 
     def abort(self, fl_ctx: FLContext, turn_to_cold: bool = False):
         self.status = "done"

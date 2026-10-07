@@ -1094,7 +1094,7 @@ class TestScatterAndGatherDownloadToDiskContext:
 
 class TestScatterAndGatherResultAdmission:
     @pytest.mark.parametrize("accepted", [False, True])
-    def test_process_train_result_returns_aggregator_decision_after_cleanup(self, accepted):
+    def test_process_train_result_keeps_aggregator_decision_server_local_after_cleanup(self, accepted):
         from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
         controller = ScatterAndGather()
@@ -1108,7 +1108,7 @@ class TestScatterAndGatherResultAdmission:
         result = Shareable({"model": "unchanged"})
         client_task.result = result
 
-        assert controller._process_train_result(client_task, fl_ctx) is accepted
+        assert controller._process_train_result(client_task, fl_ctx) is None
 
         controller.aggregator.accept.assert_called_once_with(result, fl_ctx)
         assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is accepted
@@ -1501,7 +1501,7 @@ class TestFedAvgWorkflowEvents:
                 accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
 
         with patch.object(controller, "event", side_effect=record_training_result):
-            assert controller._process_result(client_task, fl_ctx) is True
+            controller._process_result(client_task, fl_ctx)
 
         assert training_results_seen == [result]
         assert accepted_flags_seen == [True]
@@ -1526,7 +1526,7 @@ class TestFedAvgWorkflowEvents:
             patch.object(controller, "_accept_train_result", return_value=False),
             patch.object(controller, "event", side_effect=record_acceptance),
         ):
-            assert controller._process_result(client_task, fl_ctx) is False
+            controller._process_result(client_task, fl_ctx)
 
         assert accepted_flags_seen == [False]
 
@@ -1548,7 +1548,7 @@ class TestFedAvgWorkflowEvents:
                 accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
 
         with patch.object(controller, "event", side_effect=record_acceptance):
-            assert controller._process_result(client_task, fl_ctx) is False
+            controller._process_result(client_task, fl_ctx)
 
         assert accepted_flags_seen == [False]
         assert controller._results == []
@@ -1571,7 +1571,7 @@ class TestFedAvgWorkflowEvents:
             patch.object(FLModelUtils, "from_shareable", side_effect=ValueError("bad model")),
             patch.object(controller, "event", side_effect=record_acceptance),
         ):
-            assert controller._process_result(client_task, fl_ctx) is False
+            controller._process_result(client_task, fl_ctx)
 
         assert accepted_flags_seen == [False]
         assert controller._results == []
@@ -1591,7 +1591,7 @@ class TestFedAvgWorkflowEvents:
         client_task.result = result
 
         with patch.object(controller, "event"), patch.object(controller, "error") as log_error:
-            assert controller._process_result(client_task, fl_ctx) is False
+            controller._process_result(client_task, fl_ctx)
 
         callback.assert_called_once()
         log_error.assert_called_once()

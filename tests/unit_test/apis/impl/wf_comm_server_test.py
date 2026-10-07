@@ -21,7 +21,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.dxo import DXO, DataKind, from_file
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.impl.task_manager import TaskCheckStatus
 from nvflare.apis.impl.wf_comm_server import WFCommServer, _DeadClientStatus
@@ -66,7 +66,7 @@ def _make_wf_comm(clients, dead_names, min_sites=1, required_sites=None):
 
 
 @pytest.mark.parametrize("failure", [None, "callback", "filter"])
-def test_acceptance_preserves_processing_outcome_for_active_and_completed_retries(failure):
+def test_receipt_survives_processing_failure_for_active_and_retired_retries(failure):
     callback = Mock(side_effect=RuntimeError("callback failed") if failure == "callback" else None)
     client = Client("site-1", "token")
     task = Task("train", Shareable(), result_received_cb=callback)
@@ -74,19 +74,21 @@ def test_acceptance_preserves_processing_outcome_for_active_and_completed_retrie
     client_task = ClientTask(client, task)
     wf = WFCommServer()
     wf._client_task_map[client_task.id] = client_task
-    fl_ctx = FLContextManager().new_context()
+    client_task.props["___job_id"] = "job-1"
+    fl_ctx = FLContextManager(identity_name="server", job_id="job-1").new_context()
+    fl_ctx.set_peer_context(FLContextManager(identity_name="site-1", job_id="job-1").new_context())
     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR) if failure == "filter" else Shareable()
     result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
-    wf._do_process_submission(client, "train", client_task.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is (failure is None)
+    wf.process_submission(client, "train", client_task.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     # Preserve callback failure's completion status: an active-map retry must
     # keep that failed outcome even before the completed task is swept.
-    wf._do_process_submission(client, "train", client_task.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is (failure is None)
+    wf.process_submission(client, "train", client_task.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     wf._remember_completed_client_task(client_task)
     wf._client_task_map.pop(client_task.id)
-    wf._do_process_submission(client, "train", client_task.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is (failure is None)
+    wf.process_submission(client, "train", client_task.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     callback.assert_called_once()
 
 
@@ -98,7 +100,10 @@ def _assignment():
     wf = WFCommServer()
     wf.controller = Mock()
     wf._client_task_map[client_task.id] = client_task
-    return wf, client_task, FLContextManager().new_context()
+    client_task.props["___job_id"] = "job-1"
+    ctx = FLContextManager(identity_name="server", job_id="job-1").new_context()
+    ctx.set_peer_context(FLContextManager(identity_name="site-1", job_id="job-1").new_context())
+    return wf, client_task, ctx
 
 
 @pytest.mark.parametrize("attempt_id", [None, "old-attempt", ""])
@@ -108,7 +113,7 @@ def test_missing_or_stale_attempt_never_invokes_result_callback(attempt_id):
     if attempt_id is not None:
         result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
     wf.process_submission(client_task.client, "train", client_task.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
     client_task.task.result_received_cb.assert_not_called()
     assert client_task.result is None
 
@@ -125,7 +130,7 @@ def test_conflicting_duplicate_payload_does_not_replace_first_result(completed):
     second = Shareable({"value": "different"})
     second.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
     assert not wf.check_submission(client_task.client, "train", client_task.id, second, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     wf.process_submission(client_task.client, "train", client_task.id, second, fl_ctx)
     client_task.task.result_received_cb.assert_called_once()
     assert client_task.result is first
@@ -133,38 +138,36 @@ def test_conflicting_duplicate_payload_does_not_replace_first_result(completed):
 
 @pytest.mark.parametrize("return_code", [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_ABORTED, "custom.failure"])
 @pytest.mark.parametrize("completed", [False, True])
-def test_handled_non_ok_result_receives_false_admission_ack_on_every_retry(return_code, completed):
+def test_failed_result_still_receives_receipt_on_every_retry(return_code, completed):
     wf, client_task, fl_ctx = _assignment()
     first = make_reply(return_code)
     first.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
     wf.process_submission(client_task.client, "train", client_task.id, first, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     if completed:
         wf._remember_completed_client_task(client_task)
         wf._client_task_map.pop(client_task.id)
     duplicate = make_reply(ReturnCode.OK)
     duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
     wf.process_submission(client_task.client, "train", client_task.id, duplicate, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     client_task.task.result_received_cb.assert_called_once()
     assert client_task.result is first
 
 
 @pytest.mark.parametrize("completed", [False, True])
 @pytest.mark.parametrize(
-    "hook, expected_accepted",
+    "hook",
     [
-        ("manager_rc", False),
-        ("callback_rc", False),
-        ("callback_replacement_rc", False),
-        ("callback_task_error", False),
-        ("callback_clear", True),
-        ("callback_processed_value", True),
+        "manager_rc",
+        "callback_rc",
+        "callback_replacement_rc",
+        "callback_task_error",
+        "callback_clear",
+        "callback_processed_value",
     ],
 )
-def test_final_hook_outcome_gates_state_admission_without_restricting_consumed_results(
-    hook, expected_accepted, completed
-):
+def test_application_outcome_does_not_change_receipt(hook, completed):
     wf, client_task, fl_ctx = _assignment()
     first = Shareable()
     first.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
@@ -187,14 +190,14 @@ def test_final_hook_outcome_gates_state_admission_without_restricting_consumed_r
 
     client_task.task.result_received_cb.side_effect = callback
     wf.process_submission(client_task.client, "train", client_task.id, first, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected_accepted
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     if completed:
         wf._remember_completed_client_task(client_task)
         wf._client_task_map.pop(client_task.id)
     duplicate = Shareable()
     duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
     wf.process_submission(client_task.client, "train", client_task.id, duplicate, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected_accepted
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     manager.check_task_result.assert_called_once()
     client_task.task.result_received_cb.assert_called_once()
 
@@ -202,7 +205,7 @@ def test_final_hook_outcome_gates_state_admission_without_restricting_consumed_r
 @pytest.mark.parametrize("callback_result", [False, None, True])
 @pytest.mark.parametrize("failure", [None, "return_code", "task_error"])
 @pytest.mark.parametrize("completed", [False, True])
-def test_explicit_callback_rejection_survives_consumed_results_and_receipt_replay(callback_result, failure, completed):
+def test_callback_decision_does_not_change_consumed_result_receipt(callback_result, failure, completed):
     wf, assigned, fl_ctx = _assignment()
     first = Shareable()
     first.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
@@ -218,15 +221,14 @@ def test_explicit_callback_rejection_survives_consumed_results_and_receipt_repla
 
     assigned.task.result_received_cb.side_effect = callback
     wf.process_submission(assigned.client, "train", assigned.id, first, fl_ctx)
-    expected = callback_result is not False and failure is None
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     if completed:
         wf._remember_completed_client_task(assigned)
         wf._client_task_map.pop(assigned.id)
     duplicate = Shareable()
     duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
     wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     assigned.task.result_received_cb.assert_called_once()
 
 
@@ -241,7 +243,7 @@ def test_manager_exception_is_rethrown_but_attempt_retries_do_not_repeat_side_ef
         wf.process_submission(client_task.client, "train", client_task.id, result, fl_ctx)
     assert raised.value is error
     assert client_task.result_received_time is not None
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     wf.process_submission(client_task.client, "train", client_task.id, result, fl_ctx)
     manager.check_task_result.assert_called_once()
     client_task.task.result_received_cb.assert_not_called()
@@ -281,7 +283,7 @@ def _retired_assignment(task_name="train", status=TaskCompletionStatus.TIMEOUT, 
 
 @pytest.mark.parametrize("accepted", [False, True])
 @pytest.mark.parametrize("swept", [False, True])
-def test_rejection_cannot_overwrite_a_decided_publication(accepted, swept):
+def test_fatal_retry_cannot_replace_a_received_publication(accepted, swept):
     wf, assigned, fl_ctx = _assignment()
     assigned.task.result_received_cb.return_value = accepted
     result = Shareable({"first": True})
@@ -292,15 +294,15 @@ def test_rejection_cannot_overwrite_a_decided_publication(accepted, swept):
         wf._client_task_map.pop(assigned.id)
     fatal = make_reply(ReturnCode.UNSAFE_JOB)
     fatal.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
-    assert not wf.reject_submission(assigned.client, "train", assigned.id, fatal, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is accepted
+    assert not wf.claim_submission(assigned.client, "train", assigned.id, fatal, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     assert assigned.result is result
     assigned.task.result_received_cb.assert_called_once()
 
 
 @pytest.mark.parametrize("stage", ["active", "retired", "swept"])
 @pytest.mark.parametrize("mismatch", ["client", "task", "attempt", "missing_attempt"])
-def test_invalid_rejection_cannot_claim_an_assignment(stage, mismatch):
+def test_invalid_submission_cannot_claim_an_assignment(stage, mismatch):
     wf, assigned, fl_ctx, result = _retired_assignment(swept=stage == "swept")
     if stage == "active":
         assigned.task.completion_status = None
@@ -308,30 +310,30 @@ def test_invalid_rejection_cannot_claim_an_assignment(stage, mismatch):
     task_name = "other-task" if mismatch == "task" else "train"
     if mismatch in ("attempt", "missing_attempt"):
         result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "other-attempt" if mismatch == "attempt" else None)
-    assert not wf.reject_submission(client, task_name, assigned.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert not wf.claim_submission(client, task_name, assigned.id, result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
     assert assigned.result_received_time is None
     completed = wf._completed_client_task_map.get(assigned.id)
-    assert completed is None or completed.accepted is None
+    assert completed is None or not completed.received
     result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
-    assert wf.reject_submission(assigned.client, "train", assigned.id, result, fl_ctx)
-    assert wf._completed_client_task_map[assigned.id].accepted is False
+    assert wf.claim_submission(assigned.client, "train", assigned.id, result, fl_ctx)
+    wf.finish_submission(assigned.id, fl_ctx)
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     assert assigned.result is None
     assigned.task.result_received_cb.assert_not_called()
     assigned.task.props["___mgr"].check_task_result.assert_not_called()
     wf.controller.process_result_of_unknown_task.assert_not_called()
 
 
-def test_unknown_unfenced_rejection_retains_legacy_handling_without_fabricating_an_assignment():
+def test_unfenced_legacy_claim_does_not_fabricate_an_assignment():
     wf, assigned, fl_ctx = _assignment()
     result = Shareable()
-    assert wf.reject_submission(assigned.client, "train", "unknown", result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert wf.claim_submission(assigned.client, "train", "unknown", result, fl_ctx)
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     assert not wf._completed_client_task_map
     result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
-    assert not wf.reject_submission(assigned.client, "train", "unknown", result, fl_ctx)
+    assert not wf.claim_submission(assigned.client, "train", "unknown", result, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_not_called()
 
 
@@ -346,7 +348,7 @@ def test_exact_first_late_assigned_result_reaches_unknown_hook_once(status, swep
     )
     assigned.task.result_received_cb.assert_not_called()
     # A void legacy hook does not invent successful result admission.
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     duplicate = Shareable({"replacement": True})
     duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
     wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
@@ -354,7 +356,7 @@ def test_exact_first_late_assigned_result_reaches_unknown_hook_once(status, swep
         wf.check_tasks()
         wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_called_once()
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
 
 
 @pytest.mark.parametrize("swept", [False, True])
@@ -378,7 +380,7 @@ def test_scatter_and_gather_aggregates_first_authenticated_late_result_once(swep
     assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
     # The void late hook preserves its established behavior; it does not opt in
     # to a new admission ACK merely because aggregation accepted a contribution.
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     helper = controller.aggregator.dxo_aggregators[""].aggregation_helper
     assert helper.get_len() == 1
     DXO(DataKind.WEIGHTS, {"weight": 100.0}).update_shareable(result)
@@ -400,7 +402,7 @@ def test_fedavg_first_late_result_keeps_existing_unknown_hook_behavior(swept):
     DXO(DataKind.WEIGHTS, {"weight": 3.0}).update_shareable(result)
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is result
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     retry = make_reply(ReturnCode.OK)
     retry.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
     wf.process_submission(assigned.client, "train", assigned.id, retry, fl_ctx)
@@ -439,7 +441,7 @@ def test_cross_site_model_eval_stores_exact_late_assigned_contribution_once(tmp_
     DXO(kind, {"replacement": 2.0}).update_shareable(result)
     wf.process_submission(assigned.client, task_name, assigned.id, result, fl_ctx)
     assert Path(path).read_bytes() == saved
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
 
 
 @pytest.mark.parametrize(
@@ -467,16 +469,15 @@ def test_late_assigned_results_require_exact_authority_and_authenticated_job(mis
         result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "stale-attempt")
     wf.process_submission(client, task_name, task_id, result, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_not_called()
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
 
 
 @pytest.mark.parametrize("admitted", [False, True])
 @pytest.mark.parametrize("failure", [None, "return_code", "exception"])
-def test_late_hook_records_explicit_rc_gated_admission_and_never_repeats(admitted, failure):
+def test_late_hook_outcome_does_not_change_receipt_or_repeat_effects(admitted, failure):
     wf, assigned, fl_ctx, result = _retired_assignment()
 
     def hook(*_args):
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, admitted, private=True, sticky=False)
         if failure == "return_code":
             result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
         elif failure == "exception":
@@ -488,12 +489,11 @@ def test_late_hook_records_explicit_rc_gated_admission_and_never_repeats(admitte
             wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     else:
         wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
-    expected = admitted and failure is None
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     duplicate = Shareable()
     duplicate.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
     wf.process_submission(assigned.client, "train", assigned.id, duplicate, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is expected
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     wf.controller.process_result_of_unknown_task.assert_called_once()
 
 
@@ -507,7 +507,7 @@ def test_retired_pending_assignment_task_check_requires_issued_job_and_peer(peer
     retired = wf.process_task_check(assigned.id, fl_ctx)
     if peer_job == context_job == "job-1":
         assert retired is not None
-        assert retired.accepted is None
+        assert not retired.received
     else:
         assert retired is None
 
@@ -517,7 +517,7 @@ def test_late_result_without_captured_issuing_job_cannot_use_unknown_hook():
     wf._completed_client_task_map[assigned.id].job_id = None
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_not_called()
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
 
 
 @pytest.mark.parametrize("attempt", [None, "", "conflicting"])
@@ -530,14 +530,14 @@ def test_missing_or_conflicting_late_attempt_cannot_downgrade_issued_assignment(
         result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt)
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_not_called()
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
 
 
 @pytest.mark.parametrize("swept", [False, True])
 @pytest.mark.parametrize(
     "event", [EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK]
 )
-def test_late_event_failure_records_rejection_before_a_retry_can_repeat_hooks(event, swept):
+def test_late_event_failure_keeps_receipt_before_retries(event, swept):
     wf, assigned, fl_ctx, result = _retired_assignment(swept=swept)
 
     def fire(event_type, _fl_ctx):
@@ -547,7 +547,7 @@ def test_late_event_failure_records_rejection_before_a_retry_can_repeat_hooks(ev
     wf.fire_event = Mock(side_effect=fire)
     with pytest.raises(RuntimeError, match="late event failed"):
         wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     assert wf.controller.process_result_of_unknown_task.call_count == (
         0 if event == EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK else 1
@@ -566,6 +566,40 @@ def test_retired_assignment_cache_is_bounded_and_evicted_fenced_results_stay_unr
     assert assigned.id not in wf._completed_client_task_map
     wf.process_submission(assigned.client, "train", assigned.id, result, fl_ctx)
     wf.controller.process_result_of_unknown_task.assert_not_called()
+
+
+@pytest.mark.parametrize("capacity", [1, 2, 10000, 0, -1])
+def test_retired_assignment_history_capacity_comes_from_application_config(monkeypatch, capacity):
+    wf, _, ctx = _assignment()
+    ctx.set_prop(ReservedKey.ENGINE, Mock(spec=ServerEngineSpec), private=True, sticky=False)
+
+    def configured(name, conf, default):
+        assert name == "task_result_history_size"
+        assert default == 10000
+        return capacity
+
+    monkeypatch.setattr("nvflare.apis.impl.wf_comm_server.ConfigService.get_int_var", configured)
+    wf._task_monitor = Mock()
+    if capacity <= 0:
+        with pytest.raises(ValueError, match="must be positive"):
+            wf.initialize_run(ctx)
+        wf._task_monitor.start.assert_not_called()
+    else:
+        wf.initialize_run(ctx)
+        assert wf._completed_client_task_cache_size == capacity
+        wf._task_monitor.start.assert_called_once()
+
+
+def test_receipt_claim_does_not_finish_workflow_until_processing_finishes():
+    wf, assigned, ctx = _assignment()
+    result = Shareable()
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assigned.attempt_id)
+    assert wf.claim_submission(assigned.client, "train", assigned.id, result, ctx)
+    assert assigned.result_received_time is None
+    assert ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+    wf.process_submission(assigned.client, "train", assigned.id, result, ctx)
+    assert assigned.result_received_time is not None
+    assigned.task.result_received_cb.assert_called_once()
 
 
 def test_server_resend_preserves_authority_issued_attempt_identity():
@@ -623,7 +657,7 @@ def test_forwarded_result_data_rebinds_assignment_cookies_without_mutating_sourc
     forged.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "prior-attempt")
     first_assignment = wf._client_task_map[first_id]
     wf.process_submission(first_assignment.client, "train", first_id, forged, fl_ctx)
-    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
     first_assignment.task.result_received_cb.assert_not_called()
 
 
@@ -633,10 +667,10 @@ def test_attempt_task_check_requires_matching_peer_and_supports_lost_ack(complet
     wf, client_task, fl_ctx = _assignment()
     if completed:
         client_task.result_received_time = 1.0
-        client_task.props["___result_accepted"] = True
+        client_task.props["___result_received"] = True
         wf._remember_completed_client_task(client_task)
         wf._client_task_map.pop(client_task.id)
-    peer = FLContextManager(identity_name=peer_name).new_context()
+    peer = FLContextManager(identity_name=peer_name, job_id="job-1").new_context()
     fl_ctx.set_peer_context(peer)
     fl_ctx.set_prop(
         FLContextKey.TASK_ATTEMPT_ID, client_task.attempt_id if correct_attempt else "stale", private=True, sticky=False

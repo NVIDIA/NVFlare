@@ -248,7 +248,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 sticky=detail["sticky"],
             )
 
-    def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> bool:
+    def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
         client_name = client_task.client.name
@@ -294,8 +294,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             client_task.result = None
         # Note: Memory cleanup (gc.collect + malloc_trim) is handled by subclasses
         # via _maybe_cleanup_memory() based on memory_gc_rounds setting
-        # Propagate deliberate rejection even though the raw result is consumed.
-        return accepted
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext

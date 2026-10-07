@@ -1,85 +1,85 @@
-# Task assignment identity and result admission
+# Task assignment identity and result receipt
 
-The server assigns each `ClientTask` an assignment ID and a separate physical
-attempt ID. Resending an assignment preserves both IDs. This strengthens ordinary
-job-lifetime execution; it does not change executor lifetime or configuration.
+The server gives each client assignment a task ID and a separate attempt ID.
+Resending an assignment preserves both. This change supports ordinary job-lifetime
+executors and the future task-worker path without changing executor configuration.
 
-## Wire compatibility
+## Client contract
 
-Task data carries `TASK_ID`, `TASK_ATTEMPT_ID`, and `TASK_ATTEMPT_REQUIRED` in
-reserved headers and cookies. The workflow cookie identifies the issuing workflow.
-Existing clients that echo the received cookie jar remain compatible with the new
-server. Updated clients also echo the attempt header and include the attempt,
-task name, and workflow in readiness checks. Legacy readiness checks without an
-attempt retain their active-assignment behavior. Unfenced custom communicators
-and genuinely unknown legacy results retain their established handling.
+The client keeps its completed result until it receives an identity-bound reply:
 
-An attempt may arrive in either the header or cookie. If both are present they
-must agree. A required attempt cannot be missing; malformed values are rejected.
-An issued assignment cannot be downgraded to an unfenced result.
-Retained assignment IDs stay fenced even if the sender omits the attempt and
-changes the site or task name; only genuinely unknown IDs use legacy handling.
-The server checks the authenticated peer's site and job, workflow, task name,
-assignment, and attempt
-before result filters, callbacks, aggregation, or fatal return-code handling.
+| Reply | Client action |
+| --- | --- |
+| `RECEIVED` | Stop resending: the server received the complete payload. |
+| `TASK_CLOSED` | Stop resending: this assignment is no longer wanted; get the next task. |
+| `RETRY` | Keep the result and retry its submission. |
 
-Server task-data filters may replace a Shareable. The command layer restores the
-issuing identity and workflow from private context. Client filters may also replace
-task data or results; the client preserves the original assignment cookies and
-binds the final outgoing reply. Forwarding a received Shareable as new task data
-rebinds reserved cookies on a protected per-client copy and preserves application
-cookies. Incoming conflicts remain invalid.
-Server result-filter replacements also receive the already-validated task,
-attempt, required-attempt marker, and workflow in both headers and cookies;
-application cookies remain intact.
+A lost, malformed, or mismatched reply leaves receipt unresolved. Retry submission
+of the same saved result; never rerun the executor to recreate it. A readiness
+check can recover a lost `RECEIVED` ACK without uploading the result again.
+Closure can race readiness and upload; the submission reply then reports
+`TASK_CLOSED`.
 
-## Receipt versus admission
+Receipt says nothing about aggregation acceptance. Failed results, filter errors,
+callback rejection, and application exceptions still receive `RECEIVED` once the
+server owns the complete result. Aggregators keep their existing local decisions
+and callback signatures. A receipt is not a promise to aggregate or persist a
+result, nor a durable recovery guarantee across server restart.
 
-Transport success reports delivery of the reply, independently of application
-admission. The result ACK includes the assignment and attempt IDs and a boolean
-admission decision. Clients use this decision only when the ACK identity matches
-their submitted result. Older servers without this ACK leave admission unknown.
-The client context separately records send success, whether submission transport
-was ever attempted, and acknowledged admission.
+The client context exposes `TASK_RESULT_RECEIPT`, whether transport was ever
+attempted, and send success. For fenced assignments, send success means confirmed
+receipt. Closure stops retries with send success false and a `TASK_CLOSED` receipt.
+Cancellation without a terminal server reply leaves receipt unknown.
 
-A successful standing result is admitted by default, retaining compatibility with
-callbacks that return nothing. Literal `False` vetoes admission, including when a
-callback consumes the result. Failure return codes, callback errors, and task
-errors cannot acknowledge successful admission. Built-in training callbacks return
-their real admission decision. Received failures still reach their ordinary error
-handling callbacks.
+## Identity and compatibility
 
-A recognized first late result from an authenticated assignment reaches the
-existing unknown-task hook, before or after task sweep. This preserves
-ScatterAndGather aggregation, FedAvg's existing training-result publication, and
-CrossSiteModelEval storage. A void late hook does not imply an accepted ACK; a
-custom hook can explicitly set `TASK_RESULT_ACCEPTED` to `True` for successful
-admission. A first authenticated late fatal result retains job-abort behavior.
-Forged or already-decided attempts cannot cause fatal effects.
-For an assigned attempt, fatal handling records rejection in the scheduling
-authority and job-local receipt before logging or panic handling can abort or
-tear down the workflow.
+Assignment data carries task ID, attempt ID, required-attempt marker, and workflow
+in reserved headers and cookies. Clients echo the assignment cookies. If attempt
+header and cookie are both present, they must agree. The server validates the
+authenticated site and job, workflow, task, assignment, and attempt before filters,
+callbacks, aggregation, or fatal handling. ACKs and readiness receipts carry the
+task ID, attempt ID, and original workflow; clients verify all three.
 
-## Replay and retention
+Task-data and result filters may replace Shareables. Trusted replacements receive
+the original assignment identity in headers and cookies; application cookies stay
+intact. Forwarding task data creates a per-client copy with a new assignment.
+Incoming conflicts are rejected before trusted replacements can rebind them.
 
-Once processing claims a result, its admission decision is recorded. An exact
-retry replays that decision without repeating filters, callbacks, late hooks, or
-aggregation, even when its payload differs. A hook or manager failure records a
-rejection so a retry cannot repeat partially applied effects. Job-local receipts
-also survive workflow transitions and teardown. Receipt replay is authenticated
-and scoped to the original site, job, workflow, task, assignment, and attempt.
+Existing clients that echo task cookies remain compatible and may ignore the new
+receipt. Unfenced older servers retain legacy transport behavior with receipt
+unknown. Legacy readiness checks retain their active-assignment behavior.
+Unfenced custom communicators and genuinely unknown legacy results keep their
+established hooks; custom authorities issuing attempt IDs must implement receipt
+claims. No boolean aggregation-admission ACK is exposed.
 
-Retention is bounded and in memory. Each workflow retains up to 10,000 retired
-assignments (including assignments awaiting their first late result); the server
-runner retains up to 10,000 result receipts. Access refreshes retention order.
-Eviction or server-job exit ends replay availability. An evicted result that still
-carries an attempt is rejected rather than passed to the legacy unknown-task hook.
-After eviction, an unknown ID without fencing fields is indistinguishable from an
-unfenced custom protocol; rejection of stripped attempts requires retained authority.
-Pending late assignments are only recognized by their issuing workflow; this does not route a
-new late result into a subsequent workflow. These caches do not provide durable
-recovery or authorize another execution attempt.
+## Ownership, retries, and lifetime
 
-Task-lifetime workers, supervision, launchers, declared state, placement,
-capabilities, client-script adapters, and recipes are separate changes. Existing
-executors and their configuration paths remain supported.
+FOBS resolves streamed data before command dispatch. An unresolved forwarding
+reference receives `RETRY`; receiving its envelope alone cannot confirm receipt.
+The scheduling authority records receipt before filters or application side
+effects. The workflow's processing-finished timestamp is updated separately, so
+a receipt claim cannot prematurely complete a broadcast.
+
+A repeated publication for the same assignment returns `RECEIVED` without repeating
+filters, callbacks, aggregation, late hooks, or fatal effects, even if its payload
+differs. A first recognized late result within its issuing workflow still follows
+the established unknown-task hook. Exceptions after receipt do not repeat effects.
+Fatal results record receipt before panic handling.
+
+There is one workflow assignment history, with identity and receipt metadata,
+never result payloads. Active assignments hold their own receipt marker; retired
+assignments enter a bounded LRU history. Configure `task_result_history_size` in
+the server application config (positive integer, default 10,000). An evicted
+fenced assignment returns `TASK_CLOSED` and cannot enter a legacy unknown-task hook.
+
+Workflow finalization clears this history. After the workflow advances, submissions
+and readiness checks for the original workflow return `TASK_CLOSED`. There is no
+second job-level receipt cache and no need to replay aggregation decisions across
+workflows. After eviction an unknown ID with all fencing fields stripped remains
+indistinguishable from an unfenced custom protocol.
+
+Task-worker artifact cleanup must wait for terminal receipt or closure and for
+outstanding transfer readers to release the source. Worker supervision, launchers,
+declared-state promotion, adapters, and recipes remain separate work in #5352.
+Its integration must consume this receipt contract and decide state promotion
+locally; it cannot gate promotion on a server aggregation-admission boolean.

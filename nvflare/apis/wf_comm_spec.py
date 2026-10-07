@@ -16,7 +16,6 @@ from abc import ABC
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import SendOrder, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -279,28 +278,23 @@ class WFCommSpec(ABC):
     def check_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> bool:
-        """Validate attempt admission before task-result filters and callbacks.
-
-        Return ``True`` only for a submission that needs application processing.
-        A matching completed retry may set the previous acceptance decision in
-        ``fl_ctx`` and return ``False``. Legacy communicators may process unfenced
-        submissions; authorities issuing attempt IDs must implement their fence.
-        """
+        """Validate assignment identity and replay an existing receipt before processing."""
         return result.get_task_attempt_id() is None
 
-    def reject_submission(
+    def claim_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> bool:
-        """Record rejection without invoking result callbacks or late-result hooks.
+        """Record complete result receipt before filters or application side effects.
 
-        Return True only when the submission may be rejected for the first time.
-        Invalid submissions and decided retries return False; matching retries
-        restore their recorded TASK_RESULT_ACCEPTED value in fl_ctx. Authorities
-        supporting fenced assignments must override this method to retain that
-        decision. The default preserves only unfenced legacy handling.
+        Return True for the first publication only. Fenced authorities must retain
+        the receipt and let process_submission consume this request's claim.
+        The default preserves processing for legacy unfenced communicators.
         """
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
-        return result.get_task_attempt_id() is None
+        return self.check_submission(client, task_name, task_id, result, fl_ctx)
+
+    def finish_submission(self, task_id: str, fl_ctx: FLContext):
+        """Release this request's claim even if filters or callbacks failed."""
+        pass
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called by the Engine to process the submitted result from a client.

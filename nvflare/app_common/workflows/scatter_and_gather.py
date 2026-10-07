@@ -369,15 +369,14 @@ class ScatterAndGather(Controller):
             AppEventType.BEFORE_TRAIN_TASK, fl_ctx, AppConstants.TRAIN_SHAREABLE, client_task.task.data
         )
 
-    def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> bool:
+    def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result
         client_name = client_task.client.name
 
-        accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+        self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
 
         # Cleanup task result
         client_task.result = None
-        return accepted
 
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext

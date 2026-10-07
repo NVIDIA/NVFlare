@@ -14,7 +14,7 @@
 import copy
 
 from ..fuel.utils import fobs
-from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
+from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey, TaskResultReceipt
 
 
 class ReservedHeaderKey:
@@ -29,7 +29,7 @@ class ReservedHeaderKey:
     TASK_ID = ReservedKey.TASK_ID
     TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
-    TASK_RESULT_ACCEPTED = "__task_result_accepted__"
+    TASK_RESULT_RECEIPT = "__task_result_receipt__"
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
@@ -47,6 +47,27 @@ class Shareable(dict):
     Shareable is just a dict that can have any keys and values, defined by developers and users.
     It is recommended that keys are strings. Values must be serializable.
     """
+
+    def get_task_result_receipt(self, task_id: str, attempt_id: str, workflow_id: str) -> str | None:
+        """Return only a receipt bound to the exact submitted assignment."""
+        expected = (
+            (ReservedHeaderKey.TASK_ID, task_id),
+            (ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id),
+            (ReservedHeaderKey.WORKFLOW, workflow_id),
+        )
+        try:
+            if any(not isinstance(value, str) or not value or self.get_header(key) != value for key, value in expected):
+                return None
+            receipt = self.get_header(ReservedHeaderKey.TASK_RESULT_RECEIPT)
+            if isinstance(receipt, str) and receipt in (
+                TaskResultReceipt.RECEIVED,
+                TaskResultReceipt.TASK_CLOSED,
+                TaskResultReceipt.RETRY,
+            ):
+                return receipt
+        except ValueError:
+            pass
+        return None
 
     def __init__(self, data: dict | None = None):
         """Init the Shareable."""

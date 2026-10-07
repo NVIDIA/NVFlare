@@ -25,6 +25,7 @@ from nvflare.apis.fl_constant import (
     ReturnCode,
     ServerCommandKey,
     ServerCommandNames,
+    TaskResultReceipt,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -255,7 +256,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
             attempt_id = None
             task_id = None
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RETRY, private=True, sticky=False)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
@@ -263,9 +264,8 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         reply = make_reply(ReturnCode.OK)
         reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
         reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
-        reply.set_header(
-            ReservedHeaderKey.TASK_RESULT_ACCEPTED, fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
-        )
+        reply.set_header(ReservedHeaderKey.WORKFLOW, data.get_cookie(ReservedHeaderKey.WORKFLOW))
+        reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
         return reply
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
