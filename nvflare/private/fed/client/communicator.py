@@ -15,6 +15,7 @@ import threading
 import time
 from typing import List, Optional
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey
@@ -150,6 +151,22 @@ class Communicator:
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=SpecialTaskName.TRY_AGAIN)
         return shareable
 
+    def _is_valid_child_identity(self, request: CellMessage, peer_ctx: FLContext, job_id: str) -> bool:
+        if not isinstance(peer_ctx, FLContext) or not job_id or peer_ctx.get_job_id() != job_id:
+            return False
+        child_name = peer_ctx.get_identity_name()
+        child = self.engine.get_client_from_name(child_name)
+        if not isinstance(child, Client) or not child.get_fqcn():
+            return False
+        # The client table comes from the server. Bind the payload identity to
+        # that client's exact job cell, including any relay prefix. Peer-transit
+        # routes strip CLIENT_NAME, so that optional header cannot establish ownership.
+        expected_origin = FQCN.join([child.get_fqcn(), job_id])
+        if request.get_header(MessageHeaderKey.ORIGIN) != expected_origin:
+            return False
+        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        return not client_name or client_name == child_name
+
     def _process_get_task(self, request: CellMessage):
         req = request.payload
         origin = request.get_header(MessageHeaderKey.ORIGIN)
@@ -157,9 +174,11 @@ class Communicator:
             self.logger.error(f"Bad get_task request from {origin}")
             return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
         peer_ctx = req.get_peer_context()
-        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
-        if client_name and (not isinstance(peer_ctx, FLContext) or peer_ctx.get_identity_name() != client_name):
-            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
+        if self.engine:
+            with self.engine.new_context() as fl_ctx:
+                if not self._is_valid_child_identity(request, peer_ctx, fl_ctx.get_job_id()):
+                    self.logger.warning("invalid child task request identity or job-cell origin - dropped")
+                    return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
 
         # note: the self.pending_task is unset by "submit_update", which could happen at any time.
         # we first assign self.pending_task to a different var (pending_task) and use this var in our processing.
@@ -228,9 +247,8 @@ class Communicator:
         with self.engine.new_context() as fl_ctx:
             assert isinstance(fl_ctx, FLContext)
             peer_ctx = result.get_peer_context()
-            client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
-            if client_name and (not isinstance(peer_ctx, FLContext) or peer_ctx.get_identity_name() != client_name):
-                self.logger.warning("child result identity differs from authenticated client - dropped")
+            if not self._is_valid_child_identity(request, peer_ctx, fl_ctx.get_job_id()):
+                self.logger.warning("invalid child result identity or job-cell origin - dropped")
                 return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
             if isinstance(peer_ctx, FLContext):
                 fl_ctx.set_peer_context(peer_ctx)

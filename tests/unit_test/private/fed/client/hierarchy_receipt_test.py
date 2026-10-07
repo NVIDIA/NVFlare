@@ -17,6 +17,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, TaskResultReceipt
 from nvflare.apis.fl_context import FLContextManager
@@ -25,6 +26,7 @@ from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.executors.hug import HierarchicalUpdateGatherer, TaskInfo
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.client.client_engine_executor_spec import TaskAssignment
@@ -41,6 +43,8 @@ from nvflare.private.fed.client.communicator import Communicator
 @pytest.fixture
 def hierarchy(monkeypatch):
     engine = Mock()
+    clients = {}
+    engine.get_client_from_name.side_effect = clients.get
     router = TaskRouter()
     gatherer = HierarchicalUpdateGatherer("learner", "updater", 5.0)
     gatherer._updater = Mock()
@@ -71,11 +75,15 @@ def hierarchy(monkeypatch):
     gatherer._pending_task = TaskInfo(data)
     monkeypatch.setattr("nvflare.private.fed.client.communicator.determine_parent_fqcn", lambda *_: "parent")
 
-    def child(name="child"):
+    def child(name="child", fqcn=None):
+        client_record = Client(name, "token")
+        client_record.set_fqcn(fqcn or f"relay.{name}")
+        clients[name] = client_record
+        origin = FQCN.join([client_record.get_fqcn(), "job-1"])
         ctx = FLContextManager(identity_name=name, job_id="job-1").new_context()
         req = Shareable()
         req.set_peer_context(ctx)
-        headers = {CellMessageHeaderKeys.CLIENT_NAME: name}
+        headers = {CellMessageHeaderKeys.CLIENT_NAME: name, MessageHeaderKey.ORIGIN: origin}
         task = parent._process_get_task(new_cell_message(headers, req)).payload
         assert task.get_task_attempt_id() == "attempt-1"
         assert task.get_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED) is True
@@ -108,6 +116,7 @@ def hierarchy(monkeypatch):
             message = kwargs["request"]
             message.set_header(MessageHeaderKey.PAYLOAD_LEN, 0)
             message.set_header(CellMessageHeaderKeys.CLIENT_NAME, name)
+            message.set_header(MessageHeaderKey.ORIGIN, origin)
             return parent._process_submit_result(message)
 
         child_engine.send_aux_request.side_effect = check
@@ -115,7 +124,9 @@ def hierarchy(monkeypatch):
         child_engine.send_task_result.side_effect = lambda output, fl_ctx, **_: (
             client.submit_update("project", "token", "session", fl_ctx, name, output, "train") == ReturnCode.OK
         )
-        return SimpleNamespace(runner=child_runner, client=client, result=result, ctx=ctx, transport=transport)
+        return SimpleNamespace(
+            runner=child_runner, client=client, result=result, ctx=ctx, transport=transport, origin=origin
+        )
 
     return SimpleNamespace(parent=parent, runner=runner, gatherer=gatherer, child=child, contexts=contexts)
 
@@ -161,6 +172,68 @@ def test_each_child_has_its_own_receipt(hierarchy):
     assert hierarchy.gatherer._updater.process_child_update.call_count == 2
 
 
+@pytest.mark.parametrize("client_name_header", [False, True])
+def test_child_cannot_claim_another_assigned_child_receipt(hierarchy, client_name_header):
+    first, second = hierarchy.child("first"), hierarchy.child("second")
+    first.result.set_header(ReservedHeaderKey.TASK_NAME, "train")
+    first.result.set_peer_context(second.ctx)
+    headers = {MessageHeaderKey.ORIGIN: first.origin}
+    if client_name_header:
+        headers[CellMessageHeaderKeys.CLIENT_NAME] = "second"
+    reply = hierarchy.parent._process_submit_result(new_cell_message(headers, first.result)).payload
+    assert reply.get_task_result_receipt("task-1", "attempt-1", "workflow") == TaskResultReceipt.TASK_CLOSED
+    assert hierarchy.runner.running_tasks["task-1"].child_result_receipts == {"first": False, "second": False}
+    hierarchy.gatherer._updater.process_child_update.assert_not_called()
+    # The forged result must not suppress either child's genuine contribution.
+    assert first.runner._send_task_result(first.result, "task-1", first.ctx)
+    assert second.runner._send_task_result(second.result, "task-1", second.ctx)
+    assert hierarchy.gatherer._updater.process_child_update.call_count == 2
+
+
+@pytest.mark.parametrize("client_name_header", [False, True])
+def test_child_cannot_register_assignment_as_another_child(hierarchy, client_name_header):
+    first, second = hierarchy.child("first"), hierarchy.child("second")
+    hierarchy.runner.running_tasks["task-1"].child_result_receipts.pop("second")
+    request = Shareable()
+    request.set_peer_context(second.ctx)
+    headers = {MessageHeaderKey.ORIGIN: first.origin}
+    if client_name_header:
+        headers[CellMessageHeaderKeys.CLIENT_NAME] = "second"
+    reply = hierarchy.parent._process_get_task(new_cell_message(headers, request))
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+    assert hierarchy.runner.running_tasks["task-1"].child_result_receipts == {"first": False}
+
+
+@pytest.mark.parametrize("fqcn", ["child", "relay-a.relay-b.child"])
+def test_child_receipt_allows_registered_origin_without_client_name_header(hierarchy, fqcn):
+    child = hierarchy.child(fqcn=fqcn)
+    request = Shareable()
+    request.set_peer_context(child.ctx)
+    assert (
+        hierarchy.parent._process_get_task(
+            new_cell_message({MessageHeaderKey.ORIGIN: child.origin}, request)
+        ).payload.get_task_attempt_id()
+        == "attempt-1"
+    )
+    child.result.set_header(ReservedHeaderKey.TASK_NAME, "train")
+    reply = hierarchy.parent._process_submit_result(
+        new_cell_message({MessageHeaderKey.ORIGIN: child.origin}, child.result)
+    ).payload
+    assert reply.get_task_result_receipt("task-1", "attempt-1", "workflow") == TaskResultReceipt.RECEIVED
+    hierarchy.gatherer._updater.process_child_update.assert_called_once()
+
+
+@pytest.mark.parametrize("origin", [None, "relay.child.other-job", "relay.child.job-1.descendant", "child.job-1"])
+def test_child_receipt_rejects_missing_or_wrong_job_cell_origin(hierarchy, origin):
+    child = hierarchy.child()
+    child.result.set_header(ReservedHeaderKey.TASK_NAME, "train")
+    headers = {CellMessageHeaderKeys.CLIENT_NAME: "child", MessageHeaderKey.ORIGIN: origin}
+    reply = hierarchy.parent._process_submit_result(new_cell_message(headers, child.result)).payload
+    assert reply.get_task_result_receipt("task-1", "attempt-1", "workflow") == TaskResultReceipt.TASK_CLOSED
+    assert hierarchy.runner.running_tasks["task-1"].child_result_receipts == {"child": False}
+    hierarchy.gatherer._updater.process_child_update.assert_not_called()
+
+
 def test_receipt_survives_event_failure_and_concurrent_duplicate(hierarchy):
     child = hierarchy.child()
     effects = []
@@ -202,9 +275,10 @@ def test_invalid_child_submission_does_not_claim_or_run_events(hierarchy, mismat
     else:
         child.result.set_cookie_jar({})
     headers = {
+        MessageHeaderKey.ORIGIN: child.origin,
         CellMessageHeaderKeys.CLIENT_NAME: (
             "child" if mismatch == "auth" else child.result.get_peer_context().get_identity_name()
-        )
+        ),
     }
     reply = hierarchy.parent._process_submit_result(new_cell_message(headers, child.result)).payload
     assert reply.get_header(ReservedHeaderKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
@@ -294,7 +368,9 @@ def test_child_receipt_reply_keeps_identity_when_event_consumes_payload(hierarch
             ctx.get_prop(FLContextKey.TASK_RESULT).clear()
 
     hierarchy.parent.engine.fire_event.side_effect = consume
-    reply = hierarchy.parent._process_submit_result(new_cell_message({}, child.result)).payload
+    reply = hierarchy.parent._process_submit_result(
+        new_cell_message({MessageHeaderKey.ORIGIN: child.origin}, child.result)
+    ).payload
     assert child.result.get_cookie(ReservedHeaderKey.WORKFLOW) is None
     assert reply.get_task_result_receipt("task-1", "attempt-1", "workflow") == TaskResultReceipt.RECEIVED
 
@@ -307,7 +383,7 @@ def test_unfenced_parent_keeps_legacy_event_ack(hierarchy):
     legacy.set_header(ReservedHeaderKey.TASK_NAME, "train")
     legacy.set_header(EdgeTaskHeaderKey.HAS_UPDATE_DATA, True)
     legacy.set_peer_context(child.ctx)
-    reply = hierarchy.parent._process_submit_result(new_cell_message({}, legacy))
+    reply = hierarchy.parent._process_submit_result(new_cell_message({MessageHeaderKey.ORIGIN: child.origin}, legacy))
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert reply.payload.get_header(ReservedHeaderKey.TASK_RESULT_RECEIPT) is None
     hierarchy.gatherer._updater.process_child_update.assert_called_once()

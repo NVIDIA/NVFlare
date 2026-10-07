@@ -93,6 +93,9 @@ submission replies use the forwarded assignment identity. Each running parent
 assignment holds its children's receipt markers; retries do not repeat result
 events. When the parent task ends or aborts, its child assignments return
 `TASK_CLOSED`. These markers end with the parent assignment and need no cache.
+Before assigning a task or claiming receipt, the parent binds the child's identity
+and job to its exact job-cell origin using the server-provided client table. This
+also applies to relay paths where the client-name authentication header is stripped.
 
 Task-worker artifact cleanup must wait for terminal receipt or closure and for
 outstanding transfer readers to release the source. Worker supervision, launchers,
