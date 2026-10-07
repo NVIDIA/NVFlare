@@ -493,7 +493,12 @@ def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path
         probe = Mock(wraps=os.killpg)
         monkeypatch.setattr(os, "killpg", probe)
         status = handle.wait_for_settlement(timeout=1) if settle_with == "wait" else handle.cancel()
-        assert status.succeeded
+        assert status.settled
+        assert status.exit_code == 0
+        assert status.failure_reason is None
+        # Process churn can delay settlement until after cancel records its request.
+        if settle_with == "wait":
+            assert status.succeeded
         assert owned.reaped
         assert sibling.status() == psutil.STATUS_ZOMBIE
         if sys.platform == "linux":
