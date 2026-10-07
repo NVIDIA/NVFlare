@@ -577,7 +577,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(kwargs["credentials_state_path"], bootstrap.STATE / "application-proof.json")
             self.assertEqual(
                 kwargs["minimum_credentials_validity"],
-                supervisor.PROOF_EXPIRY_MARGIN_SECONDS,
+                supervisor.CPU_PERIODIC_TIMEOUT_SECONDS + supervisor.PROOF_EXPIRY_MARGIN_SECONDS,
             )
             events.append("credentials")
             yield 17
@@ -814,23 +814,14 @@ class SupervisorTests(unittest.TestCase):
                 300,
             )
 
-    def test_application_proof_without_a_full_renewal_window_retries_immediately(self):
+    def test_application_proof_without_a_full_renewal_window_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
-            write_json(state / "application-proof.json", {"expires_at": 1250})
+            write_json(state / "application-proof.json", {"expires_at": 1255})
             with (
                 patch.object(supervisor.time, "time", return_value=1000),
                 patch.object(supervisor.time, "monotonic", return_value=100),
-            ):
-                self.assertEqual(supervisor.next_periodic_deadline({"gpu": "nvidia_cc"}, state), 100)
-
-    def test_expired_application_proof_fails_closed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state = Path(directory)
-            write_json(state / "application-proof.json", {"expires_at": 1000})
-            with (
-                patch.object(supervisor.time, "time", return_value=1000),
-                self.assertRaisesRegex(BuildError, "has expired"),
+                self.assertRaisesRegex(BuildError, "cannot be renewed"),
             ):
                 supervisor.next_periodic_deadline({"gpu": "nvidia_cc"}, state)
 

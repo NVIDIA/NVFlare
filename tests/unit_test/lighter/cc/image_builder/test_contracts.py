@@ -1175,7 +1175,7 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertEqual(read_json(credentials_path), credentials)
             self.assertEqual(read_json(state_path), {"expires_at": 1300})
 
-    def test_application_proof_accepts_valid_gpu_token_with_less_than_a_full_renewal_budget(self):
+    def test_application_proof_refreshes_after_slow_gpu_key_retrieval(self):
         config = {
             "kbs_client": "/test/kbs-client",
             "kbs_url": "https://kbs.test",
@@ -1184,6 +1184,8 @@ class RuntimeContractTests(unittest.TestCase):
             "platform": "intel_tdx",
             "gpu": "nvidia_cc",
         }
+        stale = {"token": "authorized-token", "tee_keypair": "authorized-key"}
+        fresh = {"token": "fresh-proof-token", "tee_keypair": "fresh-proof-key"}
         with tempfile.TemporaryDirectory() as directory:
             credentials_path = Path(directory) / "application/trustee_token.json"
             credentials_path.parent.mkdir()
@@ -1192,11 +1194,11 @@ class RuntimeContractTests(unittest.TestCase):
             with (
                 patch(
                     "cvm.runtime.attestation._fresh_credentials",
-                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1250}),
-                ),
+                    side_effect=[(stale, {"exp": 1250}), (fresh, {"exp": 1300})],
+                ) as refresh,
                 patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
                 patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
-                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 120]),
                 patch("cvm.runtime.attestation.time.time", return_value=1000),
             ):
                 with authorized_key(
@@ -1205,11 +1207,12 @@ class RuntimeContractTests(unittest.TestCase):
                     budget=240,
                     credentials_path=credentials_path,
                     credentials_state_path=state_path,
-                    minimum_credentials_validity=15,
+                    minimum_credentials_validity=255,
                 ):
                     pass
-            self.assertTrue(credentials_path.exists())
-            self.assertEqual(read_json(state_path), {"expires_at": 1250})
+            self.assertEqual(refresh.call_count, 2)
+            self.assertEqual(read_json(credentials_path), fresh)
+            self.assertEqual(read_json(state_path), {"expires_at": 1300})
 
     def test_application_proof_rejects_a_token_without_the_publication_margin(self):
         config = {
@@ -1233,7 +1236,7 @@ class RuntimeContractTests(unittest.TestCase):
                 patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
                 patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
                 patch("cvm.runtime.attestation.time.time", return_value=1000),
-                self.assertRaisesRegex(BuildError, "safely published"),
+                self.assertRaisesRegex(BuildError, "another bounded renewal"),
             ):
                 with authorized_key(
                     config,
@@ -1241,7 +1244,7 @@ class RuntimeContractTests(unittest.TestCase):
                     budget=60,
                     credentials_path=credentials_path,
                     credentials_state_path=state_path,
-                    minimum_credentials_validity=15,
+                    minimum_credentials_validity=75,
                 ):
                     pass
             self.assertFalse(credentials_path.exists())

@@ -194,9 +194,16 @@ def authorized_key(
                     type(minimum_credentials_validity) in (int, float) and minimum_credentials_validity > 0,
                     "Application proof requires a positive renewal window",
                 )
+                # Resource retrieval can consume much of the EAR lifetime. If
+                # so, use the remaining shared transaction budget to obtain a
+                # fresh EAR/keypair for peer proofs. The first EAR already
+                # authorized the resource; the replacement is published only
+                # after that authorization succeeded.
+                if claims["exp"] - time.time() <= minimum_credentials_validity:
+                    credentials, claims = _fresh_credentials(config, digest, remaining)
                 require(
                     claims["exp"] - time.time() > minimum_credentials_validity,
-                    "Appraisal expires before proof credentials can be safely published",
+                    "Appraisal expires before another bounded renewal can finish",
                 )
                 parent = Path(credentials_path).parent
                 require(parent.is_dir() and not parent.is_symlink(), "Invalid application runtime directory")
