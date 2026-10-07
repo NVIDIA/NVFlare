@@ -674,6 +674,7 @@ def test_configured_verifier_preserves_time_checks(material, failure):
     ).decode()
     verifier = CoCoAuthorizer(public, client.audience, proof_lifetime_seconds=60)
     proof = jwt.decode(generate(proof_lifetime_seconds=60), options={"verify_signature": False})
+    verification_time = proof["iat"]
     if failure == "too_long":
         proof["exp"] = proof["iat"] + 61
     elif failure == "expired":
@@ -683,7 +684,8 @@ def test_configured_verifier_preserves_time_checks(material, failure):
         proof["iat"] += verifier.proof_iat_leeway_seconds + 1
         proof["exp"] += verifier.proof_iat_leeway_seconds + 1
     token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
-    assert not verifier.verify(token)
+    with clock_at(verification_time):
+        assert not verifier.verify(token)
 
 
 def test_longer_proof_does_not_extend_ear_freshness(material):
