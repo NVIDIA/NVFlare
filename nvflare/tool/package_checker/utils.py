@@ -23,6 +23,8 @@ import tempfile
 
 import grpc
 
+from nvflare.utils.process_utils import popen_in_new_session
+
 
 class NVFlareConfig:
     SERVER = "fed_server.json"
@@ -196,10 +198,9 @@ def check_socket_server_running(startup: str, host: str, port: int, scheme: str 
 
 def run_command_in_subprocess(command):
     new_env = os.environ.copy()
-    process = subprocess.Popen(
+    process = popen_in_new_session(
         shlex.split(command),
         shell=False,
-        preexec_fn=os.setsid,
         env=new_env,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
