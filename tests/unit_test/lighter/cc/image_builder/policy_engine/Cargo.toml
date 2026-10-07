@@ -1,0 +1,13 @@
+[package]
+name = "cvm-policy-eval"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Exact engine revision from the DESIGN.md Trustee source pin's Cargo.lock.
+regorus = "=0.11.0"
+
+[[bin]]
+name = "cvm-policy-eval"
+path = "main.rs"

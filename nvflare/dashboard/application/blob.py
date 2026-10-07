@@ -57,6 +57,9 @@ def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_im
     scheme = prop_mgr.get_project_prop("scheme", scheme)
     builders = [
         WorkspaceBuilder(),
+        # Immediately after WorkspaceBuilder: reverse finalization then signs
+        # files such as comm_config.json that later builders create in finalize().
+        SignatureBuilder(),
         StaticFileBuilder(
             config_folder="config",
             scheme=scheme,
@@ -65,7 +68,6 @@ def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_im
         AWSBuilder(),
         AzureBuilder(),
         CertBuilder(),
-        SignatureBuilder(),
     ]
 
     # TBD: need to add Packager object to the provisioner!
@@ -154,10 +156,9 @@ def gen_client_blob(key, id):
 def _prepare_client(prop_mgr: PropertyManager, prov_project: ProvProject, client_id):
     client = Client.query.get(client_id)
     inc_dl(Client, client_id)
-    if client.props:
-        props = json.loads(client.props)
-    else:
-        props = {}
+    # Legacy client.props may contain user-supplied provisioning paths. Never use
+    # them in kits; additional properties must come from operator configuration.
+    props = {}
 
     if client.capacity:
         props[PropKey.CAPACITY] = json.loads(client.capacity)
