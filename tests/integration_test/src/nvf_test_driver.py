@@ -24,6 +24,7 @@ from nvflare.fuel.hci.proto import MetaStatusValue
 from tests.integration_test.src.action_handlers import (
     _AbortJobHandler,
     _AdminCommandsHandler,
+    _AppCommandHandler,
     _CheckJobHandler,
     _CloneJobHandler,
     _KillHandler,
@@ -108,7 +109,7 @@ def _parse_workflow_states(stats_message: dict):
         return workflow_states
     for k, v in stats_message.items():
         # each controller inherit from nvflare/apis/impl/controller has tasks
-        if v.get("tasks"):
+        if "tasks" in v:
             workflow_states[k] = v.copy()
             workflow_states[k].pop("tasks")
     return workflow_states
@@ -121,7 +122,7 @@ def _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a: dict, dict_b: 
         return False
     for k in dict_a:
         if isinstance(dict_a[k], dict):
-            if not _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a[k], dict_b[k]):
+            if not _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a[k], dict_b.get(k)):
                 return False
         elif dict_b.get(k) != dict_a[k]:
             return False
@@ -212,6 +213,7 @@ class NVFTestDriver:
             "submit_job": _SubmitJobHandler(),
             "clone_job": _CloneJobHandler(),
             "abort_job": _AbortJobHandler(),
+            "app_command": _AppCommandHandler(),
             "list_job": _ListJobHandler(),
             "shell_commands": _ShellCommandHandler(),
             "ensure_current_job_done": _CheckJobHandler(),

@@ -4,18 +4,18 @@ project_yaml: ./data/projects/authz.yml
 poll_period: 0.5
 
 tests:
-  - test_name: "lead_a submit slow_job and lead_a abort"
+  - test_name: "lead_a submit abort_test_job and lead_a abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
@@ -28,19 +28,19 @@ tests:
         "result":
           "type": "run_state"
           "data": { }
-  - test_name: "lead_a submit slow_job and lead_b abort"
+  - test_name: "lead_a submit abort_test_job and lead_b abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "admin_user_name": "trainer@b.org"
         "result":
@@ -50,24 +50,31 @@ tests:
           }
       - "trigger":
           "type": "run_state"
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
+        "actions": [ "app_command release_abort_test" ]
+        "result":
+          "type": "admin_api_response"
+          "data": { "released": True }
+      - "trigger":
+          "type": "run_state"
           "data": { "run_finished": True }
         "actions": [ "ensure_current_job_done" ]
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
-  - test_name: "lead_a submit slow_job and admin_a abort"
+  - test_name: "lead_a submit abort_test_job and admin_a abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "admin_user_name": "admin@a.org"
         "result":
@@ -80,19 +87,19 @@ tests:
         "result":
           "type": "run_state"
           "data": { }
-  - test_name: "lead_a submit slow_job and admin_b abort"
+  - test_name: "lead_a submit abort_test_job and admin_b abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "admin_user_name": "admin@b.org"
         "result":
@@ -102,24 +109,31 @@ tests:
           }
       - "trigger":
           "type": "run_state"
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
+        "actions": [ "app_command release_abort_test" ]
+        "result":
+          "type": "admin_api_response"
+          "data": { "released": True }
+      - "trigger":
+          "type": "run_state"
           "data": { "run_finished": True }
         "actions": [ "ensure_current_job_done" ]
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
-  - test_name: "lead_a submit slow_job and user_a abort"
+  - test_name: "lead_a submit abort_test_job and user_a abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "admin_user_name": "user@a.org"
         "result":
@@ -129,24 +143,31 @@ tests:
           }
       - "trigger":
           "type": "run_state"
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
+        "actions": [ "app_command release_abort_test" ]
+        "result":
+          "type": "admin_api_response"
+          "data": { "released": True }
+      - "trigger":
+          "type": "run_state"
           "data": { "run_finished": True }
         "actions": [ "ensure_current_job_done" ]
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
-  - test_name: "lead_a submit slow_job and super abort"
+  - test_name: "lead_a submit abort_test_job and super abort"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job slow_job" ]
+        "actions": [ "submit_job abort_test_job" ]
         "admin_user_name": "trainer@a.org"
         "result":
           "type": "run_state"
           "data": {}
       - "trigger":
           "type": "run_state"
-          "data": { "job_status": "RUNNING" }
+          "data": { "job_status": "RUNNING", "workflows": { "AbortTestController": { "phase": "waiting_for_release" } } }
         "actions": [ "abort_job" ]
         "result":
           "type": "run_state"

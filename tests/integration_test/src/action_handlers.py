@@ -159,6 +159,14 @@ class _AbortJobHandler(_CmdHandler):
                     raise
 
 
+class _AppCommandHandler(_CmdHandler):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
+        admin_controller.admin_api_response = admin_api.do_app_command(
+            admin_controller.job_id, command_args[0], cmd_data=None
+        )
+
+
 class _ListJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         admin_api.list_jobs()

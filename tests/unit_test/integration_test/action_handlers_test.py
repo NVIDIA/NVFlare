@@ -46,6 +46,10 @@ def _session(*responses, username="admin@a.org"):
     return session
 
 
+def _gate_stats(phase="waiting_for_release"):
+    return {"server": {"AbortTestController": {"tasks": {}, "phase": phase}}}
+
+
 @pytest.fixture
 def clock(monkeypatch):
     state = SimpleNamespace(now=0.0, sleeps=[])
@@ -139,6 +143,17 @@ def test_abort_preserves_authorization_denial(controller, clock, starting_first)
     assert clock.sleeps == ([0.5] if starting_first else [])
 
 
+def test_app_command_sends_release_to_current_job_and_records_response(controller):
+    response = _reply()
+    response["data"] = [{"type": "dict", "data": {"released": True}}]
+    session = _session(response)
+
+    action_handlers._AppCommandHandler().handle(["release_abort_test"], controller, session)
+
+    session.api.do_command.assert_called_once_with(f"app_command {JOB_ID} release_abort_test", props=None)
+    assert controller.admin_api_response == {"released": True}
+
+
 CONFIG_EVENTS = [
     pytest.param(case["event_sequence"][1], RunStatus.DISPATCHED.value, RunStatus.RUNNING.value, id=case["test_name"])
     for case in ABORT_CONFIG["tests"]
@@ -164,7 +179,7 @@ def test_abort_config_waits_for_current_job_state(event, initial_status, expecte
     observed_states = []
 
     def poll_state(state):
-        _, state = nvf_test_driver._update_run_state(None, state, next(statuses))
+        _, state = nvf_test_driver._update_run_state(_gate_stats(), state, next(statuses))
         return state
 
     driver._get_run_state = Mock(side_effect=poll_state)
@@ -185,6 +200,81 @@ def test_abort_config_waits_for_current_job_state(event, initial_status, expecte
     )
 
 
+@pytest.mark.parametrize("case", ABORT_CONFIG["tests"], ids=lambda case: case["test_name"])
+def test_abort_config_waits_for_gate_even_when_metadata_is_running(case, clock):
+    driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
+    driver.job_id = JOB_ID
+    driver.server_status = Mock(return_value="started")
+    phases = iter(["initializing", "waiting_for_release", "waiting_for_release"])
+    observed_phases = []
+    event = case["event_sequence"][1]
+
+    def poll_state(state):
+        _, state = nvf_test_driver._update_run_state(_gate_stats(next(phases)), state, RunStatus.RUNNING.value)
+        return state
+
+    def execute_actions(actions, admin_user_name=None):
+        observed_phases.append(driver._get_run_state.call_args.args[0]["workflows"]["AbortTestController"]["phase"])
+        driver.admin_api_response = event["result"].get("data")
+        driver.test_done = True
+
+    driver._get_run_state = Mock(side_effect=poll_state)
+    driver.execute_actions = Mock(side_effect=execute_actions)
+
+    driver.run_event_sequence([event])
+
+    assert observed_phases == ["waiting_for_release"]
+
+
+DENIAL_CASES = [
+    case for case in ABORT_CONFIG["tests"] if case["event_sequence"][1]["result"]["type"] == "admin_api_response"
+]
+
+
+@pytest.mark.parametrize("case", DENIAL_CASES, ids=lambda case: case["test_name"])
+@pytest.mark.parametrize("abort_incorrectly_allowed", [False, True])
+def test_abort_config_releases_only_after_verifying_permission_denial(
+    case, abort_incorrectly_allowed, clock, monkeypatch
+):
+    driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
+    driver.job_id = JOB_ID
+    driver.server_status = Mock(return_value="started")
+    denial_event = case["event_sequence"][1]
+    user = denial_event["admin_user_name"]
+    abort_status = MetaStatusValue.OK if abort_incorrectly_allowed else MetaStatusValue.NOT_AUTHORIZED
+    abort_session = _session(_reply(abort_status), username=user)
+    release_session = _session(username="super@test.org")
+    driver.admin_apis = {user: abort_session}
+    driver.super_admin_api = release_session
+    current_status = RunStatus.RUNNING.value
+
+    def poll_state(state):
+        _, state = nvf_test_driver._update_run_state(_gate_stats(), state, current_status)
+        return state
+
+    def release(command, props=None):
+        nonlocal current_status
+        abort_session.api.do_command.assert_called_once_with(f"abort_job {JOB_ID}", props=None)
+        current_status = RunStatus.FINISHED_COMPLETED.value
+        response = _reply()
+        response["data"] = [{"type": "dict", "data": {"released": True}}]
+        return response
+
+    release_session.api.do_command.side_effect = release
+    driver._get_run_state = Mock(side_effect=poll_state)
+    monkeypatch.setattr(action_handlers, "check_job_done", Mock(return_value=True))
+
+    if abort_incorrectly_allowed:
+        with pytest.raises(nvf_test_driver.NVFTestError, match="Missing admin_api_response"):
+            driver.run_event_sequence(case["event_sequence"][1:])
+        release_session.api.do_command.assert_not_called()
+        assert current_status == RunStatus.RUNNING.value
+    else:
+        driver.run_event_sequence(case["event_sequence"][1:])
+        release_session.api.do_command.assert_called_once_with(f"app_command {JOB_ID} release_abort_test", props=None)
+        assert driver.test_done is True
+
+
 @pytest.mark.parametrize("event,initial_status,expected_status", CONFIG_EVENTS)
 @pytest.mark.parametrize("terminal_status", [RunStatus.FINISHED_COMPLETED.value, RunStatus.FINISHED_ABNORMAL.value])
 def test_abort_config_rejects_terminal_job_without_waiting_for_timeout(
@@ -192,14 +282,14 @@ def test_abort_config_rejects_terminal_job_without_waiting_for_timeout(
 ):
     driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
     driver.job_id = JOB_ID
-    driver.last_job_name = "slow_job"
+    driver.last_job_name = "abort_test_job"
     driver.server_status = Mock(return_value="started")
     driver.client_status = Mock(return_value="started")
     driver.execute_actions = Mock()
     statuses = iter([initial_status, terminal_status])
 
     def poll_state(state):
-        _, state = nvf_test_driver._update_run_state(None, state, next(statuses))
+        _, state = nvf_test_driver._update_run_state(_gate_stats(), state, next(statuses))
         return state
 
     driver._get_run_state = Mock(side_effect=poll_state)
@@ -217,14 +307,14 @@ def test_abort_config_rejects_terminal_job_without_waiting_for_timeout(
 def test_abort_config_rejects_job_that_finishes_between_readiness_and_abort(clock):
     driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
     driver.job_id = JOB_ID
-    driver.last_job_name = "slow_job"
+    driver.last_job_name = "abort_test_job"
     driver.server_status = Mock(return_value="started")
     driver.client_status = Mock(return_value="started")
     session = _session(_reply(info=f"Job for {JOB_ID} is already completed."))
     statuses = iter([RunStatus.RUNNING.value, RunStatus.FINISHED_COMPLETED.value, RunStatus.FINISHED_COMPLETED.value])
 
     def poll_state(state):
-        _, state = nvf_test_driver._update_run_state(None, state, next(statuses))
+        _, state = nvf_test_driver._update_run_state(_gate_stats(), state, next(statuses))
         return state
 
     def execute_actions(actions, admin_user_name=None):
