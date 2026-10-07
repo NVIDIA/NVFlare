@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in prereqs) exit 0;; esac
+. /usr/share/initramfs-tools/hook-functions
+copy_exec /usr/sbin/veritysetup /sbin/veritysetup
+manual_add_modules dm_verity
+manual_add_modules overlay
+manual_add_modules virtio_scsi
+manual_add_modules ext4
+# No KBS client, certificate, endpoint or networking hook belongs here.

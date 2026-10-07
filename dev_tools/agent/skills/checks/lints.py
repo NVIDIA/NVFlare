@@ -1205,6 +1205,8 @@ _BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
     r"|\d+ evaluation tasks \(\d+ positive\) (?:from|against) skill-evaluator-dataset-snapshot/\d+\. <br>"
     r"|\d+ evaluation tasks \(\d+ positive\) from skill-evaluator-dataset-snapshot, evaluated with "
     r"\d+ attempts? per task in local environment\. <br>"
+    r"|\d+ evaluation tasks \(\d+ positive\), each (?:run )?in an isolated sandbox pod\. "
+    r"Evaluator version:? [0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?\. <br>"
     r"|Regenerate this benchmark when the skill, evaluation dataset, target agent/model, evaluator version, "
     r"environment, or scoring policy changes\."
     r")"
