@@ -66,25 +66,18 @@ def get_std_histogram_buckets(nums: np.ndarray, num_bins: int = 10, br: Optional
         bucket_low_value = buckets[bucket_count]
         bucket_high_value = buckets[bucket_count + 1]
         bucket_sample_count = counts[bucket_count]
+        # Each endpoint is checked on its own: with num_bins == 1 the only
+        # bucket is both the first and the last, and an elif here left the
+        # positive infinities out of it.
         if bucket_count == 0 and num_neginf > 0:
             bucket_low_value = float("-inf")
             bucket_sample_count += num_neginf
-        elif bucket_count == len(counts) - 1 and num_posinf > 0:
+        if bucket_count == len(counts) - 1 and num_posinf > 0:
             bucket_high_value = float("inf")
             bucket_sample_count += num_posinf
 
         histogram_buckets.append(
             Bin(low_value=bucket_low_value, high_value=bucket_high_value, sample_count=bucket_sample_count)
         )
-
-    if buckets is not None and len(buckets) > 0:
-        bucket = None
-        if num_neginf:
-            bucket = Bin(low_value=float("-inf"), high_value=float("-inf"), sample_count=num_neginf)
-        if num_posinf:
-            bucket = Bin(low_value=float("inf"), high_value=float("inf"), sample_count=num_posinf)
-
-        if bucket:
-            histogram_buckets.append(bucket)
 
     return histogram_buckets

@@ -16,8 +16,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nvflare.app_common.abstract.statistics_spec import DataType
-from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
+from nvflare.app_common.abstract.statistics_spec import BinRange, DataType
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
 class TestDtypeToDataType:
@@ -61,3 +61,50 @@ class TestDtypeToDataType:
     def test_pandas_nullable_bool_dtype(self):
         # pd.BooleanDtype is a nullable ExtensionDtype — must map to INT, not STRING
         assert dtype_to_data_type(pd.BooleanDtype()) == DataType.INT
+
+
+class TestGetStdHistogramBuckets:
+    """Infinite samples belong to the edge buckets, and only to them.
+
+    A bucket list longer than num_bins also breaks accumulate_hists, which
+    keys the global histogram on the first client's bin ranges and walks only
+    those when it writes the counts back.
+    """
+
+    @pytest.mark.parametrize(
+        "nums",
+        [
+            np.array([-np.inf, 0.0, np.inf]),
+            np.array([0.0, 0.5, np.inf]),
+            np.array([-np.inf, 0.0, 0.5]),
+            np.array([0.0, 0.5, -0.5]),
+        ],
+    )
+    @pytest.mark.parametrize("num_bins", [1, 3])
+    def test_buckets_hold_every_sample_once(self, nums, num_bins):
+        buckets = get_std_histogram_buckets(nums, num_bins, BinRange(-1.0, 1.0))
+
+        assert len(buckets) == num_bins
+        assert sum(bucket.sample_count for bucket in buckets) == len(nums)
+
+    def test_edge_buckets_open_towards_the_infinities_present(self):
+        buckets = get_std_histogram_buckets(np.array([-np.inf, 0.0, np.inf]), 3, BinRange(-1.0, 1.0))
+
+        assert buckets[0].low_value == float("-inf")
+        assert buckets[0].sample_count == 1
+        assert buckets[-1].high_value == float("inf")
+        assert buckets[-1].sample_count == 1
+
+    def test_one_bucket_takes_both_infinities(self):
+        buckets = get_std_histogram_buckets(np.array([-np.inf, 0.0, np.inf]), 1, BinRange(-1.0, 1.0))
+
+        assert len(buckets) == 1
+        assert buckets[0].low_value == float("-inf")
+        assert buckets[0].high_value == float("inf")
+        assert buckets[0].sample_count == 3
+
+    def test_finite_samples_leave_the_bucket_bounds_alone(self):
+        buckets = get_std_histogram_buckets(np.array([0.0, 0.5, -0.5]), 3, BinRange(-1.0, 1.0))
+
+        assert buckets[0].low_value == -1.0
+        assert buckets[-1].high_value == 1.0
