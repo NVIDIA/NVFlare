@@ -304,12 +304,16 @@ host. Shut down an existing federation before switching modes. Keep the Docker
 server and site-1 commands from Step 4, and replace only site-2's start command
 with the one below, using its original `prod_00` kit.
 
-Install the training dependencies on the host, then choose a writable CIFAR-10
-cache before starting site-2. Run these commands as the same user and in the
-same shell that will start it:
+Install the training dependencies on the host:
 
 ```bash
 (cd ../.. && python -m pip install -e ".[PT]" tensorboard)
+```
+
+For `hello-pt-docker`, choose a writable CIFAR-10 cache before starting site-2.
+Run these commands as the same user and in the same shell that will start it:
+
+```bash
 export NVFL_CIFAR10_ROOT="$(pwd)/workspace/cifar10-site-2"
 mkdir -p "$NVFL_CIFAR10_ROOT"
 python - <<'PY'
@@ -322,9 +326,14 @@ print("CIFAR-10 cache is writable")
 PY
 ```
 
-Continue only after the write check succeeds. If it fails, choose another
-directory writable by that user. The process client downloads and verifies
-CIFAR-10 there; the Docker client keeps its separate cache.
+For `hello-pt-docker`, continue only after the write check succeeds. If it fails,
+choose another directory writable by that user. Its process client downloads
+and verifies CIFAR-10 there; the Docker client keeps its separate cache.
+
+`pt-ddp-docker` ignores `NVFL_CIFAR10_ROOT`. Its host site-2 trainer always uses
+`/var/tmp/nvflare/data`; ensure this directory exists and is writable by the
+user running site-2 before starting it. The write check above does not check
+this DDP directory.
 
 On macOS, also point the process client's original kit at the published server
 port before starting it:
