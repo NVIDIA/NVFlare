@@ -54,7 +54,7 @@ def _default_resources_path(workspace_root, job_name):
 def _mock_simulator_popen():
     process = MagicMock()
     process.wait.return_value = 0
-    return patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process)
+    return patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process)
 
 
 def test_sim_env_validation():
