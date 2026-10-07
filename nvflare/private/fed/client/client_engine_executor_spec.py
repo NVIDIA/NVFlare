@@ -41,6 +41,8 @@ class TaskAssignment(object):
         self.data = data
         self.attempt_id = data.get_task_attempt_id() if isinstance(data, Shareable) else None
         self.receive_time = time.time()
+        # Parent clients retain child receipts only while this assignment runs.
+        self.child_result_receipts = {}  # assigned child name => complete result received
 
 
 class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):

@@ -22,7 +22,15 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode, ServerCommandKey, TaskResultReceipt
+from nvflare.apis.filter import Filter
+from nvflare.apis.fl_constant import (
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReturnCode,
+    ServerCommandKey,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
@@ -300,6 +308,33 @@ def test_complete_result_receipt_is_independent_of_application_failures(failure)
     assert assigned.result_received_time is not None
     assert filters.call_count == (0 if failure == "before_filter" else 1)
     assert assigned.task.result_received_cb.call_count <= 1
+
+
+@pytest.mark.parametrize("consumer", ["filter", "callback"])
+def test_submit_command_receipt_keeps_identity_when_application_consumes_input(consumer):
+    runner, assigned, ctx = _fenced_runner()
+    ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+    result = _result(assigned)
+    result.set_header(ServerCommandKey.FL_CLIENT, assigned.client)
+    result.set_header(FLContextKey.TASK_NAME, "train")
+    result.set_peer_context(ctx.get_peer_context())
+
+    class ConsumingFilter(Filter):
+        def process(self, shareable, fl_ctx):
+            shareable.clear()
+            return Shareable({"filtered": True})
+
+    if consumer == "filter":
+        runner.config.task_result_filters = {"train" + FilterKey.DELIMITER + FilterKey.IN: [ConsumingFilter()]}
+    else:
+        assigned.task.result_received_cb.side_effect = lambda client_task, fl_ctx: client_task.result.clear()
+
+    with patch("nvflare.private.fed.server.server_runner.add_job_audit_event"):
+        reply = SubmitUpdateCommand().process(result, ctx)
+    assert ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+    assert result.get_cookie(ReservedHeaderKey.WORKFLOW) is None
+    assert reply.get_task_result_receipt(assigned.id, assigned.attempt_id, "workflow") == TaskResultReceipt.RECEIVED
+    assigned.task.result_received_cb.assert_called_once()
 
 
 def test_unresolved_stream_reference_requires_retry_before_receipt_or_side_effects():

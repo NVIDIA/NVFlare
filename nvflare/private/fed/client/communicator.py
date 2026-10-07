@@ -155,6 +155,11 @@ class Communicator:
         origin = request.get_header(MessageHeaderKey.ORIGIN)
         if not isinstance(req, Shareable):
             self.logger.error(f"Bad get_task request from {origin}")
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
+        peer_ctx = req.get_peer_context()
+        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        if client_name and (not isinstance(peer_ctx, FLContext) or peer_ctx.get_identity_name() != client_name):
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
 
         # note: the self.pending_task is unset by "submit_update", which could happen at any time.
         # we first assign self.pending_task to a different var (pending_task) and use this var in our processing.
@@ -198,22 +203,55 @@ class Communicator:
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, task)
 
     def _process_submit_result(self, request: CellMessage):
+        result = request.payload
+        if not isinstance(result, Shareable):
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
+        try:
+            attempt_id = result.get_task_attempt_id()
+        except ValueError:
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST}, Shareable())
+        reply = Shareable()
+        if attempt_id is not None:
+            reply.set_header(
+                ReservedHeaderKey.TASK_ID,
+                result.get_cookie(ReservedHeaderKey.TASK_ID, result.get_header(ReservedHeaderKey.TASK_ID)),
+            )
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            reply.set_header(ReservedHeaderKey.WORKFLOW, result.get_cookie(ReservedHeaderKey.WORKFLOW))
+            reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED)
         if not self.engine:
             # this could happen only when we crashed after task was pulled and restarted
             # since we don't have CJ restart capability this is impossible currently.
             self.logger.error("received submit_result while no engine")
-            return new_cell_message({}, Shareable())
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
 
         with self.engine.new_context() as fl_ctx:
             assert isinstance(fl_ctx, FLContext)
-            result = request.payload
-            assert isinstance(result, Shareable)
             peer_ctx = result.get_peer_context()
-            if peer_ctx:
+            client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+            if client_name and (not isinstance(peer_ctx, FLContext) or peer_ctx.get_identity_name() != client_name):
+                self.logger.warning("child result identity differs from authenticated client - dropped")
+                return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
+            if isinstance(peer_ctx, FLContext):
                 fl_ctx.set_peer_context(peer_ctx)
 
                 # we also need to set peer_props since some app code expects it.
                 result.set_peer_props(peer_ctx.get_all_public_props())
+
+            runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+            process = attempt_id is None
+            receipt = None
+            if runner is not None:
+                process, receipt = runner.claim_child_result(result, fl_ctx)
+            if receipt is not None:
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+            if not process:
+                if receipt != TaskResultReceipt.RECEIVED:
+                    self.logger.info(
+                        f"child result for task {result.get_header(ReservedHeaderKey.TASK_ID)} dropped: "
+                        f"{receipt or TaskResultReceipt.TASK_CLOSED}"
+                    )
+                return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
 
             fl_ctx.set_prop(
                 key=FLContextKey.TASK_RESULT,
@@ -221,14 +259,19 @@ class Communicator:
                 private=True,
                 sticky=False,
             )
-            self.engine.fire_event(EventType.TASK_RESULT_RECEIVED, fl_ctx)
+            try:
+                self.engine.fire_event(EventType.TASK_RESULT_RECEIVED, fl_ctx)
+            except Exception as ex:
+                if receipt != TaskResultReceipt.RECEIVED:
+                    raise
+                self.logger.error(f"child result event failed after receipt: {secure_format_exception(ex)}")
             is_processed = fl_ctx.get_prop(FLContextKey.EVENT_PROCESSED)
             if not is_processed:
                 # no one listened or processed this event
                 task_id = result.get_header(ReservedKey.TASK_ID)
                 self.logger.warning(f"event {EventType.TASK_RESULT_RECEIVED} for task {task_id} is not processed")
 
-        return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
+        return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
 
     def _get_site_config_for_registration(self, fl_ctx: FLContext):
         client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG, self.client_config)

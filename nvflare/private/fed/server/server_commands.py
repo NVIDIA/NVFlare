@@ -252,9 +252,11 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         try:
             attempt_id = data.get_task_attempt_id()
             task_id = data.get_cookie(FLContextKey.TASK_ID)
+            workflow_id = data.get_cookie(ReservedHeaderKey.WORKFLOW)
         except ValueError:
             attempt_id = None
             task_id = None
+            workflow_id = None
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RETRY, private=True, sticky=False)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
@@ -264,7 +266,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         reply = make_reply(ReturnCode.OK)
         reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
         reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
-        reply.set_header(ReservedHeaderKey.WORKFLOW, data.get_cookie(ReservedHeaderKey.WORKFLOW))
+        reply.set_header(ReservedHeaderKey.WORKFLOW, workflow_id)
         reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
         return reply
 

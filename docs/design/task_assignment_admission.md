@@ -78,6 +78,13 @@ second job-level receipt cache and no need to replay aggregation decisions acros
 workflows. After eviction an unknown ID with all fencing fields stripped remains
 indistinguishable from an unfenced custom protocol.
 
+In a client hierarchy, the parent client confirms complete receipt from each
+assigned child independently of its local aggregation decision. Readiness and
+submission replies use the forwarded assignment identity. Each running parent
+assignment holds its children's receipt markers; retries do not repeat result
+events. When the parent task ends or aborts, its child assignments return
+`TASK_CLOSED`. These markers end with the parent assignment and need no cache.
+
 Task-worker artifact cleanup must wait for terminal receipt or closure and for
 outstanding transfer readers to release the source. Worker supervision, launchers,
 declared-state promotion, adapters, and recipes remain separate work in #5352.

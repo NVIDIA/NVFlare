@@ -38,6 +38,7 @@ from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -179,6 +180,11 @@ class ClientRunner(TBI):
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
         assert isinstance(task_data, Shareable)
         task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
+        peer_ctx = fl_ctx.get_peer_context()
+        with self.task_lock:
+            task = self.running_tasks.get(fl_ctx.get_prop(FLContextKey.TASK_ID))
+            if task and isinstance(peer_ctx, FLContext) and peer_ctx.get_job_id() == self.job_id:
+                task.child_result_receipts.setdefault(peer_ctx.get_identity_name(), False)
         executor = None
         if not task_name:
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_NAME} from the task data")
@@ -854,12 +860,80 @@ class ClientRunner(TBI):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
+        try:
+            attempt_id = request.get_task_attempt_id()
+        except ValueError:
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
         with self.task_lock:
+            if attempt_id is not None:
+                receipt = self._child_result_receipt(request, fl_ctx)
+                reply = make_reply(
+                    ReturnCode.TASK_UNKNOWN if receipt == TaskResultReceipt.TASK_CLOSED else ReturnCode.OK
+                )
+                reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
+                reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+                reply.set_header(ReservedHeaderKey.WORKFLOW, request.get_header(ReservedHeaderKey.WORKFLOW))
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+                return reply
             if task_id not in self.running_tasks:
                 self.log_debug(fl_ctx, f"task {task_id} is not found")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
             else:
                 return make_reply(ReturnCode.OK)
+
+    def _child_result_receipt(self, request: Shareable, fl_ctx: FLContext) -> str:
+        """Resolve child assignment authority while holding task_lock."""
+        task_id = request.get_header(ReservedHeaderKey.TASK_ID)
+        task = self.running_tasks.get(task_id)
+        peer_ctx = fl_ctx.get_peer_context()
+        if (
+            task is None
+            or self.run_abort_signal.triggered
+            or not isinstance(peer_ctx, FLContext)
+            or peer_ctx.get_job_id() != self.job_id
+            or peer_ctx.get_identity_name() not in task.child_result_receipts
+        ):
+            return TaskResultReceipt.TASK_CLOSED
+        try:
+            if request.get_task_attempt_id() != task.attempt_id:
+                return TaskResultReceipt.TASK_CLOSED
+            for key, expected in (
+                (ReservedHeaderKey.TASK_ID, task.task_id),
+                (ReservedHeaderKey.TASK_NAME, task.name),
+                (ReservedHeaderKey.WORKFLOW, task.data.get_cookie(ReservedHeaderKey.WORKFLOW)),
+            ):
+                header = request.get_header(key)
+                cookie = request.get_cookie(key)
+                if (cookie if cookie is not None else header) != expected:
+                    return TaskResultReceipt.TASK_CLOSED
+                if header is not None and header != expected:
+                    return TaskResultReceipt.TASK_CLOSED
+        except ValueError:
+            return TaskResultReceipt.TASK_CLOSED
+        return (
+            TaskResultReceipt.RECEIVED
+            if task.child_result_receipts[peer_ctx.get_identity_name()]
+            else TaskResultReceipt.RETRY
+        )
+
+    def claim_child_result(self, result: Shareable, fl_ctx: FLContext):
+        """Claim full child receipt before events; return (process, receipt)."""
+        with self.task_lock:
+            try:
+                attempt_id = result.get_task_attempt_id()
+                task = self.running_tasks.get(result.get_header(ReservedHeaderKey.TASK_ID))
+            except ValueError:
+                return False, TaskResultReceipt.TASK_CLOSED
+            if attempt_id is None and (task is None or task.attempt_id is None):
+                # Unfenced custom/older authorities retain their event path.
+                return True, None
+            receipt = self._child_result_receipt(result, fl_ctx)
+            if receipt != TaskResultReceipt.RETRY:
+                return False, receipt
+            if contains_lazy_download_ref(result):
+                return False, TaskResultReceipt.RETRY
+            task.child_result_receipts[fl_ctx.get_peer_context().get_identity_name()] = True
+            return True, TaskResultReceipt.RECEIVED
 
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "received client job_heartbeat")
