@@ -24,6 +24,13 @@ TEST_CASES = [
     ({"cool": 123, "very": 4}, 10, 0),
 ]
 
+# A run begins its current rounds at start_round, so start_round is at or below
+# current_round. These keep the two apart so carrying the wrong one still fails.
+START_ROUND_TEST_CASES = [
+    ({"hello": 123}, 100, 5, 3),
+    ({"cool": 123, "very": 4}, 10, 1, 0),
+]
+
 FL_MODEL_TEST_CASES = [
     (FLModel(params={"hello": 123}, params_type=ParamsType.FULL, current_round=0, total_rounds=10), DataKind.WEIGHTS),
     (
@@ -99,11 +106,9 @@ class TestFLModelUtils:
         assert dxo.data[FLModelConst.CURRENT_ROUND] == current_round
         assert dxo.data[FLModelConst.TOTAL_ROUNDS] == num_rounds
 
-    @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
-    def test_to_from_dxo_keeps_start_round(self, weights, num_rounds, current_round):
+    @pytest.mark.parametrize("weights,num_rounds,current_round,start_round", START_ROUND_TEST_CASES)
+    def test_to_from_dxo_keeps_start_round(self, weights, num_rounds, current_round, start_round):
         # from_dxo reads start_round back out, so to_dxo has to put it in.
-        # the two rounds differ so that carrying the wrong one still fails.
-        start_round = current_round + 2
         fl_model = FLModel(
             params=weights,
             params_type=ParamsType.FULL,
