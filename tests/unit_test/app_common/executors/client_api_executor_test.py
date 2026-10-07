@@ -38,7 +38,11 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
-from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.backend_spec import (
+    CLIENT_API_BACKEND_FACTORY,
+    ClientAPIBackendContext,
+    ClientAPIBackendSpec,
+)
 from nvflare.app_common.executors.client_api_executor import (
     ALL_EXECUTION_MODES,
     FED_ANALYTIC_EVENT_TYPE,
@@ -557,6 +561,54 @@ class TestBackendPlumbing:
         fl_ctx = _make_fl_ctx(engine)
         executor.handle_event(EventType.START_RUN, fl_ctx)
         return executor, backend, fl_ctx, fired
+
+    def test_runtime_injection_uses_existing_backend_lifecycle(self):
+        original, injected = _StubBackend(), _StubBackend()
+        executor = _StubbedInProcessExecutor(original, execution_mode="in_process")
+        engine, _fired = _make_recording_engine()
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(CLIENT_API_BACKEND_FACTORY, lambda: injected, private=True, sticky=True)
+        executor.handle_event(EventType.START_RUN, fl_ctx)
+        assert executor.execute("train", Shareable(), fl_ctx, Signal()) is injected.result
+        executor.handle_event(EventType.END_RUN, fl_ctx)
+        assert injected.calls == ["initialize", ("execute", "train"), "finalize"]
+        assert not original.calls
+
+    @pytest.mark.parametrize("stage", ["initialize", "execute", "finalize", "invalid_result"])
+    def test_disposable_backend_failures_propagate_to_attempt_owner(self, monkeypatch, stage):
+        backend = _StubBackend()
+        backend.failure_is_fatal = True
+        executor = _StubbedInProcessExecutor(backend, execution_mode="in_process")
+        engine, fired = _make_recording_engine()
+        fl_ctx = _make_fl_ctx(engine)
+        if stage != "invalid_result":
+            monkeypatch.setattr(backend, stage, Mock(side_effect=RuntimeError("attempt failed")))
+        else:
+            backend.result = {}
+        if stage == "initialize":
+            with pytest.raises(RuntimeError, match="attempt failed"):
+                executor.handle_event(EventType.START_RUN, fl_ctx)
+            assert executor._backend is None
+        else:
+            executor.handle_event(EventType.START_RUN, fl_ctx)
+            if stage == "finalize":
+                with pytest.raises(RuntimeError, match="attempt failed"):
+                    executor.handle_event(EventType.END_RUN, fl_ctx)
+                assert executor._backend is None
+            else:
+                with pytest.raises((RuntimeError, TypeError), match="attempt failed|expected Shareable"):
+                    executor.execute("train", Shareable(), fl_ctx, Signal())
+                executor.handle_event(EventType.END_RUN, fl_ctx)
+        assert not any(event == EventType.FATAL_SYSTEM_ERROR for event, _data in fired)
+
+    def test_runtime_rejects_injected_object_outside_backend_contract(self):
+        executor = ClientAPIExecutor(execution_mode="in_process")
+        engine, fired = _make_recording_engine()
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(CLIENT_API_BACKEND_FACTORY, object)
+        executor.handle_event(EventType.START_RUN, fl_ctx)
+        assert executor._backend is None
+        assert any(event == EventType.FATAL_SYSTEM_ERROR for event, _data in fired)
 
     def test_start_run_initializes_backend_without_panic(self):
         executor, backend, fl_ctx, fired = self._make_started_executor()

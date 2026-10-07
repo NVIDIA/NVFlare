@@ -78,3 +78,47 @@ class TestExecutorRegistration:
         config.add_executor(["train"], _in_process_executor())
         with pytest.raises(RuntimeError, match="already exist"):
             config.add_executor(["train"], _PlainExecutor())
+
+
+def test_client_application_metadata_is_unset_by_default():
+    config = ClientAppConfig()
+    assert config.task_state_names is None
+    assert config.component_execution_scopes == {}
+
+
+def test_component_execution_scope_is_metadata_not_a_constructor_attribute():
+    config = ClientAppConfig()
+    component = _PlainExecutor()
+    attributes = dict(vars(component))
+    config.add_component("compute", component)
+    assert config.set_component_execution_scope("compute", "job") is config
+    assert config.component_execution_scopes == {"compute": "job"}
+    assert vars(component) == attributes
+    assert config.set_component_execution_scope("compute", "task") is config
+    assert config.component_execution_scopes == {"compute": "task"}
+
+
+@pytest.mark.parametrize("scope", [None, "worker", True, [], {}])
+def test_component_execution_scope_rejects_invalid_scope_without_mutation(scope):
+    config = ClientAppConfig()
+    config.add_component("component", object())
+    with pytest.raises(ValueError, match="execution_scope"):
+        config.set_component_execution_scope("component", scope)
+    assert config.component_execution_scopes == {}
+
+
+@pytest.mark.parametrize("cid", [None, [], "missing"])
+def test_component_execution_scope_requires_a_registered_component(cid):
+    config = ClientAppConfig()
+    with pytest.raises(ValueError, match="register it"):
+        config.set_component_execution_scope(cid, "job")
+    assert config.component_execution_scopes == {}
+
+
+def test_client_task_state_declarations_validate_before_replacing_previous_names():
+    config = ClientAppConfig()
+    assert config.set_task_state(["optimizer"]) is config
+    assert config.task_state_names == ("optimizer",)
+    with pytest.raises(ValueError, match="unique"):
+        config.set_task_state(["metrics", "metrics"])
+    assert config.task_state_names == ("optimizer",)

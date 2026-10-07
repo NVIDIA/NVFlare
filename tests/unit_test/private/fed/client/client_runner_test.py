@@ -22,6 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -141,6 +142,44 @@ def test_process_task_preserves_cookie_and_assignment_headers():
     assert reply.get_header(ReservedHeaderKey.TASK_ID) == "task-1"
 
 
+def test_task_assignment_and_result_preserve_authority_issued_attempt():
+    runner = _runner()
+    data = Shareable()
+    data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, "server-attempt")
+    task = _task(data=data)
+    runner._do_process_task = MagicMock(return_value=Shareable())
+    reply = runner._process_task(task, FLContext())
+    assert task.attempt_id == "server-attempt"
+    assert reply.get_task_attempt_id() == "server-attempt"
+    assert reply.get_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED) is True
+
+
+def test_task_assignment_rejects_missing_required_authority_attempt():
+    data = Shareable()
+    data.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+    with pytest.raises(ValueError, match="requires a task attempt ID"):
+        _task(data=data)
+
+
+def test_process_task_preserves_assignment_cookies_when_data_filter_replaces_shareable():
+    runner = _runner()
+    data = Shareable()
+    data.set_cookie_jar(
+        {ReservedHeaderKey.TASK_ID: "task-1", ReservedHeaderKey.TASK_ATTEMPT_ID: "server-attempt", "cookie": "value"}
+    )
+    task = _task(data=data)
+
+    def replace_data(_task, _fl_ctx):
+        _task.data = Shareable({"filtered": True})
+        return Shareable()
+
+    runner._do_process_task = MagicMock(side_effect=replace_data)
+    reply = runner._process_task(task, FLContext())
+    assert reply.get_cookie(ReservedHeaderKey.TASK_ID) == "task-1"
+    assert reply.get_cookie("cookie") == "value"
+    assert reply.get_task_attempt_id() == "server-attempt"
+
+
 def test_do_process_task_short_circuits_unsafe_job():
     runner = _runner()
     fl_ctx = FLContext()
@@ -218,6 +257,53 @@ def test_do_task_reports_abort_during_filter_materialization(filter_direction):
 
 
 @pytest.mark.parametrize(
+    "filter_failure, expected",
+    [
+        ("exception", ReturnCode.TASK_RESULT_FILTER_ERROR),
+        ("invalid_result", ReturnCode.TASK_RESULT_FILTER_ERROR),
+        ("abort", ReturnCode.TASK_ABORTED),
+        ("unsafe", ReturnCode.UNSAFE_JOB),
+    ],
+)
+def test_process_task_binds_final_failure_reply_after_successful_executor_result(filter_failure, expected):
+    runner = _runner()
+    success = Shareable({"successful_execution": True})
+    executor = MagicMock()
+    executor.execute.return_value = success
+    runner.task_router.add_executor(["train"], executor)
+    peer_ctx = FLContext()
+    peer_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.set_peer_context(peer_ctx)
+
+    def fail_result_filter(_filter_name, data, _fl_ctx, _filters, _task_name, direction, **kwargs):
+        if direction == FilterKey.IN:
+            return data
+        # Reproduce the stale-OK context specifically, rather than mocking the
+        # entire task processor: these paths return before AFTER_RESULT_FILTER.
+        assert data is success
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT) is success
+        if filter_failure == "invalid_result":
+            return object()
+        if filter_failure == "abort":
+            kwargs["abort_signal"].trigger(True)
+        elif filter_failure == "unsafe":
+            raise UnsafeJobError("unsafe result filter")
+        raise RuntimeError("result filter failed")
+
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
+        patch("nvflare.private.fed.client.client_runner.apply_filters", side_effect=fail_result_filter),
+    ):
+        reply = runner._process_task(_task(), fl_ctx)
+
+    assert reply.get_return_code() == expected
+    assert reply is not success
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT) is reply
+    assert runner.running_tasks == {}
+
+
+@pytest.mark.parametrize(
     "assignment, expected",
     [
         (None, (0.5, False)),
@@ -232,16 +318,23 @@ def test_fetch_and_run_handles_no_work_and_control_tasks(assignment, expected):
     assert runner.fetch_and_run_one_task(FLContext()) == expected
 
 
-def test_fetch_and_run_processes_task_and_uses_requested_interval():
+@pytest.mark.parametrize("send_success", [True, False])
+def test_fetch_and_run_processes_task_and_exposes_publication_outcome(send_success):
     runner = _runner()
     task = _task()
     task.data.set_header(TaskConstant.WAIT_TIME, 2.0)
     runner.engine.get_task_assignment.return_value = task
     runner._process_task = MagicMock(return_value=Shareable())
-    runner._send_task_result = MagicMock()
+    runner._send_task_result = MagicMock(return_value=send_success)
+    observed = []
+    runner.fire_event = lambda event_type, fl_ctx: observed.append(
+        (event_type, fl_ctx.get_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS))
+    )
+    fl_ctx = FLContext()
 
-    assert runner.fetch_and_run_one_task(FLContext()) == (2.0, True)
+    assert runner.fetch_and_run_one_task(fl_ctx) == (2.0, True)
     runner._send_task_result.assert_called_once()
+    assert observed[-1] == (EventType.AFTER_SEND_TASK_RESULT, send_success)
 
 
 @pytest.mark.parametrize(
@@ -302,6 +395,50 @@ def test_send_task_result_retries_after_transport_failure(monkeypatch):
     assert call_order == ["check", "send", "check", "send"]
     assert all(call.args[0] is result for call in runner.engine.send_task_result.call_args_list)
     runner.log_error.assert_called_once()
+
+
+@pytest.mark.parametrize("reason", ["task_gone", "abort"])
+@pytest.mark.parametrize("submitted", [False, True])
+def test_send_task_result_distinguishes_no_submit_from_lost_ack(monkeypatch, reason, submitted):
+    runner = _runner()
+    fl_ctx = FLContext()
+    # Facts from an earlier result must not leak into a new publication.
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, True, private=True, sticky=False)
+    checks = [_TASK_CHECK_RESULT_OK, _TASK_CHECK_RESULT_TASK_GONE] if submitted else [_TASK_CHECK_RESULT_TASK_GONE]
+    runner._check_task_once = MagicMock(side_effect=checks)
+
+    def lose_ack(*_args, **_kwargs):
+        assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is True
+        if reason == "abort":
+            runner.run_abort_signal.trigger(True)
+        return False
+
+    runner.engine.send_task_result.side_effect = lose_ack
+    if reason == "abort" and not submitted:
+        runner.run_abort_signal.trigger(True)
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+
+    assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is submitted
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    assert runner.engine.send_task_result.call_count == int(submitted)
+
+
+def test_abort_during_successful_readiness_check_does_not_handoff_result():
+    runner = _runner()
+    fl_ctx = FLContext()
+
+    def ready_then_abort(*_args):
+        runner.run_abort_signal.trigger(True)
+        return _TASK_CHECK_RESULT_OK
+
+    runner._check_task_once = MagicMock(side_effect=ready_then_abort)
+    assert runner._send_task_result(Shareable(), "task-1", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED) is False
+    assert fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is None
+    runner.engine.send_task_result.assert_not_called()
+    runner._check_task_once.assert_called_once()
 
 
 def test_task_check_and_control_handlers():

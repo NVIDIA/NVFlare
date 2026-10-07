@@ -22,6 +22,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.task_state import TASK_STATE_KEY, TaskState
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
@@ -53,18 +54,19 @@ class InProcessClientAPI(APISpec):
         self,
         task_metadata: dict,
         result_check_interval: float = 2.0,
+        task_state: Optional[TaskState] = None,
     ):
         """Initializes the InProcessClientAPI.
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
+            task_state (TaskState): explicitly declared local state bound by the runtime.
         """
         super().__init__()  # Initialize memory management from base class
 
         self.data_bus = DataBus()
-        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
-        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
+        self._subscribe_to_data_bus()
 
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
@@ -83,6 +85,11 @@ class InProcessClientAPI(APISpec):
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
         self._receive_error: Optional[Exception] = None
+        self._task_state = task_state
+
+    def _subscribe_to_data_bus(self):
+        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
+        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -120,6 +127,15 @@ class InProcessClientAPI(APISpec):
     def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
         self._receive_error = None
+        if fl_ctx is not None:
+            self._task_state = fl_ctx.get_prop(TASK_STATE_KEY)
+
+    def get_state(self):
+        if self.closed:
+            raise RuntimeError("declared state is unavailable after Client API finalization")
+        if not isinstance(self._task_state, TaskState):
+            raise RuntimeError("no declared application state was bound by this runtime")
+        return self._task_state
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.
@@ -208,7 +224,7 @@ class InProcessClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
+        self._publish_result(shareable)
 
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -275,7 +291,13 @@ class InProcessClientAPI(APISpec):
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
-        self.event_manager.fire_event(TOPIC_LOG_DATA, msg)
+        self._publish_log(msg)
+
+    def _publish_result(self, shareable: Shareable):
+        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
+
+    def _publish_log(self, message: dict):
+        self.event_manager.fire_event(TOPIC_LOG_DATA, message)
 
     def clear(self):
         self.fl_model = None
@@ -309,23 +331,26 @@ class InProcessClientAPI(APISpec):
 
     def __receive_callback(self, topic, data, databus):
         try:
-            if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
-                raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-            fl_model = FLModelUtils.from_shareable(data)
-            exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
-            fl_model.params = convert_params(
-                fl_model.params,
-                self.client_config.get_server_expected_format(),
-                exchange,
-                self._params_conversion_state,
-                self.logger,
-            )
-            self.fl_model = fl_model
+            self._set_received_shareable(data)
         except Exception as e:
             # DataBus callbacks run in a worker and publish() does not propagate their
             # exceptions. Surface conversion failures from flare.receive() instead.
             self._receive_error = e
+
+    def _set_received_shareable(self, data: Shareable):
+        """Apply the shared receive conversion for a transport-provided assignment."""
+        if not isinstance(data, Shareable):
+            raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
+        fl_model = FLModelUtils.from_shareable(data)
+        exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+        fl_model.params = convert_params(
+            fl_model.params,
+            self.client_config.get_server_expected_format(),
+            exchange,
+            self._params_conversion_state,
+            self.logger,
+        )
+        self.fl_model = fl_model
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:

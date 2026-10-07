@@ -16,6 +16,8 @@ from typing import List
 from nvflare.apis.executor import Executor
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.task_execution import ExecutionLifetime
+from nvflare.apis.task_state import TaskState
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.private.fed.client.client_json_config import _ExecutorDef
 from nvflare.private.fed.server.server_json_config import WorkFlow
@@ -30,6 +32,27 @@ class ClientAppConfig(BaseAppConfig):
     def __init__(self) -> None:
         super().__init__()
         self.executors: [_ExecutorDef] = []
+        self.execution_lifetime = ExecutionLifetime.JOB
+        self.task_state_names = None
+        self.component_execution_scopes = {}
+
+    def set_task_state(self, names):
+        """Declare explicit serializable records; omit the field when unset."""
+        self.task_state_names = TaskState.validate_names(names)
+        return self
+
+    def set_component_execution_scope(self, cid: str, scope: str):
+        """Set config-only ``task``/``job`` ownership for a registered component.
+
+        Task-lifetime components default to the worker; ``job`` is the explicit
+        CJ-only marker. Job-lifetime runtime behavior remains unchanged.
+        """
+        if not isinstance(cid, str) or cid not in self.components:
+            raise ValueError(f"unknown client component {cid!r}; register it before setting execution_scope")
+        if scope not in (ExecutionLifetime.TASK, ExecutionLifetime.JOB):
+            raise ValueError(f"component execution_scope must be 'task' or 'job' but got {scope!r}")
+        self.component_execution_scopes[cid] = scope
+        return self
 
     def add_executor(self, tasks: List[str], executor: Executor):
         if not isinstance(executor, Executor):

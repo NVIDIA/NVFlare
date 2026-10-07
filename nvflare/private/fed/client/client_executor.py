@@ -30,11 +30,13 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
+from nvflare.private.fed.utils.task_execution_utils import client_app_uses_task_runtime
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -289,6 +291,8 @@ class JobExecutor(ClientExecutor):
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_client.json"),
             JobProcessArgs.OPTIONS: ("--set", command_options),
         }
+        if client_app_uses_task_runtime(workspace_obj, job_id, parse_vars(args.set)):
+            job_args[JobProcessArgs.LAUNCH_MODE] = ("--launch_mode", job_launcher.launch_mode)
 
         params = client.cell.get_internal_listener_params()
         if params:

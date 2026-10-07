@@ -18,8 +18,11 @@ and the min_sites / required_sites abort logic.
 The test infrastructure stubs out all engine/fl_ctx interaction so that only
 _deploy_job()'s own logic is exercised."""
 
+import io
+import json
 import os
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 import pytest
 from cryptography import x509
@@ -43,6 +46,7 @@ from nvflare.private.fed.utils.job_cert_utils import (
     read_job_cert,
     unpack_job_cert_header,
 )
+from nvflare.private.fed.utils.task_execution_utils import RUNTIME_CAPABILITIES, TASK_RUNTIME_CAPABILITY
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,6 +65,13 @@ def _error_reply(body="deploy failed"):
     msg = Message(topic="reply", body=body)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.ERROR)
     return msg
+
+
+def _app_data(lifetime="job"):
+    stream = io.BytesIO()
+    with ZipFile(stream, "w") as archive:
+        archive.writestr("config/config_fed_client.json", json.dumps({"execution_lifetime": lifetime}))
+    return stream.getvalue()
 
 
 def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required_sites=None):
@@ -120,7 +131,7 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
     # Simulate a single app deployment to all client sites
     deployment = {"app": list(sites.keys())}
     job.get_deployment.return_value = deployment
-    job.get_application.return_value = b"app_data"
+    job.get_application.return_value = _app_data()
 
     return runner, fl_ctx, engine, job, sites
 
@@ -238,6 +249,22 @@ def _run_deploy(runner, job, sites, fl_ctx, *, extra_patches=None):
     with patch.object(runner, "_make_deploy_message", return_value=MagicMock()):
         with patch(patches[0]), patch(patches[1]), patch(patches[2], return_value=True):
             return runner._deploy_job(job, sites, fl_ctx)
+
+
+@pytest.mark.parametrize("supported", [False, True])
+def test_task_lifetime_rejects_clients_without_an_advertised_runtime_capability(supported):
+    runner, fl_ctx, engine, job, sites = _build_fl_ctx({"token-1": _ok_reply()})
+    job.get_application.return_value = _app_data("task")
+    client = Client("site-1", "token-1")
+    if supported:
+        client.set_prop(RUNTIME_CAPABILITIES, (TASK_RUNTIME_CAPABILITY,))
+    engine.validate_targets.return_value = ([client], [])
+    if supported:
+        assert _run_deploy(runner, job, sites, fl_ctx)[0] == job.job_id
+    else:
+        with pytest.raises(RuntimeError, match="upgraded client runtime.*site-1"):
+            _run_deploy(runner, job, sites, fl_ctx)
+        engine.server.admin_server.send_requests_and_get_reply_dict.assert_not_called()
 
 
 class TestDeployJobTimeoutClassification:
@@ -401,7 +428,7 @@ class TestDeployAndStartIntegration:
         job.min_sites = 1
         job.required_sites = []
         job.get_deployment.return_value = {"app": ["site-1", "site-2"]}
-        job.get_application.return_value = b"app_data"
+        job.get_application.return_value = _app_data()
 
         client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
 

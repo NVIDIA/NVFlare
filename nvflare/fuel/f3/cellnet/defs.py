@@ -165,8 +165,6 @@ class CellChannel:
     SERVER_COMMAND = "server_command"
     SERVER_PARENT_LISTENER = "server_parent_listener"
     CLIENT_COMMAND = "client_command"
-    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
-    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
     EDGE_REQUEST = "edge_request"

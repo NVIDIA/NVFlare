@@ -31,6 +31,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.client.task_launcher_config import configure_task_launchers
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.utils.fed_utils import authorize_build_component
 from nvflare.private.privacy_manager import PrivacyService
@@ -118,6 +119,7 @@ class ClientAppRunner(Runner):
         conf.configure()
 
         runner_config = conf.runner_config
+        configure_task_launchers(runner_config, job_launcher_mode=self.get_job_launcher_mode(args), workspace=workspace)
 
         # configure privacy control!
         privacy_manager = create_privacy_manager(workspace, names_only=False)
@@ -146,6 +148,9 @@ class ClientAppRunner(Runner):
 
             # self.start_command_agent(args, client_runner, federated_client, fl_ctx)
         return client_runner
+
+    def get_job_launcher_mode(self, args):
+        return getattr(args, "launch_mode", None)
 
     def create_run_manager(self, args, conf, federated_client, workspace):
         return ClientRunManager(

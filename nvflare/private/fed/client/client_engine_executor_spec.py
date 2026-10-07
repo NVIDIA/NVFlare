@@ -39,6 +39,7 @@ class TaskAssignment(object):
         self.name = name
         self.task_id = task_id
         self.data = data
+        self.attempt_id = data.get_task_attempt_id() if isinstance(data, Shareable) else None
         self.receive_time = time.time()
 
 

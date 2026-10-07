@@ -17,7 +17,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
@@ -27,12 +29,64 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellMessageHeaderKeys,
+    ClientRegMsgKey,
+    ClientType,
+    JobFailureMsgKey,
+    new_cell_message,
+)
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
+from nvflare.private.fed.utils.task_execution_utils import RUNTIME_CAPABILITIES, TASK_RUNTIME_CAPABILITY
+
+
+@pytest.mark.parametrize(
+    "client_type, capabilities, expected",
+    [
+        (ClientType.REGULAR, [TASK_RUNTIME_CAPABILITY], (TASK_RUNTIME_CAPABILITY,)),
+        (ClientType.REGULAR, None, ()),
+        (ClientType.REGULAR, TASK_RUNTIME_CAPABILITY, ()),
+        (ClientType.REGULAR, [None], ()),
+        (ClientType.REGULAR, ["x" * 129], ()),
+        (ClientType.REGULAR, [TASK_RUNTIME_CAPABILITY] * 33, ()),
+        (ClientType.ADMIN, [TASK_RUNTIME_CAPABILITY], ()),
+    ],
+)
+def test_registration_validates_runtime_capabilities_and_clears_stale_advertisements(
+    client_type, capabilities, expected
+):
+    server = MagicMock(
+        spec=FederatedServer,
+        engine=MagicMock(),
+        client_manager=MagicMock(),
+        logger=MagicMock(),
+        tokens={},
+        admin_server=None,
+        server_state=MagicMock(),
+    )
+    server.engine.new_context.return_value = nullcontext(FLContext())
+    server._ready_for_registration.return_value = None
+    server._get_validated_site_config.return_value = None
+    client = Client("site-1", "token")
+    client.set_prop(RUNTIME_CAPABILITIES, (TASK_RUNTIME_CAPABILITY,))
+    server.client_manager.authenticate.return_value = client
+    data = Shareable()
+    if capabilities is not None:
+        data[RUNTIME_CAPABILITIES] = capabilities
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: client.name, CellMessageHeaderKeys.CLIENT_TYPE: client_type}, data
+    )
+
+    FederatedServer.register_client(server, request)
+
+    assert client.get_prop(RUNTIME_CAPABILITIES) == expected
+    server.client_manager.authenticate.assert_called_once()
+    server._generate_reply.assert_called_once()
 
 
 def assert_client_outcome_unresolved(job_runner):

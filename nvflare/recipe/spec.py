@@ -225,6 +225,11 @@ class Recipe(ABC):
         """
         pass
 
+    def set_execution_lifetime(self, execution_lifetime: str):
+        """Select job-based or fresh-per-task client application execution."""
+        self._job.set_execution_lifetime(execution_lifetime)
+        return self
+
     def set_per_site_config(self, config: Dict[str, Dict]) -> None:
         """Set helper-provided per-site configuration for this recipe.
 
@@ -398,12 +403,16 @@ class Recipe(ABC):
             if params_snapshot is not None:
                 self._restore_additional_params(params_snapshot)
 
-    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
+    def _add_to_client_apps(
+        self, obj, clients: Optional[List[str]] = None, execution_scope: Optional[str] = None, **kwargs
+    ):
         """Add an object to client apps, preserving existing per-site structure.
 
         Args:
             obj: Object to add to clients.
             clients: Optional list of specific client names. If None, applies to all clients.
+            execution_scope: Optional explicit process scope for a registered
+                component. This is configuration metadata, not a constructor argument.
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
 
         Raises:
@@ -417,6 +426,9 @@ class Recipe(ABC):
         """
         from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
         from nvflare.job_config.defs import JobTargetType
+
+        if execution_scope is not None and execution_scope not in ("job", "task"):
+            raise ValueError("component execution_scope must be 'job' or 'task'")
 
         # Validate the selector before materializing topology so an invalid call
         # does not close the set_per_site_config() configuration window.
@@ -443,9 +455,13 @@ class Recipe(ABC):
         if clients is None:
             if existing_client_sites:
                 for site in existing_client_sites:
-                    self._job.to(obj, site, **kwargs)
+                    component_id = self._job.to(obj, site, **kwargs)
+                    if execution_scope is not None:
+                        self._job.set_component_execution_scope(component_id, execution_scope, target=site)
             else:
-                self._job.to_clients(obj, **kwargs)
+                component_id = self._job.to_clients(obj, **kwargs)
+                if execution_scope is not None:
+                    self._job.set_component_execution_scope(component_id, execution_scope, target=ALL_SITES)
         else:
             if ALL_SITES in deploy_map:
                 # The generated job has one client app deployed to all clients. Exporting
@@ -468,7 +484,9 @@ class Recipe(ABC):
                         f"only for {sorted(existing_client_sites)}"
                     )
             for client in clients:
-                self._job.to(obj, client, **kwargs)
+                component_id = self._job.to(obj, client, **kwargs)
+                if execution_scope is not None:
+                    self._job.set_component_execution_scope(component_id, execution_scope, target=client)
 
     def finalize(self):
         """Called to finalize the setup of the recipe.

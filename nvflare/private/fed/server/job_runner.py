@@ -255,6 +255,22 @@ class JobRunner(FLComponent):
                     deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
                     raise RuntimeError(f"unknown clients: {invalid_inputs}.")
 
+                from nvflare.private.fed.utils.task_execution_utils import (
+                    RUNTIME_CAPABILITIES,
+                    TASK_RUNTIME_CAPABILITY,
+                    app_requires_task_runtime,
+                )
+
+                if app_requires_task_runtime(app_data):
+                    unsupported = [
+                        c.name for c in clients if TASK_RUNTIME_CAPABILITY not in c.get_prop(RUNTIME_CAPABILITIES, ())
+                    ]
+                    if unsupported:
+                        raise RuntimeError(
+                            "task-lifetime execution requires an upgraded client runtime; "
+                            f"missing {TASK_RUNTIME_CAPABILITY}: {unsupported}"
+                        )
+
                 # each site receives only its own job credential, so the deploy message is per site
                 # (the app bytes stay shared). c.name equals the CN of the client's registered
                 # cert (registration enforces CN == client name)

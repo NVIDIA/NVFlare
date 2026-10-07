@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_utils import get_class_path_from_config, instantiate_class
+from nvflare.fuel.utils.json_scanner import Node
 from nvflare.security.logging import secure_format_exception
 
 
@@ -92,6 +93,48 @@ class ComponentBuilder(ABC):
 
     def build_nested_component(self, config_dict, arg_name):
         return self.build_component(config_dict)
+
+    def _is_authorizable_component_config(self, config_dict, node=None):
+        return self.is_authorizable_component_config(config_dict, node)
+
+    @staticmethod
+    def _make_child_node(parent_node, element, key):
+        node = Node(element)
+        node.processor = parent_node.processor
+        node.parent = parent_node
+        node.level = parent_node.level + 1
+        node.key = str(key)
+        node.paths = [*parent_node.paths, node.key]
+        return node
+
+    def authorize_component_config_tree(self, element, node, authorize, force_current=False):
+        """Preflight component arguments using the existing configurator traversal rules.
+
+        Recognized component specifications expose nested components through
+        ``args``, not through arbitrary metadata fields. Retain component-list
+        paths so explicit entries cannot bypass authorization using
+        ``config_type: dict``. Policy and authorization scope belong to the
+        runtime calling this walker, not to the generic builder.
+        """
+        if isinstance(element, dict) and (force_current or self._is_authorizable_component_config(element, node)):
+            authorize(element, node)
+            args = element.get("args")
+            if not isinstance(args, (dict, list)):
+                return
+            # ``args`` is an argument container, not itself a component,
+            # even if an ordinary argument is named ``path`` or ``name``.
+            # Inspect every argument before any component can be imported.
+            node = self._make_child_node(node, args, "args")
+            element = args
+        if isinstance(element, dict):
+            children = element.items()
+        elif isinstance(element, list):
+            children = ((f"#{i + 1}", item) for i, item in enumerate(element))
+        else:
+            return
+        for key, value in children:
+            if isinstance(value, (dict, list)):
+                self.authorize_component_config_tree(value, self._make_child_node(node, value, key), authorize)
 
     def build_component(self, config_dict):
         if not config_dict:

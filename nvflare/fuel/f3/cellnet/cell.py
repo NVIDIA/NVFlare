@@ -44,8 +44,6 @@ CHANNELS_TO_EXCLUDE = (
     CellChannel.SERVER_MAIN,
     CellChannel.SERVER_PARENT_LISTENER,
     CellChannel.CLIENT_COMMAND,
-    CellChannel.CLIENT_SUB_WORKER_COMMAND,
-    CellChannel.MULTI_PROCESS_EXECUTOR,
     CellChannel.SIMULATOR_RUNNER,
     CellChannel.RETURN_ONLY,
 )

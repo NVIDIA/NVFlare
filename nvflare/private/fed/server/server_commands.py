@@ -27,7 +27,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandNames,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger, validate_site_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -181,6 +181,17 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
 
         # we also need to make TASK_ID available to the client
         shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
+        workflow_id = fl_ctx.get_prop(FLContextKey.WORKFLOW)
+        if task_id and workflow_id is not None:
+            # Preserve the exact issuing workflow even when an OUT filter
+            # returned a fresh payload. Its echoed cookie scopes result ACKs.
+            shareable.add_cookie(ReservedHeaderKey.WORKFLOW, workflow_id)
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID) or shareable.get_task_attempt_id()
+        if task_id and attempt_id is not None:
+            shareable.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            shareable.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+            shareable.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            shareable.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
 
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
 
@@ -237,13 +248,25 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         contribution_task_name = data.get_header(FLContextKey.TASK_NAME)
-        task_id = data.get_cookie(FLContextKey.TASK_ID)
+        try:
+            attempt_id = data.get_task_attempt_id()
+            task_id = data.get_cookie(FLContextKey.TASK_ID)
+        except ValueError:
+            attempt_id = None
+            task_id = None
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_ACCEPTED, False, private=True, sticky=False)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
         self.logger.debug(f"Submit_result processing time: {time.time() - start_time} for client: {client.name}")
-        return ""
+        reply = make_reply(ReturnCode.OK)
+        reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
+        reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+        reply.set_header(
+            ReservedHeaderKey.TASK_RESULT_ACCEPTED, fl_ctx.get_prop(FLContextKey.TASK_RESULT_ACCEPTED) is True
+        )
+        return reply
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
         engine = fl_ctx.get_engine()

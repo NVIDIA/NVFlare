@@ -21,6 +21,8 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.task_execution import ExecutionLifetime
+from nvflare.apis.task_state import TaskState
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
@@ -189,6 +191,7 @@ class FedJob:
         mandatory_clients: Optional[List[str]] = None,
         meta_props: Optional[Dict[str, Any]] = None,
         fail_fast: bool = False,
+        execution_lifetime: str = ExecutionLifetime.JOB,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -207,6 +210,9 @@ class FedJob:
                 immediate abort on any client failure; when min_clients < total enrolled, the
                 disconnect is simply detected faster without necessarily aborting the job.
                 When False (the default), the existing dead-client grace period behaviour applies.
+            execution_lifetime: ``job`` keeps client application Executors in the Client Job
+                process. ``task`` runs each task in a fresh worker while the Client Job remains
+                job-based for task acquisition, filters, and result publication.
 
         """
         check_job_name("name", name)
@@ -216,10 +222,13 @@ class FedJob:
         if meta_props:
             check_object_type("meta_props", meta_props, dict)
         check_object_type("fail_fast", fail_fast, bool)
+        ExecutionLifetime.validate(execution_lifetime)
 
         self.name = name
         self.clients = []
         self._fail_fast = fail_fast
+        self.execution_lifetime = execution_lifetime
+        self._task_state_names = None
         self.job: FedJobConfig = FedJobConfig(
             job_name=self.name,
             min_clients=min_clients,
@@ -229,6 +238,48 @@ class FedJob:
         self._deploy_map = {}
         self._deployed = False
         self._components = {}
+
+    def set_execution_lifetime(self, execution_lifetime: str):
+        """Set client application execution lifetime for this job.
+
+        Existing jobs remain job-based unless task lifetime is selected explicitly.
+        """
+        self.execution_lifetime = ExecutionLifetime.validate(execution_lifetime)
+        for app in self._deploy_map.values():
+            if isinstance(app, ClientApp):
+                app.app_config.execution_lifetime = self.execution_lifetime
+
+    def set_task_state(self, names):
+        """Declare bounded named application records for client task execution.
+
+        Applications explicitly read and update these records through the Client
+        API or task context; declaring names does not capture Python objects.
+        The same declarations apply to existing and subsequently added clients,
+        independent of the selected execution lifetime. An empty list disables
+        named records. Nothing is exported unless this method is called.
+        """
+        names = TaskState.validate_names(names)
+        self._task_state_names = names
+        for app in self._deploy_map.values():
+            if isinstance(app, ClientApp):
+                app.app_config.set_task_state(names)
+        return self
+
+    def set_component_execution_scope(self, comp_id: str, scope: str, target: str = ALL_SITES):
+        """Explicitly place an already registered client component.
+
+        In task lifetime, ``task`` (the default) places the application component
+        in every worker; ``job`` retains it in the CJ for filters or job-scoped
+        handlers. This is configuration metadata, never a constructor argument.
+        ``target`` identifies the client app originally used by ``to()`` or
+        ``to_clients()``. Server component placement is not changed.
+        """
+        self._validate_target(target)
+        app = self._deploy_map.get(target)
+        if not isinstance(app, ClientApp):
+            raise ValueError(f"component execution scope requires an existing client app for target {target!r}")
+        app.app_config.set_component_execution_scope(comp_id, scope)
+        return self
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -257,6 +308,9 @@ class FedJob:
         self._deploy_map[target] = obj
 
     def _add_client_app(self, obj: ClientApp, target: str):
+        obj.app_config.execution_lifetime = self.execution_lifetime
+        if self._task_state_names is not None:
+            obj.app_config.set_task_state(self._task_state_names)
         self._deploy_map[target] = obj
         if target not in self.clients:
             self.clients.append(target)

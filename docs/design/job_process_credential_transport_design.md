@@ -32,8 +32,12 @@ parser.add_argument("--token", default=value, required=value is None)
 ```
 
 CLI wins if supplied; missing-both keeps today's error; the env var is always removed, so
-job-spawned children never inherit it. Verify the CJ's multi-GPU `sub_worker_process` spawn
-does not re-emit credentials in argv; if it does, apply the same treatment.
+job-spawned children do not inherit it. Disposable task workers do not connect to the
+federation and omit federation bootstrap credentials from argv and environment.
+Process workers share the site's UID and workspace; this is not isolation from
+credential files such as `job.key`. Their startup code
+also clears credential environment variables before importing application code as a
+defensive safeguard if a launcher incorrectly forwarded them.
 
 **Launchers** stop rendering credential flags into commands and deliver values as:
 

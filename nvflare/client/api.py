@@ -128,6 +128,11 @@ def system_info(ctx: Optional[APIContext] = None) -> Dict:
     return local_ctx.api.system_info()
 
 
+def get_state(ctx: Optional[APIContext] = None):
+    """Get named, explicitly declared local state; not the trainer's Python objects."""
+    return get_context(ctx).api.get_state()
+
+
 def get_config(ctx: Optional[APIContext] = None) -> Dict:
     """Gets the ClientConfig dictionary.
 

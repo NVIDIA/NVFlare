@@ -457,7 +457,9 @@ def add_experiment_tracking(
         client_receiver = receiver_class(**client_config)
         # Route through the recipe placement layer so existing per-site client apps
         # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
-        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
+        # Client API worker logs are replayed in the CJ, and a tracking run
+        # spans the job rather than starting and finalizing once per attempt.
+        recipe._add_to_client_apps(client_receiver, clients=clients, execution_scope="job", id="client_receiver")
 
 
 def add_final_global_evaluation(

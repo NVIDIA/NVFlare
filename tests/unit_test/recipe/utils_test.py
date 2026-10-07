@@ -998,3 +998,48 @@ class TestAddExperimentTrackingClients:
 
         entry = next(c for c in client_cfg["components"] if c["id"] == "client_receiver")
         assert entry["path"].endswith("Namespace")
+        assert entry["execution_scope"] == "job"
+
+    @pytest.mark.parametrize("lifetime", ["job", "task"])
+    @pytest.mark.parametrize("topology", ["all", "per_site", "selected"])
+    def test_tracking_receiver_scope_preserves_job_run(self, dummy_tracking, tmp_path, lifetime, topology):
+        from nvflare.apis.fl_component import FLComponent
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.app_common.np.np_trainer import NPTrainer
+        from nvflare.app_common.workflows.fedavg import FedAvg
+        from nvflare.job_config.task_execution import prepare_task_execution
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe(f"tracking-{lifetime}-{topology}")
+        recipe.set_execution_lifetime(lifetime)
+        recipe._job.to_server(FedAvg())
+        targets = [ALL_SITES] if topology == "all" else ["site-1", "site-2"]
+        for target in targets:
+            recipe._job.to(NPTrainer(), target, tasks=["train"])
+            recipe._job.to(FLComponent(), target, id="compute")
+
+        clients = ["site-1"] if topology == "selected" else None
+        add_experiment_tracking(recipe, dummy_tracking, client_side=True, clients=clients)
+        recipe._job.export_job(str(tmp_path))
+        job_dir = tmp_path / recipe.name
+        server_config = json.loads(next(job_dir.rglob("config_fed_server.json")).read_text())
+        receiver = next(component for component in server_config["components"] if component["id"] == "receiver")
+        assert "execution_scope" not in receiver
+
+        for config_path in job_dir.rglob("config_fed_client.json"):
+            config = json.loads(config_path.read_text())
+            components = {component["id"]: component for component in config["components"]}
+            assert "execution_scope" not in components["compute"]
+            expected_receiver = topology != "selected" or config_path.parent.parent.name == "app_site-1"
+            assert ("client_receiver" in components) == expected_receiver
+            if expected_receiver:
+                assert components["client_receiver"]["execution_scope"] == "job"
+                assert "execution_scope" not in components["client_receiver"]["args"]
+            plan = prepare_task_execution(config)
+            if lifetime == "job":
+                assert plan is None
+            else:
+                assert [component["id"] for component in plan.job_components] == (
+                    ["client_receiver"] if expected_receiver else []
+                )
+                assert [component["id"] for component in plan.executors[0].components] == ["compute"]

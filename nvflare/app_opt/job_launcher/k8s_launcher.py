@@ -36,6 +36,7 @@ from nvflare.apis.job_launcher_spec import (
     JobReturnCode,
     add_launcher,
 )
+from nvflare.apis.launcher import LauncherMode
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -877,6 +878,8 @@ class K8sJobHandle(JobHandleSpec):
 
 
 class K8sJobLauncher(JobLauncherSpec):
+    launch_mode = LauncherMode.K8S.value
+
     def __init__(
         self,
         config_file_path: str,

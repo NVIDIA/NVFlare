@@ -33,7 +33,11 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import contains_lazy_download_ref, get_filters, materialize_lazy_download_refs
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.backend_spec import (
+    CLIENT_API_BACKEND_FACTORY,
+    ClientAPIBackendContext,
+    ClientAPIBackendSpec,
+)
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
@@ -327,12 +331,19 @@ class ClientAPIExecutor(Executor):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             super().handle_event(event_type, fl_ctx)
+            backend = None
             try:
-                self._backend = self._create_backend()
+                factory = fl_ctx.get_prop(CLIENT_API_BACKEND_FACTORY)
+                backend = factory() if factory is not None else self._create_backend()
+                if not isinstance(backend, ClientAPIBackendSpec):
+                    raise TypeError("runtime Client API backend must implement ClientAPIBackendSpec")
+                self._backend = backend
                 self._backend.initialize(self._build_backend_context(), fl_ctx)
             except Exception as e:
                 # initialize() owns rollback; finalizing a partial backend is unsafe.
                 self._backend = None
+                if isinstance(backend, ClientAPIBackendSpec) and backend.failure_is_fatal is True:
+                    raise
                 self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
                 self.system_panic(
                     f"ClientAPIExecutor cannot start: backend for execution_mode "
@@ -354,6 +365,8 @@ class ClientAPIExecutor(Executor):
                 try:
                     backend.finalize(fl_ctx)
                 except Exception:
+                    if backend.failure_is_fatal is True:
+                        raise
                     self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
             super().handle_event(event_type, fl_ctx)
         else:
@@ -388,10 +401,14 @@ class ClientAPIExecutor(Executor):
             # branch below, which is its existing behavior.)
             raise
         except Exception:
+            if backend.failure_is_fatal is True:
+                raise
             self.log_error(fl_ctx, secure_format_traceback())
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if not isinstance(result, Shareable):
+            if backend.failure_is_fatal is True:
+                raise TypeError(f"bad result from backend: expected Shareable but got {type(result)}")
             self.log_error(fl_ctx, f"bad result from backend: expected Shareable but got {type(result)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         return result

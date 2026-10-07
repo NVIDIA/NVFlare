@@ -13,6 +13,7 @@
 # limitations under the License.
 import ast
 import builtins
+import copy
 import inspect
 import json
 import os
@@ -25,12 +26,14 @@ from enum import Enum
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
-from nvflare.job_config.fed_app_config import FedAppConfig
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+from nvflare.job_config.task_execution import EXECUTION_LIFETIME_KEY, EXECUTION_SCOPE_KEY, prepare_task_execution
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 
@@ -131,6 +134,7 @@ class FedJobConfig:
     def _prepare_meta(self):
         """Validate and serialize job metadata before replacing an existing export."""
         self._validate_meta_props(self.meta_props)
+        self._validate_task_execution_resources()
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -144,6 +148,73 @@ class FedJobConfig:
             meta_json.update(self.meta_props)
 
         return json.dumps(meta_json, indent=4)
+
+    def _validate_task_execution_resources(self):
+        """Keep the first Process slice from inheriting a job-long GPU reservation."""
+        meta_props = self.meta_props if isinstance(self.meta_props, dict) else {}
+        resource_specs = meta_props.get("resource_spec", self.resource_specs)
+        launcher_specs = meta_props.get("launcher_spec", {})
+        for setting_name, settings, default_key in (
+            ("resource_spec", resource_specs, "@default"),
+            ("launcher_spec", launcher_specs, "default"),
+        ):
+            if not isinstance(settings, dict):
+                continue
+            # Include explicit resource sites and the wildcard deployment, but
+            # respect job-based per-site apps overriding that wildcard.
+            for site_name in set(self.deploy_map) | (set(settings) - {default_key}):
+                app_name = self.deploy_map.get(site_name, self.deploy_map.get(ALL_SITES))
+                app = self.fed_apps.get(app_name)
+                if site_name == "server" or not app or not app.client_app:
+                    continue
+                if app.client_app.execution_lifetime != "task":
+                    continue
+                site_settings = self._merge_resource_settings(
+                    settings.get(default_key, {}), settings.get(site_name, {})
+                )
+                gpu_path = self._find_nonempty_gpu_setting(site_settings)
+                if gpu_path:
+                    raise ValueError(
+                        "execution_lifetime='task' currently supports CPU Process workers only; "
+                        f"client {setting_name} for {site_name!r} requests GPU resources at {gpu_path!r}. "
+                        "Keep this job job-based until task-scoped GPU admission is configured."
+                    )
+
+    @classmethod
+    def _merge_resource_settings(cls, default, override):
+        result = copy.deepcopy(default) if isinstance(default, dict) else {}
+        if isinstance(override, dict):
+            for key, value in override.items():
+                if isinstance(result.get(key), dict) and isinstance(value, dict):
+                    result[key] = cls._merge_resource_settings(result[key], value)
+                else:
+                    result[key] = copy.deepcopy(value)
+        return result
+
+    @classmethod
+    def _find_nonempty_gpu_setting(cls, value, path=""):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                item_path = f"{path}.{key}" if path else str(key)
+                if "gpu" in str(key).lower() and cls._has_resource_value(item):
+                    return item_path
+                found = cls._find_nonempty_gpu_setting(item, item_path)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                found = cls._find_nonempty_gpu_setting(item, f"{path}[{index}]")
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _has_resource_value(value):
+        if value is None or value is False:
+            return False
+        if isinstance(value, (int, float)):
+            return value > 0
+        return bool(value)
 
     def _generate_meta(self, job_dir, json_dump):
         """Atomically write the pre-validated job metadata."""
@@ -637,6 +708,17 @@ class FedJobConfig:
         if fed_app.client_app.additional_params:
             client_app.update(fed_app.client_app.additional_params)
 
+        if fed_app.client_app.task_state_names is not None:
+            client_app["task_state"] = {"names": list(fed_app.client_app.task_state_names)}
+
+        execution_lifetime = fed_app.client_app.execution_lifetime
+        if execution_lifetime != "job":
+            client_app[EXECUTION_LIFETIME_KEY] = execution_lifetime
+            # Validate the exported application without replacing its Executor
+            # with an internal runtime class. The trusted CJ runtime creates the
+            # supervisor after authorizing these original application specs.
+            prepare_task_execution(client_app)
+
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(client_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)
@@ -653,13 +735,14 @@ class FedJobConfig:
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
         for cid, component in app.components.items():
-            app_config["components"].append(
-                {
-                    "id": cid,
-                    "path": self._get_class_path(component, custom_dir),
-                    "args": self._get_args(component, custom_dir),
-                }
-            )
+            component_config = {
+                "id": cid,
+                "path": self._get_class_path(component, custom_dir),
+                "args": self._get_args(component, custom_dir),
+            }
+            if isinstance(app, ClientAppConfig) and cid in app.component_execution_scopes:
+                component_config[EXECUTION_SCOPE_KEY] = app.component_execution_scopes[cid]
+            app_config["components"].append(component_config)
 
         app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
         app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)
