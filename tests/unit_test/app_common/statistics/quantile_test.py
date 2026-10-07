@@ -266,3 +266,34 @@ class TestQuantile:
 
         expected_median = 10
         assert result["train"]["Feature"].get(0.5) == expected_median
+
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest package not installed")
+    @pytest.mark.parametrize("client_order", [["valid", "empty"], ["empty", "valid"]])
+    def test_a_client_without_data_keeps_the_accumulated_digest(self, client_order):
+        # A site that has no rows for a feature reports an empty digest. Whether
+        # it arrives before or after a site that does have rows must not change
+        # the global quantiles.
+        reports = {
+            "valid": {"train": {"Feature": {StatisticsConstants.STATS_DIGEST_COORD: TDigest([1, 2, 3]).to_dict()}}},
+            "empty": {"train": {"Feature": {StatisticsConstants.STATS_DIGEST_COORD: {}}}},
+        }
+
+        global_digest = {}
+        for client in client_order:
+            global_digest = merge_quantiles(reports[client], global_digest)
+
+        result = compute_quantiles(global_digest, {"Feature": [0.5]}, 2)
+
+        assert result["train"]["Feature"].get(0.5) == 2
+
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest package not installed")
+    def test_a_feature_no_client_has_data_for_reports_no_quantiles(self):
+        empty = {"train": {"Feature": {StatisticsConstants.STATS_DIGEST_COORD: {}}}}
+
+        global_digest = {}
+        for _ in range(2):
+            global_digest = merge_quantiles(empty, global_digest)
+
+        result = compute_quantiles(global_digest, {"Feature": [0.5]}, 2)
+
+        assert result["train"]["Feature"].get(0.5) is None
