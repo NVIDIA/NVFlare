@@ -38,7 +38,7 @@ from .audit import emit
 from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
 from .storage import close_vault, disk_device
-from .supervisor import PROOF_EXPIRY_MARGIN_SECONDS, periodic_timeout, supervise
+from .supervisor import PROOF_EXPIRY_MARGIN_SECONDS, supervise
 from .systemd import notify
 
 CONFIG = Path("/etc/cvm/runtime.json")
@@ -453,7 +453,7 @@ def refresh_application_credentials(config, digest, *, app=None):
             digest,
             credentials_path=APP_ATTESTATION_CREDENTIALS,
             credentials_state_path=STATE / "application-proof.json",
-            minimum_credentials_validity=periodic_timeout(config) + PROOF_EXPIRY_MARGIN_SECONDS,
+            minimum_credentials_validity=PROOF_EXPIRY_MARGIN_SECONDS,
         ):
             pass
     else:

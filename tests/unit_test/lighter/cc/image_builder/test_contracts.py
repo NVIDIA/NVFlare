@@ -1175,7 +1175,43 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertEqual(read_json(credentials_path), credentials)
             self.assertEqual(read_json(state_path), {"expires_at": 1300})
 
-    def test_application_proof_rejects_a_token_that_cannot_survive_renewal(self):
+    def test_application_proof_accepts_valid_gpu_token_with_less_than_a_full_renewal_budget(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+            "gpu": "nvidia_cc",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1250}),
+                ),
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=240,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=15,
+                ):
+                    pass
+            self.assertTrue(credentials_path.exists())
+            self.assertEqual(read_json(state_path), {"expires_at": 1250})
+
+    def test_application_proof_rejects_a_token_without_the_publication_margin(self):
         config = {
             "kbs_client": "/test/kbs-client",
             "kbs_url": "https://kbs.test",
@@ -1191,13 +1227,13 @@ class RuntimeContractTests(unittest.TestCase):
             with (
                 patch(
                     "cvm.runtime.attestation._fresh_credentials",
-                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1075}),
+                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1015}),
                 ),
                 patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
                 patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
                 patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
                 patch("cvm.runtime.attestation.time.time", return_value=1000),
-                self.assertRaisesRegex(BuildError, "expires before"),
+                self.assertRaisesRegex(BuildError, "safely published"),
             ):
                 with authorized_key(
                     config,
@@ -1205,7 +1241,7 @@ class RuntimeContractTests(unittest.TestCase):
                     budget=60,
                     credentials_path=credentials_path,
                     credentials_state_path=state_path,
-                    minimum_credentials_validity=75,
+                    minimum_credentials_validity=15,
                 ):
                     pass
             self.assertFalse(credentials_path.exists())

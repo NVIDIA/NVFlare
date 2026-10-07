@@ -196,7 +196,7 @@ def authorized_key(
                 )
                 require(
                     claims["exp"] - time.time() > minimum_credentials_validity,
-                    "Appraisal expires before another bounded renewal can finish",
+                    "Appraisal expires before proof credentials can be safely published",
                 )
                 parent = Path(credentials_path).parent
                 require(parent.is_dir() and not parent.is_symlink(), "Invalid application runtime directory")

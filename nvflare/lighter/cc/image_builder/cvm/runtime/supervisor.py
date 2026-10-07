@@ -52,14 +52,18 @@ def periodic_timeout(config):
 
 
 def next_periodic_deadline(config, state, fallback=None):
-    """Return a monotonic deadline that leaves time to renew before proof expiry."""
+    """Return a renewal deadline, retrying immediately when a valid proof has little headroom."""
     proof = state / "application-proof.json"
     if not proof.is_file():
         return time.monotonic() + PERIODIC_INTERVAL_SECONDS if fallback is None else fallback
     expires_at = read_json(proof).get("expires_at")
     require(type(expires_at) in (int, float), "Invalid application proof expiration state")
-    delay = expires_at - time.time() - periodic_timeout(config) - PROOF_EXPIRY_MARGIN_SECONDS
-    require(delay > 0, "Application proof cannot be renewed before expiration")
+    validity = expires_at - time.time()
+    require(validity > 0, "Application proof has expired")
+    # A successful slow transaction may leave less than another complete
+    # appraisal budget. Keep its valid proof and renew again immediately rather
+    # than quarantining a workload whose Trustee authorization just succeeded.
+    delay = max(0, validity - periodic_timeout(config) - PROOF_EXPIRY_MARGIN_SECONDS)
     return time.monotonic() + delay
 
 
