@@ -321,8 +321,13 @@ def popen_in_new_session(args, **kwargs) -> subprocess.Popen:
 
     Use this instead of ``subprocess.Popen(..., preexec_fn=os.setsid)``. ``preexec_fn`` forces a plain fork()
     and runs Python code in the child before exec, which can segfault or deadlock when other threads
-    (e.g. gRPC) are active. ``start_new_session=True`` calls setsid() in C in the child instead.
-    On Windows, start_new_session is ignored.
+    (e.g. gRPC) are active. ``start_new_session=True`` calls setsid() in C in the child instead, so no
+    Python code runs between fork and exec.
+
+    This does not guarantee that fork() is avoided: start_new_session disables Popen's posix_spawn fast
+    path, so CPython uses vfork() on Linux when it can, and fork() otherwise or on other POSIX platforms.
+    When fork() is used, gRPC may still log that it is skipping its fork handlers; that is harmless here
+    because the child only runs async-signal-safe C code before exec. On Windows, start_new_session is ignored.
 
     Args:
         args: The command to run, as accepted by subprocess.Popen.
@@ -332,7 +337,9 @@ def popen_in_new_session(args, **kwargs) -> subprocess.Popen:
         subprocess.Popen: The started process.
     """
     if "preexec_fn" in kwargs:
-        raise ValueError("preexec_fn is not allowed; it is unsafe to fork with active threads")
+        raise ValueError(
+            "preexec_fn is not allowed; it runs Python code in the forked child, which is unsafe with threads"
+        )
     kwargs["start_new_session"] = True
     return subprocess.Popen(args, **kwargs)
 

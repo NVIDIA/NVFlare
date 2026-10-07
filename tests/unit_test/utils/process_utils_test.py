@@ -341,7 +341,7 @@ class TestSpawnProcess:
 
         spawn_process(["/bin/echo"], {"PATH": "/usr/bin"})
 
-        # setsid must be done by start_new_session (in C), not by a Python preexec_fn that forces fork()
+        # setsid must be done by start_new_session (in C), not by a Python preexec_fn run in the forked child
         call_kwargs = popen_mock.call_args[1]
         assert call_kwargs["start_new_session"] is True
         assert "preexec_fn" not in call_kwargs
