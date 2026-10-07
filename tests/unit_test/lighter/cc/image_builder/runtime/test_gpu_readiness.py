@@ -64,7 +64,7 @@ class GpuReadinessTests(unittest.TestCase):
         ):
             runtime.periodic()
             self.assertEqual(events, ["authorized", "ready"])
-            authorization.assert_called_once_with(cfg, bytes(32), credentials_path=None)
+            authorization.assert_called_once_with(cfg, bytes(32))
             events.clear()
             authorization.side_effect = BuildError("GPU appraisal denied by KBS")
             with self.assertRaises(BuildError):

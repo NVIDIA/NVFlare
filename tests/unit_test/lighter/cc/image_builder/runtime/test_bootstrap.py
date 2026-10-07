@@ -34,7 +34,7 @@ from cvm.build.config import SOURCE
 from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
 from cvm.common.errors import BuildError
 from cvm.common.evidence import serial_evidence, verify_reference
-from cvm.common.io import read_json
+from cvm.common.io import read_json, write_json
 from cvm.runtime import bootstrap, storage, supervisor
 from cvm.runtime.systemd import notify
 
