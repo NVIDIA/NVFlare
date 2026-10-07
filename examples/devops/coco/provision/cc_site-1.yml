@@ -1,0 +1,41 @@
+compute_env: confidential_containers
+cc_cpu_mechanism: amd_sev_snp
+cc_gpu: nvidia
+role: client
+
+# Authenticate this AS signing PUBLIC key with the secure-services owner.
+# It is NOT the KBS TLS certificate or the KBS administration key.
+cc_issuers:
+  - id: coco_authorizer
+    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
+    token_expiration: 300
+    args:
+      trustee_public_key_file: ./trustee-as-public.pem
+      token_url: http://127.0.0.1:8006/aa/token
+      # Optional bounded-retry settings; delays are in seconds.
+      retry_max_attempts: 10
+      retry_initial_delay: 1.0
+      retry_max_delay: 15.0
+      retry_backoff_multiplier: 2.0
+      retry_jitter_ratio: 0.5
+cc_attestation:
+  check_frequency: 120
+  # Use the same manager timeouts for all CoCo participants in this project.
+  registration_token_timeout: 300
+  refresh_token_timeout: 30
+  get_token_request_timeout: 45
+
+# Paths are relative to this file; dockerfile is relative to context.
+image_build:
+  context: ./site-1
+  dockerfile: Dockerfile
+
+# Choose a new, unique release for every participant/image/key/policy tuple.
+release_name: site-1-v1
+registry_repository: workloads/site-1
+platform_config: ../admin/platform.env
+
+# Add only reviewed fully-qualified application class names baked into the image.
+# Wildcards and module-prefix grants are rejected.
+# class_allow_list:
+#   - my_application.executor.ReviewedExecutor

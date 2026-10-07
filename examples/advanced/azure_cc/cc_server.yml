@@ -1,0 +1,11 @@
+compute_env: azure_confidential_container
+cc_cpu_mechanism: amd_sev_snp
+role: server
+
+cc_issuers:
+  - id: aci_authorizer
+    path: nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer
+    token_expiration: 100
+
+cc_attestation:
+  check_frequency: 120

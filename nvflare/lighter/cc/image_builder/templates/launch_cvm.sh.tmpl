@@ -1,0 +1,13 @@
+#!/bin/sh
+# Platform: __platform__; generic bundle: __build_id__.
+# Vault binding: __vault_bind__ (checked against guest hardware at boot).
+set -eu
+cd -- "$(dirname -- "$0")"
+# This runs as root and imports Python from the delivery. Refuse paths another
+# local user could have changed: everything here must be root-owned and not
+# group- or world-writable.
+if [ -n "$(find "$PWD" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "Refusing to launch: $PWD must be owned by root and not group- or world-writable" >&2
+    exit 1
+fi
+PYTHONSAFEPATH=1 PYTHONPATH="$PWD" exec python3 -m cvm.host.launcher --vault-directory "$PWD" "$@"
