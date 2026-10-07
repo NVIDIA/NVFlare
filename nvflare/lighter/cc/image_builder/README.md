@@ -298,6 +298,10 @@ back only explicitly requested `container.capabilities` (default: none), runs wi
 with writable `/tmp` and `/run`. Set `container.user` to a non-root numeric UID
 or UID:GID for an image prepared for it; otherwise the image's USER is preserved.
 A reviewed application may explicitly set `read_only_rootfs: false` when needed.
+When `container.attestation_credentials` is enabled, the measured guest supervisor
+publishes fresh Trustee proof credentials atomically under the encrypted
+`/vault/application/runtime` directory; the application does not need access to
+the guest attester binary or TEE device.
 `allowed_in_cidrs` and `allowed_out_cidrs` optionally confine the allowed ports
 to address ranges. Runtime DNS is limited to the DHCP-learned resolvers and denied when discovery returns no usable address.
 Admitted `app_*.service` units receive systemd sandboxing directives. Additional

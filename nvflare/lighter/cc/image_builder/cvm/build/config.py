@@ -186,6 +186,7 @@ CONTAINER_OPTIONS = {
     "env",
     "volumes",
     "ports",
+    "attestation_credentials",
     "tee_device",
     "capabilities",
     "pids_limit",
@@ -648,7 +649,7 @@ def application(path):
                 and all(isinstance(x, str) and "\x00" not in x for x in container[key]),
                 f"container.{key} must be an argument array",
             )
-    for key in ("tee_device", "read_only_rootfs", "host_bin"):
+    for key in ("attestation_credentials", "tee_device", "read_only_rootfs", "host_bin"):
         require_config(type(container.setdefault(key, key == "read_only_rootfs")) is bool, f"{key} must be boolean")
     if "user" in container:
         user = container["user"]

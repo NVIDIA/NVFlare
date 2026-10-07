@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import subprocess
 from unittest.mock import patch
 
@@ -63,8 +64,13 @@ def test_cvm_provider_uses_pinned_guest_kbs_client_and_ephemeral_key():
     private = serialization.load_pem_private_key(reply["tee_keypair"].encode(), password=None)
     assert isinstance(private, rsa.RSAPrivateKey)
     argv = run.call_args.args[0]
-    assert argv[0] == "/host/bin/kbs-client"
-    assert argv[1:4] == ["--url", "https://trustee.example.org:8443", "--cert-file"]
+    assert argv[:4] == [
+        "/host/lib/ld-linux-x86-64.so.2",
+        "--library-path",
+        "/host/lib",
+        "/host/bin/kbs-client",
+    ]
+    assert argv[4:7] == ["--url", "https://trustee.example.org:8443", "--cert-file"]
     assert argv[-2] == "--tee-key-file"
     assert argv[-1].startswith("/proc/self/fd/")
     assert run.call_args.kwargs["pass_fds"]
@@ -89,6 +95,18 @@ def test_cvm_provider_does_not_forward_loader_injection(monkeypatch):
     assert "LD_PRELOAD" not in run.call_args.kwargs["env"]
     assert "LD_AUDIT" not in run.call_args.kwargs["env"]
     assert run.call_args.kwargs["env"]["LD_LIBRARY_PATH"] == "/host/lib"
+
+
+def test_cvm_provider_reads_supervisor_credentials_without_invoking_kbs_client(tmp_path):
+    token_file = tmp_path / "trustee_token.json"
+    reply = {"token": "signed-ear", "tee_keypair": "private-key"}
+    token_file.write_text(json.dumps(reply))
+    authorizer = _authorizer("cvm", guest_token_file=str(token_file))
+
+    with patch("nvflare.app_opt.confidential_computing.trustee_authorizer.subprocess.run") as run:
+        assert authorizer._get_guest_token() == reply
+
+    run.assert_not_called()
 
 
 @pytest.mark.parametrize("provider", ["", "legacy", None])

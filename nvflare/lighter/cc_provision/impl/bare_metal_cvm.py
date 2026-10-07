@@ -91,6 +91,7 @@ class BareMetalCVMDeployment(CCDeployment):
                 {
                     "kbs_url": service.values["kbs_endpoint"],
                     "kbs_ca": ca.read_text(),
+                    "guest_token_file": "/vault/application/runtime/trustee_token.json",
                 }
                 if issuer
                 else {}
@@ -170,9 +171,11 @@ class BareMetalCVMDeployment(CCDeployment):
             "allowed_in_cidrs": list(network["allowed_in_cidrs"]),
             "allowed_out_cidrs": list(network["allowed_out_cidrs"]),
             "hosts_entries": dict(mode.get("hosts_entries", {})),
-            # Peer proof generation needs the measured kbs-client and TEE device.
-            "host_bin": True,
-            "tee_device": True,
+            # The measured guest publishes fresh proof credentials without
+            # exposing its attester binary or TEE device to the application.
+            "attestation_credentials": True,
+            "host_bin": False,
+            "tee_device": False,
         }
         for field in ("user_config", "user_data"):
             if field in mode:

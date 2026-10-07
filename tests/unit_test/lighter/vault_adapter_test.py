@@ -33,7 +33,13 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from nvflare.lighter import provision as provision_module
 from nvflare.lighter.cc import vault_adapter as adapter_module
-from nvflare.lighter.cc.vault_adapter import VaultAdapter, default_builder_dir, docker_image_id, invoke_vault_builder
+from nvflare.lighter.cc.vault_adapter import (
+    VaultAdapter,
+    default_builder_dir,
+    docker_image_id,
+    invoke_vault_builder,
+    publish_artifacts,
+)
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
@@ -394,6 +400,7 @@ def test_no_new_prod_directory_is_not_success(configuration, tmp_path, monkeypat
         ({"output_root": "workspace/project1/prod_00/vaults"}, "outside the provisioning"),
         ({"release_id": "a.b"}, "Unknown cvm_vault"),
         ({"participant_overrides": {"site-2": {}}}, "selected participants"),
+        ({"attestation_credentials": "yes"}, "attestation_credentials must be boolean"),
         ({"host_bin": "yes"}, "host_bin must be boolean"),
         ({"allowed_in_cidrs": "10.0.0.0/8"}, "list of CIDR"),
         ({"allowed_out_cidrs": ["10.0.0.1/8"]}, "host bits"),
@@ -830,6 +837,21 @@ def test_default_output_matches_previous_participant_folder(configuration, tmp_p
         assert all(Path(a["path"]).parent == expected for a in result["artifacts"])
     assert all(call[1].parent.parent == tmp_path / "workspace/project1/.cvm-vault-builds" for call in calls)
     assert (Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-2/startup/client.key").is_file()
+
+
+def test_publish_artifacts_opens_only_verified_delivery(configuration, tmp_path):
+    output = tmp_path / "delivery"
+    output.mkdir(mode=0o700)
+    archive = output / "vault.oci.tar"
+    archive.write_bytes(b"delivery")
+    archive.chmod(0o600)
+    private = output / "intel_tdx"
+    private.mkdir(mode=0o700)
+    publish_artifacts(output, [{"path": str(archive)}])
+
+    assert stat.S_IMODE(output.stat().st_mode) == 0o755
+    assert stat.S_IMODE(archive.stat().st_mode) == 0o644
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
 
 
 def test_default_output_failure_retains_original_signed_kit(configuration, tmp_path, monkeypatch):

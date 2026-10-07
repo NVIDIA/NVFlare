@@ -666,6 +666,10 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     assert "trustee-one.example" in paths[0].read_text()
     assert "trustee-two.example" in paths[1].read_text()
     assert all(path.stat().st_mode & 0o077 == 0 for path in paths)
+    settings = adapter.call_args.args[0]
+    assert settings["attestation_credentials"] is True
+    assert settings["host_bin"] is False
+    assert settings["tee_device"] is False
 
 
 def test_bare_metal_deployment_returns_common_artifact_result(tmp_path):

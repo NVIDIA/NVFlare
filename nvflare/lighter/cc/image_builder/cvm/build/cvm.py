@@ -32,7 +32,7 @@ import yaml
 from ..artifacts.bundle import approve_bundle, load_signing_key, verify_bundle
 from ..artifacts.packaging import package_bundle
 from ..common.errors import BuildError, require
-from ..common.evidence import serial_evidence, verify_reference
+from ..common.evidence import require_approved_tdx_tcb, serial_evidence, verify_reference
 from ..common.firewall import firewall_rules
 from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
@@ -488,18 +488,22 @@ def finalize_locked(directory, evidence=None, gpu=None):
     # Validate artifacts before trusting any report collected from them.
     for name, expected in manifest["sha256"].items():
         require(digest_file(directory / name) == expected, "Candidate bundle changed before measurement")
+    reference_evidence = None
     if manifest.get("dev_mode"):
         manifest["measurements"] = {}
     elif evidence is None:
         manifest["measurements"] = collect_reference(manifest, directory, gpu=gpu)
+        reference_evidence = read_json(directory / "reference-evidence.json")
     else:
-        evidence = read_json(evidence)
-        verify_reference(manifest["platform"], evidence)
-        manifest["measurements"] = evidence["measurements"]
-        write_json(directory / "reference-evidence.json", evidence)
+        reference_evidence = read_json(evidence)
+        verify_reference(manifest["platform"], reference_evidence)
+        manifest["measurements"] = reference_evidence["measurements"]
+        write_json(directory / "reference-evidence.json", reference_evidence)
     # Hardware references are bundle artifacts. Production approval separately
     # verifies a signed quote, CCEL replay, policy and failure-path acceptance.
     references = read_json(directory / "reference_values.json")
+    if manifest["platform"] == "intel_tdx" and reference_evidence is not None:
+        require_approved_tdx_tcb(reference_evidence, references)
     key_map = {
         "snp.measurement": "snp_launch_measurement",
         "mr_td": "mr_td",

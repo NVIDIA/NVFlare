@@ -14,8 +14,10 @@
 
 """One Trustee proof format for CoCo guests and bare-metal CVMs."""
 
+import json
 import math
 import os
+import stat
 import subprocess
 import tempfile
 import time
@@ -24,7 +26,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from .cc_authorizer import CCTokenGenerateError
-from .coco_authorizer import CoCoAuthorizer, _TemporaryTokenError
+from .coco_authorizer import MAX_TOKEN_BYTES, CoCoAuthorizer, _TemporaryTokenError
 
 
 class TrusteeAuthorizer(CoCoAuthorizer):
@@ -42,21 +44,31 @@ class TrusteeAuthorizer(CoCoAuthorizer):
         kbs_url=None,
         kbs_ca=None,
         kbs_client="/host/bin/kbs-client",
+        guest_loader="/host/lib/ld-linux-x86-64.so.2",
+        guest_token_file=None,
         **kwargs,
     ):
         if token_provider not in ("verifier", "coco", "cvm"):
             raise ValueError("token_provider must be verifier, coco, or cvm")
         if token_provider == "cvm":
-            if not isinstance(kbs_url, str) or not kbs_url.startswith("https://"):
-                raise ValueError("CVM Trustee token generation requires an HTTPS kbs_url")
-            if not isinstance(kbs_ca, str) or "BEGIN CERTIFICATE" not in kbs_ca:
-                raise ValueError("CVM Trustee token generation requires a PEM kbs_ca")
-            if not isinstance(kbs_client, str) or not kbs_client.startswith("/"):
-                raise ValueError("kbs_client must be an absolute guest path")
+            if guest_token_file is not None:
+                if not isinstance(guest_token_file, str) or not guest_token_file.startswith("/"):
+                    raise ValueError("guest_token_file must be an absolute guest path")
+            else:
+                if not isinstance(kbs_url, str) or not kbs_url.startswith("https://"):
+                    raise ValueError("CVM Trustee token generation requires an HTTPS kbs_url")
+                if not isinstance(kbs_ca, str) or "BEGIN CERTIFICATE" not in kbs_ca:
+                    raise ValueError("CVM Trustee token generation requires a PEM kbs_ca")
+                if not isinstance(kbs_client, str) or not kbs_client.startswith("/"):
+                    raise ValueError("kbs_client must be an absolute guest path")
+                if not isinstance(guest_loader, str) or not guest_loader.startswith("/"):
+                    raise ValueError("guest_loader must be an absolute guest path")
         self.token_provider = token_provider
         self.kbs_url = kbs_url
         self.kbs_ca = kbs_ca
         self.kbs_client = kbs_client
+        self.guest_loader = guest_loader
+        self.guest_token_file = guest_token_file
         super().__init__(*args, **kwargs)
 
     def _get_guest_token(self):
@@ -64,6 +76,25 @@ class TrusteeAuthorizer(CoCoAuthorizer):
             return super()._get_guest_token()
         if self.token_provider != "cvm":
             raise CCTokenGenerateError("Verifier-only Trustee authorizer cannot generate tokens")
+
+        if self.guest_token_file:
+            try:
+                descriptor = os.open(self.guest_token_file, os.O_RDONLY | os.O_NOFOLLOW)
+                try:
+                    metadata = os.fstat(descriptor)
+                    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_TOKEN_BYTES + 16384:
+                        raise ValueError("Invalid guest token file")
+                    with os.fdopen(descriptor) as stream:
+                        descriptor = -1
+                        reply = json.load(stream)
+                finally:
+                    if descriptor >= 0:
+                        os.close(descriptor)
+                if not isinstance(reply, dict) or set(reply) != {"token", "tee_keypair"}:
+                    raise ValueError("Invalid guest token file")
+                return reply
+            except OSError:
+                raise _TemporaryTokenError("CVM guest token temporarily unavailable") from None
 
         deadline = getattr(self._generation_context, "deadline", float("inf"))
         remaining = deadline - time.monotonic() if math.isfinite(deadline) else 60.0
@@ -91,6 +122,9 @@ class TrusteeAuthorizer(CoCoAuthorizer):
                 environment.update(RUST_LOG="off", LD_LIBRARY_PATH="/host/lib")
                 result = subprocess.run(
                     [
+                        self.guest_loader,
+                        "--library-path",
+                        "/host/lib",
                         self.kbs_client,
                         "--url",
                         self.kbs_url,

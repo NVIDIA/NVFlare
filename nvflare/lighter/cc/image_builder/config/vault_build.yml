@@ -25,6 +25,8 @@ container:
   ports: [{host: 8080, container: 8080}]
   env: {}
   volumes: []
+  # Publish short-lived guest-generated Trustee credentials in encrypted runtime storage.
+  attestation_credentials: false
   tee_device: false
   # No capabilities are restored by default; request only what the image needs.
   # capabilities: [NET_BIND_SERVICE]

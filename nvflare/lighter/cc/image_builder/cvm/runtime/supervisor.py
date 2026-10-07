@@ -28,7 +28,9 @@ from .gpu import readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
 
-PERIODIC_INTERVAL_SECONDS = 300
+# Refresh before Trustee's five-minute maximum EAR lifetime, leaving a minute
+# for scheduling and network jitter while preserving a bounded proof age.
+PERIODIC_INTERVAL_SECONDS = 240
 PERIODIC_TIMEOUT_SECONDS = 300
 
 

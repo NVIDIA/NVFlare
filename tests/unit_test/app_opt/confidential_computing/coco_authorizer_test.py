@@ -47,11 +47,6 @@ def test_approved_trust_vectors_match_trustee_policy_contract():
         "executables": 3,
         "hardware": 2,
         "configuration": 2,
-        "file-system": 0,
-        "instance-identity": 0,
-        "runtime-opaque": 0,
-        "storage-opaque": 0,
-        "sourced-data": 0,
     }
     assert TRUST_VECTOR == expected
     assert CPU_TRUST_VECTORS == {"snp": expected, "tdx": expected}
@@ -66,10 +61,23 @@ def material(request):
         if key_type == "rsa"
         else ec.generate_private_key(ec.SECP256R1())
     )
-    algorithm = jwt.algorithms.RSAAlgorithm if key_type == "rsa" else jwt.algorithms.ECAlgorithm
-    jwk = json.loads(algorithm.to_jwk(key.public_key()))
     if key_type == "rsa":
+        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
         jwk["alg"] = "RSA-OAEP-256"
+    else:
+        # RFC 7518 requires fixed-width P-256 coordinates. PyJWT's to_jwk()
+        # intermittently drops a leading zero byte and creates an invalid JWK.
+        numbers = key.public_key().public_numbers()
+
+        def encode_coordinate(value):
+            return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode()
+
+        jwk = {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": encode_coordinate(numbers.x),
+            "y": encode_coordinate(numbers.y),
+        }
     expected = {"init_data": "a" * 64, "image": "registry.example/workload@sha256:" + "b" * 64, "args": ["/start"]}
     # Match the pinned Trustee TDX claims.rs / AS flattening contract. These
     # synthetic values exercise the real claim shape, not hardware validation.

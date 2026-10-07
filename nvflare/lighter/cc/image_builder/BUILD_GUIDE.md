@@ -311,6 +311,11 @@ sudo ./cvmctl inspect-tcb \
 
 Compare its TCB fields with the approved input and complete signed-quote/CCEL
 and deployment acceptance for that exact bundle before production approval.
+Finalization fails if the measured TD's `mr_seam`, `tcb_svn`, or `xfam` is not
+already present in the approved reference input. Run `inspect-tcb`, complete the
+administrator review, update the reference input, increment `profile_version`,
+and rebuild; the builder never approves a value merely because the local host
+reported it.
 Transfer the discovery records securely and stop the temporary TD afterward.
 Changing approved references, firmware or other contract inputs requires a new
 `profile_version`, fresh construction/finalization and approval, and the isolated
@@ -619,6 +624,7 @@ container:
   ports: [{host: 8080, container: 8080}]
   env: {}
   volumes: []
+  attestation_credentials: false
   tee_device: false
 services: []
 hosts_entries: {}
@@ -631,7 +637,7 @@ systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
 application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
 protections and a reduced capability bounding set).
 
-Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in.
+Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in. `attestation_credentials` asks the measured guest supervisor to atomically publish a fresh Trustee EAR and its ephemeral proof key at `/vault/application/runtime/trustee_token.json`; unified CC provisioning enables this without exposing the guest attester binary or TEE device to the container.
 
 `container.env` is serialized into a sealed memory-backed environment file. Its values are never merged into the privileged Docker client's environment or command-line arguments. Names such as `DOCKER_HOST`, `PATH` and `LD_PRELOAD` configure only the container. Values cannot contain NUL, CR or LF. The CLI uses an absolute executable and the local Unix socket.
 

@@ -66,6 +66,7 @@ CONTAINER_STOP_SECONDS = 15
 DOCKER = "/usr/bin/docker"
 DOCKER_ENVIRONMENT = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/root", "LANG": "C.UTF-8"}
 NFS_MOUNT = Path("/nfs_data")
+APP_ATTESTATION_CREDENTIALS = Path("/vault/application/runtime/trustee_token.json")
 
 
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
@@ -195,10 +196,15 @@ def time_sync(max_tries=30, *, initialize=False):
         # threshold with our gate, obtain an initial correction, then collect
         # extra samples. Only the final bounded skew check authorizes startup.
         run(["/usr/bin/chronyc", "maxupdateskew", str(CLOCK_MAX_SKEW_PPM)], timeout=2)
-        run(
-            ["/usr/bin/chronyc", "waitsync", "30", str(CLOCK_MAX_CORRECTION_SECONDS), "0", "1"],
-            timeout=32,
-        )
+        try:
+            run(
+                ["/usr/bin/chronyc", "waitsync", "30", str(CLOCK_MAX_CORRECTION_SECONDS), "0", "1"],
+                timeout=32,
+            )
+        except BuildError:
+            # A cold clock may need the following burst before it has enough
+            # samples. The final bounded gate below still authorizes startup.
+            pass
         run(["/usr/bin/chronyc", "burst", "8/16"], timeout=2)
     run(
         [
@@ -382,6 +388,10 @@ def finish_bootstrap(config, dev=False):
             hosts.write(f"\n{address} {hostname}\n")
     if dev:
         (STATE / "platform.env").write_text("TEE_PLATFORM=none\nTEE_DEVICE=\nTEE_DEVICE_ARGS=\n")
+    elif app["container"].get("attestation_credentials"):
+        digest = bytes.fromhex(read_json(STATE / "binding.json")["digest"])
+        with authorized_key(config, digest, credentials_path=APP_ATTESTATION_CREDENTIALS):
+            pass
     mount_user_data()
     units = install_services()
     run(["systemctl", "daemon-reload"])
@@ -429,7 +439,9 @@ def periodic():
     verify_local_binding(config["platform"], digest)
     # Every supervisor tick requires a fresh positive appraisal AND current key
     # authorization; a valid signature or a cached EAR is insufficient.
-    with authorized_key(config, digest):
+    app = read_json("/vault/config/application.json")
+    credentials_path = APP_ATTESTATION_CREDENTIALS if app["container"].get("attestation_credentials") else None
+    with authorized_key(config, digest, credentials_path=credentials_path):
         pass
 
     readiness(config, True)

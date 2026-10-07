@@ -15,6 +15,7 @@
 """Security and application-neutral contracts, runnable without a guest."""
 
 import base64
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -55,7 +56,7 @@ from cvm.common.contracts import (
     validate_resource,
 )
 from cvm.common.errors import BuildError
-from cvm.common.evidence import serial_evidence, serial_frames
+from cvm.common.evidence import require_approved_tdx_tcb, serial_evidence, serial_frames, tdx_tcb
 from cvm.common.firewall import firewall_rules
 from cvm.common.io import canonical
 from cvm.common.linux import memory_file, validate_core_policy
@@ -75,6 +76,32 @@ from cvm.trustee.admin import verify_readback
 
 
 class BindingTests(unittest.TestCase):
+    @staticmethod
+    def tdx_evidence():
+        nonce = b"n" * 64
+        report = bytearray(1024)
+        report[0] = 0x81
+        report[128:192] = nonce
+        report[264:280] = bytes.fromhex("01" * 16)
+        report[280:328] = bytes.fromhex("02" * 48)
+        report[520:528] = bytes.fromhex("03" * 8)
+        return {
+            "platform": "intel_tdx",
+            "report": base64.b64encode(report).decode(),
+            "nonce": base64.b64encode(nonce).decode(),
+            "ccel": base64.b64encode(b"fixture-ccel").decode(),
+            "measurements": measurements("intel_tdx", report),
+        }
+
+    def test_tdx_reference_boot_requires_approved_tcb(self):
+        evidence = self.tdx_evidence()
+        candidate = tdx_tcb(evidence)
+        references = {name: [value] for name, value in candidate.items()}
+        require_approved_tdx_tcb(evidence, references)
+        for name in candidate:
+            with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
+                require_approved_tdx_tcb(evidence, dict(references, **{name: ["0" * len(candidate[name])]}))
+
     def test_piped_core_collectors_are_rejected_for_secret_children(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "core_pattern"
@@ -693,6 +720,7 @@ class ApplicationTests(unittest.TestCase):
         container = app["container"]
         self.assertEqual(container["capabilities"], list(runtime.DEFAULT_CAPABILITIES))
         self.assertEqual(container["pids_limit"], runtime.DEFAULT_PIDS_LIMIT)
+        self.assertFalse(container["attestation_credentials"])
         self.assertFalse(container["host_bin"])
         self.assertTrue(container["read_only_rootfs"])
         self.assertNotIn("allowed_out_cidrs", runtime_config(app))
@@ -709,6 +737,7 @@ class ApplicationTests(unittest.TestCase):
             ("capabilities", "CHOWN"),
             ("pids_limit", 0),
             ("pids_limit", "many"),
+            ("attestation_credentials", "yes"),
             ("host_bin", "yes"),
             ("read_only_rootfs", 1),
         ):
@@ -756,7 +785,9 @@ class ApplicationTests(unittest.TestCase):
         app = self.load()
         with self.assertRaises(BuildError):
             runtime.docker_argv(app)
-        self.assertIn("/dev/tdx_guest", runtime.docker_argv(app, device="/dev/tdx_guest"))
+        tdx_command = runtime.docker_argv(app, device="/dev/tdx_guest")
+        self.assertIn("/dev/tdx_guest", tdx_command)
+        self.assertNotIn("/sys/kernel/config", " ".join(tdx_command))
 
     def test_gpu_application_passes_all_gpus_to_container(self):
         self.value["requires_gpu"] = True
@@ -1097,6 +1128,7 @@ class RuntimeContractTests(unittest.TestCase):
         with (
             patch("cvm.runtime.attestation.run", side_effect=[b"token", base64.b64encode(bytes(64))]) as execute,
             patch("cvm.runtime.attestation.validate_token"),
+            patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
             patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 140]),
         ):
             with authorized_key(config, bytes(32), budget=ATTESTATION_BUDGET_SECONDS):
@@ -1127,8 +1159,14 @@ class RuntimeContractTests(unittest.TestCase):
         )
         self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 2, 92])
 
-    def test_cold_clock_rejects_unsynchronized_or_excessive_skew(self):
-        for failure_at in (1, 3):
+    def test_cold_clock_tolerates_preliminary_wait_failure(self):
+        failure = [None, BuildError("clock not ready"), None, None]
+        with patch("cvm.runtime.bootstrap.run", side_effect=failure) as execute:
+            runtime.time_sync(max_tries=90, initialize=True)
+        self.assertEqual(execute.call_count, 4)
+
+    def test_cold_clock_rejects_setup_burst_or_final_gate_failure(self):
+        for failure_at in (0, 2, 3):
             with patch("cvm.runtime.bootstrap.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
                 with self.assertRaises(BuildError):
                     runtime.time_sync(max_tries=90, initialize=True)

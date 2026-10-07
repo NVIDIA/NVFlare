@@ -14,21 +14,12 @@
 
 """Inspect candidate TDX TCB fields; this command never approves or imports them."""
 
-import base64
-
-from ..common.errors import require
-from ..common.evidence import verify_reference
+from ..common.evidence import tdx_tcb
 
 
 def inspect_tcb(evidence):
-    require(evidence["platform"] == "intel_tdx", "This inspector expects TDX reference evidence")
-    verify_reference("intel_tdx", evidence)
-    report = base64.b64decode(evidence["report"], validate=True)
+    candidate = tdx_tcb(evidence)
     return {
-        "unapproved_candidate_tcb": {
-            "mr_seam": [report[280:328].hex()],
-            "tcb_svn": [report[264:280].hex()],
-            "xfam": [report[520:528].hex()],
-        },
+        "unapproved_candidate_tcb": {name: [value] for name, value in candidate.items()},
         "review_required": "Validate platform endorsements and TCB status; obtain advisory IDs from a real signed-quote appraisal. This output is not an approved reference file.",
     }

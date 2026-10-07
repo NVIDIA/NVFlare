@@ -543,6 +543,41 @@ class BootstrapTests(unittest.TestCase):
             )
         self.assertEqual(events, ["firewall", "nfs", "units", "reload"])
 
+    def test_guest_credentials_are_published_before_workload_start(self):
+        events = []
+        app = {
+            "requires_gpu": False,
+            "allowed_ports": [],
+            "allowed_out_ports": [443],
+            "container": {"ports": [], "attestation_credentials": True},
+            "hosts_entries": {},
+        }
+
+        def read(path):
+            if path == bootstrap.STATE / "binding.json":
+                return {"digest": "00" * 32}
+            return app
+
+        @contextlib.contextmanager
+        def authorize(*args, **kwargs):
+            self.assertEqual(kwargs["credentials_path"], bootstrap.APP_ATTESTATION_CREDENTIALS)
+            events.append("credentials")
+            yield 17
+
+        with (
+            patch.object(bootstrap, "read_json", side_effect=read),
+            patch("builtins.open", mock_open()),
+            patch.object(bootstrap, "discovered_resolvers", return_value=[]),
+            patch.object(bootstrap, "firewall", side_effect=lambda *a, **k: events.append("firewall")),
+            patch.object(bootstrap, "authorized_key", side_effect=authorize),
+            patch.object(bootstrap, "mount_user_data", side_effect=lambda: events.append("nfs")),
+            patch.object(bootstrap, "install_services", side_effect=lambda: events.append("units") or []),
+            patch.object(bootstrap, "run", side_effect=lambda *a: events.append("reload")),
+        ):
+            bootstrap.finish_bootstrap({"gpu": "none", "bootstrap_egress": [443]})
+
+        self.assertEqual(events, ["firewall", "credentials", "nfs", "units", "reload"])
+
     def test_generated_units_depend_on_bootstrap_and_delegate_failure_to_pid1(self):
         destination = MagicMock()
         source = Mock()

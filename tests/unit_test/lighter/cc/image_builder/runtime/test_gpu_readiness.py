@@ -42,23 +42,29 @@ class GpuReadinessTests(unittest.TestCase):
         cfg = {"gpu": "nvidia_cc", "gpu_count": 1, "platform": "intel_tdx"}
 
         @contextlib.contextmanager
-        def authorize(*args):
+        def authorize(*args, **kwargs):
             events.append("authorized")
             yield
+
+        def read(path):
+            if path == runtime.CONFIG:
+                return cfg
+            if path == runtime.STATE / "binding.json":
+                return {"digest": "00" * 32}
+            return {"container": {"attestation_credentials": False}}
 
         with (
             patch.object(runtime.Path, "exists", return_value=False),
             patch.object(runtime, "protect_process"),
             patch.object(runtime, "time_sync"),
             patch.object(runtime, "verify_local_binding"),
-            patch.object(
-                runtime, "read_json", side_effect=lambda path: cfg if path == runtime.CONFIG else {"digest": "00" * 32}
-            ),
+            patch.object(runtime, "read_json", side_effect=read),
             patch.object(runtime, "authorized_key", side_effect=authorize) as authorization,
             patch.object(runtime, "readiness", side_effect=lambda *args: events.append("ready")),
         ):
             runtime.periodic()
             self.assertEqual(events, ["authorized", "ready"])
+            authorization.assert_called_once_with(cfg, bytes(32), credentials_path=None)
             events.clear()
             authorization.side_effect = BuildError("GPU appraisal denied by KBS")
             with self.assertRaises(BuildError):

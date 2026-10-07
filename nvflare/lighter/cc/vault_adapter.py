@@ -53,6 +53,7 @@ APPLICATION_SETTINGS = {
     "user_config",
     "user_data",
     "hosts_entries",
+    "attestation_credentials",
     "tee_device",
     "host_bin",
     "workspace_uid",
@@ -277,6 +278,32 @@ def collect_artifacts(output_dir, platforms=None):
             }
         )
     return {"deployment_id": deployment, "artifacts": artifacts}
+
+
+def publish_artifacts(output_dir, artifacts):
+    """Expose only verified OCI deliveries from a privileged vault build."""
+    output_dir = Path(output_dir).resolve(strict=True)
+    archives = []
+    for item in artifacts:
+        archive = Path(item["path"])
+        _require(
+            archive.is_absolute() and archive.parent == output_dir and archive.name == Path(archive.name).name,
+            "Vault delivery escaped its output directory",
+        )
+        archives.append(archive)
+    _require(archives, "Vault build produced no OCI deliveries")
+    try:
+        output_dir.chmod(0o755)
+        for archive in archives:
+            archive.chmod(0o644)
+    except PermissionError:
+        subprocess.run(["sudo", "-n", "chmod", "0755", "--", str(output_dir)], check=True)
+        subprocess.run(["sudo", "-n", "chmod", "0644", "--", *(str(path) for path in archives)], check=True)
+    _require(
+        os.access(output_dir, os.R_OK | os.X_OK)
+        and all(path.is_file() and os.access(path, os.R_OK) for path in archives),
+        "Verified CVM OCI deliveries are not readable by the public packager",
+    )
 
 
 class VaultAdapter:
@@ -519,6 +546,8 @@ class VaultAdapter:
             ipaddress.ip_address(address)
         tee_device = values.get("tee_device", False)
         _require(type(tee_device) is bool, "tee_device must be boolean")
+        attestation_credentials = values.get("attestation_credentials", False)
+        _require(type(attestation_credentials) is bool, "attestation_credentials must be boolean")
         # NVFlare's confidential-computing authorizers default to /host/bin tools,
         # so the mount stays on for kits unless a site turns it off explicitly.
         host_bin = values.get("host_bin", True)
@@ -529,6 +558,7 @@ class VaultAdapter:
             "env": {"NVFL_WORKSPACE": "/vault/application/runtime"},
             "volumes": [],
             "ports": [],
+            "attestation_credentials": attestation_credentials,
             "tee_device": tee_device,
             "host_bin": host_bin,
         }
@@ -774,6 +804,7 @@ class VaultAdapter:
                         all(a["cvm_build_id"] == expected[a["platform"]]["build_id"] for a in artifacts),
                         "Vault delivery changed the selected CVM build ID",
                     )
+                publish_artifacts(output, artifacts)
             except Exception as exc:
                 raise RuntimeError(
                     f"Cannot collect vault delivery metadata. Preserve {inputs} and {output}; "
