@@ -14,12 +14,13 @@
 
 import os
 import signal
+import subprocess
 import sys
 from unittest import mock
 
 import pytest
 
-from nvflare.utils.process_utils import ProcessAdapter, prepare_subprocess_command, spawn_process
+from nvflare.utils.process_utils import ProcessAdapter, popen_in_new_session, prepare_subprocess_command, spawn_process
 
 
 class TestPrepareSubprocessCommand:
@@ -381,4 +382,36 @@ class TestSpawnProcess:
         adapter.wait()
 
         sid, pid = out.read_text().split()
+        assert sid == pid
+
+
+class TestPopenInNewSession:
+    def test_sets_start_new_session_and_passes_kwargs(self, monkeypatch):
+        popen_mock = mock.Mock(return_value=mock.Mock())
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        popen_in_new_session(["/bin/echo", "hi"], shell=False, env={"A": "1"}, stdout=-1)
+
+        popen_mock.assert_called_once_with(
+            ["/bin/echo", "hi"], shell=False, env={"A": "1"}, stdout=-1, start_new_session=True
+        )
+
+    def test_rejects_preexec_fn(self, monkeypatch):
+        popen_mock = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        with pytest.raises(ValueError, match="preexec_fn"):
+            popen_in_new_session(["/bin/echo"], preexec_fn=os.setsid if hasattr(os, "setsid") else print)
+        popen_mock.assert_not_called()
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_child_runs_in_new_session(self):
+        process = popen_in_new_session(
+            [sys.executable, "-c", "import os; print(os.getsid(0), os.getpid())"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        out, _ = process.communicate(timeout=30)
+
+        sid, pid = out.split()
         assert sid == pid

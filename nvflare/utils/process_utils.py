@@ -316,6 +316,27 @@ class ProcessAdapter:
             self.logger.warning("Failed to kill process group %s (%s)", pgid, exc)
 
 
+def popen_in_new_session(args, **kwargs) -> subprocess.Popen:
+    """Start a subprocess as the leader of a new session (and process group).
+
+    Use this instead of ``subprocess.Popen(..., preexec_fn=os.setsid)``. ``preexec_fn`` forces a plain fork()
+    and runs Python code in the child before exec, which can segfault or deadlock when other threads
+    (e.g. gRPC) are active. ``start_new_session=True`` calls setsid() in C in the child instead.
+    On Windows, start_new_session is ignored.
+
+    Args:
+        args: The command to run, as accepted by subprocess.Popen.
+        **kwargs: Other subprocess.Popen keyword arguments. ``preexec_fn`` is not allowed.
+
+    Returns:
+        subprocess.Popen: The started process.
+    """
+    if "preexec_fn" in kwargs:
+        raise ValueError("preexec_fn is not allowed; it is unsafe to fork with active threads")
+    kwargs["start_new_session"] = True
+    return subprocess.Popen(args, **kwargs)
+
+
 def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
@@ -348,9 +369,7 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
-    # Do not use preexec_fn here: it forces a plain fork() and runs Python code in the child, which can
-    # segfault or deadlock when other threads (e.g. gRPC) are active. start_new_session is ignored on Windows.
-    process = subprocess.Popen(cmd_args, shell=False, start_new_session=True, env=env)
+    process = popen_in_new_session(cmd_args, shell=False, env=env)
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)
