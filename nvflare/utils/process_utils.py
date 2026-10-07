@@ -321,7 +321,8 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
 
     This method attempts to use os.posix_spawn with setsid=True to avoid fork() related issues
     (such as gRPC deadlocks). If posix_spawn is unavailable or fails, it falls back to
-    subprocess.Popen with preexec_fn=os.setsid.
+    subprocess.Popen with start_new_session=True, which calls setsid() in C in the child
+    instead of running Python code (preexec_fn) between fork and exec.
 
     Args:
         cmd_args: The command arguments as a list of strings.
@@ -338,15 +339,18 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             pid = os.posix_spawn(path, cmd_args, env, setsid=True)
             log.info("Launch the job in process ID: %s (posix_spawn)", pid)
             return ProcessAdapter(pid=pid)
-        except TypeError as exc:
-            # Happens when this interpreter lacks posix_spawn(..., setsid=...) support and silently falls back to fork.
+        except (TypeError, NotImplementedError) as exc:
+            # TypeError: this interpreter's posix_spawn does not accept the setsid keyword.
+            # NotImplementedError: CPython was built without POSIX_SPAWN_SETSID (e.g. against glibc < 2.26,
+            # as python-build-standalone and conda builds are).
             log.warning("posix_spawn missing setsid support (%s); falling back to subprocess.", exc)
         except Exception as exc:
             # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
-    preexec_fn = os.setsid if hasattr(os, "setsid") else None
-    process = subprocess.Popen(cmd_args, shell=False, preexec_fn=preexec_fn, env=env)
+    # Do not use preexec_fn here: it forces a plain fork() and runs Python code in the child, which can
+    # segfault or deadlock when other threads (e.g. gRPC) are active. start_new_session is ignored on Windows.
+    process = subprocess.Popen(cmd_args, shell=False, start_new_session=True, env=env)
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)

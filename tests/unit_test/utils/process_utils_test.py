@@ -14,6 +14,7 @@
 
 import os
 import signal
+import sys
 from unittest import mock
 
 import pytest
@@ -339,6 +340,45 @@ class TestSpawnProcess:
 
         spawn_process(["/bin/echo"], {"PATH": "/usr/bin"})
 
-        # Verify preexec_fn is set to os.setsid
+        # setsid must be done by start_new_session (in C), not by a Python preexec_fn that forces fork()
         call_kwargs = popen_mock.call_args[1]
-        assert call_kwargs["preexec_fn"] is os.setsid
+        assert call_kwargs["start_new_session"] is True
+        assert "preexec_fn" not in call_kwargs
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            NotImplementedError("posix_spawn: setsid unavailable on this platform"),
+            TypeError("posix_spawn() got an unexpected keyword argument 'setsid'"),
+        ],
+    )
+    def test_spawn_falls_back_when_setsid_unsupported(self, monkeypatch, error):
+        def unsupported_spawn(*args, **kwargs):
+            raise error
+
+        mock_popen = mock.Mock()
+        mock_popen.pid = 4444
+
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", True)
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", unsupported_spawn)
+        popen_mock = mock.Mock(return_value=mock_popen)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        adapter = spawn_process(["/bin/echo", "hello"], {"PATH": "/usr/bin"})
+
+        assert adapter.process is mock_popen
+        call_kwargs = popen_mock.call_args[1]
+        assert call_kwargs["start_new_session"] is True
+        assert "preexec_fn" not in call_kwargs
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_popen_fallback_child_runs_in_new_session(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", False)
+        out = tmp_path / "sid.txt"
+        script = f"import os; open({str(out)!r}, 'w').write(str(os.getsid(0)) + ' ' + str(os.getpid()))"
+
+        adapter = spawn_process([sys.executable, "-c", script], dict(os.environ))
+        adapter.wait()
+
+        sid, pid = out.read_text().split()
+        assert sid == pid
