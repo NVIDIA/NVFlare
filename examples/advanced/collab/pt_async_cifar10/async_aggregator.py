@@ -44,6 +44,7 @@ _TEST_TRANSFORM = transforms.Compose(
         ),
     ]
 )
+_FAILURE_POLL_INTERVAL = 0.1
 
 
 def seed_everything(seed: int) -> None:
@@ -94,6 +95,7 @@ class Cifar10AsyncAggregator:
         setup_seed: int = 10,
         run_seed: int = 10,
         checkpoint_interval: int = 0,
+        max_client_failures: int = 3,
     ):
         if num_active_jobs < 1:
             raise ValueError("num_active_jobs must be >= 1")
@@ -101,6 +103,8 @@ class Cifar10AsyncAggregator:
             raise ValueError("buffer_size must be >= 1")
         if not 1 <= min_open_slots <= num_active_jobs:
             raise ValueError("min_open_slots must be between 1 and num_active_jobs")
+        if max_client_failures < 1:
+            raise ValueError("max_client_failures must be >= 1")
 
         self.data_root = data_root
         self.num_rounds = num_rounds
@@ -114,10 +118,12 @@ class Cifar10AsyncAggregator:
         self.setup_seed = setup_seed
         self.run_seed = run_seed
         self.checkpoint_interval = max(0, checkpoint_interval)
+        self.max_client_failures = max_client_failures
         self.logger = get_obj_logger(self)
 
         self._outcomes = queue.Queue()
         self._active_jobs: dict[str, _ActiveJob] = {}
+        self._client_failures: dict[str, int] = defaultdict(int)
         self._available_clients: list[str] = []
         self._num_open_slots = 0
         self._update_buffer: list[_BufferedUpdate] = []
@@ -325,12 +331,22 @@ class Cifar10AsyncAggregator:
         return None
 
     def _watch_call_failures(self, results) -> None:
-        # Iteration waits for every outcome from this nonblocking group call.
-        # Successful values were already handled by the response callback.
-        for _ in results:
-            pass
-        for physical_name, error in results.failures.items():
-            self._outcomes.put(_ClientOutcome(physical_name=physical_name, error=error))
+        reported_failures = set()
+        while True:
+            with results.update_lock:
+                new_failures = [
+                    (physical_name, error)
+                    for physical_name, error in results.failures.items()
+                    if physical_name not in reported_failures
+                ]
+                all_outcomes_received = results.num_whole_items_received >= results.limit
+
+            for physical_name, error in new_failures:
+                reported_failures.add(physical_name)
+                self._outcomes.put(_ClientOutcome(physical_name=physical_name, error=error))
+            if all_outcomes_received:
+                return
+            time.sleep(_FAILURE_POLL_INTERVAL)
 
     def _wait_for_outcome(self) -> _ClientOutcome:
         while True:
@@ -348,17 +364,16 @@ class Cifar10AsyncAggregator:
             self.logger.warning(f"ignoring duplicate or unexpected outcome from {outcome.physical_name}")
             return False
 
-        self._available_clients.append(job.physical_name)
         self._num_open_slots += 1
         if outcome.error is not None:
-            self.logger.warning(
-                f"assignment {job.assignment_id} failed on {job.physical_name} "
-                f"(logical={job.logical_name}): {outcome.error}"
-            )
+            self._handle_failed_job(job, outcome.error, retry=accept_update)
             return False
         if outcome.result is None:
-            self.logger.warning(f"assignment {job.assignment_id} returned no update from {job.physical_name}")
+            self._handle_failed_job(job, "returned no update", retry=accept_update)
             return False
+
+        self._client_failures.pop(job.physical_name, None)
+        self._available_clients.append(job.physical_name)
         if not accept_update:
             self.logger.info(f"discarding assignment {job.assignment_id} completed after the final aggregation")
             return False
@@ -383,6 +398,24 @@ class Cifar10AsyncAggregator:
             return False
         self._aggregate_buffer()
         return True
+
+    def _handle_failed_job(self, job: _ActiveJob, error, retry: bool) -> None:
+        failure_count = self._client_failures[job.physical_name] + 1
+        self._client_failures[job.physical_name] = failure_count
+        if retry and failure_count < self.max_client_failures:
+            self._available_clients.append(job.physical_name)
+            retry_status = f"; retrying after failure {failure_count}/{self.max_client_failures}"
+            log = self.logger.warning
+        elif retry:
+            retry_status = f"; reached failure limit {self.max_client_failures}, removing client from scheduling"
+            log = self.logger.error
+        else:
+            retry_status = "; not retrying after final aggregation"
+            log = self.logger.warning
+        log(
+            f"assignment {job.assignment_id} failed on {job.physical_name} "
+            f"(logical={job.logical_name}): {error}{retry_status}"
+        )
 
     def _aggregate_buffer(self) -> None:
         total_delta = {}

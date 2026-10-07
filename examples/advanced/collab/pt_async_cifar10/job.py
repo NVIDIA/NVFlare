@@ -88,6 +88,12 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--server-lr", type=float, default=1.0)
     parser.add_argument("--eval-batch-size", type=int, default=300)
     parser.add_argument("--call-timeout", type=float, default=3600.0)
+    parser.add_argument(
+        "--max-client-failures",
+        type=int,
+        default=3,
+        help="Consecutive failed assignments before a client is removed from scheduling (default: 3)",
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--setup-seed", type=int, default=10)
     parser.add_argument("--run-seed", type=int, default=10)
@@ -107,6 +113,8 @@ def make_recipe(args) -> CollabRecipe:
         raise ValueError("--total-client-rounds must be >= 1 and --num-workers must be >= 0")
     if args.local_lr <= 0 or args.server_lr <= 0 or args.call_timeout <= 0:
         raise ValueError("--local-lr, --server-lr, and --call-timeout must be > 0")
+    if args.max_client_failures < 1:
+        raise ValueError("--max-client-failures must be >= 1")
     num_active_jobs = args.num_clients if args.num_active_jobs is None else args.num_active_jobs
     if not 1 <= num_active_jobs <= args.num_clients:
         raise ValueError("--num-active-jobs must be between 1 and --num-clients")
@@ -130,6 +138,7 @@ def make_recipe(args) -> CollabRecipe:
         setup_seed=args.setup_seed,
         run_seed=args.run_seed,
         checkpoint_interval=args.checkpoint_interval,
+        max_client_failures=args.max_client_failures,
     )
     client = Cifar10Trainer(
         data_root=args.data_root,
@@ -182,6 +191,7 @@ def main():
     print(f"  Dispatch threshold (O): {args.min_open_slots}")
     print(f"  Schedule: {schedule}")
     print(f"  Global aggregations: {args.num_rounds}")
+    print(f"  Client failure limit: {args.max_client_failures}")
     print(f"  Data root: {args.data_root}")
     print("=" * 80)
 

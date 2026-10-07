@@ -57,6 +57,12 @@ Because the server dispatches all $K$ initial slots with a nonblocking group
 call, $K$ is also the configured client-training parallelism. It may be smaller
 than `--num-clients`, but cannot exceed the available physical clients.
 
+Failures are forwarded to the scheduler as they arrive so a failed assignment
+releases its slot without waiting for the rest of its dispatch group. A client
+is removed from scheduling after `--max-client-failures` consecutive failed
+assignments (default: 3); a successful assignment resets its failure count. If
+no usable clients remain, the workflow stops instead of retrying forever.
+
 `--num-rounds` counts global aggregations, not client dispatches. The default
 is eight physical clients, $K=8$, $B=4$, $O=1$, and 100 global aggregations.
 This matches the referenced 8-client, 50-round CIFAR-10 FedAvg baseline's 400
