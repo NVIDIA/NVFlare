@@ -139,12 +139,12 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 def secure_load_admin_config(workspace: Workspace):
     mgr = SecurityContentManager(content_folder=workspace.get_startup_kit_dir())
 
-    # Tamper check: only meaningful when signature.json is present (CC or HE mode).
-    # When valid_config=False (no signature.json — standard non-CC, non-HE, or Manual
+    # Tamper check: only meaningful when signature.json is present (CVM vault or HE mode).
+    # When valid_config=False (no signature.json — standard non-HE or Manual
     # Workflow), fed_admin.json returns NOT_SIGNED; that is correct and not an error.
     _, result = mgr.load_json(WorkspaceConstants.ADMIN_STARTUP_CONFIG)
     if mgr.valid_config and result != LoadResult.OK:
-        # signature.json is present (CC or HE mode) — enforce tamper check strictly
+        # signature.json is present (CVM vault or HE mode) — enforce tamper check strictly
         raise ConfigError(f"invalid {WorkspaceConstants.ADMIN_STARTUP_CONFIG}: tampered ({result})")
     # if valid_config=False (no signature.json): skip tamper check
     # mTLS is the trust anchor; no centrally-signed kit exists to verify against
