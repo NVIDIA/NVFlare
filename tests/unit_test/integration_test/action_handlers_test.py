@@ -183,3 +183,62 @@ def test_abort_config_waits_for_current_job_state(event, initial_status, expecte
     driver.execute_actions.assert_called_once_with(
         actions=event["actions"], admin_user_name=event.get("admin_user_name")
     )
+
+
+@pytest.mark.parametrize("event,initial_status,expected_status", CONFIG_EVENTS)
+@pytest.mark.parametrize("terminal_status", [RunStatus.FINISHED_COMPLETED.value, RunStatus.FINISHED_ABNORMAL.value])
+def test_abort_config_rejects_terminal_job_without_waiting_for_timeout(
+    event, initial_status, expected_status, terminal_status, clock
+):
+    driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
+    driver.job_id = JOB_ID
+    driver.last_job_name = "slow_job"
+    driver.server_status = Mock(return_value="started")
+    driver.client_status = Mock(return_value="started")
+    driver.execute_actions = Mock()
+    statuses = iter([initial_status, terminal_status])
+
+    def poll_state(state):
+        _, state = nvf_test_driver._update_run_state(None, state, next(statuses))
+        return state
+
+    driver._get_run_state = Mock(side_effect=poll_state)
+
+    with pytest.raises(nvf_test_driver.NVFTestError) as caught:
+        driver.run_event_sequence([event])
+
+    assert f"terminal status {terminal_status!r}" in str(caught.value)
+    assert f"waiting for job_status={expected_status!r}" in str(caught.value)
+    assert JOB_ID in str(caught.value)
+    driver.execute_actions.assert_not_called()
+    assert clock.sleeps == [0.5]
+
+
+def test_abort_config_rejects_job_that_finishes_between_readiness_and_abort(clock):
+    driver = nvf_test_driver.NVFTestDriver("unused", Mock(), poll_period=0.5, event_sequence_timeout=5.0)
+    driver.job_id = JOB_ID
+    driver.last_job_name = "slow_job"
+    driver.server_status = Mock(return_value="started")
+    driver.client_status = Mock(return_value="started")
+    session = _session(_reply(info=f"Job for {JOB_ID} is already completed."))
+    statuses = iter([RunStatus.RUNNING.value, RunStatus.FINISHED_COMPLETED.value, RunStatus.FINISHED_COMPLETED.value])
+
+    def poll_state(state):
+        _, state = nvf_test_driver._update_run_state(None, state, next(statuses))
+        return state
+
+    def execute_actions(actions, admin_user_name=None):
+        assert actions == ["abort_job"]
+        action_handlers._AbortJobHandler().handle([], driver, session)
+
+    driver._get_run_state = Mock(side_effect=poll_state)
+    driver.execute_actions = Mock(side_effect=execute_actions)
+
+    with pytest.raises(nvf_test_driver.NVFTestError) as caught:
+        driver.run_event_sequence(ABORT_CONFIG["tests"][0]["event_sequence"][1:])
+
+    assert "terminal status 'FINISHED:COMPLETED'" in str(caught.value)
+    assert "waiting for job_status='FINISHED:ABORTED'" in str(caught.value)
+    session.api.do_command.assert_called_once_with(f"abort_job {JOB_ID}", props=None)
+    assert driver.test_done is False
+    assert clock.sleeps == [0.5]
