@@ -106,9 +106,10 @@ class SequentialRelayTaskManager(TaskManager):
             Tuple[int, int]: starting and ending indices of a window of client candidates.
 
         """
-        # A relay with dynamic targets starts with none: targets of "*" keep the
-        # list empty on purpose, and so does a relay scheduled before any client
-        # has registered. There is no candidate to window over until one joins.
+        # relay(targets=[], dynamic_targets=True) schedules a task whose target
+        # list is filled in by the job participants that ask for work, so it is
+        # empty for as long as none has asked. There is no candidate to window
+        # over until the first one is appended.
         if not task.targets:
             return -1, -1
 

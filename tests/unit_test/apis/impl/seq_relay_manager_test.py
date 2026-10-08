@@ -38,12 +38,12 @@ def _manager_and_task(targets):
 
 class TestSequentialRelayTaskManager:
     def test_check_task_exit_with_no_targets_yet(self):
-        """The task monitor calls this before any client has joined.
+        """The task monitor calls this before any participant has asked for work.
 
-        A relay with targets of "*", or one scheduled before a client has
-        registered, leaves task.targets empty, and the monitor thread has no
-        exception handling, so indexing the list there took the thread down and
-        the job stopped timing anything out.
+        relay(targets=[], dynamic_targets=True) leaves task.targets empty until
+        a participant is appended to it, and the monitor thread has no exception
+        handling, so indexing the list there took the thread down and the job
+        stopped timing anything out.
         """
         manager, task = _manager_and_task([])
 
@@ -55,7 +55,7 @@ class TestSequentialRelayTaskManager:
         assert manager.check_task_exit(task) == (False, TaskCompletionStatus.IGNORED)
 
     def test_first_client_to_arrive_gets_the_task(self):
-        """A wildcard relay starts with no targets and fills in as clients ask.
+        """A relay scheduled with no targets fills in as participants ask for work.
 
         The monitor may run any number of times in between, so this covers the
         whole transition rather than just the empty window.

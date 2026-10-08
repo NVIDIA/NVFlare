@@ -958,7 +958,11 @@ class WFCommServer(FLComponent, WFCommSpec):
             raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
         if not isinstance(dynamic_targets, bool):
             raise TypeError("dynamic_targets must be an instance of bool, but got {}".format(type(dynamic_targets)))
-        if targets is None and dynamic_targets is False:
+        # An empty list is as unusable as None here: with dynamic_targets off
+        # nothing can be added to it, so the relay would wait out its timeout,
+        # or forever when the task has none. The docstring above has always said
+        # so; the check only covered None.
+        if not targets and dynamic_targets is False:
             raise ValueError("Need to provide targets when dynamic_targets is set to False.")
 
         if send_order == SendOrder.SEQUENTIAL:
