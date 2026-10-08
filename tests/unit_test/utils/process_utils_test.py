@@ -385,7 +385,14 @@ class TestSpawnProcess:
         script = f"import os; open({str(out)!r}, 'w').write(str(os.getsid(0)) + ' ' + str(os.getpid()))"
 
         adapter = spawn_process([sys.executable, "-c", script], dict(os.environ))
-        adapter.wait()
+        process = adapter.process
+        assert process is not None
+        try:
+            process.wait(timeout=30)
+        finally:
+            if adapter.poll() is None:
+                adapter.terminate()
+                process.wait(timeout=30)
 
         sid, pid = out.read_text().split()
         assert sid == pid
