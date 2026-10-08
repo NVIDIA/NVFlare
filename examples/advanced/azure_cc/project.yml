@@ -1,0 +1,25 @@
+api_version: 3
+name: azure_cc_project
+description: Azure confidential ACI server and confidential VM client
+
+participants:
+  - name: server.azure.example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    cc_config: cc_server.yml
+  - name: site-1
+    type: client
+    org: nvidia
+    cc_config: cc_site-1.yml
+  - name: admin@example.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
