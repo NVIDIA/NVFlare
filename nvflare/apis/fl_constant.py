@@ -86,6 +86,8 @@ class ReservedKey:
     TASK_DATA = "__task_data__"
     TASK_RESULT = "__task_result__"
     TASK_ID = "__task_id__"
+    TASK_ATTEMPT_ID = "__task_attempt_id__"
+    TASK_ATTEMPT_REQUIRED = "__task_attempt_required__"
     EVENT_ID = "__event_id__"
     AUDIT_EVENT_ID = "__audit_event_id__"
     IS_RESEND = "__is_resend__"
@@ -126,7 +128,12 @@ class FLContextKey:
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_DATA = ReservedKey.TASK_DATA
     TASK_RESULT = ReservedKey.TASK_RESULT
+    TASK_RESULT_SEND_SUCCESS = "__task_result_send_success__"
+    TASK_RESULT_SUBMISSION_ATTEMPTED = "__task_result_submission_attempted__"
+    TASK_RESULT_RECEIPT = "__task_result_receipt__"
     TASK_ID = ReservedKey.TASK_ID
+    TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
+    TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
     EVENT_ID = ReservedKey.EVENT_ID
     EVENT_ORIGIN = ReservedKey.EVENT_ORIGIN
     EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
@@ -535,7 +542,16 @@ class FilterKey:
     DELIMITER = "/"
 
 
+class TaskResultReceipt:
+    """Submission acknowledgement, independent of aggregation policy."""
+
+    RECEIVED = "RECEIVED"
+    TASK_CLOSED = "TASK_CLOSED"
+    RETRY = "RETRY"
+
+
 class ConfigVarName:
+    TASK_RESULT_HISTORY_SIZE = "task_result_history_size"  # server: retired assignments retained per workflow
     # These variables can be set in job config files (config_fed_server or config_fed_client)
     RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"  # client: runner sync message timeout
     MAX_RUNNER_SYNC_TIMEOUT = "max_runner_sync_timeout"  # client: max timeout of runner sync attempts

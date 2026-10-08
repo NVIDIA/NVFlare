@@ -18,7 +18,7 @@ import time
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -27,6 +27,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
@@ -98,7 +99,7 @@ class ServerRunner(TBI):
         self.config = config
         self.engine = engine
         self.abort_signal = Signal()
-        # Submission admission and workflow teardown share this gate. It is
+        # Result receipt and workflow teardown share this gate. It is
         # reentrant because process_submission delegates to existing workflow
         # processing that already takes the same lock.
         self.wf_lock = threading.RLock()
@@ -204,7 +205,7 @@ class ServerRunner(TBI):
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"Error executing RUN: {secure_format_exception(e)}")
         finally:
-            # Close submission admission atomically with workflow teardown.
+            # Close result submissions atomically with workflow teardown.
             with self.wf_lock:
                 self.status = "done"
                 with self.engine.new_context() as fl_ctx:
@@ -414,6 +415,12 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
                     fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
+                    # Keep the issuing workflow independently of the payload:
+                    # OUT filters may replace its entire Shareable/cookie jar.
+                    fl_ctx.set_prop(FLContextKey.WORKFLOW, value=self.current_wf.id, private=True, sticky=False)
+                    fl_ctx.set_prop(
+                        FLContextKey.TASK_ATTEMPT_ID, value=task_data.get_task_attempt_id(), private=True, sticky=False
+                    )
                     fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
 
                     self.log_info(fl_ctx, f"assigned task to client {client.name}: name={task_name}, id={task_id}")
@@ -443,30 +450,11 @@ class ServerRunner(TBI):
                 )
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        """Process task result submitted from a client.
-
-        NOTE: the Engine will create a new fl_ctx and call this method:
-
-            with engine.new_context() as fl_ctx:
-                name, id, data = runner.process_submission(client, fl_ctx)
-
-        Args:
-            client: Client object
-            task_name: task name
-            task_id: task id
-            result: task result
-            fl_ctx: FLContext
-        """
-        # A streamed result callback can be queued before teardown and execute
-        # after END_RUN. Keep the admission decision and all downstream state
-        # access under the same lock used to close the workflow.
+        """Confirm complete result receipt independently of application processing."""
         with self.wf_lock:
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
             if self.status != "started" or self.current_wf is None:
-                self.log_info(
-                    fl_ctx,
-                    f"ignored result submission since server runner status is {self.status} "
-                    f"and current workflow is {self.current_wf}",
-                )
+                self.log_info(fl_ctx, f"result submission dropped: runner={self.status}, workflow={self.current_wf}")
                 return
             return self._process_submission(client, task_name, task_id, result, fl_ctx)
 
@@ -497,14 +485,43 @@ class ServerRunner(TBI):
             # the client is on a different RUN
             self.log_info(fl_ctx, "invalid result submission: not the same job id - dropped")
             return
+        if peer_ctx.get_identity_name() != client.name:
+            self.log_warning(fl_ctx, "invalid result submission: client and peer identity differ - dropped")
+            return
+
+        try:
+            attempt_id = result.get_task_attempt_id()
+        except ValueError as e:
+            self.log_warning(fl_ctx, f"invalid result submission: {e} - dropped")
+            return
+        fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=attempt_id, private=True, sticky=False)
+        wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
+        if (attempt_id is not None or wf_id is not None) and wf_id != self.current_wf.id:
+            self.log_info(fl_ctx, f"result workflow {wf_id} does not match {self.current_wf.id} - dropped")
+            return
+        workflow = self.current_wf
+        communicator = workflow.controller.communicator
+        if not communicator.check_submission(client, task_name, task_id, result, fl_ctx):
+            return
+        # FOBS normally resolves streamed references before dispatch. Never
+        # acknowledge a forwarding envelope while the client still owns its bytes.
+        if contains_lazy_download_ref(result):
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RETRY, private=True, sticky=False)
+            self.log_warning(fl_ctx, "result payload is not fully downloaded - retry required")
+            return
+        if not communicator.claim_submission(client, task_name, task_id, result, fl_ctx):
+            return
 
         rc = result.get_return_code(default=ReturnCode.OK)
         if rc in self.ABORT_RETURN_CODES:
-            self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
-            self.system_panic(
-                reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
-                fl_ctx=fl_ctx,
-            )
+            try:
+                self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
+                self.system_panic(
+                    reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
+                    fl_ctx=fl_ctx,
+                )
+            finally:
+                communicator.finish_submission(task_id, fl_ctx)
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
@@ -550,24 +567,45 @@ class ServerRunner(TBI):
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+                result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
+                if attempt_id is not None:
+                    # A trusted filter may replace the Shareable with a prior
+                    # result. Rebind the full validated assignment in headers
+                    # and cookies before the communicator validates it again.
+                    for key, value in (
+                        (ReservedHeaderKey.TASK_ID, task_id),
+                        (ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id),
+                        (ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True),
+                        (ReservedHeaderKey.WORKFLOW, workflow.id),
+                    ):
+                        result.set_header(key, value)
+                        result.add_cookie(key, value)
+                else:
+                    result.set_header(ReservedHeaderKey.TASK_ID, task_id)
                 fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
                 self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
 
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_SUBMISSION")
                 self.fire_event(EventType.BEFORE_PROCESS_SUBMISSION, fl_ctx)
 
-                self.current_wf.controller.communicator.process_submission(
+                communicator.process_submission(
                     client=client, task_name=task_name, task_id=task_id, result=result, fl_ctx=fl_ctx
                 )
-                self.log_info(fl_ctx, "finished processing client result by {}".format(self.current_wf.id))
+                self.log_info(
+                    fl_ctx,
+                    f"finished processing received result by {workflow.id}; "
+                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                )
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
                 self.log_exception(
                     fl_ctx,
-                    "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
+                    "Error processing received client result by {}: {}".format(workflow.id, secure_format_exception(e)),
                 )
+            finally:
+                communicator.finish_submission(task_id, fl_ctx)
 
     def _report_client_active(self, reason: str, fl_ctx: FLContext):
         with self.wf_lock:
@@ -588,21 +626,47 @@ class ServerRunner(TBI):
         if not task_id:
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
+        try:
+            attempt_id = request.get_task_attempt_id()
+        except ValueError:
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+        fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.TASK_NAME, request.get_header(ReservedHeaderKey.TASK_NAME), private=True, sticky=False
+        )
 
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
         with self.wf_lock:
-            if self.current_wf is None or self.current_wf.controller is None:
-                self.log_info(fl_ctx, "no current workflow - dropped task_check.")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-
+            reply = make_reply(ReturnCode.TASK_UNKNOWN)
+            workflow_id = request.get_header(ReservedHeaderKey.WORKFLOW)
+            if attempt_id is not None:
+                reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
+                reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+                reply.set_header(ReservedHeaderKey.WORKFLOW, workflow_id)
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED)
+            peer_ctx = fl_ctx.get_peer_context()
+            if (
+                not isinstance(peer_ctx, FLContext)
+                or peer_ctx.get_job_id() != self.job_id
+                or self.status != "started"
+                or self.current_wf is None
+                or self.current_wf.controller is None
+                or (attempt_id is not None and workflow_id != self.current_wf.id)
+            ):
+                return reply
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
             task = self.current_wf.controller.communicator.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
-            if task:
-                self.log_debug(fl_ctx, f"task {task_id} is still good")
-                return make_reply(ReturnCode.OK)
-            else:
+            if attempt_id is not None:
+                receipt = fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT)
+                if receipt not in (TaskResultReceipt.RECEIVED, TaskResultReceipt.RETRY):
+                    return reply
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+            elif task is None:
                 self.log_info(fl_ctx, f"task {task_id} is not found")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
+                return reply
+            reply.set_return_code(ReturnCode.OK)
+            return reply
 
     def abort(self, fl_ctx: FLContext, turn_to_cold: bool = False):
         self.status = "done"
