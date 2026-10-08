@@ -34,7 +34,7 @@ def _mark_server_transit(message):
 
 def _wait_for_connection(cell, peer_fqcn):
     deadline = time.time() + _CONNECT_TIMEOUT
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if cell.is_cell_connected(peer_fqcn):
             return
         time.sleep(0.05)

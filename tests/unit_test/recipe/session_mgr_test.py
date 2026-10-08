@@ -21,6 +21,7 @@ from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.session_mgr import SessionManager, _job_monitor_callback
+from tests.timing_utils import isolate_time
 
 
 def test_submit_job_scans_generated_config_before_submission():
@@ -297,3 +298,11 @@ def test_error_log_retrieval_failure_preserves_result_and_closes_session(tmp_pat
     assert manager.get_job_result("job-id") == str(tmp_path)
     assert session.get_job_logs.call_count == int(failed)
     session.close.assert_called_once()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.recipe.session_mgr",
+    )

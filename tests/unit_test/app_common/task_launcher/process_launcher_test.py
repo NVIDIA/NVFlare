@@ -42,6 +42,7 @@ from nvflare.app_common.task_launcher.process_launcher import (
     _OwnedProcessAdapter,
 )
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from tests.timing_utils import ManualClock
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="ProcessTaskLauncher requires POSIX process groups")
 requires_waitid = pytest.mark.skipif(
@@ -821,7 +822,7 @@ def test_real_process_creation_failure_releases_attempt_fence(tmp_path, backend)
 
 @pytest.mark.parametrize("bounded_wait", [False, True])
 @requires_waitid
-def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait):
+def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait, monkeypatch):
     child_pid_path = tmp_path / "retained-child.pid"
     child_code = (
         "import os, pathlib, signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -846,14 +847,19 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
     assert observed.si_pid == handle.process_group_id
     assert observed.si_status == 0
     if bounded_wait:
-        started = time.monotonic()
-        try:
-            status = handle.wait_for_settlement(timeout=0.12)
-        except TimeoutError:
-            # The caller can finish observing cleanup after its wait expires.
-            # The launcher must retain the leader until that proof is complete.
-            status = handle.poll()
-        assert time.monotonic() - started < 0.5
+        import nvflare.app_common.task_launcher.process_launcher as process_launcher
+
+        clock = ManualClock()
+        started = clock.monotonic()
+        with monkeypatch.context() as clock_patch:
+            clock.sleep = clock.advance
+            clock_patch.setattr(process_launcher, "time", clock)
+            try:
+                status = handle.wait_for_settlement(timeout=0.12)
+            except TimeoutError:
+                # Retain the leader until the remaining descendant is cleaned up.
+                status = handle.poll()
+        assert clock.monotonic() - started <= 0.12 + 1e-9
         assert not status.succeeded
         if status.settled:
             _assert_pid_not_running(int(child_pid_path.read_text()))

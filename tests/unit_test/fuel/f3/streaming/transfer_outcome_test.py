@@ -25,6 +25,7 @@ from nvflare.fuel.f3.streaming.transfer_outcome import (
     terminal_state_for_done_status,
 )
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
+from tests.timing_utils import ManualClock
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     MockDownloadable,
     make_isolated_download_service,
@@ -746,7 +747,7 @@ class TestServiceOutcomeTable:
         with service._tx_lock:
             assert tx_id not in service._terminating_txs
 
-    def test_receipt_ttl_starts_at_recording_not_at_verdict(self):
+    def test_receipt_ttl_starts_at_recording_not_at_verdict(self, monkeypatch):
         """P1 pin: the outcome timestamp is captured before the settlement callbacks
         run -- a settlement slower than TX_OUTCOME_TTL used to record a receipt that
         was EXPIRED at birth, which the inline expiry then handed to a same-id
@@ -754,13 +755,18 @@ class TestServiceOutcomeTable:
         re-stamped at recording time ("kept 30 min" from recording)."""
         from unittest.mock import Mock
 
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        clock = ManualClock()
+        monkeypatch.setattr(ds_module, "time", clock)
+
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
-        service.TX_OUTCOME_TTL = 0.2
+        service.TX_OUTCOME_TTL = 20.0
         cell = Mock()
 
         def slow_done_cb(tid, status, base_objs, **kw):
-            time.sleep(0.4)  # slower than the (patched) TTL
+            clock.advance(40.0)  # settlement exceeds TTL, without advancing recording time afterward
 
         service.new_transaction(
             cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGED", transaction_done_cb=slow_done_cb
@@ -772,7 +778,7 @@ class TestServiceOutcomeTable:
         with pytest.raises(ValueError, match="already in use"):
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGED")
 
-    def test_aged_receipt_with_leaked_op_cannot_expose_id(self):
+    def test_aged_receipt_with_leaked_op_cannot_expose_id(self, monkeypatch):
         """P1 pin (reviewer's exact sequence): slow settlement past the TTL WITH a
         drain-leaked operation -- the id must stay excluded end to end; before the
         marker moved to _delete_tx, a constructor could slip between ownership
@@ -782,31 +788,32 @@ class TestServiceOutcomeTable:
 
         import nvflare.fuel.f3.streaming.download_service as ds_module
 
+        clock = ManualClock()
+        monkeypatch.setattr(ds_module, "time", clock)
+
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
-        service.TX_OUTCOME_TTL = 0.2
+        service.TX_OUTCOME_TTL = 20.0
         cell = Mock()
         service.new_transaction(
             cell=cell,
             timeout=10.0,
             num_receivers=1,
             tx_id="TX-AGEDLEAK",
-            transaction_done_cb=lambda tid, status, base_objs, **kw: time.sleep(0.4),
+            transaction_done_cb=lambda tid, status, base_objs, **kw: clock.advance(40.0),
         )
         with service._tx_lock:
             tx = service._tx_table["TX-AGEDLEAK"]
         assert tx.begin_op()  # the leak
 
-        saved = ds_module.OP_DRAIN_TIMEOUT
-        ds_module.OP_DRAIN_TIMEOUT = 0.1
-        try:
-            service.delete_transaction("TX-AGEDLEAK")
-        finally:
-            ds_module.OP_DRAIN_TIMEOUT = saved
+        # The operation is deliberately leaked; a zero drain budget establishes
+        # that state immediately, without a frozen-clock condition wait.
+        monkeypatch.setattr(ds_module, "OP_DRAIN_TIMEOUT", 0.0)
+        service.delete_transaction("TX-AGEDLEAK")
 
         # settlement complete, receipt aged past the (patched) TTL -- the leaked op
         # still excludes the id, and no overlap state can form
-        time.sleep(0.25)
+        clock.advance(25.0)
         with pytest.raises(ValueError, match="has not fully terminated"):
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGEDLEAK")
         with service._tx_lock:

@@ -16,7 +16,6 @@ import os
 import shlex
 import shutil
 import tempfile
-import time
 
 import yaml
 
@@ -44,6 +43,8 @@ def _start_site(site_properties: SiteProperties):
 
 
 def _stop_site(site_properties: SiteProperties):
+    if site_properties.process is None:
+        return
     run_command_in_subprocess(
         f"bash {shlex.quote(os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh'))}", stdin_data=b"y\n"
     )
@@ -90,7 +91,7 @@ class ProvisionSiteLauncher(SiteLauncher):
     def start_servers(self):
         for k in self.server_properties:
             self.start_server(k)
-            time.sleep(3.0)  # makes the first one always primary
+            self.wait_for_server(k)
 
     def start_clients(self):
         for k in self.client_properties:
@@ -100,19 +101,22 @@ class ProvisionSiteLauncher(SiteLauncher):
         _start_site(self.server_properties[server_id])
 
     def stop_server(self, server_id: str):
-        _stop_site(self.server_properties[server_id])
-        super().stop_server(server_id)
+        try:
+            _stop_site(self.server_properties[server_id])
+        finally:
+            super().stop_server(server_id)
 
     def start_client(self, client_id: str):
         _start_site(self.client_properties[client_id])
 
     def stop_client(self, client_id: str):
-        _stop_site(self.client_properties[client_id])
-        super().stop_client(client_id)
+        try:
+            _stop_site(self.client_properties[client_id])
+        finally:
+            super().stop_client(client_id)
 
     def cleanup(self):
-        process = run_command_in_subprocess(f"pkill -9 -f {PROD_FOLDER_NAME}")
-        process.wait()
+        self.stop_all_sites()
         for server_name in self.server_properties:
             cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
         shutil.rmtree(WORKSPACE)

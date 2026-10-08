@@ -64,6 +64,10 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import SOURCE_FAILURE_TOPIC
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+from tests.timing_utils import CheckedThread, ManualClock, isolate_time, join_thread
+
+# A policy regression must fail even when its explicitly controlled clock is frozen.
+pytestmark = pytest.mark.timeout(60)
 
 CJ_FQCN = "site-1.job-1"
 
@@ -350,6 +354,58 @@ def _initialized_backend(env, executor=None, **overrides):
     fl_ctx = _make_fl_ctx(engine, env.app_dir)
     backend.initialize(_make_context(executor=executor, **overrides), fl_ctx)
     return backend, fl_ctx
+
+
+def _install_clocked_reaper(backend, trainer, monkeypatch, clock, on_join=lambda: None):
+    """Model reaper progress while exercising the real shutdown budget policy.
+
+    join consumes exactly its requested budget; transport and process outcomes
+    remain controlled by the caller. Natural reaper behavior is tested separately.
+    """
+
+    class ClockedReaper:
+        name = "clocked_result_reaper"
+
+        def is_alive(self):
+            return not trainer._cleaned
+
+        def join(self, timeout):
+            if not self.is_alive():
+                backend._result_reapers.discard(trainer)
+                return
+            clock.advance(timeout)
+            on_join()
+            if not backend._process_group_alive(trainer):
+                backend._cleanup_trainer(trainer)
+                backend._result_reapers.discard(trainer)
+
+    monkeypatch.setattr(ebp, "time", clock)
+    monkeypatch.setattr(cbp, "time", clock)
+    trainer.reaper_thread = ClockedReaper()
+    backend._result_reapers.add(trainer)
+
+
+def _drive_natural_reaper(backend, trainer, monkeypatch, steps):
+    """Advance policy time only between completed reaper samples.
+
+    The production reaper catches BaseException. Record observations here and
+    assert them on the test thread so callback failures cannot disappear.
+    """
+    clock = ManualClock()
+    observations = []
+    actions = iter(steps)
+
+    def next_sample(_delay):
+        observations.append((trainer.process.returncode, backend._process_group_alive(trainer)))
+        advance, action = next(actions)
+        action()
+        clock.advance(advance)
+
+    monkeypatch.setattr(ebp, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=next_sample))
+    monkeypatch.setattr(cbp, "time", clock)
+    backend._closed = True
+    backend._wait_for_natural_exit_and_cleanup(trainer)
+    return observations
 
 
 def _install_auto_result(env, lazy_result=False):
@@ -759,37 +815,27 @@ class TestInitializeAndFinalize:
         assert env.cell.fired[-1][0] == Topic.ABORT
         backend.finalize(FLContext())
 
-    def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
+    def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env, monkeypatch):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+        clock = ManualClock()
+        started = clock.monotonic()
+        observations = []
 
-        finalize_done = threading.Event()
+        def finish_after_transfer():
+            observations.append(process.returncode)
+            if clock.monotonic() >= started + 0.25:
+                process.exit(0)
 
-        def finalize():
-            backend.finalize(FLContext())
-            finalize_done.set()
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock, finish_after_transfer)
+        backend.finalize(FLContext())
 
-        finalize_thread = threading.Thread(target=finalize)
-        finalize_thread.start()
-
-        deadline = time.monotonic() + 1.0
-        while trainer.reaper_thread is None and time.monotonic() < deadline:
-            time.sleep(0.005)
-        assert trainer.reaper_thread is not None
-        assert not finalize_done.wait(0.03), "END_RUN must preserve the CJ while the accepted result source is live"
-
-        assert process.returncode is None
-        assert len([request for request in env.cell.sent if request[0] == Topic.SHUTDOWN]) == 1
+        assert observations and all(code is None for code in observations)
+        assert clock.monotonic() - started >= 0.25
         assert env.harness.signals_sent() == []
-
-        # The trainer exits itself only after its real downstream transfer waiter settles;
-        # the reaper then performs ordinary launch-artifact cleanup and releases END_RUN.
-        process.exit(0)
-        finalize_thread.join(timeout=1.0)
-        assert finalize_done.is_set()
         assert backend._active_launch is None
         assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
@@ -817,9 +863,16 @@ class TestInitializeAndFinalize:
         trainer = backend._active_launch
         trainer.result_source_live.set()
         trainer.result_accepted.set()
-        backend._reap_trainer_after_result(trainer)
         trainer.result_source_live.clear()
-        threading.Timer(0.03, process.exit, args=[0]).start()
+        clock = ManualClock()
+        started = clock.monotonic()
+        _install_clocked_reaper(
+            backend,
+            trainer,
+            monkeypatch,
+            clock,
+            lambda: process.exit(0) if clock.monotonic() >= started + 0.03 else None,
+        )
 
         backend.finalize(FLContext())
 
@@ -837,9 +890,16 @@ class TestInitializeAndFinalize:
         trainer = backend._active_launch
         trainer.result_source_live.set()
         trainer.result_accepted.set()
-        backend._reap_trainer_after_result(trainer)
         trainer.result_source_live.clear()
-        threading.Timer(0.05, process.exit, args=[0]).start()
+        clock = ManualClock()
+        started = clock.monotonic()
+        _install_clocked_reaper(
+            backend,
+            trainer,
+            monkeypatch,
+            clock,
+            lambda: process.exit(0) if clock.monotonic() >= started + 0.05 else None,
+        )
 
         backend.finalize(FLContext())
 
@@ -857,7 +917,6 @@ class TestInitializeAndFinalize:
         trainer.result_accepted.set()
         trainer.result_source_task_id = "task-1"
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        backend._reap_trainer_after_result(trainer)
         settlement_replies = []
 
         def settle_source():
@@ -869,8 +928,16 @@ class TestInitializeAndFinalize:
                 )
             )
 
-        threading.Timer(0.05, settle_source).start()
-        threading.Timer(0.07, process.exit, args=[0]).start()
+        clock = ManualClock()
+        started = clock.monotonic()
+
+        def progress():
+            if not settlement_replies and clock.monotonic() >= started + 0.05:
+                settle_source()
+            if clock.monotonic() >= started + 0.07:
+                process.exit(0)
+
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock, progress)
 
         backend.finalize(FLContext())
 
@@ -922,7 +989,10 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
         assert trainer.token == ""
 
-    def test_settled_ack_still_allows_user_thread_natural_exit_grace(self, env):
+    def test_settled_ack_still_allows_user_thread_natural_exit_grace(self, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(ebp, "time", clock)
+        monkeypatch.setattr(cbp, "time", clock)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
@@ -945,7 +1015,7 @@ class TestInitializeAndFinalize:
             return _task_accepted_reply()
 
         env.cell.on_shutdown = settled_shutdown
-        finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
+        finalize_thread = CheckedThread(target=backend.finalize, args=(FLContext(),))
         finalize_thread.start()
 
         try:
@@ -956,13 +1026,15 @@ class TestInitializeAndFinalize:
             # Always release the mocked wait, including when an assertion fails, so
             # test-runner scheduling cannot turn this synchronization into SIGTERM.
             release_exit.set()
-        finalize_thread.join(timeout=2.0)
-        assert not finalize_thread.is_alive()
+        join_thread(finalize_thread)
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-    def test_settled_ack_graces_workers_after_launcher_exit(self, env):
+    def test_settled_ack_graces_workers_after_launcher_exit(self, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(ebp, "time", clock)
+        monkeypatch.setattr(cbp, "time", clock)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
         trainer = backend._active_launch
@@ -972,101 +1044,97 @@ class TestInitializeAndFinalize:
         env.cell.on_shutdown = lambda *_args: make_cell_reply(
             CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: False}
         )
+        wait_entered = threading.Event()
+        release_exit = threading.Event()
+        observed_budgets = []
+        await_exit = backend._await_group_exit
 
-        finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
+        def await_workers(trainer, timeout):
+            observed_budgets.append(timeout)
+            wait_entered.set()
+            release_exit.wait()
+            return await_exit(trainer, timeout)
+
+        monkeypatch.setattr(backend, "_await_group_exit", await_workers)
+        finalize_thread = CheckedThread(target=backend.finalize, args=(FLContext(),))
         finalize_thread.start()
-
-        time.sleep(0.03)
-        assert finalize_thread.is_alive()
-        assert process.extra_group_members
-        assert env.harness.signals_sent() == []
-
-        # The launcher is already gone, but its worker gets the full natural-exit grace
-        # and finishes by itself while returning from send().
-        process.extra_group_members = False
-        finalize_thread.join(timeout=1.0)
-        assert not finalize_thread.is_alive()
+        try:
+            assert wait_entered.wait(10)
+            assert finalize_thread.is_alive()
+            assert process.extra_group_members
+            assert env.harness.signals_sent() == []
+            process.extra_group_members = False
+        finally:
+            process.extra_group_members = False
+            release_exit.set()
+            join_thread(finalize_thread)
+        assert observed_budgets == [0.2]
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
-    def test_shutdown_timeout_does_not_cut_off_accepted_result_source(self, env):
+    def test_shutdown_timeout_does_not_cut_off_accepted_result_source(self, env, monkeypatch):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.03)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        finalize_done = threading.Event()
+        clock = ManualClock()
+        started = clock.monotonic()
+        observations = []
 
-        def finalize():
-            backend.finalize(FLContext())
-            finalize_done.set()
+        def exit_after_ordinary_bound():
+            observations.append(process.returncode)
+            if clock.monotonic() >= started + 0.08:
+                process.exit(0)
 
-        finalize_thread = threading.Thread(target=finalize)
-        finalize_thread.start()
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock, exit_after_ordinary_bound)
+        backend.finalize(FLContext())
 
-        assert not finalize_done.wait(0.08), "ordinary shutdown_timeout must not cut off a live result source"
-        assert process.returncode is None
-        assert trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()
+        assert observations and all(code is None for code in observations)
+        assert clock.monotonic() - started >= 0.08
         assert env.harness.signals_sent() == []
-
-        process.exit(0)
-        finalize_thread.join(timeout=1.0)
-        assert finalize_done.is_set()
         assert backend._active_launch is None
 
     def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
-        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
-        backend, _ = _initialized_backend(
-            env,
-            heartbeat_timeout=0.0,
-            shutdown_timeout=0.01,
-            stop_grace_period=0.0,
-        )
+        backend, _ = _initialized_backend(env, heartbeat_timeout=0.0, shutdown_timeout=0.01, stop_grace_period=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+        clock = ManualClock()
+        started = clock.monotonic()
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock)
 
-        start = time.monotonic()
         backend.finalize(FLContext())
-        elapsed = time.monotonic() - start
 
-        assert elapsed < ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT + 0.2
+        assert clock.monotonic() - started == pytest.approx(ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT)
         assert process.returncode is not None
         assert backend._result_reapers == set()
         assert "forcing trainer cleanup" in caplog.text
 
     def test_finalize_reprobes_source_at_deadline_before_forced_cleanup(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.08)
-        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
-        transfer_settled = threading.Event()
         shutdown_states = []
+        clock = ManualClock()
+        started = clock.monotonic()
 
         def on_shutdown(*_args):
-            source_live = not transfer_settled.is_set()
+            source_live = clock.monotonic() < started + 0.04
             shutdown_states.append(source_live)
             if not source_live:
                 process.exit(0)
             return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: source_live})
 
         env.cell.on_shutdown = on_shutdown
-        settlement_timer = threading.Timer(0.04, transfer_settled.set)
-        settlement_timer.start()
-        try:
-            backend.finalize(FLContext())
-        finally:
-            settlement_timer.cancel()
-            settlement_timer.join(timeout=0.2)
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock)
+        backend._request_trainer_shutdown(trainer, wait_timeout=ebp._LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT, force_probe=True)
+        backend.finalize(FLContext())
 
-        assert shutdown_states[0] is True
-        assert shutdown_states[-1] is False
-        assert len(shutdown_states) >= 2
+        assert shutdown_states == [True, False]
         assert env.harness.signals_sent() == []
         assert backend._result_reapers == set()
         assert backend._active_launch is None
@@ -1075,33 +1143,24 @@ class TestInitializeAndFinalize:
     def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog):
         monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.4)
         monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
-        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
-        monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
-        transfer_settled = threading.Event()
-
+        clock = ManualClock()
+        started = clock.monotonic()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(
-            CellReturnCode.OK,
-            body={MsgKey.RESULT_SOURCE_LIVE: not transfer_settled.is_set()},
+            CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: clock.monotonic() < started + 0.15}
         )
-        # The natural-exit budget is 0.35s. Exit after the old deadline but
-        # comfortably before the fresh deadline that starts at settlement.
-        settlement_timer = threading.Timer(0.15, transfer_settled.set)
-        exit_timer = threading.Timer(0.43, process.exit, args=[0])
-        settlement_timer.start()
-        exit_timer.start()
-        try:
-            backend.finalize(FLContext())
-        finally:
-            settlement_timer.cancel()
-            exit_timer.cancel()
-            settlement_timer.join(timeout=1.0)
-            exit_timer.join(timeout=1.0)
 
+        def progress():
+            if clock.monotonic() >= started + 0.43:
+                process.exit(0)
+
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock, progress)
+        backend.finalize(FLContext())
+
+        assert clock.monotonic() - started >= 0.43
         assert env.harness.signals_sent() == []
         assert "forcing trainer cleanup" not in caplog.text
         assert process.returncode == 0
@@ -1224,31 +1283,29 @@ class TestInitializeAndFinalize:
 
     def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        finalize_done = threading.Event()
+        clock = ManualClock()
+        started = clock.monotonic()
+        observations = []
 
-        def finalize():
-            backend.finalize(FLContext())
-            finalize_done.set()
+        def finish_live_result():
+            observations.append(process.returncode)
+            if clock.monotonic() >= started + 0.02:
+                process.exit(0)
 
-        finalize_thread = threading.Thread(target=finalize)
-        finalize_thread.start()
-        assert not finalize_done.wait(0.02), "ScriptRunner's zero default must not erase live-result grace"
+        _install_clocked_reaper(backend, trainer, monkeypatch, clock, finish_live_result)
+        backend.finalize(FLContext())
 
-        process.exit(0)
-        finalize_thread.join(timeout=1.0)
-        assert finalize_done.is_set()
+        assert observations and all(code is None for code in observations)
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
     def test_zero_heartbeat_and_shutdown_do_not_make_disconnect_immediately_terminal(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.06)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.0, shutdown_timeout=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
@@ -1256,26 +1313,22 @@ class TestInitializeAndFinalize:
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
         env.cell.disconnected.add(trainer.trainer_fqcn)
 
-        finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
-        finalize_thread.start()
-        time.sleep(0.02)
-
-        # Reconnecting inside the nonzero source grace resets disconnect evidence. END_RUN
-        # remains blocked because the source is still live, regardless of shutdown_timeout.
-        env.cell.disconnected.discard(trainer.trainer_fqcn)
-        time.sleep(0.08)
-        assert finalize_thread.is_alive()
-        assert process.returncode is None
-        assert trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()
+        observations = _drive_natural_reaper(
+            backend,
+            trainer,
+            monkeypatch,
+            [
+                (0.02, lambda: None),  # a second disconnected sample inside the nonzero grace
+                (0.08, lambda: env.cell.disconnected.discard(trainer.trainer_fqcn)),
+                (0.0, lambda: process.exit(0)),  # reconnect survives beyond the original grace
+            ],
+        )
+        assert observations == [(None, True)] * 3
+        assert process.returncode == 0
         assert env.harness.signals_sent() == []
-
-        process.exit(0)
-        finalize_thread.join(timeout=1.0)
-        assert not finalize_thread.is_alive()
         assert backend._active_launch is None
 
     def test_lazy_result_reaper_retries_shutdown_then_requires_sustained_disconnect(self, env, monkeypatch, caplog):
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.03, shutdown_timeout=0.01)
         process = env.harness.processes[0]
@@ -1284,38 +1337,30 @@ class TestInitializeAndFinalize:
         attempts = []
 
         def flaky_shutdown(topic, target, message):
-            if topic != Topic.SHUTDOWN:
-                return _task_accepted_reply()
             attempts.append((topic, target))
             if len(attempts) == 1:
                 return None
-            # The retry reaches the trainer. It closes Cell after its terminal result
-            # waiter; the reaper still requires a sustained disconnect before stopping.
-            env.cell.disconnected.add(trainer.trainer_fqcn)
+            if len(attempts) == 2:
+                env.cell.disconnected.add(trainer.trainer_fqcn)
             return make_cell_reply(CellReturnCode.OK)
 
         env.cell.on_shutdown = flaky_shutdown
-        finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
-        finalize_thread.start()
-
-        deadline = time.monotonic() + 0.5
-        while len(attempts) < 2 and time.monotonic() < deadline:
-            time.sleep(0.005)
+        observations = _drive_natural_reaper(
+            backend,
+            trainer,
+            monkeypatch,
+            [
+                (0.02, lambda: None),
+                (0.01, lambda: None),
+                (0.04, lambda: env.cell.disconnected.discard(trainer.trainer_fqcn)),
+                (0.01, lambda: env.cell.disconnected.add(trainer.trainer_fqcn)),
+                (0.02, lambda: None),
+                (0.02, lambda: None),
+            ],
+        )
         assert len(attempts) >= 2
-
-        # A first disconnected sample is not terminal.
-        time.sleep(0.01)
-        assert process.returncode is None
-        env.cell.disconnected.discard(trainer.trainer_fqcn)
-        time.sleep(0.04)
-        assert process.returncode is None, "reconnect must reset the disconnect grace"
-        env.cell.disconnected.add(trainer.trainer_fqcn)
-        deadline = time.monotonic() + 1.0
-        while process.returncode is None and time.monotonic() < deadline:
-            time.sleep(0.01)
+        assert observations == [(None, True)] * 6
         assert process.returncode is not None
-        finalize_thread.join(timeout=1.0)
-        assert not finalize_thread.is_alive()
         assert "trainer SHUTDOWN was not acknowledged (rc=None)" in caplog.text
 
     def test_finalize_escalates_sigterm_to_sigkill(self, env, monkeypatch):
@@ -1724,12 +1769,15 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_heartbeat_is_bound_to_origin_and_session(self, env):
+    def test_heartbeat_is_bound_to_origin_and_session(self, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(ebp, "time", clock)
+        monkeypatch.setattr(cbp, "time", clock)
         backend, _ = _initialized_backend(env)
         try:
             trainer = backend._active_launch
             with trainer._activity_lock:
-                trainer._last_peer_activity = time.monotonic() - 5.0
+                trainer._last_peer_activity = clock.monotonic() - 5.0
 
             rejected = env.cell.deliver(
                 Topic.HEARTBEAT,
@@ -1737,7 +1785,7 @@ class TestHeartbeatAndOperationalLiveness:
                 {MsgKey.SESSION_ID: trainer.session_id},
             )
             assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
-            assert trainer.peer_silent_for() >= 4.0
+            assert trainer.peer_silent_for() == 5.0
 
             accepted = env.cell.deliver(
                 Topic.HEARTBEAT,
@@ -1748,7 +1796,7 @@ class TestHeartbeatAndOperationalLiveness:
                 MsgKey.REPLY_TOPIC: Topic.HEARTBEAT,
                 MsgKey.SESSION_ID: trainer.session_id,
             }
-            assert trainer.peer_silent_for() < 0.5
+            assert trainer.peer_silent_for() == 0.0
         finally:
             backend.finalize(FLContext())
 
@@ -1811,7 +1859,13 @@ class TestHeartbeatAndOperationalLiveness:
             backend.finalize(FLContext())
 
     def test_completed_task_payload_transaction_does_not_restore_heartbeat_expiry(self, env, monkeypatch):
-        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
+        clock = ManualClock()
+        monkeypatch.setattr(ebp, "time", clock)
+        monkeypatch.setattr(cbp, "time", clock)
+        task = ebp.CellTask("test-task")
+        monkeypatch.setattr(ebp, "CellTask", lambda **_kwargs: task)
+        cancellation_observed = []
+        pending_result = []
         waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: True)
         get_transfer_waiter = MagicMock(return_value=waiter)
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", get_transfer_waiter)
@@ -1824,28 +1878,40 @@ class TestHeartbeatAndOperationalLiveness:
         try:
 
             def slow_materialization(topic, target, request):
-                assert topic == Topic.TASK_READY
+                if topic != Topic.TASK_READY:
+                    return make_cell_reply(CellReturnCode.OK)
                 tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="task-payload-tx"))
-                time.sleep(0.1)  # longer than the heartbeat timeout
-                assert not env.cell.sent_kwargs[-1]["abort_signal"].triggered
+                clock.advance(0.1)  # materialization outlasts heartbeat policy
+                cancellation_observed.append(env.cell.sent_kwargs[-1]["abort_signal"].triggered)
                 payload = request.payload
                 result_payload = {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
                     MsgKey.RESULT: _result_shareable(),
                 }
-                threading.Timer(0.02, env.cell.deliver, args=(Topic.RESULT_READY, target, result_payload)).start()
+                pending_result.append((target, result_payload))
                 return _task_accepted_reply()
 
+            def deliver_after_task_acceptance(_timeout):
+                target, payload = pending_result.pop()
+                env.cell.deliver(Topic.RESULT_READY, target, payload)
+                return True
+
+            monkeypatch.setattr(task.result_ready, "wait", deliver_after_task_acceptance)
             env.cell.on_request = slow_materialization
             env.cell.on_shutdown = lambda *_args: make_cell_reply(
                 CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: False}
             )
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert result.get_return_code() == ReturnCode.OK
+            assert cancellation_observed == [False]
+            assert pending_result == []
             get_transfer_waiter.assert_called_once_with("task-payload-tx")
         finally:
+            # A frozen policy clock must not govern test-owned teardown waits.
+            for process in env.harness.processes:
+                process.exit(0)
             backend.finalize(FLContext())
 
     def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
@@ -3068,10 +3134,21 @@ class TestAcceptedResultSourceFailure:
         backend, _ = _initialized_backend(env, launch_once=True)
         try:
             _, trainer = self._accept_lazy_result(backend, env)
-            trainer.process.exit(0)
-            trainer.process.extra_group_members = True
+            group_observed = threading.Event()
+            group_alive = backend._process_group_alive
 
-            time.sleep(0.03)
+            def observe_workers(active):
+                alive = group_alive(active)
+                if active is trainer and alive and active.process.returncode == 0:
+                    group_observed.set()
+                return alive
+
+            monkeypatch.setattr(backend, "_process_group_alive", observe_workers)
+            # Publish the workers first so the monitor cannot observe a dead group
+            # between the two writes.
+            trainer.process.extra_group_members = True
+            trainer.process.exit(0)
+            assert group_observed.wait(10)
             assert backend._context.executor.system_panic.call_count == 0
             assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
 
@@ -3377,6 +3454,8 @@ class TestLaunchPerTask:
             stop_grace_period=30.0,
         )
         _install_auto_result(env, lazy_result=True)
+        # Budget accounting is independent of actual reaper thread scheduling.
+        monkeypatch.setattr(backend, "_reap_trainer_after_result", lambda _trainer: None)
 
         first = backend.execute("train", Shareable(), fl_ctx, Signal())
         retired_trainer = backend._active_launch
@@ -3389,11 +3468,13 @@ class TestLaunchPerTask:
         assert all(process.returncode is None for process in env.harness.processes)
         assert all(trainer.result_source_live.is_set() for trainer in (retired_trainer, current_trainer))
 
-        start = time.monotonic()
+        clock = ManualClock()
+        started = clock.monotonic()
+        for trainer in (retired_trainer, current_trainer):
+            _install_clocked_reaper(backend, trainer, monkeypatch, clock)
         backend.finalize(FLContext())
-        elapsed = time.monotonic() - start
 
-        assert elapsed < ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT + 0.2
+        assert clock.monotonic() - started <= ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT
         assert all(process.returncode is not None for process in env.harness.processes)
         assert backend._result_reapers == set()
         assert backend._active_launch is None
@@ -3591,3 +3672,12 @@ class TestLogRouting:
             assert "failed to process trainer LOG data" in caplog.text
         finally:
             backend.finalize(FLContext())
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.executors.client_api.cell_backend",
+        "nvflare.app_common.executors.client_api.external_process_backend",
+    )

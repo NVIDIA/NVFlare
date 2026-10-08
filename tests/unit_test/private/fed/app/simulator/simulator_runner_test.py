@@ -16,8 +16,6 @@ import json
 import os
 import shutil
 import sys
-import threading
-import time
 import uuid
 from argparse import Namespace
 from tempfile import TemporaryDirectory
@@ -30,6 +28,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
+from tests.timing_utils import CheckedThread, join_thread, wait_for
 
 
 class MockCell:
@@ -167,23 +166,28 @@ class TestSimulatorRunner:
 
             with patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer.run_engine"):
                 with patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer.create_job_cell"):
-                    server_thread = threading.Thread(target=runner.start_server_app, args=[runner.args])
+                    server_thread = CheckedThread(target=runner.start_server_app, args=[runner.args])
                     server_thread.start()
 
-                    while runner.server.engine.engine_info.status != MachineStatus.STARTED:
-                        time.sleep(1.0)
-                        if not server_thread.is_alive():
-                            raise RuntimeError("Could not start the Server App.")
-                    fl_ctx = runner.server.engine.new_context()
-                    workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-                    assert workspace_obj.get_root_dir() == os.path.join(workspace, "server")
-                    job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-                    assert job_meta[JobMetaKey.JOB_NAME.value] == "sag"
-                    assert runner.server.engine.get_cell() is runner.server.job_cell
-                    assert runner.server.engine.run_manager.cell is runner.server.job_cell
+                    try:
 
-                    runner.server.logger = Mock()
-                    runner.server.engine.asked_to_stop = True
+                        def server_started():
+                            server_thread.raise_if_failed()
+                            return runner.server.engine.engine_info.status == MachineStatus.STARTED
+
+                        wait_for(server_started, message="simulator server app did not start")
+                        fl_ctx = runner.server.engine.new_context()
+                        workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+                        assert workspace_obj.get_root_dir() == os.path.join(workspace, "server")
+                        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+                        assert job_meta[JobMetaKey.JOB_NAME.value] == "sag"
+                        assert runner.server.engine.get_cell() is runner.server.job_cell
+                        assert runner.server.engine.run_manager.cell is runner.server.job_cell
+
+                    finally:
+                        runner.server.logger = Mock()
+                        runner.server.engine.asked_to_stop = True
+                        join_thread(server_thread)
 
     def test_get_new_sys_path_with_empty(self):
         args = Namespace(workspace="/tmp")

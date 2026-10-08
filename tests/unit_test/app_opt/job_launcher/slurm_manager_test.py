@@ -44,6 +44,7 @@ from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _SlurmCliAdapter
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.fed.server.fed_server import FederatedServer
+from tests.timing_utils import isolate_time
 
 
 def _command(returncode=0, stdout="42\n", stderr="", timed_out=False):
@@ -811,3 +812,11 @@ def test_accounting_probe_is_required_and_briefly_retried(tmp_path, monkeypatch,
     else:
         with pytest.raises(UnsafeComponentError, match="slurmdbd"):
             manager._require_accounting()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_opt.job_launcher.slurm.manager",
+    )

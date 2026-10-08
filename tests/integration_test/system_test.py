@@ -32,6 +32,7 @@ from tests.integration_test.src import (
     read_yaml,
     run_command_in_subprocess,
 )
+from tests.integration_test.src.utils import wait_command_process
 
 
 def _print_newlines(repeat=5):
@@ -279,13 +280,13 @@ class TestSystem:
             test_name, validators, setup, background_commands, teardown, event_sequence, reset_job_info = test_data
             print(f"Running test {test_name} in {test_yaml_path}")
 
-            start_time = time.time()
+            start_time = time.monotonic()
             background_processes = []
             try:
                 for command in setup:
                     print(f"Running setup command: {command}")
                     process = run_command_in_subprocess(command)
-                    process.wait()
+                    wait_command_process(process, command, timeout=test_driver.event_sequence_timeout or 300.0)
 
                 for command in background_commands:
                     print(f"Starting background process: {command}")
@@ -343,11 +344,11 @@ class TestSystem:
                         for command in teardown:
                             print(f"Running teardown command: {command}")
                             process = run_command_in_subprocess(command)
-                            process.wait()
+                            wait_command_process(process, command, timeout=test_driver.event_sequence_timeout or 300.0)
                     finally:
                         test_driver.reset_test_info(reset_job_info=reset_job_info)
 
-            print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
+            print(f"Finished running test {test_name!r} in {time.monotonic() - start_time} seconds.")
             _print_newlines()
 
         _print_test_report(yaml_path=test_yaml_path, validate_result=test_validate_results)

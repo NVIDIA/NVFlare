@@ -16,13 +16,17 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 
 from nvflare.tool.poc.poc_commands import _prepare_poc
 
 from .constants import CLIENT_NVF_CONFIG, CLIENT_SCRIPT, SERVER_NVF_CONFIG, SERVER_SCRIPT
-from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, run_command_in_subprocess
-from .utils import cleanup_job_and_snapshot, update_job_store_path_in_workspace, update_snapshot_path_in_workspace
+from .site_launcher import ServerProperties, SiteLauncher, SiteProperties
+from .utils import (
+    cleanup_job_and_snapshot,
+    run_command_in_subprocess,
+    update_job_store_path_in_workspace,
+    update_snapshot_path_in_workspace,
+)
 
 
 def _get_client_name(client_id: int):
@@ -52,7 +56,7 @@ class POCSiteLauncher(SiteLauncher):
     def start_servers(self):
         for i in range(self.n_servers):
             self.start_server(i)
-            time.sleep(1)
+            self.wait_for_server("server")
 
     def start_clients(self):
         for i in range(1, self.n_clients + 1):

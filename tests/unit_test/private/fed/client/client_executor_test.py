@@ -39,6 +39,7 @@ from nvflare.private.fed.client.client_executor import (
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
+from tests.timing_utils import isolate_time
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -804,3 +805,11 @@ def test_wait_child_process_skips_terminal_outcome_after_client_communication_st
     client.send_request_before_shutdown.assert_called_once()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.private.fed.client.client_executor",
+    )

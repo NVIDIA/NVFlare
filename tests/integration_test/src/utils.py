@@ -18,6 +18,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -58,11 +59,59 @@ def cleanup_path(path: str):
 
 def run_provision_command(project_yaml: str, workspace: str):
     command = f"{sys.executable} -m {PROVISION_SCRIPT} -p {project_yaml} -w {workspace}"
+    run_command_and_wait(command)
+
+
+def process_group_alive(process):
+    process.poll()  # reap the leader before probing its group
+    try:
+        os.killpg(process.pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def stop_process_group(process, graceful_timeout=5.0, kill_timeout=5.0):
+    """Stop only this harness-owned session, including a departed leader's children."""
+    for sig, timeout in [(signal.SIGTERM, graceful_timeout), (signal.SIGKILL, kill_timeout)]:
+        if not process_group_alive(process):
+            process.wait(timeout=kill_timeout)
+            return
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            process.wait(timeout=kill_timeout)
+            return
+        deadline = time.monotonic() + timeout
+        while process_group_alive(process) and time.monotonic() < deadline:
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    if process_group_alive(process):
+        raise RuntimeError(f"Owned process group {process.pid} survived SIGKILL")
+    # Group disappearance can precede waitpid observing the leader's exit.
+    # Confirm reaping before declaring cleanup complete.
+    process.wait(timeout=kill_timeout)
+
+
+def wait_command_process(process, command, timeout=300.0):
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        detail = ""
+        try:
+            stop_process_group(process)
+        except Exception as cleanup_error:
+            detail = f"; command cleanup failed: {cleanup_error}"
+        raise RuntimeError(f"Command timed out after {timeout}s: {command}{detail}") from error
+    if code != 0:
+        raise RuntimeError(f"Command exited with code {code}: {command}")
+
+
+def run_command_and_wait(command, timeout=300.0):
     process = run_command_in_subprocess(command)
-    process.wait()
+    wait_command_process(process, command, timeout)
 
 
-def run_command_in_subprocess(command, stdin_data=None):
+def run_command_in_subprocess(command, stdin_data=None, timeout=300.0):
     new_env = os.environ.copy()
     python_path = os.pathsep.join(path for path in sys.path if path)
     new_env["PYTHONPATH"] = python_path
@@ -78,7 +127,17 @@ def run_command_in_subprocess(command, stdin_data=None):
     if stdin_data:
         # communicate() writes stdin, drains stdout/stderr, and waits for exit.
         # Return None since the process has already terminated.
-        process.communicate(input=stdin_data)
+        try:
+            process.communicate(input=stdin_data, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            detail = ""
+            try:
+                stop_process_group(process)
+            except Exception as cleanup_error:
+                detail = f"; command cleanup failed: {cleanup_error}"
+            raise RuntimeError(f"Command timed out after {timeout}s: {command}{detail}") from error
+        if process.returncode != 0:
+            raise RuntimeError(f"Command exited with code {process.returncode}: {command}")
         return None
     return process
 
@@ -429,8 +488,8 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
 def ensure_admin_api_logged_in(admin_api: Session, timeout: int = 60):
     login_success = False
     try:
-        start_time = time.time()
-        while time.time() - start_time <= timeout:
+        start_time = time.monotonic()
+        while time.monotonic() - start_time <= timeout:
             if admin_api.api.is_ready():
                 login_success = True
                 break

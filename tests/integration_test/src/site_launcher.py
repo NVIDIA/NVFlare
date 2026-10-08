@@ -14,10 +14,11 @@
 
 import logging
 import os
-import signal
+import socket
+import time
 from abc import ABC, abstractmethod
 
-from .utils import run_command_in_subprocess
+from .utils import process_group_alive, stop_process_group
 
 
 class SiteProperties:
@@ -36,13 +37,9 @@ class ServerProperties(SiteProperties):
 def kill_process(site_prop: SiteProperties):
     if not site_prop.process:
         return
-    os.killpg(site_prop.process.pid, signal.SIGTERM)
-    p = run_command_in_subprocess(f"kill -9 {str(site_prop.process.pid)}")
-    p.wait()
-    p = run_command_in_subprocess(f"pkill -9 -f {site_prop.root_dir}")
-    p.wait()
-    print(f"Kill {site_prop.name}.")
-    site_prop.process.wait()
+    stop_process_group(site_prop.process)
+    site_prop.process = None
+    print(f"Stopped {site_prop.name}.")
 
 
 class SiteLauncher(ABC):
@@ -70,6 +67,32 @@ class SiteLauncher(ABC):
     @abstractmethod
     def start_clients(self):
         pass
+
+    def wait_for_server(self, server_id, timeout=60.0):
+        """Require the deployed server's admin listener before continuing startup.
+
+        Server deployment precedes admin listener startup. The driver separately
+        authenticates its admin session before running any scenario.
+        """
+        server = self.server_properties[server_id]
+        deadline = time.monotonic() + timeout
+        last_error = None
+        while True:
+            if server.process is not None and not process_group_alive(server.process):
+                raise RuntimeError(f"Server {server.name} exited before readiness (code={server.process.returncode})")
+            try:
+                remaining = max(0.0, deadline - time.monotonic())
+                with socket.create_connection(("127.0.0.1", int(server.port)), timeout=min(0.5, remaining)):
+                    return
+            except OSError as error:
+                last_error = error
+            if time.monotonic() >= deadline:
+                log_path = os.path.join(server.root_dir, "log.txt")
+                raise RuntimeError(
+                    f"Server {server.name} admin port {server.port} did not become ready: "
+                    f"{last_error}. Startup log: {log_path}"
+                )
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
     def stop_server(self, server_id):
         if server_id not in self.server_properties:

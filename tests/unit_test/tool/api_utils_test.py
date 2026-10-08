@@ -23,6 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
 from nvflare.fuel.sec.admin_cert_provider import AdminCertProviderError
 from nvflare.tool import cli_output
+from tests.timing_utils import isolate_time
 
 
 def _synchronize_probe_start(monkeypatch, entered):
@@ -587,3 +588,11 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
             assert not worker.is_alive()
     assert len(requests) >= 2
     assert all(session.api.closed for session in sessions)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.tool.api_utils",
+    )
