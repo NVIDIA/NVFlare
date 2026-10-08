@@ -511,14 +511,12 @@ class TestByteStreamerAckWatchdog:
         task.ack_waiter = MagicMock()
         task.ack_waiter.wait.return_value = False
 
-        start = time.monotonic()
         task.send_loop()
-        elapsed = time.monotonic() - start
 
         err = task.stream_future.exception()
         assert err is not None
         assert "ack made no progress" in str(err).lower()
-        assert elapsed < 0.2
+        task.ack_waiter.wait.assert_not_called()
 
 
 class TestReliableByteStreamer:
