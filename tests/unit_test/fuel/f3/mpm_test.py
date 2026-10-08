@@ -12,11 +12,84 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.mpm import MainProcessMonitor
+
+
+@pytest.fixture
+def cleanup_monitor(monkeypatch):
+    monkeypatch.setattr(MainProcessMonitor, "_cleanup_cbs", [])
+    monkeypatch.setattr(MainProcessMonitor, "_logger", MagicMock())
+    monkeypatch.setattr(MainProcessMonitor, "_stopping", False)
+    return MainProcessMonitor
+
+
+def test_dependent_cleanup_precedes_process_services_on_one_thread(cleanup_monitor):
+    calls = []
+
+    def cleanup(name):
+        calls.append((name, threading.current_thread()))
+
+    def stop_transport():
+        cleanup("transport")
+
+    def stop_pools():
+        cleanup("global pools")
+
+    cleanup_monitor.add_cleanup_cb(stop_transport)
+    cleanup_monitor.add_cleanup_cb(stop_pools)
+    cleanup_monitor.add_cleanup_cb_first(cleanup, name="worker archival")
+    completed = threading.Event()
+    cleanup_monitor._do_cleanup(completed)
+
+    assert completed.is_set()
+    assert calls == [(name, threading.current_thread()) for name in ("worker archival", "transport", "global pools")]
+
+
+@pytest.mark.parametrize(
+    "error_type, expected_rc",
+    [
+        (RuntimeError, ProcessExitCode.EXCEPTION),
+        (ConfigError, ProcessExitCode.CONFIG_ERROR),
+        (ComponentNotAuthorized, ProcessExitCode.UNSAFE_COMPONENT),
+    ],
+)
+def test_execution_failure_is_classified_before_deferred_cleanup(cleanup_monitor, tmp_path, error_type, expected_rc):
+    logger = cleanup_monitor.logger()
+    errors_before_cleanup = []
+
+    def failed_main():
+        def failed_cleanup():
+            errors_before_cleanup.extend(call.args[0] for call in logger.error.call_args_list)
+            raise ValueError("secondary cleanup failure")
+
+        cleanup_monitor.add_cleanup_cb_first(failed_cleanup)
+        raise error_type("original execution failure")
+
+    with (
+        patch("nvflare.fuel.f3.mpm.AioContext.close_global_context"),
+        patch("nvflare.fuel.f3.mpm.threading.enumerate", return_value=[threading.current_thread()]),
+    ):
+        rc = cleanup_monitor.run(failed_main, run_dir=str(tmp_path), shutdown_grace_time=0)
+
+    assert rc == expected_rc
+    assert any("original execution failure" in message for message in errors_before_cleanup)
+
+
+def test_dependent_cleanup_rejects_duplicate_callback(cleanup_monitor):
+    def cleanup():
+        pass
+
+    cleanup_monitor.add_cleanup_cb(cleanup)
+    with pytest.raises(RuntimeError, match="already registered"):
+        cleanup_monitor.add_cleanup_cb_first(cleanup)
 
 
 def _fake_thread(name, daemon):
