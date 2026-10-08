@@ -28,6 +28,7 @@ MODEL_ATTRS = [
     FLModelConst.PARAMS,
     FLModelConst.METRICS,
     FLModelConst.OPTIMIZER_PARAMS,
+    FLModelConst.START_ROUND,
     FLModelConst.CURRENT_ROUND,
     FLModelConst.TOTAL_ROUNDS,
     FLModelConst.META,
