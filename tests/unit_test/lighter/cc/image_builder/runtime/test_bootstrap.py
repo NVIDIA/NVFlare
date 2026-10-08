@@ -560,6 +560,7 @@ class BootstrapTests(unittest.TestCase):
         events = []
         app = {
             "requires_gpu": False,
+            "max_token_age_seconds": 100,
             "allowed_ports": [],
             "allowed_out_ports": [443],
             "container": {"ports": [], "attestation_credentials": True},
@@ -579,6 +580,7 @@ class BootstrapTests(unittest.TestCase):
                 kwargs["minimum_credentials_validity"],
                 supervisor.CPU_PERIODIC_TIMEOUT_SECONDS + supervisor.PROOF_EXPIRY_MARGIN_SECONDS,
             )
+            self.assertEqual(kwargs["maximum_credentials_age"], 100)
             events.append("credentials")
             yield 17
 
@@ -824,6 +826,18 @@ class SupervisorTests(unittest.TestCase):
                 self.assertRaisesRegex(BuildError, "cannot be renewed"),
             ):
                 supervisor.next_periodic_deadline({"gpu": "nvidia_cc"}, state)
+
+    def test_application_proof_deadline_uses_effective_maximum_age(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            # authorized_key records the earlier of signed exp and iat + max age.
+            write_json(state / "application-proof.json", {"expires_at": 1100})
+            with (
+                patch.object(supervisor.time, "time", return_value=1000),
+                patch.object(supervisor.time, "monotonic", return_value=100),
+            ):
+                deadline = supervisor.next_periodic_deadline({"gpu": "none"}, state)
+            self.assertEqual(deadline, 125)
 
     def test_requested_tick_and_overrun_do_not_add_a_full_sleep(self):
         clock = [0]

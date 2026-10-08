@@ -123,6 +123,12 @@ claims; obtain them from authenticated reference measurements. Do not set
 constraint from each participant's ``gpu_tee``: ``nvidia_cc`` requires CPU plus
 GPU evidence and ``none`` requires CPU-only evidence.
 
+``token_expiration_seconds`` is the maximum accepted EAR age. For a bare-metal
+CVM, provisioning also places this limit in the measured guest so renewal uses
+the earlier of signed ``exp`` and ``iat + token_expiration_seconds``. It must be
+greater than 75 seconds for a CPU-only CVM or 255 seconds for a GPU CVM, leaving
+one complete bounded appraisal plus the 15-second publication margin.
+
 Common participant fields
 -------------------------
 

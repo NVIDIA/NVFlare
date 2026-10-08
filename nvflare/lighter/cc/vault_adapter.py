@@ -35,6 +35,7 @@ from urllib.parse import urlparse
 
 import yaml
 
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import proof_renewal_window
 from nvflare.lighter.constants import CtxKey, ParticipantType, ProvFileName
 from nvflare.lighter.utils import verify_folder_signature
 
@@ -46,6 +47,7 @@ APPLICATION_SETTINGS = {
     "docker_archive",
     "platforms",
     "requires_gpu",
+    "max_token_age_seconds",
     "allowed_ports",
     "allowed_out_ports",
     "allowed_in_cidrs",
@@ -474,7 +476,7 @@ class VaultAdapter:
         return path.resolve()
 
     def _application(self, values):
-        app = {key: values[key] for key in ("requires_gpu", "hosts_entries") if key in values}
+        app = {key: values[key] for key in ("requires_gpu", "hosts_entries", "max_token_age_seconds") if key in values}
         image = self._image_source(values.get("cvm_image"))
         app["cvm_image"] = str(image)
         app["docker_archive"] = str(self._path(values.get("docker_archive")))
@@ -548,6 +550,16 @@ class VaultAdapter:
         _require(type(tee_device) is bool, "tee_device must be boolean")
         attestation_credentials = values.get("attestation_credentials", False)
         _require(type(attestation_credentials) is bool, "attestation_credentials must be boolean")
+        if "max_token_age_seconds" in app:
+            _require(
+                type(app["max_token_age_seconds"]) is int and 0 < app["max_token_age_seconds"] <= 300,
+                "max_token_age_seconds must be an integer from 1 through 300",
+            )
+            _require(attestation_credentials, "max_token_age_seconds requires attestation_credentials")
+            _require(
+                app["max_token_age_seconds"] > proof_renewal_window(app["requires_gpu"]),
+                "max_token_age_seconds must exceed the bounded proof renewal window",
+            )
         # NVFlare's confidential-computing authorizers default to /host/bin tools,
         # so the mount stays on for kits unless a site turns it off explicitly.
         host_bin = values.get("host_bin", True)

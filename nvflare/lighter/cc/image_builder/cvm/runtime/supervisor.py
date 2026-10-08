@@ -20,6 +20,11 @@ import subprocess
 import sys
 import time
 
+from ..common.contracts import (
+    CPU_ATTESTATION_TIMEOUT_SECONDS,
+    GPU_ATTESTATION_TIMEOUT_SECONDS,
+    PROOF_EXPIRY_MARGIN_SECONDS,
+)
 from ..common.errors import BuildError, require
 from ..common.io import read_json, write_json
 from ..common.linux import run
@@ -32,9 +37,8 @@ from .systemd import notify, watchdog
 # periodic integrity cadence. Proof-producing participants schedule from the
 # authenticated token expiration recorded in protected /run/cvm state.
 PERIODIC_INTERVAL_SECONDS = 240
-CPU_PERIODIC_TIMEOUT_SECONDS = 60
-GPU_PERIODIC_TIMEOUT_SECONDS = 240
-PROOF_EXPIRY_MARGIN_SECONDS = 15
+CPU_PERIODIC_TIMEOUT_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
+GPU_PERIODIC_TIMEOUT_SECONDS = GPU_ATTESTATION_TIMEOUT_SECONDS
 
 
 # A failed periodic check no longer powers the guest off at once. The workload

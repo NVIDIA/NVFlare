@@ -22,6 +22,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import proof_renewal_window
 from nvflare.lighter.cc.vault_adapter import VaultAdapter
 from nvflare.lighter.cc_provision.deployment import (
     CCArtifact,
@@ -132,6 +133,13 @@ class BareMetalCVMDeployment(CCDeployment):
                 else (plan.config_path.parent / local_image).resolve()
             )
         tools = project_config["build_tools"][self.mode.value]
+        maximum_token_age = service.values["token_expiration_seconds"]
+        renewal_window = proof_renewal_window(plan.gpu_tee.value == "nvidia_cc")
+        if maximum_token_age <= renewal_window:
+            raise ValueError(
+                "bare_metal_cvm Trustee token_expiration_seconds must exceed the "
+                f"{renewal_window}-second bounded proof renewal window"
+            )
         settings = {
             "cvm_builder_dir": str(_declared_path(project_config["_config_path"], tools["cvm_builder_dir"])),
             "project_config": str(project_file),
@@ -140,6 +148,7 @@ class BareMetalCVMDeployment(CCDeployment):
             "docker_archive": str(plan.workload_source.values["path"]),
             "platforms": [plan.cpu_tee.value],
             "requires_gpu": plan.gpu_tee.value == "nvidia_cc",
+            "max_token_age_seconds": maximum_token_age,
             "vault_drive_size": storage["vault_size_gib"],
             "applog_drive_size": storage["applog_size_gib"],
             "user_config_drive_size": storage["user_config_size_gib"],

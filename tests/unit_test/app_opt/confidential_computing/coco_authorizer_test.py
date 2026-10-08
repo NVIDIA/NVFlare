@@ -170,6 +170,23 @@ def test_valid_proof_and_single_use(material, gpu):
         verifier.generate()
 
 
+@pytest.mark.parametrize("gpu_count", [0, 1, 2, 8])
+def test_valid_proof_accepts_supported_contiguous_gpu_sets(material, gpu_count):
+    claims, _, verifier, generate, _ = material
+    gpu = claims["submods"].pop("gpu0")
+    claims["submods"].update({f"gpu{i}": copy.deepcopy(gpu) for i in range(gpu_count)})
+    token = generate()
+    assert set(
+        jwt.decode(jwt.decode(token, options={"verify_signature": False})["ear"], options={"verify_signature": False})[
+            "submods"
+        ]
+    ) == {
+        "cpu0",
+        *(f"gpu{i}" for i in range(gpu_count)),
+    }
+    assert verifier.verify(token)
+
+
 @pytest.mark.parametrize("audience", [None, "other", "expected"])
 def test_optional_ear_audience_is_verified(material, audience):
     claims, _, verifier, generate, _ = material
@@ -841,7 +858,19 @@ def test_signed_invalid_cpu_evidence_rejected_in_both_modes(material, gpu, failu
     elif failure == "cpu_key_missing":
         cpu["ear.veraison.annotated-evidence"]["runtime_data_claims"].pop("tee-pubkey")
     else:
-        claims["submods"]["gpu1"] = copy.deepcopy(cpu)
+        claims["submods"]["cpu1"] = copy.deepcopy(cpu)
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("gpu_names", [("gpu1",), ("gpu0", "gpu2"), tuple(f"gpu{i}" for i in range(9))])
+def test_noncontiguous_or_oversized_gpu_sets_are_rejected(material, gpu_names):
+    claims, client, verifier, generate, key = material
+    gpu = claims["submods"].pop("gpu0")
+    claims["submods"].update({name: copy.deepcopy(gpu) for name in gpu_names})
     with pytest.raises(CCTokenGenerateError):
         generate()
     with patch.object(client, "_ear", return_value=(claims, key.public_key())):

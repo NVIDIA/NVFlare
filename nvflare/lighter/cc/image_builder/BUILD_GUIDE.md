@@ -610,6 +610,9 @@ image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde
 # Optional: omit to use every platform available in cvm_image.
 # platforms: [intel_tdx]
 requires_gpu: false
+# Optional with container.attestation_credentials. This is the verifier's
+# maximum accepted EAR age, not the signed EAR lifetime.
+# max_token_age_seconds: 300
 vault_drive_size: 8
 applog_drive_size: 1
 user_config_drive_size: 1
@@ -637,7 +640,7 @@ systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
 application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
 protections and a reduced capability bounding set).
 
-Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in. `attestation_credentials` asks the measured guest supervisor to atomically publish a fresh Trustee EAR and its ephemeral proof key at `/vault/application/runtime/trustee_token.json`; unified CC provisioning enables this without exposing the guest attester binary or TEE device to the container.
+Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in. `attestation_credentials` asks the measured guest supervisor to atomically publish a fresh Trustee EAR and its ephemeral proof key at `/vault/application/runtime/trustee_token.json`; unified CC provisioning enables this without exposing the guest attester binary or TEE device to the container. When `max_token_age_seconds` is set, it requires `attestation_credentials` and must exceed the complete bounded renewal window: 75 seconds for CPU-only profiles or 255 seconds for GPU profiles. The supervisor renews from the earlier of the signed EAR expiration and `iat + max_token_age_seconds`.
 
 `container.env` is serialized into a sealed memory-backed environment file. Its values are never merged into the privileged Docker client's environment or command-line arguments. Names such as `DOCKER_HOST`, `PATH` and `LD_PRELOAD` configure only the container. Values cannot contain NUL, CR or LF. The CLI uses an absolute executable and the local Unix socket.
 

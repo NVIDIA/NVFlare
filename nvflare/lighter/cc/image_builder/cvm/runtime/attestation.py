@@ -25,13 +25,13 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa, utils
 
-from ..common.contracts import resource_path
+from ..common.contracts import CPU_ATTESTATION_TIMEOUT_SECONDS, GPU_ATTESTATION_TIMEOUT_SECONDS, resource_path
 from ..common.errors import BuildError, require
 from ..common.io import write_json
 from ..common.linux import memory_file, run
 from .gpu_claims import validate_submods
 
-ATTESTATION_BUDGET_SECONDS = 60
+ATTESTATION_BUDGET_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
 
 
 def _fresh_credentials(config, digest, remaining):
@@ -143,8 +143,9 @@ def authorized_key(
     credentials_path=None,
     credentials_state_path=None,
     minimum_credentials_validity=None,
+    maximum_credentials_age=None,
 ):
-    maximum = 240 if config.get("gpu") == "nvidia_cc" else ATTESTATION_BUDGET_SECONDS
+    maximum = GPU_ATTESTATION_TIMEOUT_SECONDS if config.get("gpu") == "nvidia_cc" else ATTESTATION_BUDGET_SECONDS
     budget = maximum if budget is None else budget
     require(type(budget) in (int, float) and 0 < budget <= maximum, "Invalid attestation budget")
     deadline = time.monotonic() + budget
@@ -194,15 +195,28 @@ def authorized_key(
                     type(minimum_credentials_validity) in (int, float) and minimum_credentials_validity > 0,
                     "Application proof requires a positive renewal window",
                 )
+
+                def valid_until(appraisal):
+                    expires_at = appraisal["exp"]
+                    if maximum_credentials_age is not None:
+                        require(
+                            type(maximum_credentials_age) is int and maximum_credentials_age > 0,
+                            "Application proof requires a positive maximum age",
+                        )
+                        require(type(appraisal.get("iat")) in (int, float), "Application proof requires an issue time")
+                        expires_at = min(expires_at, appraisal["iat"] + maximum_credentials_age)
+                    return expires_at
+
                 # Resource retrieval can consume much of the EAR lifetime. If
                 # so, use the remaining shared transaction budget to obtain a
                 # fresh EAR/keypair for peer proofs. The first EAR already
                 # authorized the resource; the replacement is published only
                 # after that authorization succeeded.
-                if claims["exp"] - time.time() <= minimum_credentials_validity:
+                if valid_until(claims) - time.time() <= minimum_credentials_validity:
                     credentials, claims = _fresh_credentials(config, digest, remaining)
+                expires_at = valid_until(claims)
                 require(
-                    claims["exp"] - time.time() > minimum_credentials_validity,
+                    expires_at - time.time() > minimum_credentials_validity,
                     "Appraisal expires before another bounded renewal can finish",
                 )
                 parent = Path(credentials_path).parent
@@ -212,10 +226,12 @@ def authorized_key(
                 # The application can replace its copy inside /vault. Keep the
                 # scheduling authority in /run/cvm, which application units see
                 # read-only, and publish it only after the credential file.
-                write_json(credentials_state_path, {"expires_at": claims["exp"]}, mode=0o600)
+                write_json(credentials_state_path, {"expires_at": expires_at}, mode=0o600)
             else:
                 require(
-                    credentials_state_path is None and minimum_credentials_validity is None,
+                    credentials_state_path is None
+                    and minimum_credentials_validity is None
+                    and maximum_credentials_age is None,
                     "Proof renewal settings require a credentials path",
                 )
             with memory_file(key) as key_fd:

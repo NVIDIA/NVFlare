@@ -653,6 +653,7 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
                         "kbs_endpoint": endpoint,
                         "ca_cert_file": "ca.pem",
                         "admin_token_file": "admin.jwt",
+                        "token_expiration_seconds": 100,
                     },
                 ),
                 mode_config=mode,
@@ -669,8 +670,60 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     assert all(path.stat().st_mode & 0o077 == 0 for path in paths)
     settings = adapter.call_args.args[0]
     assert settings["attestation_credentials"] is True
+    assert settings["max_token_age_seconds"] == 100
     assert settings["host_bin"] is False
     assert settings["tee_device"] is False
+
+
+def test_bare_metal_gpu_rejects_maximum_age_shorter_than_renewal_window(tmp_path):
+    project = prepare_project(
+        {
+            "api_version": 3,
+            "name": "bare",
+            "participants": [{"type": "server", "name": "server.example.com", "org": "example"}],
+        },
+        project_file=tmp_path / "project.yml",
+    )
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for name in ("ca.pem", "admin.jwt", "approval.pub"):
+        (tmp_path / name).write_text("fixture")
+    plan = SimpleNamespace(
+        participant_name="server.example.com",
+        config_path=tmp_path / "cc_site.yml",
+        attestation_service=SimpleNamespace(
+            values={
+                "kbs_endpoint": "https://trustee.example:8443",
+                "ca_cert_file": "ca.pem",
+                "admin_token_file": "admin.jwt",
+                "token_expiration_seconds": 255,
+            }
+        ),
+        mode_config={
+            "cvm_image": "oci://registry.example/cvm@sha256:" + "a" * 64,
+            "storage": {
+                "vault_size_gib": 8,
+                "applog_size_gib": 1,
+                "user_config_size_gib": 1,
+                "user_data_size_gib": 1,
+            },
+            "network": {
+                "allowed_in_ports": [],
+                "allowed_out_ports": [],
+                "allowed_in_cidrs": [],
+                "allowed_out_cidrs": [],
+            },
+        },
+        workload_source=SimpleNamespace(values={"path": tmp_path / "application.tar"}),
+        cpu_tee=CPUTEE.INTEL_TDX,
+        gpu_tee=GPUTEE.NVIDIA_CC,
+    )
+    project_config = {
+        "_config_path": tmp_path / "cc_project.yml",
+        "approval": {"public_key_files": ["approval.pub"]},
+        "build_tools": {"bare_metal_cvm": {"cvm_builder_dir": "builder"}},
+    }
+    with pytest.raises(ValueError, match="must exceed the 255-second bounded proof renewal window"):
+        BareMetalCVMDeployment().bind(plan, project_config, project, ctx)
 
 
 def test_bare_metal_deployment_returns_common_artifact_result(tmp_path):

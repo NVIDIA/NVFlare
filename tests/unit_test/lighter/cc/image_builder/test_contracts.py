@@ -731,6 +731,13 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(projected["allowed_out_cidrs"], ["10.0.0.0/8"])
         self.assertEqual(projected["allowed_in_cidrs"], ["192.0.2.0/24"])
         self.assertEqual(projected["container"]["capabilities"], ["NET_BIND_SERVICE"])
+        self.value["max_token_age_seconds"] = 100
+        with self.assertRaises(BuildError):
+            self.load()
+        self.value["container"]["attestation_credentials"] = True
+        self.assertEqual(runtime_config(self.load())["max_token_age_seconds"], 100)
+        self.value["container"]["attestation_credentials"] = False
+        del self.value["max_token_age_seconds"]
         for key, invalid in (
             ("capabilities", ["SYS_ADMIN"]),
             ("capabilities", ["CHOWN", "CHOWN"]),
@@ -1213,6 +1220,45 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertEqual(refresh.call_count, 2)
             self.assertEqual(read_json(credentials_path), fresh)
             self.assertEqual(read_json(state_path), {"expires_at": 1300})
+
+    def test_application_proof_uses_configured_maximum_age(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        stale = {"token": "authorized-token", "tee_keypair": "authorized-key"}
+        fresh = {"token": "fresh-proof-token", "tee_keypair": "fresh-proof-key"}
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    side_effect=[(stale, {"iat": 900, "exp": 1300}), (fresh, {"iat": 1000, "exp": 1300})],
+                ) as refresh,
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 120]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                    maximum_credentials_age=100,
+                ):
+                    pass
+            self.assertEqual(refresh.call_count, 2)
+            self.assertEqual(read_json(credentials_path), fresh)
+            self.assertEqual(read_json(state_path), {"expires_at": 1100})
 
     def test_application_proof_rejects_a_token_without_the_publication_margin(self):
         config = {

@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
+from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, proof_renewal_window
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
@@ -597,6 +597,7 @@ def application(path):
         "allowed_in_cidrs",
         "allowed_out_cidrs",
         "requires_gpu",
+        "max_token_age_seconds",
         "services",
         "nfs_mount",
     }
@@ -634,6 +635,11 @@ def application(path):
         require_config(type(value.get(key)) is int and value[key] > 0, f"{key} must be a positive integer GiB size")
     require_config(type(value.get("requires_gpu", False)) is bool, "requires_gpu must be boolean")
     value.setdefault("requires_gpu", False)
+    if "max_token_age_seconds" in value:
+        require_config(
+            type(value["max_token_age_seconds"]) is int and 0 < value["max_token_age_seconds"] <= 300,
+            "max_token_age_seconds must be an integer from 1 through 300",
+        )
     for key in ("allowed_ports", "allowed_out_ports"):
         ports(value.setdefault(key, []))
     for key in ("allowed_in_cidrs", "allowed_out_cidrs"):
@@ -651,6 +657,15 @@ def application(path):
             )
     for key in ("attestation_credentials", "tee_device", "read_only_rootfs", "host_bin"):
         require_config(type(container.setdefault(key, key == "read_only_rootfs")) is bool, f"{key} must be boolean")
+    require_config(
+        "max_token_age_seconds" not in value or container["attestation_credentials"],
+        "max_token_age_seconds requires container.attestation_credentials",
+    )
+    require_config(
+        "max_token_age_seconds" not in value
+        or value["max_token_age_seconds"] > proof_renewal_window(value["requires_gpu"]),
+        "max_token_age_seconds must exceed the bounded proof renewal window",
+    )
     if "user" in container:
         user = container["user"]
         require_config(

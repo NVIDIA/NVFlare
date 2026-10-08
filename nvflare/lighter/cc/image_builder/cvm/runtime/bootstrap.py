@@ -454,6 +454,7 @@ def refresh_application_credentials(config, digest, *, app=None):
             credentials_path=APP_ATTESTATION_CREDENTIALS,
             credentials_state_path=STATE / "application-proof.json",
             minimum_credentials_validity=periodic_timeout(config) + PROOF_EXPIRY_MARGIN_SECONDS,
+            maximum_credentials_age=app.get("max_token_age_seconds"),
         ):
             pass
     else:
