@@ -28,7 +28,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
-from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import (
     _ABORT_REQUESTED_KEY,
@@ -542,9 +542,14 @@ def test_start_app_rejects_launch_metadata_drift(tmp_path, deployed_meta, start_
 
 @pytest.mark.parametrize(
     "return_code, reason",
-    EXPECTED_REPORTABLE_JOB_FAILURES.items(),
+    [
+        *EXPECTED_REPORTABLE_JOB_FAILURES.items(),
+        (JobReturnCode.SUCCESS, None),
+        (JobReturnCode.EXECUTION_ERROR, None),
+        (JobReturnCode.UNKNOWN, None),
+    ],
 )
-def test_wait_child_process_reports_failure_return_code_to_server(return_code, reason):
+def test_wait_child_process_reports_terminal_outcome_to_server(return_code, reason):
     client = MagicMock()
     client.client_name = "site-1"
     client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
@@ -574,13 +579,14 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     call_kwargs = client.send_request_before_shutdown.call_args.kwargs
     assert call_kwargs["target"] == FQCN.ROOT_SERVER
     assert call_kwargs["channel"] == CellChannel.SERVER_MAIN
-    assert call_kwargs["topic"] == CellChannelTopic.REPORT_JOB_FAILURE
+    assert call_kwargs["topic"] == CellChannelTopic.REPORT_JOB_OUTCOME
+    assert call_kwargs["topic"] == "report_job_failure"  # Existing servers still receive the report.
     assert call_kwargs["optional"] is True
 
     payload = call_kwargs["request"].payload
-    assert payload[JobFailureMsgKey.JOB_ID] == "job-1"
-    assert payload[JobFailureMsgKey.CODE] == return_code
-    assert payload[JobFailureMsgKey.REASON] == reason
+    assert payload[JobOutcomeMsgKey.JOB_ID] == "job-1"
+    assert payload[JobOutcomeMsgKey.CODE] == return_code
+    assert payload[JobOutcomeMsgKey.REASON] == reason
 
     assert "job-1" not in job_executor.run_processes
     fl_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", private=True, sticky=False)
@@ -687,7 +693,7 @@ def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file
     )
 
     payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
-    assert payload[JobFailureMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert payload[JobOutcomeMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert not rc_file.exists()
 
 
@@ -737,8 +743,8 @@ def test_wait_child_process_reports_terminal_return_code(return_code, process_st
 
     client.send_request_before_shutdown.assert_called_once()
     payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
-    assert payload[JobFailureMsgKey.CODE] == expected_code
-    assert payload[JobFailureMsgKey.REASON] == REPORTABLE_JOB_FAILURES.get(expected_code)
+    assert payload[JobOutcomeMsgKey.CODE] == expected_code
+    assert payload[JobOutcomeMsgKey.REASON] == REPORTABLE_JOB_FAILURES.get(expected_code)
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 

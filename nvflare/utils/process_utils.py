@@ -316,37 +316,117 @@ class ProcessAdapter:
             self.logger.warning("Failed to kill process group %s (%s)", pgid, exc)
 
 
-def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
+def popen_in_new_session(args, **kwargs) -> subprocess.Popen:
+    """Start a subprocess as the leader of a new session (and process group).
+
+    Use this instead of ``subprocess.Popen(..., preexec_fn=os.setsid)``. ``preexec_fn`` forces a plain fork()
+    and runs Python code in the child before exec, which can segfault or deadlock when other threads
+    (e.g. gRPC) are active. ``start_new_session=True`` calls setsid() in C in the child instead, so no
+    Python code runs between fork and exec.
+
+    This does not guarantee that fork() is avoided: start_new_session disables Popen's posix_spawn fast
+    path, so CPython uses vfork() on Linux when it can, and fork() otherwise or on other POSIX platforms.
+    When fork() is used, gRPC may still log that it is skipping its fork handlers; that is harmless here
+    because the child only runs async-signal-safe C code before exec. On Windows, start_new_session is ignored.
+
+    Args:
+        args: The command to run, as accepted by subprocess.Popen.
+        **kwargs: Other subprocess.Popen keyword arguments. ``preexec_fn`` is not allowed.
+
+    Returns:
+        subprocess.Popen: The started process.
+    """
+    return subprocess.Popen(args, **_new_session_kwargs(kwargs))
+
+
+def run_in_new_session(args, **kwargs) -> subprocess.CompletedProcess:
+    """Run a command to completion as the leader of a new session, like subprocess.run.
+
+    Same as :func:`popen_in_new_session` but keeps subprocess.run's cleanup: if waiting is interrupted
+    (e.g. KeyboardInterrupt), the child is killed instead of being left running in its own session.
+
+    Args:
+        args: The command to run, as accepted by subprocess.run.
+        **kwargs: Other subprocess.run keyword arguments. ``preexec_fn`` is not allowed.
+
+    Returns:
+        subprocess.CompletedProcess: The completed process.
+    """
+    return subprocess.run(args, **_new_session_kwargs(kwargs))
+
+
+def _new_session_kwargs(kwargs: dict) -> dict:
+    if "preexec_fn" in kwargs:
+        raise ValueError(
+            "preexec_fn is not allowed; it runs Python code in the forked child, which is unsafe with threads"
+        )
+    kwargs["start_new_session"] = True
+    return kwargs
+
+
+class ProcessSpawnError(RuntimeError):
+    """An execution was acquired before spawn finalization failed.
+
+    The caller owns ``adapter`` and must arrange its cleanup; this error must
+    never trigger another spawn as though process creation had failed.
+    """
+
+    def __init__(self, adapter: ProcessAdapter):
+        super().__init__(f"spawn finalization failed after acquiring process {adapter.pid}")
+        self.adapter = adapter
+
+
+def _finish_spawn(adapter: ProcessAdapter, backend: str) -> ProcessAdapter:
+    try:
+        log.info("Launch the job in process ID: %s (%s)", adapter.pid, backend)
+    except Exception as e:
+        raise ProcessSpawnError(adapter) from e
+    return adapter
+
+
+def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
     This method attempts to use os.posix_spawn with setsid=True to avoid fork() related issues
     (such as gRPC deadlocks). If posix_spawn is unavailable or fails, it falls back to
-    subprocess.Popen with preexec_fn=os.setsid.
+    subprocess.Popen with start_new_session=True, which calls setsid() in C in the child
+    instead of running Python code (preexec_fn) between fork and exec.
 
     Args:
         cmd_args: The command arguments as a list of strings.
         env: The environment variables dictionary.
+        cwd: Optional working directory. Portable posix_spawn has no chdir
+            argument, so a working directory selects the subprocess fallback.
 
     Returns:
         ProcessAdapter: An adapter wrapping the launched process.
+
+    Raises:
+        ProcessSpawnError: If finalization fails after creating a process.
+            The caller retains ownership of the error's adapter and must
+            clean it up instead of retrying process creation.
     """
-    if _POSIX_SPAWN_SUPPORTED and cmd_args:
+    if _POSIX_SPAWN_SUPPORTED and cmd_args and cwd is None:
         try:
             # Note: 'setsid' is a potential extension or patch in some python environments.
             # We wrap it in try-except to gracefully fallback if not supported.
             path = cmd_args[0]
             pid = os.posix_spawn(path, cmd_args, env, setsid=True)
-            log.info("Launch the job in process ID: %s (posix_spawn)", pid)
-            return ProcessAdapter(pid=pid)
-        except TypeError as exc:
-            # Happens when this interpreter lacks posix_spawn(..., setsid=...) support and silently falls back to fork.
+        except (TypeError, NotImplementedError) as exc:
+            # TypeError: this interpreter's posix_spawn does not accept the setsid keyword.
+            # NotImplementedError: CPython was built without POSIX_SPAWN_SETSID (e.g. against glibc < 2.26,
+            # as python-build-standalone and conda builds are).
             log.warning("posix_spawn missing setsid support (%s); falling back to subprocess.", exc)
         except Exception as exc:
             # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
+        else:
+            # Once a child exists, errors must preserve ownership and must not
+            # enter the process-creation fallback above.
+            return _finish_spawn(ProcessAdapter(pid=pid), "posix_spawn")
 
-    preexec_fn = os.setsid if hasattr(os, "setsid") else None
-    process = subprocess.Popen(cmd_args, shell=False, preexec_fn=preexec_fn, env=env)
-    log.info("Launch the job in process ID: %s (subprocess)", process.pid)
-
-    return ProcessAdapter(process=process)
+    popen_kwargs = {"shell": False, "env": env}
+    if cwd is not None:
+        popen_kwargs["cwd"] = cwd
+    process = popen_in_new_session(cmd_args, **popen_kwargs)
+    return _finish_spawn(ProcessAdapter(process=process), "subprocess")

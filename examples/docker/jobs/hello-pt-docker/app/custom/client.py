@@ -17,6 +17,7 @@ client side training scripts
 """
 
 import argparse
+import os
 
 import torch
 import torchvision
@@ -29,7 +30,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
-DATASET_PATH = "/var/tmp/nvflare/data"
+DATASET_PATH = os.environ.get("NVFL_CIFAR10_ROOT") or "/var/tmp/nvflare/data"
 
 
 def evaluate(net, data_loader, device):

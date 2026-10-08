@@ -20,13 +20,14 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationShapeError, WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows import fedavg as fedavg_module
@@ -208,7 +209,8 @@ def test_closed_round_callback_cannot_change_next_round(monkeypatch, custom):
     assert saved == [{"a": 2.0}, {"a": 2.0}]
 
 
-def test_custom_callback_failure_through_communicator_prevents_publication(monkeypatch):
+@pytest.mark.parametrize("error_type", [RuntimeError, AggregationShapeError])
+def test_custom_callback_failure_through_communicator_prevents_publication(monkeypatch, error_type):
     controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0}), custom=True)
     comm = WFCommServer()
     comm.controller = controller
@@ -224,7 +226,7 @@ def test_custom_callback_failure_through_communicator_prevents_publication(monke
     def fail_after_mutation(result):
         accept(result)
         if result.meta["client_name"] == "bad":
-            raise RuntimeError("aggregator failed after changing its state")
+            raise error_type("aggregator failed after changing its state")
 
     controller.aggregator.accept_model.side_effect = fail_after_mutation
 
@@ -232,9 +234,11 @@ def test_custom_callback_failure_through_communicator_prevents_publication(monke
         comm.broadcast(task, controller.fl_ctx, targets=["good", "bad"])
         for name, value in (("good", 1.0), ("bad", 9.0)):
             client = Client(name, name)
-            task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+            task_name, task_id, task_data = comm.process_task_request(client, controller.fl_ctx)
             result = FLModelUtils.to_shareable(FLModel(params={"a": value}))
+            result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task_data.get_task_attempt_id())
             comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
+            assert controller.fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
         # Actual task retirement follows callback completion under the communicator lock.
         comm.check_tasks()
         assert comm.get_num_standing_tasks() == 0

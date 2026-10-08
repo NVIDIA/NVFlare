@@ -99,10 +99,14 @@ class AioTcpDriver(BaseDriver):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
         self.server = await asyncio.start_server(self._create_connection, host, port, ssl=self.ssl_context)
         async with self.server:
+            if self.connector.stopped.is_set():
+                return
             await self.server.serve_forever()
 
     async def _create_connection(self, reader, writer):
         conn = AioConnection(self.connector, self.aio_ctx, reader, writer, self.ssl_context is not None)
         self.add_connection(conn)
+        if self.connector.stopped.is_set():
+            conn.close()
         await conn.read_loop()
         self.close_connection(conn)
