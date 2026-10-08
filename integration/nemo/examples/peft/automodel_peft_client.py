@@ -180,22 +180,23 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
     args = model_profiles.resolve_model_profile(args)
     seed = getattr(args, "seed", 42)
     dataset_factory_target = _dataset_factory_target()
+    tokenizer_config = {
+        "pretrained_model_name_or_path": args.tokenizer_name_or_path,
+        "revision": args.tokenizer_revision,
+    }
     validation = {
         "_target_": dataset_factory_target,
         "data_file": args.validation_file,
         "seq_length": args.seq_length,
         "limit_dataset_samples": args.limit_validation_samples,
+        "tokenizer": dict(tokenizer_config),
         "padding": False,
         "truncation": True,
     }
-    if model_profiles.is_lightning35(args):
-        validation["tokenizer"] = {
-            "pretrained_model_name_or_path": args.tokenizer_name_or_path,
-            "revision": args.tokenizer_revision,
-        }
     model_config = {
         "_target_": _model_factory_target(),
         "pretrained_model_name_or_path": args.model_name_or_path,
+        "revision": args.model_revision,
         "incoming_adapter_dir": incoming_adapter_dir,
         "trust_remote_code": True,
     }
@@ -227,6 +228,7 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
             "limit_dataset_samples": _estimated_limit_train_samples(args),
             "balance_labels": args.balance_train_labels,
             "use_chat_template": args.use_chat_template,
+            "tokenizer": dict(tokenizer_config),
             "padding": False,
             "truncation": True,
         },
@@ -266,10 +268,6 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
         config["distributed"]["activation_checkpointing"] = args.activation_checkpointing
         config["dataset"]["seed"] = seed
         config["dataset"]["recycle_samples"] = True
-        config["dataset"]["tokenizer"] = {
-            "pretrained_model_name_or_path": args.tokenizer_name_or_path,
-            "revision": args.tokenizer_revision,
-        }
         config["optimizer"] = {
             "_target_": "torch.optim.AdamW",
             "betas": [0.9, 0.95],

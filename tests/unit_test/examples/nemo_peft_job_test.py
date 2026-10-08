@@ -285,6 +285,8 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
     args.backend = "automodel"
     args.train_file = str(tmp_path / "train.jsonl")
+    args.model_revision = "model-revision"
+    args.tokenizer_revision = "tokenizer-revision"
     incoming_adapter_dir = str(tmp_path / "incoming_adapter")
 
     config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), incoming_adapter_dir)
@@ -299,7 +301,14 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     expected_model_suffix = os.path.join("peft", "automodel_adapter_loader.py")
     assert config["model"]["_target_"].endswith(f"{expected_model_suffix}:from_pretrained_with_adapter")
     assert config["model"]["incoming_adapter_dir"] == incoming_adapter_dir
+    assert config["model"]["revision"] == "model-revision"
     assert "peft_config" not in config["model"]
+    expected_tokenizer = {
+        "pretrained_model_name_or_path": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "revision": "tokenizer-revision",
+    }
+    assert config["dataset"]["tokenizer"] == expected_tokenizer
+    assert config["validation_dataset"]["tokenizer"] == expected_tokenizer
 
 
 def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp_path):
