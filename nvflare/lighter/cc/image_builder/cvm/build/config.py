@@ -337,13 +337,10 @@ def gpu_inputs(path, value):
     provenance = read_json(value["gpu_attestation_provenance"])
     require(isinstance(provenance, dict), "Invalid NVAT provenance")
     require(
-        provenance.get("source_repository") == "https://github.com/NVIDIA/attestation-sdk.git"
+        provenance.get("source_clean") is True
+        and provenance.get("source_repository") == "https://github.com/NVIDIA/attestation-sdk.git"
         and provenance.get("source_commit") == NVAT_COMMIT,
-        "NVAT provenance must match Trustee v0.22.0's pinned SDK source",
-    )
-    require(
-        provenance.get("patch_sha256") == digest_file(SOURCE / "cvm/build/nvat_libxml2_const.patch"),
-        "NVAT provenance must record the reviewed libxml2 compatibility patch",
+        "NVAT provenance must match the selector client's pinned clean SDK source",
     )
     require(
         provenance.get("library_sha256") == digest_file(value["gpu_attestation_library"]),

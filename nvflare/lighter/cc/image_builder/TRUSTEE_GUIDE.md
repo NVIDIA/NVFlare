@@ -392,7 +392,7 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
   "admin_issuer": "cvm-builder",
   "admin_audience": "coco-trustee",
   "resource_policy_file": "/home/service_operator/trustee/kbs/data/kbs-policy/resource-policy.rego",
-  "policy_lock": "/home/service_operator/trustee/kbs/data/kbs-policy/.resource-policy.lock",
+  "policy_lock": "/home/service_operator/trustee/kbs/data/.resource-policy.lock",
   "state": "/var/lib/cvm-trustee/admin",
   "trustee_binary": "/home/service_operator/trustee-v0.22-512fed6/kbs-server-v0.22-512fed6",
   "trustee_image_id": "sha256:KBS_IMAGE_ID",
@@ -439,7 +439,8 @@ deployment receipts and omits the CoCo recipe and image fields. Mixing the clean
 binary record with the patched CoCo image, or naming a different running image,
 fails before policy publication.
 
-`policy_lock` must be the same file used by the CoCo service scripts. CVM
+`policy_lock` must be the same file used by the CoCo service scripts and must
+remain outside directories scanned by Trustee for Rego policies. CVM
 administration reads the active policy while holding this lock, replaces only
 the marked CVM fragment, and publishes the merged bytes. Existing CoCo release
 rules and the default policy remain intact.

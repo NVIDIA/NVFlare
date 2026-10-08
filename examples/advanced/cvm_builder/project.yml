@@ -13,9 +13,6 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-    capacity:
-      num_of_gpus: 1
-      mem_per_gpu_in_GiB: 4
     cc_config: cc_site-1.yml
   - name: admin@example.com
     type: admin

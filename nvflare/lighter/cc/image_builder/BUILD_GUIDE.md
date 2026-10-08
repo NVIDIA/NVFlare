@@ -723,10 +723,10 @@ false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
 The default expects `inputs/libnvat.so.1` plus `inputs/nvat_build.json`.
-Trustee v0.22.0's Cargo.lock pins the NVAT 2026.03.02 source, which builds library
-version 1.2.0 with soname 1. Stage 1 checks the source revision, reviewed libxml2
-compatibility patch, build environment and binary digest in the provenance
-record. Evidence collection and verification use CoCo's code.
+The selector-capable client patch pins the NVAT 2026.06.09 source, which builds
+library version 1.2.2 with soname 1. Stage 1 checks the clean source revision,
+build environment and binary digest in the provenance record. Evidence
+collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
 `linux-modules-nvidia-*-<kernel>` package plus its matching

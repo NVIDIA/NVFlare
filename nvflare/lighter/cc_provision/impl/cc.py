@@ -54,6 +54,33 @@ class CCBuilder(Builder):
         self.plans = {}
         self.deployments = {}
 
+    @staticmethod
+    def _configure_client_gpu_capacity(participant, gpu_tee):
+        """Keep FL resource scheduling consistent with the declared GPU TEE."""
+        if participant.type != ParticipantType.CLIENT:
+            return
+
+        capacity = participant.get_prop(PropKey.CAPACITY)
+        if capacity is None:
+            if gpu_tee is GPUTEE.NVIDIA_CC:
+                participant.set_prop(PropKey.CAPACITY, {PropKey.NUM_GPUS: 1})
+            return
+        if not isinstance(capacity, dict):
+            raise ValueError("capacity must be a mapping")
+
+        num_gpus = capacity.get(PropKey.NUM_GPUS)
+        if num_gpus is not None and type(num_gpus) is not int:
+            raise ValueError("capacity.num_of_gpus must be an integer")
+        if gpu_tee is GPUTEE.NVIDIA_CC:
+            if num_gpus is None:
+                capacity = dict(capacity)
+                capacity[PropKey.NUM_GPUS] = 1
+                participant.set_prop(PropKey.CAPACITY, capacity)
+            elif num_gpus < 1:
+                raise ValueError("capacity.num_of_gpus must be positive when gpu_tee is nvidia_cc")
+        elif num_gpus not in (None, 0):
+            raise ValueError("capacity.num_of_gpus must be zero or omitted when gpu_tee is none")
+
     def initialize(self, project, ctx):
         # Builders may be reused by programmatic callers. Never carry plans,
         # adapters, or project credentials into a later provisioning run.
@@ -94,7 +121,9 @@ class CCBuilder(Builder):
         for participant in selected:
             try:
                 path = Path(resolve_cc_config(project, participant.get_prop(PropKey.CC_CONFIG)))
-                normalized[participant.name] = load_participant_config(path, self.project_config)
+                participant_config = load_participant_config(path, self.project_config)
+                self._configure_client_gpu_capacity(participant, participant_config["gpu_tee"])
+                normalized[participant.name] = participant_config
             except Exception as exc:
                 raise ValueError(f"Invalid CC configuration for {participant.name}: {exc}") from exc
 

@@ -200,25 +200,25 @@ class HttpTests(unittest.TestCase):
         mappings = service["attestation_service"].get("policy_id_map", {})
         if not mappings:
             self.skipTest("HTTP-only lab has no bare-metal CVM profile")
-        self.assertEqual(len(mappings), 1)
-        selector, policy_ids = next(iter(mappings.items()))
-        self.assertEqual(len(policy_ids), 1)
-        token = run(
-            [
-                self.directory / "inputs/kbs-client",
-                "--url",
-                self.admin["url"],
-                "--cert-file",
-                self.admin["ca"],
-                "attest",
-                "--attestation-policy-selector",
-                selector,
-            ],
-            timeout=30,
-            env=dict(os.environ, RUST_LOG="off"),
-        ).strip()
-        claims = json.loads(unb64url(token.decode().split(".")[1]))
-        self.assertEqual(claims["submods"]["cpu0"]["ear.appraisal-policy-id"], policy_ids[0])
+        for selector, policy_ids in mappings.items():
+            with self.subTest(selector=selector):
+                self.assertEqual(len(policy_ids), 1)
+                token = run(
+                    [
+                        self.directory / "inputs/kbs-client",
+                        "--url",
+                        self.admin["url"],
+                        "--cert-file",
+                        self.admin["ca"],
+                        "attest",
+                        "--attestation-policy-selector",
+                        selector,
+                    ],
+                    timeout=30,
+                    env=dict(os.environ, RUST_LOG="off"),
+                ).strip()
+                claims = json.loads(unb64url(token.decode().split(".")[1]))
+                self.assertEqual(claims["submods"]["cpu0"]["ear.appraisal-policy-id"], policy_ids[0])
 
     def test_cross_vault_access_denied(self):
         a, _, _ = self.create()

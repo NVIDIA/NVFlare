@@ -397,6 +397,44 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
 
 
+def test_gpu_tee_defaults_missing_client_capacity_to_one(tmp_path):
+    project = _coco_project(tmp_path)
+
+    CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+    assert project.get_clients()[0].get_prop(PropKey.CAPACITY) == {PropKey.NUM_GPUS: 1}
+
+
+def test_gpu_tee_preserves_explicit_positive_client_capacity(tmp_path):
+    project = _coco_project(tmp_path)
+    capacity = {PropKey.NUM_GPUS: 2, PropKey.GPU_MEM: 8}
+    project.get_clients()[0].set_prop(PropKey.CAPACITY, capacity)
+
+    CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+    assert project.get_clients()[0].get_prop(PropKey.CAPACITY) == capacity
+
+
+@pytest.mark.parametrize("num_gpus", [0, -1, True, "1"])
+def test_gpu_tee_rejects_invalid_client_capacity(tmp_path, num_gpus):
+    project = _coco_project(tmp_path)
+    project.get_clients()[0].set_prop(PropKey.CAPACITY, {PropKey.NUM_GPUS: num_gpus})
+
+    with pytest.raises(ValueError, match="capacity.num_of_gpus"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+def test_cpu_only_tee_rejects_gpu_client_capacity(tmp_path):
+    project = _coco_project(tmp_path)
+    participant_config = yaml.safe_load((tmp_path / "cc_site.yml").read_text())
+    participant_config["gpu_tee"] = "none"
+    _write(tmp_path / "cc_site.yml", participant_config)
+    project.get_clients()[0].set_prop(PropKey.CAPACITY, {PropKey.NUM_GPUS: 1})
+
+    with pytest.raises(ValueError, match="zero or omitted when gpu_tee is none"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
 def test_cc_builder_reserves_logical_server_identity(tmp_path):
     project = _azure_project(tmp_path)
     project.add_client("server", "example", {})
@@ -904,4 +942,8 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
     manifest = json.loads((output / "cc_manifests/site-1.json").read_text())
     assert manifest["cc_deployment_mode"] == "coco"
     assert manifest["artifacts"][0]["image"].endswith("@sha256:" + "a" * 64)
-    assert (Path(ctx.get_state_dir()) / "cc-private" / output.name / "site-1/startup-kit").is_dir()
+    private_kit = Path(ctx.get_state_dir()) / "cc-private" / output.name / "site-1/startup-kit"
+    assert private_kit.is_dir()
+    resources = json.loads((private_kit / "local" / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
+    resource_manager = next(component for component in resources["components"] if component["id"] == "resource_manager")
+    assert resource_manager["args"]["num_of_gpus"] == 1

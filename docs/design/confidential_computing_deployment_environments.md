@@ -89,9 +89,6 @@ participants:
   - name: site-coco
     type: client
     org: example
-    capacity:
-      num_of_gpus: 1
-      mem_per_gpu_in_GiB: 4
     cc_config: cc_site_coco.yml
 
   - name: site-azure
@@ -278,6 +275,13 @@ workload:
 `participant.type` supplies the role. A participant file must not contain
 `role`. `cpu_tee` is a scalar so it has the same meaning in all modes. One
 participant configuration produces one deployment target.
+
+For a client, `gpu_tee` also controls the default FL resource capacity.
+`gpu_tee: nvidia_cc` defaults an omitted `capacity.num_of_gpus` in
+`project.yml` to `1`. A positive explicit value is preserved for a reviewed
+multi-GPU profile. With `gpu_tee: none`, `capacity.num_of_gpus` must be zero
+or omitted. `capacity.mem_per_gpu_in_GiB` remains an optional scheduling
+minimum in `project.yml`.
 
 `class_allow_list` is optional and normalizes to `[]`. An empty list means
 “add no application classes to the framework's existing safe defaults.” It
