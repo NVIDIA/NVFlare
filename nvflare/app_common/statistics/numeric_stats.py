@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from math import sqrt
-from typing import Dict, List, TypeVar
+from math import isfinite, sqrt
+from typing import Dict, List, Optional, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
@@ -164,6 +164,46 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
     return buckets
 
 
+def _merge_matching_histogram_infinity_edges(
+    existing: Histogram, incoming: Histogram, precision: int
+) -> Optional[Histogram]:
+    """Align standard histograms differing only by infinite outer edges.
+
+    A client with an infinity extends the first/last bucket, while a client
+    without it retains the configured finite edge. Their counts belong to
+    the same bin grid; matching solely by the resulting edge pair drops the
+    second client's counts. Do not align different interior grids or any
+    finite-to-finite endpoint differences.
+    """
+    if (
+        existing.hist_type != HistogramType.STANDARD
+        or incoming.hist_type != HistogramType.STANDARD
+        or not existing.bins
+        or len(existing.bins) != len(incoming.bins)
+    ):
+        return None
+
+    merged = []
+    extended = False
+    last_index = len(existing.bins) - 1
+    for index, (old, new) in enumerate(zip(existing.bins, incoming.bins)):
+        old_low, old_high = round(old.low_value, precision), round(old.high_value, precision)
+        new_low, new_high = round(new.low_value, precision), round(new.high_value, precision)
+        low, high = min(old_low, new_low), max(old_high, new_high)
+
+        if old_low != new_low:
+            if index != 0 or low != float("-inf") or not isfinite(max(old_low, new_low)):
+                return None
+            extended = True
+        if old_high != new_high:
+            if index != last_index or high != float("inf") or not isfinite(min(old_high, new_high)):
+                return None
+            extended = True
+        merged.append(Bin(low, high, old.sample_count + new.sample_count))
+
+    return Histogram(existing.hist_type, merged, existing.hist_name) if extended else None
+
+
 def accumulate_hists(
     metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]], precision: int = 4
 ) -> Dict[str, Dict[str, Histogram]]:
@@ -186,6 +226,10 @@ def accumulate_hists(
                 global_hists[ds_name][feature] = g_hist
             else:
                 g_hist = global_hists[ds_name][feature]
+                reconciled = _merge_matching_histogram_infinity_edges(g_hist, hist, precision)
+                if reconciled is not None:
+                    global_hists[ds_name][feature] = reconciled
+                    continue
                 g_buckets = bins_to_dict(g_hist.bins)
                 for bucket in hist.bins:
                     bin_range = BinRange(round(bucket.low_value, precision), round(bucket.high_value, precision))

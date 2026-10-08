@@ -102,6 +102,43 @@ class TestHistogramInfinityCounts:
         assert sum(b.sample_count for b in buckets) == sum(counts)
         np.testing.assert_array_equal(nums, values)
 
+    @pytest.mark.parametrize("num_bins", [1, 3])
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize(
+        "client_values",
+        [
+            ([-np.inf, 0.0], [-np.inf, 0.0, np.inf]),
+            ([-1.0, 0.0, 1.0], [-np.inf, 0.0, np.inf]),
+            ([0.0, np.inf], [-np.inf, 0.0]),
+        ],
+    )
+    def test_global_histogram_with_mixed_infinite_boundaries(self, num_bins, reverse, client_values):
+        # Clients may emit different outer boundaries for the same explicit
+        # range, depending on which signs of infinity occur locally.
+        clients = list(reversed(client_values)) if reverse else client_values
+        global_histograms = {}
+        expected_counts = np.zeros(num_bins, dtype=np.int64)
+        for values in clients:
+            stats = DFStatisticsCore()
+            stats.data = {"train": pd.DataFrame({"value": values})}
+            local_hist = stats.histogram("train", "value", num_bins, -1.0, 1.0)
+            global_histograms = accumulate_hists({"train": {"value": local_hist}}, global_histograms)
+
+            nums = np.asarray(values)
+            counts = np.histogram(nums[np.isfinite(nums)], bins=num_bins, range=(-1.0, 1.0))[0]
+            counts[0] += np.isneginf(nums).sum()
+            counts[-1] += np.isposinf(nums).sum()
+            expected_counts += counts
+
+        bins = global_histograms["train"]["value"].bins
+        assert len(bins) == num_bins
+        np.testing.assert_array_equal([b.sample_count for b in bins], expected_counts)
+        assert sum(b.sample_count for b in bins) == sum(len(v) for v in clients)
+        if any(-np.inf in v for v in clients):
+            assert bins[0].low_value == -np.inf
+        if any(np.inf in v for v in clients):
+            assert bins[-1].high_value == np.inf
+
     def test_dataframe_and_global_histogram_preserve_sample_count(self):
         global_histograms = {}
         expected_count = 0
