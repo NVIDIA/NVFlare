@@ -75,6 +75,7 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.process_utils import popen_in_new_session
 
 CLIENT_CREATE_POOL_SIZE = 200
 POOL_STATS_DIR = "pool_stats"
@@ -759,7 +760,7 @@ class SimulatorClientRunner(FLComponent):
                 python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
-        process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
+        process = popen_in_new_session(shlex.split(command, True), shell=False, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 

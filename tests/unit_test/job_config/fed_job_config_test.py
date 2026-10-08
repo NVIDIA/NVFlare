@@ -50,6 +50,6 @@ class TestFedJobConfig:
         process.wait.return_value = 2
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process):
                 with pytest.raises(RuntimeError, match="Simulator run failed with exit code 2"):
                     job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)

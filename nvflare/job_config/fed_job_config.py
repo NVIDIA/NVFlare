@@ -17,7 +17,6 @@ import json
 import os
 import shlex
 import shutil
-import subprocess
 import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
@@ -30,6 +29,7 @@ from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.utils.process_utils import popen_in_new_session
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -192,7 +192,7 @@ class FedJobConfig:
                     command += " -l" + str(log_config)
 
                 new_env = os.environ.copy()
-                process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
+                process = popen_in_new_session(shlex.split(command, True), shell=False, env=new_env)
 
                 return_code = process.wait()
                 if return_code != 0:
