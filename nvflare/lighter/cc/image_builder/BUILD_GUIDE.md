@@ -151,18 +151,21 @@ an independently authenticated administrator process before retrying. The
 builder's recorded input digest provides traceability; it does not authenticate
 the publisher or replace this verification step.
 
-Build `kbs-client` from the unmodified CoCo Trustee v0.22.0 checkout, using
-upstream's Linux build prerequisites and Rust toolchain:
+Build `kbs-client` from the pinned Trustee checkout plus the reviewed CLI patch.
+The patch updates to guest-components' upstream attestation-policy-selector API and exposes
+it through the standalone client; it does not modify the Trustee service:
 
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
+git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
+  -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
 
-Record which clean checkout produced the client. Production builds require this
-record for the selected platform (`kbs_client_provenance`), because a measured
-digest alone does not say what source it came from:
+Record the exact reviewed client build. Production builds require this record
+for the selected platform (`kbs_client_provenance`), because a measured digest
+alone does not say what source produced it:
 
 ```sh
 ./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
@@ -372,6 +375,8 @@ kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 attestation_policy: attestation_policy.rego
+attestation_policy_selector: cvm-cpu-2026-09-r5
+attestation_policy_id: cvm-cpu-2026-09-r5
 reference_values: ../inputs/approved-tcb-references.json
 platforms:
   amd_sev_snp:

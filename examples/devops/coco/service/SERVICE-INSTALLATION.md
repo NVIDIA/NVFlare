@@ -184,21 +184,25 @@ cd /home/service_operator/coco-service-admin
 bash ./04-build-trustee-main.sh
 ```
 
-Stage 04 fetches Trustee, checks out
-`338610fbfed57b66c61a8a3a60e0e4386bdce793`, and builds KBS, AS with all
+Stage 04 fetches Trustee, checks out the shared CoCo/CVM Trustee v0.22 revision
+`512fed65642015b849f38fb13bfdec7806639987`, and builds KBS, AS with all
 verifiers, RVPS, and the SNP/TDX-capable KBS administration client. It vendors
 checksum-verified Actix HTTP 3.13.3 with a 128 KiB HTTP request-head buffer.
-**Do not use Trustee v0.21.0.** The HTTP header issue requires this pinned
-post-v0.21 source and patch.
+**Do not use Trustee v0.21.0.** The HTTP header issue requires this pinned v0.22
+source and reviewed Actix patch.
 
 No NVFlare repository checkout or Kubernetes installation is needed on secure services.
 Builds can take tens of minutes. In another SSH terminal, monitor `df -h /`
 and `sudo docker stats --no-stream`; do not mistake a quiet build for failure.
+Stage 04 requires a fresh `TRUSTEE_ROOT` so ignored or untracked files cannot
+enter the Docker build context. Preserve the emitted provenance and artifacts,
+then select a new root/label for a deliberate rebuild.
 
-Outputs live under `/home/service_operator/trustee-main-338610f/`:
+Outputs live under `/home/service_operator/trustee-v0.22-512fed6/`:
 
 - `built-image-ids.txt`: built KBS, AS and RVPS image IDs;
-- `kbs-client-snp-tdx-main-338610f`: administration client;
+- `trustee-build.json` and `kbs-server-v0.22-512fed6`: CVM-compatible server provenance and the exact KBS binary exported from the image;
+- `kbs-client-snp-tdx-v0.22-512fed6`: administration client;
 - the pinned source checkout and build inputs.
 
 ## 5. Start Trustee and create its TLS identity
@@ -335,7 +339,7 @@ openssl verify -CAfile public/registry-ca.crt \
 | Registry CA private key | `/etc/coco-registry/pki/ca.key` | secure services only, root:root 0600 |
 | Registry server private key | `/etc/coco-registry/tls/server.key` | secure services only, root:root 0600 |
 | Publisher username/password | `~/.coco-publisher/{username,password}` | Trusted admin only, confidential transfer |
-| KBS admin token | `~/trustee-main-338610f/kbs/config/docker-compose/admin-token` | secure services only, root:root 0600 |
+| KBS admin token | `~/trustee-v0.22-512fed6/kbs/config/docker-compose/admin-token` | secure services only, root:root 0600 |
 
 Trustee and the registry deliberately use separate private keys and certificate
 chains. Clients trust the Trustee leaf and registry CA, never a private key.

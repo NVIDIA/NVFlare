@@ -74,10 +74,12 @@ selects NVIDIA attestation-sdk tag `2026.03.02`, commit
 and its ABI soname is `libnvat.so.1`. The prior `libnvat.so.1.2.2` filename did not
 establish this source identity; the profile now requires a provenance record.
 
-The reviewed [compatibility patch](cvm/build/nvat_libxml2_const.patch) changes
+The reviewed [NVAT compatibility patch](cvm/build/nvat_libxml2_const.patch) changes
 only the type receiving `xmlGetLastError()` to `const xmlError *`, as required by
-Ubuntu's `libxml2.so.16`. It does not change verification logic. Trustee, its
-Cargo.lock, and guest-components remain unmodified.
+Ubuntu's `libxml2.so.16`. It does not change verification logic. The separate
+[`kbs-client` selector patch](cvm/build/kbs_client_policy_selector.patch) updates
+the client lockfile to guest-components' upstream selector API and does not
+change Trustee's server or NVIDIA verification logic.
 
 From the CVM Builder directory, build in fresh directories:
 

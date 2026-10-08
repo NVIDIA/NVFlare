@@ -21,10 +21,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cvm.common.errors import BuildError
-from cvm.common.io import write_json
-from cvm.common.references import validate_references
+from cvm.common.io import read_json, write_json
+from cvm.common.references import reference_record_name, validate_references
 from cvm.common.services import validate_service
 from cvm.host.launcher import find_bundle
+from cvm.trustee.import_references import import_references
 from cvm.trustee.references import check_profile, merge_records
 
 
@@ -37,12 +38,17 @@ class ReviewRegressionTests(unittest.TestCase):
             root = Path(directory)
             binary = root / "kbs"
             binary.write_bytes(b"fixture binary")
-            contract = {"gpu": "nvidia_cc", "trustee_commit": "a" * 40}
+            contract = {
+                "gpu": "nvidia_cc",
+                "trustee_commit": "a" * 40,
+                "attestation_policy_selector": "gpu-r2",
+            }
             manifest = {
                 "build_id": "test-gpu",
                 "profile_version": "gpu-2026.09-r2",
                 "contract": contract,
                 "attestation_policy_id": "gpu-r2",
+                "reference_value_id": reference_record_name("gpu-2026.09-r2", contract),
                 "sha256": {"attestation_policy.rego": "c" * 64, "gpu_attestation_policy.rego": "d" * 64},
             }
             cfg = {name: str(root / name) for name in ("state", "deployment_receipt", "trustee_build")}
@@ -53,6 +59,7 @@ class ReviewRegressionTests(unittest.TestCase):
                 source_clean=True,
                 policy_selection_tested=True,
                 unauthorized_administration_denied=True,
+                policy_id_map={"gpu-r2": ["gpu-r2"]},
                 immutable_as_policies={"gpu-r2_cpu": "c" * 64, "gpu-r2_gpu": "d" * 64},
             )
             with (
@@ -101,6 +108,30 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(merge_records(old, {"snp_bootloader": [1]}, expires), old)
         with self.assertRaisesRegex(BuildError, "Conflicting"):
             merge_records(old, {"snp_bootloader": [1, 2]}, expires)
+
+    def test_cpu_and_gpu_profiles_use_separate_rvps_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, state = root / "rvps", root / "state"
+            expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).isoformat()
+            manifests = []
+            for name, value in (("cpu", [1]), ("gpu", [2])):
+                bundle = root / name
+                bundle.mkdir()
+                write_json(bundle / "reference_values.json", {"snp_bootloader": value})
+                contract = {"profile": name}
+                manifest = {
+                    "profile_version": name + "-r1",
+                    "contract": contract,
+                    "reference_value_id": reference_record_name(name + "-r1", contract),
+                }
+                manifests.append((bundle, manifest))
+                with patch("cvm.trustee.import_references.verify_bundle", return_value=manifest):
+                    import_references(bundle, store, state, expires)
+            records = {path.name: read_json(path)["value"] for path in store.iterdir()}
+            self.assertEqual(len(records), 2)
+            for (_bundle, manifest), expected in zip(manifests, ([1], [2])):
+                self.assertEqual(records[manifest["reference_value_id"]]["values"]["snp_bootloader"], expected)
 
     def test_profile_isolation_includes_version_and_contract(self):
         original = {"profile_version": "cpu-r1", "contract": {"reference_values_sha256": "aa"}}

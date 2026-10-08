@@ -1129,6 +1129,7 @@ class RuntimeContractTests(unittest.TestCase):
             "kbs_client": "/test/kbs-client",
             "kbs_url": "https://kbs.test",
             "kbs_cert": "/test/ca.pem",
+            "attestation_policy_selector": "cvm-test",
             "build_id": "bundle-1",
             "platform": "intel_tdx",
         }

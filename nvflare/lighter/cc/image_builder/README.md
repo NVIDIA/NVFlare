@@ -162,17 +162,20 @@ receipt records operator approval; it is not a substitute for those tests.
 
 ## Trustee administration
 
-Use unmodified **CoCo Trustee v0.22.0**, paired with **CoCo v0.23.0**.
-The profile pins upstream commit `512fed65642015b849f38fb13bfdec7806639987`;
-there is no custom Rust verifier, attester, or Trustee patch to apply.
-Use the same upstream distribution and image digest as your CoCo deployment.
+Use the upstream **CoCo Trustee v0.22.0 service**, paired with **CoCo v0.23.0**.
+The profile pins commit `512fed65642015b849f38fb13bfdec7806639987`.
+There is no custom Trustee verifier, attester, or server fork. The standalone
+CVM `kbs-client` carries a reviewed CLI-only patch that invokes
+guest-components' upstream attestation-policy-selector API. Use the same Trustee
+instance as the CoCo deployment.
 
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
-upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
-policies, RVPS references and expiry, role-based administrative ACLs, and native
-resource uploads. `./cvmctl provenance` records a clean
-release checkout and binary digest. The upstream client uses the `default` AS
-policy; policy content digests and profile versions identify approved revisions.
+upstream [kbs.json](trustee/kbs.json) configuration, profile-mapped CPU/GPU
+policies, profile-scoped RVPS references and expiry, role-based administrative
+ACLs, and native resource uploads. `./cvmctl provenance` records a clean native
+service build or the exact reviewed client patch. The checked-in CoCo service
+workflow emits separate provenance for its reviewed server-image recipe. CoCo
+continues to use the default AS policy; CVMs use explicit mapped policies.
 
 CVM-specific authorization remains in Rego and deployment configuration. The
 resource policy requires a fresh, favorable CPU appraisal and, for GPU profiles,

@@ -38,7 +38,12 @@ from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
 from ..common.linux import lock, run
 from ..common.policy import compose
-from ..common.references import SNP_POLICY_SINGLE_SOCKET, snp_guest_policy
+from ..common.references import (
+    SNP_POLICY_SINGLE_SOCKET,
+    reference_record_name,
+    render_reference_policy,
+    snp_guest_policy,
+)
 from ..host.launcher import cbit_position, qemu_command, vfio_gpus
 from ..host.platforms import host_capabilities, select_platform
 from . import config
@@ -53,6 +58,7 @@ RUNTIME_KEYS = (
     "kbs_url",
     "token_algorithm",
     "token_issuer",
+    "attestation_policy_selector",
     "attestation_policy_id",
     "vault_prescan",
 )
@@ -629,7 +635,10 @@ def build(
         with guest_root(image) as guest_files:
             roothash, offset = build_verity(guest_files, directory / "verity_root.qcow2", profile["root_drive_size"])
         shutil.copyfile(profile["build_firmware"] if dev else settings["firmware"], directory / "OVMF.fd")
-        shutil.copyfile(profile["attestation_policy"], directory / "attestation_policy.rego")
+        reference_id = reference_record_name(profile["profile_version"], shared)
+        (directory / "attestation_policy.rego").write_text(
+            render_reference_policy(Path(profile["attestation_policy"]).read_text(), reference_id)
+        )
         shutil.copyfile(profile["reference_values"], directory / "reference_values.json")
         for name in ("launch_cvm.sh.tmpl", "shutdown_cvm.sh.tmpl"):
             shutil.copyfile(source / "templates" / name, directory / name)
@@ -655,7 +664,9 @@ def build(
         ]
         if profile["gpu"] == "nvidia_cc":
 
-            (directory / "gpu_attestation_policy.rego").write_text(render(read_json(profile["gpu_policy"])))
+            (directory / "gpu_attestation_policy.rego").write_text(
+                render(read_json(profile["gpu_policy"]), reference_id)
+            )
             artifacts.append("gpu_attestation_policy.rego")
         if settings.get("shim") and not dev:
             shutil.copyfile(settings["shim"], directory / "shim.efi")
@@ -674,6 +685,7 @@ def build(
             "cmdline_sha256": hashlib.sha256(cmdline.encode()).hexdigest(),
             "root_hash": roothash,
             "hash_offset": offset,
+            "reference_value_id": reference_id,
             "attestation_policy_id": profile["attestation_policy_id"],
             "kbs_client_sha256": digest_file(settings["kbs_client"]),
             "sha256": {name: digest_file(directory / name) for name in artifacts},

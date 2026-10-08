@@ -1,13 +1,17 @@
 # Existing CoCo Trustee deployment
 
-CVM Builder uses unmodified Trustee v0.22.0, paired with CoCo v0.23.0.
-CoCo manages the running deployment. This directory contains reference
-configuration and policy only; there are no systemd services, custom key servers,
-Trustee source patches or guest-components patches.
+CVM Builder uses the same upstream Trustee v0.22.0 service as CoCo v0.23.0.
+CoCo manages the running KBS, AS and RVPS deployment. This directory contains
+reference configuration and policy only; there are no CVM-specific Trustee
+services or server forks. The standalone CVM guest client carries one reviewed
+CLI patch that exposes guest-components' upstream attestation-policy-selector
+API; CoCo guests omit the selector and continue to use the default policy.
 
 Merge the relevant settings from [kbs.json](kbs.json) into the existing deployment
-and follow [TRUSTEE_GUIDE.md](../TRUSTEE_GUIDE.md). Preserve existing workloads'
-policies and references when selecting a compatible CVM security profile.
+and follow [TRUSTEE_GUIDE.md](../TRUSTEE_GUIDE.md). The native
+`policy_id_map` can name multiple CVM profile policies while leaving CoCo's
+default policy unchanged. Preserve existing workload policies and references
+when adding or retiring a CVM security profile.
 
 The reference configuration explicitly uses Intel's `standard` TCB update
 channel. Upstream Trustee defaults to `early`; choose the channel as a deployment

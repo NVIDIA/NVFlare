@@ -45,7 +45,14 @@ def _fresh_credentials(config, digest, remaining):
     environment = dict(os.environ, RUST_LOG="off")
     with memory_file(pem) as tee_key:
         token = run(
-            command + ["attest", "--tee-key-file", f"/proc/self/fd/{tee_key}"],
+            command
+            + [
+                "attest",
+                "--tee-key-file",
+                f"/proc/self/fd/{tee_key}",
+                "--attestation-policy-selector",
+                config["attestation_policy_selector"],
+            ],
             pass_fds=(tee_key,),
             timeout=remaining(),
             env=environment,

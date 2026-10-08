@@ -25,9 +25,25 @@ from cvm.build import config
 from cvm.build import cvm as builder
 from cvm.common.errors import BuildError
 from cvm.common.io import digest_file, read_json, write_json
+from cvm.common.references import reference_record_name
 
 
 class ProfileTests(unittest.TestCase):
+    def test_bare_metal_profile_requires_nondefault_valid_selector_and_policy_id(self):
+        for settings, message in (
+            ({"attestation_policy_selector": "Bad Selector"}, "Invalid attestation_policy_selector"),
+            ({"attestation_policy_id": "default"}, "must not replace the default CoCo"),
+        ):
+            with (
+                self.subTest(settings=settings),
+                patch.object(config, "load_yaml", return_value=settings),
+                patch.object(config, "local_path", side_effect=lambda path, value: value),
+                patch.object(config, "read_json", return_value={"snp_single_socket": False}),
+                patch.object(config, "validate_references"),
+                self.assertRaisesRegex(BuildError, message),
+            ):
+                config.profile("profile.yml")
+
     def test_gpu_profile_options_are_accepted_and_references_checked_once(self):
         settings = {
             "gpu": "nvidia_cc",
@@ -85,13 +101,15 @@ class ProfileTests(unittest.TestCase):
             (directory / name).write_text("fixture")
         write_json(directory / "reference_values.json", {})
         cmdline = builder.kernel_command_line("ab" * 32, 4096, 4096)
+        contract = {"gpu": "none", "root_overlay_max_mib": 4096}
         manifest = {
             "schema_version": 2,
             "profile_version": version,
             "platform": platform,
             "build_id": "cvm-" + platform,
             "dev_mode": True,
-            "contract": {"gpu": "none", "root_overlay_max_mib": 4096},
+            "contract": contract,
+            "reference_value_id": reference_record_name(version, contract),
             "launch_shape": {},
             "cmdline": cmdline,
             "cmdline_sha256": hashlib.sha256(cmdline.encode()).hexdigest(),

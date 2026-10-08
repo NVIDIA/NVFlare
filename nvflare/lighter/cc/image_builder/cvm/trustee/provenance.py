@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Record a clean CoCo Trustee v0.22.0 source revision and its built binary."""
+"""Record an upstream Trustee service or the reviewed selector-capable client."""
 
+import hashlib
 import subprocess
+from pathlib import Path
 
 from ..common.errors import require
 from ..common.io import digest_file
-from ..common.versions import TRUSTEE_COMMIT
+from ..common.versions import GUEST_COMPONENTS_SELECTOR_COMMIT, TRUSTEE_COMMIT
+
+CLIENT_PATCH = Path(__file__).parents[1] / "build/kbs_client_policy_selector.patch"
 
 
 def provenance(source, binary):
@@ -27,5 +31,20 @@ def provenance(source, binary):
     status = subprocess.check_output(
         ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=all"], text=True
     )
-    require(not status, "Trustee source must be an unmodified upstream checkout")
-    return {"trustee_commit": commit, "source_clean": True, "binary_sha256": digest_file(binary)}
+    result = {"trustee_commit": commit, "binary_sha256": digest_file(binary)}
+    if not status:
+        return dict(result, source_clean=True)
+    diff = subprocess.check_output(
+        ["git", "-C", str(source), "diff", "--binary", "--no-ext-diff", "--no-color", "HEAD"]
+    )
+    expected = CLIENT_PATCH.read_bytes()
+    require(
+        status.splitlines() and all(not line.startswith("??") for line in status.splitlines()) and diff == expected,
+        "Trustee source must be unmodified or contain only the reviewed kbs-client selector patch",
+    )
+    return dict(
+        result,
+        source_clean=False,
+        kbs_client_patch_sha256=hashlib.sha256(expected).hexdigest(),
+        guest_components_commit=GUEST_COMPONENTS_SELECTOR_COMMIT,
+    )

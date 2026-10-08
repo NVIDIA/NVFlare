@@ -1,8 +1,10 @@
 # Use CoCo Trustee for CVM vault keys
 
-CVM Builder uses **unmodified CoCo Trustee v0.22.0**, the Trustee release paired
-with **CoCo v0.23.0**. There is no CVM Trustee fork or guest-components patch.
-Use the existing Trustee deployment managed by CoCo. CVM Builder installs no
+CVM Builder uses the **upstream CoCo Trustee v0.22.0 service**, the Trustee
+release paired with **CoCo v0.23.0**. There is no CVM Trustee server fork. A
+reviewed client-only patch exposes guest-components' upstream attestation-policy
+selector through the standalone `kbs-client` CLI. Use the existing Trustee
+deployment managed by CoCo. CVM Builder installs no
 backend service, sidecar, or systemd unit. Its deployment inputs are Rego policies,
 reference values, administrative role ACLs, and native resource uploads.
 
@@ -11,7 +13,12 @@ Vault builds upload through HTTPS and need no access to that storage. The offlin
 bundle-policy administration command still reads the policy namespace to verify
 published bytes; other storage backends need an equivalent readback workflow.
 
-Deploy one independently administered Trustee instance and storage/admin state per project or tenant and security profile. The supplied endpoint ACLs and bundle-scoped resource roles are not a multi-tenant isolation boundary for tenants sharing a generic CVM. Resource administrators may replace/delete resources in their allowed scope, and policy administrators replace the global instance policy. All holders must belong to the same trusted administration domain. For mutually untrusted tenants, provision separate instances, credentials and generic profiles. CoCo may use this same Trustee within that shared trust domain.
+Deploy one independently administered Trustee instance and storage/admin state
+per project or tenant. That instance can serve CoCo plus multiple isolated CVM
+security profiles. The supplied endpoint ACLs and bundle-scoped resource roles
+are not a multi-tenant isolation boundary. All holders must belong to the same
+trusted administration domain. For mutually untrusted tenants, provision
+separate instances and credentials.
 
 ## 1. Pin the upstream release
 
@@ -19,11 +26,14 @@ Deploy one independently administered Trustee instance and storage/admin state p
 |---|---|
 | CoCo | v0.23.0 |
 | Trustee | v0.22.0 / `512fed65642015b849f38fb13bfdec7806639987` |
-| Guest-components used by Trustee's kbs-client | `da8d93f2797088a5f0636c8c1eeb31da73784fe8` (upstream Cargo.lock) |
+| Guest-components used by CVM kbs-client | `706cd996d2f3ef746c3ec378741d6d953b08740f` (upstream selector API) |
 | Policy engine | Regorus 0.11.0 |
 
-Use the official KBS image at this release commit; upstream publishes commit
-image tags rather than a `v0.22.0` image tag:
+Use the release commit in every shared CoCo/CVM service. The checked-in CoCo
+service workflow builds that commit with its reviewed Actix request-head patch,
+exports the exact KBS binary from the resulting image, and writes
+`trustee-build.json`. An official image can instead be used when its immutable
+digest and extracted server binary are recorded:
 
 ```sh
 export TRUSTEE_IMAGE=ghcr.io/confidential-containers/staged-images/kbs:512fed65642015b849f38fb13bfdec7806639987
@@ -31,15 +41,19 @@ docker pull "$TRUSTEE_IMAGE"
 docker image inspect "$TRUSTEE_IMAGE" --format '{{json .RepoDigests}}'
 ```
 
-Record and deploy its immutable registry digest. For a native deployment, build
-from the clean release checkout with upstream's documented build prerequisites
-and Rust toolchain. Leave Cargo.toml, Cargo.lock, and guest-components unchanged:
+Record and deploy its immutable registry digest. For a clean native deployment,
+build with upstream's documented prerequisites and Rust toolchain. Build and
+record the service before applying the client patch:
 
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs --bin kbs --no-default-features --features coco-as-builtin
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 ./cvmctl provenance /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
+git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
+  -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
+./cvmctl provenance /tmp/trustee \
+  /tmp/trustee/target/release/kbs-client /tmp/kbs_client_build.json
 ```
 
 Keep the client's default crypto features. In this release, `native-tls` selects
@@ -52,8 +66,10 @@ libxml2 compatibility patch, and install its header/library in the disposable
 build environment. That guide then builds the client with `NVAT_USE_SYSTEM_LIB=1`
 and `nvidia-attester`. The command above builds a CPU-only client. Compile guest
 binaries for the guest's Linux environment.
-The provenance command rejects dirty source and records the revision and binary
-SHA-256; it does not build or modify Trustee.
+The provenance command accepts either the clean server checkout or exactly the
+checked-in client patch. The CoCo service build records its separate reviewed
+build recipe, source-patch digest, dependency hashes, image ID and exported
+server-binary digest. Any other source change or recipe is rejected.
 
 Build CVM clients from this clean source checkout. Upstream's `sample_only`
 kbs-client OCI artifacts are for sample-attester tests, not the TDX/SNP/NVIDIA
@@ -173,35 +189,60 @@ For diagnosis and verified recovery steps, see
 including the distinction between QGS quote-generation failures and a valid
 quote appraised against a newer TCB baseline.
 
-The upstream `kbs-client` CLI uses the `default` AS policy. Set
-`attestation_policy_id: default` and
-`token_issuer: CoCo-Attestation-Service` in the CVM profile. Install the reviewed
-CPU policy as `storage/attestation_service_policy/default_cpu.rego`; install a GPU
-profile's generated `gpu_attestation_policy.rego` as `default_gpu.rego`.
+CoCo guests omit an attestation-policy selector and continue to use Trustee's
+`default` policies. Every CVM profile sets a non-default
+`attestation_policy_selector` and `attestation_policy_id`. Configure the shared
+KBS to map each selector to its policy ID:
 
-The filename suffix selects the upstream appraisal type; it is not the EAR policy selector. Trustee v0.22.0 selects `default_cpu.rego` for CPU evidence and `default_gpu.rego` for GPU evidence while emitting `ear.appraisal-policy-id: default` in each corresponding submodule. Consumers also validate the submodule type and its CPU/GPU-specific claim contract; they do not use the selector alone to identify the appraisal. The deployment receipt separately hashes both installed files. `test_upstream_default_cpu_policy_rejects_sample_evidence` obtains a token from the actual AS and asserts the unsuffixed selector and CPU rejection. Composite policy tests reject missing or invalid GPU submodules.
-Policy content hashes and the profile version identify the approved policy
-revision. A policy name by itself is not approval.
+```json
+"attestation_service": {
+  "type": "coco_as_builtin",
+  "policy_id_map": {
+    "cvm-cpu-2026-09-r5": ["cvm-cpu-2026-09-r5"],
+    "cvm-gpu-2026-09-r5": ["cvm-gpu-2026-09-r5"]
+  }
+}
+```
 
-Each CPU/GPU security profile keeps separate policy/reference storage and its
-own configured endpoint. Reuse the same upstream Trustee image for these
-instances. Do not overwrite an existing CoCo deployment's default policies or
-combine different profiles' TCB allowlists. The upstream protocol also supports
-policy selectors, but this release's `kbs-client` CLI does not expose one.
+The checked-in CoCo service uses TOML and `coco_as_grpc`; the same native map is:
 
-Before starting KBS, populate all four default policy files so its startup can
-find them with its policy namespace mounted read-only:
+```toml
+[attestation_service.policy_id_map]
+cvm-cpu-2026-09-r5 = ["cvm-cpu-2026-09-r5"]
+cvm-gpu-2026-09-r5 = ["cvm-gpu-2026-09-r5"]
+```
+
+Install the reviewed AS policy files, update this map, and restart KBS in one
+coordinated maintenance window before approving either profile. Map each CVM
+selector to exactly one policy ID because CoCo AS evaluates one policy set per
+evidence class. Existing CoCo guests send no selector, so this table does not
+change their default appraisal path.
+
+An unknown selector is rejected. Omitting the selector selects the CoCo default,
+so a CVM profile is forbidden from naming `default`. Trustee loads CPU and GPU
+policies for a mapped ID from `<policy-id>_cpu.rego` and
+`<policy-id>_gpu.rego`, and emits the selected policy ID in
+`ear.appraisal-policy-id`. The deployment receipt hashes each installed file and
+records the exact `policy_id_map` entry.
+
+Each profile's AS policy reads one profile-scoped RVPS object containing its
+values and per-value expiry deadlines. CPU and GPU profiles therefore share the
+same RVPS and KBS endpoint without sharing an allowlist. Leave the existing
+CoCo default policies and reference records unchanged.
+
+Before starting KBS, retain CoCo's default files and install each rendered CVM
+bundle policy under its mapped ID:
 
 ```sh
-sudo install -m 0600 -o cvm-trustee -g cvm-trustee config/attestation_policy.rego   /var/lib/cvm-trustee/storage/attestation_service_policy/default_cpu.rego
-python3 - <<'PY_POLICY'
-from pathlib import Path
-policy = 'package policy\nimport rego.v1\ntrust_claims := {"hardware": 97}\n'
-Path('/tmp/cvm_deny_device.rego').write_text(policy)
-PY_POLICY
-for device in gpu switch ppcie; do
-  sudo install -m 0600 -o cvm-trustee -g cvm-trustee /tmp/cvm_deny_device.rego     "/var/lib/cvm-trustee/storage/attestation_service_policy/default_${device}.rego"
-done
+sudo install -m 0600 -o cvm-trustee -g cvm-trustee \
+  /srv/cvm-cpu/attestation_policy.rego \
+  /var/lib/cvm-trustee/storage/attestation_service_policy/cvm-cpu-2026-09-r5_cpu.rego
+sudo install -m 0600 -o cvm-trustee -g cvm-trustee \
+  /srv/cvm-gpu/attestation_policy.rego \
+  /var/lib/cvm-trustee/storage/attestation_service_policy/cvm-gpu-2026-09-r5_cpu.rego
+sudo install -m 0600 -o cvm-trustee -g cvm-trustee \
+  /srv/cvm-gpu/gpu_attestation_policy.rego \
+  /var/lib/cvm-trustee/storage/attestation_service_policy/cvm-gpu-2026-09-r5_gpu.rego
 ```
 
 On a new deployment, also install the initial deny-all resource policy:
@@ -216,7 +257,7 @@ exist at startup, before accepting traffic; apply this check in the existing CoC
 Kubernetes init container. Upstream's built-in fallback resource policy is not
 the CVM authorization policy and must not be used when a policy volume is missing.
 
-For a GPU profile replace `default_gpu.rego` with that bundle's generated GPU
+For a GPU profile install that bundle's generated GPU policy beside its CPU
 policy. Add `nvidia_verifier` to the existing `verifier_config` object under
 `attestation_service` in `kbs.json`, preserving the DCAP settings:
 
@@ -321,11 +362,12 @@ expiry:
 sudo -u cvm-trustee ./cvmctl references /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
 ```
 
-The import uses upstream RVPS record files and a `cvm_reference_expiry` companion
-reference. The AS policies call `query_reference_value()` and enforce each
-record's deadline: v0.22 RVPS does not itself reject an expired record. Existing
-approvals cannot be silently broadened or renewed by this importer. Missing or
-expired approvals deny appraisal. Measurements remain in Trustee property storage.
+The import writes one upstream RVPS record named `cvm_profile_<digest>` per
+security profile. Its value contains the profile's references and per-value
+deadlines. The rendered AS policy queries only that record and enforces every
+deadline because v0.22 RVPS does not itself reject expired metadata. Existing
+approvals cannot be silently broadened or renewed. Missing or expired approvals
+deny appraisal. Measurements remain in Trustee property storage.
 
 Apply configuration through CoCo's normal deployment mechanism. Run
 `./cvmctl preflight trustee` on the trusted deployment host and confirm the
@@ -349,10 +391,12 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
   "admin_role": "cvm-policy",
   "admin_issuer": "cvm-builder",
   "admin_audience": "coco-trustee",
-  "storage_directory": "/var/lib/cvm-trustee/storage",
+  "resource_policy_file": "/home/service_operator/trustee/kbs/data/kbs-policy/resource-policy.rego",
+  "policy_lock": "/home/service_operator/trustee/kbs/data/kbs-policy/.resource-policy.lock",
   "state": "/var/lib/cvm-trustee/admin",
-  "trustee_binary": "/opt/cvm-trustee/bin/kbs",
-  "trustee_build": "/etc/cvm-trustee/trustee_build.json",
+  "trustee_binary": "/home/service_operator/trustee-v0.22-512fed6/kbs-server-v0.22-512fed6",
+  "trustee_image_id": "sha256:KBS_IMAGE_ID",
+  "trustee_build": "/home/service_operator/trustee-v0.22-512fed6/trustee-build.json",
   "deployment_receipt": "/etc/cvm-trustee/deployment_receipt.json",
   "approval_public_keys": ["/etc/cvm-trustee/pki/acceptance-signing.pub"]
 }
@@ -360,30 +404,54 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
 
 `approval_public_keys` lists the acceptance authorities whose Ed25519 signature
 on a bundle's `approval.json` counts as production approval; `admin install`
-refuses unsigned or foreign-signed receipts. Copy the upstream build provenance
-to `trustee_build.json`. For image deployments,
-retain the registry digest and source-commit provenance alongside the extracted
-binary digest. The deployment receipt contains:
+refuses unsigned or foreign-signed receipts. The paths above use the files
+emitted by `examples/devops/coco/service/04-build-trustee-main.sh`. For another
+image deployment, retain its immutable image identity and source provenance
+alongside the binary extracted from that image. The shared CoCo service's
+deployment receipt contains:
 
 ```json
 {
   "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
-  "source_clean": true,
+  "source_clean": false,
+  "build_profile": "nvflare-coco-service-v1",
+  "source_patch_sha256": "1c62128cc044499a4c70172f2820f0083ccf205fed06562f7caed616b3230414",
+  "actix_http_version": "3.13.3",
+  "actix_http_crate_sha256": "11004b0e9b44b4eb3d15e0c3132b96fb178c7e50a74758b2f17bb9cc9a7fb4f6",
+  "actix_http_source_sha256": "ea345db9b3fe2346f74f99cdf0d6ae0e07b84f906464af766e9b5931002ad767",
+  "kbs_image_id": "sha256:KBS_IMAGE_ID",
   "policy_selection_tested": true,
   "unauthorized_administration_denied": true,
+  "policy_id_map": {
+    "cvm-cpu-2026-09-r5": ["cvm-cpu-2026-09-r5"],
+    "cvm-gpu-2026-09-r5": ["cvm-gpu-2026-09-r5"]
+  },
   "immutable_as_policies": {
-    "default_cpu": "SHA256_OF_INSTALLED_CPU_POLICY",
-    "default_gpu": "SHA256_OF_INSTALLED_GPU_POLICY_FOR_GPU_PROFILES"
+    "cvm-cpu-2026-09-r5_cpu": "SHA256_OF_CPU_POLICY",
+    "cvm-gpu-2026-09-r5_cpu": "SHA256_OF_GPU_PROFILE_CPU_POLICY",
+    "cvm-gpu-2026-09-r5_gpu": "SHA256_OF_GPU_POLICY"
   }
 }
 ```
 
+A clean native server instead records `"source_clean": true` in both build and
+deployment receipts and omits the CoCo recipe and image fields. Mixing the clean
+binary record with the patched CoCo image, or naming a different running image,
+fails before policy publication.
+
+`policy_lock` must be the same file used by the CoCo service scripts. CVM
+administration reads the active policy while holding this lock, replaces only
+the marked CVM fragment, and publishes the merged bytes. Existing CoCo release
+rules and the default policy remain intact.
+
 Set acceptance fields only after testing the actual deployment. Verify denied
 AS-policy replacement and native resource writes even with the policy publisher's
 credentials; builder/admin/transport certificates cannot sign accepted EARs;
-wrong, stale, cross-vault or incomplete GPU appraisals deny release; key retry,
+wrong, stale, unmapped-selector, cross-profile, cross-vault or incomplete GPU
+appraisals deny release; key retry,
 revoke and restore behavior remains correct. Verify the measured guest and KBS
-emit and accept the expected default CPU/GPU policy. Complete the bundle's
+emit and accept the expected mapped CPU/GPU policy while an unmodified CoCo
+guest still receives the default policy. Complete the bundle's
 hardware acceptance before production approval.
 
 For the pinned v0.22.0 configuration, the live HTTPS role-boundary test uses a

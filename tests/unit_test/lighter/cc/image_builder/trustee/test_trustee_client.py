@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.common.contracts import resource_path
 from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
-from cvm.common.policy import compose
+from cvm.common.policy import compose, merge
 from cvm.trustee.admin import install, retire
 from cvm.trustee.client import (
     MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
@@ -265,10 +265,11 @@ class TrusteeClientTests(unittest.TestCase):
         with patch("cvm.trustee.admin.api", side_effect=BuildError("offline")), self.assertRaises(BuildError):
             retire(config, "bundle-1")
         self.assertTrue((self.root / "retired/bundle-1").is_file())
-        policy = compose([other]).encode()
+        current = compose([manifest, other]).encode()
+        policy = merge(current.decode(), [other], [manifest, other]).encode()
         with (
             patch("cvm.trustee.admin.api") as request,
-            patch("cvm.trustee.admin.read_resource_policy", return_value=policy),
+            patch("cvm.trustee.admin.read_resource_policy", side_effect=[current, policy]),
         ):
             retire(config, "bundle-1")
         request.assert_called_once_with(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
