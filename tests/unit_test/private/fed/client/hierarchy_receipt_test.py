@@ -19,9 +19,12 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, TaskResultReceipt
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic
+from nvflare.apis.fl_constant import ReturnCode as ShareableRC
+from nvflare.apis.fl_constant import TaskResultReceipt
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.signal import Signal
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.executors.hug import HierarchicalUpdateGatherer, TaskInfo
@@ -67,7 +70,9 @@ def hierarchy(monkeypatch):
         (ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True),
         (ReservedHeaderKey.WORKFLOW, "workflow"),
     ):
-        data.set_header(key, value)
+        # Server assignments carry workflow identity only in the cookie jar.
+        if key != ReservedHeaderKey.WORKFLOW:
+            data.set_header(key, value)
         data.add_cookie(key, value)
     data.set_header(ReservedKey.TASK_IS_READY, True)
     parent.pending_task = data
@@ -102,7 +107,7 @@ def hierarchy(monkeypatch):
             (FLContextKey.TASK_ID, "task-1"),
             (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
             (FLContextKey.TASK_NAME, "train"),
-            (FLContextKey.WORKFLOW, "workflow"),
+            (FLContextKey.WORKFLOW, task.get_cookie(ReservedHeaderKey.WORKFLOW)),
             (FLContextKey.SSID, "session"),
         ):
             ctx.set_prop(key, value, private=True, sticky=False)
@@ -125,10 +130,98 @@ def hierarchy(monkeypatch):
             client.submit_update("project", "token", "session", fl_ctx, name, output, "train") == ReturnCode.OK
         )
         return SimpleNamespace(
-            runner=child_runner, client=client, result=result, ctx=ctx, transport=transport, origin=origin
+            runner=child_runner,
+            client=client,
+            assignment=task,
+            result=result,
+            ctx=ctx,
+            transport=transport,
+            origin=origin,
         )
 
     return SimpleNamespace(parent=parent, runner=runner, gatherer=gatherer, child=child, contexts=contexts)
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+@pytest.mark.parametrize("reserved_values", ["missing", "conflicting"])
+def test_parent_data_filter_preserves_child_assignment_and_receipt(
+    hierarchy, monkeypatch, replacement, reserved_values
+):
+    task = hierarchy.runner.running_tasks["task-1"]
+    data_filter = Mock()
+    hierarchy.runner.task_data_filters = {"train" + FilterKey.DELIMITER + FilterKey.IN: [data_filter]}
+
+    def filter_data(data, _ctx):
+        filtered = Shareable({"model": 3}) if replacement else data
+        filtered.set_cookie_jar({"application": "filtered"})
+        if reserved_values == "conflicting":
+            for key in (
+                ReservedHeaderKey.TASK_ID,
+                ReservedHeaderKey.TASK_NAME,
+                ReservedHeaderKey.TASK_ATTEMPT_ID,
+                ReservedHeaderKey.WORKFLOW,
+            ):
+                filtered.set_header(key, "filter-value")
+                filtered.add_cookie(key, "filter-value")
+            filtered.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, False)
+            filtered.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, False)
+        return filtered
+
+    data_filter.process.side_effect = filter_data
+    executor = hierarchy.gatherer
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.add_job_audit_event", lambda **_: "audit")
+
+    def execute(_name, filtered, _ctx, _signal):
+        # Publish the executor's filtered data through the normal child transport.
+        filtered.set_header(ReservedKey.TASK_IS_READY, True)
+        hierarchy.parent.pending_task = filtered
+        child = hierarchy.child()
+        assert child.runner._check_task_once("task-1", child.ctx) == _TASK_CHECK_RESULT_OK
+        assert child.ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RETRY
+        assert child.assignment.get_cookie("application") == "filtered"
+        for key, expected in (
+            (ReservedHeaderKey.TASK_ID, "task-1"),
+            (ReservedHeaderKey.TASK_NAME, "train"),
+            (ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt-1"),
+            (ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True),
+        ):
+            assert child.assignment.get_header(key) == expected
+            assert child.assignment.get_cookie(key) == expected
+        assert child.assignment.get_cookie(ReservedHeaderKey.WORKFLOW) == "workflow"
+        assert child.runner._send_task_result(child.result, "task-1", child.ctx)
+        assert child.ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+        hierarchy.gatherer._updater.process_child_update.assert_called_once()
+        return Shareable()
+
+    monkeypatch.setattr(executor, "execute", Mock(side_effect=execute))
+    with hierarchy.contexts.new_context() as ctx:
+        ctx.set_peer_context(FLContextManager(identity_name="server", job_id="job-1").new_context())
+        reply = hierarchy.runner._do_task(task, ctx, Signal())
+    assert reply.get_return_code() == ShareableRC.OK
+    executor.execute.assert_called_once()
+
+
+def test_parent_receipt_authority_survives_mutated_task_data(hierarchy):
+    child = hierarchy.child()
+    task = hierarchy.runner.running_tasks["task-1"]
+    task.data.set_cookie_jar({"application": "filtered"})
+    assert child.runner._check_task_once("task-1", child.ctx) == _TASK_CHECK_RESULT_OK
+    assert child.ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RETRY
+    assert child.runner._send_task_result(child.result, "task-1", child.ctx)
+    assert child.ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+    hierarchy.gatherer._updater.process_child_update.assert_called_once()
+
+
+def test_forwarded_child_assignment_restores_issued_identity(hierarchy):
+    hierarchy.parent.pending_task.set_cookie_jar({"application": "forwarded"})
+    child = hierarchy.child()
+    assert child.assignment.get_cookie(ReservedHeaderKey.WORKFLOW) == "workflow"
+    assert child.assignment.get_header(ReservedHeaderKey.WORKFLOW) is None
+    assert child.assignment.get_cookie("application") == "forwarded"
+    assert child.runner._check_task_once("task-1", child.ctx) == _TASK_CHECK_RESULT_OK
+    assert child.runner._send_task_result(child.result, "task-1", child.ctx)
+    assert child.ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+    hierarchy.gatherer._updater.process_child_update.assert_called_once()
 
 
 def test_child_receipt_independent_of_parent_aggregation_and_replayed_on_readiness(hierarchy):

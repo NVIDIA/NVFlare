@@ -21,6 +21,7 @@ import socket
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 import yaml
@@ -188,16 +189,21 @@ def _install_fake_docker(tmp_path, monkeypatch):
         "#!/usr/bin/env bash\n"
         'printf \'%s\\n\' "$*" >> "$NVFL_TEST_DOCKER_LOG"\n'
         'case " $* " in\n'
+        '    *" context show "*) echo "${NVFL_TEST_CONTEXT:-}" ;;\n'
+        '    *" context inspect "*) echo "${NVFL_TEST_ENDPOINT:-}" ;;\n'
         '    *" network ls "*) echo nvflare-network ;;\n'
         "esac\n"
         'case " $* " in\n'
         '    *" --entrypoint /usr/local/bin/python3 "*)\n'
         '        if [ "${NVFL_TEST_PROBE_FAIL:-}" = "1" ]; then exit 1; fi\n'
-        '        echo "${NVFL_TEST_REMOTE_SOCK_GID:-2375}"\n'
+        '        echo "${NVFL_TEST_REMOTE_SOCK_GID-2375}"\n'
         "        ;;\n"
         "esac\n"
     )
     fake_docker.chmod(0o755)
+    fake_uname = fake_bin / "uname"
+    fake_uname.write_text('#!/bin/sh\nprintf "%s\\n" "${NVFL_TEST_HOST_OS:-Linux}"\n')
+    fake_uname.chmod(0o755)
     monkeypatch.setenv("NVFL_TEST_DOCKER_LOG", str(docker_log))
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
     return docker_log
@@ -366,15 +372,7 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network inspect' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" network create' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" run' in script
-    assert (
-        "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
-        'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
-    ) in script
-    assert "HOST_OS=$(uname -s)" in script
     assert "GROUP_ADD_ARGS=()" in script
-    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
-    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
-    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
     assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
     assert '"${GROUP_ADD_ARGS[@]}"' in script
     assert "NVFL_DOCKER_SOCK_GID" in script
@@ -445,6 +443,7 @@ def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys
     )
     capsys.readouterr()
     docker_log = _install_fake_docker(tmp_path, monkeypatch)
+    monkeypatch.setenv("NVFL_TEST_HOST_OS", "Darwin")
 
     with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
         docker_socket_path = os.path.join(socket_dir, "docker.sock")
@@ -465,7 +464,7 @@ def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys
     expected_prefix = f"--host unix://{docker_socket_path} "
     assert calls
     assert all(call.startswith(expected_prefix) for call in calls)
-    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    assert sum("--entrypoint /usr/local/bin/python3" in call for call in calls) == 1
     run_call = next(call for call in calls if " run --name" in call)
     assert f"--mount type=bind,src={docker_socket_path},dst=/var/run/docker.sock" in run_call
 
@@ -535,6 +534,77 @@ def test_prepare_docker_start_script_fails_when_daemon_host_socket_probe_fails(t
     assert "Set NVFL_DOCKER_SOCK_GID" in result.stdout
     calls = docker_log.read_text().splitlines()
     assert not any(call.startswith("run --name") for call in calls)
+
+
+@pytest.mark.parametrize("host_os", ["Linux", "Darwin"])
+@pytest.mark.parametrize("endpoint_source", ["host", "context", "absolute_symlink", "relative_symlink"])
+@pytest.mark.parametrize(
+    "probe_gid,configured_gid,probe_fail,expected_gid",
+    [
+        ("2375", None, False, "2375"),
+        ("0", None, False, "0"),
+        ("bad", None, False, None),
+        ("", None, False, None),
+        ("2375", None, True, None),
+        ("2375", "4242", True, "4242"),
+        ("2375", "0", True, "0"),
+        ("2375", "bad", False, None),
+    ],
+)
+def test_prepare_docker_local_socket_uses_daemon_gid(
+    tmp_path, capsys, monkeypatch, host_os, endpoint_source, probe_gid, configured_gid, probe_fail, expected_gid
+):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(kit, output, {"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+    monkeypatch.delenv("NVFL_DOCKER_SOCK", raising=False)
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.delenv("NVFL_DOCKER_SOCK_GID", raising=False)
+    monkeypatch.setenv("NVFL_TEST_HOST_OS", host_os)
+    monkeypatch.setenv("NVFL_TEST_REMOTE_SOCK_GID", probe_gid)
+    monkeypatch.setenv("NVFL_TEST_PROBE_FAIL", "1" if probe_fail else "0")
+    if configured_gid is not None:
+        monkeypatch.setenv("NVFL_DOCKER_SOCK_GID", configured_gid)
+
+    # Short paths keep AF_UNIX sockets below macOS's path length limit.
+    with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
+        socket_path = Path(socket_dir) / "rootless.sock"
+        with socket.socket(socket.AF_UNIX) as local_socket:
+            local_socket.bind(str(socket_path))
+            endpoint_path = socket_path
+            if endpoint_source.endswith("symlink"):
+                endpoint_path = Path(socket_dir) / "docker.sock"
+                endpoint_path.symlink_to(socket_path if endpoint_source == "absolute_symlink" else socket_path.name)
+            if endpoint_source == "host":
+                monkeypatch.setenv("DOCKER_HOST", f"unix://{endpoint_path}")
+            else:
+                monkeypatch.setenv("NVFL_TEST_CONTEXT", "colima-test")
+                monkeypatch.setenv("NVFL_TEST_ENDPOINT", f"unix://{endpoint_path}")
+            result = subprocess.run(
+                ["bash", str(output / "startup" / "start_docker.sh")], capture_output=True, text=True, check=False
+            )
+
+    calls = docker_log.read_text().splitlines()
+    probes = [call for call in calls if "--entrypoint /usr/local/bin/python3" in call]
+    parent_calls = [call for call in calls if "run --name" in call]
+    assert len(probes) == (1 if configured_gid is None else 0)
+    if probes:
+        assert probes[0].startswith(f"--host unix://{socket_path} run --rm ")
+        mount_socket = "/var/run/docker.sock" if host_os == "Darwin" else socket_path
+        assert f"--mount type=bind,src={mount_socket},dst=/var/run/docker.sock" in probes[0]
+    if expected_gid is None:
+        assert result.returncode == 1
+        assert "ERROR:" in result.stdout
+        assert not parent_calls
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert len(parent_calls) == 1
+        assert f"--group-add {expected_gid} " in parent_calls[0]
+        assert parent_calls[0].count("--group-add") == 1
+        mount_socket = "/var/run/docker.sock" if host_os == "Darwin" else socket_path
+        assert f"--mount type=bind,src={mount_socket},dst=/var/run/docker.sock" in parent_calls[0]
 
 
 def test_prepare_docker_start_script_rejects_missing_local_socket(tmp_path, capsys, monkeypatch):

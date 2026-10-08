@@ -19,7 +19,7 @@ from typing import Dict, List, Union
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.widgets.widget import Widget
 
@@ -40,9 +40,28 @@ class TaskAssignment(object):
         self.task_id = task_id
         self.data = data
         self.attempt_id = data.get_task_attempt_id() if isinstance(data, Shareable) else None
+        # Receipt authority must outlive mutations/replacements by task-data filters.
+        self.workflow_id = data.get_cookie(ReservedHeaderKey.WORKFLOW) if isinstance(data, Shareable) else None
         self.receive_time = time.time()
         # Parent clients retain child receipts only while this assignment runs.
         self.child_result_receipts = {}  # assigned child name => complete result received
+
+    def restore_assignment_identity(self, data: Shareable):
+        """Rebind trusted filtered/forwarded data to the originally issued assignment."""
+        if self.attempt_id is None:
+            return
+        for key, value in (
+            (ReservedHeaderKey.TASK_ID, self.task_id),
+            (ReservedHeaderKey.TASK_NAME, self.name),
+            (ReservedHeaderKey.TASK_ATTEMPT_ID, self.attempt_id),
+            (ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True),
+        ):
+            data.set_header(key, value)
+            data.add_cookie(key, value)
+        data.add_cookie(ReservedHeaderKey.WORKFLOW, self.workflow_id)
+        # Assignments need only the workflow cookie; repair a filter-added header if present.
+        if data.get_header(ReservedHeaderKey.WORKFLOW) is not None:
+            data.set_header(ReservedHeaderKey.WORKFLOW, self.workflow_id)
 
 
 class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):

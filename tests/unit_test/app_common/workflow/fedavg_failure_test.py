@@ -27,7 +27,7 @@ from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationShapeError, WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows import fedavg as fedavg_module
@@ -209,7 +209,8 @@ def test_closed_round_callback_cannot_change_next_round(monkeypatch, custom):
     assert saved == [{"a": 2.0}, {"a": 2.0}]
 
 
-def test_custom_callback_failure_through_communicator_prevents_publication(monkeypatch):
+@pytest.mark.parametrize("error_type", [RuntimeError, AggregationShapeError])
+def test_custom_callback_failure_through_communicator_prevents_publication(monkeypatch, error_type):
     controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0}), custom=True)
     comm = WFCommServer()
     comm.controller = controller
@@ -225,7 +226,7 @@ def test_custom_callback_failure_through_communicator_prevents_publication(monke
     def fail_after_mutation(result):
         accept(result)
         if result.meta["client_name"] == "bad":
-            raise RuntimeError("aggregator failed after changing its state")
+            raise error_type("aggregator failed after changing its state")
 
     controller.aggregator.accept_model.side_effect = fail_after_mutation
 

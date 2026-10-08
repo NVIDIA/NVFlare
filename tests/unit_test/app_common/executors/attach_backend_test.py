@@ -79,7 +79,7 @@ class FakeCell:
         self.task_reply_topic = Topic.TASK_ACCEPTED
         self.task_status_state = TaskState.QUEUED
         self.task_serialization_error = None
-        self.hold_lost_task_reply_until_cancel = False
+        self.lost_reply_saw_cancel = None
         self.pending_task = None
         self.task_ready_count = 0
         self.session_open_count = 0
@@ -146,11 +146,9 @@ class FakeCell:
             if self.deliver_result:
                 self._deliver_result(target, task)
             if self.lose_task_reply:
-                if self.hold_lost_task_reply_until_cancel:
-                    deadline = time.monotonic() + 1.0
-                    while time.monotonic() < deadline and not kwargs["abort_signal"].triggered:
-                        time.sleep(0.001)
-                    assert kwargs["abort_signal"].triggered
+                # Assert this observation in the test: send_request exceptions
+                # are recoverable once a result has already been accepted.
+                self.lost_reply_saw_cancel = kwargs["abort_signal"].triggered
                 raise RuntimeError("TASK_ACCEPTED reply lost")
             return _accepted(Topic.TASK_ACCEPTED)
         if topic == Topic.TASK_STATUS:
@@ -364,20 +362,17 @@ def test_lost_task_acceptance_uses_status_without_redelivery():
 def test_accepted_result_recovers_lost_task_confirmation_without_status_or_redelivery():
     cell = FakeCell()
     cell.lose_task_reply = True
-    cell.hold_lost_task_reply_until_cancel = True
     cell.task_status_state = TaskState.UNKNOWN
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
     backend.initialize(_context(task_wait_timeout=600.0), fl_ctx)
     _wait_ready(backend)
 
-    start = time.monotonic()
     result = backend.execute("train", Shareable(), fl_ctx, Signal())
-    elapsed = time.monotonic() - start
     backend.finalize(fl_ctx)
 
     assert result["answer"] == 42
-    assert elapsed < 1.0
+    assert cell.lost_reply_saw_cancel is True
     assert cell.task_ready_count == 1
     assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
 

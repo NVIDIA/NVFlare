@@ -179,12 +179,13 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"received TASK_ASSIGNMENT_SENT {event_type}")
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
         assert isinstance(task_data, Shareable)
-        task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
         peer_ctx = fl_ctx.get_peer_context()
         with self.task_lock:
             task = self.running_tasks.get(fl_ctx.get_prop(FLContextKey.TASK_ID))
             if task and isinstance(peer_ctx, FLContext) and peer_ctx.get_job_id() == self.job_id:
+                task.restore_assignment_identity(task_data)
                 task.child_result_receipts.setdefault(peer_ctx.get_identity_name(), False)
+        task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
         executor = None
         if not task_name:
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_NAME} from the task data")
@@ -286,9 +287,7 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=task.attempt_id, private=True, sticky=False)
-        fl_ctx.set_prop(
-            FLContextKey.WORKFLOW, value=task.data.get_cookie(ReservedHeaderKey.WORKFLOW), private=True, sticky=False
-        )
+        fl_ctx.set_prop(FLContextKey.WORKFLOW, value=task.workflow_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
         add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
@@ -392,6 +391,7 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
             )
 
+        task.restore_assignment_identity(task_data)
         task.data = task_data
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
@@ -900,7 +900,7 @@ class ClientRunner(TBI):
             for key, expected in (
                 (ReservedHeaderKey.TASK_ID, task.task_id),
                 (ReservedHeaderKey.TASK_NAME, task.name),
-                (ReservedHeaderKey.WORKFLOW, task.data.get_cookie(ReservedHeaderKey.WORKFLOW)),
+                (ReservedHeaderKey.WORKFLOW, task.workflow_id),
             ):
                 header = request.get_header(key)
                 cookie = request.get_cookie(key)

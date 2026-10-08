@@ -37,17 +37,21 @@ Cancellation without a terminal server reply leaves receipt unknown.
 
 ## Identity and compatibility
 
-Assignment data carries task ID, attempt ID, required-attempt marker, and workflow
-in reserved headers and cookies. Clients echo the assignment cookies. If attempt
-header and cookie are both present, they must agree. The server validates the
-authenticated site and job, workflow, task, assignment, and attempt before filters,
-callbacks, aggregation, or fatal handling. ACKs and readiness receipts carry the
-task ID, attempt ID, and original workflow; clients verify all three.
+Assignment data carries task ID, attempt ID, and the required-attempt marker in
+reserved headers and cookies. The issuing workflow is carried in the reserved
+`WORKFLOW` cookie; clients must not require a workflow header on assignments.
+Clients echo the assignment cookies. If attempt header and cookie are both
+present, they must agree. The server validates the authenticated site and job,
+workflow, task, assignment, and attempt before filters, callbacks, aggregation,
+or fatal handling. ACKs and readiness receipts carry the task ID, attempt ID,
+and original workflow; clients verify all three.
 
-Task-data and result filters may replace Shareables. Trusted replacements receive
-the original assignment identity in headers and cookies; application cookies stay
-intact. Forwarding task data creates a per-client copy with a new assignment.
-Incoming conflicts are rejected before trusted replacements can rebind them.
+Task-data and result filters may replace Shareables. Before delivery, task-data
+replacements regain the assignment fields described above. Filtered result
+replacements receive the validated task ID, attempt ID, required-attempt marker,
+and workflow in both headers and cookies; application cookies stay intact.
+Forwarding task data creates a per-client copy with a new assignment. Incoming
+conflicts are rejected before trusted replacements can rebind them.
 
 Existing clients that echo task cookies remain compatible and may ignore the new
 receipt. Unfenced older servers retain legacy transport behavior with receipt
