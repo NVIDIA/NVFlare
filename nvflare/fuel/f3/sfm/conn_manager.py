@@ -15,7 +15,7 @@ import logging
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 import msgpack
@@ -138,7 +138,9 @@ class ConnManager(ConnMonitor):
             connector = self.connectors.pop(handle, None)
         if connector:
             connector.stopped.set()
-            connector.driver.shutdown()
+            completion = connector.driver.shutdown()
+            if isinstance(completion, Future):
+                completion.result()
             log.debug(f"Connector {connector} is removed")
         else:
             log.error(f"Unknown connector handle: {handle}")
@@ -161,9 +163,17 @@ class ConnManager(ConnMonitor):
         with self.lock:
             self.stopped = True
             connectors = list(self.connectors.values())
+        completions = []
         for connector in connectors:
             connector.stopped.set()
-            connector.driver.shutdown()
+            completion = connector.driver.shutdown()
+            if isinstance(completion, Future):
+                completions.append(completion)
+
+        # Request cancellation from every driver before waiting for any one.
+        # The enclosing process supervisor owns the shutdown deadline.
+        for completion in completions:
+            completion.result()
 
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)

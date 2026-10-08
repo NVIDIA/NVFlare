@@ -33,25 +33,44 @@ class BaseDriver(Driver, ABC):
         self.connections: Dict[str, Connection] = {}
         self.connector: Optional[ConnectorInfo] = None
         self.conn_lock = threading.Lock()
+        self._connection_admission_closed = False
+
+    def stop_connection_admission(self):
+        """Close admission before cancelling resources or taking a connection snapshot."""
+        with self.conn_lock:
+            self._connection_admission_closed = True
+
+    def is_stopping(self):
+        with self.conn_lock:
+            return self._connection_admission_closed
 
     def add_connection(self, conn: Connection):
         with self.conn_lock:
-            self.connections[conn.name] = conn
+            admitted = not self._connection_admission_closed and not conn.connector.stopped.is_set()
+            if admitted:
+                self.connections[conn.name] = conn
+
+        if not admitted:
+            # Native close and monitor callbacks can re-enter the driver.
+            conn.close()
+            return False
 
         conn.state = ConnState.CONNECTED
         self._notify_monitor(conn)
 
         log.debug(f"Connection created: {self.get_name()}:{conn}")
+        return True
 
     def close_connection(self, conn: Connection):
         log.debug(f"Connection removed: {self.get_name()}:{conn}")
 
-        conn.state = ConnState.CLOSED
-        self._notify_monitor(conn)
-
         with self.conn_lock:
             if not self.connections.pop(conn.name, None):
                 log.debug(f"{conn.name} is already removed from driver")
+                return
+
+        conn.state = ConnState.CLOSED
+        self._notify_monitor(conn)
 
     def close_all(self):
         with self.conn_lock:

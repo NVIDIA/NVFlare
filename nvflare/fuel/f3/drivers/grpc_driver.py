@@ -143,7 +143,8 @@ class Servicer(StreamerServicer):
             self.logger.debug(f"SERVER started Stream CB in thread {ct.name}")
             connection = StreamConnection(oq, self.server.connector, conn_props, "SERVER", context=context)
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
-            self.server.driver.add_connection(connection)
+            if not self.server.driver.add_connection(connection):
+                return
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
             t = threading.Thread(target=connection.read_loop, args=(request_iterator,), name="grpc_reader", daemon=True)
             t.start()
@@ -200,7 +201,7 @@ class Server:
         self.grpc_server.wait_for_termination()
 
     def shutdown(self):
-        self.grpc_server.stop(grace=0.5)
+        self.grpc_server.stop(grace=0.5).wait()
 
 
 class GrpcDriver(BaseDriver):
@@ -246,6 +247,8 @@ class GrpcDriver(BaseDriver):
         self.server.start()
 
     def connect(self, connector: ConnectorInfo):
+        if self.is_stopping() or connector.stopped.is_set():
+            return
         self.logger.debug("CLIENT: trying connect ...")
         params = connector.params
         address = get_address(params)
@@ -268,7 +271,8 @@ class GrpcDriver(BaseDriver):
             self.logger.debug("CLIENT: got stub")
             oq = QQ()
             connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
-            self.add_connection(connection)
+            if not self.add_connection(connection):
+                return
             self.logger.debug("CLIENT: added connection")
             received = stub.Stream(connection.generate_output())
             connection.read_loop(received)
@@ -290,6 +294,7 @@ class GrpcDriver(BaseDriver):
         return get_tcp_urls(scheme, resources)
 
     def shutdown(self):
+        self.stop_connection_admission()
         if self.closing:
             return
         self.closing = True
