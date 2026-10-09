@@ -108,6 +108,10 @@ class CredentialManager:
 
         return req
 
+    def clear_cert_cache(self):
+        with self.lock:
+            self.cert_cache.clear()
+
     def _cache_cert(self, fqcn: str, cert: bytes):
         if not cert:
             raise RuntimeError(f"missing certificate for {fqcn}")

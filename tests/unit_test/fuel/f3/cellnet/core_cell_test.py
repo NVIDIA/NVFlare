@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -27,11 +28,12 @@ from nvflare.fuel.f3.cellnet.core_cell import (
     _is_failed_cert_exchange,
     _validate_url,
 )
+from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
 
 
@@ -122,6 +124,23 @@ def test_certificate_exchanger_reports_empty_response_and_handles_requests():
 
     manager.process_request.return_value = b"reply"
     assert exchanger._handle_cert_request(Message(payload=b"request")).payload == b"reply"
+
+
+def test_reconnected_endpoint_invalidates_direct_and_routed_peer_certificates():
+    cell = _cell()
+    cell.agent_lock = threading.Lock()
+    cell.cell_connected_cb = None
+    manager = CredentialManager.__new__(CredentialManager)
+    manager.lock = threading.Lock()
+    manager.cert_cache = {"server": b"old-server", "site-2": b"old-routed-peer"}
+    cell.credential_manager = manager
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+
+    cell.state_change(endpoint)
+
+    assert not manager.cert_cache
+    assert cell.agents["server"].endpoint is endpoint
 
 
 def test_fobs_context_is_validated_and_copied():
