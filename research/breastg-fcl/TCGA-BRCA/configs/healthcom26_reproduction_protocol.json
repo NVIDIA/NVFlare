@@ -1,0 +1,148 @@
+{
+  "paper": {
+    "title": "BreastG-FCL: Graph-Conditioned Federated Continual Learning for Breast Cancer Radiogenomics",
+    "venue": "IEEE HealthCom 2026",
+    "reported_tcga_cases": 1098,
+    "reported_metrics": {
+      "accuracy_percent": 84.87,
+      "auc_percent": 90.96,
+      "forgetting_percent": 2.58,
+      "macro_f1_percent": 83.71
+    }
+  },
+  "implementation_scope": {
+    "unchanged": [
+      "TCGA-BRCA expression features and prediction target",
+      "TCGA-BRCA cohort and clinical-stage task definitions",
+      "evaluation metrics"
+    ],
+    "changed": [
+      "relational graph input summaries",
+      "spatial attention",
+      "sliding-window temporal attention",
+      "multiplicative spatial-temporal fusion",
+      "label-free expression encoder conditioned on a graph row",
+      "noise-label-graph-conditioned latent replay generator",
+      "joint local E/F/G prediction and adversarial training",
+      "server graph-row MSE training and differentiable frozen local discriminator",
+      "all-task synthetic replay without historical raw-input reads",
+      "E/F/G aggregation and per-client optimizer/scheduler state return through NVFlare",
+      "global patient-disjoint train/test split before task and client assignment",
+      "patient/sample identity audits and rejection of duplicate record assignments or empty client/task splits",
+      "expression and TCIA normalization fitted only on final eligible training data, with saved fitting statistics and identities",
+      "client-side Laplace perturbation of all uploaded real and synthetic encodings before Collab transmission"
+    ]
+  },
+  "learning_protocol": {
+    "encoder": "E(expression, graph_row) -> latent; labels never enter the encoder",
+    "generator": "G(Gaussian_noise, label, graph_row) -> synthetic latent",
+    "predictor": "F(real_or_synthetic_latent) -> class prediction",
+    "discriminator": "D(real_or_synthetic_latent) -> graph_row",
+    "latent_dimension_default": 800,
+    "graph_dimension": "num_clients",
+    "noise_dimension_default": 100,
+    "noise_dimension_provenance": "public implementation choice, not a reported author setting",
+    "local_objective": "current-real prediction NLL minus lambda_gan * graph-row MSE, plus the corresponding sum of synthetic objectives",
+    "local_trainable_components": ["E", "F", "G"],
+    "server_objective": "minimize graph-row MSE directly on client-perturbed real and synthetic latents without adding latent noise again",
+    "latent_upload_noise": "client generate_encodings adds independent Laplace noise with scale b = sensitivity / epsilon to every current real E encoding and current or historical G encoding before returning it through Collab; epsilon = 0 retains the existing no-noise mode b = 0",
+    "graph_noise_location": "relational-graph Laplace perturbation remains on the server",
+    "simulation_randomness": "operation-derived seeds support deterministic simulation; the implementation does not establish formal differential privacy or a production privacy guarantee",
+    "local_discriminator": "frozen parameters and evaluation mode; input gradients remain enabled to update E/G",
+    "attention_training": "forward only; no separate loss or optimizer",
+    "replay_enabled": "synthetic tasks j <= current task k, including the current task",
+    "replay_disabled": "current-task synthetic training still updates G; historical synthetic losses are omitted",
+    "replay_metadata": ["per-task label counts", "per-task batch sizes", "task relational graph rows"],
+    "historical_label_sampling": "sample from each client's saved task label counts",
+    "historical_raw_inputs": "not read by replay",
+    "nvflare_training": "one client training task computes current and synthetic replay losses on the same client before returning E/F/G weights",
+    "aggregation": "average E/F/G weights across clients",
+    "client_state_returned": ["Adam optimizer", "learning-rate scheduler", "task label counts", "task batch sizes"],
+    "learning_rates_default": {"E": 0.0001, "F": 0.0001, "G": 0.0001, "D": 0.0001},
+    "checkpoint_compatibility": "Old label-conditioned E and graph-embedding G checkpoints cannot be loaded directly into the new E/G architectures."
+  },
+  "source_reproducible_data_protocol": {
+    "main_prediction_input": "TCGA-BRCA expression features with log1p values standardized using only final eligible training records",
+    "prediction_target": "inherited unchanged from the TCGA-BRCA GFedCL workflow",
+    "train_test_split": "group by case_submitter_id globally; split approximately 80/20 patients stratified by Normal-only, Tumor-only, or mixed labels before assigning tasks and clients; clinical_stage and random use the same patient-disjoint protocol",
+    "partition_validation": "train/test patient and sample IDs must be disjoint; record indices cannot be duplicated across assignments; every client/task must have training and evaluation records without copying records to fill empty splits",
+    "partition_audit": "partition pickle records split_unit='patient', split_protocol_version=2, per-index patient/sample/file IDs, and identity_split train/test patient and sample lists",
+    "normalization_scope": "expression mean and scale are fitted on the union of final eligible training record indices after patient and task assignment; evaluation records and excluded unknown-stage tumors do not participate; the same statistics transform training and evaluation data",
+    "expression_cache": "schema v3 stores unstandardized log1p values; its fingerprint includes the expression column, gene count, ordered file/patient/sample/label identities, and actual source-file SHA-256 hashes recomputed before every reuse, detecting content changes even with unchanged names, sizes, and modification times",
+    "expression_cache_validation": "cache saves per-record identities, source hashes, and configuration; reuse validates metadata, shapes, dtypes, and finite values with allow_pickle=False and non-object arrays; v1/v2 caches rebuild automatically, while corrupt or metadata-mismatched v3 caches raise an error and must be removed before rebuilding; inconsistent gene order across source files is rejected, and complete caches are published by atomic rename",
+    "tcia_normalization": "spatial and temporal tables are fitted separately on unique TCIA rows matched by final training records; repeated expression matches do not increase row weight; each table applies its fitted statistics to all rows and rejects zero training matches instead of fitting on the full table",
+    "normalization_audit": "partition pickle normalization has schema_version=1 and expression, tcia_spatial, and tcia_temporal entries containing mean, scale, n_samples_seen, and expression fit_indices or TCIA fit_ids",
+    "normalization_timing": "statistics are fitted once across all training tasks during local simulator preparation; this is not strictly online preprocessing per task or distributed privacy-preserving statistics estimation",
+    "historical_benchmark_limitations": "the external Ray benchmark used expression-file splits with shared train/test patient and sample IDs and full-cohort normalization; its scores do not validate the current patient split or training-fitted normalization",
+    "graph_source": "TCGA-Breast-Radiogenomics TCIA analysis result",
+    "official_tcia_imaging_subjects": 139,
+    "official_segmented_lesions": 91,
+    "official_radiomics_rows": 91,
+    "matched_radiomics_pam50_clinical_rows": 84,
+    "spatial_feature_dimension": 25,
+    "temporal_feature_dimension": 11,
+    "graph_test_leakage_policy": "client/task summaries use training patients only"
+  },
+  "graph_equations": {
+    "spatial": "alpha_ij^k = softmax_j a_theta_s(s_i^k, s_j^k)",
+    "temporal_window": "R_i^k = concat(r_i^max(1,k-m+1), ..., r_i^k)",
+    "temporal": "beta_ij^k = softmax_j b_theta_t(R_i^k, R_j^k, m)",
+    "fusion": "G_ij^k = alpha_ij^k beta_ij^k / (sum_l alpha_il^k beta_il^k + epsilon_0)",
+    "public_scorer_assumption": "GFedCL-inspired multi-head additive spatial attention and query/key scaled-dot-product temporal attention; reference parameterization, not recovered author weights"
+  },
+  "reference_attention_implementation": {
+    "spatial": {
+      "input": "standardized client/task morphology summary",
+      "encoder_dimensions": [128, 64],
+      "encoder_normalization": "LayerNorm replaces GFedCL reference BatchNorm to support small client counts",
+      "heads": 4,
+      "head_dimension": 32,
+      "head_score": "LeakyReLU(a_h^T [W_h encoded_s_i || W_h encoded_s_j])",
+      "attention": "mean_h softmax_j(head_score_h / attention_temperature)"
+    },
+    "temporal": {
+      "input": "concatenation of the latest m DCE summaries, including the current task, standardized per feature across clients",
+      "early_window_padding": "left-pad missing earlier summaries with zeros to preserve fixed m * temporal_feature_dimension input width",
+      "query_key_dimension": 64,
+      "score": "(W_Q R_i)^T (W_K R_j) / sqrt(64)",
+      "attention": "softmax_j(score / attention_temperature)",
+      "projection_lifetime": "the same query/key projection layers are reused across tasks"
+    },
+    "fusion": "elementwise spatial-temporal product divided by its row sum plus graph_epsilon",
+    "dropout_default": 0.2,
+    "initialization": "fixed by the experiment seed",
+    "training": "differentiable forward only by default; no separate attention loss or optimizer",
+    "learn_entry_point": "compatibility inference entry point; epochs is unused; temporarily enters eval mode to disable dropout, then restores the previous mode",
+    "checkpoint": {
+      "path": "OUTPUT_DIR/relational_graphs/task_<k>_attention.pt",
+      "contents": [
+        "state_dict, including DCE history in extra_state",
+        "network_config, including dimensions, temporal window, attention temperature, and graph epsilon"
+      ],
+      "interpretation": "reference network state, not evidence of separate attention training or original author weights"
+    }
+  },
+  "exact_author_experiment_blockers": [
+    {
+      "id": "attention_networks_missing",
+      "detail": "The original BreastG-FCL attention parameterization, trained weights, supervision, and optimization are not published. The public implementation supplies reference networks without a separate training objective; it does not recover the authors' learned attention."
+    },
+    {
+      "id": "four_region_features_missing",
+      "detail": "The public 91-case workbook contains lesion-level radiomics, not the paper's complete tumor-core, enhancing-rim, peritumoral, and BPE feature pipeline."
+    },
+    {
+      "id": "cohort_mapping_missing",
+      "detail": "The paper does not explain how the limited TCIA imaging subset supplies client/task graph summaries for the reported 1,098-case TCGA experiment."
+    },
+    {
+      "id": "experiment_partition_missing",
+      "detail": "Exact client count, task construction, patient assignments, split, and seeds for the reported metrics are not published."
+    },
+    {
+      "id": "author_tcga_code_unavailable",
+      "detail": "The authors' public GFedCL repository omits the TCGA-BRCA implementation."
+    }
+  ],
+  "status": "graph_equations_and_public_sources_reproduced_exact_author_attention_blocked"
+}

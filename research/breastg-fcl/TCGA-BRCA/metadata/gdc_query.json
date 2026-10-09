@@ -1,0 +1,69 @@
+{
+  "api": "https://api.gdc.cancer.gov",
+  "project_id": "TCGA-BRCA",
+  "filters": {
+    "op": "and",
+    "content": [
+      {
+        "op": "in",
+        "content": {
+          "field": "cases.project.project_id",
+          "value": [
+            "TCGA-BRCA"
+          ]
+        }
+      },
+      {
+        "op": "in",
+        "content": {
+          "field": "files.data_category",
+          "value": [
+            "Transcriptome Profiling"
+          ]
+        }
+      },
+      {
+        "op": "in",
+        "content": {
+          "field": "files.data_type",
+          "value": [
+            "Gene Expression Quantification"
+          ]
+        }
+      },
+      {
+        "op": "in",
+        "content": {
+          "field": "files.analysis.workflow_type",
+          "value": [
+            "STAR - Counts"
+          ]
+        }
+      },
+      {
+        "op": "in",
+        "content": {
+          "field": "files.access",
+          "value": [
+            "open"
+          ]
+        }
+      }
+    ]
+  },
+  "fields": [
+    "file_id",
+    "file_name",
+    "file_size",
+    "md5sum",
+    "access",
+    "data_category",
+    "data_type",
+    "cases.submitter_id",
+    "cases.case_id",
+    "cases.samples.submitter_id",
+    "cases.samples.sample_type",
+    "cases.samples.tissue_type",
+    "analysis.workflow_type"
+  ]
+}
