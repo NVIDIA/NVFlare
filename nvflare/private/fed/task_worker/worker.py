@@ -225,8 +225,8 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
         data = store.read_input(identity)
         result, runtime = _execute(bootstrap, data, workspace, store)
         reference = store.stage_result(identity, result)
-        # Serialization can invoke application decomposers. Recheck latched
-        # abort/fatal/event failures before publishing the final commit record.
+        # Serialization can invoke application decomposers. Fail early here;
+        # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
         usage = resource.getrusage(resource.RUSAGE_SELF)
         completed_at = time.time()
@@ -244,6 +244,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             started_at=started_at,
             completed_at=completed_at,
             diagnostics=diagnostics,
+            publication_guard=runtime.completion_guard,
         )
     except BaseException as e:
         try:

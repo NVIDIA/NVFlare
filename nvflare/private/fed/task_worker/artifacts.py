@@ -22,7 +22,7 @@ import re
 import shutil
 import stat
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
@@ -77,11 +77,11 @@ def _fingerprint(stream) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def _write_json_exclusive(directory: str, name: str, value: Mapping[str, Any]):
+def _write_json_exclusive(directory: str, name: str, value: Mapping[str, Any], *, publication_guard=nullcontext):
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     if len(encoded) > _MAX_RECORD_BYTES:
         raise ValueError(f"artifact record {name} is too large")
-    _publish_exclusive(directory, name, lambda stream: stream.write(encoded))
+    _publish_exclusive(directory, name, lambda stream: stream.write(encoded), publication_guard=publication_guard)
 
 
 def _read_json(path: str) -> dict:
@@ -364,8 +364,9 @@ class FileTaskArtifactStore:
         started_at: Optional[float] = None,
         completed_at: Optional[float] = None,
         diagnostics: Optional[Mapping[str, Any]] = None,
+        publication_guard=nullcontext,
     ) -> TaskCompletion:
-        """Install completion only after application code and finalization finish."""
+        """Verify the result, then guard the final atomic completion publication."""
         if not isinstance(reference, ArtifactReference) or reference.kind != _RESULT_KIND:
             raise ValueError("staged result must be a result artifact reference")
         with self._verified_payload(identity, reference):
@@ -381,7 +382,12 @@ class FileTaskArtifactStore:
             diagnostics={} if diagnostics is None else diagnostics,
         )
         try:
-            _write_json_exclusive(self.attempt_dir(identity), "completion.json", completion.to_dict())
+            _write_json_exclusive(
+                self.attempt_dir(identity),
+                "completion.json",
+                completion.to_dict(),
+                publication_guard=publication_guard,
+            )
         except (TypeError, ValueError) as e:
             raise ValueError(f"completion diagnostics must contain only JSON-compatible values: {e}") from e
         return completion

@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +50,8 @@ from nvflare.private.fed.task_worker import (
     IncompleteTaskArtifactError,
     TaskAttemptIdentity,
     WorkerBootstrap,
+    artifacts,
+    protocol,
     read_bootstrap,
     worker,
     write_bootstrap,
@@ -498,6 +501,160 @@ def test_task_runtime_panic_latches_first_failure_and_triggers_abort():
         runtime.raise_if_failed()
 
 
+def test_resetting_abort_signal_cannot_restore_success():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    runtime.abort_signal.trigger(True)
+    runtime.abort_signal.reset()
+    assert not runtime.abort_signal.triggered
+    with pytest.raises(RuntimeError, match="aborted"), runtime.completion_guard():
+        pytest.fail("an aborted attempt must not publish completion")
+
+
+@pytest.mark.parametrize("callback_kind", ["handler", "observer"])
+def test_background_event_failure_is_latched(callback_kind):
+    runtime = TaskRuntime(None, "endpoint", "job")
+
+    def fail(*args):
+        raise ValueError("background callback failed")
+
+    if callback_kind == "observer":
+        runtime.add_event_observer(fail)
+    else:
+        component = FLComponent()
+        component.handle_event = fail
+        runtime.set_compute_graph({}, component)
+
+    def dispatch():
+        if callback_kind == "observer":
+            with pytest.raises(ValueError, match="background callback failed"):
+                runtime.fire_event("background", runtime.new_context())
+        else:
+            runtime.fire_event("background", runtime.new_context())
+
+    callback = threading.Thread(target=dispatch, daemon=True)
+    callback.start()
+    callback.join(timeout=5)
+    assert not callback.is_alive()
+    with pytest.raises(RuntimeError, match="event handler failed"), runtime.completion_guard():
+        pytest.fail("a failed background callback must prevent completion")
+
+
+def test_completion_rejects_an_event_still_running(tmp_path):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    started = threading.Event()
+    release = threading.Event()
+
+    def observe(*args):
+        started.set()
+        assert release.wait(timeout=5)
+        raise ValueError("event failed after the completion attempt")
+
+    def dispatch():
+        with pytest.raises(ValueError, match="event failed"):
+            runtime.fire_event("background", runtime.new_context())
+
+    runtime.add_event_observer(observe)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("active-event")
+    store.create_attempt(identity)
+    reference = store.stage_result(identity, Shareable())
+    callback = threading.Thread(target=dispatch, daemon=True)
+    callback.start()
+    try:
+        assert started.wait(timeout=5)
+        with pytest.raises(RuntimeError, match="still active"):
+            store.commit_staged_result(identity, reference, publication_guard=runtime.completion_guard)
+        with pytest.raises(IncompleteTaskArtifactError):
+            store.read_completion(identity)
+    finally:
+        release.set()
+        callback.join(timeout=5)
+    assert not callback.is_alive()
+    with pytest.raises(RuntimeError, match="event handler failed"):
+        runtime.raise_if_failed()
+
+
+@pytest.mark.parametrize("fault", ["panic", "abort"])
+def test_completion_winning_the_race_closes_runtime(tmp_path, monkeypatch, fault):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("completion-wins")
+    store.create_attempt(identity)
+    reference = store.stage_result(identity, Shareable({"produced": True}))
+    started = threading.Event()
+    rejected = threading.Event()
+
+    def fail_after_commit_begins():
+        started.set()
+        with pytest.raises(RuntimeError, match="already completed"):
+            if fault == "panic":
+                FLComponent().system_panic("too late", runtime.new_context())
+            else:
+                runtime.abort_signal.trigger(True)
+        assert Path(store.attempt_dir(identity), "completion.json").is_file()
+        rejected.set()
+
+    callback = threading.Thread(target=fail_after_commit_begins, daemon=True)
+    link = protocol.os.link
+
+    def publish_with_callback(source, destination, **kwargs):
+        if destination == "completion.json":
+            callback.start()
+            assert started.wait(timeout=5)
+        return link(source, destination, **kwargs)
+
+    monkeypatch.setattr(protocol.os, "link", publish_with_callback)
+    completion = store.commit_staged_result(identity, reference, publication_guard=runtime.completion_guard)
+    callback.join(timeout=5)
+    assert not callback.is_alive()
+    assert rejected.is_set()
+    assert store.read_completion(identity) == completion
+    assert not runtime.abort_signal.triggered
+    runtime.raise_if_failed()
+
+
+def test_failed_completion_publication_releases_runtime_guard(tmp_path, monkeypatch):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("publication-fails")
+    store.create_attempt(identity)
+    reference = store.stage_result(identity, Shareable())
+
+    def fail_link(*args, **kwargs):
+        raise OSError("publication failed")
+
+    monkeypatch.setattr(protocol.os, "link", fail_link)
+    with pytest.raises(OSError, match="publication failed"):
+        store.commit_staged_result(identity, reference, publication_guard=runtime.completion_guard)
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+    assert not list(Path(store.attempt_dir(identity)).glob(".completion.json.*"))
+    callback = threading.Thread(target=runtime.abort_signal.trigger, args=(True,), daemon=True)
+    callback.start()
+    callback.join(timeout=5)
+    assert not callback.is_alive()
+    with pytest.raises(RuntimeError, match="aborted"):
+        runtime.raise_if_failed()
+
+
+def test_nested_event_can_abort_without_holding_publication_lock():
+    runtime = TaskRuntime(None, "endpoint", "job")
+
+    def observe(event_type, ctx):
+        if event_type == "outer":
+            runtime.fire_event("inner", ctx)
+        else:
+            runtime.abort_signal.trigger(True)
+
+    runtime.add_event_observer(observe)
+    callback = threading.Thread(target=runtime.fire_event, args=("outer", runtime.new_context()), daemon=True)
+    callback.start()
+    callback.join(timeout=5)
+    assert not callback.is_alive()
+    with pytest.raises(RuntimeError, match="aborted"):
+        runtime.raise_if_failed()
+
+
 @pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.AFTER_TASK_EXECUTION, EventType.END_RUN])
 def test_worker_panic_never_commits_completion_and_still_finalizes(tmp_path, monkeypatch, phase):
     events = []
@@ -752,6 +909,81 @@ def test_failure_during_result_serialization_leaves_only_a_staged_result(tmp_pat
     assert Path(store.attempt_dir(identity), "result.fobs").is_file()
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
+
+
+@pytest.mark.parametrize("boundary", ["result_verification", "completion_write"])
+@pytest.mark.parametrize("fault", ["panic", "abort", None])
+def test_background_failure_before_completion_publication(tmp_path, monkeypatch, boundary, fault):
+    runtime_context = []
+
+    class SuccessfulExecutor(Executor):
+        def execute(self, task_name, data, ctx, abort_signal):
+            runtime_context.append(ctx)
+            return Shareable({"produced": True})
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = SuccessfulExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    def background_callback():
+        ctx = runtime_context[0]
+        if fault == "panic":
+            FLComponent().system_panic("background panic", ctx)
+        elif fault == "abort":
+            ctx.get_run_abort_signal().trigger(True)
+
+    callbacks = []
+
+    def inject_callback():
+        callback = threading.Thread(target=background_callback, daemon=True)
+        callbacks.append(callback)
+        callback.start()
+        callback.join(timeout=5)
+        assert not callback.is_alive(), "completion preparation blocked a background callback"
+
+    fingerprint = artifacts._fingerprint
+    fingerprint_calls = 0
+
+    def verify_with_callback(stream):
+        nonlocal fingerprint_calls
+        fingerprint_calls += 1
+        # Input read, result staging, then the final staged-result verification.
+        if fingerprint_calls == 3:
+            inject_callback()
+        return fingerprint(stream)
+
+    publish = artifacts._publish_exclusive
+
+    def write_with_callback(directory, name, writer, **kwargs):
+        def staged_writer(stream):
+            writer(stream)
+            inject_callback()
+
+        return publish(directory, name, staged_writer if name == "completion.json" else writer, **kwargs)
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("background-failure")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    if boundary == "result_verification":
+        monkeypatch.setattr(artifacts, "_fingerprint", verify_with_callback)
+    else:
+        monkeypatch.setattr(artifacts, "_publish_exclusive", write_with_callback)
+
+    if fault:
+        with pytest.raises(RuntimeError, match="background panic" if fault == "panic" else "aborted"):
+            worker.run_worker(path)
+        with pytest.raises(IncompleteTaskArtifactError):
+            store.read_completion(identity)
+        assert Path(store.attempt_dir(identity), "failure.json").is_file()
+    else:
+        worker.run_worker(path)
+        assert store.read_result(identity)[0]["produced"]
+        assert not Path(store.attempt_dir(identity), "failure.json").exists()
+    assert len(callbacks) == 1
+    assert Path(store.attempt_dir(identity), "result.fobs").is_file()
+    assert not list(Path(store.attempt_dir(identity)).glob(".completion.json.*"))
 
 
 def _wait_until(predicate, timeout=10):

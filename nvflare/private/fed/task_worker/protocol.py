@@ -19,6 +19,7 @@ import math
 import os
 import stat
 import uuid
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
@@ -111,7 +112,7 @@ def _open_regular(path: str):
     return os.fdopen(fd, "rb")
 
 
-def _publish_exclusive(directory, name, writer):
+def _publish_exclusive(directory, name, writer, *, publication_guard=nullcontext):
     directory_fd = _open_directory(directory)
     temporary = f".{name}.{uuid.uuid4().hex}"
     try:
@@ -121,8 +122,11 @@ def _publish_exclusive(directory, name, writer):
                 writer(stream)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd, follow_symlinks=False)
-            os.fsync(directory_fd)
+            # Keep serialization and file preparation outside the guard. Only
+            # the atomic installation and durability barrier decide completion.
+            with publication_guard():
+                os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd, follow_symlinks=False)
+                os.fsync(directory_fd)
         finally:
             try:
                 os.unlink(temporary, dir_fd=directory_fd)

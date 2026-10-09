@@ -14,6 +14,9 @@
 
 """Private, role-neutral local services for one compute attempt."""
 
+import threading
+from contextlib import contextmanager
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey
@@ -25,6 +28,26 @@ from nvflare.private.event import fire_event
 
 class UnsupportedTaskRuntimeService(RuntimeError):
     """A compute component requested a service owned by its job runtime."""
+
+
+class _TaskAbortSignal(Signal):
+    """Serialize direct abort requests with the attempt's completion decision."""
+
+    def __init__(self, runtime):
+        super().__init__()
+        self._runtime = runtime
+
+    def trigger(self, value):
+        with self._runtime._state_lock:
+            self._runtime._require_open()
+            self._runtime._aborted = True
+            super().trigger(value)
+
+    def reset(self, value=None):
+        with self._runtime._state_lock:
+            self._runtime._require_open()
+            # Resetting the compatibility signal cannot undo an attempt failure.
+            super().reset(value)
 
 
 class TaskRuntime:
@@ -40,9 +63,13 @@ class TaskRuntime:
         self._components = {}
         self._handlers = []
         self._event_observers = []
+        self._state_lock = threading.Lock()
+        self._completed = False
+        self._active_events = 0
+        self._aborted = False
         self._fatal_error = None
         self._event_error = None
-        self.abort_signal = Signal()
+        self.abort_signal = _TaskAbortSignal(self)
         self._context_manager = FLContextManager(
             engine=self,
             identity_name=identity_name,
@@ -73,29 +100,75 @@ class TaskRuntime:
         self._event_observers.append(observer)
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.FATAL_SYSTEM_ERROR and self._fatal_error is None:
-            self._fatal_error = fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error"
-            self.abort_signal.trigger(True)
-        captured = False
-        for observer in self._event_observers:
-            captured = observer(event_type, fl_ctx) or captured
-        if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION and not captured:
-            self._unsupported("federated events")
-        fire_event(event=event_type, handlers=self._handlers, ctx=fl_ctx)
-        exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-        if exceptions and self._event_error is None:
-            self._event_error = next(iter(exceptions.values()))
-            self.abort_signal.trigger(True)
+        fatal_error = None
+        if event_type == EventType.FATAL_SYSTEM_ERROR:
+            fatal_error = str(fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error")
+        with self._state_lock:
+            self._require_open()
+            if fatal_error is not None and self._fatal_error is None:
+                self._fatal_error = fatal_error
+                self._abort_locked()
+            self._active_events += 1
+        error = None
+        try:
+            # Application callbacks may nest events or signal abort. Never hold
+            # the completion lock while running them.
+            captured = False
+            for observer in self._event_observers:
+                captured = observer(event_type, fl_ctx) or captured
+            if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION and not captured:
+                self._unsupported("federated events")
+            fire_event(event=event_type, handlers=self._handlers, ctx=fl_ctx)
+        except BaseException as e:
+            error = e
+            raise
+        finally:
+            exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+            if error is None and exceptions:
+                error = next(iter(exceptions.values()))
+            with self._state_lock:
+                if error is not None and self._event_error is None:
+                    self._event_error = error
+                    self._abort_locked()
+                self._active_events -= 1
+
+    def _abort_locked(self):
+        self._aborted = True
+        Signal.trigger(self.abort_signal, True)
+
+    def _require_open(self):
+        if self._completed:
+            raise RuntimeError("task runtime has already completed")
 
     def raise_if_failed(self):
         """Surface a panic at execution boundaries, after finalizers can run."""
+        with self._state_lock:
+            self._raise_if_failed_locked()
+
+    def _raise_if_failed_locked(self):
         if self._fatal_error is not None:
             raise RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {self._fatal_error}")
 
         if self._event_error is not None:
             raise RuntimeError("task runtime event handler failed") from self._event_error
-        if self.abort_signal.triggered:
+        if self._aborted:
             raise RuntimeError("task runtime was aborted")
+
+    @contextmanager
+    def completion_guard(self):
+        """Order final publication against abort and event failure reporting.
+
+        Use only around the final filesystem publication, after serialization
+        and verification. Fail closed if an application event is still running.
+        Once publication wins, subsequent events and abort requests are rejected.
+        """
+        with self._state_lock:
+            self._require_open()
+            self._raise_if_failed_locked()
+            if self._active_events:
+                raise RuntimeError("task runtime event handlers are still active")
+            yield
+            self._completed = True
 
     @staticmethod
     def _unsupported(service: str):
