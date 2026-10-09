@@ -115,6 +115,11 @@ def resolve_model_profile(args):
         args.model_revision = None
     if not hasattr(args, "tokenizer_revision"):
         args.tokenizer_revision = None
+    if profile_name == NANO_PROFILE and args.exclude_modules.strip():
+        raise ValueError(
+            "The nano profile does not support --exclude_modules because Hugging Face PEFT and NeMo AutoModel "
+            "use incompatible exclusion pattern semantics."
+        )
     return args
 
 

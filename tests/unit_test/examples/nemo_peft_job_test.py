@@ -327,6 +327,21 @@ def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp
     assert resolved.tokenizer_revision == expected_revision
 
 
+def test_nano_profile_rejects_exclusions_before_initialization_and_training(monkeypatch):
+    invocations = (
+        (_load_prepare_module, ["prepare_initial_adapter.py", "--exclude_modules=*.out_proj"]),
+        (
+            _load_client_module,
+            ["automodel_peft_client.py", "--train_file=train.jsonl", "--exclude_modules=*.out_proj"],
+        ),
+    )
+
+    for load_module, argv in invocations:
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(ValueError, match="nano profile does not support --exclude_modules"):
+            load_module().define_parser()
+
+
 def test_lightning35_profile_keeps_pinned_revisions_for_explicit_default_repository(tmp_path):
     job_module = _load_job_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
