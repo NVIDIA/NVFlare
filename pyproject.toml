@@ -37,6 +37,7 @@ exclude = '''
 
 [tool.pytest.ini_options]
 markers = [
+    "coverage_incompatible: mark integration tests that must be skipped when pytest-cov is enabled",
     "timeout: mark tests with an execution time limit",
     "slow: mark tests as slow-running (excluded from the default test run)",
     "xdist_group(name): mark tests that must run on the same pytest-xdist worker",

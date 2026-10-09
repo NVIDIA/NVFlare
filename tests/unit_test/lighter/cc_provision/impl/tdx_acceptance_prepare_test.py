@@ -23,7 +23,7 @@ import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
+from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
 
 ROOT = Path(__file__).resolve().parents[5]
 
@@ -46,6 +46,44 @@ def inputs(tmp_path):
     key.write_bytes(public)
     platform = tmp_path / "platform.env"
     platform.write_text("# externally approved platform configuration\n")
+    for name in ("trustee-ca.pem", "admin.jwt", "registry-ca.pem", "username", "password"):
+        (tmp_path / name).write_text("fixture")
+    command = tmp_path / "build"
+    command.write_text("#!/bin/sh\n")
+    command.chmod(0o700)
+    cc_project = tmp_path / "cc_project.yml"
+    cc_project.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "attestation_services": {
+                    "trustee": {
+                        "type": "trustee",
+                        "kbs_endpoint": "https://trustee.example.com:8443",
+                        "ca_cert_file": "trustee-ca.pem",
+                        "admin_token_file": "admin.jwt",
+                        "attestation_token_endpoint": "http://127.0.0.1:8006/aa/token",
+                        "attestation_signing_public_key_file": "as.pem",
+                        "token_expiration_seconds": 300,
+                        "check_frequency_seconds": 120,
+                        "registration_token_timeout_seconds": 300,
+                        "refresh_token_timeout_seconds": 30,
+                        "get_token_request_timeout_seconds": 45,
+                    }
+                },
+                "container_registries": {
+                    "workloads": {
+                        "endpoint": "registry.example.com:5000",
+                        "ca_cert_file": "registry-ca.pem",
+                        "publisher_username_file": "username",
+                        "publisher_password_file": "password",
+                    }
+                },
+                "build_tools": {"coco": {"build_command": "build"}},
+            },
+            sort_keys=False,
+        )
+    )
     return dict(
         output=tmp_path / "run",
         run_id="reviewed-run",
@@ -55,6 +93,7 @@ def inputs(tmp_path):
         mrtd="b" * 96,
         platform=platform,
         server="server.example.com",
+        cc_project=cc_project,
     )
 
 
@@ -68,15 +107,71 @@ def test_private_preparation_and_complete_constraints(inputs):
         observer = next(p for p in project["participants"] if p["name"] == "site-observer")
         assert "cc_config" not in observer
         required = {"site-1", "site-2"} | ({"server"} if topology == "b" else set())
+        project_config = load_project_config(output / topology / "cc_project.yml")
+        constraints = project_config["attestation_services"]["trustee"]["workload_constraints"]
+        assert set(constraints) == required
         for name in required:
-            config = yaml.safe_load((output / topology / f"cc_{name}.yml").read_text())
-            validate_coco_config(config)
-            assert set(config["cc_issuers"][0]["args"]["workload_constraints"]) == required
-            assert config["cc_gpu"] == "none"
-            assert "init_data" not in config["cc_issuers"][0]["args"]["workload_constraints"][name]
+            config = load_participant_config(output / topology / f"cc_{name}.yml", project_config)
+            assert config["gpu_tee"].value == "none"
+            assert "init_data" not in constraints[name]
             assert (output / topology / name / "tdx_acceptance.py").is_file()
     with pytest.raises(FileExistsError):
         load("prepare").prepare(**inputs)
+
+
+def test_preparation_preserves_normalized_project_paths(inputs, monkeypatch):
+    source_root = Path(inputs["cc_project"]).parent
+    home = source_root / "home"
+    credentials = home / "credentials"
+    credentials.mkdir(parents=True)
+    for name in ("trustee-ca.pem", "admin.jwt", "registry-ca.pem", "username", "password"):
+        (credentials / name).write_text("fixture")
+    command = home / "bin" / "build"
+    command.parent.mkdir()
+    command.write_text("#!/bin/sh\n")
+    command.chmod(0o700)
+    approval = source_root / "approval.pub"
+    approval.write_text("fixture")
+    builder = source_root / "builder"
+    builder.mkdir()
+    (builder / "cvmctl").write_text("#!/bin/sh\n")
+    (builder / "cvmctl").chmod(0o700)
+
+    project_config = yaml.safe_load(Path(inputs["cc_project"]).read_text())
+    trustee = project_config["attestation_services"]["trustee"]
+    trustee["ca_cert_file"] = "~/credentials/trustee-ca.pem"
+    trustee["admin_token_file"] = "~/credentials/admin.jwt"
+    registry = project_config["container_registries"]["workloads"]
+    for field, name in (
+        ("ca_cert_file", "registry-ca.pem"),
+        ("publisher_username_file", "username"),
+        ("publisher_password_file", "password"),
+    ):
+        registry[field] = f"~/credentials/{name}"
+    project_config["approval"] = {"public_key_files": ["approval.pub"]}
+    project_config["build_tools"] = {
+        "coco": {"build_command": "~/bin/build"},
+        "bare_metal_cvm": {"cvm_builder_dir": "builder", "output_root": "external-output"},
+    }
+    Path(inputs["cc_project"]).write_text(yaml.safe_dump(project_config, sort_keys=False))
+    monkeypatch.setenv("HOME", str(home))
+
+    output = load("prepare").prepare(**inputs)
+
+    for topology in ("a", "b"):
+        generated = load_project_config(output / topology / "cc_project.yml")
+        service = generated["attestation_services"]["trustee"]
+        assert service["ca_cert_file"] == str(credentials / "trustee-ca.pem")
+        assert service["admin_token_file"] == str(credentials / "admin.jwt")
+        assert service["attestation_signing_public_key_file"] == str(output / topology / "trustee-as-public.pem")
+        generated_registry = generated["container_registries"]["workloads"]
+        assert generated_registry["ca_cert_file"] == str(credentials / "registry-ca.pem")
+        assert generated_registry["publisher_username_file"] == str(credentials / "username")
+        assert generated_registry["publisher_password_file"] == str(credentials / "password")
+        assert generated["approval"]["public_key_files"] == [str(approval)]
+        assert generated["build_tools"]["coco"]["build_command"] == str(command)
+        assert generated["build_tools"]["bare_metal_cvm"]["cvm_builder_dir"] == str(builder)
+        assert generated["build_tools"]["bare_metal_cvm"]["output_root"] == str(source_root / "external-output")
 
 
 @pytest.mark.parametrize("topology", ["a", "b"])
@@ -107,38 +202,14 @@ def test_reject_untrusted_inputs(inputs, field, value):
     assert not inputs["output"].exists()
 
 
-@pytest.mark.parametrize("protected", [False, True])
-def test_observer_is_verifier_only_before_signing(tmp_path, protected):
+def test_observer_builder_only_authorizes_baked_server_classes(tmp_path):
     server = SimpleNamespace(name="server.example.com")
-    observer = SimpleNamespace(name="site-observer")
     source = tmp_path / server.name
     source.mkdir()
     (source / "resources.json.default").write_text(json.dumps({"components": [], "preserved": "value"}))
-    (tmp_path / observer.name).mkdir()
-    authorizer = dict(
-        audience="nvflare-coco:run", trustee_public_key="public", workload_constraints={"site-1": {"cpu_tee": "tdx"}}
-    )
-    if protected:
-        authorizer.update(site_name="server", token_url="http://127.0.0.1:8006/aa/token", retry_max_attempts=10)
-    manager = dict(
-        cc_issuers_conf=[{"issuer_id": "coco_authorizer"}] if protected else [],
-        require_site_binding=True,
-        required_site_verifier_ids={"site-1": ["coco_authorizer"]},
-    )
-    for name, args in (("coco_authorizer", authorizer), ("cc_manager", manager)):
-        (source / f"{name}__p_resources.json").write_text(json.dumps({"components": [{"args": args}]}))
-    project = SimpleNamespace(get_clients=lambda: [observer], get_server=lambda: server)
+    project = SimpleNamespace(get_server=lambda: server)
     ctx = SimpleNamespace(get_local_dir=lambda p: tmp_path / p.name)
     load("observer_builder").ObserverBuilder().build(project, ctx)
-    result = json.loads((tmp_path / observer.name / "coco_authorizer__p_resources.json").read_text())["components"][0][
-        "args"
-    ]
-    assert result == {k: v for k, v in authorizer.items() if k not in {"site_name", "token_url", "retry_max_attempts"}}
-    result = json.loads((tmp_path / observer.name / "cc_manager__p_resources.json").read_text())["components"][0][
-        "args"
-    ]
-    assert result["cc_issuers_conf"] == []
-    assert result["require_site_binding"]
     resources = json.loads((source / "resources.json.default").read_text())
     assert resources["preserved"] == "value"
     assert resources["components"] == []
@@ -200,18 +271,18 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
     monkeypatch.syspath_prepend(str(ROOT / "examples/devops/coco/acceptance"))
     project = prepare_project(definition, project_file=str(source))
     pipeline = prepare_builders(definition)
-    # Leave CoCoPackager disabled: this proves signed private-kit generation,
+    # Leave CCPackager disabled: this proves signed private-kit generation,
     # not encrypted image packaging or release readiness.
     ctx = Provisioner(str(output / topology / "offline-workspace"), pipeline).provision(project)
     assert ctx.get(CtxKey.PROVISION_SUCCESS) is True, ctx.get_errors()
     result = Path(ctx[CtxKey.CURRENT_PROD_DIR])
     protected = {"site-1", "site-2"} | ({"server"} if topology == "b" else set())
-    expected_map = {site: ["coco_authorizer"] for site in protected}
+    expected_map = {site: ["trustee_authorizer"] for site in protected}
     for identity in (inputs["server"], "site-1", "site-2", "site-observer"):
         kit = result / identity
         local = kit / "local"
         manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
-        authorizer = json.loads((local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
+        authorizer = json.loads((local / "trustee_authorizer__p_resources.json").read_text())["components"][0]["args"]
         assert manager["required_site_verifier_ids"] == expected_map
         assert set(manager["cc_enabled_sites"]) == protected
         assert manager["require_site_binding"] is True
@@ -220,7 +291,7 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
         assert manager["refresh_token_timeout"] == 30
         assert manager["get_token_request_timeout"] == 45
         assert set(authorizer["workload_constraints"]) == protected
-        assert authorizer["audience"] == "nvflare-coco:" + project.name
+        assert authorizer["audience"] == "nvflare-trustee:" + project.name
         logical_identity = "server" if identity == inputs["server"] else identity
         if identity == inputs["server"]:
             from nvflare.apis.fl_exception import UnsafeComponentError
@@ -235,7 +306,7 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
                     policy.authorize_component_config({"path": name}, workspace=workspace)
         if logical_identity in protected:
             assert authorizer["site_name"] == logical_identity
-            assert manager["cc_issuers_conf"] == [{"issuer_id": "coco_authorizer", "token_expiration": 300}]
+            assert manager["cc_issuers_conf"] == [{"issuer_id": "trustee_authorizer", "token_expiration": 300}]
             assert verify_folder_signature(
                 str(kit),
                 str(kit / "startup/rootCA.pem"),
@@ -244,7 +315,7 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
             )
             # Observer/server public configuration must be covered before any
             # acceptance of modified local resources on protected participants.
-            resources = local / "coco_authorizer__p_resources.json"
+            resources = local / "trustee_authorizer__p_resources.json"
             resources.write_text(resources.read_text() + " ")
             assert not verify_folder_signature(
                 str(kit),

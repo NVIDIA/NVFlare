@@ -108,19 +108,23 @@ folder and docker folder under current working folder, respectively, as shown be
    COPY $NVFL_ROOT nvflare
 
 
-The following is a sample cc_server.yml file, which is used with project.yml for cc provision.  A sample project.yml file
-is shown after the cc_server.yml file.  Note this sample project.yml file also includes cc_site-1.yml, as described in
-:ref:`azure_confidential_virtual_machine_deployment` - Creating Azure confidential virtual machines
+The server selects the common Azure CC deployment mode. Its role is derived
+from the participant in ``project.yml``. The MAA endpoint and timing are defined
+once in ``cc_project.yml`` as shown in :ref:`cc_deployment`.
 
 .. code-block:: yaml
 
-  compute_env: azure_confidential_container
-  cc_cpu_mechanism: amd_sev_snp
-  role: server
-  cc_issuers:
-    - id: aci_authorizer
-      path: nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer
-      token_expiration: 100 # seconds, needs to be less than check_frequency
+  schema_version: 1
+  cc_deployment_mode: azure_cc
+  cpu_tee: amd_sev_snp
+  gpu_tee: none
+  attestation:
+    service: azure_maa
+  workload:
+    source:
+      type: external
+  azure_cc:
+    deployment_target: confidential_container
 
 The following is the sample project.yml file.
 
@@ -129,6 +133,7 @@ The following is the sample project.yml file.
   api_version: 3
   name: example_project
   description: NVIDIA FLARE sample project yaml file
+  cc_project_config: cc_project.yml
   participants:
     # Change the name of the server (server1) to the Fully Qualified Domain Name
     # (FQDN) of the server, for example: server1.example.com.
@@ -167,6 +172,8 @@ The following is the sample project.yml file.
     - path: nvflare.lighter.impl.cert.CertBuilder
     - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
     - path: nvflare.lighter.impl.signature.SignatureBuilder
+  packager:
+    path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager
 
 Publish Container Images to Azure Container Registry
 ------------------------------------------------------------

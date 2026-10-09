@@ -88,22 +88,22 @@ Target profiles and implementation scope
      - Implementation scope
    * - SNP, CPU-only
      - ``kata-qemu-snp``
-     - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: none``
+     - ``cpu_tee: amd_sev_snp``; ``gpu_tee: none``
      - CPU only
      - Implemented in ``2.9``
    * - SNP with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-snp``
-     - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: nvidia``
+     - ``cpu_tee: amd_sev_snp``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
      - Implemented in ``2.9``
    * - TDX, CPU-only
      - ``kata-qemu-tdx``
-     - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: none``
+     - ``cpu_tee: intel_tdx``; ``gpu_tee: none``
      - CPU only
      - Implemented in ``2.9``; experimental
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
-     - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: nvidia``
+     - ``cpu_tee: intel_tdx``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
      - Implemented in ``2.9``; experimental
 
@@ -497,7 +497,7 @@ Provision two separate client releases
 --------------------------------------
 
 Start from the complete ``provision/project.yaml``. Retain its server and FL
-admin participants, builder order and ``CoCoPackager``; replace the placeholder
+admin participants, builder order and common ``CCPackager``; replace the placeholder
 server/admin names with the actual identities and configure reachable server
 DNS/port before provisioning. Replace its one-client participant entry
 with these two entries within ``participants`` (this fragment is not a complete
@@ -515,8 +515,8 @@ project file):
      cc_config: cc_site-2.yml
 
 Copy/adapt ``cc_site-1.yml`` to ``cc_site-2.yml`` and supply the reviewed
-application contexts. Keep ``compute_env: confidential_containers``,
-``cc_cpu_mechanism: amd_sev_snp``, ``cc_gpu: nvidia`` and ``role: client``.
+application contexts. Keep ``cc_deployment_mode: coco``, select the required
+``cpu_tee`` and ``gpu_tee``, and let the participant ``type`` supply the role.
 Use these distinct packaging values:
 
 .. list-table:: Per-client packaging inputs
@@ -526,21 +526,21 @@ Use these distinct packaging values:
    * - Field
      - ``cc_site-1.yml``
      - ``cc_site-2.yml``
-   * - ``image_build.context``
+   * - ``workload.source.context``
      - ``./site-1``
      - ``./site-2``
-   * - ``image_build.dockerfile``
+   * - ``workload.source.dockerfile``
      - ``Dockerfile``
      - ``Dockerfile``
-   * - ``release_name``
+   * - ``coco.release_name``
      - ``site-1-v1``
      - ``site-2-v1``
-   * - ``registry_repository``
+   * - ``coco.registry_repository``
      - ``workloads/site-1``
      - ``workloads/site-2``
 
-Use the same authenticated AS public key and identical project-wide
-attestation timing/manager settings. Each ``platform_config`` must reference a
+Both participants select the same named Trustee service from ``cc_project.yml``.
+Each ``coco.platform_config_file`` must reference a
 file named ``platform.env`` inside a complete prepared admin kit directory for
 its destination. Use separate admin kit directories when launch contracts,
 cluster service environment or trust inputs differ. Use reviewed, fully
@@ -947,12 +947,11 @@ CPU-only release rules require exactly
 successful appraisals of both. A failed or
 missing GPU cannot silently downgrade a GPU-required release. Conversely,
 installing a GPU verifier does not make GPU evidence mandatory for every
-workload. NVFlare's peer authorizer can independently require
-``gpu_required: true`` in a site's shared ``workload_constraints`` mapping. ``false`` requires
-CPU-only evidence; omitting the constraint preserves acceptance of either
-mode, while every present GPU appraisal must still pass. Configure the same
-complete mapping for all participants; peer verification does not replace
-the release's KBS CPU/GPU requirements.
+workload. Unified provisioning derives the peer verifier's internal GPU
+requirement from each participant's ``gpu_tee``. ``nvidia_cc`` requires signed
+CPU and GPU appraisals; ``none`` requires CPU-only evidence. Operators do not
+repeat an internal ``gpu_required`` boolean in ``workload_constraints``. Peer
+verification remains separate from the release's KBS CPU/GPU requirements.
 
 Measurement coverage must be demonstrated
 -----------------------------------------
@@ -1433,12 +1432,10 @@ against its exact vector. Unknown CPU types, unknown submodules, malformed
 claims, and failed GPU appraisal are rejected. Stripping GPU claims from an
 EAR breaks the AS signature.
 
-Default peer verification **does not require GPU evidence for a
-particular site**, nor directly compare its image digest or command. It trusts
-the configured AS signer and its accepted claims. Workload-specific key
-authorization remains KBS's job. A deployment requiring GPU attestation at the
-FL participant boundary needs an additional independently reviewed requirement;
-token-driven CPU/GPU selection alone does not establish it.
+Peer verification requires GPU evidence exactly when that protected
+participant selects ``gpu_tee: nvidia_cc`` and requires CPU-only evidence for
+``gpu_tee: none``. It does not directly compare the participant's image digest
+or command. Workload-specific key authorization remains KBS's job.
 
 ``workload_constraints`` can pin each protected site's InitData digest,
 SNP measurement, CPU TEE and TDX MRTD/RTMR values. With constraints enabled,
@@ -1447,7 +1444,7 @@ unlisted sites or missing/mismatched required claims fail. The legacy
 SHA-256, with strict TDX padding normalization. These restrictions narrow
 accepted peers but do not replace AS appraisal or KBS resource authorization.
 
-The outer audience is project-specific (generated as ``nvflare-coco:<project>``).
+The outer audience is project-specific (generated as ``nvflare-trustee:<project>``).
 It is different from the optional inner ``ear_audience`` constraint. By default
 there is no independent expected EAR audience or AS policy identifier. A
 successful proof is not by itself proof that one particular application is
@@ -1566,7 +1563,7 @@ real boundary, not merely trusting an installer's preflight.
      - Each accepted state still needs independent approval; event-log consistency alone is not approval.
    * - Omit GPU or submit failed GPU evidence
      - GPU release policy requires exactly CPU+GPU and both exact vectors; present failed GPU proofs are rejected.
-     - Configure per-site ``gpu_required: true`` for FL peer verification as well as the KBS release rule. Without that constraint, valid CPU-only proofs remain accepted by the authorizer.
+     - Select ``gpu_tee: nvidia_cc`` for the participant. Provisioning derives the bound peer-verifier requirement; ``gpu_tee: none`` requires CPU-only evidence.
    * - Request another workload's decryption key
      - KBS checks the actual exact path plus that release's platform/workload constraints on every request.
      - Knowing a path or passing CPU appraisal grants no store-wide access. A permissive global policy defeats isolation.

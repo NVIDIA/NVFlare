@@ -1,4 +1,5 @@
-> Current implementation targets unmodified CoCo v0.23.0 / Trustee v0.22.0.
+> Current implementation targets CoCo v0.23.0 / the upstream Trustee v0.22.0
+> service plus a reviewed selector-capable standalone client build.
 > A September 21 native-CVM run at `95bf53889` passed with a TDX server,
 > an SNP/H800 client, upstream Trustee and periodic CPU/GPU appraisal; see
 > [VALIDATION.md](VALIDATION.md). Subsequent token-freshness changes require new

@@ -31,11 +31,19 @@ import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from nvflare.lighter import provision as provision_module
 from nvflare.lighter.cc import vault_adapter as adapter_module
-from nvflare.lighter.cc.vault_adapter import VaultAdapter, default_builder_dir, docker_image_id, invoke_vault_builder
+from nvflare.lighter.cc.vault_adapter import (
+    VaultAdapter,
+    default_builder_dir,
+    docker_image_id,
+    invoke_vault_builder,
+    publish_artifacts,
+)
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
-from nvflare.lighter.provision import prepare_project, provision
+from nvflare.lighter.provision import prepare_project
+from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import verify_folder_signature
 
@@ -163,12 +171,25 @@ def configuration(tmp_path):
 
 
 def run_provision(config, tmp_path):
-    return provision(
-        SimpleNamespace(gen_scripts=False),
-        copy.deepcopy(config),
-        str(tmp_path / "project.yml"),
+    config = copy.deepcopy(config)
+    settings = config.pop("cvm_vault", None)
+    project = prepare_project(config, project_file=tmp_path / "project.yml")
+    adapter = None
+    if settings:
+        adapter = adapter_module.VaultAdapter(settings, tmp_path / "project.yml", tmp_path / "workspace", project)
+        for plan in adapter.plans:
+            plan["participant"].set_prop("cc_enabled", True)
+    provisioner = Provisioner(
         str(tmp_path / "workspace"),
+        provision_module.prepare_builders(config),
+        provision_module.prepare_packager(config),
     )
+    ctx = provisioner.provision(project)
+    if adapter:
+        if ctx.get(CtxKey.PROVISION_SUCCESS) is not True:
+            raise RuntimeError("Provisioning did not produce a complete new startup kit; no CVM vaults were built")
+        ctx[CtxKey.CC_DEPLOYMENT_RESULTS] = adapter.build(ctx)
+    return ctx
 
 
 def make_adapter(config, tmp_path):
@@ -262,7 +283,7 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
     ctx = run_provision(configuration, tmp_path)
     assert ctx[CtxKey.PROVISION_SUCCESS] is True
-    result = ctx[CtxKey.CVM_VAULT_RESULTS][0]
+    result = ctx[CtxKey.CC_DEPLOYMENT_RESULTS][0]
     assert result["participant"] == "site-1"
     assert result["artifacts"][0]["cvm_build_id"] == "generic-intel_tdx"
     assert "trustee" not in json.dumps(result)
@@ -302,7 +323,7 @@ def test_inputs_match_included_builder(configuration, tmp_path, monkeypatch, reg
     ctx = run_provision(configuration, tmp_path)
     assert ctx[CtxKey.PROVISION_SUCCESS]
     assert len(observed) == 1
-    assert ctx[CtxKey.CVM_VAULT_RESULTS][0]["participant"] == participant
+    assert ctx[CtxKey.CC_DEPLOYMENT_RESULTS][0]["participant"] == participant
 
 
 def test_ordinary_provisioning_does_not_use_adapter(configuration, tmp_path, monkeypatch):
@@ -311,7 +332,7 @@ def test_ordinary_provisioning_does_not_use_adapter(configuration, tmp_path, mon
     monkeypatch.setattr(adapter_module, "VaultAdapter", factory)
     ctx = run_provision(configuration, tmp_path)
     assert ctx[CtxKey.PROVISION_SUCCESS]
-    assert CtxKey.CVM_VAULT_RESULTS not in ctx
+    assert CtxKey.CC_DEPLOYMENT_RESULTS not in ctx
     factory.assert_not_called()
 
 
@@ -379,6 +400,7 @@ def test_no_new_prod_directory_is_not_success(configuration, tmp_path, monkeypat
         ({"output_root": "workspace/project1/prod_00/vaults"}, "outside the provisioning"),
         ({"release_id": "a.b"}, "Unknown cvm_vault"),
         ({"participant_overrides": {"site-2": {}}}, "selected participants"),
+        ({"attestation_credentials": "yes"}, "attestation_credentials must be boolean"),
         ({"host_bin": "yes"}, "host_bin must be boolean"),
         ({"allowed_in_cidrs": "10.0.0.0/8"}, "list of CIDR"),
         ({"allowed_out_cidrs": ["10.0.0.1/8"]}, "host bits"),
@@ -479,8 +501,8 @@ def test_multi_participant_overrides(configuration, tmp_path, monkeypatch):
     }
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", fake_build)
     ctx = run_provision(configuration, tmp_path)
-    assert len(ctx[CtxKey.CVM_VAULT_RESULTS]) == 2
-    server = ctx[CtxKey.CVM_VAULT_RESULTS][1]
+    assert len(ctx[CtxKey.CC_DEPLOYMENT_RESULTS]) == 2
+    server = ctx[CtxKey.CC_DEPLOYMENT_RESULTS][1]
     assert re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", server["deployment_id"])
     assert len(server["artifacts"]) == 2
     app = yaml.safe_load(
@@ -503,6 +525,7 @@ def test_multi_participant_overrides(configuration, tmp_path, monkeypatch):
         ("data.pem", b"-----BEGIN PRIVATE KEY-----"),
         ("data.pem", b"a" * (1024 * 1024 - 12) + b"-----BEGIN RSA PRIVATE KEY-----"),
     ],
+    ids=["key-file", "pem-header", "pem-header-at-scan-limit"],
 )
 def test_private_keys_rejected_in_public_inputs(configuration, tmp_path, name, content):
     public = tmp_path / "public"
@@ -614,10 +637,13 @@ def test_new_invocation_reuses_same_cvm_ids(configuration, tmp_path, monkeypatch
     before = {p: p.read_bytes() for p in (tmp_path / "profile").rglob("*") if p.is_file()}
     first = run_provision(copy.deepcopy(configuration), tmp_path)
     second = run_provision(configuration, tmp_path)
-    assert first[CtxKey.CVM_VAULT_RESULTS][0]["deployment_id"] != second[CtxKey.CVM_VAULT_RESULTS][0]["deployment_id"]
     assert (
-        first[CtxKey.CVM_VAULT_RESULTS][0]["artifacts"][0]["cvm_build_id"]
-        == second[CtxKey.CVM_VAULT_RESULTS][0]["artifacts"][0]["cvm_build_id"]
+        first[CtxKey.CC_DEPLOYMENT_RESULTS][0]["deployment_id"]
+        != second[CtxKey.CC_DEPLOYMENT_RESULTS][0]["deployment_id"]
+    )
+    assert (
+        first[CtxKey.CC_DEPLOYMENT_RESULTS][0]["artifacts"][0]["cvm_build_id"]
+        == second[CtxKey.CC_DEPLOYMENT_RESULTS][0]["artifacts"][0]["cvm_build_id"]
     )
     assert all(p.read_bytes() == content for p, content in before.items())
 
@@ -700,7 +726,7 @@ def test_registry_reference_passed_intact_to_builder(configuration, tmp_path, mo
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
     ctx = run_provision(configuration, tmp_path)
     assert len(calls) == 1
-    assert len(ctx[CtxKey.CVM_VAULT_RESULTS][0]["artifacts"]) == 2
+    assert len(ctx[CtxKey.CC_DEPLOYMENT_RESULTS][0]["artifacts"]) == 2
 
 
 @pytest.mark.parametrize("absolute", [False, True])
@@ -710,7 +736,7 @@ def test_local_image_resolves_folder_without_pull(configuration, tmp_path, monke
     monkeypatch.setattr(adapter_module.subprocess, "run", pull)
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", fake_build)
     ctx = run_provision(configuration, tmp_path)
-    assert ctx[CtxKey.CVM_VAULT_RESULTS]
+    assert ctx[CtxKey.CC_DEPLOYMENT_RESULTS]
     pull.assert_not_called()
 
 
@@ -776,7 +802,7 @@ def test_omitted_platforms_stays_omitted(configuration, tmp_path, monkeypatch):
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
     ctx = run_provision(configuration, tmp_path)
     assert "platforms" not in apps[0]
-    assert len(ctx[CtxKey.CVM_VAULT_RESULTS][0]["artifacts"]) == 2
+    assert len(ctx[CtxKey.CC_DEPLOYMENT_RESULTS][0]["artifacts"]) == 2
 
 
 @pytest.mark.parametrize("value", [None, [], "intel_tdx", ["intel_tdx", "intel_tdx"]])
@@ -805,12 +831,27 @@ def test_default_output_matches_previous_participant_folder(configuration, tmp_p
 
     monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
     ctx = run_provision(configuration, tmp_path)
-    for result in ctx[CtxKey.CVM_VAULT_RESULTS]:
+    for result in ctx[CtxKey.CC_DEPLOYMENT_RESULTS]:
         expected = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / result["participant"]
         assert result["output_dir"] == str(expected)
         assert all(Path(a["path"]).parent == expected for a in result["artifacts"])
     assert all(call[1].parent.parent == tmp_path / "workspace/project1/.cvm-vault-builds" for call in calls)
     assert (Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-2/startup/client.key").is_file()
+
+
+def test_publish_artifacts_opens_only_verified_delivery(configuration, tmp_path):
+    output = tmp_path / "delivery"
+    output.mkdir(mode=0o700)
+    archive = output / "vault.oci.tar"
+    archive.write_bytes(b"delivery")
+    archive.chmod(0o600)
+    private = output / "intel_tdx"
+    private.mkdir(mode=0o700)
+    publish_artifacts(output, [{"path": str(archive)}])
+
+    assert stat.S_IMODE(output.stat().st_mode) == 0o755
+    assert stat.S_IMODE(archive.stat().st_mode) == 0o644
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
 
 
 def test_default_output_failure_retains_original_signed_kit(configuration, tmp_path, monkeypatch):
@@ -927,3 +968,24 @@ def test_output_identity_and_inventory_are_checked(configuration, tmp_path, monk
     with pytest.raises(RuntimeError, match="keys may already be active"):
         run_provision(configuration, tmp_path)
     assert list((tmp_path / "vault-builds").glob("*/vault_set.json"))
+
+
+def test_common_packager_can_supply_a_private_signed_source(configuration, tmp_path, monkeypatch):
+    config = copy.deepcopy(configuration)
+    settings = config.pop("cvm_vault")
+    project = prepare_project(config, project_file=tmp_path / "project.yml")
+    adapter = VaultAdapter(settings, tmp_path / "project.yml", tmp_path / "workspace", project)
+    for plan in adapter.plans:
+        plan["participant"].set_prop("cc_enabled", True)
+    ctx = Provisioner(str(tmp_path / "workspace"), provision_module.prepare_builders(config)).provision(project)
+    assert ctx[CtxKey.PROVISION_SUCCESS]
+    source = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-1"
+    private = Path(ctx.get_state_dir()) / "cc-private/prod_00/site-1/startup-kit"
+    private.parent.mkdir(parents=True)
+    source.rename(private)
+    monkeypatch.setattr(adapter_module, "invoke_vault_builder", fake_build)
+
+    results = adapter.build(ctx, source_dirs={"site-1": private})
+
+    assert results[0]["participant"] == "site-1"
+    assert Path(results[0]["output_dir"]).is_dir()

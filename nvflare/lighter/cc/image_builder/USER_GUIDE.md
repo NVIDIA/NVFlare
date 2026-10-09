@@ -156,8 +156,9 @@ Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault buil
 confine the allowed ports to address ranges when configured.
 
 The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
-the measured root's `/usr/bin` appears at `/host/bin` only when the vault was
-built with `container.host_bin: true`. The container starts with a reduced
+the measured root's `/usr/bin` and system runtime libraries appear read-only at
+`/host/bin` and `/host/lib` only when the vault was built with
+`container.host_bin: true`. The container starts with a reduced
 capability set, `no-new-privileges` and a process limit; see
 [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
 Only `/vault` is encrypted and authenticated at rest. `/applog` is

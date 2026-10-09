@@ -27,8 +27,10 @@ stderr of failed commands that never handle secrets.
 
 This builder is part of NVFlare at `nvflare/lighter/cc/image_builder`.
 Run the commands below from this directory in a source checkout. NVFlare
-provisioning invokes `cvmctl vault` through its `cvm_vault` configuration; see
-the [provisioning example](../../../../examples/advanced/cvm_builder/README.md).
+provisioning invokes `cvmctl vault` for participants whose unified `cc_config`
+selects `cc_deployment_mode: bare_metal_cvm`; see the
+[provisioning example](../../../../examples/advanced/cvm_builder/README.md) and
+[common CC guide](../../../../docs/user_guide/confidential_computing/deployment.rst).
 
 For operational instructions, see:
 
@@ -160,17 +162,20 @@ receipt records operator approval; it is not a substitute for those tests.
 
 ## Trustee administration
 
-Use unmodified **CoCo Trustee v0.22.0**, paired with **CoCo v0.23.0**.
-The profile pins upstream commit `512fed65642015b849f38fb13bfdec7806639987`;
-there is no custom Rust verifier, attester, or Trustee patch to apply.
-Use the same upstream distribution and image digest as your CoCo deployment.
+Use the upstream **CoCo Trustee v0.22.0 service**, paired with **CoCo v0.23.0**.
+The profile pins commit `512fed65642015b849f38fb13bfdec7806639987`.
+There is no custom Trustee verifier, attester, or server fork. The standalone
+CVM `kbs-client` carries a reviewed CLI-only patch that invokes
+guest-components' upstream attestation-policy-selector API. Use the same Trustee
+instance as the CoCo deployment.
 
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
-upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
-policies, RVPS references and expiry, role-based administrative ACLs, and native
-resource uploads. `./cvmctl provenance` records a clean
-release checkout and binary digest. The upstream client uses the `default` AS
-policy; policy content digests and profile versions identify approved revisions.
+upstream [kbs.json](trustee/kbs.json) configuration, profile-mapped CPU/GPU
+policies, profile-scoped RVPS references and expiry, role-based administrative
+ACLs, and native resource uploads. `./cvmctl provenance` records a clean native
+service build or the exact reviewed client patch. The checked-in CoCo service
+workflow emits separate provenance for its reviewed server-image recipe. CoCo
+continues to use the default AS policy; CVMs use explicit mapped policies.
 
 CVM-specific authorization remains in Rego and deployment configuration. The
 resource policy requires a fresh, favorable CPU appraisal and, for GPU profiles,
@@ -288,13 +293,18 @@ Bootstrap and periodic appraisal queue allowlisted metadata for an independent, 
 
 The container receives `/vault/application` read-only, its `runtime/` and `data/`
 subdirectories writable, `/applog`, `/user_config` (read-only) and `/user_data`
-(read-only); the measured root's `/usr/bin` is mounted at `/host/bin` only when
-`container.host_bin` is true. The container starts with no capabilities and adds
+(read-only); the measured root's `/usr/bin` and system runtime libraries are
+mounted read-only at `/host/bin` and `/host/lib` only when `container.host_bin`
+is true. The container starts with no capabilities and adds
 back only explicitly requested `container.capabilities` (default: none), runs with
 `no-new-privileges` and a `pids_limit`, and defaults to a read-only container root
 with writable `/tmp` and `/run`. Set `container.user` to a non-root numeric UID
 or UID:GID for an image prepared for it; otherwise the image's USER is preserved.
 A reviewed application may explicitly set `read_only_rootfs: false` when needed.
+When `container.attestation_credentials` is enabled, the measured guest supervisor
+publishes fresh Trustee proof credentials atomically under the encrypted
+`/vault/application/runtime` directory; the application does not need access to
+the guest attester binary or TEE device.
 `allowed_in_cidrs` and `allowed_out_cidrs` optionally confine the allowed ports
 to address ranges. Runtime DNS is limited to the DHCP-learned resolvers and denied when discovery returns no usable address.
 Admitted `app_*.service` units receive systemd sandboxing directives. Additional

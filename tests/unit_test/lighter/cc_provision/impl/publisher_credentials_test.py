@@ -59,12 +59,7 @@ def credential_kit(tmp_path, credential_bash):
     work_root = tmp_path / "custom state"
     hostname = subprocess.check_output(["hostname", "-f"], text=True).strip()
     config = (ROOT / "admin/platform.env.example").read_text() + (
-        f"EXPECTED_HOSTNAME={shlex.quote(hostname)}\n"
-        f"WORK_ROOT={shlex.quote(str(work_root))}\n"
-        'REGISTRY_HOST="secure.nvflare.local"\n'
-        'REGISTRY_PORT="5000"\n'
-        'REGISTRY_USERNAME="coco-publisher"\n'
-        'KBS_URL="https://secure.nvflare.local:8443"\n'
+        f"EXPECTED_HOSTNAME={shlex.quote(hostname)}\n" f"WORK_ROOT={shlex.quote(str(work_root))}\n"
     )
     (kit / "platform.env").write_text(config)
     received = tmp_path / "received credential"
@@ -82,6 +77,11 @@ def credential_kit(tmp_path, credential_bash):
         f"BUILD_CONTEXT={shlex.quote(str(context))}\n"
         f"DOCKERFILE={shlex.quote(str(context / 'Dockerfile'))}\n"
         "REGISTRY_REPOSITORY=workloads/fixture\n"
+        "REGISTRY_ENDPOINT=secure.nvflare.local:5000\n"
+        f"REGISTRY_CA_FILE={shlex.quote(str(kit / 'public/registry-ca.crt'))}\n"
+        f"REGISTRY_USERNAME_FILE={shlex.quote(str(work_root / 'secrets/registry/username'))}\n"
+        f"REGISTRY_PASSWORD_FILE={shlex.quote(str(work_root / 'secrets/registry/password'))}\n"
+        "KBS_URL=https://secure.nvflare.local:8443\n"
         "APP_COMMAND_JSON='[\"/coco-app\"]'\n"
         "APP_UID=65532\nAPP_GID=65532\n"
     )
@@ -118,9 +118,9 @@ install() {
     [[ $destination == "$TEST_ROOT/"* ]] || { echo "write outside test root: $destination" >&2; return 99; }
     command install "$@"
 }
-source "$INSTALLER" "$RECEIVED"
+source "$INSTALLER" "$RECEIVED" "$DESTINATION"
 if [[ $VERIFY_RELEASE == 1 ]]; then
-    source "$SCRIPT_DIR/lib/release.sh"
+    source "$(dirname -- "$INSTALLER")/lib/release.sh"
     need_file "$REGISTRY_USERNAME_PATH"
     need_file "$REGISTRY_PASSWORD_PATH"
     printf 'RELEASE_USERNAME_PATH=%s\nRELEASE_PASSWORD_PATH=%s\n' "$REGISTRY_USERNAME_PATH" "$REGISTRY_PASSWORD_PATH"
@@ -132,6 +132,7 @@ fi
         DRY_RUN=str(int(dry_run)),
         INSTALLER=str(kit / "05-install-publisher-credential.sh"),
         RECEIVED=str(source or received),
+        DESTINATION=str(work_root / "secrets/registry"),
         VERIFY_RELEASE=str(int(verify_release)),
         OWNER_CONFIG=str(kit / "workload.env"),
         PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
@@ -139,7 +140,7 @@ fi
     return subprocess.run([credential_bash, "-c", prelude], env=env, capture_output=True, text=True, timeout=10)
 
 
-def test_installs_credential_in_configured_work_root(credential_bash, credential_kit):
+def test_installs_credential_at_explicit_destination(credential_bash, credential_kit):
     _, work_root, _ = credential_kit
     result = run_installer(credential_bash, credential_kit, verify_release=True)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -154,27 +155,20 @@ def test_installs_credential_in_configured_work_root(credential_bash, credential
     assert PASSWORD not in result.stdout + result.stderr
 
 
-def test_default_work_root_is_still_supported_without_writing_home(credential_bash, credential_kit):
-    kit, _, _ = credential_kit
-    config = kit / "platform.env"
-    lines = config.read_text().splitlines()
-    config.write_text(
-        "\n".join(
-            'WORK_ROOT="${HOME}/coco-workload-owner"' if line.startswith("WORK_ROOT=") else line for line in lines
-        )
-        + "\n"
-    )
-    default = Path.home() / "coco-workload-owner/secrets/registry"
-    if any((default / name).exists() or (default / name).is_symlink() for name in ("username", "password")):
-        pytest.skip("Existing real default publisher credentials must not be accessed by this dry-run test")
+def test_dry_run_uses_the_explicit_destination_without_writing_it(credential_bash, credential_kit):
+    _, work_root, _ = credential_kit
+    destination = work_root / "secrets/registry"
     result = run_installer(credential_bash, credential_kit, dry_run=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"INSTALL_DESTINATION={default / 'username'}" in result.stdout
-    assert f"INSTALL_DESTINATION={default / 'password'}" in result.stdout
+    assert f"INSTALL_DESTINATION={destination / 'username'}" in result.stdout
+    assert f"INSTALL_DESTINATION={destination / 'password'}" in result.stdout
+    assert not destination.exists()
     assert PASSWORD not in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("invalid", ["extra", "missing", "empty", "symlink", "directory", "username", "source_symlink"])
+@pytest.mark.parametrize(
+    "invalid", ["extra", "missing", "empty", "symlink", "directory", "empty_username", "source_symlink"]
+)
 def test_invalid_credential_handoff_is_rejected(credential_bash, credential_kit, invalid):
     kit, work_root, received = credential_kit
     password = received / "password"
@@ -191,8 +185,8 @@ def test_invalid_credential_handoff_is_rejected(credential_bash, credential_kit,
     elif invalid == "directory":
         password.unlink()
         password.mkdir()
-    elif invalid == "username":
-        (received / "username").write_text("registry-admin\n")
+    elif invalid == "empty_username":
+        (received / "username").write_text("\n")
     else:
         source = kit.parent / "source-link"
         source.symlink_to(received, target_is_directory=True)
@@ -225,17 +219,17 @@ def test_existing_credentials_are_never_overwritten(credential_bash, credential_
         assert not (destination / "must-not-create").exists()
 
 
-@pytest.mark.parametrize("invalid", ["missing", "hostname", "root"])
-def test_installer_requires_reviewed_platform_configuration(credential_bash, credential_kit, invalid):
+@pytest.mark.parametrize("platform_change", ["missing", "hostname", "root"])
+def test_installer_does_not_derive_destination_from_platform_config(credential_bash, credential_kit, platform_change):
     kit, _, _ = credential_kit
     config = kit / "platform.env"
-    if invalid == "missing":
+    if platform_change == "missing":
         config.unlink()
-    elif invalid == "hostname":
+    elif platform_change == "hostname":
         config.write_text(config.read_text() + "EXPECTED_HOSTNAME=wrong-machine\n")
     else:
         config.write_text(config.read_text() + "WORK_ROOT=/tmp\n")
     result = run_installer(credential_bash, credential_kit)
-    assert result.returncode != 0
-    assert "INSTALL_DESTINATION=" not in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "INSTALL_DESTINATION=" in result.stdout
     assert PASSWORD not in result.stdout + result.stderr

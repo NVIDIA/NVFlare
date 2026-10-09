@@ -40,14 +40,14 @@ hardware := 2 if {
     input.snp.reported_tcb_microcode >= min_microcode
 }
 
-configuration := 3 if {
+configuration := 2 if {
     input.snp
     not input.tdx
     input.snp.policy_debug_allowed == false
     input.snp.policy_migrate_ma == false
 }
 
-# TDX claim paths and encodings follow Trustee 338610fbfed57b66c61a8a3a60e0e4386bdce793:
+# TDX claim paths and encodings follow Trustee 512fed65642015b849f38fb13bfdec7806639987:
 # deps/verifier/src/tdx/{mod.rs,claims.rs} and ear_default_policy_cpu.rego.
 # The verifier validates the DCAP quote and replays CCEL against all four RTMRs.
 # This policy additionally requires a complete, administrator-approved TDVF

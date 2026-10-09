@@ -10,7 +10,7 @@ This is a complete provisioning starting point for the mixed functional workflow
 | `admin@example.com` | Ordinary trusted administration kit | FL administration over authenticated transport |
 
 There is no observation client. The ordinary server's generated CCManager and
-`coco_authorizer` verify the two workload clients. Both clients also receive
+`trustee_authorizer` verify the two workload clients. Both clients also receive
 the same complete required-participant mapping and verifier constraints.
 
 A real mixed functional run passed on 2026-10-04: both encrypted clients
@@ -54,13 +54,16 @@ Before provisioning:
    server/admin identities in [project.yaml](project.yaml). The server's DNS
    endpoint must be directly reachable from both guests; the default learning
    and admin ports are 8002 and 8003.
-2. Select distinct, fresh `release_name` values and repositories in
+2. Configure the shared Trustee, registry, credentials, and trusted build
+   command once in [cc_project.yml](cc_project.yml). Select distinct, fresh
+   `release_name` values and repositories in
    [cc_site-1.yml](cc_site-1.yml) and [cc_site-2.yml](cc_site-2.yml). Authenticate
    the AS public PEM and put it at `trustee-as-public.pem` beside these files.
    It is different from the Trustee TLS certificate and administration key.
-3. Keep the same complete `workload_constraints` map in both files. `site-1`
-   requires `cpu_tee: tdx` and `gpu_required: false`; `site-2` requires
-   `cpu_tee: snp` and `gpu_required: true`. Add approved MRTD/RTMR or SNP
+3. Keep one complete `workload_constraints` map in `cc_project.yml`. `site-1`
+   selects `gpu_tee: none`; `site-2` selects `gpu_tee: nvidia_cc`.
+   Provisioning derives the verifier's internal `gpu_required` claim from those
+   values, so do not repeat it in the constraints. Add approved MRTD/RTMR or SNP
    measurement constraints when your policy requires them. KBS separately
    enforces approved complete platform tuples and final release InitData.
    Do not place final InitData inside its own image's CC config: that creates
@@ -117,7 +120,7 @@ privately. Protected kits are signed; the ordinary server kit uses the normal
 mTLS trust model and must remain on trusted storage. The server has no issuer;
 `cc_enabled_sites` and
 `required_site_verifier_ids` cover exactly `site-1` and `site-2`, each mapped to
-`coco_authorizer`.
+`trustee_authorizer`.
 
 The packager builds each client separately, includes only its own signed kit,
 generates its own encryption key, encrypts/signs its image, and publishes

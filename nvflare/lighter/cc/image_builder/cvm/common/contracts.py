@@ -23,6 +23,18 @@ from .errors import require
 HEADER_BYTES = 16777216
 
 
+CPU_ATTESTATION_TIMEOUT_SECONDS = 60
+
+
+GPU_ATTESTATION_TIMEOUT_SECONDS = 240
+
+
+PROOF_EXPIRY_MARGIN_SECONDS = 15
+
+
+PROOF_DELIVERY_MARGIN_SECONDS = 15
+
+
 STORAGE_PROFILE = "luks2-xts-random-hmac-sha256-v1"
 
 
@@ -33,6 +45,18 @@ DISK_ROLES = ("root", "applog", "user-config", "user-data", "vault")
 
 
 ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
+
+
+def proof_renewal_window(requires_gpu):
+    """Return the validity headroom required for one bounded proof renewal."""
+    require(type(requires_gpu) is bool, "requires_gpu must be boolean")
+    timeout = GPU_ATTESTATION_TIMEOUT_SECONDS if requires_gpu else CPU_ATTESTATION_TIMEOUT_SECONDS
+    return timeout + PROOF_EXPIRY_MARGIN_SECONDS
+
+
+def minimum_proof_lifetime(requires_gpu):
+    """Return the minimum accepted age limit including proof-delivery headroom."""
+    return proof_renewal_window(requires_gpu) + PROOF_DELIVERY_MARGIN_SECONDS
 
 
 def identifier(value):

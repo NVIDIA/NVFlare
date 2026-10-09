@@ -27,7 +27,7 @@ _STREAM_RX_CELL = "stream_test_server"
 _STREAM_TX_CELL = "stream_test_sender"
 from nvflare.fuel.utils.network_utils import get_open_ports
 
-WAIT_SEC = 10
+WAIT_SEC = 60
 
 
 class State:
@@ -36,6 +36,9 @@ class State:
         self.result = None
 
 
+# These 64 MiB end-to-end transfers are timing-sensitive under coverage
+# instrumentation. Every normal unit-test matrix job still runs them.
+@pytest.mark.coverage_incompatible
 class TestStreamCell:
     @pytest.fixture(scope="session")
     def port(self):
@@ -75,11 +78,11 @@ class TestStreamCell:
         buffer = make_buffer(size)
 
         send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, _STREAM_RX_CELL, Message(None, buffer))
-        bytes_sent = send_future.result()
+        bytes_sent = send_future.result(timeout=WAIT_SEC)
         assert bytes_sent == len(buffer)
 
-        if not state.done.wait(timeout=30):
-            raise Exception("Data not received after 30 seconds")
+        if not state.done.wait(timeout=WAIT_SEC):
+            raise Exception(f"Data not received after {WAIT_SEC} seconds")
 
         assert buffer == state.result
 
@@ -95,11 +98,11 @@ class TestStreamCell:
         buf_list.append(buffer[3 * interval : size])
 
         send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, _STREAM_RX_CELL, Message(None, buf_list))
-        bytes_sent = send_future.result()
+        bytes_sent = send_future.result(timeout=WAIT_SEC)
         assert bytes_sent == len(buffer)
 
-        if not state.done.wait(timeout=30):
-            raise Exception("Data not received after 30 seconds")
+        if not state.done.wait(timeout=WAIT_SEC):
+            raise Exception(f"Data not received after {WAIT_SEC} seconds")
 
         assert buffer == state.result
 

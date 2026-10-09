@@ -32,13 +32,18 @@ import yaml
 from ..artifacts.bundle import approve_bundle, load_signing_key, verify_bundle
 from ..artifacts.packaging import package_bundle
 from ..common.errors import BuildError, require
-from ..common.evidence import serial_evidence, verify_reference
+from ..common.evidence import require_approved_tdx_tcb, serial_evidence, verify_reference
 from ..common.firewall import firewall_rules
 from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
 from ..common.linux import lock, run
 from ..common.policy import compose
-from ..common.references import SNP_POLICY_SINGLE_SOCKET, snp_guest_policy
+from ..common.references import (
+    SNP_POLICY_SINGLE_SOCKET,
+    reference_record_name,
+    render_reference_policy,
+    snp_guest_policy,
+)
 from ..host.launcher import cbit_position, qemu_command, vfio_gpus
 from ..host.platforms import host_capabilities, select_platform
 from . import config
@@ -53,6 +58,7 @@ RUNTIME_KEYS = (
     "kbs_url",
     "token_algorithm",
     "token_issuer",
+    "attestation_policy_selector",
     "attestation_policy_id",
     "vault_prescan",
 )
@@ -488,18 +494,22 @@ def finalize_locked(directory, evidence=None, gpu=None):
     # Validate artifacts before trusting any report collected from them.
     for name, expected in manifest["sha256"].items():
         require(digest_file(directory / name) == expected, "Candidate bundle changed before measurement")
+    reference_evidence = None
     if manifest.get("dev_mode"):
         manifest["measurements"] = {}
     elif evidence is None:
         manifest["measurements"] = collect_reference(manifest, directory, gpu=gpu)
+        reference_evidence = read_json(directory / "reference-evidence.json")
     else:
-        evidence = read_json(evidence)
-        verify_reference(manifest["platform"], evidence)
-        manifest["measurements"] = evidence["measurements"]
-        write_json(directory / "reference-evidence.json", evidence)
+        reference_evidence = read_json(evidence)
+        verify_reference(manifest["platform"], reference_evidence)
+        manifest["measurements"] = reference_evidence["measurements"]
+        write_json(directory / "reference-evidence.json", reference_evidence)
     # Hardware references are bundle artifacts. Production approval separately
     # verifies a signed quote, CCEL replay, policy and failure-path acceptance.
     references = read_json(directory / "reference_values.json")
+    if manifest["platform"] == "intel_tdx" and reference_evidence is not None:
+        require_approved_tdx_tcb(reference_evidence, references)
     key_map = {
         "snp.measurement": "snp_launch_measurement",
         "mr_td": "mr_td",
@@ -625,7 +635,10 @@ def build(
         with guest_root(image) as guest_files:
             roothash, offset = build_verity(guest_files, directory / "verity_root.qcow2", profile["root_drive_size"])
         shutil.copyfile(profile["build_firmware"] if dev else settings["firmware"], directory / "OVMF.fd")
-        shutil.copyfile(profile["attestation_policy"], directory / "attestation_policy.rego")
+        reference_id = reference_record_name(profile["profile_version"], shared)
+        (directory / "attestation_policy.rego").write_text(
+            render_reference_policy(Path(profile["attestation_policy"]).read_text(), reference_id)
+        )
         shutil.copyfile(profile["reference_values"], directory / "reference_values.json")
         for name in ("launch_cvm.sh.tmpl", "shutdown_cvm.sh.tmpl"):
             shutil.copyfile(source / "templates" / name, directory / name)
@@ -651,7 +664,9 @@ def build(
         ]
         if profile["gpu"] == "nvidia_cc":
 
-            (directory / "gpu_attestation_policy.rego").write_text(render(read_json(profile["gpu_policy"])))
+            (directory / "gpu_attestation_policy.rego").write_text(
+                render(read_json(profile["gpu_policy"]), reference_id)
+            )
             artifacts.append("gpu_attestation_policy.rego")
         if settings.get("shim") and not dev:
             shutil.copyfile(settings["shim"], directory / "shim.efi")
@@ -670,6 +685,7 @@ def build(
             "cmdline_sha256": hashlib.sha256(cmdline.encode()).hexdigest(),
             "root_hash": roothash,
             "hash_offset": offset,
+            "reference_value_id": reference_id,
             "attestation_policy_id": profile["attestation_policy_id"],
             "kbs_client_sha256": digest_file(settings["kbs_client"]),
             "sha256": {name: digest_file(directory / name) for name in artifacts},

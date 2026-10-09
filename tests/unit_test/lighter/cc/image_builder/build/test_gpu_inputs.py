@@ -37,9 +37,9 @@ class GpuInputTests(unittest.TestCase):
         self.library = self.root / "libnvat.so.1"
         self.library.write_bytes(b"fixture NVAT library")
         self.provenance = {
+            "source_clean": True,
             "source_repository": "https://github.com/NVIDIA/attestation-sdk.git",
             "source_commit": NVAT_COMMIT,
-            "patch_sha256": digest_file(SOURCE / "cvm/build/nvat_libxml2_const.patch"),
             "library_sha256": digest_file(self.library),
             "build_environment": "ubuntu-26.04-x86_64",
         }
@@ -100,12 +100,12 @@ class GpuInputTests(unittest.TestCase):
         with self.assertRaisesRegex(BuildError, "authenticated"):
             gpu_inputs(self.root / "profile.yml", dict(self.value, gpu_apt_repositories=[]))
 
-    def test_nvat_revision_patch_environment_and_library_are_bound(self):
+    def test_nvat_revision_clean_source_environment_and_library_are_bound(self):
         gpu_inputs(self.root / "profile.yml", self.value)
         for key, value in (
+            ("source_clean", False),
             ("source_commit", "ab" * 20),
             ("source_repository", "https://example.org/unreviewed"),
-            ("patch_sha256", "ab" * 32),
             ("library_sha256", "ab" * 32),
             ("build_environment", "ubuntu-24.04-x86_64"),
         ):

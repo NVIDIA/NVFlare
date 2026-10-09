@@ -7,6 +7,11 @@ API examples and scoped verification records together. KBS workload-key release
 and NVFlare participant verification are separate enforcement points; neither
 replaces the other.
 
+The [unified CC deployment guide](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html)
+is the authoritative configuration reference for CoCo, bare-metal CVM, and
+Azure CC. This file explains CoCo runtime behavior and does not define a second
+configuration schema.
+
 This runbook documents the 2.9 integration for AMD SEV-SNP or Intel TDX, with or
 without an NVIDIA confidential GPU, including the typed verifier constraints
 described below. Select and approve each target using the
@@ -46,24 +51,17 @@ still fails. Ordinary participants outside the required set do not acquire an
 attestation requirement.
 
 The first periodic round waits one configured verification interval plus
-0–20% jitter for coordinated startup. During initial startup, periodic discovery
-can wait for missing required registrations for at most 600 seconds from the
-local validation-thread start. This grace applies only to missing registration:
-malformed discovery, failed services and invalid proofs still fail closed. Once
-a complete membership has passed validation, later loss of a required site
-follows the federation-shutdown path immediately rather than restarting a grace
-period. Missing sites never become optional members.
-
-The 600-second grace is not a wall-clock limit for collecting or verifying all
-proofs: discovery, token generation and peer requests retain their own configured
-budgets. An external coordinated-launch/acceptance deadline is separate. Before
-checking job resources, the server performs immediate strict cross-validation
-if no cross-validation has run yet; that job check receives no registration
-grace and cannot pass with missing required attestations. Once a periodic or
-scheduling-related round has run, later jobs do not force a new round. Continued
-validation is periodic, not fresh hardware attestation for every job. Coordinate
-startup and review all budgets; changing required federation membership requires
-trusted reprovisioning rather than accepting a shorter server-provided list.
+0–20% jitter for coordinated startup. Before checking job resources, the server
+performs cross-validation only if no cross-validation has run yet; this check
+does not wait for the periodic interval and cannot pass with missing attestations.
+Once a periodic or scheduling-related round has run, later jobs do not force a
+new round. Continued validation is periodic, not fresh hardware attestation for
+every job. All required sites must be connected and able to attest by that first
+round and remain available thereafter. An omitted/offline site
+is a validation failure, not an implicit membership removal, and follows the
+existing federation-shutdown policy. Coordinate startup and review the configured
+validation interval; changing federation membership requires trusted
+reprovisioning rather than accepting a shorter server-provided list.
 
 ### Per-participant attestation namespaces
 
@@ -79,11 +77,11 @@ For example, a CoCo server and one CoCo client require the combined CoCo
 authorizer namespace for each participant:
 
 ```json
-"cc_verifier_ids": ["coco_authorizer"],
+"cc_verifier_ids": ["trustee_authorizer"],
 "cc_enabled_sites": ["server", "site-1"],
 "required_site_verifier_ids": {
-  "server": ["coco_authorizer"],
-  "site-1": ["coco_authorizer"]
+  "server": ["trustee_authorizer"],
+  "site-1": ["trustee_authorizer"]
 }
 ```
 
@@ -93,7 +91,9 @@ CoCoAuthorizer. No extra GPU token namespace is required. The deployment
 scripts support AMD SEV-SNP or Intel TDX with optional NVIDIA confidential GPU
 for protected servers and clients. Select and approve the target using the
 [runtime-variant guide](../RUNTIME-VARIANTS.md). Mixing other CC compute
-environments into the project is not supported.
+environments in one project is supported through the unified interface; every
+protected participant still receives the verifier matrix for the complete
+protected set.
 
 Re-run provisioning and distribute the regenerated kits to fix heterogeneous
 deployments. Existing hand-written/previously generated configurations without
@@ -193,8 +193,8 @@ participants' kits are packaged separately into encrypted images:
 
 | File under `local/` | Protected client | Protected server | Ordinary verifier participant |
 | --- | --- | --- | --- |
-| `coco_authorizer__p_resources.json` | Pinned public key, audience, client site name, loopback API, EAR age limit | Same trust, audience and limits; site name `server`; guest loopback API | Same trust, audience and limits; no issuing site name |
-| `cc_manager__p_resources.json` | `coco_authorizer` is issuer and verifier; required protected-site set | `coco_authorizer` is issuer and verifier; same required set | No issuers; verifier `coco_authorizer`; same required set |
+| `trustee_authorizer__p_resources.json` | Pinned public key, audience, client site name, loopback API, EAR age limit | Same trust, audience and limits; site name `server`; guest loopback API | Same trust, audience and limits; no issuing site name |
+| `cc_manager__p_resources.json` | `trustee_authorizer` is issuer and verifier; required protected-site set | `trustee_authorizer` is issuer and verifier; same required set | No issuers; verifier `trustee_authorizer`; same required set |
 
 NVFlare loads these component fragments alongside `resources.json.default`.
 An ordinary server is not marked CC-enabled and does not request a guest token.
@@ -205,8 +205,8 @@ their existing configuration is preserved. All protected participants generate
 proofs and verify one another; each generated verifier checks the required
 protected-site set, including the server when enabled.
 
-`token_expiration` is the maximum accepted EAR age (1–300 seconds), not a
-request to change AS token lifetime. `check_frequency` must be positive and
+`token_expiration_seconds` is the maximum accepted EAR age (1–300 seconds), not a
+request to change AS token lifetime. `check_frequency_seconds` must be positive and
 smaller than that limit (defaults: 300/120 seconds). The outer proof lifetime is
 configured separately by the authorizer constructor argument `proof_lifetime_seconds`
 (positive integer, default 300). Generation sets `exp = iat + proof_lifetime_seconds`;
@@ -250,25 +250,13 @@ it must still be unexpired and within the normal proof-age/lifetime limits.
 This change does not extend those limits. Increasing the proof lifetime alone
 would not fix rejection of a future-issued proof.
 
-Configure the new option under `cc_issuers[].args` in every protected
-participant's `cc_config` YAML:
-
-```yaml
-cc_issuers:
-  - id: coco_authorizer
-    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
-    token_expiration: 300
-    args:
-      trustee_public_key_file: ./trustee-as-public.pem
-      token_url: http://127.0.0.1:8006/aa/token
-      proof_iat_leeway_seconds: 180
-```
-
-Use the same value on all protected participants in the project. Provisioning
-checks this agreement and also writes the value into ordinary participants'
-generated verifier configurations. Omitting it selects 180. This provisioning
-option controls only the outer proof's future issue-time allowance, not the
-EAR leeway or proof lifetime described above.
+Configure `proof_iat_leeway_seconds` once in the named Trustee service in
+`cc_project.yml`; see the
+[common project configuration](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html#common-project-configuration).
+Provisioning installs the same policy in protected issuers and ordinary
+verifiers. Omitting it selects 180. The option controls only the outer proof's
+future issue-time allowance, not the EAR leeway or proof lifetime described
+above.
 
 To deploy the updated authorizer or change the allowance, update the trusted
 provisioning inputs, run `nvflare provision -p project.yaml`, and rebuild, sign,
@@ -313,36 +301,15 @@ manager shares the generation budget across its issuers; legacy authorizers
 retain their existing single-attempt implementation and are not given CoCo's
 bounded worker or retry classification.
 
-Set the authorizer retry options under `cc_issuers[].args` and the CCManager
-timeouts under `cc_attestation` in each protected participant's `cc_config` YAML
-referenced by `project.yaml` (see `cc_site-1.yml` and `cc_server.yml`). For example,
-these optional fields explicitly
-select a 30-second refresh budget; omit it to use the derived default:
-
-```yaml
-cc_issuers:
-  - id: coco_authorizer
-    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
-    token_expiration: 300
-    args:
-      trustee_public_key_file: ./trustee-as-public.pem
-      token_url: http://127.0.0.1:8006/aa/token
-      retry_max_attempts: 10
-      retry_initial_delay: 1.0
-      retry_max_delay: 15.0
-      retry_backoff_multiplier: 2.0
-      retry_jitter_ratio: 0.5
-cc_attestation:
-  check_frequency: 120
-  registration_token_timeout: 300
-  refresh_token_timeout: 30
-  get_token_request_timeout: 45
-```
+Set retry and manager timing once in the named Trustee service in
+`cc_project.yml`. The unified guide defines the `_seconds` names and the
+`retry` mapping; participant files select the service by name and cannot
+override its policy.
 
 Run `nvflare provision -p project.yaml` again. Provisioning writes the authorizer
 settings into each protected participant's resources and the manager timeouts
-into every generated manager. All CoCo participants in the project must
-share the manager timeouts; their authorizer backoff settings may differ.
+into every generated manager. All bare-metal CVM and CoCo participants that
+select the service share these settings.
 The same names are constructor arguments when configuring components directly.
 
 Delays must satisfy `0 < retry_initial_delay <= retry_max_delay`; the multiplier
@@ -391,7 +358,7 @@ methods return `True` or `False`; reject on `False`. The compatible
 
 For a standalone integration, load the public key authenticated by the
 secure-services owner. Use the same project audience on both sides; provisioned
-kits use `nvflare-coco:` followed by the project name. For example, inside the
+kits use `nvflare-trustee:` followed by the project name. For example, inside the
 CoCo client:
 
 ```python
@@ -401,7 +368,7 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorize
 
 client = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
-    audience="nvflare-coco:example-project",
+    audience="nvflare-trustee:example-project",
     site_name="site-1",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
@@ -428,7 +395,7 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorize
 
 verifier = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
-    audience="nvflare-coco:example-project",
+    audience="nvflare-trustee:example-project",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
     proof_iat_leeway_seconds=180,
@@ -512,18 +479,16 @@ that needs additional FL-side restrictions can configure a verifier directly:
 ```python
 verifier = CoCoAuthorizer(
     trustee_public_key=as_public_key_pem,
-    audience="nvflare-coco:my_project",
+    audience="nvflare-trustee:my_project",
     ear_audience="my-reviewed-as-audience",  # only if AS actually emits this aud
     workload_constraints={
         "site-1": {
             "init_data": approved_init_data_sha256,  # 64 lowercase hex characters
             "cpu_tee": "snp",
-            "gpu_required": True,
             "measurement": approved_snp_measurement,  # SNP-only; 96 lowercase hex
         },
         "site-2": {
             "cpu_tee": "tdx",
-            "gpu_required": False,
             "init_data": approved_tdx_init_data_sha256,  # canonical 64 lowercase hex
             "tdx_mr_td": approved_tdx_mr_td,  # 96 lowercase hex characters
             "tdx_rtmr_0": approved_tdx_rtmr_0,
@@ -537,10 +502,7 @@ verifier = CoCoAuthorizer(
 
 Both options default to `None` for the existing Trustee flow. With constraints
 configured, every verified subject must have an entry; all configured claims
-must match the signed appraisals. `gpu_required: true` requires a valid signed
-`gpu0` appraisal; `false` requires CPU-only appraisals. The value must be a
-boolean. Omitting it preserves acceptance of either mode, with any present GPU
-appraisal still required to pass. Choose the needed typed constraints; `measurement`
+must match signed CPU evidence. Choose the needed typed constraints; `measurement`
 remains SNP-only and cannot pin TDX MRTD. TDX fields require signed TDX evidence
 and canonical 96-character lowercase hex values. Cross-TEE or mixed constraints
 fail closed. `init_data` remains a canonical 32-byte digest for either TEE;
@@ -548,23 +510,12 @@ TDX normalization also checks the quoted MRCONFIGID agrees and has exactly
 16 zero padding bytes. Obtain
 values from the trusted platform and workload owner, never from the CoCo host.
 An absent/mismatched configured EAR audience or workload claim fails closed.
-To provision platform pins, put the same complete `workload_constraints` mapping
-under `cc_issuers[0].args` in every protected participant's CC YAML. Provisioning
-validates it and installs that mapping in protected participants and ordinary
-verifier-only kits. Use logical `server` as the protected server key, not its
-DNS name. For example, inside the existing issuer's `args`:
-
-```yaml
-workload_constraints:
-  site-1:
-    cpu_tee: tdx
-    gpu_required: false
-    tdx_mr_td: '<approved 96-character lowercase MRTD>'
-  server:
-    cpu_tee: snp
-    gpu_required: true
-    measurement: '<approved 96-character lowercase SNP measurement>'
-```
+To provision platform pins, put one complete `workload_constraints` mapping in
+the named Trustee service in `cc_project.yml`. Provisioning validates it and
+installs that mapping in protected participants and ordinary verifier-only
+kits. Use logical `server` as the protected server key, not its DNS name. The
+unified guide contains the YAML example; the mapping must cover exactly every
+protected participant that selects the service.
 
 Replace placeholders with authenticated references before provisioning. Every
 protected subject must have the applicable entry, and all participants must
@@ -584,23 +535,20 @@ CoCo's implementation enforces its bounded request/retry budget explicitly.
 Successful peer verification is not workload authorization or image-key release;
 the separate KBS release policy authorizes access to the workload's resources.
 
-The authorizer deliberately accepts SNP or TDX, with either CPU-only or
-CPU-plus-GPU evidence by default. An explicit `cpu_tee` constraint can restrict
-a site to one CPU TEE; `gpu_required: true` additionally requires that site's
-signed GPU appraisal, while `false` requires CPU-only evidence. Omitting the
-constraint preserves the default acceptance of either mode. CPU-only evidence
-means no GPU was attested in that token, not that the machine has no GPU. `generate()` applies
-the same checks to the EAR returned by the guest API; it neither requests a
-CPU-only mode nor strips GPU claims (which would invalidate the AS signature).
+The authorizer accepts SNP or TDX. Unified provisioning also derives each
+site's internal GPU constraint from its participant `gpu_tee`: `nvidia_cc`
+requires signed CPU plus GPU appraisals and `none` requires CPU-only evidence.
+Do not add `gpu_required` to project workload constraints. CPU-only evidence
+means no GPU was attested in that token, not that the machine has no GPU.
+`generate()` applies the same checks to the EAR returned by the guest API; it
+neither requests a CPU-only mode nor strips GPU claims, which would invalidate
+the AS signature.
 
 Core provisioning and the supplied deployment scripts accept all four combinations.
 Each release's KBS policy selects the approved CPU TEE and requires either CPU
 alone or CPU plus GPU; accepting a CPU-only NVFlare proof cannot satisfy a GPU
-release's KBS policy. Deployments
-requiring GPU attestation at the FL participant boundary must configure the
-site's `gpu_required: true` constraint in the shared mapping. The
-[mixed example](mixed-tdx-snp/README.md) does this for its SNP GPU client and
-sets `false` for its TDX CPU-only client.
+release's KBS policy. The derived peer constraint and the KBS release rule must
+both match the intended CPU/GPU profile.
 
 CCManager binds a protected client's registration envelope to `CLIENT_NAME`,
 the same asserted name that ClientManager must authenticate against its
@@ -630,27 +578,6 @@ restart; it is not a fresh response to a verifier-issued challenge. Consult the
 for the resulting revocation, cross-verifier replay and application-trust limits.
 
 ## Verification status
-
-### Mixed encrypted-workload functional run (2026-10-04)
-
-An ordinary trusted server and two protected clients completed the full positive
-functional chain: TDX CPU-only `site-1` and SNP+NVIDIA GPU `site-2` launched as
-real Kata guests from separately signed/encrypted images, registered, passed
-`coco_authorizer` verification and newly observed periodic CCManager rounds,
-and completed a finite job. Both returned the current nonce and values 3 and
-7; aggregate 10 with zero errors. The shared per-site constraints required
-CPU-only evidence for TDX and both CPU/GPU appraisal for SNP. The job computed
-CPU arithmetic and did not benchmark or train on the GPU.
-
-The [normal mixed workflow](mixed-tdx-snp/README.md) uses the ordinary server's
-CCManager for client verification; it does not require another client. The
-historical records below retain their original, narrower scopes. This later
-functional run does not qualify the protected-server or TDX+GPU configurations,
-a 15-minute renewal sequence, confidentiality enforcement, or mandatory
-hardware denial cases. See the separate
-[runtime validation status](../RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
-
-### Historical authorizer checks
 
 Offline tests cover real cryptographic signatures, RSA/EC TEE proof keys,
 SNP/TDX CPU-only and CPU-plus-GPU proofs, rejected CPU-type/GPU-claim tampering, malformed
@@ -691,11 +618,10 @@ authorization path before deployment. Deployment-specific certificates,
 measurements, node identities and private operational artifacts are not
 included in this public example.
 
-The September live test does not cover the later peer-binding, mixed-client
-registration, or protected-server provisioning changes. The October mixed run
-above establishes the ordinary-server positive functional path; protected-server
-provisioning remains covered by offline regression tests here. Repeat registration
-and periodic-validation rehearsal for the selected deployment before use. Protected
+The later peer-binding, mixed-client registration, and protected-server
+provisioning changes are covered by offline regression tests, not that historical
+live test. Re-run a complete registration and periodic-validation rehearsal for
+the selected ordinary-server or protected-server deployment before use. Protected
 server testing must also cover its own encrypted image-key authorization,
 stable network endpoint, and rejection of missing or invalid server proofs.
 

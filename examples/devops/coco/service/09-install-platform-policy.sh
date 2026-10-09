@@ -51,5 +51,5 @@ bash "$SCRIPT_DIR/10-verify-platform-reference-values.sh" "$VALUES_FILE"
 curl --fail --silent --show-error --cacert "${TRUSTEE_PUBLIC_CERT}" \
     --output /dev/null "${KBS_URL}/healthz"
 printf 'Reviewed CPU policy and complete approved %s references installed.\n' "$APPROVED_TEE"
-printf 'The pinned post-v0.21 Trustee default GPU appraisal policy remains active.\n'
+printf 'The pinned Trustee v0.22 default GPU appraisal policy remains active.\n'
 printf 'The KBS resource policy is unchanged; on a fresh installation it remains default-deny.\n'

@@ -63,6 +63,11 @@ CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 # so deadlocked workers unblock and the process exits cleanly.
 _stop_delay = threading.Event()
 
+# Real Cell instances and intentional pool starvation can keep an instrumented
+# test process alive after teardown. Every normal unit-test matrix job still
+# runs both integration scenarios.
+pytestmark = pytest.mark.coverage_incompatible
+
 
 class ChunkedDownloadable(Downloadable):
     def __init__(self, data: bytes, chunk_size: int):
@@ -287,8 +292,9 @@ class TestDownloadPreFixStarvation:
             # unblocking any deadlocked workers still waiting on future.result()
             _stop_delay.set()
 
-            # Shut down the tiny pool (don't wait -- workers may be deadlocked)
-            tiny_pool.shutdown(wait=False)
+            # Cancel queued readers so workers blocked on their futures can
+            # unwind; waiting here would deadlock the intentional reproducer.
+            tiny_pool.shutdown(wait=False, cancel_futures=True)
 
             # Remove the tiny pool's deadlocked threads from Python's internal
             # atexit tracking so they don't block process exit.

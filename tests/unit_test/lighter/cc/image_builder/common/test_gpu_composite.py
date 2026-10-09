@@ -109,10 +109,18 @@ class GpuAppraisalTests(unittest.TestCase):
     def evaluate(self, claims, refs, *, expiry=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "policy.rego").write_text(render(self.policy))
+            (root / "policy.rego").write_text(render(self.policy, "cvm_profile_test"))
             (root / "input.json").write_text(json.dumps({"nvidia": claims}))
             expiry = {name: time.time() + 300 for name in refs} if expiry is None else expiry
-            (root / "data.json").write_text(json.dumps({"reference": dict(refs, cvm_reference_expiry=expiry)}))
+            (root / "data.json").write_text(
+                json.dumps(
+                    {
+                        "reference": {
+                            "cvm_profile_test": {"values": refs, "expirations": expiry},
+                        }
+                    }
+                )
+            )
             result = subprocess.run(
                 [
                     str(ENGINE),

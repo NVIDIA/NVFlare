@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,241 +12,307 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Unified confidential-computing provisioning dispatcher."""
+
 import json
 import os
-from typing import Any, Dict, Optional, Type
+from dataclasses import replace
+from pathlib import Path
 
+from nvflare.apis.fl_constant import SiteType
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
-from nvflare.lighter import utils
+from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
+from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
+from nvflare.lighter.cc_provision.deployment import GPUTEE, CCDeploymentMode, immutable_data, plain_data
+from nvflare.lighter.cc_provision.impl.azure_cc import AzureCCDeployment
+from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
+from nvflare.lighter.cc_provision.impl.coco import CoCoDeployment
 from nvflare.lighter.cc_provision.utils import resolve_cc_config
-from nvflare.lighter.constants import PropKey, ProvFileName, TemplateSectionKey
-from nvflare.lighter.ctx import ProvisionContext
-from nvflare.lighter.entity import Participant, Project
+from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.spec import Builder
 
-from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
-from .azure import AzureSimpleBuilder
-from .coco import CoCoBuilder
-
 CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
+CC_PACKAGER_PATH = "nvflare.lighter.cc_provision.impl.cc_packager.CCPackager"
 
-
-VALID_COMPUTE_ENVS = [
-    CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
-    CCConfigValue.AZURE_CVM,
-    CCConfigValue.CONFIDENTIAL_CONTAINERS,
-]
-
-
-BUILDER_CLASSES = {
-    CCConfigValue.AZURE_CVM: AzureSimpleBuilder,
-    CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER: AzureSimpleBuilder,
-    CCConfigValue.CONFIDENTIAL_CONTAINERS: CoCoBuilder,
+DEPLOYMENTS = {
+    CCDeploymentMode.BARE_METAL_CVM: BareMetalCVMDeployment,
+    CCDeploymentMode.COCO: CoCoDeployment,
+    CCDeploymentMode.AZURE_CC: AzureCCDeployment,
 }
 
 
+def _site_name(participant):
+    return SiteType.SERVER if participant.type == ParticipantType.SERVER else participant.name
+
+
 class CCBuilder(Builder):
-    """Builder that coordinates supported confidential computing implementations.
+    """Validate and provision all three CC deployment modes through one contract."""
 
-    Each CC implementation builder handles all participants that use its implementation.
-    This builder also sets up the CCManager component for each participant.
-    """
-
-    def __init__(
-        self,
-        cc_mgr_id="cc_manager",
-    ):
-        self.project_name: Optional[str] = None
-        self.project: Optional[Project] = None
-        self.cc_config: Optional[Dict[str, Any]] = None
-        # CC Manager specific
+    def __init__(self, cc_mgr_id="cc_manager"):
         self._cc_mgr_id = cc_mgr_id
-        self._cc_enabled_sites = []
-        # Map of compute environment to its builder class
-        self._cc_builders: Dict[str, Type[Builder]] = {}
+        self.project_config = None
+        self.plans = {}
+        self.deployments = {}
 
-    def _load_and_validate_cc_config(self, config_path):
-        """Load CC configuration from YAML file."""
-        if not isinstance(config_path, str):
-            raise TypeError(f"cc_config must be a YAML file path but got {type(config_path)}")
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"CC config file not found: {config_path}")
-        cc_config = utils.load_yaml(config_path)
-        compute_env = cc_config.get(CCConfigKey.COMPUTE_ENV)
-
-        if compute_env not in VALID_COMPUTE_ENVS:
-            raise ValueError(f"Invalid compute environment: {compute_env}")
-        return cc_config
-
-    def _enable_participant_for_cc(self, participant, cc_config, ctx):
-        self._cc_enabled_sites.append(participant)
-        participant.set_prop(PropKey.CC_ENABLED, True)
-        participant.set_prop(PropKey.CC_CONFIG_DICT, cc_config)
-        participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
-        cc_issuers = cc_config.get(CCConfigKey.CC_ISSUERS, [])
-        participant.set_prop(PropKey.CC_ISSUERS, cc_issuers)
-        # Add cc_issuers to ctx for cc manager
-        authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
-        for issuer in cc_issuers:
-            authorizers.append(
-                {
-                    "id": issuer.get(CCIssuerConfig.ID),
-                    "path": issuer.get(CCIssuerConfig.PATH),
-                    "args": issuer.get(CCIssuerConfig.ARGS, {}),
-                }
-            )
-        ctx[CC_AUTHORIZERS_KEY] = authorizers
-
-    def _create_builder_for_env(self, cc_config):
-        compute_env = cc_config.get(CCConfigKey.COMPUTE_ENV)
-        if compute_env not in self._cc_builders:
-            if compute_env not in BUILDER_CLASSES:
-                raise ValueError(f"Unsupported compute environment: {compute_env}")
-            builder_class = BUILDER_CLASSES[compute_env]
-            builder = builder_class()
-            self._cc_builders[compute_env] = builder
-
-    def initialize(self, project: Project, ctx: ProvisionContext):
-        """Initialize all CC builders needed for the project."""
-        self.project_name = project.name
-        self.project = project
-        for participant in project.get_all_participants():
-            config_path = participant.get_prop(PropKey.CC_CONFIG)
-            if config_path:
-                # An explicitly requested confidential participant must never fall back to a
-                # standard startup kit because its configuration is missing or invalid.
-                try:
-                    config_path = resolve_cc_config(project, config_path)
-                    cc_config = self._load_and_validate_cc_config(config_path)
-                    self._enable_participant_for_cc(participant, cc_config, ctx)
-                    self._create_builder_for_env(cc_config)
-                except Exception as e:
-                    raise ValueError(f"Invalid CC configuration for {participant.name}: {e}") from e
-
-        if len(self._cc_builders) > 1 and any(builder.is_exclusive for builder in self._cc_builders.values()):
-            raise ValueError("An exclusive CC backend cannot be mixed with other CC compute environments")
-
-        # Initialize each builder type once
-        for builder in self._cc_builders.values():
-            builder.initialize(project, ctx)
-
-    def _build_cc_manager_component(self, participant: Participant, ctx: ProvisionContext):
-        """Build CCManager component for a participant."""
-        cc_mgr_args = {CCManagerArgs.CC_ISSUERS_CONF: [], CCManagerArgs.CC_VERIFIER_IDS: []}
-        cc_enabled = participant.get_prop(PropKey.CC_ENABLED, False)
-        if not cc_enabled:
+    @staticmethod
+    def _configure_client_gpu_capacity(participant, gpu_tee):
+        """Keep FL resource scheduling consistent with the declared GPU TEE."""
+        if participant.type != ParticipantType.CLIENT:
             return
 
-        cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
-        if cc_config == {}:
+        capacity = participant.get_prop(PropKey.CAPACITY)
+        if capacity is None:
+            if gpu_tee is GPUTEE.NVIDIA_CC:
+                participant.set_prop(PropKey.CAPACITY, {PropKey.NUM_GPUS: 1})
             return
-        builder_class = BUILDER_CLASSES[cc_config[CCConfigKey.COMPUTE_ENV]]
-        if builder_class.emits_cc_manager:
-            # The selected backend emits its own participant-specific manager.
-            return
+        if not isinstance(capacity, dict):
+            raise ValueError("capacity must be a mapping")
 
-        cc_issuers = participant.get_prop(PropKey.CC_ISSUERS, [])
-        for issuer in cc_issuers:
-            cc_mgr_args[CCManagerArgs.CC_ISSUERS_CONF].append(
-                {
-                    CC_ISSUER_ID: issuer.get(CCIssuerConfig.ID),
-                    TOKEN_EXPIRATION: issuer.get(CCIssuerConfig.TOKEN_EXPIRATION),
-                }
-            )
+        num_gpus = capacity.get(PropKey.NUM_GPUS)
+        if num_gpus is not None and type(num_gpus) is not int:
+            raise ValueError("capacity.num_of_gpus must be an integer")
+        if gpu_tee is GPUTEE.NVIDIA_CC:
+            if num_gpus is None:
+                capacity = dict(capacity)
+                capacity[PropKey.NUM_GPUS] = 1
+                participant.set_prop(PropKey.CAPACITY, capacity)
+            elif num_gpus < 1:
+                raise ValueError("capacity.num_of_gpus must be positive when gpu_tee is nvidia_cc")
+        elif num_gpus not in (None, 0):
+            raise ValueError("capacity.num_of_gpus must be zero or omitted when gpu_tee is none")
 
-        all_cc_authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
-        cc_verifier_ids = set([])
-        for authorizer in all_cc_authorizers:
-            attestation_config = cc_config.get(CCConfigKey.CC_ATTESTATION_CONFIG)
-            if attestation_config:
-                cc_mgr_args[CCManagerArgs.VERIFY_FREQUENCY] = attestation_config.get("check_frequency", 600)
-
-            cc_verifier_ids.add(authorizer.get(CCIssuerConfig.ID))
-
-        # TODO our fl_ctx.get_identity_name always return "server"
-        # check nvflare/private/fed/app/deployer/server_deployer.py
-        # and nvflare/app_opt/confidential_computing/cc_manager.py
-        cc_mgr_args[CCManagerArgs.CC_ENABLED_SITES] = [
-            e.name if e.type != "server" else "server" for e in self._cc_enabled_sites
-        ]
-        cc_mgr_args[CCManagerArgs.CC_VERIFIER_IDS] = list(cc_verifier_ids)
-        cc_mgr_args[CCManagerArgs.REQUIRED_SITE_VERIFIER_IDS] = {
-            e.name if e.type != "server" else "server": [
-                issuer[CCIssuerConfig.ID] for issuer in e.get_prop(PropKey.CC_ISSUERS, [])
-            ]
-            for e in self._cc_enabled_sites
-        }
-
-        component = {
-            "id": self._cc_mgr_id,
-            "path": CC_MGR_PATH,
-            "args": cc_mgr_args,
-        }
-
-        dest_dir = ctx.get_local_dir(participant)
-        resources_file = os.path.join(dest_dir, f"{self._cc_mgr_id}__p_resources.json")
-        utils.add_component_to_resources(resources_file, component)
-
-    def _extend_class_allow_list(self, participant: Participant, ctx: ProvisionContext):
-        cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
-        class_allow_list = cc_config.get(CCConfigKey.CLASS_ALLOW_LIST)
-        if not class_allow_list:
-            return
-
-        if not isinstance(class_allow_list, list):
+    def initialize(self, project, ctx):
+        # Builders may be reused by programmatic callers. Never carry plans,
+        # adapters, or project credentials into a later provisioning run.
+        self.project_config = None
+        self.plans = {}
+        self.deployments = {}
+        if project.get_prop("cvm_vault") is not None:
             raise ValueError(
-                f"{CCConfigKey.CLASS_ALLOW_LIST} in cc_config for {participant.name} must be list "
-                f"but got {type(class_allow_list)}"
+                "Legacy top-level cvm_vault is not supported; use participant cc_config with "
+                "cc_deployment_mode: bare_metal_cvm"
             )
+        selected = [
+            participant for participant in project.get_all_participants() if participant.get_prop(PropKey.CC_CONFIG)
+        ]
+        if not selected:
+            ctx[CtxKey.CC_DEPLOYMENT_PLANS] = {}
+            return
+        if any(client.name == SiteType.SERVER for client in project.get_clients()):
+            raise ValueError("CC projects reserve the client name 'server' for the logical root-server identity")
+        invalid = [
+            participant.name
+            for participant in selected
+            if participant.type not in (ParticipantType.SERVER, ParticipantType.CLIENT)
+        ]
+        if invalid:
+            raise ValueError(f"cc_config is supported only for server/client participants: {', '.join(invalid)}")
+        packager = project.get_prop("packager", {})
+        if not isinstance(packager, dict) or packager.get("path") != CC_PACKAGER_PATH:
+            raise ValueError(f"Confidential participants require the common packager {CC_PACKAGER_PATH}")
+        project_ref = project.get_prop(PropKey.CC_PROJECT_CONFIG)
+        if not isinstance(project_ref, str) or not project_ref:
+            raise ValueError("cc_project_config is required when any participant has cc_config")
+        project_path = Path(resolve_cc_config(project, project_ref))
+        self.project_config = load_project_config(project_path)
+        self.project_config["_project_name"] = project.name
 
-        for class_path in class_allow_list:
-            if not isinstance(class_path, str) or not class_path:
-                raise ValueError(
-                    f"{CCConfigKey.CLASS_ALLOW_LIST} in cc_config for {participant.name} "
-                    "must contain non-empty strings"
+        normalized = {}
+        for participant in selected:
+            try:
+                path = Path(resolve_cc_config(project, participant.get_prop(PropKey.CC_CONFIG)))
+                participant_config = load_participant_config(path, self.project_config)
+                self._configure_client_gpu_capacity(participant, participant_config["gpu_tee"])
+                normalized[participant.name] = participant_config
+            except Exception as exc:
+                raise ValueError(f"Invalid CC configuration for {participant.name}: {exc}") from exc
+
+        used_modes = {value["mode"] for value in normalized.values()}
+        supplied_blocks = {
+            CCDeploymentMode(name)
+            for name in self.project_config.get("build_tools", {})
+            if name in (CCDeploymentMode.BARE_METAL_CVM.value, CCDeploymentMode.COCO.value)
+        }
+        for mode in used_modes | supplied_blocks:
+            deployment = self.deployments.setdefault(mode, DEPLOYMENTS[mode]())
+            deployment.validate_project_config(self.project_config)
+
+        trustee_services = {
+            value["attestation_service"].name
+            for value in normalized.values()
+            if value["attestation_service"].service_type == "trustee"
+        }
+        if len(trustee_services) > 1:
+            raise ValueError("Bare-metal CVM and CoCo participants must resolve the same named Trustee service")
+        derived_constraints = {}
+        for service_name in trustee_services:
+            service = self.project_config["attestation_services"][service_name]
+            constraints = service.get("workload_constraints")
+            participants = [
+                participant
+                for participant in selected
+                if normalized[participant.name]["attestation_service"].name == service_name
+            ]
+            expected_sites = {_site_name(participant) for participant in participants}
+            if constraints is not None:
+                if set(constraints) != expected_sites:
+                    raise ValueError(
+                        f"attestation_services.{service_name}.workload_constraints must contain exactly "
+                        f"the protected sites: {', '.join(sorted(expected_sites))}"
+                    )
+            derived_constraints[service_name] = {
+                _site_name(participant): {
+                    **plain_data((constraints or {}).get(_site_name(participant), {})),
+                    "gpu_required": normalized[participant.name]["gpu_tee"] is GPUTEE.NVIDIA_CC,
+                }
+                for participant in participants
+            }
+        releases = [
+            value["mode_config"]["release_name"]
+            for value in normalized.values()
+            if value["mode"] is CCDeploymentMode.COCO
+        ]
+        if len(releases) != len(set(releases)):
+            raise ValueError("Each CoCo participant requires a distinct coco.release_name")
+
+        for participant in selected:
+            value = normalized[participant.name]
+            deployment = self.deployments[value["mode"]]
+            plan = deployment.create_plan(participant, value, self.project_config)
+            # Internal values are not serialized. They let every mode use the
+            # same logical server identity and project audience.
+            plan = replace(
+                plan,
+                internal=immutable_data(
+                    {
+                        **plan.internal,
+                        "project_name": project.name,
+                        "site_name": _site_name(participant),
+                        **(
+                            {"workload_constraints": derived_constraints[plan.attestation_service.name]}
+                            if plan.attestation_service.service_type == "trustee"
+                            else {}
+                        ),
+                    }
+                ),
+            )
+            self.plans[participant.name] = plan
+            participant.set_prop(PropKey.CC_ENABLED, True)
+            participant.set_prop(PropKey.CC_CONFIG_DICT, value["raw"])
+            participant.set_prop(PropKey.CC_DEPLOYMENT_PLAN, plan)
+            participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
+            if hasattr(deployment, "bind"):
+                deployment.bind(plan, self.project_config, project, ctx)
+
+        ctx[CtxKey.CC_PROJECT_CONFIG] = self.project_config
+        ctx[CtxKey.CC_DEPLOYMENT_PLANS] = self.plans
+        ctx["cc_deployments"] = self.deployments
+
+    @staticmethod
+    def _write_component(ctx, participant, component):
+        target = Path(ctx.get_local_dir(participant)) / f'{component["id"]}__p_resources.json'
+        target.write_text(json.dumps({"components": [component]}, indent=2) + "\n")
+
+    def _authorizer(self, plan, issuer):
+        deployment = self.deployments[plan.mode]
+        if not hasattr(deployment, "authorizer"):
+            raise ValueError(f"{plan.mode.value} cannot supply a peer authorizer")
+        return deployment.authorizer(plan, issuer=issuer)
+
+    def _build_peer_matrix(self, project, ctx):
+        protected = {
+            _site_name(participant): self.plans[participant.name]
+            for participant in project.get_all_participants()
+            if participant.name in self.plans
+        }
+        verifier_plans = {}
+        for plan in self.plans.values():
+            spec = self._authorizer(plan, issuer=False)
+            verifier_plans.setdefault(spec["id"], plan)
+        required = {site: [self._authorizer(plan, issuer=False)["id"]] for site, plan in protected.items()}
+        enabled = list(protected)
+        frequencies = [plan.attestation_service.values["check_frequency_seconds"] for plan in self.plans.values()]
+
+        for participant in [project.get_server(), *project.get_clients()]:
+            if participant is None:
+                continue
+            own = self.plans.get(participant.name)
+            components = {
+                authorizer_id: self._authorizer(plan, issuer=False) for authorizer_id, plan in verifier_plans.items()
+            }
+            issuers = []
+            if own:
+                own_spec = self._authorizer(own, issuer=True)
+                components[own_spec["id"]] = own_spec
+                issuers.append(
+                    {
+                        CC_ISSUER_ID: own_spec["id"],
+                        TOKEN_EXPIRATION: own_spec["token_expiration"],
+                    }
                 )
+            for spec in components.values():
+                component = {key: spec[key] for key in ("id", "path", "args")}
+                self._write_component(ctx, participant, component)
 
-        resources_file = os.path.join(ctx.get_local_dir(participant), ProvFileName.RESOURCES_JSON_DEFAULT)
-        if not os.path.exists(resources_file):
-            raise RuntimeError(
-                "CCBuilder requires StaticFileBuilder to run before it so "
-                f"{resources_file} exists before class_allow_list is extended."
+            manager_args = {
+                "cc_issuers_conf": issuers,
+                "cc_verifier_ids": list(components),
+                "verify_frequency": min(frequencies),
+                "cc_enabled_sites": enabled,
+                "required_site_verifier_ids": required,
+                # Trustee proofs bind their signed subject to the mTLS peer.
+                # The existing 2.9 Azure authorizers retain their MAA semantics.
+                "require_site_binding": all(plan.mode is not CCDeploymentMode.AZURE_CC for plan in self.plans.values()),
+            }
+            trustee = next(
+                (
+                    plan.attestation_service.values
+                    for plan in self.plans.values()
+                    if plan.attestation_service.service_type == "trustee"
+                ),
+                None,
             )
+            if trustee:
+                manager_args.update(
+                    resolve_token_timeouts(
+                        registration_token_timeout=trustee["registration_token_timeout_seconds"],
+                        refresh_token_timeout=trustee["refresh_token_timeout_seconds"],
+                        get_token_request_timeout=trustee["get_token_request_timeout_seconds"],
+                    )
+                )
+            self._write_component(
+                ctx,
+                participant,
+                {"id": self._cc_mgr_id, "path": CC_MGR_PATH, "args": manager_args},
+            )
+            participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
 
-        with open(resources_file, "r") as f:
-            resources = json.load(f)
+    @staticmethod
+    def _extend_class_allow_list(participant, plan, ctx):
+        if not plan.class_allow_list:
+            return
+        resources_file = Path(ctx.get_local_dir(participant)) / ProvFileName.RESOURCES_JSON_DEFAULT
+        if not resources_file.is_file():
+            raise RuntimeError("CCBuilder requires StaticFileBuilder before class_allow_list is extended")
+        resources = json.loads(resources_file.read_text())
+        configured = resources.get("class_allow_list", [])
+        if not isinstance(configured, list):
+            raise RuntimeError(f"{resources_file} contains a non-list class_allow_list")
+        for class_path in plan.class_allow_list:
+            if class_path not in configured:
+                configured.append(class_path)
+        resources["class_allow_list"] = configured
+        temporary = resources_file.with_name(resources_file.name + f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(resources, indent=2) + "\n")
+        os.replace(temporary, resources_file)
 
-        configured_allow_list = resources.get(CCConfigKey.CLASS_ALLOW_LIST, [])
-        if not isinstance(configured_allow_list, list):
-            raise RuntimeError(f"{resources_file} contains non-list {CCConfigKey.CLASS_ALLOW_LIST}")
-
-        for class_path in class_allow_list:
-            if class_path not in configured_allow_list:
-                configured_allow_list.append(class_path)
-
-        resources[CCConfigKey.CLASS_ALLOW_LIST] = configured_allow_list
-        tmp_file = f"{resources_file}.{os.getpid()}.tmp"
-        utils.write(tmp_file, json.dumps(resources, indent=2) + "\n", "t")
-        os.replace(tmp_file, resources_file)
-
-    def build(self, project: Project, ctx: ProvisionContext):
-        """Build CC configuration for all participants."""
-        # Build CC implementation for each participant
-        for builder in self._cc_builders.values():
-            builder.build(project, ctx)
-
-        for participant in self._cc_enabled_sites:
-            self._extend_class_allow_list(participant, ctx)
-
-        # Build CCManager for each participant
-        server = project.get_server()
-        if server:
-            self._build_cc_manager_component(server, ctx)
-
-        for client in project.get_clients():
-            self._build_cc_manager_component(client, ctx)
-
-    def finalize(self, project: Project, ctx: ProvisionContext):
-        """Finalize all CC builders."""
-        for builder in self._cc_builders.values():
-            builder.finalize(project, ctx)
+    def build(self, project, ctx):
+        if not self.plans:
+            return
+        for participant in project.get_all_participants():
+            plan = self.plans.get(participant.name)
+            if not plan:
+                continue
+            self.deployments[plan.mode].configure_startup_kit(plan, project, ctx)
+            self._extend_class_allow_list(participant, plan, ctx)
+        self._build_peer_matrix(project, ctx)

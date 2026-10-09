@@ -15,6 +15,7 @@
 """Prepare private CPU-only A/B provisioning inputs; never learn trust from a host."""
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -31,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[3]
 
 
-def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, server):
+def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, server, cc_project):
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,35}", run_id):
         raise ValueError("run_id must be a unique lowercase label of at most 36 characters")
     if not re.fullmatch(r"[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}", base_image):
@@ -47,6 +48,20 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
     if not isinstance(public, ec.EllipticCurvePublicKey) or not isinstance(public.curve, ec.SECP256R1):
         raise ValueError("AS signing key must be P-256")
     platform = Path(platform).resolve(strict=True)
+    cc_project = Path(cc_project).resolve(strict=True)
+    from nvflare.lighter.cc_provision.config import load_project_config
+
+    common_template = load_project_config(cc_project)
+    # The generated topology has a different declaring directory. Preserve the
+    # loader's absolute paths and omit its private source-location marker.
+    common_template.pop("_config_path", None)
+    trustees = [
+        name for name, service in common_template["attestation_services"].items() if service["type"] == "trustee"
+    ]
+    registries = list(common_template.get("container_registries", {}))
+    if len(trustees) != 1 or len(registries) != 1 or "coco" not in common_template.get("build_tools", {}):
+        raise ValueError("Acceptance requires exactly one Trustee service, one registry, and one CoCo build tool")
+    trustee_name, registry_name = trustees[0], registries[0]
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
     output = Path(output)
     old_umask = os.umask(0o077)
@@ -57,6 +72,13 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
             root.mkdir()
             (root / "trustee-as-public.pem").write_bytes(key)
             protected = ["site-1", "site-2"] + (["server"] if topology == "b" else [])
+            common = copy.deepcopy(common_template)
+            common_trustee = common["attestation_services"][trustee_name]
+            common_trustee["attestation_signing_public_key_file"] = "./trustee-as-public.pem"
+            common_trustee["workload_constraints"] = {
+                participant: {"cpu_tee": "tdx", "tdx_mr_td": mrtd} for participant in protected
+            }
+            (root / "cc_project.yml").write_text(yaml.safe_dump(common, sort_keys=False))
             participants = [dict(name=server, type="server", org="acceptance", fed_learn_port=8002)]
             if topology == "b":
                 participants[0]["cc_config"] = "cc_server.yml"
@@ -86,12 +108,10 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
                 api_version=3,
                 name=f"tdx-{run_id}-{topology}",
                 description="CPU-only TDX acceptance",
+                cc_project_config="cc_project.yml",
                 participants=participants,
                 builders=builders,
-                packager=dict(
-                    path="nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager",
-                    args=dict(build_image_cmd=str(HERE.parent / "admin/build_coco_image.sh")),
-                ),
+                packager=dict(path="nvflare.lighter.cc_provision.impl.cc_packager.CCPackager"),
             )
             (root / "project.yaml").write_text(yaml.safe_dump(project, sort_keys=False))
             for site in protected:
@@ -101,40 +121,20 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
                 (context / "Dockerfile").write_text(
                     f"FROM {base_image}\nCOPY --chown=65532:65532 tdx_acceptance.py /local/custom/tdx_acceptance.py\nENV PYTHONPATH=/local/custom\n"
                 )
-                args = dict(
-                    trustee_public_key_file="./trustee-as-public.pem",
-                    token_url="http://127.0.0.1:8006/aa/token",
-                    retry_max_attempts=10,
-                    retry_initial_delay=1.0,
-                    retry_max_delay=15.0,
-                    retry_backoff_multiplier=2.0,
-                    retry_jitter_ratio=0.5,
-                    workload_constraints={p: dict(cpu_tee="tdx", tdx_mr_td=mrtd) for p in protected},
-                )
                 config = dict(
-                    compute_env="confidential_containers",
-                    cc_cpu_mechanism="intel_tdx",
-                    cc_gpu="none",
-                    role="server" if site == "server" else "client",
-                    cc_issuers=[
-                        dict(
-                            id="coco_authorizer",
-                            path="nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer",
-                            token_expiration=300,
-                            args=args,
-                        )
-                    ],
-                    cc_attestation=dict(
-                        check_frequency=120,
-                        registration_token_timeout=300,
-                        refresh_token_timeout=30,
-                        get_token_request_timeout=45,
-                    ),
-                    image_build=dict(context=f"./{site}", dockerfile="Dockerfile"),
-                    release_name=f"{run_id}-{topology}-{site}",
-                    registry_repository=f"acceptance/{run_id}/{topology}/{site}",
-                    platform_config=str(platform),
+                    schema_version=1,
+                    cc_deployment_mode="coco",
+                    cpu_tee="intel_tdx",
+                    gpu_tee="none",
+                    attestation={"service": trustee_name},
                     class_allow_list=["tdx_acceptance.AcceptanceController", "tdx_acceptance.AcceptanceExecutor"],
+                    workload={"source": {"type": "docker_build", "context": f"./{site}", "dockerfile": "Dockerfile"}},
+                    coco={
+                        "release_name": f"{run_id}-{topology}-{site}",
+                        "registry": registry_name,
+                        "registry_repository": f"acceptance/{run_id}/{topology}/{site}",
+                        "platform_config_file": str(platform),
+                    },
                 )
                 (root / f"cc_{site}.yml").write_text(yaml.safe_dump(config, sort_keys=False))
         (output / "inputs.json").write_text(
@@ -161,7 +161,17 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("output", "run-id", "base-image", "as-key", "as-key-sha256", "mrtd", "platform", "server"):
+    for name in (
+        "output",
+        "run-id",
+        "base-image",
+        "as-key",
+        "as-key-sha256",
+        "mrtd",
+        "platform",
+        "server",
+        "cc-project",
+    ):
         parser.add_argument("--" + name, required=True)
     args = parser.parse_args()
     prepare(**vars(args))

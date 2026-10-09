@@ -6,7 +6,7 @@ the Azure attestation authorizers and manager in both startup kits, applies the
 restricted confidential-computing authorization policy, and enables startup
 integrity signing.
 
-Edit the participant names and Azure attestation settings in the three YAML
+Edit the participant names and Azure attestation settings in the four YAML
 files, then run provisioning from this directory so the relative `cc_config`
 paths resolve correctly:
 
@@ -15,5 +15,5 @@ cd examples/advanced/azure_cc
 nvflare provision -p project.yml -w ./workspace
 ```
 
-See the [Azure Confidential Computing deployment guide](../../../docs/user_guide/confidential_computing/azure/index.rst)
-for the Azure resource, image, attestation, and launch steps.
+See the [unified Confidential Computing deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst)
+for the shared schema and the Azure resource, attestation, and launch boundary.

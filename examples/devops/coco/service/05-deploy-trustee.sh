@@ -10,13 +10,15 @@ source "${SCRIPT_DIR}/lib/common.sh"
 require_sudo
 for command in docker git python3 ss; do need_cmd "${command}"; done
 [[ "$(git -C "${TRUSTEE_ROOT}" rev-parse HEAD)" == "${TRUSTEE_COMMIT}" ]] || \
-    die 'Trustee source is not the pinned post-v0.21 commit'
+    die 'Trustee source is not the pinned v0.22 commit'
 # The setup container has its own shell options and umask: harden the actual
 # mounted script before Compose can create or read any administrator secret.
 python3 "${SCRIPT_DIR}/lib/harden-trustee-setup.py" \
     "${TRUSTEE_ROOT}/kbs/config/docker-compose/setup.sh"
 need_file "${TRUSTEE_ROOT}/built-image-ids.txt"
 need_file "${KBS_CLIENT}"
+need_file "${KBS_SERVER}"
+need_file "${TRUSTEE_BUILD_PROVENANCE}"
 for image in "${KBS_IMAGE}" "${AS_IMAGE}" "${RVPS_IMAGE}"; do
     sudo docker image inspect "${image}" >/dev/null
 done
@@ -134,4 +136,4 @@ for port in 8080 50003 50004; do
     done
 done
 sudo docker compose -p "${TRUSTEE_PROJECT}" -f "${TRUSTEE_COMPOSE}" ps
-printf 'Pinned post-v0.21 Trustee is running on loopback backends.\n'
+printf 'Pinned Trustee v0.22 is running on loopback backends.\n'

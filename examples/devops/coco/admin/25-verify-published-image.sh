@@ -16,7 +16,7 @@ IMAGE_REF="$(tr -d '\r\n' < "${OUTPUT_DIR}/encrypted-image-reference.txt")"
 KBS_KEY_URI="$(kbs_uri "${KBS_IMAGE_KEY_PATH}")"
 
 DOCKER_CONFIG="${REGISTRY_SECRET_DIR}" cosign verify \
-    --registry-cacert "${PUBLIC_DIR}/registry-ca.crt" \
+    --registry-cacert "${REGISTRY_CA_FILE}" \
     --key "${OUTPUT_DIR}/cosign.pub" --insecure-ignore-tlog \
     "${IMAGE_REF}" > "${OUTPUT_DIR}/owner-cosign-verification.json"
 skopeo inspect --raw --authfile "${REGISTRY_AUTH_FILE}" "docker://${IMAGE_REF}" \
@@ -46,7 +46,7 @@ print(f"owner verified {len(layers)} encrypted layer(s)")
 PY
 
 STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-    --cacert "${PUBLIC_DIR}/registry-ca.crt" --request POST \
+    --cacert "${REGISTRY_CA_FILE}" --request POST \
     "https://$(registry_base)/v2/${REGISTRY_REPOSITORY}-unauthorized/blobs/uploads/")"
 [[ "${STATUS}" == "401" || "${STATUS}" == "403" ]] \
     || die "anonymous registry write was not rejected (HTTP ${STATUS})"

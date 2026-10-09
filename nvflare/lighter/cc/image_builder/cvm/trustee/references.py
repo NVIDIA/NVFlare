@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Merge approved references and enforce profile isolation."""
+"""Merge approved references inside one isolated profile namespace."""
 
 import datetime
 
@@ -34,7 +34,7 @@ def profile_identity(manifest):
 def check_profile(existing, manifest):
     require(
         existing == profile_identity(manifest),
-        "Trustee instance belongs to another security profile; use a separate instance",
+        "Profile identifier already belongs to another security profile",
     )
 
 
