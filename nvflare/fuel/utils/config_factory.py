@@ -90,8 +90,10 @@ class ConfigFactory:
     @staticmethod
     def get_file_basename(init_file_path):
         base_path = os.path.basename(init_file_path)
-        index = base_path.find(".")
-        file_basename = base_path[:index]
+        # split keeps the first-dot rule that "config.json.default" relies on and
+        # returns the name unchanged when there is no dot, where find() gave -1
+        # and the slice dropped the last character.
+        file_basename = base_path.split(".", 1)[0]
         return file_basename
 
     @staticmethod
