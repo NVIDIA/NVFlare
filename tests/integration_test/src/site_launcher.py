@@ -14,10 +14,12 @@
 
 import logging
 import os
-import signal
+import socket
+import time
 from abc import ABC, abstractmethod
+from functools import partial
 
-from .utils import run_command_in_subprocess
+from .utils import find_site_processes, process_group_alive, run_cleanup_steps, stop_site_processes
 
 
 class SiteProperties:
@@ -25,6 +27,7 @@ class SiteProperties:
         self.name = name
         self.root_dir = root_dir
         self.process = process
+        self.processes_stopped = False
 
 
 class ServerProperties(SiteProperties):
@@ -33,16 +36,26 @@ class ServerProperties(SiteProperties):
         self.port = str(port)
 
 
-def kill_process(site_prop: SiteProperties):
-    if not site_prop.process:
-        return
-    os.killpg(site_prop.process.pid, signal.SIGTERM)
-    p = run_command_in_subprocess(f"kill -9 {str(site_prop.process.pid)}")
-    p.wait()
-    p = run_command_in_subprocess(f"pkill -9 -f {site_prop.root_dir}")
-    p.wait()
-    print(f"Kill {site_prop.name}.")
-    site_prop.process.wait()
+def kill_process(site_prop: SiteProperties, graceful_stop=None):
+    site_prop.processes_stopped = False
+    owned = set()
+
+    def force_stop():
+        stop_site_processes(site_prop.process, site_prop.root_dir, known_processes=owned)
+        site_prop.process = None
+        site_prop.processes_stopped = True
+        print(f"Stopped {site_prop.name}.")
+
+    steps = []
+    if graceful_stop is not None:
+        steps.extend(
+            [
+                ("Capture jobs before stop script", lambda: owned.update(find_site_processes(site_prop.root_dir))),
+                ("Run stop script", graceful_stop),
+            ]
+        )
+    steps.append(("Force site process cleanup", force_stop))
+    run_cleanup_steps(steps)
 
 
 class SiteLauncher(ABC):
@@ -71,37 +84,63 @@ class SiteLauncher(ABC):
     def start_clients(self):
         pass
 
+    def wait_for_server(self, server_id, timeout=60.0):
+        """Require the deployed server's admin listener before continuing startup.
+
+        Server deployment precedes admin listener startup. The driver separately
+        authenticates its admin session before running any scenario.
+        """
+        server = self.server_properties[server_id]
+        deadline = time.monotonic() + timeout
+        last_error = None
+        while True:
+            if server.process is not None and not process_group_alive(server.process):
+                raise RuntimeError(f"Server {server.name} exited before readiness (code={server.process.returncode})")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                log_path = os.path.join(server.root_dir, "log.txt")
+                raise RuntimeError(
+                    f"Server {server.name} admin port {server.port} did not become ready: "
+                    f"{last_error}. Startup log: {log_path}"
+                )
+            try:
+                with socket.create_connection(("127.0.0.1", int(server.port)), timeout=min(0.5, remaining)):
+                    return
+            except OSError as error:
+                last_error = error
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+
     def stop_server(self, server_id):
         if server_id not in self.server_properties:
             raise RuntimeError(f"Server {server_id} not in server_properties.")
-        server_prop: ServerProperties = self.server_properties[server_id]
-        try:
-            # Kill the process
-            kill_process(server_prop)
-        except Exception as e:
-            print(f"Exception in stopping server {server_id}: {e.__str__()}")
+        kill_process(self.server_properties[server_id])
 
     def stop_client(self, client_id):
         if client_id not in self.client_properties:
             raise RuntimeError(f"Client {client_id} not in client_properties.")
-        client_prop: SiteProperties = self.client_properties[client_id]
-
-        try:
-            kill_process(client_prop)
-        except Exception as e:
-            print(f"Exception in stopping client {client_id}: {e.__str__()}")
+        kill_process(self.client_properties[client_id])
 
     def stop_all_clients(self):
-        for client_id in list(self.client_properties.keys()):
-            self.stop_client(client_id)
+        run_cleanup_steps(
+            [(f"Stop client {client_id}", partial(self.stop_client, client_id)) for client_id in self.client_properties]
+        )
 
     def stop_all_servers(self):
-        for server_id in list(self.server_properties.keys()):
-            self.stop_server(server_id)
+        run_cleanup_steps(
+            [(f"Stop server {server_id}", partial(self.stop_server, server_id)) for server_id in self.server_properties]
+        )
 
     def stop_all_sites(self):
-        self.stop_all_clients()
-        self.stop_all_servers()
+        run_cleanup_steps([("Stop clients", self.stop_all_clients), ("Stop servers", self.stop_all_servers)])
+
+    def require_sites_stopped(self):
+        survivors = [
+            site.name
+            for site in [*self.client_properties.values(), *self.server_properties.values()]
+            if not site.processes_stopped
+        ]
+        if survivors:
+            raise RuntimeError(f"Preserving workspace: process cleanup was not confirmed for {survivors}")
 
     def get_active_server_id(self, port) -> str:
         active_server_id = None

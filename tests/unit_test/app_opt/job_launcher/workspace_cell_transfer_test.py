@@ -47,6 +47,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 from nvflare.private.fed.utils.job_cert_utils import job_cert_uris
+from tests.timing_utils import isolate_time
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -929,3 +930,11 @@ class TestBootstrapAuthIdentityMap:
         _install_job_cert(args)
 
         assert not (tmp_path / JOB_ID).exists()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer",
+    )

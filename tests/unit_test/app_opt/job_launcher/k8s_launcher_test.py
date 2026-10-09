@@ -72,6 +72,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from tests.timing_utils import isolate_time
 
 _DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
 
@@ -3716,3 +3717,11 @@ class TestK8sCredentialTransport:
             assert handle.terminal_state is None
         finally:
             _exit_patches(patches)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_opt.job_launcher.k8s_launcher",
+    )

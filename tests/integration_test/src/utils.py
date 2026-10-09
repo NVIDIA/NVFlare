@@ -18,11 +18,13 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 
+import psutil
 import yaml
 
 from nvflare.apis.job_def import RunStatus
@@ -58,11 +60,168 @@ def cleanup_path(path: str):
 
 def run_provision_command(project_yaml: str, workspace: str):
     command = f"{sys.executable} -m {PROVISION_SCRIPT} -p {project_yaml} -w {workspace}"
+    run_command_and_wait(command)
+
+
+def process_group_alive(process):
+    process.poll()  # reap the leader before probing its group
+    try:
+        os.killpg(process.pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def stop_process_group(process, graceful_timeout=5.0, kill_timeout=5.0):
+    """Stop only this harness-owned session, including a departed leader's children."""
+    for sig, timeout in [(signal.SIGTERM, graceful_timeout), (signal.SIGKILL, kill_timeout)]:
+        if not process_group_alive(process):
+            process.wait(timeout=kill_timeout)
+            return
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            process.wait(timeout=kill_timeout)
+            return
+        deadline = time.monotonic() + timeout
+        while process_group_alive(process) and time.monotonic() < deadline:
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    if process_group_alive(process):
+        raise RuntimeError(f"Owned process group {process.pid} survived SIGKILL")
+    # Group disappearance can precede waitpid observing the leader's exit.
+    # Confirm reaping before declaring cleanup complete.
+    process.wait(timeout=kill_timeout)
+
+
+def run_cleanup_steps(steps):
+    """Attempt every cleanup step, then report all failures together."""
+    errors = []
+    for description, cleanup in steps:
+        try:
+            cleanup()
+        except Exception as error:
+            errors.append((description, error))
+    if errors:
+        details = "\n".join(f"{description}: {error}" for description, error in errors)
+        raise RuntimeError(f"Cleanup failed:\n{details}") from errors[0][1]
+
+
+def find_site_processes(root_dir, parents=()):
+    # Match path arguments at a directory boundary, including relative paths
+    # and --workspace=PATH. A sibling such as site-10 must not match site-1.
+    roots = {os.path.normpath(root_dir), os.path.abspath(root_dir), os.path.realpath(root_dir)}
+    processes = set(parents)
+    for process in psutil.process_iter(["cmdline"]):
+        if process.pid == os.getpid():
+            continue
+        for argument in process.info["cmdline"] or []:
+            path = argument.split("=", 1)[-1] if argument.startswith("--") else argument
+            if any(path == root or path.startswith(root + os.sep) for root in roots):
+                processes.add(process)
+                break
+    for process in list(processes):
+        try:
+            if process.is_running():
+                processes.update(process.children(recursive=True))
+        except psutil.NoSuchProcess:
+            pass
+    return processes
+
+
+def _process_running(process):
+    try:
+        # Zombies have exited and cannot write to the workspace. Their new
+        # parent must reap them; they are not surviving training processes.
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=()):
+    """Stop the launcher and workspace jobs, including descendants in new sessions."""
+    owned = set(known_processes)
+
+    def capture_descendants():
+        parents = []
+        if process is not None and process.poll() is None:
+            try:
+                parents.append(psutil.Process(process.pid))
+            except psutil.NoSuchProcess:
+                pass
+        owned.update(find_site_processes(root_dir, parents))
+
+    def stop_jobs():
+        deadline = time.monotonic() + kill_timeout
+        while True:
+            # Rescan after stopping the launcher to catch jobs created during
+            # shutdown. Keep the earlier identities for trainers without a
+            # workspace argument that have since been reparented.
+            owned.update(find_site_processes(root_dir, owned))
+            running = [child for child in owned if _process_running(child)]
+            if not running:
+                return
+            errors = []
+            for child in running:
+                try:
+                    child.kill()  # psutil checks PID identity before signalling
+                except psutil.NoSuchProcess:
+                    pass
+                except psutil.AccessDenied as error:
+                    errors.append(str(error))
+            remaining = max(0.0, deadline - time.monotonic())
+            psutil.wait_procs(running, timeout=min(0.1, remaining))
+            survivors = [child for child in running if _process_running(child)]
+            if time.monotonic() >= deadline:
+                owned.update(find_site_processes(root_dir, owned))
+                survivors = [child for child in owned if _process_running(child)]
+                if not survivors and not errors:
+                    return
+            if errors or (survivors and time.monotonic() >= deadline):
+                pids = ", ".join(str(child.pid) for child in survivors)
+                raise RuntimeError(f"Site {root_dir} processes survived cleanup (pids={pids}): {'; '.join(errors)}")
+
+    steps = [("Capture site descendants", capture_descendants)]
+    if process is not None:
+
+        def stop_launcher():
+            if process.poll() is None:
+                try:
+                    stop_process_group(process)
+                except PermissionError:
+                    # A group probe can race with group exit. Fall back to the
+                    # captured process identities; cleanup still fails if any
+                    # kill is denied or the launcher cannot be reaped below.
+                    pass
+
+        steps.append(("Stop site launcher group", stop_launcher))
+    steps.append(("Stop workspace job processes", stop_jobs))
+    if process is not None:
+        # Reap after the identity-based fallback has stopped the launcher too.
+        # Never look up or signal a departed launcher's reusable numeric PID.
+        steps.append(("Reap site launcher", lambda: process.wait(timeout=kill_timeout)))
+    run_cleanup_steps(steps)
+
+
+def wait_command_process(process, command, timeout=300.0):
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        detail = ""
+        try:
+            stop_process_group(process)
+        except Exception as cleanup_error:
+            detail = f"; command cleanup failed: {cleanup_error}"
+        raise RuntimeError(f"Command timed out after {timeout}s: {command}{detail}") from error
+    if code != 0:
+        raise RuntimeError(f"Command exited with code {code}: {command}")
+
+
+def run_command_and_wait(command, timeout=300.0):
     process = run_command_in_subprocess(command)
-    process.wait()
+    wait_command_process(process, command, timeout)
 
 
-def run_command_in_subprocess(command, stdin_data=None):
+def run_command_in_subprocess(command, stdin_data=None, timeout=300.0):
     new_env = os.environ.copy()
     python_path = os.pathsep.join(path for path in sys.path if path)
     new_env["PYTHONPATH"] = python_path
@@ -78,7 +237,17 @@ def run_command_in_subprocess(command, stdin_data=None):
     if stdin_data:
         # communicate() writes stdin, drains stdout/stderr, and waits for exit.
         # Return None since the process has already terminated.
-        process.communicate(input=stdin_data)
+        try:
+            process.communicate(input=stdin_data, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            detail = ""
+            try:
+                stop_process_group(process)
+            except Exception as cleanup_error:
+                detail = f"; command cleanup failed: {cleanup_error}"
+            raise RuntimeError(f"Command timed out after {timeout}s: {command}{detail}") from error
+        if process.returncode != 0:
+            raise RuntimeError(f"Command exited with code {process.returncode}: {command}")
         return None
     return process
 
@@ -429,8 +598,8 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
 def ensure_admin_api_logged_in(admin_api: Session, timeout: int = 60):
     login_success = False
     try:
-        start_time = time.time()
-        while time.time() - start_time <= timeout:
+        start_time = time.monotonic()
+        while time.monotonic() - start_time <= timeout:
             if admin_api.api.is_ready():
                 login_success = True
                 break

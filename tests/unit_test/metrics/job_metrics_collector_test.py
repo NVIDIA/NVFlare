@@ -14,11 +14,14 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.event_type import EventType
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 from nvflare.metrics.metrics_collector import MetricsCollector
 from nvflare.metrics.metrics_keys import MetricKeys
+from tests.timing_utils import isolate_time
 
 
 class _ReorderedPairMetricsCollector(MetricsCollector):
@@ -158,3 +161,11 @@ def test_legacy_singleton_pair_event_toggle_is_preserved(monkeypatch):
 
     assert _duration_values(published_metrics, "_receive_best_model") == [3.5]
     assert collector.event_start_time["_receive_best_model"] is None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.metrics.metrics_collector",
+    )

@@ -12,17 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import sys
 import tempfile
-import time
+from functools import partial
 
 from nvflare.tool.poc.poc_commands import _prepare_poc
 
 from .constants import CLIENT_NVF_CONFIG, CLIENT_SCRIPT, SERVER_NVF_CONFIG, SERVER_SCRIPT
-from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, run_command_in_subprocess
-from .utils import cleanup_job_and_snapshot, update_job_store_path_in_workspace, update_snapshot_path_in_workspace
+from .site_launcher import ServerProperties, SiteLauncher, SiteProperties
+from .utils import (
+    cleanup_job_and_snapshot,
+    run_cleanup_steps,
+    run_command_in_subprocess,
+    update_job_store_path_in_workspace,
+    update_snapshot_path_in_workspace,
+)
 
 
 def _get_client_name(client_id: int):
@@ -52,7 +59,7 @@ class POCSiteLauncher(SiteLauncher):
     def start_servers(self):
         for i in range(self.n_servers):
             self.start_server(i)
-            time.sleep(1)
+            self.wait_for_server("server")
 
     def start_clients(self):
         for i in range(1, self.n_clients + 1):
@@ -63,6 +70,9 @@ class POCSiteLauncher(SiteLauncher):
         # with server_id = 0
         server_name = "server"
         server_dir_name = os.path.join(self.poc_dir, server_name)
+        with open(os.path.join(server_dir_name, "startup", SERVER_NVF_CONFIG)) as f:
+            server_config = json.load(f)["servers"][0]
+        admin_port = server_config.get("admin_port") or server_config["service"]["target"].rsplit(":", 1)[1]
 
         command = (
             f"{sys.executable} -m {SERVER_SCRIPT}"
@@ -72,7 +82,7 @@ class POCSiteLauncher(SiteLauncher):
         process = run_command_in_subprocess(command)
 
         self.server_properties[server_name] = ServerProperties(
-            name=server_name, root_dir=server_dir_name, process=process, port=f"8{server_id}03"
+            name=server_name, root_dir=server_dir_name, process=process, port=admin_port
         )
         print(f"Launched server ({server_name}) using {command}. process_id: {process.pid}")
 
@@ -94,6 +104,15 @@ class POCSiteLauncher(SiteLauncher):
         print(f"Launched client {client_name} process using {command}. process_id: {process.pid}")
 
     def cleanup(self):
-        cleanup_job_and_snapshot(self.poc_dir, "server")
-        print(f"Deleting temporary directory: {self.poc_temp_dir}.")
-        shutil.rmtree(self.poc_temp_dir)
+        def remove_workspace():
+            self.require_sites_stopped()
+            run_cleanup_steps(
+                [
+                    ("Clean server storage", partial(cleanup_job_and_snapshot, self.poc_dir, "server")),
+                    ("Remove POC workspace", partial(shutil.rmtree, self.poc_temp_dir)),
+                ]
+            )
+            self.server_properties.clear()
+            self.client_properties.clear()
+
+        run_cleanup_steps([("Stop POC sites", self.stop_all_sites), ("Remove workspace", remove_workspace)])

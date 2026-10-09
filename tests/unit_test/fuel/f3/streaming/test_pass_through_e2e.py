@@ -55,7 +55,6 @@ Tests:
 """
 
 import json
-import time
 import uuid
 
 import numpy as np
@@ -68,8 +67,7 @@ from nvflare.fuel.utils.fobs import FOBSContextKey, dots
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, _RefKey
 from nvflare.fuel.utils.fobs.lobs import dump_to_bytes, load_from_bytes
 from nvflare.fuel.utils.network_utils import get_open_ports
-
-CONNECT_WAIT = 2.0  # seconds to wait for TCP cell connection
+from tests.timing_utils import wait_for
 
 
 def _register_numpy():
@@ -116,11 +114,17 @@ class TestPassThroughE2E:
         server_fqcn = f"server-{uuid.uuid4().hex[:8]}"
         subproc_fqcn = f"subprocess-{uuid.uuid4().hex[:8]}"
         server = Cell(server_fqcn, f"tcp://localhost:{port}", secure=False, credentials={})
-        server.core_cell.start()
         subproc = Cell(subproc_fqcn, f"tcp://localhost:{port}", secure=False, credentials={})
-        subproc.core_cell.start()
-        time.sleep(CONNECT_WAIT)
         try:
+            server.core_cell.start()
+            subproc.core_cell.start()
+            wait_for(
+                lambda: server.core_cell.running
+                and subproc.core_cell.running
+                and server.core_cell.is_cell_connected(subproc_fqcn)
+                and subproc.core_cell.is_cell_connected(server_fqcn),
+                message="pass-through cells did not become ready",
+            )
             yield server, subproc
         finally:
             subproc_name = subproc.get_fqcn()

@@ -17,13 +17,14 @@ import ssl
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from nvflare.fuel.f3.drivers import tcp_driver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, parse_url
+from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver, TcpStreamServer
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -165,6 +166,28 @@ def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
             context = get_ssl_context(connector.params, ssl_server=False)
             with context.wrap_socket(peer) as secured_peer:
                 assert secured_peer.recv(1) == b""
+
+
+@pytest.mark.parametrize("timeout", [None, 10, "10"])
+def test_tls_handshake_uses_configured_budget_and_restores_blocking_socket(monkeypatch, timeout):
+    handler = ConnectionHandler.__new__(ConnectionHandler)
+    handler.server = MagicMock()
+    handler.server.connector.params = {"connect_timeout": timeout}
+    handler.server.connector.stopped.is_set.return_value = False
+    handler.request = MagicMock()
+    observed = []
+    handler.request.do_handshake.side_effect = lambda: observed.append(handler.request.settimeout.call_args.args[0])
+    connection = MagicMock()
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.socket_conn.SocketConnection", lambda *_args: connection)
+
+    handler.handle()
+
+    assert observed == [None if timeout is None else float(timeout)]
+    assert handler.request.settimeout.call_args_list == [
+        call(None if timeout is None else float(timeout)),
+        call(None),
+    ]
+    connection.read_loop.assert_called_once()
 
 
 def test_tls_handshake_honors_longer_url_connection_timeout(tls_listener):

@@ -21,6 +21,7 @@ from dev_tools.f3 import cellnet_bench
 from nvflare.fuel.f3.streaming.byte_receiver import ACK_INTERVAL
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_INTERVAL, STREAM_RETRY_MAX_PENDING_BYTES
+from tests.timing_utils import isolate_time
 
 
 def test_benchmark_defaults_match_f3_streaming_defaults():
@@ -221,3 +222,11 @@ def test_cellnet_sender_cleans_sampler_and_cell_when_send_fails(monkeypatch):
     sampler.start.assert_called_once_with()
     sampler.stop.assert_called_once_with()
     assert FakeCell.instance.stopped
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "dev_tools.f3.cellnet_bench",
+    )
