@@ -183,6 +183,9 @@ class ClientTask:
         self.client = client
         self.task = task
         self.id = str(uuid.uuid4())
+        # The scheduling authority issues the physical-attempt fence. Sending
+        # this assignment again does not authorize a new worker attempt.
+        self.attempt_id = str(uuid.uuid4())
         self.task_send_count = 0  # number of times the task is sent to the client
         self.task_sent_time = None  # last time the task was sent to the client
         self.result_received_time = None  # time when the result was received from the client

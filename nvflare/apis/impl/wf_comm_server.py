@@ -21,7 +21,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus, TaskPropKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, SystemConfigs, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -41,6 +41,9 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+_CLIENT_TASK_RESULT_RECEIVED = "___result_received"
+_SUBMISSION_CLAIM = "__submission_claim"
+_CLIENT_TASK_JOB_ID = "___job_id"
 _COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
 
 
@@ -83,9 +86,14 @@ class _DeadClientStatus:
 
 
 class _CompletedClientTaskInfo:
-    def __init__(self, client_name: str, task_name: str):
+    """Retired assignment identity and whether its complete result was received."""
+
+    def __init__(self, client_name: str, task_name: str, attempt_id: str, received: bool, job_id: Optional[str] = None):
         self.client_name = client_name
         self.task_name = task_name
+        self.attempt_id = attempt_id
+        self.received = received
+        self.job_id = job_id
 
 
 class WFCommServer(FLComponent, WFCommSpec):
@@ -101,6 +109,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
         self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
+        self._completed_client_task_cache_size = _COMPLETED_CLIENT_TASK_CACHE_SIZE
         self._all_done = False
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
@@ -130,6 +139,13 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._dead_client_grace = ConfigService.get_float_var(
             name=ConfigVarName.DEAD_CLIENT_GRACE_PERIOD, conf=SystemConfigs.APPLICATION_CONF, default=60.0
         )
+        self._completed_client_task_cache_size = ConfigService.get_int_var(
+            name=ConfigVarName.TASK_RESULT_HISTORY_SIZE,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=_COMPLETED_CLIENT_TASK_CACHE_SIZE,
+        )
+        if self._completed_client_task_cache_size <= 0:
+            raise ValueError("task_result_history_size must be positive")
         self._task_monitor.start()
 
     def _cleanup_inflight_tensor_downloads(self, fl_ctx: FLContext):
@@ -353,6 +369,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_task_to_send.task_send_count += 1
 
             if not resend_task:
+                client_task_to_send.props[_CLIENT_TASK_JOB_ID] = fl_ctx.get_job_id()
                 task.last_client_task_map[client.name] = client_task_to_send
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
@@ -365,6 +382,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                 client_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
 
             client_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
+            client_data.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+            # Controllers may forward a received result as a new task's data.
+            # Rebind reserved cookies on this protected per-client copy so the
+            # prior assignment cannot conflict with the new authority headers.
+            client_data.add_cookie(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
+            client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, client_data
@@ -390,123 +415,238 @@ class WFCommServer(FLComponent, WFCommSpec):
         self.log_error(fl_ctx, "task {} is cancelled due to exception".format(task.name))
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
         with self._task_lock:
-            # task_id is the uuid associated with the client_task
-            return self._client_task_map.get(task_id, None)
+            client_task = self._client_task_map.get(task_id)
+            attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+            if attempt_id is None:
+                return client_task
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            peer = fl_ctx.get_peer_context()
+            client_name = peer.get_identity_name() if isinstance(peer, FLContext) else None
+            if client_task is not None:
+                job_id = client_task.props.get(_CLIENT_TASK_JOB_ID)
+                if (
+                    client_task.attempt_id != attempt_id
+                    or client_task.client.name != client_name
+                    or client_task.task.name != task_name
+                    or not isinstance(peer, FLContext)
+                    or not job_id
+                    or fl_ctx.get_job_id() != job_id
+                    or peer.get_job_id() != job_id
+                ):
+                    return None
+                if client_task.task.completion_status is None:
+                    fl_ctx.set_prop(
+                        FLContextKey.TASK_RESULT_RECEIPT,
+                        (
+                            TaskResultReceipt.RECEIVED
+                            if client_task.props.get(_CLIENT_TASK_RESULT_RECEIVED, False)
+                            else TaskResultReceipt.RETRY
+                        ),
+                        private=True,
+                        sticky=False,
+                    )
+                    return client_task
+                completed = self._remember_completed_client_task(client_task)
+            else:
+                completed = self._get_completed_client_task_info(task_id)
+            if completed and self._matches_retired_assignment(completed, client_name, task_name, attempt_id, fl_ctx):
+                fl_ctx.set_prop(
+                    FLContextKey.TASK_RESULT_RECEIPT,
+                    TaskResultReceipt.RECEIVED if completed.received else TaskResultReceipt.RETRY,
+                    private=True,
+                    sticky=False,
+                )
+                return completed
+            return None
 
     def _remember_completed_client_task(self, client_task: ClientTask):
-        if client_task.result_received_time is None:
-            return
-
-        self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
-            client_name=client_task.client.name, task_name=client_task.task.name
-        )
+        completed = self._completed_client_task_map.get(client_task.id)
+        received = client_task.props.get(_CLIENT_TASK_RESULT_RECEIVED, False)
+        if completed is None:
+            completed = _CompletedClientTaskInfo(
+                client_name=client_task.client.name,
+                task_name=client_task.task.name,
+                attempt_id=client_task.attempt_id,
+                received=received,
+                job_id=client_task.props.get(_CLIENT_TASK_JOB_ID),
+            )
+            self._completed_client_task_map[client_task.id] = completed
+        else:
+            completed.received = completed.received or received
         self._completed_client_task_map.move_to_end(client_task.id)
-        while len(self._completed_client_task_map) > _COMPLETED_CLIENT_TASK_CACHE_SIZE:
+        while len(self._completed_client_task_map) > self._completed_client_task_cache_size:
             self._completed_client_task_map.popitem(last=False)
+        return completed
+
+    @staticmethod
+    def _matches_retired_assignment(completed, client_name, task_name, attempt_id, fl_ctx):
+        peer_ctx = fl_ctx.get_peer_context()
+        return (
+            completed.client_name == client_name
+            and completed.task_name == task_name
+            and completed.attempt_id == attempt_id
+            and isinstance(completed.job_id, str)
+            and bool(completed.job_id)
+            and fl_ctx.get_job_id() == completed.job_id
+            and isinstance(peer_ctx, FLContext)
+            and peer_ctx.get_identity_name() == client_name
+            and peer_ctx.get_job_id() == completed.job_id
+        )
 
     def _get_completed_client_task_info(self, task_id: str):
-        completed_client_task = self._completed_client_task_map.get(task_id)
-        if completed_client_task:
+        completed = self._completed_client_task_map.get(task_id)
+        if completed:
             self._completed_client_task_map.move_to_end(task_id)
-        return completed_client_task
+        return completed
+
+    def check_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Fence assignments; a duplicate only replays receipt, never application work."""
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
+        try:
+            attempt_id = result.get_task_attempt_id()
+        except ValueError as e:
+            self.log_warning(fl_ctx, f"invalid task attempt identity: {e}")
+            return False
+        with self._task_lock:
+            client_task = self._client_task_map.get(task_id)
+            completed = self._get_completed_client_task_info(task_id) if client_task is None else None
+            if client_task is not None:
+                if (
+                    client_task.client.name != client.name
+                    or client_task.task.name != task_name
+                    or client_task.attempt_id != attempt_id
+                ):
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission dropped: assignment identity mismatch; "
+                        f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                    )
+                    return False
+                if client_task.task.completion_status is not None:
+                    completed = self._remember_completed_client_task(client_task)
+                else:
+                    received = client_task.props.get(_CLIENT_TASK_RESULT_RECEIVED, False)
+                    if received:
+                        fl_ctx.set_prop(
+                            FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False
+                        )
+                        self.log_info(fl_ctx, f"result already received; client={client.name}, task_id={task_id}")
+                        return False
+                    return True
+            if completed is not None:
+                if not self._matches_retired_assignment(completed, client.name, task_name, attempt_id, fl_ctx):
+                    self.log_info(
+                        fl_ctx,
+                        f"result submission dropped: retired assignment identity, peer or job mismatch; "
+                        f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                    )
+                    return False
+                if completed.received:
+                    fl_ctx.set_prop(
+                        FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False
+                    )
+                    self.log_info(fl_ctx, f"result already received; client={client.name}, task_id={task_id}")
+                    return False
+                return True  # Preserve the first-late-result policy within this workflow.
+            if attempt_id is not None:
+                self.log_info(
+                    fl_ctx,
+                    f"result submission dropped: unknown task assignment; "
+                    f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
+                )
+                return False
+            return True  # Established unfenced unknown-task hooks.
+
+    def claim_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        with self._controller_lock:
+            return self._claim_submission(client, task_name, task_id, result, fl_ctx)
+
+    def _claim_submission(self, client, task_name, task_id, result, fl_ctx):
+        if not self.check_submission(client, task_name, task_id, result, fl_ctx):
+            return False
+        with self._task_lock:
+            client_task = self._client_task_map.get(task_id)
+            if client_task is not None:
+                client_task.props[_CLIENT_TASK_RESULT_RECEIVED] = True
+                completed = self._completed_client_task_map.get(task_id)
+            else:
+                completed = self._get_completed_client_task_info(task_id)
+            if completed is not None:
+                completed.received = True
+        fl_ctx.set_prop(
+            _SUBMISSION_CLAIM,
+            (self, client.name, task_name, task_id, result.get_task_attempt_id()),
+            private=True,
+            sticky=False,
+        )
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+        return True
+
+    def finish_submission(self, task_id: str, fl_ctx: FLContext):
+        with self._controller_lock:
+            self._finish_submission(task_id, fl_ctx)
+
+    def _finish_submission(self, task_id, fl_ctx):
+        claim = fl_ctx.get_prop(_SUBMISSION_CLAIM)
+        if claim is None or claim[0] is not self or claim[3] != task_id:
+            return
+        fl_ctx.remove_prop(_SUBMISSION_CLAIM, force_removal=True)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+        with self._task_lock:
+            client_task = self._client_task_map.get(task_id)
+            if client_task is not None:
+                client_task.result_received_time = time.time()
+                if client_task.task.completion_status is not None:
+                    self._remember_completed_client_task(client_task)
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        """Called to process a submission from one client.
-
-        .. note::
-
-            This method is called by a separate thread.
-
-        Args:
-            client (Client): the client that submitted this task
-            task_name (str): the task name associated this submission
-            task_id (str): the id associated with the client_task
-            result (Shareable): the actual submitted data from the client
-            fl_ctx (FLContext): the FLContext associated with this submission
-
-        Raises:
-            TypeError: when client is not an instance of Client
-            TypeError: when fl_ctx is not an instance of FLContext
-            TypeError: when result is not an instance of Shareable
-            ValueError: task_name is not found in the client_task
-        """
         with self._controller_lock:
-            self._do_process_submission(client, task_name, task_id, result, fl_ctx)
+            try:
+                self._do_process_submission(client, task_name, task_id, result, fl_ctx)
+            finally:
+                if isinstance(fl_ctx, FLContext):
+                    self._finish_submission(task_id, fl_ctx)
 
-    def _do_process_submission(
-        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
-    ):
+    def _do_process_submission(self, client, task_name, task_id, result, fl_ctx):
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
-
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
         if not isinstance(result, Shareable):
             raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
-
-        with self._task_lock:
-            # task_id is the uuid associated with the client_task
-            client_task = self._client_task_map.get(task_id, None)
-            completed_client_task = self._get_completed_client_task_info(task_id) if client_task is None else None
-            self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
-
-        if client_task is None:
-            if (
-                completed_client_task
-                and completed_client_task.client_name == client.name
-                and completed_client_task.task_name == task_name
-            ):
-                self.log_info(fl_ctx, "client task result is already received - submission dropped")
+        try:
+            attempt_id = result.get_task_attempt_id()
+        except ValueError:
+            self.check_submission(client, task_name, task_id, result, fl_ctx)
+            return
+        claim = (self, client.name, task_name, task_id, attempt_id)
+        if fl_ctx.get_prop(_SUBMISSION_CLAIM) != claim:
+            if not self._claim_submission(client, task_name, task_id, result, fl_ctx):
                 return
-
-            # cannot find a standing task for the submission
-            self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
-
-            self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK")
+        with self._task_lock:
+            client_task = self._client_task_map.get(task_id)
+            if client_task is not None and client_task.task.completion_status is not None:
+                client_task = None
+        if client_task is None:
             self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
-
             self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
-
-            self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK")
             self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
             return
-
         task = client_task.task
         with task.cb_lock:
-            if client_task.client.name != client.name:
-                self.log_warning(
-                    fl_ctx,
-                    f"submission client mismatch for {task_name}:{task_id} - got {client.name} "
-                    f"but task is assigned to {client_task.client.name}",
-                )
-                return
-
-            if task.name != task_name:
-                raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
-
-            if task.completion_status is not None:
-                # the task is already finished - drop the result
-                self.log_info(fl_ctx, "task is already finished - submission dropped")
-                return
-
-            if client_task.result_received_time is not None:
-                self.log_info(fl_ctx, "client task result is already received - submission dropped")
-                return
-
-            # do client task CB processing outside the lock
-            # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
-
             manager = task.props[_TASK_KEY_MANAGER]
             manager.check_task_result(result, client_task, fl_ctx)
-
             if task.result_received_cb is not None:
                 try:
-                    self.log_debug(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
                 except Exception as e:
-                    # this task cannot proceed anymore
                     error_log_ctx = fl_ctx
                     if task.get_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES) is False:
                         error_log_ctx = fl_ctx.clone()
@@ -519,10 +659,6 @@ class WFCommServer(FLComponent, WFCommSpec):
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
-            else:
-                self.log_debug(fl_ctx, "no result_received_cb")
-
-            client_task.result_received_time = time.time()
 
     def _schedule_task(
         self,
@@ -958,7 +1094,11 @@ class WFCommServer(FLComponent, WFCommSpec):
             raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
         if not isinstance(dynamic_targets, bool):
             raise TypeError("dynamic_targets must be an instance of bool, but got {}".format(type(dynamic_targets)))
-        if targets is None and dynamic_targets is False:
+        # An empty list is as unusable as None here: with dynamic_targets off
+        # nothing can be added to it, so the relay would wait out its timeout,
+        # or forever when the task has none. The docstring above has always said
+        # so; the check only covered None.
+        if not targets and dynamic_targets is False:
             raise ValueError("Need to provide targets when dynamic_targets is set to False.")
 
         if send_order == SendOrder.SEQUENTIAL:
