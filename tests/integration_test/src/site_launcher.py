@@ -96,18 +96,18 @@ class SiteLauncher(ABC):
         while True:
             if server.process is not None and not process_group_alive(server.process):
                 raise RuntimeError(f"Server {server.name} exited before readiness (code={server.process.returncode})")
-            try:
-                remaining = max(0.0, deadline - time.monotonic())
-                with socket.create_connection(("127.0.0.1", int(server.port)), timeout=min(0.5, remaining)):
-                    return
-            except OSError as error:
-                last_error = error
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 log_path = os.path.join(server.root_dir, "log.txt")
                 raise RuntimeError(
                     f"Server {server.name} admin port {server.port} did not become ready: "
                     f"{last_error}. Startup log: {log_path}"
                 )
+            try:
+                with socket.create_connection(("127.0.0.1", int(server.port)), timeout=min(0.5, remaining)):
+                    return
+            except OSError as error:
+                last_error = error
             time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
     def stop_server(self, server_id):

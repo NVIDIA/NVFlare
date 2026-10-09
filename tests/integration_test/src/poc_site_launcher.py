@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import sys
@@ -69,6 +70,9 @@ class POCSiteLauncher(SiteLauncher):
         # with server_id = 0
         server_name = "server"
         server_dir_name = os.path.join(self.poc_dir, server_name)
+        with open(os.path.join(server_dir_name, "startup", SERVER_NVF_CONFIG)) as f:
+            server_config = json.load(f)["servers"][0]
+        admin_port = server_config.get("admin_port") or server_config["service"]["target"].rsplit(":", 1)[1]
 
         command = (
             f"{sys.executable} -m {SERVER_SCRIPT}"
@@ -78,7 +82,7 @@ class POCSiteLauncher(SiteLauncher):
         process = run_command_in_subprocess(command)
 
         self.server_properties[server_name] = ServerProperties(
-            name=server_name, root_dir=server_dir_name, process=process, port=f"8{server_id}03"
+            name=server_name, root_dir=server_dir_name, process=process, port=admin_port
         )
         print(f"Launched server ({server_name}) using {command}. process_id: {process.pid}")
 
