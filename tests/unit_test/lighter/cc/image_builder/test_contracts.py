@@ -753,6 +753,20 @@ class ApplicationTests(unittest.TestCase):
             with self.subTest(key=key, invalid=invalid), self.assertRaises(BuildError):
                 self.load()
             self.value["container"][key] = original
+
+    def test_maximum_token_age_reserves_proof_delivery_headroom(self):
+        self.value["container"]["attestation_credentials"] = True
+        for requires_gpu, rejected, accepted in ((False, 76, 90), (True, 256, 270)):
+            self.value["requires_gpu"] = requires_gpu
+            self.value["max_token_age_seconds"] = rejected
+            with (
+                self.subTest(requires_gpu=requires_gpu, value=rejected),
+                self.assertRaisesRegex(BuildError, "delivery margin"),
+            ):
+                self.load()
+            self.value["max_token_age_seconds"] = accepted
+            with self.subTest(requires_gpu=requires_gpu, value=accepted):
+                self.assertEqual(runtime_config(self.load())["max_token_age_seconds"], accepted)
         for invalid in (["10.0.0.1/8"], "10.0.0.0/8", ["10.0.0.0/8", "10.0.0.0/8"]):
             self.value["allowed_out_cidrs"] = invalid
             with self.subTest(cidrs=invalid), self.assertRaises(BuildError):

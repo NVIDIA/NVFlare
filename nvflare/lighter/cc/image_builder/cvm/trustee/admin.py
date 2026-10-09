@@ -110,13 +110,16 @@ def verify_server_provenance(config, build, deployment):
 def publication_locks(config, state):
     """Serialize CVM state first, then the resource policy shared with CoCo."""
     state_lock = (state / "publisher.lock").resolve()
-    policy_lock = Path(config.get("policy_lock", state_lock)).resolve()
+    value = config.get("policy_lock")
+    require(
+        isinstance(value, str) and value and Path(value).expanduser().is_absolute(),
+        "Trustee administration requires an absolute shared policy_lock",
+    )
+    policy_lock = Path(value).expanduser().resolve()
+    require(policy_lock != state_lock, "policy_lock must be the shared CoCo lock, separate from publisher state")
     with lock(state_lock):
-        if policy_lock == state_lock:
+        with lock(policy_lock):
             yield
-        else:
-            with lock(policy_lock):
-                yield
 
 
 def install(config, directory, candidate=False):

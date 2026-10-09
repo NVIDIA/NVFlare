@@ -51,8 +51,10 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
     cc_project = Path(cc_project).resolve(strict=True)
     from nvflare.lighter.cc_provision.config import load_project_config
 
-    load_project_config(cc_project)
-    common_template = yaml.safe_load(cc_project.read_text())
+    common_template = load_project_config(cc_project)
+    # The generated topology has a different declaring directory. Preserve the
+    # loader's absolute paths and omit its private source-location marker.
+    common_template.pop("_config_path", None)
     trustees = [
         name for name, service in common_template["attestation_services"].items() if service["type"] == "trustee"
     ]
@@ -60,15 +62,6 @@ def prepare(output, run_id, base_image, as_key, as_key_sha256, mrtd, platform, s
     if len(trustees) != 1 or len(registries) != 1 or "coco" not in common_template.get("build_tools", {}):
         raise ValueError("Acceptance requires exactly one Trustee service, one registry, and one CoCo build tool")
     trustee_name, registry_name = trustees[0], registries[0]
-    template_root = cc_project.parent
-    trustee = common_template["attestation_services"][trustee_name]
-    for field in ("ca_cert_file", "admin_token_file"):
-        trustee[field] = str((template_root / trustee[field]).resolve())
-    registry = common_template["container_registries"][registry_name]
-    for field in ("ca_cert_file", "publisher_username_file", "publisher_password_file"):
-        registry[field] = str((template_root / registry[field]).resolve())
-    tool = common_template["build_tools"]["coco"]
-    tool["build_command"] = str((template_root / tool["build_command"]).resolve())
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
     output = Path(output)
     old_umask = os.umask(0o077)

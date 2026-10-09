@@ -22,7 +22,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from nvflare.lighter.cc.image_builder.cvm.common.contracts import proof_renewal_window
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import minimum_proof_lifetime
 from nvflare.lighter.cc.vault_adapter import VaultAdapter
 from nvflare.lighter.cc_provision.deployment import (
     CCArtifact,
@@ -134,11 +134,11 @@ class BareMetalCVMDeployment(CCDeployment):
             )
         tools = project_config["build_tools"][self.mode.value]
         maximum_token_age = service.values["token_expiration_seconds"]
-        renewal_window = proof_renewal_window(plan.gpu_tee.value == "nvidia_cc")
-        if maximum_token_age <= renewal_window:
+        minimum_token_age = minimum_proof_lifetime(plan.gpu_tee.value == "nvidia_cc")
+        if maximum_token_age < minimum_token_age:
             raise ValueError(
-                "bare_metal_cvm Trustee token_expiration_seconds must exceed the "
-                f"{renewal_window}-second bounded proof renewal window"
+                "bare_metal_cvm Trustee token_expiration_seconds must be at least "
+                f"{minimum_token_age} seconds to cover proof renewal and delivery"
             )
         settings = {
             "cvm_builder_dir": str(_declared_path(project_config["_config_path"], tools["cvm_builder_dir"])),

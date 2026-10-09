@@ -713,7 +713,13 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     assert settings["tee_device"] is False
 
 
-def test_bare_metal_gpu_rejects_maximum_age_shorter_than_renewal_window(tmp_path):
+@pytest.mark.parametrize(
+    "gpu_tee,maximum_token_age,minimum_token_age",
+    [(GPUTEE.NONE, 76, 90), (GPUTEE.NVIDIA_CC, 256, 270)],
+)
+def test_bare_metal_rejects_maximum_age_without_delivery_headroom(
+    tmp_path, gpu_tee, maximum_token_age, minimum_token_age
+):
     project = prepare_project(
         {
             "api_version": 3,
@@ -733,7 +739,7 @@ def test_bare_metal_gpu_rejects_maximum_age_shorter_than_renewal_window(tmp_path
                 "kbs_endpoint": "https://trustee.example:8443",
                 "ca_cert_file": "ca.pem",
                 "admin_token_file": "admin.jwt",
-                "token_expiration_seconds": 255,
+                "token_expiration_seconds": maximum_token_age,
             }
         ),
         mode_config={
@@ -753,14 +759,14 @@ def test_bare_metal_gpu_rejects_maximum_age_shorter_than_renewal_window(tmp_path
         },
         workload_source=SimpleNamespace(values={"path": tmp_path / "application.tar"}),
         cpu_tee=CPUTEE.INTEL_TDX,
-        gpu_tee=GPUTEE.NVIDIA_CC,
+        gpu_tee=gpu_tee,
     )
     project_config = {
         "_config_path": tmp_path / "cc_project.yml",
         "approval": {"public_key_files": ["approval.pub"]},
         "build_tools": {"bare_metal_cvm": {"cvm_builder_dir": "builder"}},
     }
-    with pytest.raises(ValueError, match="must exceed the 255-second bounded proof renewal window"):
+    with pytest.raises(ValueError, match=f"must be at least {minimum_token_age} seconds"):
         BareMetalCVMDeployment().bind(plan, project_config, project, ctx)
 
 

@@ -61,11 +61,13 @@ an OpenSSL RSA decryptor incompatible with the builder's RSA-OAEP-256 resource
 responses. Test encrypted key retrieval before packaging the client.
 
 For the NVIDIA client feature, first follow [GPU_BUILD.md](GPU_BUILD.md) to build
-NVAT from the revision in Trustee's Cargo.lock, apply the recorded Ubuntu 26.04
-libxml2 compatibility patch, and install its header/library in the disposable
-build environment. That guide then builds the client with `NVAT_USE_SYSTEM_LIB=1`
-and `nvidia-attester`. The command above builds a CPU-only client. Compile guest
-binaries for the guest's Linux environment.
+NVAT from the clean 2026.06.09 source revision pinned by the selector-capable
+client lockfile and install its header/library in the disposable build
+environment. That revision already contains the Ubuntu 26.04 `libxml2`
+const-correctness fix, so no local NVAT patch is applied. The guide then builds
+the client with `NVAT_USE_SYSTEM_LIB=1` and `nvidia-attester`. The command above
+builds a CPU-only client. Compile guest binaries for the guest's Linux
+environment.
 The provenance command accepts either the clean server checkout or exactly the
 checked-in client patch. The CoCo service build records its separate reviewed
 build recipe, source-patch digest, dependency hashes, image ID and exported

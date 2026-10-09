@@ -119,6 +119,61 @@ def test_private_preparation_and_complete_constraints(inputs):
         load("prepare").prepare(**inputs)
 
 
+def test_preparation_preserves_normalized_project_paths(inputs, monkeypatch):
+    source_root = Path(inputs["cc_project"]).parent
+    home = source_root / "home"
+    credentials = home / "credentials"
+    credentials.mkdir(parents=True)
+    for name in ("trustee-ca.pem", "admin.jwt", "registry-ca.pem", "username", "password"):
+        (credentials / name).write_text("fixture")
+    command = home / "bin" / "build"
+    command.parent.mkdir()
+    command.write_text("#!/bin/sh\n")
+    command.chmod(0o700)
+    approval = source_root / "approval.pub"
+    approval.write_text("fixture")
+    builder = source_root / "builder"
+    builder.mkdir()
+    (builder / "cvmctl").write_text("#!/bin/sh\n")
+    (builder / "cvmctl").chmod(0o700)
+
+    project_config = yaml.safe_load(Path(inputs["cc_project"]).read_text())
+    trustee = project_config["attestation_services"]["trustee"]
+    trustee["ca_cert_file"] = "~/credentials/trustee-ca.pem"
+    trustee["admin_token_file"] = "~/credentials/admin.jwt"
+    registry = project_config["container_registries"]["workloads"]
+    for field, name in (
+        ("ca_cert_file", "registry-ca.pem"),
+        ("publisher_username_file", "username"),
+        ("publisher_password_file", "password"),
+    ):
+        registry[field] = f"~/credentials/{name}"
+    project_config["approval"] = {"public_key_files": ["approval.pub"]}
+    project_config["build_tools"] = {
+        "coco": {"build_command": "~/bin/build"},
+        "bare_metal_cvm": {"cvm_builder_dir": "builder", "output_root": "external-output"},
+    }
+    Path(inputs["cc_project"]).write_text(yaml.safe_dump(project_config, sort_keys=False))
+    monkeypatch.setenv("HOME", str(home))
+
+    output = load("prepare").prepare(**inputs)
+
+    for topology in ("a", "b"):
+        generated = load_project_config(output / topology / "cc_project.yml")
+        service = generated["attestation_services"]["trustee"]
+        assert service["ca_cert_file"] == str(credentials / "trustee-ca.pem")
+        assert service["admin_token_file"] == str(credentials / "admin.jwt")
+        assert service["attestation_signing_public_key_file"] == str(output / topology / "trustee-as-public.pem")
+        generated_registry = generated["container_registries"]["workloads"]
+        assert generated_registry["ca_cert_file"] == str(credentials / "registry-ca.pem")
+        assert generated_registry["publisher_username_file"] == str(credentials / "username")
+        assert generated_registry["publisher_password_file"] == str(credentials / "password")
+        assert generated["approval"]["public_key_files"] == [str(approval)]
+        assert generated["build_tools"]["coco"]["build_command"] == str(command)
+        assert generated["build_tools"]["bare_metal_cvm"]["cvm_builder_dir"] == str(builder)
+        assert generated["build_tools"]["bare_metal_cvm"]["output_root"] == str(source_root / "external-output")
+
+
 @pytest.mark.parametrize("topology", ["a", "b"])
 def test_private_application_can_be_read_by_approved_guest_identity(inputs, topology):
     """Private source stays 0600; Docker must transfer ownership to the guest UID."""

@@ -204,9 +204,9 @@ fields are not renamed by mode.
 `token_expiration_seconds` is the maximum accepted EAR age. Bare-metal CVM
 provisioning carries it into the measured guest's proof-renewal schedule and
 uses the earlier of signed `exp` and `iat + token_expiration_seconds`. The value
-must leave room for one complete appraisal plus the 15-second publication
-margin: more than 75 seconds for CPU-only CVMs and more than 255 seconds for
-GPU CVMs.
+must leave room for one complete appraisal, the 15-second expiry margin, and a
+separate 15-second allowance for issuance, retrieval, and publication: at least
+90 seconds for CPU-only CVMs and 270 seconds for GPU CVMs.
 
 `proof_iat_leeway_seconds` and `workload_constraints` preserve the existing
 fail-closed Trustee verifier policy at project scope. When constraints are

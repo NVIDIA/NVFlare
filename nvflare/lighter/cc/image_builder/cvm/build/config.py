@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, proof_renewal_window
+from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, minimum_proof_lifetime
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
@@ -678,8 +678,8 @@ def application(path):
     )
     require_config(
         "max_token_age_seconds" not in value
-        or value["max_token_age_seconds"] > proof_renewal_window(value["requires_gpu"]),
-        "max_token_age_seconds must exceed the bounded proof renewal window",
+        or value["max_token_age_seconds"] >= minimum_proof_lifetime(value["requires_gpu"]),
+        "max_token_age_seconds must include the bounded proof renewal window and delivery margin",
     )
     if "user" in container:
         user = container["user"]

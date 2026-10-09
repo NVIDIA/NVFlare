@@ -53,6 +53,7 @@ class ReviewRegressionTests(unittest.TestCase):
             }
             cfg = {name: str(root / name) for name in ("state", "deployment_receipt", "trustee_build")}
             cfg["trustee_binary"] = str(binary)
+            cfg["policy_lock"] = str(root / "shared-policy.lock")
             write_json(cfg["trustee_build"], dict(contract, source_clean=True, binary_sha256=digest_file(binary)))
             receipt = dict(
                 contract,

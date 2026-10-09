@@ -32,6 +32,9 @@ GPU_ATTESTATION_TIMEOUT_SECONDS = 240
 PROOF_EXPIRY_MARGIN_SECONDS = 15
 
 
+PROOF_DELIVERY_MARGIN_SECONDS = 15
+
+
 STORAGE_PROFILE = "luks2-xts-random-hmac-sha256-v1"
 
 
@@ -49,6 +52,11 @@ def proof_renewal_window(requires_gpu):
     require(type(requires_gpu) is bool, "requires_gpu must be boolean")
     timeout = GPU_ATTESTATION_TIMEOUT_SECONDS if requires_gpu else CPU_ATTESTATION_TIMEOUT_SECONDS
     return timeout + PROOF_EXPIRY_MARGIN_SECONDS
+
+
+def minimum_proof_lifetime(requires_gpu):
+    """Return the minimum accepted age limit including proof-delivery headroom."""
+    return proof_renewal_window(requires_gpu) + PROOF_DELIVERY_MARGIN_SECONDS
 
 
 def identifier(value):

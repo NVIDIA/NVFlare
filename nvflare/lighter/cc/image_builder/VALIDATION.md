@@ -470,7 +470,7 @@ access and client registration succeeded.
   Trustee HTTPS cases** (12 per backend), and **4 real storage tests** passed.
   The macOS Linux-only wrapper was skipped; its underlying suite ran on Linux.
 - Release packaging now includes the complete builder source and assets,
-  including the NVAT compatibility patch. The distribution regression test
+  including the `kbs-client` policy-selector patch. The distribution regression test
   builds an sdist and a wheel from it, compares all builder files byte-for-byte,
   checks executable metadata, and runs the CLI and GPU input tests from the
   extracted wheel. This test and scoped repository style checks passed.
@@ -510,13 +510,10 @@ CVMs and isolated backends were stopped afterward, and the GPU was released.
   This uses archived public evidence; it is not a fresh hardware challenge or a
   live SNP vault-unlock test. See the [fixture provenance and regeneration steps](../../../../tests/unit_test/lighter/cc/image_builder/fixtures/README.md).
 - The actual Intel lab host's headerless `/etc/qgs.conf` passed preflight parsing.
-- NVAT commit `0c1be386a8fbb8f2766a6a556d10df86f5fed9d3` built successfully on
-  Ubuntu 26.04 using only the recorded const-correctness patch. The resulting
-  library version is 1.2.0, soname `libnvat.so.1`, using `libxml2.so.16`.
-  The documented source/provenance checks passed. This build's library SHA-256
-  was `7477e3d947910d3d2b1bfb628962c2c2bdc59b123c900c0933356ddd17379bb3`;
-  record the hash produced by the selected build environment rather than treating
-  this test result as a published binary artifact.
+- This historical run used the former NVAT 2026.03.02 pin and its local
+  const-correctness patch. The current build contract supersedes that input with
+  the clean 2026.06.09 source documented in `GPU_BUILD.md`; the earlier binary
+  and digest are not accepted by the current provenance check.
 - **GPU Stage 1 construction from the clean Ubuntu cloud image passed**, including
   authenticated repository setup, pinned 580.178.04 driver packages, Container
   Toolkit 1.20.0-1, NVAT installation, hardening, verity root construction and OCI
