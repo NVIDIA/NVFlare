@@ -28,6 +28,9 @@ class TestConfigFactory:
             ["/abc/efg/acb@abc.com/fed_client_config.json", "fed_client_config"],
             ["/abc/efg/acb@abc.com/fed_client_config.json.default", "fed_client_config"],
             ["./abc/fed_client_config.json.default", "fed_client_config"],
+            ["fed_client_config", "fed_client_config"],
+            ["/abc/efg/fed_client_config", "fed_client_config"],
+            ["comm_config", "comm_config"],
         ],
     )
     def test_get_file_basename(self, init_file_path, file_basename):
