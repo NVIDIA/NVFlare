@@ -393,9 +393,17 @@ def test_lightning35_explicit_targets_clear_inherited_exclusions_and_reject_conf
     client_module = _load_client_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
     args.model_profile = "lightning35"
-    args.target_modules = "q_proj,v_proj"
+    args.target_modules = " all-linear "
     args.exclude_modules = None
     args.train_file = str(tmp_path / "train.jsonl")
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+
+    assert config["peft"]["target_modules"] == []
+    assert config["peft"]["exclude_modules"] == ["*.out_proj"]
+
+    args.target_modules = "q_proj,v_proj"
+    args.exclude_modules = None
 
     config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
 

@@ -95,11 +95,13 @@ def resolve_model_profile(args):
     values = deepcopy(PROFILES[profile_name])
     requested_target_modules = getattr(args, "target_modules", None)
     requested_exclude_modules = getattr(args, "exclude_modules", None)
+    normalized_target_modules = requested_target_modules.strip() if requested_target_modules is not None else None
+    if normalized_target_modules is not None:
+        args.target_modules = normalized_target_modules
     uses_explicit_target_selection = (
         profile_name == LIGHTNING35_PROFILE
-        and requested_target_modules is not None
-        and bool(requested_target_modules.strip())
-        and requested_target_modules != values["target_modules"]
+        and bool(normalized_target_modules)
+        and normalized_target_modules != values["target_modules"]
     )
     if uses_explicit_target_selection:
         if requested_exclude_modules is not None and requested_exclude_modules.strip():
