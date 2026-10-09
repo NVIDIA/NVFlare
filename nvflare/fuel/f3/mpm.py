@@ -58,12 +58,29 @@ class MainProcessMonitor:
 
     @classmethod
     def add_cleanup_cb(cls, cb, *args, **kwargs):
+        cls._add_cleanup_cb(cb, args, kwargs, prepend=False)
+
+    @classmethod
+    def prepend_cleanup_cb(cls, cb, *args, **kwargs):
+        """Prepend a callback to the pending cleanup list.
+
+        The callback uses the same cleanup thread and grace period as all other
+        callbacks; it does not create another shutdown owner or deadline.
+        """
+        cls._add_cleanup_cb(cb, args, kwargs, prepend=True)
+
+    @classmethod
+    def _add_cleanup_cb(cls, cb, args, kwargs, prepend):
         if not callable(cb):
             raise ValueError(f"specified cleanup_cb {type(cb)} is not callable")
         for _cb in cls._cleanup_cbs:
             if cb == _cb[0]:
                 raise RuntimeError(f"cleanup CB {cb.__name__} is already registered")
-        cls._cleanup_cbs.append((cb, args, kwargs))
+        entry = (cb, args, kwargs)
+        if prepend:
+            cls._cleanup_cbs.insert(0, entry)
+        else:
+            cls._cleanup_cbs.append(entry)
 
     @classmethod
     def _call_cb(cls, t: tuple):
@@ -71,7 +88,7 @@ class MainProcessMonitor:
         try:
             return cb(*args, **kwargs)
         except Exception as ex:
-            cls.logger().error(f"exception from CB {cb.__name__}: {type(secure_format_exception(ex))}")
+            cls.logger().error(f"exception from CB {cb.__name__}: {secure_format_exception(ex)}")
 
     @classmethod
     def _start_shutdown(cls, shutdown_grace_time, cleanup_grace_time):
