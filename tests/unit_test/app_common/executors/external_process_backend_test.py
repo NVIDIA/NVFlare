@@ -3473,7 +3473,9 @@ class TestLaunchPerTask:
             stop_grace_period=30.0,
         )
         _install_auto_result(env, lazy_result=True)
-        # Budget accounting is independent of actual reaper thread scheduling.
+        # Drive END_RUN's reaper budget without a competing result-source monitor
+        # cleaning launch state after the process exits.
+        monkeypatch.setattr(backend, "_monitor_accepted_result_source", lambda *_args: None)
         monkeypatch.setattr(backend, "_reap_trainer_after_result", lambda _trainer: None)
 
         first = backend.execute("train", Shareable(), fl_ctx, Signal())
@@ -3484,6 +3486,7 @@ class TestLaunchPerTask:
         assert first.get_return_code() == ReturnCode.OK
         assert second.get_return_code() == ReturnCode.OK
         assert retired_trainer is not current_trainer
+        assert backend._active_launch is current_trainer
         assert all(process.returncode is None for process in env.harness.processes)
         assert all(trainer.result_source_live.is_set() for trainer in (retired_trainer, current_trainer))
 
