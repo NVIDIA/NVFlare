@@ -3394,7 +3394,9 @@ class TestLaunchPerTask:
             finalize_thread.join(timeout=1.0)
 
     def test_retired_result_source_can_heartbeat_and_settle_after_next_launch(self, env, client_job_exit):
-        backend, fl_ctx = _initialized_backend(env, launch_once=False, heartbeat_timeout=0.1)
+        # This exercises the retired session protocol, not heartbeat expiry. Disable
+        # the liveness deadline so a busy runner cannot reap it before the assertions.
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, heartbeat_timeout=0.0)
         _install_auto_result(env, lazy_result=True)
 
         first = backend.execute("train", Shareable(), fl_ctx, Signal())
