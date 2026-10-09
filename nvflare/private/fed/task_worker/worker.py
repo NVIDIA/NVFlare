@@ -127,7 +127,7 @@ def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ct
     # START_RUN/END_RUN are attempt-scoped initialization adapters here. Only
     # the explicitly selected compute graph receives them; job-scoped
     # handlers are neither copied nor replayed.
-    runtime.set_compute_graph(components, executor)
+    runtime.set_compute_graph(components, executor, handlers=builder.handlers)
     return executor
 
 

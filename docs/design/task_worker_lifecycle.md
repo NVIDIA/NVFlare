@@ -13,8 +13,10 @@ the job audit sink first, preserving allow-all and warn-mode authorization recor
 The current builder repeats authorization during graph construction; these checks
 are safe but can be consolidated in a later optimization.
 
-START_RUN and END_RUN apply only to the selected attempt compute graph. On a
-Python exception, both cleanup events are attempted and the first exception is
+START_RUN and END_RUN apply only to the selected attempt compute graph, including
+nested FLComponents constructed for executor/component arguments. Each instance
+receives lifecycle and task events once, with children registered before parents.
+On a Python exception, both cleanup events are attempted and the first exception is
 retained in failure.json. Later cleanup exceptions cannot overwrite it.
 Wall-clock start/end timestamps are diagnostic and may move backward. Elapsed
 time is measured with time.monotonic(). The worker has no SIGTERM handler: launcher cancellation can terminate it without

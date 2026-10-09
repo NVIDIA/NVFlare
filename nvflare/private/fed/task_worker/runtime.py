@@ -78,11 +78,16 @@ class TaskRuntime:
             private_stickers={FLContextKey.RUN_ABORT_SIGNAL: self.abort_signal},
         )
 
-    def set_compute_graph(self, components, executor):
-        """Install only the attempt's graph, never its job's handler graph."""
+    def set_compute_graph(self, components, executor, handlers=None):
+        """Install the attempt's graph, including its nested constructor components."""
         self._components = dict(components)
-        self._handlers = [component for component in components.values() if isinstance(component, FLComponent)]
-        self._handlers.append(executor)
+        self._handlers = []
+        seen = set()
+        for component in [*(handlers or ()), *components.values(), executor]:
+            # Aliases and the executor may refer to an already registered object.
+            if isinstance(component, FLComponent) and id(component) not in seen:
+                self._handlers.append(component)
+                seen.add(id(component))
 
     def get_component(self, component_id: str):
         return self._components.get(component_id)

@@ -112,6 +112,38 @@ class ReferenceExecutor(Executor):
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         component = fl_ctx.get_engine().get_component(self.source_model)
         return Shareable({"value": component.value + shareable["value"], "options": self.options})
+
+
+class LifecycleHelper(FLComponent):
+    def __init__(self, marker_path, label, helper=None, fail_at=None):
+        super().__init__()
+        self.marker_path = marker_path
+        self.label = label
+        self.helper = helper
+        self.fail_at = fail_at
+        self.started = False
+
+    def handle_event(self, event_type, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write(json.dumps([self.label, event_type]) + "\\n")
+        if event_type == EventType.START_RUN:
+            if self.helper is not None and not self.helper.started:
+                raise RuntimeError("nested helper must start before its parent")
+            self.started = True
+        if event_type == self.fail_at:
+            raise ValueError("nested helper lifecycle failure")
+
+
+class NestedExecutor(Executor):
+    def __init__(self, helper=None):
+        super().__init__()
+        self.helper = helper
+
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        helper = self.helper or fl_ctx.get_engine().get_component("parent").helper
+        if not helper.started or not helper.helper.started:
+            raise RuntimeError("nested helpers were not initialized")
+        return Shareable({"initialized": True})
 """ % (
     JobProcessEnv.ALL,
 )
@@ -262,6 +294,64 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
     failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
     assert failure["identity"] == identity.to_dict()
     assert failure["error_type"] == "ValueError"
+
+
+@pytest.mark.parametrize("location", ["executor", "component"])
+@pytest.mark.parametrize("fail_at", [None, EventType.START_RUN, EventType.END_RUN])
+def test_nested_compute_graph_receives_lifecycle_events(tmp_path, location, fail_at):
+    workspace_root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("nested-lifecycle")
+    marker = tmp_path / "nested-events.jsonl"
+
+    def helper_config(label, helper=None, fail_at=None):
+        return {
+            "path": "worker_components.LifecycleHelper",
+            "args": {"marker_path": str(marker), "label": label, "helper": helper, "fail_at": fail_at},
+        }
+
+    helper = helper_config("helper", helper_config("leaf", fail_at=fail_at))
+    executor = {"path": "worker_components.NestedExecutor", "args": {}}
+    components = ()
+    labels = ["leaf", "helper"]
+    if location == "executor":
+        executor["args"]["helper"] = helper
+    else:
+        components = ({"id": "parent", **helper_config("parent", helper)},)
+        labels.append("parent")
+    path = _stage(store, identity, workspace_root, executor, Shareable(), components=components)
+
+    process = _run_process(path)
+
+    if fail_at is None:
+        assert process.returncode == 0, process.stderr
+        result, _completion = store.read_result(identity)
+        assert result["initialized"] is True
+    else:
+        assert process.returncode != 0
+        failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+        assert "nested helper lifecycle failure" in failure["message"]
+        with pytest.raises(IncompleteTaskArtifactError):
+            store.read_result(identity)
+
+    events = [EventType.ABOUT_TO_START_RUN, EventType.START_RUN]
+    if fail_at != EventType.START_RUN:
+        events.extend([EventType.BEFORE_TASK_EXECUTION, EventType.AFTER_TASK_EXECUTION])
+    events.extend([EventType.ABOUT_TO_END_RUN, EventType.END_RUN])
+    observed = [json.loads(line) for line in marker.read_text().splitlines()]
+    assert observed == [[label, event] for event in events for label in labels]
+
+
+def test_task_runtime_dispatches_each_component_instance_once():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    calls = []
+    component = FLComponent()
+    component.handle_event = lambda event, _ctx: calls.append(event)
+    runtime.set_compute_graph({"first": component, "alias": component}, component)
+
+    runtime.fire_event(EventType.START_RUN, runtime.new_context())
+
+    assert calls == [EventType.START_RUN]
 
 
 def test_component_authorization_rejects_custom_executor_before_import(tmp_path):
