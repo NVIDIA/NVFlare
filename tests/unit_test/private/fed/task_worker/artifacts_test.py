@@ -27,12 +27,6 @@ from nvflare.private.fed.task_worker import (
     artifacts,
 )
 from nvflare.private.fed.task_worker.artifacts import ArtifactReference, TaskCompletion
-from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
-
-
-@pytest.fixture(autouse=True)
-def _initialize_fobs():
-    nvflare_fobs_initialize()
 
 
 def _identity(attempt_id="attempt-1"):

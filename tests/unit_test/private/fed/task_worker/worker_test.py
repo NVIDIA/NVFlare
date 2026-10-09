@@ -35,15 +35,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskLaunchRequest
-from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
-from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
-from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
@@ -57,7 +51,6 @@ from nvflare.private.fed.task_worker import (
     write_bootstrap,
 )
 from nvflare.private.fed.task_worker.runtime import TaskRuntime, UnsupportedTaskRuntimeService
-from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 _PROBE_MODULE = """
 import json
@@ -121,18 +114,6 @@ class ReferenceExecutor(Executor):
 """ % (
     JobProcessEnv.ALL,
 )
-
-
-@pytest.fixture(autouse=True)
-def _initialize_fobs():
-    nvflare_fobs_initialize()
-    # Other suites reset the registry without resetting module-level guards.
-    # Register this fixture's exact dependencies on every invocation.
-    fobs.register(DictDecomposer(Shareable))
-    fobs.register(DictDecomposer(ModelLearnable))
-    fobs.register(DXODecomposer)
-    fobs.register(FLModelDecomposer)
-    fobs.register(NumpyArrayDecomposer)
 
 
 def _workspace(tmp_path):
