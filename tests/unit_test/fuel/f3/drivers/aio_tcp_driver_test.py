@@ -14,7 +14,7 @@
 
 import asyncio
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,6 +38,9 @@ def test_shutdown_runs_on_aio_loop_and_is_idempotent(monkeypatch):
         def close(self):
             calls.append(("server.close", threading.get_ident()))
 
+        async def wait_closed(self):
+            calls.append(("server.wait_closed", threading.get_ident()))
+
     def close_all():
         calls.append(("close_all", threading.get_ident()))
 
@@ -45,17 +48,17 @@ def test_shutdown_runs_on_aio_loop_and_is_idempotent(monkeypatch):
     driver.server = _Server()
 
     try:
-        driver.shutdown()
-        driver.shutdown()
+        driver.shutdown().result(timeout=5)
+        driver.shutdown().result(timeout=5)
     finally:
-        # Queued callbacks must run even when the global AIO context stops immediately.
         aio_ctx.stop_aio_loop()
         loop_thread.join(timeout=5)
 
     assert not loop_thread.is_alive()
     assert calls == [
-        ("close_all", loop_thread.ident),
         ("server.close", loop_thread.ident),
+        ("close_all", loop_thread.ident),
+        ("server.wait_closed", loop_thread.ident),
         ("close_all", loop_thread.ident),
     ]
     assert driver.server is None
@@ -72,13 +75,19 @@ def test_shutdown_schedules_transport_close_on_owning_event_loop(target):
         with patch("nvflare.fuel.f3.drivers.aio_tcp_driver.AioContext.get_global_context", return_value=context):
             driver = AioTcpDriver()
         driver.server = transport = MagicMock()
+        transport.wait_closed = AsyncMock()
         close = driver.shutdown
 
     close()
     transport.close.assert_not_called()
-    loop = context.get_event_loop.return_value
-    loop.call_soon_threadsafe.assert_called_once()
-    loop.call_soon_threadsafe.call_args.args[0]()
+    if target == "connection":
+        loop = context.get_event_loop.return_value
+        loop.call_soon_threadsafe.assert_called_once()
+        loop.call_soon_threadsafe.call_args.args[0]()
+    else:
+        context.run_coro.assert_called_once()
+        asyncio.run(context.run_coro.call_args.args[0])
+        transport.wait_closed.assert_awaited_once()
     transport.close.assert_called_once()
 
 
@@ -108,12 +117,13 @@ def test_connection_registered_after_shutdown_is_closed():
         reader, peer = await asyncio.open_connection(*server.sockets[0].getsockname())
         try:
             await asyncio.wait_for(accepted.wait(), 2)
-            driver.connector.stopped.set()
-            driver._shutdown_on_loop()
+            completion = driver.shutdown()
+            await asyncio.sleep(0)
             register.set()
             assert await asyncio.wait_for(reader.read(1), 2) == b""
             await asyncio.wait_for(server.wait_closed(), 2)
             await asyncio.wait_for(finished.wait(), 2)
+            await asyncio.wait_for(completion, 2)
             assert not driver.connections
         finally:
             register.set()
@@ -133,6 +143,7 @@ def test_listener_created_during_shutdown_is_closed():
     async def shutdown():
         context = MagicMock()
         context.get_event_loop.return_value = asyncio.get_running_loop()
+        context.run_coro.side_effect = asyncio.create_task
         with patch.object(AioContext, "get_global_context", return_value=context):
             driver = AioTcpDriver()
         driver.connector = ConnectorInfo(
@@ -154,8 +165,7 @@ def test_listener_created_during_shutdown_is_closed():
             try:
                 await asyncio.wait_for(created.wait(), 2)
                 sockets = servers[0].sockets
-                driver.connector.stopped.set()
-                driver._shutdown_on_loop()
+                await driver.shutdown()
                 release.set()
                 await asyncio.wait_for(asyncio.shield(listener), 2)
                 assert all(sock.fileno() == -1 for sock in sockets)
