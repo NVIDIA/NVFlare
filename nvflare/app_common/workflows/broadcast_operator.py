@@ -17,10 +17,10 @@ import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskPropKey
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -28,11 +28,12 @@ from nvflare.app_common.workflows.error_handling_controller import ErrorHandling
 
 
 class BroadcastAndWait(FLComponent):
-    def __init__(self, fl_ctx: FLContext, controller: ErrorHandlingController):
+    def __init__(self, fl_ctx: FLContext, controller: ErrorHandlingController, log_client_names: bool = True):
         super().__init__()
         self.lock = threading.Lock()
         self.fl_ctx = fl_ctx
         self.controller = controller
+        self.log_client_names = log_client_names
         self.task = None
 
         # [target, DXO]
@@ -49,6 +50,7 @@ class BroadcastAndWait(FLComponent):
         abort_signal: Signal = None,
     ) -> Dict[str, DXO]:
         task = Task(name=task_name, data=task_input, result_received_cb=self.results_cb, props=task_props)
+        task.set_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES, self.log_client_names)
         self.controller.broadcast_and_wait(task, fl_ctx, targets, min_responses, 0, abort_signal)
         return self.results
 
@@ -78,6 +80,7 @@ class BroadcastAndWait(FLComponent):
         tasks = {}
         for client_name in task_inputs:
             task = Task(name=task_name, data=task_inputs[client_name], result_received_cb=self.results_cb)
+            task.set_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES, self.log_client_names)
             tasks[client_name] = task
         return tasks
 
@@ -93,17 +96,27 @@ class BroadcastAndWait(FLComponent):
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
         task_name = client_task.task.name
-        print("task_name", task_name)
-        self.log_info(fl_ctx, f"Processing {task_name}, {self.task} result from client {client_name}")
+        log_ctx = self._logging_context(fl_ctx)
+        processing_client_detail = f" from client {client_name}" if self.log_client_names else ""
+        self.log_info(log_ctx, f"Processing {task_name}, {self.task} result{processing_client_detail}")
         result = client_task.result
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
-            self.log_info(fl_ctx, f"Received result from client:{client_name} for task {task_name} ")
+            received_client_detail = f" from client:{client_name}" if self.log_client_names else ""
+            self.log_info(log_ctx, f"Received result{received_client_detail} for task {task_name} ")
             dxo = from_shareable(result)
             self.update_result(client_name, dxo)
         else:
             if rc in self.controller.abort_job_in_error.keys():
-                self.controller.handle_client_errors(rc, client_task, fl_ctx)
+                self.controller.handle_client_errors(rc, client_task, log_ctx)
 
         # Cleanup task result
         client_task.result = None
+
+    def _logging_context(self, fl_ctx: FLContext) -> FLContext:
+        if self.log_client_names or not fl_ctx:
+            return fl_ctx
+
+        log_ctx = fl_ctx.clone()
+        log_ctx.remove_prop(ReservedKey.PEER_CTX, force_removal=True)
+        return log_ctx
