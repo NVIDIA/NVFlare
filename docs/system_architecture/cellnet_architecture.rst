@@ -114,7 +114,7 @@ The **Cell** class provides a unified interface for streaming and non-streaming 
 **Excluded Channels** (non-streaming):
 
 - ``CellChannel.CLIENT_MAIN`` - Admin commands
-- ``CellChannel.SERVER_MAIN`` - Task distribution
+- ``CellChannel.SERVER_MAIN`` - Client registration, heartbeat, quit and job outcome reports
 - ``CellChannel.RETURN_ONLY`` - Internal replies
 - ``CellChannel.CLIENT_COMMAND`` - Client commands
 - Other internal channels
@@ -160,7 +160,7 @@ This is stored in message headers:
      - Admin commands
    * - CellChannel.SERVER_MAIN
      - "task"
-     - Task distribution
+     - Client registration, heartbeat, quit and job outcome reports
    * - CellChannel.AUX_COMMUNICATION
      - "aux_communication"
      - Application-defined
@@ -169,7 +169,7 @@ This is stored in message headers:
      - Internal reply routing
    * - CellChannel.SERVER_COMMAND
      - "server_command"
-     - Server commands
+     - Server commands, including GET_TASK and SUBMIT_UPDATE
 
 
 Communication Patterns
