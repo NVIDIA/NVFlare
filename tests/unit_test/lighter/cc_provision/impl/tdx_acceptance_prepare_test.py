@@ -97,6 +97,7 @@ def inputs(tmp_path):
     )
 
 
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_private_preparation_and_complete_constraints(inputs):
     output = load("prepare").prepare(**inputs)
     assert output.stat().st_mode & 0o777 == 0o700
@@ -119,6 +120,7 @@ def test_private_preparation_and_complete_constraints(inputs):
         load("prepare").prepare(**inputs)
 
 
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_preparation_preserves_normalized_project_paths(inputs, monkeypatch):
     source_root = Path(inputs["cc_project"]).parent
     home = source_root / "home"
@@ -175,6 +177,7 @@ def test_preparation_preserves_normalized_project_paths(inputs, monkeypatch):
 
 
 @pytest.mark.parametrize("topology", ["a", "b"])
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_private_application_can_be_read_by_approved_guest_identity(inputs, topology):
     """Private source stays 0600; Docker must transfer ownership to the guest UID."""
     output = load("prepare").prepare(**inputs)
@@ -257,6 +260,7 @@ def test_baked_application_preserves_explicit_policy_and_is_idempotent(tmp_path)
 
 
 @pytest.mark.parametrize("topology", ["a", "b"])
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkeypatch, topology):
     """Exercise real provision parsing/finalization; no image build or trust-service request."""
     from nvflare.lighter.constants import CtxKey, ProvFileName
