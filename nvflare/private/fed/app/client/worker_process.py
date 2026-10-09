@@ -148,16 +148,16 @@ def main(args):
                     # abort the runner after those joins is too late.
                     client_app_runner.stop()
 
-        def _cleanup():
+        def _cleanup(*, stop_command_admission=None, before_streaming_shutdown=None):
             try:
                 shutdown_job_process_runtime(
-                    stop_command_admission=_close_commands if client_app_runner else None,
+                    stop_command_admission=stop_command_admission,
                     wait_for_command_callbacks=(
                         client_app_runner.wait_for_command_callbacks if client_app_runner else None
                     ),
                     stop_cell=federated_client.stop_cell if federated_client else None,
                     logger=logger,
-                    before_streaming_shutdown=_archive_results,
+                    before_streaming_shutdown=before_streaming_shutdown,
                 )
             finally:
                 # Preserve the upload exception, but never let it bypass the remaining
@@ -171,12 +171,31 @@ def main(args):
                     thread.join()
 
         if execution_failed:
-            # Let MPM classify the original exception before cleanup. Worker
-            # archival must run while process-global F3/Cell services are alive,
-            # under MPM's existing cleanup owner and grace period.
-            mpm.prepend_cleanup_cb(_cleanup)
+            # Keep publication outside MPM's short cleanup grace period and
+            # inside the original exception context. Workspace transfer has its
+            # own connection/transfer timeouts and needs the F3/Cell services.
+            try:
+                if client_app_runner:
+                    try:
+                        _close_commands()
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"failed to stop command admission: {secure_format_exception(e)}")
+                _archive_results()
+            except Exception as e:
+                if logger:
+                    logger.error(
+                        f"failed to archive job results while handling another error: {secure_format_exception(e)}"
+                    )
+            finally:
+                # Only the remaining teardown, which can block on executor or
+                # transport joins, uses MPM's existing cleanup owner and budget.
+                mpm.prepend_cleanup_cb(_cleanup)
         else:
-            _cleanup()
+            _cleanup(
+                stop_command_admission=_close_commands if client_app_runner else None,
+                before_streaming_shutdown=_archive_results,
+            )
 
 
 def parse_arguments():

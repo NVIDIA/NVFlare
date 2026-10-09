@@ -88,7 +88,7 @@ class MainProcessMonitor:
         try:
             return cb(*args, **kwargs)
         except Exception as ex:
-            cls.logger().error(f"exception from CB {cb.__name__}: {type(secure_format_exception(ex))}")
+            cls.logger().error(f"exception from CB {cb.__name__}: {secure_format_exception(ex)}")
 
     @classmethod
     def _start_shutdown(cls, shutdown_grace_time, cleanup_grace_time):

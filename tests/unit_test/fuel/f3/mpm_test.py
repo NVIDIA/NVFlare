@@ -81,6 +81,7 @@ def test_execution_failure_is_classified_before_deferred_cleanup(cleanup_monitor
 
     assert rc == expected_rc
     assert any("original execution failure" in message for message in errors_before_cleanup)
+    assert any("secondary cleanup failure" in call.args[0] for call in logger.error.call_args_list)
 
 
 def test_dependent_cleanup_rejects_duplicate_callback(cleanup_monitor):
