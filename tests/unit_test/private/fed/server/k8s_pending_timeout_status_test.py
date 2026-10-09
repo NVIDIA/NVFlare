@@ -29,7 +29,7 @@ chains them so a single regression test covers the full pipeline:
     K8sJobHandle (Pending → terminate)
       → poll() == JobReturnCode.EXCEPTION
       → ClientExecutor.REPORTABLE_JOB_FAILURES has reason for code
-      → FederatedServer.process_job_failure → JobRunner.fail_run
+      → FederatedServer.process_job_outcome → JobRunner.fail_run
       → JobRunner._get_finished_job_status → FINISHED_EXECUTION_EXCEPTION
 """
 
@@ -158,7 +158,7 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
     """Client's CJ pod stuck pending → list_jobs shows FINISHED:EXECUTION_EXCEPTION.
 
     Wires the real K8sJobHandle through the client's REPORTABLE_JOB_FAILURES
-    contract, the server's process_job_failure dispatch, JobRunner.fail_run,
+    contract, the server's process_job_outcome dispatch, JobRunner.fail_run,
     and finally JobRunner._get_finished_job_status. Asserts the finished
     status value.
     """
@@ -171,12 +171,12 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
     assert launcher_return_code == JobReturnCode.EXCEPTION
 
     # 2. Client recognizes this as a reportable failure and would send
-    #    REPORT_JOB_FAILURE with that exact code.
+    #    REPORT_JOB_OUTCOME with that exact code.
     assert launcher_return_code in REPORTABLE_JOB_FAILURES
     failure_reason = REPORTABLE_JOB_FAILURES[launcher_return_code]
     assert failure_reason  # non-empty
 
-    # 3. Server's process_job_failure dispatcher routes EXCEPTION-class codes
+    # 3. Server's process_job_outcome dispatcher routes EXCEPTION-class codes
     #    to JobRunner.fail_run with ProcessExitCode.EXCEPTION. We assert the
     #    routing rule directly here (covered fully in fed_server_test.py).
     assert launcher_return_code in (
@@ -257,7 +257,7 @@ def test_sj_exit_after_fail_run_does_not_clobber_exception_status(_mock_sleep, s
     job.job_id = "job-1"
     runner.running_jobs = {"job-1": job}
 
-    # Step 1: client reports EXCEPTION via REPORT_JOB_FAILURE → fail_run.
+    # Step 1: client reports EXCEPTION via REPORT_JOB_OUTCOME → fail_run.
     runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
     assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
 

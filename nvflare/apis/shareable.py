@@ -14,7 +14,7 @@
 import copy
 
 from ..fuel.utils import fobs
-from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
+from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey, TaskResultReceipt
 
 
 class ReservedHeaderKey:
@@ -27,6 +27,9 @@ class ReservedHeaderKey:
     REPLY_IS_LATE = "__reply_is_late__"
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
+    TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
+    TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
+    TASK_RESULT_RECEIPT = "__task_result_receipt__"
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
@@ -44,6 +47,27 @@ class Shareable(dict):
     Shareable is just a dict that can have any keys and values, defined by developers and users.
     It is recommended that keys are strings. Values must be serializable.
     """
+
+    def get_task_result_receipt(self, task_id: str, attempt_id: str, workflow_id: str) -> str | None:
+        """Return only a receipt bound to the exact submitted assignment."""
+        expected = (
+            (ReservedHeaderKey.TASK_ID, task_id),
+            (ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id),
+            (ReservedHeaderKey.WORKFLOW, workflow_id),
+        )
+        try:
+            if any(not isinstance(value, str) or not value or self.get_header(key) != value for key, value in expected):
+                return None
+            receipt = self.get_header(ReservedHeaderKey.TASK_RESULT_RECEIPT)
+            if isinstance(receipt, str) and receipt in (
+                TaskResultReceipt.RECEIVED,
+                TaskResultReceipt.TASK_CLOSED,
+                TaskResultReceipt.RETRY,
+            ):
+                return receipt
+        except ValueError:
+            pass
+        return None
 
     def __init__(self, data: dict | None = None):
         """Init the Shareable."""
@@ -102,6 +126,38 @@ class Shareable(dict):
         if not jar:
             return default
         return jar.get(name, default)
+
+    def get_task_attempt_id(self):
+        """Return the scheduling authority's attempt ID, rejecting wire conflicts.
+
+        Cookies let existing job-based clients echo the assignment identity
+        unchanged. New clients also echo it in the header. Neither representation
+        may contradict the other or downgrade an attempt-fenced assignment.
+        ``None`` is reserved for legacy, unfenced task protocols.
+        """
+        cookie_jar = self.get_cookie_jar()
+        if cookie_jar is not None and not isinstance(cookie_jar, dict):
+            raise ValueError("task attempt cookie jar must be a dict")
+        header = self.get_header(ReservedHeaderKey.TASK_ATTEMPT_ID)
+        cookie = self.get_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID)
+        if header is not None and cookie is not None and header != cookie:
+            raise ValueError("conflicting task attempt identities")
+        attempt_id = cookie if cookie is not None else header
+        if attempt_id is not None and (
+            not isinstance(attempt_id, str) or not attempt_id.strip() or "\x00" in attempt_id
+        ):
+            raise ValueError("task attempt ID must be a non-empty string without NUL")
+        required = False
+        for value in (
+            self.get_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED),
+            self.get_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED),
+        ):
+            if value is not None and not isinstance(value, bool):
+                raise ValueError("task attempt requirement must be a bool")
+            required = required or value is True
+        if required and attempt_id is None:
+            raise ValueError("attempt-fenced task assignment requires a task attempt ID")
+        return attempt_id
 
     def set_peer_props(self, props: dict):
         self.set_header(ReservedHeaderKey.PEER_PROPS, props)
