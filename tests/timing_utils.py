@@ -31,6 +31,8 @@ def isolate_time(monkeypatch, *modules):
     Patching ``some_module.time.monotonic`` otherwise changes the singleton
     stdlib time module, including logging, transports and unrelated workers.
     Cooperating modules share one copy so their timestamp origins still agree.
+    Patch the selected module's time reference afterward; patching stdlib
+    time.time or time.sleep will not affect the isolated copy.
     """
     local_time = SimpleNamespace(**vars(time))
     for module in modules:

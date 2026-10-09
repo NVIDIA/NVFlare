@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 
+import psutil
 import yaml
 
 from nvflare.apis.job_def import RunStatus
@@ -90,6 +91,115 @@ def stop_process_group(process, graceful_timeout=5.0, kill_timeout=5.0):
     # Group disappearance can precede waitpid observing the leader's exit.
     # Confirm reaping before declaring cleanup complete.
     process.wait(timeout=kill_timeout)
+
+
+def run_cleanup_steps(steps):
+    """Attempt every cleanup step, then report all failures together."""
+    errors = []
+    for description, cleanup in steps:
+        try:
+            cleanup()
+        except Exception as error:
+            errors.append((description, error))
+    if errors:
+        details = "\n".join(f"{description}: {error}" for description, error in errors)
+        raise RuntimeError(f"Cleanup failed:\n{details}") from errors[0][1]
+
+
+def find_site_processes(root_dir, parents=()):
+    # Match path arguments at a directory boundary, including relative paths
+    # and --workspace=PATH. A sibling such as site-10 must not match site-1.
+    roots = {os.path.normpath(root_dir), os.path.abspath(root_dir), os.path.realpath(root_dir)}
+    processes = set(parents)
+    for process in psutil.process_iter(["cmdline"]):
+        if process.pid == os.getpid():
+            continue
+        for argument in process.info["cmdline"] or []:
+            path = argument.split("=", 1)[-1] if argument.startswith("--") else argument
+            if any(path == root or path.startswith(root + os.sep) for root in roots):
+                processes.add(process)
+                break
+    for process in list(processes):
+        try:
+            if process.is_running():
+                processes.update(process.children(recursive=True))
+        except psutil.NoSuchProcess:
+            pass
+    return processes
+
+
+def _process_running(process):
+    try:
+        # Zombies have exited and cannot write to the workspace. Their new
+        # parent must reap them; they are not surviving training processes.
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=()):
+    """Stop the launcher and workspace jobs, including descendants in new sessions."""
+    owned = set(known_processes)
+
+    def capture_descendants():
+        parents = []
+        if process is not None and process.poll() is None:
+            try:
+                parents.append(psutil.Process(process.pid))
+            except psutil.NoSuchProcess:
+                pass
+        owned.update(find_site_processes(root_dir, parents))
+
+    def stop_jobs():
+        deadline = time.monotonic() + kill_timeout
+        while True:
+            # Rescan after stopping the launcher to catch jobs created during
+            # shutdown. Keep the earlier identities for trainers without a
+            # workspace argument that have since been reparented.
+            owned.update(find_site_processes(root_dir, owned))
+            running = [child for child in owned if _process_running(child)]
+            if not running:
+                return
+            errors = []
+            for child in running:
+                try:
+                    child.kill()  # psutil checks PID identity before signalling
+                except psutil.NoSuchProcess:
+                    pass
+                except psutil.AccessDenied as error:
+                    errors.append(str(error))
+            remaining = max(0.0, deadline - time.monotonic())
+            psutil.wait_procs(running, timeout=min(0.1, remaining))
+            survivors = [child for child in running if _process_running(child)]
+            if time.monotonic() >= deadline:
+                owned.update(find_site_processes(root_dir, owned))
+                survivors = [child for child in owned if _process_running(child)]
+                if not survivors and not errors:
+                    return
+            if errors or (survivors and time.monotonic() >= deadline):
+                pids = ", ".join(str(child.pid) for child in survivors)
+                raise RuntimeError(f"Site {root_dir} processes survived cleanup (pids={pids}): {'; '.join(errors)}")
+
+    steps = [("Capture site descendants", capture_descendants)]
+    if process is not None:
+
+        def stop_launcher():
+            if process.poll() is None:
+                try:
+                    stop_process_group(process)
+                except PermissionError:
+                    # A group probe can race with group exit. Fall back to the
+                    # captured process identities; cleanup still fails if any
+                    # kill is denied or the launcher cannot be reaped below.
+                    pass
+
+        steps.append(("Stop site launcher group", stop_launcher))
+    steps.append(("Stop workspace job processes", stop_jobs))
+    if process is not None:
+        # Reap after the identity-based fallback has stopped the launcher too.
+        # Never look up or signal a departed launcher's reusable numeric PID.
+        steps.append(("Reap site launcher", lambda: process.wait(timeout=kill_timeout)))
+    run_cleanup_steps(steps)
 
 
 def wait_command_process(process, command, timeout=300.0):

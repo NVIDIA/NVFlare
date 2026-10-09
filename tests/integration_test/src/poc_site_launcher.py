@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+from functools import partial
 
 from nvflare.tool.poc.poc_commands import _prepare_poc
 
@@ -23,6 +24,7 @@ from .constants import CLIENT_NVF_CONFIG, CLIENT_SCRIPT, SERVER_NVF_CONFIG, SERV
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties
 from .utils import (
     cleanup_job_and_snapshot,
+    run_cleanup_steps,
     run_command_in_subprocess,
     update_job_store_path_in_workspace,
     update_snapshot_path_in_workspace,
@@ -98,6 +100,15 @@ class POCSiteLauncher(SiteLauncher):
         print(f"Launched client {client_name} process using {command}. process_id: {process.pid}")
 
     def cleanup(self):
-        cleanup_job_and_snapshot(self.poc_dir, "server")
-        print(f"Deleting temporary directory: {self.poc_temp_dir}.")
-        shutil.rmtree(self.poc_temp_dir)
+        def remove_workspace():
+            self.require_sites_stopped()
+            run_cleanup_steps(
+                [
+                    ("Clean server storage", partial(cleanup_job_and_snapshot, self.poc_dir, "server")),
+                    ("Remove POC workspace", partial(shutil.rmtree, self.poc_temp_dir)),
+                ]
+            )
+            self.server_properties.clear()
+            self.client_properties.clear()
+
+        run_cleanup_steps([("Stop POC sites", self.stop_all_sites), ("Remove workspace", remove_workspace)])

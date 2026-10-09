@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from functools import partial
 from typing import Any
 
 import pytest
@@ -32,7 +33,7 @@ from tests.integration_test.src import (
     read_yaml,
     run_command_in_subprocess,
 )
-from tests.integration_test.src.utils import wait_command_process
+from tests.integration_test.src.utils import run_cleanup_steps, run_command_and_wait, wait_command_process
 
 
 def _print_newlines(repeat=5):
@@ -162,8 +163,21 @@ def _stop_background_processes(processes, graceful_timeout: float = 10.0, kill_t
         raise NVFTestError(f"Background process group survived SIGKILL: {group_details}")
 
 
+def _teardown_test_case(background_processes, teardown, test_driver, reset_job_info):
+    steps = [("Stop background processes", partial(_stop_background_processes, background_processes))]
+    for command in teardown:
+        steps.append(
+            (
+                f"Teardown command {command}",
+                partial(run_command_and_wait, command, timeout=test_driver.event_sequence_timeout or 300.0),
+            )
+        )
+    steps.append(("Reset test driver", partial(test_driver.reset_test_info, reset_job_info=reset_job_info)))
+    run_cleanup_steps(steps)
+
+
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
-test_configs = read_yaml("test_configs.yml")
+test_configs = read_yaml(os.path.join(os.path.dirname(__file__), "test_configs.yml"))
 if framework not in test_configs["test_configs"]:
     print(f"Framework/test {framework} is not supported, using default numpy.")
     framework = "numpy"
@@ -253,16 +267,20 @@ def setup_and_teardown_system(request):
         test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
         yield test_cases, site_launcher, test_driver, yaml_path
     finally:
+        steps = []
         if test_driver:
-            test_driver.finalize()
+            steps.append(("Finalize driver", test_driver.finalize))
         if site_launcher:
-            site_launcher.stop_all_sites()
+            steps.append(("Stop sites", site_launcher.stop_all_sites))
         if cleanup:
             if site_launcher:
-                site_launcher.cleanup()
-            cleanup_path(test_temp_dir)
-        sys.path = sys.path[: -len(additional_python_paths) or None]
-        print(f"sys.path finish is: {sys.path}")
+                steps.append(("Clean site workspaces", site_launcher.cleanup))
+            steps.append(("Clean test directory", partial(cleanup_path, test_temp_dir)))
+        try:
+            run_cleanup_steps(steps)
+        finally:
+            sys.path = sys.path[: -len(additional_python_paths) or None]
+            print(f"sys.path finish is: {sys.path}")
 
 
 @pytest.mark.xdist_group(name="system_tests_group")
@@ -334,19 +352,7 @@ class TestSystem:
                     validate_result = "No Validators"
                 test_validate_results.append((test_name, validate_result))
             finally:
-                # Always run the configured teardown and reset the driver, even
-                # when a process group survives forced cleanup and is reported
-                # as an error.
-                try:
-                    _stop_background_processes(background_processes)
-                finally:
-                    try:
-                        for command in teardown:
-                            print(f"Running teardown command: {command}")
-                            process = run_command_in_subprocess(command)
-                            wait_command_process(process, command, timeout=test_driver.event_sequence_timeout or 300.0)
-                    finally:
-                        test_driver.reset_test_info(reset_job_info=reset_job_info)
+                _teardown_test_case(background_processes, teardown, test_driver, reset_job_info)
 
             print(f"Finished running test {test_name!r} in {time.monotonic() - start_time} seconds.")
             _print_newlines()

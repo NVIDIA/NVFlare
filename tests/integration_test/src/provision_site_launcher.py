@@ -16,14 +16,16 @@ import os
 import shlex
 import shutil
 import tempfile
+from functools import partial
 
 import yaml
 
-from .site_launcher import ServerProperties, SiteLauncher, SiteProperties
+from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process
 from .utils import (
     cleanup_job_and_snapshot,
     cleanup_path,
     read_yaml,
+    run_cleanup_steps,
     run_command_in_subprocess,
     run_provision_command,
     update_job_store_path_in_workspace,
@@ -101,23 +103,29 @@ class ProvisionSiteLauncher(SiteLauncher):
         _start_site(self.server_properties[server_id])
 
     def stop_server(self, server_id: str):
-        try:
-            _stop_site(self.server_properties[server_id])
-        finally:
-            super().stop_server(server_id)
+        site = self.server_properties[server_id]
+        kill_process(site, graceful_stop=partial(_stop_site, site))
 
     def start_client(self, client_id: str):
         _start_site(self.client_properties[client_id])
 
     def stop_client(self, client_id: str):
-        try:
-            _stop_site(self.client_properties[client_id])
-        finally:
-            super().stop_client(client_id)
+        site = self.client_properties[client_id]
+        kill_process(site, graceful_stop=partial(_stop_site, site))
 
     def cleanup(self):
-        self.stop_all_sites()
-        for server_name in self.server_properties:
-            cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
-        shutil.rmtree(WORKSPACE)
-        super().cleanup()
+        def remove_workspace():
+            self.require_sites_stopped()
+            steps = [
+                (
+                    f"Clean storage for {server_name}",
+                    partial(cleanup_job_and_snapshot, self._get_workspace_dir(), server_name),
+                )
+                for server_name in self.server_properties
+            ]
+            steps.append(("Remove provisioned workspace", partial(shutil.rmtree, WORKSPACE)))
+            run_cleanup_steps(steps)
+            self.server_properties.clear()
+            self.client_properties.clear()
+
+        run_cleanup_steps([("Stop provisioned sites", self.stop_all_sites), ("Remove workspace", remove_workspace)])
