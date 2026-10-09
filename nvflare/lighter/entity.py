@@ -298,6 +298,20 @@ class Participant(Entity):
                 if role not in DEFINED_ROLES:
                     print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
 
+        external_cert = self.get_prop(PropKey.EXTERNAL_CERT)
+        if external_cert is not None and not isinstance(external_cert, bool):
+            raise ValueError(
+                f"external_cert for {type} '{name}' must be bool but got {external_cert.__class__.__name__}"
+            )
+        if external_cert and type not in (ParticipantType.SERVER, ParticipantType.CLIENT):
+            raise ValueError("external_cert is supported only for server and client participants")
+
+        external_job_ca = self.get_prop(PropKey.EXTERNAL_JOB_CA)
+        if external_job_ca is not None and not isinstance(external_job_ca, bool):
+            raise ValueError(f"external_job_ca for {type} '{name}' must be bool")
+        if external_job_ca and type != ParticipantType.SERVER:
+            raise ValueError("external_job_ca is supported only for server participants")
+
         self.type = type
         self.org = org
         self.subject = name

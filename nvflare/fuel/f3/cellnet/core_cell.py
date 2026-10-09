@@ -2265,6 +2265,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")
         fqcn = endpoint.name
         if endpoint.state == EndpointState.READY:
+            # A reconnected peer may have restarted with a new key. Routed peers
+            # may also have changed, so exchange certificates again on demand.
+            self.credential_manager.clear_cert_cache()
             # create the CellAgent for this endpoint
             agent = self.agents.get(fqcn)
             if not agent:

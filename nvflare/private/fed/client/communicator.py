@@ -20,7 +20,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
-from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames, TaskResultReceipt
+from nvflare.apis.fl_constant import (
+    SecureTrainConst,
+    ServerCommandKey,
+    ServerCommandNames,
+    SystemComponents,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -89,6 +95,7 @@ class Communicator:
         self.ssid = None
         self.client_name = None
         self.token_verifier = None
+        self._authenticator = None
         self.abort_signal = Signal()
         self.engine = None
         self.last_task_id = None  # ID of the last task received
@@ -143,6 +150,19 @@ class Communicator:
             topic=ServerCommandNames.SUBMIT_UPDATE,
             cb=self._process_submit_result,
         )
+
+    def _check_server_session(self, client_name, project_name, fl_ctx):
+        # Verify the server's fresh challenge before deciding whether its new
+        # key requires registration. Failed heartbeats also reach relayed clients.
+        _, verifier = self._authenticator.challenge_server()
+        if verifier is None:
+            raise FLCommunicationError("Cannot authenticate reconnected server")
+        if not verifier.verify(client_name, self.token, self.token_signature, log_error=False):
+            client = fl_ctx.get_prop(SystemComponents.FED_CLIENT)
+            client.token, client.token_signature, client.ssid = self.client_registration(
+                client_name, project_name, fl_ctx, timeout=self.maint_msg_timeout
+            )
+            fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, client.token, private=True, sticky=True)
 
     @staticmethod
     def _make_try_again():
@@ -304,7 +324,7 @@ class Communicator:
             return None
         return site_config
 
-    def client_registration(self, client_name, project_name, fl_ctx: FLContext):
+    def client_registration(self, client_name, project_name, fl_ctx: FLContext, timeout=None):
         """Register the client with the FLARE Server.
 
         Note that the client no longer needs to be directly connected with the Server!
@@ -340,6 +360,7 @@ class Communicator:
             client_name: client name
             project_name: FL study project name
             fl_ctx: FLContext
+            timeout: optional authentication retry limit; initial registration remains unbounded
 
         Returns:
             The client's token
@@ -398,10 +419,14 @@ class Communicator:
             cert_file=cert_file,
             msg_timeout=self.maint_msg_timeout,
             retry_interval=self.client_register_interval,
+            timeout=timeout,
             site_config=site_config,
         )
 
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
+        if not token:
+            raise FLCommunicationError("Client registration did not complete")
+        self._authenticator = authenticator
         self.token_verifier = token_verifier
         self.set_auth(client_name, token, signature, ssid)
 
@@ -689,8 +714,11 @@ class Communicator:
                         timeout=self.maint_msg_timeout,
                     )
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                    # Incoming auth filters can drop a rejected request without a reply.
+                    if self.secure_train and return_code in (ReturnCode.UNAUTHENTICATED, ReturnCode.TIMEOUT):
+                        self._check_server_session(client_name, task_name, fl_ctx)
                     if return_code == ReturnCode.UNAUTHENTICATED:
-                        unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                        unauthenticated = result.get_header(MessageHeaderKey.ERROR, "")
                         raise FLCommunicationError("error:client_quit " + unauthenticated)
 
                     num_heartbeats_sent += 1
