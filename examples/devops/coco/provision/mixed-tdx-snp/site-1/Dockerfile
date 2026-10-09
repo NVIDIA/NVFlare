@@ -7,4 +7,4 @@ FROM nvflare-client-base:REPLACE-WITH-REVIEWED-IMAGE-DIGEST
 COPY --chown=65532:65532 tdx_acceptance.py /local/custom/tdx_acceptance.py
 ENV PYTHONPATH=/local/custom
 
-# CoCoPackager adds only this participant's signed kit and exact startup command.
+# CCPackager adds only this participant's signed kit and exact startup command.

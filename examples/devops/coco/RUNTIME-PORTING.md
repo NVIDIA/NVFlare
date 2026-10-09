@@ -91,7 +91,7 @@ The generator and secure-services installer independently derive the expected
 release-policy shape. CPU-only releases require exactly `cpu0`; GPU releases
 require exactly `cpu0` and `gpu0`. Signed CPU evidence must identify the approved
 TEE. Present failing GPU evidence cannot be ignored or downgraded to CPU-only.
-Expected EAR vectors are exact: SNP `(3,2,3)`, TDX `(3,2,2)`, NVIDIA GPU `(3,2,3)`
+Expected EAR vectors are exact: SNP, TDX, and NVIDIA GPU use `(3,2,2)`
 for executables/hardware/configuration; the other five fields are zero.
 
 Changing image digest, command, application security context, agent policy or
@@ -110,9 +110,9 @@ it does not need to run in CoCo or contact Trustee to verify it.
 
 Optional typed constraints include `cpu_tee`, `tdx_mr_td` and `tdx_rtmr_0`
 through `tdx_rtmr_3`. The legacy `measurement` field remains SNP-only.
-The optional boolean `gpu_required` binds each subject to CPU-only (`false`)
-or CPU+GPU (`true`) signed appraisals, preventing a GPU-required participant
-from presenting a CPU-only proof.
+Unified provisioning derives the internal `gpu_required` constraint from each
+participant's `gpu_tee`: `none` requires CPU-only evidence and `nvidia_cc`
+requires CPU plus GPU signed appraisals.
 `init_data` pins the canonical digest for either TEE, with strict TDX padding
 normalization. These are additional verifier restrictions, not substitutes for
 KBS release policy. See [CCManager configuration](provision/CCMANAGER.md).

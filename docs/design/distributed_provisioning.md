@@ -1151,8 +1151,7 @@ truth and can preserve the original identity.
 | **Participant info required upfront** | All participants before any kit is generated | Each participant joins independently, on demand |
 | **Adding a new site** | Dynamic provisioning with existing root CA | Same workflow; no impact on existing sites |
 | **Endpoint changes** | Rebuild or edit kit configuration | Coordinated participant configuration update. Re-package only if existing certificate identities remain valid; otherwise re-request/re-approve affected certificates. |
-| **Azure CC deployments** | Supported through `CCBuilder` | Not supported |
-| **CVM vault deliveries** | Supported through `cvm_vault` | Not supported |
+| **Confidential computing deployments** | Supported through unified `CCBuilder` / `CCPackager` | Not supported |
 | **HE deployments** | Supported | Not supported (future) |
 | **Trust required in Project Admin** | Must trust Project Admin with your private key | Project Admin never sees private keys |
 
@@ -1549,18 +1548,20 @@ mismatch is a hard error. Deploy version `00` maps to `prod_00`, `01` maps to
 
 ## CC Deployments: Out of Scope
 
-Azure CC and CVM vault deployments require centralized provisioning. Azure CC uses per-participant
-`cc_config` files to configure attestation authorizers and startup integrity. CVM vault construction
-requires the project administrator to approve the generic image and build the application vault.
+Bare-metal CVM, CoCo, and Azure CC deployments require centralized provisioning.
+They use per-participant `cc_config` files, one project `cc_project_config`, the
+unified `CCBuilder`, and the fail-closed `CCPackager`. CVM vault construction
+also requires the project administrator to approve the generic image and build
+the application vault.
 
 The distributed `request` / `approve` / `package` flow assembles an ordinary startup kit
 from the requester's private key and the Project Admin's signed response. It does not run
-the `cvm_vault` stage, invoke CVM Builder, or produce an OCI CVM delivery.
+the common CC packaging lifecycle, invoke CVM Builder or a CoCo release command, or produce
+a confidential-computing delivery.
 
-Use centralized `nvflare provision` with a `cvm_vault` configuration to finalize and sign
-selected participant workspaces, then construct their application vaults from approved
-generic CVM images. Recipients can launch those deliveries without access to the
-provisioning workspace or vault-construction credentials.
+Use centralized `nvflare provision` with the unified CC configuration to finalize and sign
+selected participant workspaces, then construct their mode-specific deliverables. Recipients
+can use those deliveries without access to the provisioning workspace or build credentials.
 
 ---
 

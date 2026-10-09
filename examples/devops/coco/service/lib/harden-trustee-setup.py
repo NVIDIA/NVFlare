@@ -21,7 +21,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-# confidential-containers/trustee@338610fbfed57b66c61a8a3a60e0e4386bdce793,
+# confidential-containers/trustee@512fed65642015b849f38fb13bfdec7806639987,
 # kbs/config/docker-compose/setup.sh. Do not silently patch a changed upstream.
 UPSTREAM_SHA256 = "c299639734bf68c7532a43aa403f77eacd13af976fd94074cab0b58c4e3a5768"
 REPLACEMENTS = (

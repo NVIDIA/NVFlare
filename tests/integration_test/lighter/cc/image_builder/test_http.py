@@ -195,6 +195,31 @@ class HttpTests(unittest.TestCase):
         with self.assertRaisesRegex(BuildError, "CPU appraisal denied"):
             validate_token(token, config, bytes(32))
 
+    def test_bare_metal_selector_uses_mapped_policy_without_changing_coco_default(self):
+        service = read_json(self.directory / "lab-kbs/kbs.json")
+        mappings = service["attestation_service"].get("policy_id_map", {})
+        if not mappings:
+            self.skipTest("HTTP-only lab has no bare-metal CVM profile")
+        for selector, policy_ids in mappings.items():
+            with self.subTest(selector=selector):
+                self.assertEqual(len(policy_ids), 1)
+                token = run(
+                    [
+                        self.directory / "inputs/kbs-client",
+                        "--url",
+                        self.admin["url"],
+                        "--cert-file",
+                        self.admin["ca"],
+                        "attest",
+                        "--attestation-policy-selector",
+                        selector,
+                    ],
+                    timeout=30,
+                    env=dict(os.environ, RUST_LOG="off"),
+                ).strip()
+                claims = json.loads(unb64url(token.decode().split(".")[1]))
+                self.assertEqual(claims["submods"]["cpu0"]["ear.appraisal-policy-id"], policy_ids[0])
+
     def test_cross_vault_access_denied(self):
         a, _, _ = self.create()
         _, b_path, _ = self.create()

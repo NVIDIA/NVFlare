@@ -42,6 +42,16 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import (
 from nvflare.app_opt.confidential_computing.trustee_claims import normalized_init_data
 
 
+def test_approved_trust_vectors_match_trustee_policy_contract():
+    expected = {
+        "executables": 3,
+        "hardware": 2,
+        "configuration": 2,
+    }
+    assert TRUST_VECTOR == expected
+    assert CPU_TRUST_VECTORS == {"snp": expected, "tdx": expected}
+
+
 @pytest.fixture(params=[("rsa", "snp"), ("ec", "snp"), ("rsa", "tdx"), ("ec", "tdx")])
 def material(request):
     key_type, cpu_type = request.param
@@ -51,10 +61,23 @@ def material(request):
         if key_type == "rsa"
         else ec.generate_private_key(ec.SECP256R1())
     )
-    algorithm = jwt.algorithms.RSAAlgorithm if key_type == "rsa" else jwt.algorithms.ECAlgorithm
-    jwk = json.loads(algorithm.to_jwk(key.public_key()))
     if key_type == "rsa":
+        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
         jwk["alg"] = "RSA-OAEP-256"
+    else:
+        # RFC 7518 requires fixed-width P-256 coordinates. PyJWT's to_jwk()
+        # intermittently drops a leading zero byte and creates an invalid JWK.
+        numbers = key.public_key().public_numbers()
+
+        def encode_coordinate(value):
+            return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode()
+
+        jwk = {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": encode_coordinate(numbers.x),
+            "y": encode_coordinate(numbers.y),
+        }
     expected = {"init_data": "a" * 64, "image": "registry.example/workload@sha256:" + "b" * 64, "args": ["/start"]}
     # Match the pinned Trustee TDX claims.rs / AS flattening contract. These
     # synthetic values exercise the real claim shape, not hardware validation.
@@ -145,6 +168,23 @@ def test_valid_proof_and_single_use(material, gpu):
     assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
+
+
+@pytest.mark.parametrize("gpu_count", [0, 1, 2, 8])
+def test_valid_proof_accepts_supported_contiguous_gpu_sets(material, gpu_count):
+    claims, _, verifier, generate, _ = material
+    gpu = claims["submods"].pop("gpu0")
+    claims["submods"].update({f"gpu{i}": copy.deepcopy(gpu) for i in range(gpu_count)})
+    token = generate()
+    assert set(
+        jwt.decode(jwt.decode(token, options={"verify_signature": False})["ear"], options={"verify_signature": False})[
+            "submods"
+        ]
+    ) == {
+        "cpu0",
+        *(f"gpu{i}" for i in range(gpu_count)),
+    }
+    assert verifier.verify(token)
 
 
 @pytest.mark.parametrize("audience", [None, "other", "expected"])
@@ -818,7 +858,19 @@ def test_signed_invalid_cpu_evidence_rejected_in_both_modes(material, gpu, failu
     elif failure == "cpu_key_missing":
         cpu["ear.veraison.annotated-evidence"]["runtime_data_claims"].pop("tee-pubkey")
     else:
-        claims["submods"]["gpu1"] = copy.deepcopy(cpu)
+        claims["submods"]["cpu1"] = copy.deepcopy(cpu)
+    with pytest.raises(CCTokenGenerateError):
+        generate()
+    with patch.object(client, "_ear", return_value=(claims, key.public_key())):
+        token = generate()
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize("gpu_names", [("gpu1",), ("gpu0", "gpu2"), tuple(f"gpu{i}" for i in range(9))])
+def test_noncontiguous_or_oversized_gpu_sets_are_rejected(material, gpu_names):
+    claims, client, verifier, generate, key = material
+    gpu = claims["submods"].pop("gpu0")
+    claims["submods"].update({name: copy.deepcopy(gpu) for name in gpu_names})
     with pytest.raises(CCTokenGenerateError):
         generate()
     with patch.object(client, "_ear", return_value=(claims, key.public_key())):
@@ -882,10 +934,9 @@ def test_platform_vectors_do_not_accept_generic_success_threshold(material, subm
 
 
 @pytest.mark.parametrize("submod", ["cpu0", "gpu0"])
-def test_cpu_and_gpu_configuration_vectors_are_not_interchangeable(material, submod):
+def test_configuration_three_is_not_an_approved_trustee_claim(material, submod):
     claims, client, verifier, generate, key = material
-    vector = claims["submods"][submod]["ear.trustworthiness-vector"]
-    vector["configuration"] = 2 if vector["configuration"] == 3 else 3
+    claims["submods"][submod]["ear.trustworthiness-vector"]["configuration"] = 3
     with pytest.raises(CCTokenGenerateError):
         generate()
     with patch.object(client, "_ear", return_value=(claims, key.public_key())):

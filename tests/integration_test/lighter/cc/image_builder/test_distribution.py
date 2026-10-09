@@ -90,7 +90,7 @@ class DistributionTests(unittest.TestCase):
                 for path in (source / BUILDER).rglob("*")
                 if path.is_file() and "__pycache__" not in path.parts
             ]
-            self.assertIn(BUILDER / "cvm/build/nvat_libxml2_const.patch", expected)
+            self.assertIn(BUILDER / "cvm/build/kbs_client_policy_selector.patch", expected)
             for relative in expected:
                 with self.subTest(asset=relative.as_posix()):
                     self.assertEqual((unpacked / relative).read_bytes(), (source / relative).read_bytes())

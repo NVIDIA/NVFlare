@@ -20,16 +20,25 @@ import subprocess
 import sys
 import time
 
+from ..common.contracts import (
+    CPU_ATTESTATION_TIMEOUT_SECONDS,
+    GPU_ATTESTATION_TIMEOUT_SECONDS,
+    PROOF_EXPIRY_MARGIN_SECONDS,
+)
 from ..common.errors import BuildError, require
-from ..common.io import write_json
+from ..common.io import read_json, write_json
 from ..common.linux import run
 from .audit import emit
 from .gpu import readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
 
-PERIODIC_INTERVAL_SECONDS = 300
-PERIODIC_TIMEOUT_SECONDS = 300
+# Participants that do not expose an application proof keep the original
+# periodic integrity cadence. Proof-producing participants schedule from the
+# authenticated token expiration recorded in protected /run/cvm state.
+PERIODIC_INTERVAL_SECONDS = 240
+CPU_PERIODIC_TIMEOUT_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
+GPU_PERIODIC_TIMEOUT_SECONDS = GPU_ATTESTATION_TIMEOUT_SECONDS
 
 
 # A failed periodic check no longer powers the guest off at once. The workload
@@ -40,6 +49,22 @@ QUARANTINE_RETRY_SECONDS = 60
 REOPEN_TIMEOUT_SECONDS = 900
 WATCHDOG_SECONDS = 360
 REVOCATION_TIMEOUT_SECONDS = 180
+
+
+def periodic_timeout(config):
+    return GPU_PERIODIC_TIMEOUT_SECONDS if config.get("gpu") == "nvidia_cc" else CPU_PERIODIC_TIMEOUT_SECONDS
+
+
+def next_periodic_deadline(config, state, fallback=None):
+    """Return a monotonic deadline that leaves time to renew before proof expiry."""
+    proof = state / "application-proof.json"
+    if not proof.is_file():
+        return time.monotonic() + PERIODIC_INTERVAL_SECONDS if fallback is None else fallback
+    expires_at = read_json(proof).get("expires_at")
+    require(type(expires_at) in (int, float), "Invalid application proof expiration state")
+    delay = expires_at - time.time() - periodic_timeout(config) - PROOF_EXPIRY_MARGIN_SECONDS
+    require(delay > 0, "Application proof cannot be renewed before expiration")
+    return time.monotonic() + delay
 
 
 def run_reopen(timeout, environment):
@@ -87,7 +112,7 @@ def periodic_tick(config, state, sequence):
         environment.pop("NOTIFY_SOCKET", None)
         output = run(
             [sys.executable, "-m", "cvm.runtime.bootstrap", "periodic"],
-            timeout=PERIODIC_TIMEOUT_SECONDS,
+            timeout=periodic_timeout(config),
             env=environment,
         )
         # The measured child prints only the sanitized audit record; command
@@ -159,7 +184,7 @@ def supervise(config, units, state):
     try:
         write_json(state / "periodic.json", {"sequence": 0, "result": "idle"})
         emit("allow")
-        deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+        deadline = next_periodic_deadline(config, state)
         notify("READY=1\nSTATUS=Vault authenticated; starting application services")
         watchdog(WATCHDOG_SECONDS)
         # READY completes our own start job before units depending on us start.
@@ -169,16 +194,17 @@ def supervise(config, units, state):
         while True:
             watchdog(WATCHDOG_SECONDS)
             signal.sigtimedwait(signals, max(0, deadline - time.monotonic()))
-            # Include the child's runtime in the interval. An explicit request
-            # starts a fresh interval; slow startup/ticks never add another full
-            # sleep, and the synchronous loop never overlaps children.
-            deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+            # For workloads without an application proof, retain the original
+            # start-to-start cadence. A signal starts a fresh interval and an
+            # overrun triggers the next check immediately.
+            fallback = time.monotonic() + PERIODIC_INTERVAL_SECONDS
             sequence += 1
             watchdog(WATCHDOG_SECONDS)
             try:
                 periodic_tick(config, state, sequence)
+                deadline = next_periodic_deadline(config, state, fallback)
             except BuildError:
                 quarantine(config, units, state)
-                deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+                deadline = next_periodic_deadline(config, state)
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)

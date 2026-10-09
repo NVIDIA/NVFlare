@@ -151,18 +151,21 @@ an independently authenticated administrator process before retrying. The
 builder's recorded input digest provides traceability; it does not authenticate
 the publisher or replace this verification step.
 
-Build `kbs-client` from the unmodified CoCo Trustee v0.22.0 checkout, using
-upstream's Linux build prerequisites and Rust toolchain:
+Build `kbs-client` from the pinned Trustee checkout plus the reviewed CLI patch.
+The patch updates to guest-components' upstream attestation-policy-selector API and exposes
+it through the standalone client; it does not modify the Trustee service:
 
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
+git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
+  -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
 
-Record which clean checkout produced the client. Production builds require this
-record for the selected platform (`kbs_client_provenance`), because a measured
-digest alone does not say what source it came from:
+Record the exact reviewed client build. Production builds require this record
+for the selected platform (`kbs_client_provenance`), because a measured digest
+alone does not say what source produced it:
 
 ```sh
 ./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
@@ -311,6 +314,11 @@ sudo ./cvmctl inspect-tcb \
 
 Compare its TCB fields with the approved input and complete signed-quote/CCEL
 and deployment acceptance for that exact bundle before production approval.
+Finalization fails if the measured TD's `mr_seam`, `tcb_svn`, or `xfam` is not
+already present in the approved reference input. Run `inspect-tcb`, complete the
+administrator review, update the reference input, increment `profile_version`,
+and rebuild; the builder never approves a value merely because the local host
+reported it.
 Transfer the discovery records securely and stop the temporary TD afterward.
 Changing approved references, firmware or other contract inputs requires a new
 `profile_version`, fresh construction/finalization and approval, and the isolated
@@ -367,6 +375,8 @@ kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 attestation_policy: attestation_policy.rego
+attestation_policy_selector: cvm-cpu-2026-09-r5
+attestation_policy_id: cvm-cpu-2026-09-r5
 reference_values: ../inputs/approved-tcb-references.json
 platforms:
   amd_sev_snp:
@@ -605,6 +615,9 @@ image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde
 # Optional: omit to use every platform available in cvm_image.
 # platforms: [intel_tdx]
 requires_gpu: false
+# Optional with container.attestation_credentials. This is the verifier's
+# maximum accepted EAR age, not the signed EAR lifetime.
+# max_token_age_seconds: 300
 vault_drive_size: 8
 applog_drive_size: 1
 user_config_drive_size: 1
@@ -619,6 +632,7 @@ container:
   ports: [{host: 8080, container: 8080}]
   env: {}
   volumes: []
+  attestation_credentials: false
   tee_device: false
 services: []
 hosts_entries: {}
@@ -631,7 +645,7 @@ systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
 application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
 protections and a reduced capability bounding set).
 
-Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in.
+Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in. `attestation_credentials` asks the measured guest supervisor to atomically publish a fresh Trustee EAR and its ephemeral proof key at `/vault/application/runtime/trustee_token.json`; unified CC provisioning enables this without exposing the guest attester binary or TEE device to the container. When `max_token_age_seconds` is set, it requires `attestation_credentials` and must include the complete bounded renewal window plus 15 seconds for issuance, retrieval, and publication: at least 90 seconds for CPU-only profiles or 270 seconds for GPU profiles. The supervisor renews from the earlier of the signed EAR expiration and `iat + max_token_age_seconds`.
 
 `container.env` is serialized into a sealed memory-backed environment file. Its values are never merged into the privileged Docker client's environment or command-line arguments. Names such as `DOCKER_HOST`, `PATH` and `LD_PRELOAD` configure only the container. Values cannot contain NUL, CR or LF. The CLI uses an absolute executable and the local Unix socket.
 
@@ -709,10 +723,10 @@ false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
 The default expects `inputs/libnvat.so.1` plus `inputs/nvat_build.json`.
-Trustee v0.22.0's Cargo.lock pins the NVAT 2026.03.02 source, which builds library
-version 1.2.0 with soname 1. Stage 1 checks the source revision, reviewed libxml2
-compatibility patch, build environment and binary digest in the provenance
-record. Evidence collection and verification use CoCo's code.
+The selector-capable client patch pins the NVAT 2026.06.09 source, which builds
+library version 1.2.2 with soname 1. Stage 1 checks the clean source revision,
+build environment and binary digest in the provenance record. Evidence
+collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
 `linux-modules-nvidia-*-<kernel>` package plus its matching

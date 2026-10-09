@@ -35,7 +35,8 @@ from urllib.parse import urlparse
 
 import yaml
 
-from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey, ProvFileName
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import proof_renewal_window
+from nvflare.lighter.constants import CtxKey, ParticipantType, ProvFileName
 from nvflare.lighter.utils import verify_folder_signature
 
 PLATFORMS = {"amd_sev_snp", "intel_tdx"}
@@ -46,6 +47,7 @@ APPLICATION_SETTINGS = {
     "docker_archive",
     "platforms",
     "requires_gpu",
+    "max_token_age_seconds",
     "allowed_ports",
     "allowed_out_ports",
     "allowed_in_cidrs",
@@ -53,6 +55,7 @@ APPLICATION_SETTINGS = {
     "user_config",
     "user_data",
     "hosts_entries",
+    "attestation_credentials",
     "tee_device",
     "host_bin",
     "workspace_uid",
@@ -279,6 +282,32 @@ def collect_artifacts(output_dir, platforms=None):
     return {"deployment_id": deployment, "artifacts": artifacts}
 
 
+def publish_artifacts(output_dir, artifacts):
+    """Expose only verified OCI deliveries from a privileged vault build."""
+    output_dir = Path(output_dir).resolve(strict=True)
+    archives = []
+    for item in artifacts:
+        archive = Path(item["path"])
+        _require(
+            archive.is_absolute() and archive.parent == output_dir and archive.name == Path(archive.name).name,
+            "Vault delivery escaped its output directory",
+        )
+        archives.append(archive)
+    _require(archives, "Vault build produced no OCI deliveries")
+    try:
+        output_dir.chmod(0o755)
+        for archive in archives:
+            archive.chmod(0o644)
+    except PermissionError:
+        subprocess.run(["sudo", "-n", "chmod", "0755", "--", str(output_dir)], check=True)
+        subprocess.run(["sudo", "-n", "chmod", "0644", "--", *(str(path) for path in archives)], check=True)
+    _require(
+        os.access(output_dir, os.R_OK | os.X_OK)
+        and all(path.is_file() and os.access(path, os.R_OK) for path in archives),
+        "Verified CVM OCI deliveries are not readable by the public packager",
+    )
+
+
 class VaultAdapter:
     def __init__(self, settings, project_file, workspace_root, project):
         _require(isinstance(settings, dict) and settings, "cvm_vault must be a non-empty mapping")
@@ -368,9 +397,6 @@ class VaultAdapter:
                     "output": output,
                 }
             )
-        # VaultSignatureBuilder signs selected workspaces during finalization.
-        for plan in self.plans:
-            plan["participant"].set_prop(PropKey.CVM_VAULT, True)
 
     def _path(self, value, directory=False, must_exist=True):
         _require(isinstance(value, str) and value, "Expected a non-empty cvm_vault path")
@@ -450,7 +476,7 @@ class VaultAdapter:
         return path.resolve()
 
     def _application(self, values):
-        app = {key: values[key] for key in ("requires_gpu", "hosts_entries") if key in values}
+        app = {key: values[key] for key in ("requires_gpu", "hosts_entries", "max_token_age_seconds") if key in values}
         image = self._image_source(values.get("cvm_image"))
         app["cvm_image"] = str(image)
         app["docker_archive"] = str(self._path(values.get("docker_archive")))
@@ -522,6 +548,18 @@ class VaultAdapter:
             ipaddress.ip_address(address)
         tee_device = values.get("tee_device", False)
         _require(type(tee_device) is bool, "tee_device must be boolean")
+        attestation_credentials = values.get("attestation_credentials", False)
+        _require(type(attestation_credentials) is bool, "attestation_credentials must be boolean")
+        if "max_token_age_seconds" in app:
+            _require(
+                type(app["max_token_age_seconds"]) is int and 0 < app["max_token_age_seconds"] <= 300,
+                "max_token_age_seconds must be an integer from 1 through 300",
+            )
+            _require(attestation_credentials, "max_token_age_seconds requires attestation_credentials")
+            _require(
+                app["max_token_age_seconds"] > proof_renewal_window(app["requires_gpu"]),
+                "max_token_age_seconds must exceed the bounded proof renewal window",
+            )
         # NVFlare's confidential-computing authorizers default to /host/bin tools,
         # so the mount stays on for kits unless a site turns it off explicitly.
         host_bin = values.get("host_bin", True)
@@ -532,6 +570,7 @@ class VaultAdapter:
             "env": {"NVFL_WORKSPACE": "/vault/application/runtime"},
             "volumes": [],
             "ports": [],
+            "attestation_credentials": attestation_credentials,
             "tee_device": tee_device,
             "host_bin": host_bin,
         }
@@ -616,13 +655,15 @@ class VaultAdapter:
         )
         return profile
 
-    def _network(self, plan, ctx):
+    def _network(self, plan, ctx, source=None):
         participant = plan["participant"]
         app = plan["app"]
         server_ports = {ctx[CtxKey.FED_LEARN_PORT], ctx[CtxKey.ADMIN_PORT]}
         outgoing = _ports(app["allowed_out_ports"]) | _ports(list(server_ports))
         incoming = _ports(app["allowed_ports"])
-        kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / participant.name / "startup"
+        kit = (
+            Path(source) if source is not None else Path(ctx[CtxKey.CURRENT_PROD_DIR]) / participant.name
+        ) / "startup"
         config = _read_json(kit / f"fed_{participant.type}.json")
         for server in config.get("servers", []):
             endpoint = urlparse("//" + server["service"]["target"])
@@ -662,11 +703,11 @@ class VaultAdapter:
         app["allowed_out_ports"] = sorted(outgoing)
         app["container"]["ports"] = [{"host": port, "container": port} for port in sorted(incoming)]
 
-    def build(self, ctx):
+    def build(self, ctx, source_dirs=None):
         prod = ctx.get(CtxKey.CURRENT_PROD_DIR)
         _require(
-            ctx.get(CtxKey.PROVISION_SUCCESS) is True and prod and Path(prod).is_dir(),
-            "No successfully finalized production directory",
+            not ctx.get(CtxKey.BUILD_ERROR) and prod and Path(prod).is_dir(),
+            "No finalized production directory",
         )
         prod = Path(prod).resolve()
         _require(
@@ -675,8 +716,12 @@ class VaultAdapter:
         )
         # Validate every completed kit before any privileged build starts.
         for plan in self.plans:
-            source = prod / plan["participant"].name
-            _require(source.is_dir() and source.parent == prod, "Missing participant workspace")
+            source = (
+                Path(source_dirs[plan["participant"].name]).resolve()
+                if source_dirs and plan["participant"].name in source_dirs
+                else prod / plan["participant"].name
+            )
+            _require(source.is_dir(), "Missing participant workspace")
             _check_tree(source)
             for name in ("sub_start.sh", "rootCA.pem"):
                 _require((source / "startup" / name).is_file(), f"Missing startup/{name}")
@@ -689,7 +734,7 @@ class VaultAdapter:
                 ),
                 f"Finalized workspace for {plan['participant'].name} has missing or invalid signatures",
             )
-            self._network(plan, ctx)
+            self._network(plan, ctx, source)
             _require(
                 not plan["inputs"].exists() and (plan["output"] is None or not plan["output"].exists()),
                 "Vault build staging already exists",
@@ -706,7 +751,11 @@ class VaultAdapter:
             inputs.mkdir(mode=0o700)
             application = inputs / "application"
             application.mkdir(mode=0o700)
-            source = prod / plan["participant"].name
+            source = (
+                Path(source_dirs[plan["participant"].name]).resolve()
+                if source_dirs and plan["participant"].name in source_dirs
+                else prod / plan["participant"].name
+            )
             destination = application / "workspace"
             shutil.copytree(source, destination, copy_function=shutil.copy2)
             _require(
@@ -767,6 +816,7 @@ class VaultAdapter:
                         all(a["cvm_build_id"] == expected[a["platform"]]["build_id"] for a in artifacts),
                         "Vault delivery changed the selected CVM build ID",
                     )
+                publish_artifacts(output, artifacts)
             except Exception as exc:
                 raise RuntimeError(
                     f"Cannot collect vault delivery metadata. Preserve {inputs} and {output}; "

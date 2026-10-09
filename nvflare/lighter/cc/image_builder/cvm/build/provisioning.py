@@ -325,6 +325,10 @@ def install_files(config, payload, root=Path("/")):
             raise ValueError("Unexpected package in measured guest payload")
         copy_file(source, root, "/usr/lib/cvm/cvm/" + relative.as_posix(), 0o644)
     copy_file(payload / "inputs/kbs-client", root, "/usr/lib/cvm/bin/kbs-client", 0o755)
+    # The application container receives the measured host /usr/bin as
+    # read-only /host/bin. Expose the same pinned client there so NVFlare can
+    # generate identity-bound Trustee peer proofs without another host service.
+    copy_file(payload / "inputs/kbs-client", root, "/usr/bin/kbs-client", 0o755)
     for name in ("kbs-ca.pem", "as-public.pem", "runtime.json"):
         copy_file(payload / "inputs" / name, root, "/etc/cvm/" + name, 0o644)
     write_file(root, "/etc/cvm_build_id", config["build_id"] + "\n")

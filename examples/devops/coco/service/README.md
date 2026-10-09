@@ -24,8 +24,10 @@ The resulting secure services are:
 - RVPS with persistent LocalFs references; and
 - a private OCI registry behind Nginx TLS on **5000**.
 
-All backend listeners are loopback-only. This kit uses the pinned post-v0.21
-Trustee source and 128 KiB HTTP request-head patch, not Trustee v0.21.0.
+All backend listeners are loopback-only. This kit uses the pinned Trustee v0.22
+source and 128 KiB HTTP request-head patch. The same KBS/AS/RVPS deployment can
+serve CoCo guests through its default appraisal policy and bare-metal CVMs
+through explicitly mapped profile policies.
 
 ## Installation order
 

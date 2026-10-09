@@ -314,6 +314,7 @@ def cc_test_env(basic_config) -> Generator[tuple[CCManager, FLContext, Mock], No
     engine.get_component.return_value = tdx_authorizer
 
     cc_manager._setup_cc_authorizers(fl_ctx)
+    cc_manager.site_name = "server"
 
     yield cc_manager, fl_ctx, tdx_authorizer
 
@@ -783,10 +784,17 @@ class TestCCManager:
 
         # Verify the value contains token info
         cc_info = call_args[1]["value"]
-        print(f"CFUCK {cc_info=}")
         assert len(cc_info) == 1
         assert cc_info["server"][0][CC_TOKEN] == VALID_TOKEN
         assert cc_info["server"][0][CC_NAMESPACE] == TDX_NAMESPACE
+
+    def test_attached_token_envelope_uses_local_bootstrap_identity(self, cc_test_env):
+        manager, context, _ = cc_test_env
+        context.get_identity_name.return_value = "registering-client"
+
+        manager._generate_and_attach_tokens(context)
+
+        assert set(context.set_prop.call_args.kwargs["value"]) == {"server"}
 
 
 @pytest.mark.parametrize("server", [True, False])

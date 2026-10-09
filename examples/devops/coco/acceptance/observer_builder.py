@@ -21,7 +21,6 @@ import tempfile
 from pathlib import Path
 
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
-from nvflare.lighter.cc_provision.impl.coco import AUTHOR_PATH, MANAGER_PATH, CoCoBuilder
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.spec import Builder
 
@@ -53,20 +52,9 @@ class ObserverBuilder(Builder):
                 os.unlink(temporary)
 
     def build(self, project, ctx):
-        observer = next(c for c in project.get_clients() if c.name == "site-observer")
         server = project.get_server()
-        # The server always has a verifier, including topology A. Copy only its
-        # public verifier settings, never issuer credentials or startup files.
+        # CCBuilder installs the common verifier matrix on the ordinary observer
+        # and server. This builder only authorizes the baked acceptance classes
+        # used by the server-side validation job.
         source = Path(ctx.get_local_dir(server))
-        # Topology A's ordinary server has no protected CC configuration to
-        # extend its component policy. Authorize only the reviewed baked classes
-        # during provisioning, before SignatureBuilder runs for protected kits.
         self._allow_baked_application(source / ProvFileName.RESOURCES_JSON_DEFAULT)
-        authorizer = json.loads((source / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
-        manager = json.loads((source / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
-        authorizer = {
-            k: v for k, v in authorizer.items() if k not in {"site_name", "token_url"} and not k.startswith("retry_")
-        }
-        manager["cc_issuers_conf"] = []
-        CoCoBuilder._write(ctx, observer, "coco_authorizer", AUTHOR_PATH, authorizer)
-        CoCoBuilder._write(ctx, observer, "cc_manager", MANAGER_PATH, manager)

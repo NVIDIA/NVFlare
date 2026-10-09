@@ -240,7 +240,7 @@ def test_snp_coexists_and_mixed_evidence_is_rejected(evaluate):
     snp = {"measurement": "approved-snp", "policy_debug_allowed": False, "policy_migrate_ma": False}
     snp.update({"reported_tcb_" + name: 1 for name in ("bootloader", "tee", "snp", "microcode")})
     claims = evaluate({"snp": snp}, references=refs)["trust_claims"]
-    assert [claims[key] for key in ("executables", "hardware", "configuration")] == [3, 2, 3]
+    assert [claims[key] for key in ("executables", "hardware", "configuration")] == [3, 2, 2]
     mixed = {**evidence(), "snp": snp}
     claims = evaluate(mixed, references=refs)["trust_claims"]
     assert [claims[key] for key in ("executables", "hardware", "configuration")] == [33, 97, 36]

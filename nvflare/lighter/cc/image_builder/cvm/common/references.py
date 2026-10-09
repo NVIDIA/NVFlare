@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared approved-reference schemas and expiry-policy definitions."""
+"""Shared approved-reference schemas and profile-scoped policy definitions."""
 
+import hashlib
+import json
 import re
 
 from .errors import require
+from .io import canonical
 
 SNP_LISTS = {"snp_bootloader", "snp_microcode", "snp_snp_svn", "snp_tee_svn"}
 
@@ -39,7 +42,7 @@ TCB_NAMES = GPU_NAMES | SNP_LISTS | SNP_BOOLS | SNP_INTS | set(TDX_HEX) | {"allo
 MEASUREMENT_NAMES = {"snp_launch_measurement", "mr_td", "rtmr_0", "rtmr_1", "rtmr_2"}
 
 
-EXPIRY_REFERENCE = "cvm_reference_expiry"
+REFERENCE_RECORD_PLACEHOLDER = "__CVM_PROFILE_REFERENCE_RECORD__"
 
 
 # SEV-SNP guest policy bits (AMD SEV-SNP ABI specification, GUEST_POLICY).
@@ -51,15 +54,42 @@ SNP_POLICY_SINGLE_SOCKET = 1 << 20
 SNP_POLICY_KNOWN = (1 << 21) - 1
 
 
-# Trustee v0.22 returns reference values without checking their metadata expiry.
-# Keep the deadline in a companion reference and enforce it at every appraisal.
-REFERENCE_REGO = """reference(name) := value if {
-    expiry := query_reference_value("cvm_reference_expiry")[name]
+# Trustee returns reference values without checking their metadata expiry. Keep
+# every profile's values and deadlines in one uniquely named RVPS record so a
+# CPU and GPU profile can safely share the same Trustee instance.
+def reference_record_name(profile_version, contract):
+    require(isinstance(profile_version, str) and profile_version, "Invalid profile version")
+    require(isinstance(contract, dict), "Invalid profile contract")
+    digest = hashlib.sha256(canonical({"profile_version": profile_version, "contract": contract})).hexdigest()
+    return "cvm_profile_" + digest[:32]
+
+
+def reference_rego(record=REFERENCE_RECORD_PLACEHOLDER):
+    require(
+        record == REFERENCE_RECORD_PLACEHOLDER
+        or (isinstance(record, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", record)),
+        "Invalid RVPS record",
+    )
+    encoded = json.dumps(record)
+    return f"""profile_references := query_reference_value({encoded})
+
+reference(name) := value if {{
+    expiry := profile_references["expirations"][name]
     is_number(expiry)
     time.now_ns() < expiry * 1000000000
-    value := query_reference_value(name)
-}
+    value := profile_references["values"][name]
+}}
 """
+
+
+REFERENCE_REGO = reference_rego()
+
+
+def render_reference_policy(policy, record):
+    require(isinstance(policy, str), "Invalid appraisal policy")
+    require(policy.count(REFERENCE_RECORD_PLACEHOLDER) == 1, "Appraisal policy must contain one RVPS placeholder")
+    reference_rego(record)  # Validate before replacing the reviewed placeholder.
+    return policy.replace(REFERENCE_RECORD_PLACEHOLDER, record)
 
 
 def validate_references(values, platforms=(), *, finalized=False, gpu=False):

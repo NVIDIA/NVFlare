@@ -38,7 +38,7 @@ from .audit import emit
 from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
 from .storage import close_vault, disk_device
-from .supervisor import supervise
+from .supervisor import PROOF_EXPIRY_MARGIN_SECONDS, periodic_timeout, supervise
 from .systemd import notify
 
 CONFIG = Path("/etc/cvm/runtime.json")
@@ -66,6 +66,7 @@ CONTAINER_STOP_SECONDS = 15
 DOCKER = "/usr/bin/docker"
 DOCKER_ENVIRONMENT = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/root", "LANG": "C.UTF-8"}
 NFS_MOUNT = Path("/nfs_data")
+APP_ATTESTATION_CREDENTIALS = Path("/vault/application/runtime/trustee_token.json")
 
 
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
@@ -195,10 +196,15 @@ def time_sync(max_tries=30, *, initialize=False):
         # threshold with our gate, obtain an initial correction, then collect
         # extra samples. Only the final bounded skew check authorizes startup.
         run(["/usr/bin/chronyc", "maxupdateskew", str(CLOCK_MAX_SKEW_PPM)], timeout=2)
-        run(
-            ["/usr/bin/chronyc", "waitsync", "30", str(CLOCK_MAX_CORRECTION_SECONDS), "0", "1"],
-            timeout=32,
-        )
+        try:
+            run(
+                ["/usr/bin/chronyc", "waitsync", "30", str(CLOCK_MAX_CORRECTION_SECONDS), "0", "1"],
+                timeout=32,
+            )
+        except BuildError:
+            # A cold clock may need the following burst before it has enough
+            # samples. The final bounded gate below still authorizes startup.
+            pass
         run(["/usr/bin/chronyc", "burst", "8/16"], timeout=2)
     run(
         [
@@ -354,6 +360,7 @@ def reopen():
         verify_payload(config)
         mount_roles({"vault": "/dev/mapper/vault"})
         check_vault_manifest(config, platform, actual_uuid)
+        refresh_application_credentials(config, digest)
         readiness(config, True)
     except BaseException:
         # The supervisor also cleans up after killing a timed-out child, when
@@ -382,6 +389,9 @@ def finish_bootstrap(config, dev=False):
             hosts.write(f"\n{address} {hostname}\n")
     if dev:
         (STATE / "platform.env").write_text("TEE_PLATFORM=none\nTEE_DEVICE=\nTEE_DEVICE_ARGS=\n")
+    elif app["container"].get("attestation_credentials"):
+        digest = bytes.fromhex(read_json(STATE / "binding.json")["digest"])
+        refresh_application_credentials(config, digest, app=app)
     mount_user_data()
     units = install_services()
     run(["systemctl", "daemon-reload"])
@@ -429,10 +439,29 @@ def periodic():
     verify_local_binding(config["platform"], digest)
     # Every supervisor tick requires a fresh positive appraisal AND current key
     # authorization; a valid signature or a cached EAR is insufficient.
-    with authorized_key(config, digest):
-        pass
+    refresh_application_credentials(config, digest)
 
     readiness(config, True)
+
+
+def refresh_application_credentials(config, digest, *, app=None):
+    """Refresh current key authorization and any application-visible Trustee proof."""
+    app = read_json("/vault/config/application.json") if app is None else app
+    if app["container"].get("attestation_credentials"):
+        with authorized_key(
+            config,
+            digest,
+            credentials_path=APP_ATTESTATION_CREDENTIALS,
+            credentials_state_path=STATE / "application-proof.json",
+            minimum_credentials_validity=periodic_timeout(config) + PROOF_EXPIRY_MARGIN_SECONDS,
+            maximum_credentials_age=app.get("max_token_age_seconds"),
+        ):
+            pass
+    else:
+        # Key authorization is still mandatory even when the workload does not
+        # consume peer-proof credentials.
+        with authorized_key(config, digest):
+            pass
 
 
 def docker_argv(app, *, device=None, defaults=None, environment_file=None):
@@ -483,8 +512,10 @@ def docker_argv(app, *, device=None, defaults=None, environment_file=None):
         ("/user_data", "/user_data", True),
     ]
     if cfg.get("host_bin"):
-        # Opt-in only: exposes the measured root's tools to the container.
+        # Opt-in only: expose the measured root's tools and their exact runtime
+        # libraries. Trustee's GPU-enabled kbs-client links to pinned libnvat.
         mounts.append(("/usr/bin", "/host/bin", True))
+        mounts.append(("/usr/lib/x86_64-linux-gnu", "/host/lib", True))
     if app.get("nfs_mount") is not None:
         mounts.append((str(NFS_MOUNT), str(NFS_MOUNT), True))
     for source, target, ro in mounts:

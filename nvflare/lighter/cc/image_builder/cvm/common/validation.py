@@ -62,7 +62,7 @@ RUNTIME_KEYS = (
 )
 
 
-OPTIONAL_RUNTIME_KEYS = ("nfs_mount", "allowed_in_cidrs", "allowed_out_cidrs")
+OPTIONAL_RUNTIME_KEYS = ("nfs_mount", "allowed_in_cidrs", "allowed_out_cidrs", "max_token_age_seconds")
 
 
 def ports(values):
