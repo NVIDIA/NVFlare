@@ -583,6 +583,17 @@ def _get_relay_test_cases():
             ValueError,
             "Need to provide targets when dynamic_targets is set to False.",
         ),
+        (
+            # Documented to raise, and nothing can be added to the list later
+            {
+                "task": create_task("__test"),
+                "fl_ctx": FLContext(),
+                "targets": [],
+                "dynamic_targets": False,
+            },
+            ValueError,
+            "Need to provide targets when dynamic_targets is set to False.",
+        ),
     ]
     return test_cases
 
@@ -2702,6 +2713,52 @@ class TestSendBehavior(TestController):
             result=data,
         )
 
+        controller.communicator.check_tasks()
+        assert controller.get_num_standing_tasks() == 0
+        assert task.completion_status == TaskCompletionStatus.OK
+        launch_thread.join()
+        self.teardown_system(controller, fl_ctx)
+
+
+class TestRelayWithoutTargets(TestController):
+    def test_relay_dynamic_targets_empty_list(self):
+        """A relay scheduled with no targets waits, then takes the first participant to ask.
+
+        relay(targets=[], dynamic_targets=True) is the reachable form of this:
+        targets="*" does not survive the input validation above, and
+        dynamic_targets=False with no targets is rejected outright.
+        """
+        controller, fl_ctx, clients = self.setup_system()
+        client = clients[0]
+        task = create_task("__test_task")
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "relay",
+                "fl_ctx": fl_ctx,
+                "kwargs": {"targets": [], "dynamic_targets": True},
+            },
+        )
+        get_ready(launch_thread)
+
+        # The monitor runs while the target list is still empty
+        controller.communicator.check_tasks()
+        assert controller.get_num_standing_tasks() == 1
+
+        # A job participant asks for work and is appended to the relay
+        task_name, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
+        assert task_name == "__test_task"
+        assert client_task_id != ""
+        assert client.name in task.targets
+
+        controller.communicator.check_tasks()
+        assert controller.get_num_standing_tasks() == 1
+
+        controller.communicator.process_submission(
+            client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
+        )
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
