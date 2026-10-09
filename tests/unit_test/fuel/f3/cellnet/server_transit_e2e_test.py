@@ -15,6 +15,7 @@
 import multiprocessing
 import time
 import traceback
+from unittest.mock import Mock
 
 import pytest
 
@@ -22,6 +23,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import ManualClock
 
 _CHANNEL = "server_transit_test"
 _TOPIC = "ping"
@@ -33,12 +35,27 @@ def _mark_server_transit(message):
 
 
 def _wait_for_connection(cell, peer_fqcn):
-    deadline = time.time() + _CONNECT_TIMEOUT
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
     while time.monotonic() < deadline:
         if cell.is_cell_connected(peer_fqcn):
             return
         time.sleep(0.05)
     raise RuntimeError(f"{cell.get_fqcn()} did not connect to {peer_fqcn}")
+
+
+@pytest.mark.timeout(5)
+def test_missing_connection_deadline_uses_one_monotonic_clock(monkeypatch):
+    clock = ManualClock(now=0.0)
+    clock.time = Mock(side_effect=AssertionError("wall clock used for connection deadline"))
+    clock.sleep = clock.advance
+    monkeypatch.setattr(__name__ + ".time", clock)
+    cell = Mock()
+    cell.get_fqcn.return_value = "origin"
+    cell.is_cell_connected.return_value = False
+
+    with pytest.raises(RuntimeError, match="origin did not connect to missing"):
+        _wait_for_connection(cell, "missing")
+    assert clock.monotonic() == pytest.approx(_CONNECT_TIMEOUT)
 
 
 def _run_server(root_url, status_queue, stop_event):

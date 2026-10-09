@@ -356,6 +356,16 @@ def _initialized_backend(env, executor=None, **overrides):
     return backend, fl_ctx
 
 
+@pytest.fixture
+def backend_clock(monkeypatch, request):
+    # Install before initialize/execute: session activity and shutdown deadlines
+    # must share an origin, including on runners whose uptime is below 1000s.
+    clock = ManualClock(now=getattr(request, "param", 1000.0))
+    monkeypatch.setattr(ebp, "time", clock)
+    monkeypatch.setattr(cbp, "time", clock)
+    return clock
+
+
 def _install_clocked_reaper(backend, trainer, monkeypatch, clock, on_join=lambda: None):
     """Model reaper progress while exercising the real shutdown budget policy.
 
@@ -379,9 +389,8 @@ def _install_clocked_reaper(backend, trainer, monkeypatch, clock, on_join=lambda
                 backend._cleanup_trainer(trainer)
                 backend._result_reapers.discard(trainer)
 
-    monkeypatch.setattr(ebp, "time", clock)
-    monkeypatch.setattr(cbp, "time", clock)
-    trainer.reaper_thread = ClockedReaper()
+    assert ebp.time is clock and cbp.time is clock, "install the policy clock before creating a session"
+    monkeypatch.setattr(trainer, "reaper_thread", ClockedReaper())
     backend._result_reapers.add(trainer)
 
 
@@ -391,7 +400,8 @@ def _drive_natural_reaper(backend, trainer, monkeypatch, steps):
     The production reaper catches BaseException. Record observations here and
     assert them on the test thread so callback failures cannot disappear.
     """
-    clock = ManualClock()
+    clock = cbp.time
+    assert isinstance(clock, ManualClock), "install the policy clock before creating a session"
     observations = []
     actions = iter(steps)
 
@@ -815,13 +825,13 @@ class TestInitializeAndFinalize:
         assert env.cell.fired[-1][0] == Topic.ABORT
         backend.finalize(FLContext())
 
-    def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env, monkeypatch):
+    def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env, monkeypatch, backend_clock):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         observations = []
 
@@ -856,7 +866,7 @@ class TestInitializeAndFinalize:
         assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
 
-    def test_finalize_lets_registered_settled_result_reaper_own_natural_exit(self, env, monkeypatch):
+    def test_finalize_lets_registered_settled_result_reaper_own_natural_exit(self, env, monkeypatch, backend_clock):
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
@@ -864,7 +874,7 @@ class TestInitializeAndFinalize:
         trainer.result_source_live.set()
         trainer.result_accepted.set()
         trainer.result_source_live.clear()
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         _install_clocked_reaper(
             backend,
@@ -882,7 +892,7 @@ class TestInitializeAndFinalize:
         assert backend._result_reapers == set()
         assert backend._active_launch is None
 
-    def test_settled_result_reaper_is_not_cut_off_by_live_source_deadline(self, env, monkeypatch):
+    def test_settled_result_reaper_is_not_cut_off_by_live_source_deadline(self, env, monkeypatch, backend_clock):
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2, stop_grace_period=0.05)
@@ -891,7 +901,7 @@ class TestInitializeAndFinalize:
         trainer.result_source_live.set()
         trainer.result_accepted.set()
         trainer.result_source_live.clear()
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         _install_clocked_reaper(
             backend,
@@ -907,7 +917,7 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._result_reapers == set()
 
-    def test_live_result_reaper_allows_settlement_after_shutdown_ack_deadline(self, env, monkeypatch):
+    def test_live_result_reaper_allows_settlement_after_shutdown_ack_deadline(self, env, monkeypatch, backend_clock):
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2, stop_grace_period=0.05)
@@ -928,7 +938,7 @@ class TestInitializeAndFinalize:
                 )
             )
 
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
 
         def progress():
@@ -1072,13 +1082,13 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
-    def test_shutdown_timeout_does_not_cut_off_accepted_result_source(self, env, monkeypatch):
+    def test_shutdown_timeout_does_not_cut_off_accepted_result_source(self, env, monkeypatch, backend_clock):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.03)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         observations = []
 
@@ -1095,13 +1105,13 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
-    def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
+    def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog, backend_clock):
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.0, shutdown_timeout=0.01, stop_grace_period=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         _install_clocked_reaper(backend, trainer, monkeypatch, clock)
 
@@ -1112,14 +1122,16 @@ class TestInitializeAndFinalize:
         assert backend._result_reapers == set()
         assert "forcing trainer cleanup" in caplog.text
 
-    def test_finalize_reprobes_source_at_deadline_before_forced_cleanup(self, env, monkeypatch, client_job_exit):
+    def test_finalize_reprobes_source_at_deadline_before_forced_cleanup(
+        self, env, monkeypatch, client_job_exit, backend_clock
+    ):
         monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.08)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         shutdown_states = []
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
 
         def on_shutdown(*_args):
@@ -1140,14 +1152,14 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
         client_job_exit.assert_not_called()
 
-    def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog):
+    def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog, backend_clock):
         monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.4)
         monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(
             CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: clock.monotonic() < started + 0.15}
@@ -1281,14 +1293,14 @@ class TestInitializeAndFinalize:
             (process.pid, signal.SIGKILL),
         ]
 
-    def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
+    def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch, backend_clock):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         observations = []
 
@@ -1304,7 +1316,9 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
-    def test_zero_heartbeat_and_shutdown_do_not_make_disconnect_immediately_terminal(self, env, monkeypatch):
+    def test_zero_heartbeat_and_shutdown_do_not_make_disconnect_immediately_terminal(
+        self, env, monkeypatch, backend_clock
+    ):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.06)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.0, shutdown_timeout=0.0)
         process = env.harness.processes[0]
@@ -1328,7 +1342,9 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._active_launch is None
 
-    def test_lazy_result_reaper_retries_shutdown_then_requires_sustained_disconnect(self, env, monkeypatch, caplog):
+    def test_lazy_result_reaper_retries_shutdown_then_requires_sustained_disconnect(
+        self, env, monkeypatch, caplog, backend_clock
+    ):
         monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.03, shutdown_timeout=0.01)
         process = env.harness.processes[0]
@@ -3444,7 +3460,10 @@ class TestLaunchPerTask:
         client_job_exit.assert_not_called()
         backend.finalize(FLContext())
 
-    def test_finalize_force_stops_connected_late_result_sources_within_end_run_budget(self, env, monkeypatch, caplog):
+    @pytest.mark.parametrize("backend_clock", [0.0, 1000.0, 1e9], indirect=True)
+    def test_finalize_force_stops_connected_late_result_sources_within_end_run_budget(
+        self, env, monkeypatch, caplog, backend_clock
+    ):
         """Late results that nobody consumes must not outlive their owning CJ."""
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.02)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
@@ -3468,9 +3487,10 @@ class TestLaunchPerTask:
         assert all(process.returncode is None for process in env.harness.processes)
         assert all(trainer.result_source_live.is_set() for trainer in (retired_trainer, current_trainer))
 
-        clock = ManualClock()
+        clock = backend_clock
         started = clock.monotonic()
         for trainer in (retired_trainer, current_trainer):
+            assert trainer.peer_silent_for() == 0.0
             _install_clocked_reaper(backend, trainer, monkeypatch, clock)
         backend.finalize(FLContext())
 
