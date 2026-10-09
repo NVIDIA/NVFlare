@@ -15,8 +15,9 @@ are safe but can be consolidated in a later optimization.
 
 START_RUN and END_RUN apply only to the selected attempt compute graph. On a
 Python exception, both cleanup events are attempted and the first exception is
-retained in failure.json. Later cleanup exceptions cannot overwrite it. The
-worker has no SIGTERM handler: launcher cancellation can terminate it without
+retained in failure.json. Later cleanup exceptions cannot overwrite it.
+Wall-clock start/end timestamps are diagnostic and may move backward. Elapsed
+time is measured with time.monotonic(). The worker has no SIGTERM handler: launcher cancellation can terminate it without
 END_RUN. Executors must support this stateless one-shot cancellation contract;
 END_RUN is not a guaranteed cleanup mechanism after process termination.
 
@@ -31,6 +32,11 @@ accept an optional positive max_payload_bytes supplied by the trusted site/clien
 adapter. The adapter must apply the same policy to input staging, the bootstrap,
 and result reading. None leaves capacity to the filesystem and its quota. The
 separate bootstrap and metadata record limits remain in place.
+
+After confirming writer and reader quiescence, release_payloads also removes
+interrupted publication temporaries for its payload/metadata names. Full retention
+cleanup can remove an incomplete attempt directory whose identity.json was never
+published. An existing identity record must still be valid and match the caller.
 
 FOBS serialization hashes each byte as it is written. The worker still verifies
 the stored result before publishing completion, and the reader verifies it before

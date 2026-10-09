@@ -998,7 +998,8 @@ def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, re
         "class HangingExecutor(Executor):\n"
         " def execute(self,*args):\n"
         "  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])\n"
-        f"  Path({str(marker)!r}).write_text(json.dumps([os.getpid(),child.pid]))\n"
+        f"  Path({str(marker.with_suffix('.tmp'))!r}).write_text(json.dumps([os.getpid(),child.pid]))\n"
+        f"  os.replace({str(marker.with_suffix('.tmp'))!r}, {str(marker)!r})\n"
         + ("  return Shareable()\n" if worker_exits else "  time.sleep(30)\n")
     )
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
@@ -1077,7 +1078,8 @@ def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutd
         f" Path({str(cleaned)!r}).write_text('cleaned')\n"
         " sys.exit(0)\n"
         f"signal.signal(signal.SIGTERM, {'cleanup' if shutdown == 'cancel' else 'signal.SIG_IGN'})\n"
-        f"Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        f"Path({str(ready.with_suffix('.tmp'))!r}).write_text(str(os.getpid()))\n"
+        f"os.replace({str(ready.with_suffix('.tmp'))!r}, {str(ready)!r})\n"
         + (
             "while owner.is_running() and owner.status() not in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD):\n"
             " time.sleep(0.01)\n"
@@ -1279,3 +1281,61 @@ def test_completion_remains_readable_after_directory_fsync_failure(tmp_path, mon
     assert store.read_result(identity)[0]["produced"]
     failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
     assert "durability failure" in failure["message"]
+
+
+def test_backward_wall_clock_does_not_discard_completed_compute(tmp_path, monkeypatch):
+    class SuccessfulExecutor(Executor):
+        def execute(self, *args):
+            return Shareable({"produced": True})
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = SuccessfulExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("backward-clock")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    monkeypatch.setattr(
+        worker,
+        "time",
+        SimpleNamespace(time=Mock(side_effect=[200.0, 100.0, 100.0]), monotonic=Mock(side_effect=[10.0, 12.0])),
+    )
+    completion = worker.run_worker(path)
+    assert completion.started_at == 200.0
+    assert completion.completed_at == 100.0
+    assert completion.diagnostics["elapsed_seconds"] == 2.0
+    assert store.read_result(identity)[0]["produced"]
+    assert not Path(store.attempt_dir(identity), "failure.json").exists()
+
+
+def test_worker_matches_cj_custom_module_precedence(tmp_path, monkeypatch):
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    dependency_name = "_p3_import_probe_dependency"
+    executor_name = "_p3_import_probe_executor"
+    (installed / f"{dependency_name}.py").write_text("VALUE = 'installed'\n")
+    monkeypatch.syspath_prepend(str(installed))
+    workspace_root = _workspace(tmp_path)
+    custom = workspace_root / "job-1" / "app_site-1" / "custom"
+    (custom / f"{dependency_name}.py").write_text("VALUE = 'custom'\n")
+    (custom / f"{executor_name}.py").write_text(
+        "from nvflare.apis.executor import Executor\n"
+        "from nvflare.apis.shareable import Shareable\n"
+        f"import {dependency_name} as dependency\n"
+        "class QuietExecutor(Executor):\n"
+        "    def execute(self, *args):\n"
+        "        return Shareable({'value': dependency.VALUE})\n"
+    )
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("import-precedence")
+    path = _stage(store, identity, workspace_root, {"path": f"{executor_name}.QuietExecutor"}, Shareable())
+    original_path = sys.path.copy()
+    try:
+        worker.run_worker(path)
+        assert store.read_result(identity)[0]["value"] == "installed"
+        assert sys.path == original_path
+    finally:
+        sys.modules.pop(dependency_name, None)
+        sys.modules.pop(executor_name, None)

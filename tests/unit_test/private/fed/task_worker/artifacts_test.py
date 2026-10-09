@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -187,7 +188,7 @@ def test_artifact_records_require_exact_fields(record):
         ({"worker_pid": 0}, ValueError),
         ({"worker_ppid": -1}, ValueError),
         ({"started_at": "now"}, TypeError),
-        ({"completed_at": 0}, ValueError),
+        ({"completed_at": "now"}, TypeError),
         ({"diagnostics": []}, TypeError),
     ],
 )
@@ -462,3 +463,82 @@ def test_artifact_store_traverses_execute_only_parent(tmp_path):
         store.release_payloads(identity)
     finally:
         parent.chmod(0o700)
+
+
+def test_release_removes_interrupted_payload_temporaries_and_retains_diagnostics(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    directory = Path(store.create_attempt(identity))
+    store.commit_result(identity, Shareable({"result": 1}))
+    temporary_names = [f".{name}.{'a' * 32}" for name in ("input.fobs", "result.fobs", "analytics.fobs")]
+    for name in temporary_names:
+        (directory / name).write_bytes(b"interrupted payload")
+    retained_names = ["identity.json", "completion.json", "failure.json", f".completion.json.{'b' * 32}"]
+    (directory / "failure.json").write_text("diagnostics")
+    (directory / retained_names[-1]).write_text("commit diagnostics")
+    store.release_payloads(identity)
+    assert all(not (directory / name).exists() for name in temporary_names)
+    assert all((directory / name).exists() for name in retained_names)
+    assert store.read_completion(identity).identity == identity
+
+
+@pytest.mark.parametrize("kind", ["directory", "symlink"])
+def test_release_refuses_non_regular_payload_temporary(tmp_path, kind):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = Path(store.create_attempt(identity))
+    temporary = directory / f".result.fobs.{'a' * 32}"
+    protected = tmp_path / "protected"
+    protected.write_text("retain")
+    if kind == "directory":
+        temporary.mkdir()
+    else:
+        temporary.symlink_to(protected)
+    with pytest.raises(ValueError, match="invalid attempt artifact"):
+        store.release_payloads(identity)
+    assert protected.read_text() == "retain"
+    assert temporary.exists()
+
+
+@pytest.mark.parametrize("failure_point", ["before_identity", "during_identity", "after_identity"])
+def test_remove_can_clean_attempt_after_identity_publication_failure(tmp_path, monkeypatch, failure_point):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    publish = artifacts._write_json_exclusive
+
+    def interrupted(directory, name, value, **kwargs):
+        assert name == "identity.json"
+        if failure_point == "during_identity":
+            Path(directory, f".identity.json.{'a' * 32}").write_text("partial")
+        elif failure_point == "after_identity":
+            publish(directory, name, value, **kwargs)
+        raise OSError("interrupted identity publication")
+
+    monkeypatch.setattr(artifacts, "_write_json_exclusive", interrupted)
+    with pytest.raises(OSError, match="interrupted identity"):
+        store.create_attempt(identity)
+    directory = Path(store.attempt_dir(identity))
+    assert directory.is_dir()
+    protected = tmp_path / "protected"
+    protected.write_text("retain")
+    store.remove_attempt(identity)
+    assert not directory.exists()
+    assert protected.read_text() == "retain"
+
+
+@pytest.mark.parametrize("fault", ["malformed", "symlink"])
+def test_remove_still_refuses_invalid_existing_identity(tmp_path, fault):
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity()
+    directory = Path(store.create_attempt(identity))
+    identity_path = directory / "identity.json"
+    if fault == "malformed":
+        identity_path.write_text("{")
+    else:
+        original = tmp_path / "saved-identity.json"
+        identity_path.rename(original)
+        identity_path.symlink_to(original)
+    with pytest.raises((ValueError, OSError)):
+        store.remove_attempt(identity)
+    assert directory.is_dir()
+    assert identity_path.exists()

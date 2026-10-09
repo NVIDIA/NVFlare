@@ -165,8 +165,6 @@ class TaskCompletion:
             raise TypeError("completion timestamps must be numeric")
         if any(type(t) is bool or not math.isfinite(t) for t in (self.started_at, self.completed_at)):
             raise ValueError("completion timestamps must be finite numbers")
-        if self.completed_at < self.started_at:
-            raise ValueError("completed_at must not precede started_at")
         if not isinstance(self.diagnostics, Mapping):
             raise TypeError("completion diagnostics must be a mapping")
         object.__setattr__(self, "diagnostics", _freeze_json(self.diagnostics))
@@ -455,7 +453,7 @@ class FileTaskArtifactStore:
         _write_json_exclusive(self.attempt_dir(identity), "failure.json", record)
 
     def release_payloads(self, identity: TaskAttemptIdentity):
-        """Release bulky attempt data while retaining completion diagnostics."""
+        """Release payloads and interrupted writes after writer/reader quiescence."""
 
         directory = self.attempt_dir(identity)
         if (
@@ -467,7 +465,11 @@ class FileTaskArtifactStore:
         self._check_identity(identity)
         directory_fd = _open_directory(directory)
         try:
-            for name in ("bootstrap.json", "input.json", "input.fobs", "result.fobs", "analytics.fobs"):
+            payload_names = ("bootstrap.json", "input.json", "input.fobs", "result.fobs", "analytics.fobs")
+            temporary_prefixes = tuple(f".{name}." for name in payload_names)
+            names = set(payload_names)
+            names.update(name for name in os.listdir(directory_fd) if name.startswith(temporary_prefixes))
+            for name in names:
                 try:
                     info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                     if not stat.S_ISREG(info.st_mode):
@@ -485,5 +487,11 @@ class FileTaskArtifactStore:
         path = self.attempt_dir(identity)
         if os.path.islink(path):
             raise ValueError("refusing to remove a symlinked attempt directory")
-        self._check_identity(identity)
+        try:
+            self._check_identity(identity)
+        except IncompleteTaskArtifactError:
+            # create_attempt may stop between mkdir and identity publication.
+            # Full retention cleanup can remove this incomplete directory;
+            # existing identities must still be valid and match the caller.
+            pass
         shutil.rmtree(path)

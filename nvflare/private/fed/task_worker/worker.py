@@ -32,6 +32,7 @@ from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import FileTaskArtifactStore, TaskCompletion
 from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
@@ -213,6 +214,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
     pop_credential_env()
     sys.argv[:] = ["nvflare-task-worker"]
     started_at = time.time()
+    started_monotonic = time.monotonic()
     bootstrap = read_bootstrap(bootstrap_path)
     identity = bootstrap.identity
     store = FileTaskArtifactStore(bootstrap.artifact_root, max_payload_bytes=bootstrap.max_payload_bytes)
@@ -233,9 +235,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
             logging.basicConfig(level=logging.INFO)
-        custom_dir = workspace.get_app_custom_dir(identity.job_id)
-        if os.path.isdir(custom_dir):
-            sys.path.insert(0, custom_dir)
+        refresh_custom_dir_import_path(workspace.get_app_custom_dir(identity.job_id))
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
         data = store.read_input(identity)
         result, runtime = _execute(bootstrap, data, workspace, store)
@@ -246,6 +246,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
         usage = resource.getrusage(resource.RUSAGE_SELF)
         completed_at = time.time()
         diagnostics = {
+            "elapsed_seconds": time.monotonic() - started_monotonic,
             "user_cpu_seconds": usage.ru_utime,
             "system_cpu_seconds": usage.ru_stime,
             "max_rss_native_units": usage.ru_maxrss,
