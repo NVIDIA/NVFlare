@@ -25,36 +25,74 @@ import time
 import psutil
 
 
-def _watch_parent(parent_pid: int, worker_pid: int):
+def _is_live(process):
+    try:
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.AccessDenied:
+        # Uncertainty is not proof of owner loss or group quiescence.
+        return True
+
+
+def _dead_descendant_snapshot(worker_pid: int):
+    """Return dead member identities, or None for live/uncertain membership."""
+    dead_members = set()
+    try:
+        # Like launcher settlement, use raw PIDs and two stable snapshots so a
+        # disappearing process cannot hide a child forked during enumeration.
+        for pid in psutil.pids():
+            if pid == 0 or pid in (worker_pid, os.getpid()):
+                # macOS lists kernel PID 0, but getpgid(0) means this caller's
+                # group. Also exclude the known-dead worker and this guardian.
+                continue
+            try:
+                try:
+                    if os.getpgid(pid) != worker_pid:
+                        continue
+                except ProcessLookupError:
+                    # Darwin may drop a zombie's PGID before its PID disappears.
+                    pass
+                process = psutil.Process(pid)
+                if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    return None
+                dead_members.add((pid, process.create_time()))
+            except (ProcessLookupError, psutil.NoSuchProcess, PermissionError, psutil.AccessDenied):
+                return None
+    except (PermissionError, psutil.AccessDenied):
+        return None
+    return dead_members
+
+
+def _watch_parent(parent: psutil.Process, worker: psutil.Process):
     # This tiny guardian stays in the owned group, including after the worker
     # exits. A thread would disappear at os._exit and could leave descendants
     # orphaned if CJ dies before its launcher finishes settlement.
-    # Relationship and identity checks observe loss without trusting reusable
-    # PIDs. An exited, unreaped parent can retain its relationship, so zombies
-    # are not live owners.
-    worker = None
+    # The inherited Process objects pin identities before the fork. Worker exit
+    # only starts a quiescence check; the live CJ still owns graceful shutdown.
+    worker_pid = worker.pid
+    group_empty = False
     try:
-        worker = psutil.Process(worker_pid)
-        parent = psutil.Process(parent_pid)
-        while (
-            os.getppid() == worker_pid
-            and worker.is_running()
-            and worker.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-            and worker.ppid() == parent_pid
-            and parent.is_running()
-            and parent.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-        ):
+        while _is_live(parent):
+            if not _is_live(worker):
+                first = _dead_descendant_snapshot(worker_pid)
+                if first is not None and first == _dead_descendant_snapshot(worker_pid):
+                    group_empty = True
+                    return
             time.sleep(0.05)
     finally:
+        if group_empty:
+            # Do not keep an otherwise quiescent group alive until the launcher
+            # escalates. Only the launcher may reap the worker and settle it.
+            os._exit(0)
         try:
             # Stop the identity-checked leader first. On some POSIX systems a
             # killpg from within the group can kill this guardian before the
             # signal reaches the leader. Group cleanup still covers descendants.
-            if worker is not None:
-                try:
-                    worker.kill()
-                except psutil.NoSuchProcess:
-                    pass
+            try:
+                worker.kill()
+            except psutil.NoSuchProcess:
+                pass
         finally:
             try:
                 # Membership reserves this PGID even if the leader has exited;
@@ -66,14 +104,17 @@ def _watch_parent(parent_pid: int, worker_pid: int):
 
 
 def _start_parent_guard(parent_pid: int):
-    worker_pid = os.getpid()
+    parent = psutil.Process(parent_pid)
+    worker = psutil.Process(os.getpid())
+    if worker.ppid() != parent_pid:
+        raise RuntimeError("task worker lost its owning Client Job before starting the guardian")
     # Fork before framework/application imports or threads. The guardian ignores
     # SIGTERM so it covers the launcher's graceful-cancellation window too.
     old_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
     try:
         guardian_pid = os.fork()
         if guardian_pid == 0:
-            _watch_parent(parent_pid, worker_pid)
+            _watch_parent(parent, worker)
     finally:
         signal.signal(signal.SIGTERM, old_handler)
 

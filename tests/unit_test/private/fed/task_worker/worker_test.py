@@ -14,6 +14,7 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -983,21 +984,24 @@ def _live(process):
 
 
 @pytest.mark.parametrize("reap_owner", [False, True])
-def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, reap_owner):
+@pytest.mark.parametrize("worker_exits", [False, True])
+def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, reap_owner, worker_exits):
     if not hasattr(os, "waitid"):
         pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
     workspace_root = _workspace(tmp_path)
     marker = tmp_path / "members.json"
+    leader_exited = tmp_path / "leader-exited"
     custom = workspace_root / "job-1" / "app_site-1" / "custom" / "hanging.py"
     custom.write_text(
         "import json,os,subprocess,sys,time\n"
         "from pathlib import Path\n"
         "from nvflare.apis.executor import Executor\n"
+        "from nvflare.apis.shareable import Shareable\n"
         "class HangingExecutor(Executor):\n"
         " def execute(self,*args):\n"
         "  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])\n"
         f"  Path({str(marker)!r}).write_text(json.dumps([os.getpid(),child.pid]))\n"
-        "  time.sleep(30)\n"
+        + ("  return Shareable()\n" if worker_exits else "  time.sleep(30)\n")
     )
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("parent-loss")
@@ -1007,17 +1011,22 @@ def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, re
     env["PYTHONPATH"] = repo_root
     code = (
         "import os,sys\n"
-        "from nvflare.apis.task_launcher_spec import TaskLaunchRequest,TaskLaunchError\n"
+        "from pathlib import Path\n"
+        "import time\n"
+        "from nvflare.apis.task_launcher_spec import TaskLaunchRequest,TaskLaunchError,TaskExecutionPhase\n"
         "from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher\n"
         f"request=TaskLaunchRequest('job-1','site-1','task-1','parent-loss',"
         f"(sys.executable,'-m','nvflare.private.fed.app.client.task_worker_process','--bootstrap',{path!r}),"
         f"environment=dict(os.environ),cwd={repo_root!r})\n"
         "try:\n"
-        " handle=ProcessTaskLauncher().launch_task(request)\n"
+        " handle=ProcessTaskLauncher(descendant_settle_timeout=20).launch_task(request)\n"
         "except TaskLaunchError as error:\n"
         " error.handle.cancel()\n"
         " raise\n"
         "try:\n"
+        f" if {worker_exits!r}:\n"
+        "  while handle.poll().phase != TaskExecutionPhase.TERMINAL: time.sleep(0.01)\n"
+        f"  Path({str(leader_exited)!r}).touch()\n"
         " handle.wait_for_settlement(timeout=25)\n"
         "finally:\n"
         " if not handle.poll().settled: handle.cancel()\n"
@@ -1029,15 +1038,20 @@ def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, re
             _wait_until(marker.exists)
             pids = json.loads(marker.read_text())
             members = [psutil.Process(pid) for pid in pids]
-            assert all(_live(p) for p in members)
-            assert all(os.getpgid(p.pid) == pids[0] for p in members)
+            if worker_exits:
+                _wait_until(leader_exited.exists)
+                assert not _live(members[0])
+                assert _live(members[1])
+            else:
+                assert all(_live(p) for p in members)
+            assert os.getpgid(members[1].pid) == pids[0]
             owner.kill()
             if reap_owner:
                 owner.wait(timeout=5)
             # In the other case the owner remains an unreaped zombie; no wait,
             # poll or external reaping of the task leader is used by this test.
             _wait_until(lambda: not any(_live(p) for p in members))
-            assert not Path(store.attempt_dir(identity), "completion.json").exists()
+            assert Path(store.attempt_dir(identity), "completion.json").exists() == worker_exits
         finally:
             if owner.poll() is None:
                 owner.kill()
@@ -1047,3 +1061,87 @@ def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, re
             for member in members:
                 if _live(member):
                     member.kill()
+
+
+@pytest.mark.parametrize("shutdown", ["cancel", "normal", "stubborn"])
+def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutdown):
+    if not hasattr(os, "waitid"):
+        pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
+    workspace_root = _workspace(tmp_path)
+    ready = tmp_path / "child-ready"
+    cleaned = tmp_path / "child-cleaned"
+    child_code = (
+        "import os,signal,sys,time,psutil\n"
+        "from pathlib import Path\n"
+        "owner=psutil.Process(os.getppid())\n"
+        "def cleanup(*args):\n"
+        " time.sleep(0.5)\n"
+        f" Path({str(cleaned)!r}).write_text('cleaned')\n"
+        " sys.exit(0)\n"
+        f"signal.signal(signal.SIGTERM, {'cleanup' if shutdown == 'cancel' else 'signal.SIG_IGN'})\n"
+        f"Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        + (
+            "while owner.is_running() and owner.status() not in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD):\n"
+            " time.sleep(0.01)\n"
+            "cleanup()\n"
+            if shutdown == "normal"
+            else "time.sleep(30)\n"
+        )
+    )
+    custom = workspace_root / "job-1" / "app_site-1" / "custom" / "shutdown_child.py"
+    custom.write_text(
+        "import subprocess,sys,time\n"
+        "from pathlib import Path\n"
+        "from nvflare.apis.executor import Executor\n"
+        "from nvflare.apis.shareable import Shareable\n"
+        "class ChildExecutor(Executor):\n"
+        " def execute(self,*args):\n"
+        f"  subprocess.Popen([sys.executable,'-c',{child_code!r}])\n"
+        f"  while not Path({str(ready)!r}).exists(): time.sleep(0.01)\n"
+        + ("  time.sleep(30)\n" if shutdown == "cancel" else "  return Shareable()\n")
+    )
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("descendant-shutdown")
+    path = _stage(store, identity, workspace_root, {"path": "shutdown_child.ChildExecutor"}, Shareable())
+    repo_root = str(Path(__file__).resolve().parents[5])
+    env = {key: value for key, value in os.environ.items() if key not in JobProcessEnv.ALL}
+    env["PYTHONPATH"] = repo_root
+    request = TaskLaunchRequest(
+        identity.job_id,
+        identity.site_name,
+        identity.task_id,
+        identity.attempt_id,
+        (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap", path),
+        environment=env,
+        cwd=repo_root,
+    )
+    launcher = ProcessTaskLauncher(stop_grace_period=2, descendant_settle_timeout=2, poll_interval=0.02)
+    try:
+        handle = launcher.launch_task(request)
+    except TaskLaunchError as error:
+        error.handle.cancel()
+        raise
+    try:
+        _wait_until(ready.exists)
+        try:
+            child = psutil.Process(int(ready.read_text()))
+        except psutil.NoSuchProcess:
+            # A normally exiting child may finish before this test is scheduled.
+            child = None
+        status = handle.cancel() if shutdown == "cancel" else handle.wait_for_settlement(timeout=15)
+        assert status.settled
+        assert child is None or not _live(child)
+        if shutdown == "stubborn":
+            assert not cleaned.exists()
+            assert status.failure_reason == "task leader exited while descendants remained alive"
+        else:
+            assert cleaned.read_text() == "cleaned"
+            assert status.failure_reason is None
+            if shutdown == "cancel":
+                assert status.termination_signal == signal.SIGTERM
+                assert status.cancel_requested
+            else:
+                assert status.succeeded
+    finally:
+        if not handle.poll().settled:
+            handle.cancel()
