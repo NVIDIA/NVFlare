@@ -75,6 +75,10 @@ def _create_adapter_state(args):
     from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
     from transformers import AutoModelForCausalLM
 
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
     model_kwargs = {
         "revision": args.model_revision,
         "torch_dtype": torch.bfloat16,

@@ -342,6 +342,71 @@ def test_nano_profile_rejects_exclusions_before_initialization_and_training(monk
             load_module().define_parser()
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to verify seeded adapter initialization")
+def test_nano_initial_adapter_seed_controls_lora_weights(monkeypatch):
+    import torch
+
+    prepare_module = _load_prepare_module()
+
+    class LoraConfig:
+        def __init__(self, **kwargs):
+            self.settings = kwargs
+
+        def to_dict(self):
+            return self.settings
+
+    class AutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(*_args, **_kwargs):
+            return object()
+
+    peft_module = ModuleType("peft")
+    peft_module.LoraConfig = LoraConfig
+    peft_module.get_peft_model = lambda _model, _config: {"layer.lora_A.weight": torch.rand((2, 2))}
+    peft_module.get_peft_model_state_dict = lambda model: model
+    transformers_module = ModuleType("transformers")
+    transformers_module.AutoModelForCausalLM = AutoModelForCausalLM
+    monkeypatch.setitem(sys.modules, "peft", peft_module)
+    monkeypatch.setitem(sys.modules, "transformers", transformers_module)
+    args = SimpleNamespace(
+        seed=42,
+        model_revision=None,
+        device_map="none",
+        load_in_4bit=False,
+        model_name_or_path="model",
+        lora_rank=2,
+        lora_alpha=4,
+        lora_dropout=0.0,
+        target_modules="all-linear",
+    )
+
+    first, _ = prepare_module._create_adapter_state(args)
+    second, _ = prepare_module._create_adapter_state(args)
+    args.seed = 43
+    third, _ = prepare_module._create_adapter_state(args)
+
+    assert torch.equal(first["layer.lora_A.weight"], second["layer.lora_A.weight"])
+    assert not torch.equal(first["layer.lora_A.weight"], third["layer.lora_A.weight"])
+
+
+def test_lightning35_explicit_targets_clear_inherited_exclusions_and_reject_conflicts(tmp_path):
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.target_modules = "q_proj,v_proj"
+    args.exclude_modules = None
+    args.train_file = str(tmp_path / "train.jsonl")
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+
+    assert config["peft"]["target_modules"] == ["q_proj", "v_proj"]
+    assert "exclude_modules" not in config["peft"]
+
+    args.exclude_modules = "*.out_proj"
+    with pytest.raises(ValueError, match="does not allow explicit target_modules with exclude_modules"):
+        client_module.model_profiles.resolve_model_profile(args)
+
+
 def test_lightning35_profile_keeps_pinned_revisions_for_explicit_default_repository(tmp_path):
     job_module = _load_job_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")

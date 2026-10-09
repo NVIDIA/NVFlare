@@ -93,6 +93,19 @@ def resolve_model_profile(args):
         raise ValueError(f"Unknown model profile: {profile_name}")
     args.model_profile = profile_name
     values = deepcopy(PROFILES[profile_name])
+    requested_target_modules = getattr(args, "target_modules", None)
+    requested_exclude_modules = getattr(args, "exclude_modules", None)
+    uses_explicit_target_selection = (
+        profile_name == LIGHTNING35_PROFILE
+        and requested_target_modules is not None
+        and bool(requested_target_modules.strip())
+        and requested_target_modules != values["target_modules"]
+    )
+    if uses_explicit_target_selection:
+        if requested_exclude_modules is not None and requested_exclude_modules.strip():
+            raise ValueError("The lightning35 profile does not allow explicit target_modules with exclude_modules.")
+        if requested_exclude_modules is None:
+            args.exclude_modules = ""
     requested_model_name = getattr(args, "model_name_or_path", None)
     if requested_model_name is None:
         requested_model_name = values["model_name_or_path"]
