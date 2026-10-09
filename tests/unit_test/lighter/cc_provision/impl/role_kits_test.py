@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[5]
 SOURCE = ROOT / "examples/devops/coco"
 
 
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_assembled_roles_vendor_importable_helpers_without_nvflare(tmp_path):
     pytest.importorskip("tomllib", reason="role-kit assembly requires Python 3.11+")
     kits = runpy.run_path(str(SOURCE / "role_kits.py"))
