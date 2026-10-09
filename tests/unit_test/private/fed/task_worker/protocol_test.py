@@ -172,18 +172,58 @@ def test_bootstrap_rejects_duplicate_fields_and_excessive_nesting(tmp_path, boot
         replace(bootstrap, executor=nested)
 
 
-def test_bootstrap_rejects_symlinked_file_and_ancestor(tmp_path, bootstrap):
+def test_bootstrap_accepts_directory_alias_but_rejects_symlinked_file(tmp_path, bootstrap):
     directory = tmp_path / "real"
     directory.mkdir()
     path = directory / "bootstrap.json"
     protocol.write_bootstrap(str(path), bootstrap)
     alias = tmp_path / "alias"
     alias.symlink_to(directory, target_is_directory=True)
-    with pytest.raises(OSError):
-        protocol.read_bootstrap(str(alias / "bootstrap.json"))
-    with pytest.raises(OSError):
-        protocol.write_bootstrap(str(alias / "new.json"), bootstrap)
+    assert protocol.read_bootstrap(str(alias / "bootstrap.json")) == bootstrap
+    protocol.write_bootstrap(str(alias / "new.json"), bootstrap)
+    assert protocol.read_bootstrap(str(directory / "new.json")) == bootstrap
     link = tmp_path / "link.json"
     link.symlink_to(path)
     with pytest.raises(OSError):
         protocol.read_bootstrap(str(link))
+
+
+def test_bootstrap_traverses_execute_only_parent(tmp_path, bootstrap):
+    parent = tmp_path / "search-only"
+    target = parent / "artifacts"
+    target.mkdir(parents=True)
+    parent.chmod(0o311)
+    try:
+        path = target / "bootstrap.json"
+        protocol.write_bootstrap(str(path), bootstrap)
+        assert protocol.read_bootstrap(str(path)) == bootstrap
+    finally:
+        parent.chmod(0o700)
+
+
+def test_bootstrap_accepts_trusted_directory_alias(tmp_path, bootstrap):
+    target = tmp_path / "real"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+    path = alias / "bootstrap.json"
+    protocol.write_bootstrap(str(path), bootstrap)
+    assert protocol.read_bootstrap(str(path)) == bootstrap
+    assert (target / "bootstrap.json").exists()
+
+
+@pytest.mark.parametrize("limit", [None, 64, 14 * 1024**3])
+def test_bootstrap_carries_optional_site_payload_policy(tmp_path, bootstrap, limit):
+    configured = replace(bootstrap, max_payload_bytes=limit)
+    path = str(tmp_path / "bootstrap.json")
+    protocol.write_bootstrap(path, configured)
+    assert protocol.read_bootstrap(path).max_payload_bytes == limit
+    record = configured.to_dict()
+    record.pop("max_payload_bytes")
+    assert WorkerBootstrap.from_dict(record).max_payload_bytes is None
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "64"])
+def test_bootstrap_rejects_invalid_payload_policy(bootstrap, limit):
+    with pytest.raises(ValueError, match="max_payload_bytes"):
+        replace(bootstrap, max_payload_bytes=limit)

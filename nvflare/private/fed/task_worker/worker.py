@@ -27,6 +27,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
@@ -169,6 +170,7 @@ def _execute(
     _restore_peer_context(data, fl_ctx)
 
     started = False
+    first_error = None
     try:
         started = True
         _fire_checked(runtime, EventType.ABOUT_TO_START_RUN, fl_ctx)
@@ -181,12 +183,20 @@ def _execute(
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
         _fire_checked(runtime, EventType.AFTER_TASK_EXECUTION, fl_ctx)
+    except BaseException as e:
+        first_error = e
     finally:
         if started:
-            try:
-                _fire_checked(runtime, EventType.ABOUT_TO_END_RUN, fl_ctx)
-            finally:
-                _fire_checked(runtime, EventType.END_RUN, fl_ctx)
+            for event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
+                try:
+                    _fire_checked(runtime, event_type, fl_ctx)
+                except BaseException as e:
+                    # Finalizers must all run, but cannot replace the failure
+                    # that caused cleanup, or an earlier finalizer failure.
+                    if first_error is None:
+                        first_error = e
+    if first_error is not None:
+        raise first_error
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     if not isinstance(result, Shareable):
         raise TypeError("task hooks must leave a Shareable result")
@@ -205,12 +215,17 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
     started_at = time.time()
     bootstrap = read_bootstrap(bootstrap_path)
     identity = bootstrap.identity
-    store = FileTaskArtifactStore(bootstrap.artifact_root)
+    store = FileTaskArtifactStore(bootstrap.artifact_root, max_payload_bytes=bootstrap.max_payload_bytes)
     workspace = Workspace(bootstrap.workspace_root, site_name=identity.site_name)
     old_sys_path = sys.path.copy()
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
+    owns_auditor = False
     try:
+        # Record policy decisions even before application logging or imports.
+        if AuditService.get_auditor() is None:
+            AuditService.initialize(workspace.get_audit_file_path(identity.job_id))
+            owns_auditor = True
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace)
         _authorize_compute_graph(bootstrap, workspace, fl_ctx)
@@ -262,6 +277,8 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
         raise
     finally:
         sys.path[:] = old_sys_path
+        if owns_auditor:
+            AuditService.close()
 
 
 def main():

@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
+from nvflare.security.logging import secure_format_exception
 
 
 class UnsupportedTaskRuntimeService(RuntimeError):
@@ -150,7 +151,9 @@ class TaskRuntime:
             raise RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {self._fatal_error}")
 
         if self._event_error is not None:
-            raise RuntimeError("task runtime event handler failed") from self._event_error
+            raise RuntimeError(
+                f"task runtime event handler failed: {secure_format_exception(self._event_error)}"
+            ) from self._event_error
         if self._aborted:
             raise RuntimeError("task runtime was aborted")
 

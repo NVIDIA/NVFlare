@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import json
 import os
 from dataclasses import replace
@@ -360,11 +361,10 @@ def test_stale_identity_cannot_write_claim_or_delete_attempt(tmp_path, operation
     assert os.path.isdir(store.attempt_dir(identity))
 
 
-def test_payload_bound_is_enforced_before_publication(tmp_path, monkeypatch):
-    store = FileTaskArtifactStore(str(tmp_path))
+def test_payload_bound_is_enforced_before_publication(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path), max_payload_bytes=64)
     identity = _identity()
     store.create_attempt(identity)
-    monkeypatch.setattr(artifacts, "_MAX_PAYLOAD_BYTES", 64)
     with pytest.raises(ValueError, match="too large"):
         store.stage_result(identity, Shareable({"large": b"x" * 1000}))
     assert not (tmp_path / identity.attempt_id / "result.fobs").exists()
@@ -402,3 +402,63 @@ def test_attempt_claim_is_exclusive_and_released_payloads_cannot_be_reexecuted(t
     store.release_payloads(identity)
     with pytest.raises(FileExistsError):
         store.claim_worker(identity)
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "64"])
+def test_artifact_store_rejects_invalid_payload_policy(tmp_path, limit):
+    with pytest.raises(ValueError, match="max_payload_bytes"):
+        FileTaskArtifactStore(str(tmp_path), max_payload_bytes=limit)
+
+
+def test_payload_policy_applies_to_input_and_result_reads(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    store.write_input(identity, Shareable({"value": "x" * 1024}))
+    store.commit_result(identity, Shareable({"value": "x" * 1024}))
+    limited = FileTaskArtifactStore(str(tmp_path), max_payload_bytes=64)
+    for read in (limited.read_input, limited.read_result):
+        with pytest.raises(ValueError, match="too large"):
+            read(identity)
+    assert store.read_result(identity)[0]["value"] == "x" * 1024
+
+
+def test_payload_reference_can_represent_large_models():
+    reference = ArtifactReference("result", "result.fobs", 14 * 1024**3, "0" * 64)
+    assert ArtifactReference.from_dict(reference.to_dict()) == reference
+
+
+def test_streaming_checksum_matches_serialized_file_and_staging_needs_no_reread(tmp_path, monkeypatch):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    fingerprint = artifacts._fingerprint
+
+    def unexpected_reread(*args):
+        raise AssertionError("payload staging must hash during writing")
+
+    monkeypatch.setattr(artifacts, "_fingerprint", unexpected_reread)
+    reference = store.stage_result(identity, Shareable({"large": b"x" * (2 * 1024 * 1024)}))
+    encoded = (tmp_path / identity.attempt_id / "result.fobs").read_bytes()
+    assert reference.size == len(encoded)
+    assert reference.sha256 == hashlib.sha256(encoded).hexdigest()
+    monkeypatch.setattr(artifacts, "_fingerprint", fingerprint)
+    store.commit_staged_result(identity, reference)
+    assert store.read_result(identity)[0]["large"] == b"x" * (2 * 1024 * 1024)
+
+
+def test_artifact_store_traverses_execute_only_parent(tmp_path):
+    parent = tmp_path / "search-only"
+    parent.mkdir()
+    parent.chmod(0o311)
+    try:
+        store = FileTaskArtifactStore(str(parent / "artifacts"))
+        identity = _identity()
+        store.create_attempt(identity)
+        store.write_input(identity, Shareable({"input": 1}))
+        store.commit_result(identity, Shareable({"result": 2}))
+        assert store.read_input(identity)["input"] == 1
+        assert store.read_result(identity)[0]["result"] == 2
+        store.release_payloads(identity)
+    finally:
+        parent.chmod(0o700)

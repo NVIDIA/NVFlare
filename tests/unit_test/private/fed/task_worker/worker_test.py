@@ -150,6 +150,7 @@ def _stage(store, identity, workspace_root, executor, data, components=(), conte
         executor=executor,
         components=components,
         context_properties=context_properties or {},
+        max_payload_bytes=store.max_payload_bytes,
     )
     path = store.bootstrap_path(identity)
     write_bootstrap(path, bootstrap)
@@ -925,15 +926,12 @@ def test_background_failure_before_completion_publication(tmp_path, monkeypatch,
         assert not callback.is_alive(), "completion preparation blocked a background callback"
 
     fingerprint = artifacts._fingerprint
-    fingerprint_calls = 0
 
-    def verify_with_callback(stream):
-        nonlocal fingerprint_calls
-        fingerprint_calls += 1
-        # Input read, result staging, then the final staged-result verification.
-        if fingerprint_calls == 3:
+    def verify_with_callback(stream, max_payload_bytes=None):
+        # Input verification precedes execute; inject at result verification.
+        if runtime_context and not callbacks:
             inject_callback()
-        return fingerprint(stream)
+        return fingerprint(stream, max_payload_bytes)
 
     publish = artifacts._publish_exclusive
 
@@ -1145,3 +1143,139 @@ def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutd
     finally:
         if not handle.poll().settled:
             handle.cancel()
+
+
+@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.ABOUT_TO_END_RUN])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_failure_record_keeps_first_exception_through_cleanup(tmp_path, monkeypatch, phase, cleanup_fails):
+    events = []
+
+    class FailingExecutor(Executor):
+        def handle_event(self, event_type, fl_ctx):
+            events.append(event_type)
+            if event_type == phase:
+                raise ValueError("ROOT CAUSE from first failure")
+            if cleanup_fails and event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
+                raise RuntimeError("secondary cleanup failure")
+
+        def execute(self, *args):
+            if phase == "execute":
+                raise ValueError("ROOT CAUSE from first failure")
+            return Shareable()
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = FailingExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("first-failure")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    with pytest.raises((ValueError, RuntimeError), match="ROOT CAUSE"):
+        worker.run_worker(path)
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "ROOT CAUSE" in failure["message"]
+    assert "ValueError" in failure["message"]
+    assert "secondary cleanup failure" not in failure["message"]
+    assert events.count(EventType.ABOUT_TO_END_RUN) == 1
+    assert events.count(EventType.END_RUN) == 1
+    assert not Path(store.attempt_dir(identity), "completion.json").exists()
+
+
+@pytest.mark.parametrize(
+    "policy, audit_action",
+    [
+        ({"class_allow_list": ["*"]}, "component_authorization.class_allow_list_disabled"),
+        (
+            {"class_allow_list": ["nvflare."], "class_list_enforcement_mode": "warn"},
+            "component_authorization.unlisted_class_allowed",
+        ),
+    ],
+)
+def test_fresh_worker_preserves_component_authorization_audit(tmp_path, policy, audit_action):
+    from nvflare.apis.workspace import Workspace
+
+    workspace_root = _workspace(tmp_path)
+    (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
+    (workspace_root / "local" / "resources.json.default").write_text(json.dumps(policy))
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("audited")
+    path = _stage(
+        store,
+        identity,
+        workspace_root,
+        {"path": "worker_components.ReferenceExecutor", "args": {"source_model": "value", "options": {}}},
+        Shareable({"value": 3}),
+        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
+    )
+    process = _run_process(path)
+    assert process.returncode == 0, process.stderr
+    audit_path = Path(Workspace(str(workspace_root), site_name=identity.site_name).get_audit_file_path(identity.job_id))
+    assert audit_path.exists()
+    text = audit_path.read_text()
+    assert audit_action in text
+    assert identity.job_id in text
+    if policy.get("class_list_enforcement_mode") == "warn":
+        assert "worker_components.ReferenceExecutor" in text
+        assert "worker_components.ValueComponent" in text
+
+
+def test_worker_applies_payload_policy_from_bootstrap(tmp_path):
+    workspace_root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"), max_payload_bytes=512)
+    identity = _identity("payload-policy")
+    path = _stage(
+        store,
+        identity,
+        workspace_root,
+        {
+            "path": "worker_components.ReferenceExecutor",
+            "args": {"source_model": "value", "options": {"large": "x" * 1024}},
+        },
+        Shareable({"value": 3}),
+        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
+    )
+    assert read_bootstrap(path).max_payload_bytes == 512
+    process = _run_process(path)
+    assert process.returncode != 0
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "payload is too large" in failure["message"]
+    assert not Path(store.attempt_dir(identity), "result.fobs").exists()
+    assert not Path(store.attempt_dir(identity), "completion.json").exists()
+
+
+def test_completion_remains_readable_after_directory_fsync_failure(tmp_path, monkeypatch):
+    class SuccessfulExecutor(Executor):
+        def execute(self, *args):
+            return Shareable({"produced": True})
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = SuccessfulExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("post-publication-error")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    completion_path = Path(store.attempt_dir(identity), "completion.json")
+    fsync = protocol.os.fsync
+    failed = False
+
+    def fail_after_completion(fd):
+        import stat
+
+        nonlocal failed
+        if not failed and completion_path.exists() and stat.S_ISDIR(os.fstat(fd).st_mode):
+            failed = True
+            raise OSError("completion directory durability failure")
+        fsync(fd)
+
+    monkeypatch.setattr(protocol.os, "fsync", fail_after_completion)
+    with pytest.raises(OSError, match="durability failure"):
+        worker.run_worker(path)
+    assert failed
+    assert store.read_result(identity)[0]["produced"]
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "durability failure" in failure["message"]

@@ -32,11 +32,10 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_dow
 
 from .protocol import SCHEMA_VERSION, TaskAttemptIdentity, _freeze_json, _load_json, _open_directory
 from .protocol import _open_regular as _open_protocol_file
-from .protocol import _publish_exclusive, _thaw_json
+from .protocol import _publish_exclusive, _require_payload_limit, _thaw_json
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_RECORD_BYTES = 1024 * 1024
-_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024 * 1024
 _INPUT_KIND = "input"
 _RESULT_KIND = "result"
 _ANALYTICS_KIND = "analytics"
@@ -53,26 +52,31 @@ def _open_regular(path: str):
         raise IncompleteTaskArtifactError(f"artifact is incomplete: missing {os.path.basename(path)}") from e
 
 
-class _BoundedWriter:
-    def __init__(self, stream):
+class _PayloadWriter:
+    """Hash the append-only FOBS stream while enforcing optional site policy."""
+
+    def __init__(self, stream, max_payload_bytes):
         self.stream = stream
+        self.max_payload_bytes = max_payload_bytes
+        self.size = 0
+        self.digest = hashlib.sha256()
 
     def write(self, value):
-        if self.stream.tell() + len(value) > _MAX_PAYLOAD_BYTES:
+        if self.max_payload_bytes is not None and self.size + len(value) > self.max_payload_bytes:
             raise ValueError("artifact payload is too large")
-        return self.stream.write(value)
+        written = self.stream.write(value)
+        self.digest.update(memoryview(value)[:written])
+        self.size += written
+        return written
 
-    def __getattr__(self, name):
-        return getattr(self.stream, name)
 
-
-def _fingerprint(stream) -> tuple[int, str]:
+def _fingerprint(stream, max_payload_bytes=None) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
     while chunk := stream.read(_CHUNK_SIZE):
         digest.update(chunk)
         size += len(chunk)
-        if size > _MAX_PAYLOAD_BYTES:
+        if max_payload_bytes is not None and size > max_payload_bytes:
             raise ValueError("artifact payload is too large")
     return size, digest.hexdigest()
 
@@ -118,8 +122,8 @@ class ArtifactReference:
             raise ValueError("artifact kind must be input, result or analytics")
         if self.file_name != f"{self.kind}.fobs":
             raise ValueError("artifact payload name does not match its kind")
-        if type(self.size) is not int or not 0 <= self.size <= _MAX_PAYLOAD_BYTES:
-            raise ValueError("artifact size must be a bounded nonnegative integer")
+        if type(self.size) is not int or self.size < 0:
+            raise ValueError("artifact size must be a nonnegative integer")
         if not isinstance(self.sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", self.sha256):
             raise ValueError("artifact sha256 must be a hexadecimal SHA-256 digest")
 
@@ -213,10 +217,12 @@ class FileTaskArtifactStore:
     completion record, or :meth:`remove_attempt` after a full retention decision.
     """
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str, *, max_payload_bytes: int | None = None):
         if not isinstance(root_dir, str) or not os.path.isabs(root_dir):
             raise ValueError("artifact root must be an absolute path")
+        _require_payload_limit(max_payload_bytes)
         self.root_dir = os.path.realpath(root_dir)
+        self.max_payload_bytes = max_payload_bytes
 
     def attempt_dir(self, identity: TaskAttemptIdentity) -> str:
         if not isinstance(identity, TaskAttemptIdentity):
@@ -271,10 +277,10 @@ class FileTaskArtifactStore:
         details = {}
 
         def writer(stream):
-            fobs.dump_to_stream(data, _BoundedWriter(stream), max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True})
-            stream.flush()
-            stream.seek(0)
-            details["size"], details["sha256"] = _fingerprint(stream)
+            payload_writer = _PayloadWriter(stream, self.max_payload_bytes)
+            fobs.dump_to_stream(data, payload_writer, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True})
+            details["size"] = payload_writer.size
+            details["sha256"] = payload_writer.digest.hexdigest()
 
         _publish_exclusive(directory, file_name, writer)
         return ArtifactReference(kind=kind, file_name=file_name, **details)
@@ -282,11 +288,13 @@ class FileTaskArtifactStore:
     @contextmanager
     def _verified_payload(self, identity, reference):
         self._check_identity(identity)
+        if self.max_payload_bytes is not None and reference.size > self.max_payload_bytes:
+            raise ValueError("artifact payload is too large")
         path = os.path.join(self.attempt_dir(identity), reference.file_name)
         with _open_regular(path) as stream:
             if os.fstat(stream.fileno()).st_size != reference.size:
                 raise ValueError("artifact payload size or checksum mismatch")
-            size, digest = _fingerprint(stream)
+            size, digest = _fingerprint(stream, self.max_payload_bytes)
             if size != reference.size or digest != reference.sha256:
                 raise ValueError("artifact payload size or checksum mismatch")
             stream.seek(0)

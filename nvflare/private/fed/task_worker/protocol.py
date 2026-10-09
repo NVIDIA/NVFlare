@@ -78,21 +78,30 @@ def _require_absolute_directory_name(name: str, value: str):
         raise ValueError(f"{name} must be an absolute path")
 
 
+def _require_payload_limit(value):
+    if value is not None and (type(value) is not int or value <= 0):
+        raise ValueError("max_payload_bytes must be a positive integer or None")
+
+
 def _open_directory(path, create=False):
     """Anchor operations to real directories; never follow a replaced path segment."""
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open("/", flags)
+    # Ancestors require search permission, not permission to list contents.
+    # The final directory remains readable so callers can fsync its entries.
+    search_flags = getattr(os, "O_PATH", getattr(os, "O_SEARCH", os.O_RDONLY)) | os.O_DIRECTORY | os.O_NOFOLLOW
+    parts = [part for part in os.path.abspath(path).split("/") if part]
+    fd = os.open("/", search_flags if parts else flags)
     try:
-        for part in os.path.abspath(path).split("/"):
-            if part:
-                if create:
-                    try:
-                        os.mkdir(part, mode=0o700, dir_fd=fd)
-                    except FileExistsError:
-                        pass
-                child = os.open(part, flags, dir_fd=fd)
-                os.close(fd)
-                fd = child
+        for index, part in enumerate(parts):
+            if create:
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            child_flags = flags if index == len(parts) - 1 else search_flags
+            child = os.open(part, child_flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
         return fd
     except BaseException:
         os.close(fd)
@@ -137,7 +146,7 @@ def _publish_exclusive(directory, name, writer, *, publication_guard=nullcontext
 
 
 def _atomic_publish(path: str, encoded: bytes):
-    directory = os.path.dirname(os.path.abspath(path))
+    directory = os.path.realpath(os.path.dirname(os.path.abspath(path)))
     os.close(_open_directory(directory, create=True))
     _publish_exclusive(directory, os.path.basename(path), lambda stream: stream.write(encoded))
 
@@ -225,6 +234,7 @@ class WorkerBootstrap:
     components: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     context_properties: Mapping[str, ContextProperty] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
+    max_payload_bytes: int | None = None
 
     def __post_init__(self):
         if not isinstance(self.identity, TaskAttemptIdentity):
@@ -233,6 +243,7 @@ class WorkerBootstrap:
             raise ValueError(f"unsupported worker bootstrap schema version {self.schema_version}")
         _require_absolute_directory_name("artifact_root", self.artifact_root)
         _require_absolute_directory_name("workspace_root", self.workspace_root)
+        _require_payload_limit(self.max_payload_bytes)
         if not isinstance(self.executor, Mapping):
             raise TypeError("executor must be a JSON component mapping")
         if not isinstance(self.components, Sequence) or isinstance(self.components, (str, bytes)):
@@ -266,6 +277,7 @@ class WorkerBootstrap:
             "executor": _thaw_json(self.executor),
             "components": _thaw_json(self.components),
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
+            "max_payload_bytes": self.max_payload_bytes,
         }
 
     @classmethod
@@ -273,7 +285,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties"}
+        optional = {"components", "context_properties", "max_payload_bytes"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -287,6 +299,7 @@ class WorkerBootstrap:
             executor=value["executor"],
             components=tuple(value.get("components", ())),
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
+            max_payload_bytes=value.get("max_payload_bytes"),
         )
 
 
@@ -309,7 +322,10 @@ def write_bootstrap(path: str, bootstrap: WorkerBootstrap):
 def read_bootstrap(path: str) -> WorkerBootstrap:
     """Load and strictly validate a worker bootstrap."""
 
-    with _open_regular(path) as stream:
+    # Trusted callers may use directory aliases such as /tmp on macOS.
+    # Canonicalize ancestors while still refusing a symlinked bootstrap file.
+    directory = os.path.realpath(os.path.dirname(os.path.abspath(path)))
+    with _open_regular(os.path.join(directory, os.path.basename(path))) as stream:
         encoded = stream.read(_MAX_BOOTSTRAP_BYTES + 1)
     if len(encoded) > _MAX_BOOTSTRAP_BYTES:
         raise ValueError("worker bootstrap is too large")
