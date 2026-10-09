@@ -174,7 +174,7 @@ def main(args):
             # Let MPM classify the original exception before cleanup. Worker
             # archival must run while process-global F3/Cell services are alive,
             # under MPM's existing cleanup owner and grace period.
-            mpm.add_cleanup_cb_first(_cleanup)
+            mpm.prepend_cleanup_cb(_cleanup)
         else:
             _cleanup()
 

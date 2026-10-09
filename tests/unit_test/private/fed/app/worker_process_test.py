@@ -160,7 +160,7 @@ def _exception_worker(workspace_root, failure, cooperative):
 
     # This process-level fallback must follow dependent worker cleanup, never
     # run concurrently with it. It can finish only in the cooperative case.
-    MainProcessMonitor.add_cleanup_cb_first(lambda: (run_dir / "fallback_cleanup").write_text("started"))
+    MainProcessMonitor.prepend_cleanup_cb(lambda: (run_dir / "fallback_cleanup").write_text("started"))
 
     with _worker_runtime(workspace_root, runner) as (args, _client):
         rc = MainProcessMonitor.run(

@@ -45,7 +45,7 @@ def test_dependent_cleanup_precedes_process_services_on_one_thread(cleanup_monit
 
     cleanup_monitor.add_cleanup_cb(stop_transport)
     cleanup_monitor.add_cleanup_cb(stop_pools)
-    cleanup_monitor.add_cleanup_cb_first(cleanup, name="worker archival")
+    cleanup_monitor.prepend_cleanup_cb(cleanup, name="worker archival")
     completed = threading.Event()
     cleanup_monitor._do_cleanup(completed)
 
@@ -70,7 +70,7 @@ def test_execution_failure_is_classified_before_deferred_cleanup(cleanup_monitor
             errors_before_cleanup.extend(call.args[0] for call in logger.error.call_args_list)
             raise ValueError("secondary cleanup failure")
 
-        cleanup_monitor.add_cleanup_cb_first(failed_cleanup)
+        cleanup_monitor.prepend_cleanup_cb(failed_cleanup)
         raise error_type("original execution failure")
 
     with (
@@ -89,7 +89,7 @@ def test_dependent_cleanup_rejects_duplicate_callback(cleanup_monitor):
 
     cleanup_monitor.add_cleanup_cb(cleanup)
     with pytest.raises(RuntimeError, match="already registered"):
-        cleanup_monitor.add_cleanup_cb_first(cleanup)
+        cleanup_monitor.prepend_cleanup_cb(cleanup)
 
 
 def _fake_thread(name, daemon):
