@@ -595,6 +595,47 @@ def test_nemo_peft_latest_adapter_dir_prefers_numeric_step_when_mtime_ties(tmp_p
     assert client_module._latest_adapter_dir(str(checkpoint_dir)) == str(step_10)
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to run the AutoModel client helper")
+def test_lightning_round_rejects_missing_fresh_report_and_removes_stale_outputs(monkeypatch, tmp_path):
+    import torch
+
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.train_file = str(tmp_path / "train.jsonl")
+    round_dir = tmp_path / "round_0"
+    stale_output = round_dir / "output_adapter" / "model"
+    stale_checkpoint = round_dir / "checkpoints" / "epoch_0_step_20" / "model"
+    stale_loaded = round_dir / "loaded_adapter" / "model"
+    for path in (stale_output, stale_checkpoint, stale_loaded):
+        path.mkdir(parents=True)
+        (path / "adapter_model.safetensors").write_text("stale")
+    stale_report = round_dir / "automodel_report.json"
+    stale_report.write_text(json.dumps({"actual_optimizer_steps": 20, "output_adapter_dir": str(stale_output)}))
+
+    monkeypatch.setattr(client_module.adapter_checkpoint, "save_hf_adapter_state_dir", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        client_module,
+        "_write_automodel_config",
+        lambda *_args, **_kwargs: str(round_dir / "finetune_config.yaml"),
+    )
+
+    def run_without_report(*_args, **_kwargs):
+        assert not (round_dir / "output_adapter").exists()
+        assert not (round_dir / "checkpoints").exists()
+        assert not (round_dir / "loaded_adapter").exists()
+        assert not stale_report.exists()
+
+    monkeypatch.setattr(client_module.subprocess, "run", run_without_report)
+
+    with pytest.raises(RuntimeError, match="required fresh training report"):
+        client_module._run_automodel_round(
+            args,
+            str(round_dir),
+            {"layer.lora_A.weight": torch.zeros((2, 2), dtype=torch.float32)},
+        )
+
+
 def test_lightning_contract_resolution_is_independent_of_process_working_directory(monkeypatch, tmp_path):
     client_module = _load_client_module()
     custom_dir = tmp_path / "app" / "custom"

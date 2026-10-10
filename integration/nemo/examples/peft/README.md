@@ -275,6 +275,9 @@ python job.py \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
 
+Lightning templates must keep `FederatedTrainFinetuneRecipeForNextTokenPrediction`, which reports the adapter produced
+by the current invocation and its actual optimizer-step count; the client rejects templates that omit this report.
+
 Use `--backend=mock` for a CPU/static smoke of NVFlare adapter exchange only. This does not run NeMo AutoModel.
 
 Nano preserves its native adapter dtype during exchange by default. Add `--fp32_adapter_exchange` to a Nano `job.py`

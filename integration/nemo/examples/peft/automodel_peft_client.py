@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -376,6 +377,14 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
     incoming_adapter_dir = os.path.join(round_dir, "incoming_adapter")
     output_adapter_dir = os.path.join(round_dir, "output_adapter")
     checkpoint_dir = os.path.join(round_dir, "checkpoints")
+    report_path = os.path.join(round_dir, "automodel_report.json")
+    is_lightning = model_profiles.is_lightning35(args)
+    if is_lightning:
+        for path in (output_adapter_dir, checkpoint_dir, os.path.join(round_dir, "loaded_adapter"), report_path):
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            elif os.path.lexists(path):
+                os.remove(path)
     adapter_config = {
         "base_model_name_or_path": args.model_name_or_path,
         "r": args.lora_rank,
@@ -407,8 +416,7 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         command.extend(shlex.split(extra_args))
 
     env = _build_subprocess_env()
-    report_path = os.path.join(round_dir, "automodel_report.json")
-    if model_profiles.is_lightning35(args):
+    if is_lightning:
         env.update(
             {
                 "NVFLARE_AUTOMODEL_REPORT": report_path,
@@ -424,16 +432,34 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
     print(f"Running NeMo AutoModel: {shlex.join(command)}")
     subprocess.run(command, cwd=round_dir, check=True, env=env)
 
-    adapter_dir = _latest_adapter_dir(output_adapter_dir) or _latest_adapter_dir(checkpoint_dir) or output_adapter_dir
-    if not os.path.isdir(adapter_dir):
-        raise FileNotFoundError(
-            "NeMo AutoModel did not produce a PEFT adapter directory. "
-            f"Looked under {checkpoint_dir} and {output_adapter_dir}."
+    report = {}
+    if is_lightning:
+        if not os.path.isfile(report_path):
+            raise RuntimeError(
+                "Lightning AutoModel did not produce the required fresh training report. "
+                "Custom templates must use FederatedTrainFinetuneRecipeForNextTokenPrediction."
+            )
+        with open(report_path) as f:
+            report = json.load(f)
+        missing_report_fields = sorted(
+            field for field in ("actual_optimizer_steps", "output_adapter_dir") if not report.get(field)
         )
+        if missing_report_fields:
+            raise RuntimeError(f"Lightning AutoModel training report is missing fields: {missing_report_fields}")
+        adapter_dir = os.path.abspath(report["output_adapter_dir"])
+    else:
+        adapter_dir = (
+            _latest_adapter_dir(output_adapter_dir) or _latest_adapter_dir(checkpoint_dir) or output_adapter_dir
+        )
+    if not os.path.isdir(adapter_dir):
+        if is_lightning:
+            details = f"Reported adapter path: {adapter_dir}."
+        else:
+            details = f"Looked under {checkpoint_dir} and {output_adapter_dir}."
+        raise FileNotFoundError(f"NeMo AutoModel did not produce a PEFT adapter directory. {details}")
 
     updated_state = adapter_checkpoint.load_adapter_state(adapter_dir)
-    report = {}
-    if os.path.isfile(report_path):
+    if not is_lightning and os.path.isfile(report_path):
         with open(report_path) as f:
             report = json.load(f)
     report.setdefault("output_adapter_dir", os.path.abspath(adapter_dir))
