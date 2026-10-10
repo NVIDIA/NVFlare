@@ -281,9 +281,9 @@ FLARE uses a pull-based task distribution pattern:
 
 1. **Task Creation**: Controller creates task with payload
 2. **Task Broadcast**: ServerRunner broadcasts task availability
-3. **Task Pull**: ClientRunner pulls task via ``CellChannel.SERVER_MAIN``
+3. **Task Pull**: ClientRunner pulls task via ``CellChannel.SERVER_COMMAND`` (topic ``GET_TASK``)
 4. **Task Execution**: Executor processes task, produces result
-5. **Result Push**: ClientRunner sends result via ``CellChannel.SERVER_MAIN``
+5. **Result Push**: ClientRunner sends result via ``CellChannel.SERVER_COMMAND`` (topic ``SUBMIT_UPDATE``)
 6. **Result Processing**: Controller aggregates results
 
 
