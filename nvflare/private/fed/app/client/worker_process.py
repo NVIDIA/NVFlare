@@ -84,6 +84,7 @@ def main(args):
     client_app_runner = None
     federated_client = None
     logger = None
+    execution_failed = False
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
@@ -125,9 +126,10 @@ def main(args):
 
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, conf.handlers)
     except Exception as e:
+        execution_failed = True
         if logger:
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
-        raise e
+        raise
     finally:
 
         def _archive_results():
@@ -136,24 +138,64 @@ def main(args):
                 logger.warning(err)
             upload_results_on_shutdown(args, secure_train, log=logger)
 
-        try:
-            shutdown_job_process_runtime(
-                stop_command_admission=client_app_runner.close if client_app_runner else None,
-                wait_for_command_callbacks=client_app_runner.wait_for_command_callbacks if client_app_runner else None,
-                stop_cell=federated_client.stop_cell if federated_client else None,
-                logger=logger,
+        def _close_commands():
+            try:
+                client_app_runner.close()
+            finally:
+                if execution_failed:
+                    # Reject new commands, then wake cooperative work before
+                    # joining its executors. Waiting for the parent monitor to
+                    # abort the runner after those joins is too late.
+                    client_app_runner.stop()
+
+        def _cleanup(*, stop_command_admission=None, before_streaming_shutdown=None):
+            try:
+                shutdown_job_process_runtime(
+                    stop_command_admission=stop_command_admission,
+                    wait_for_command_callbacks=(
+                        client_app_runner.wait_for_command_callbacks if client_app_runner else None
+                    ),
+                    stop_cell=federated_client.stop_cell if federated_client else None,
+                    logger=logger,
+                    before_streaming_shutdown=before_streaming_shutdown,
+                )
+            finally:
+                # Preserve the upload exception, but never let it bypass the remaining
+                # process-local ownership cleanup.
+                if deployer:
+                    deployer.close()
+                if federated_client:
+                    federated_client.terminate()
+                stop_event.set()
+                if thread and thread.is_alive():
+                    thread.join()
+
+        if execution_failed:
+            # Keep publication outside MPM's short cleanup grace period and
+            # inside the original exception context. Workspace transfer has its
+            # own connection/transfer timeouts and needs the F3/Cell services.
+            try:
+                if client_app_runner:
+                    try:
+                        _close_commands()
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"failed to stop command admission: {secure_format_exception(e)}")
+                _archive_results()
+            except Exception as e:
+                if logger:
+                    logger.error(
+                        f"failed to archive job results while handling another error: {secure_format_exception(e)}"
+                    )
+            finally:
+                # Only the remaining teardown, which can block on executor or
+                # transport joins, uses MPM's existing cleanup owner and budget.
+                mpm.prepend_cleanup_cb(_cleanup)
+        else:
+            _cleanup(
+                stop_command_admission=_close_commands if client_app_runner else None,
                 before_streaming_shutdown=_archive_results,
             )
-        finally:
-            # Preserve the upload exception, but never let it bypass the remaining
-            # process-local ownership cleanup.
-            if deployer:
-                deployer.close()
-            if federated_client:
-                federated_client.terminate()
-            stop_event.set()
-            if thread and thread.is_alive():
-                thread.join()
 
 
 def parse_arguments():
