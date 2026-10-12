@@ -123,8 +123,9 @@ class ProvisionSiteLauncher(SiteLauncher):
                 )
                 for server_name in self.server_properties
             ]
-            steps.append(("Remove provisioned workspace", partial(shutil.rmtree, WORKSPACE)))
             run_cleanup_steps(steps)
+            # Keep the resource JSON until every external path has been removed.
+            shutil.rmtree(WORKSPACE)
             self.server_properties.clear()
             self.client_properties.clear()
 

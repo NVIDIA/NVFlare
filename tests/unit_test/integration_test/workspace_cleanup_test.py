@@ -27,6 +27,7 @@ import pytest
 
 from tests.integration_test import system_test
 from tests.integration_test.src import provision_site_launcher, site_launcher, utils
+from tests.integration_test.src.poc_site_launcher import POCSiteLauncher
 from tests.integration_test.src.provision_site_launcher import ProvisionSiteLauncher
 from tests.integration_test.src.site_launcher import SiteLauncher, SiteProperties
 from tests.timing_utils import ManualClock
@@ -251,6 +252,64 @@ def test_failed_process_cleanup_attempts_other_sites_and_preserves_workspace(pro
     assert attempted == ["site-1", "site-2", "server"]
     storage.assert_not_called()
     assert workspace.exists()
+
+
+@pytest.mark.parametrize("launcher_type", ["poc", "provision"])
+def test_failed_external_storage_cleanup_preserves_path_record_for_retry(tmp_path, monkeypatch, launcher_type):
+    if launcher_type == "poc":
+        launcher = POCSiteLauncher.__new__(POCSiteLauncher)
+        SiteLauncher.__init__(launcher)
+        workspace = tmp_path / "poc"
+        launcher.poc_temp_dir = str(workspace)
+        launcher.poc_dir = str(workspace / "example_project" / "prod_00")
+        resource_root = Path(launcher.poc_dir)
+    else:
+        launcher = ProvisionSiteLauncher.__new__(ProvisionSiteLauncher)
+        SiteLauncher.__init__(launcher)
+        workspace = tmp_path / "provision"
+        monkeypatch.setattr(provision_site_launcher, "WORKSPACE", str(workspace))
+        launcher.project_yaml = {"name": "cleanup_test"}
+        resource_root = workspace / "cleanup_test" / "prod_00"
+        server = SiteProperties("server", str(resource_root / "server"), None)
+        server.processes_stopped = True
+        launcher.server_properties["server"] = server
+
+    launcher.stop_all_sites = Mock()
+    resource_file = resource_root / "server" / "local" / utils.RESOURCE_CONFIG
+    resource_file.parent.mkdir(parents=True)
+    job_store = tmp_path / "external_jobs"
+    snapshot = tmp_path / "external_snapshot"
+    job_store.mkdir()
+    snapshot.mkdir()
+    resource_file.write_text(
+        json.dumps(
+            {
+                "components": [{"id": "job_manager", "args": {"uri_root": str(job_store)}}],
+                "snapshot_persistor": {
+                    "args": {"storage": {"path": utils.FILE_STORAGE, "args": {"root_dir": str(snapshot)}}}
+                },
+            }
+        )
+    )
+    cleanup_path = utils.cleanup_path
+    first_failure = True
+
+    def fail_once(path):
+        nonlocal first_failure
+        if path == str(snapshot) and first_failure:
+            first_failure = False
+            raise PermissionError("snapshot removal denied")
+        cleanup_path(path)
+
+    monkeypatch.setattr(utils, "cleanup_path", fail_once)
+    with pytest.raises(RuntimeError, match="snapshot removal denied"):
+        launcher.cleanup()
+    assert resource_file.exists()
+    assert snapshot.exists()
+
+    launcher.cleanup()
+    assert not workspace.exists()
+    assert not snapshot.exists()
 
 
 @pytest.mark.parametrize("reset_job_info", [False, True])

@@ -221,8 +221,16 @@ def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=())
 
 
 def wait_command_process(process, command, timeout=300.0):
+    deadline = time.monotonic() + timeout
     try:
         code = process.wait(timeout=timeout)
+        if code == 0 and os.name == "posix":
+            # A successful launcher can leave work in its process group.
+            while process_group_alive(process):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                time.sleep(min(0.1, remaining))
     except subprocess.TimeoutExpired as error:
         detail = ""
         try:
@@ -231,7 +239,13 @@ def wait_command_process(process, command, timeout=300.0):
             detail = f"; command cleanup failed: {cleanup_error}"
         raise RuntimeError(f"Command timed out after {timeout}s: {command}{detail}") from error
     if code != 0:
-        raise RuntimeError(f"Command exited with code {code}: {command}")
+        detail = ""
+        if os.name == "posix" and process_group_alive(process):
+            try:
+                stop_process_group(process)
+            except Exception as cleanup_error:
+                detail = f"; command cleanup failed: {cleanup_error}"
+        raise RuntimeError(f"Command exited with code {code}: {command}{detail}")
 
 
 def run_command_and_wait(command, timeout=300.0):

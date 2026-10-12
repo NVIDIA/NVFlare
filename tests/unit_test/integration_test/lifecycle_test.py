@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import json
+import os
 import shlex
+import signal
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -177,6 +179,24 @@ def test_nonzero_foreground_command_is_not_reported_as_success():
     command = shlex.join([sys.executable, "-c", "raise SystemExit(7)"])
     with pytest.raises(RuntimeError, match="exited with code 7"):
         utils.run_command_and_wait(command)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="foreground commands use POSIX process groups")
+def test_foreground_command_waits_for_its_child_group_and_stops_it_on_timeout():
+    command = "import subprocess, sys; subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])"
+    process = subprocess.Popen([sys.executable, "-c", command], start_new_session=True)
+    try:
+        assert process.wait(timeout=5) == 0
+        assert utils.process_group_alive(process)
+        with pytest.raises(RuntimeError, match="Command timed out"):
+            utils.wait_command_process(process, "command with child", timeout=0.2)
+        assert not utils.process_group_alive(process)
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
 
 
 def test_stdin_command_timeout_reaps_its_owned_process(monkeypatch):

@@ -17,7 +17,6 @@ import os
 import shutil
 import sys
 import tempfile
-from functools import partial
 
 from nvflare.tool.poc.poc_commands import _prepare_poc
 
@@ -106,12 +105,9 @@ class POCSiteLauncher(SiteLauncher):
     def cleanup(self):
         def remove_workspace():
             self.require_sites_stopped()
-            run_cleanup_steps(
-                [
-                    ("Clean server storage", partial(cleanup_job_and_snapshot, self.poc_dir, "server")),
-                    ("Remove POC workspace", partial(shutil.rmtree, self.poc_temp_dir)),
-                ]
-            )
+            # The workspace records the external storage paths needed for a retry.
+            cleanup_job_and_snapshot(self.poc_dir, "server")
+            shutil.rmtree(self.poc_temp_dir)
             self.server_properties.clear()
             self.client_properties.clear()
 
