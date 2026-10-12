@@ -18,6 +18,7 @@ import asyncio
 import socket
 import ssl
 import threading
+import time
 from concurrent.futures import Future
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -37,6 +38,7 @@ from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
 def test_close_all_does_not_hold_driver_lock():
@@ -660,6 +662,102 @@ def test_tcp_shutdown_interrupts_pending_client_tls_handshake(asynchronous, list
                 stopper.start()
             stopper.join(5)
             assert not stopper.is_alive()
+
+
+def _server_tls_context(tmp_path):
+    key, public_key = generate_keys()
+    cert = generate_cert(Identity("localhost"), Identity("localhost"), key, public_key, ca=True)
+    cert_file, key_file = tmp_path / "server.crt", tmp_path / "server.key"
+    cert_file.write_bytes(serialize_cert(cert))
+    key_file.write_bytes(serialize_pri_key(key))
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_file, key_file)
+    return context
+
+
+@pytest.mark.parametrize("operation", ["remove", "stop"])
+def test_async_tcp_shutdown_interrupts_pending_server_tls_handshake(operation, listener_context, monkeypatch, tmp_path):
+    driver = AioTcpDriver()
+    manager = ConnManager(Endpoint(f"server_tls_{operation}"))
+    tls = _server_tls_context(tmp_path)
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", lambda *args, **kwargs: tls)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
+    handle = manager.add_connector(driver, params, Mode.PASSIVE)
+    manager.start()
+    deadline = time.monotonic() + 5
+    while driver.server is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert driver.server is not None
+
+    peer = socket.create_connection(("127.0.0.1", port), timeout=2)
+    errors = []
+
+    def shutdown():
+        try:
+            if operation == "remove":
+                manager.remove_connector(handle)
+            else:
+                manager.stop()
+        except Exception as ex:
+            errors.append(ex)
+
+    stopper = threading.Thread(target=shutdown, daemon=True)
+    try:
+        # The TCP connection is accepted, but this peer never starts TLS.
+        # It is not an AioConnection and cannot be closed by close_all().
+        time.sleep(0.2)
+        assert not driver.connections
+        stopper.start()
+        stopper.join(2)
+        assert not stopper.is_alive(), "server-side TLS negotiation blocked connector shutdown"
+        assert not errors
+        assert not driver._accept_tasks
+        peer.settimeout(2)
+        assert peer.recv(1) == b""
+    finally:
+        peer.close()
+        if stopper.ident is None:
+            stopper.start()
+        stopper.join(5)
+        assert not stopper.is_alive()
+        if operation == "remove":
+            manager.stop()
+
+
+def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch, tmp_path):
+    driver = AioTcpDriver()
+    manager = ConnManager(Endpoint("accepted_server_tls"))
+    tls = _server_tls_context(tmp_path)
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", lambda *args, **kwargs: tls)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
+    manager.add_connector(driver, params, Mode.PASSIVE)
+    manager.start()
+    deadline = time.monotonic() + 5
+    while driver.server is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert driver.server is not None
+
+    client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_tls.check_hostname = False
+    client_tls.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as raw_peer:
+            with client_tls.wrap_socket(raw_peer, server_hostname="localhost") as peer:
+                deadline = time.monotonic() + 5
+                while not driver.connections and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                assert len(driver.connections) == 1
+                assert next(iter(driver.connections.values())).secure
+                manager.stop()
+                assert peer.recv(1) == b""
+    finally:
+        manager.stop()
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

@@ -34,6 +34,7 @@ class AioTcpDriver(AioBaseDriver):
         self.aio_ctx = AioContext.get_global_context()
         self.server = None
         self.ssl_context = None
+        self._accept_tasks = set()
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -98,8 +99,28 @@ class AioTcpDriver(AioBaseDriver):
                 server.close()
             self.close_all()
             await self._cancel_connect_tasks()
+            await self._cancel_accept_tasks()
             if server:
                 await server.wait_closed()
+
+    async def _cancel_accept_tasks(self):
+        tasks = list(self._accept_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _tls_protocol_factory(self):
+        # The protocol factory runs in asyncio's accept task before TLS
+        # negotiation. Keep that task so shutdown can close sockets that have
+        # not reached _create_connection() yet.
+        task = asyncio.current_task()
+        if task is not None:
+            self._accept_tasks.add(task)
+            task.add_done_callback(self._accept_tasks.discard)
+            if self.is_stopping() or self.connector.stopped.is_set():
+                task.cancel()
+        return asyncio.StreamReaderProtocol(asyncio.StreamReader(), self._create_connection)
 
     async def _tcp_connect(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=False)
@@ -108,7 +129,12 @@ class AioTcpDriver(AioBaseDriver):
 
     async def _tcp_listen(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
-        self.server = await asyncio.start_server(self._create_connection, host, port, ssl=self.ssl_context)
+        if self.ssl_context:
+            self.server = await asyncio.get_running_loop().create_server(
+                self._tls_protocol_factory, host, port, ssl=self.ssl_context
+            )
+        else:
+            self.server = await asyncio.start_server(self._create_connection, host, port)
         async with self.server:
             if self.is_stopping() or self.connector.stopped.is_set():
                 return
