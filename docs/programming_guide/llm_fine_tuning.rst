@@ -51,7 +51,7 @@ NVIDIA NeMo Integration
 For NVIDIA NeMo models, FLARE provides tight integration for multiple fine-tuning strategies:
 
 - `Federated SFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ -- Supervised fine-tuning of NeMo models across sites
-- `Federated PEFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Parameter-efficient LoRA fine-tuning with NeMo
+- `Federated PEFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- LoRA fine-tuning for Nemotron 3 Nano and Nemotron 3.5 Lightning
 
 Self-Paced Training
 ===================

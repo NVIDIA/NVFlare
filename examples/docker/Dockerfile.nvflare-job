@@ -9,7 +9,18 @@ WORKDIR /opt/NVFlare
 # won't re-download on every source edit.
 COPY pyproject.toml setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
-RUN pip install -U pip && pip install -e ".[PT,TRACKING]"
+ARG TARGETARCH
+# ARM64 CPU wheel compatibility for Colima; retain normal PT dependencies on AMD64.
+# Debian architecture detection also supports legacy builders without TARGETARCH.
+RUN pip install -U pip && \
+    if [ "${TARGETARCH:-$(dpkg --print-architecture)}" = "arm64" ]; then \
+        pip install -e ".[PT,TRACKING]" "torch==2.5.1" "torchvision==0.20.1"; \
+    else \
+        pip install -e ".[PT,TRACKING]"; \
+    fi
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare
+
+# Job containers may run with a host UID absent from the image.
+RUN mkdir -p /var/tmp/nvflare/data && chmod 1777 /var/tmp/nvflare/data

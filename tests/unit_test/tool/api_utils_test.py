@@ -30,6 +30,7 @@ def _synchronize_probe_start(monkeypatch, entered):
     from nvflare.tool import api_utils
 
     started_at = None
+    wait_timeouts = []
 
     def elapsed():
         return 0.0 if started_at is None else time.monotonic() - started_at
@@ -41,11 +42,18 @@ def _synchronize_probe_start(monkeypatch, entered):
             assert entered.wait(5), "readiness worker did not reach the tested phase"
             started_at = time.monotonic()
 
+    class BoundedFuture(api_utils.Future):
+        def result(self, timeout=None):
+            assert timeout is not None, "readiness must bound the caller's wait"
+            wait_timeouts.append(timeout)
+            return super().result(timeout=timeout)
+
     # The deadline is computed before Thread.start(), so freeze only the probe's
     # clock until phase entry. Transport and streaming retain their real clocks.
     monkeypatch.setattr(api_utils, "time", SimpleNamespace(monotonic=elapsed, sleep=time.sleep))
     monkeypatch.setattr(api_utils, "threading", SimpleNamespace(Thread=SynchronizedThread, Event=threading.Event))
-    return elapsed
+    monkeypatch.setattr(api_utils, "Future", BoundedFuture)
+    return wait_timeouts
 
 
 @pytest.mark.parametrize("connection_options", [{}, {"conn_timeout": 0.1}])
@@ -181,7 +189,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
             release_close.wait(5)
             close_finished.set()
 
-    elapsed = _synchronize_probe_start(monkeypatch, close_started)
+    wait_timeouts = _synchronize_probe_start(monkeypatch, close_started)
     try:
         with patch("nvflare.tool.api_utils.Session", BlockingCloseSession):
             kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
@@ -198,8 +206,10 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
                     assert "Last observation: certificate service unavailable" in str(exc_info.value)
                 else:
                     assert "Last observation: server is not reachable" in str(exc_info.value)
-        assert elapsed() < 0.5
+        assert len(wait_timeouts) == 1
+        assert 0 <= wait_timeouts[0] <= 0.05
         assert close_started.wait(1)
+        assert not close_finished.is_set()
     finally:
         release_close.set()
         assert close_finished.wait(1)
@@ -230,11 +240,12 @@ def test_readiness_bounds_blocked_operations_and_cleans_up_after_return(monkeypa
     elif phase == "status":
         session.get_system_info.side_effect = block
     monkeypatch.setattr(api_utils, "Session", construct)
-    elapsed = _synchronize_probe_start(monkeypatch, entered)
+    wait_timeouts = _synchronize_probe_start(monkeypatch, entered)
     try:
         with pytest.raises(api_utils.SystemStartTimeout):
             api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1)
-        assert elapsed() < 0.5
+        assert len(wait_timeouts) == 1
+        assert 0 <= wait_timeouts[0] <= 0.1
         assert entered.is_set()
         assert not closed.is_set()
     finally:
@@ -452,11 +463,12 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
         stream.send_blob = send_blob
 
     monkeypatch.setattr(api_utils, "Session", lambda **kwargs: session)
-    elapsed = _synchronize_probe_start(monkeypatch, entered)
+    wait_timeouts = _synchronize_probe_start(monkeypatch, entered)
     try:
         with pytest.raises(api_utils.SystemStartTimeout, match="Could not confirm"):
             api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1)
-        assert elapsed() < 0.5
+        assert len(wait_timeouts) == 1
+        assert 0 <= wait_timeouts[0] <= 0.1
         assert entered.is_set()
         assert not closed.is_set()
         if phase == "authentication":
@@ -558,7 +570,7 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
     monkeypatch.setattr(admin_api.AdminAPI, "logout", lambda self: self.close())
     monkeypatch.setattr(flare_api.Session, "get_system_info", lambda self: info)
     monkeypatch.setattr(api_utils, "Session", construct)
-    elapsed = _synchronize_probe_start(monkeypatch, entered)
+    wait_timeouts = _synchronize_probe_start(monkeypatch, entered)
     try:
         kwargs = dict(second_to_wait=0, timeout_in_sec=0.1, poll_interval=0.01, secure_mode=True)
         if recovers:
@@ -567,7 +579,8 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
         else:
             with pytest.raises(api_utils.SystemStartTimeout, match="certificate service temporarily unavailable"):
                 api_utils.wait_for_system_start(1, str(tmp_path), **kwargs)
-        assert elapsed() < 0.5
+        assert len(wait_timeouts) == 1
+        assert 0 <= wait_timeouts[0] <= 0.1
     finally:
         for worker in workers:
             worker.join(1)

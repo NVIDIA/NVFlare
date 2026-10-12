@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 import logging
 from typing import Any, Dict, List
 
@@ -92,6 +93,7 @@ class AioHttpDriver(BaseDriver):
         self.loop = self.aio_context.get_event_loop()
         self.ssl_context = None
         self.stop_event = self.loop.create_future()
+        self.shutdown_lock = asyncio.Lock()
         self.app = None
         self.site = None
         self.runner = None
@@ -112,14 +114,18 @@ class AioHttpDriver(BaseDriver):
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
 
-        self.app = web.Application(client_max_size=MAX_FRAME_SIZE)
-        self.app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
+        app = web.Application(client_max_size=MAX_FRAME_SIZE)
+        app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
 
         async def setup():
-            self.runner = web.AppRunner(self.app, access_log=None)
-            await self.runner.setup()
-            self.site = web.TCPSite(self.runner, host, port, ssl_context=self.ssl_context)
-            await self.site.start()
+            runner = web.AppRunner(app, access_log=None)
+            await runner.setup()
+            site = web.TCPSite(runner, host, port, ssl_context=self.ssl_context)
+            await site.start()
+            # Publish only after startup so shutdown cannot detach a partially started site.
+            self.app, self.runner, self.site = app, runner, site
+            if connector.stopped.is_set() or self.stop_event.done():
+                await self._async_shutdown()
             await self.stop_event
 
         self.aio_context.run_coro(setup()).result()
@@ -191,18 +197,24 @@ class AioHttpDriver(BaseDriver):
                 break
 
     async def _async_shutdown(self):
-        self.close_all()
+        # Keep completion behind cleanup, including when shutdown calls overlap.
+        async with self.shutdown_lock:
+            self.close_all()
 
-        if self.site:
-            await self.site.stop()
+            # Detach before awaiting so repeated shutdowns cannot clean up the same site.
+            site, self.site = self.site, None
+            runner, self.runner = self.runner, None
+            app, self.app = self.app, None
 
-        if self.runner:
-            await self.runner.cleanup()
+            if site:
+                await site.stop()
 
-        if self.app:
-            await self.app.shutdown()
-            await self.app.cleanup()
-            self.app = None
+            if runner:
+                await runner.cleanup()
 
-        if self.stop_event:
-            self.stop_event.set_result(None)
+            if app:
+                await app.shutdown()
+                await app.cleanup()
+
+            if self.stop_event and not self.stop_event.done():
+                self.stop_event.set_result(None)

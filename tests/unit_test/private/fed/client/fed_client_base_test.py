@@ -227,9 +227,9 @@ def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, schem
                 with pytest.raises(RuntimeError, match="cancelled"):
                     future.result(timeout=3)
                 connection.settimeout(1)
-                with suppress(ConnectionResetError):
+                with suppress(ConnectionResetError, BrokenPipeError):
                     while connection.recv(4096):
-                        pass  # EOF or a reset confirms the probe closed its socket.
+                        pass  # EOF, a reset or a broken pipe confirms the probe closed its socket.
         finally:
             signal.trigger(True)
             if connection:

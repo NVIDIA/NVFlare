@@ -70,6 +70,11 @@ if [ "$DOCKER_ENDPOINT_IS_LOCAL" = "true" ]; then
         exit 1
     fi
     DOCKER_CLI_ARGS=(--host "unix://$DOCKER_SOCK")
+    # On macOS the CLI socket forwards to a Linux VM. Its host path is not
+    # the daemon's bind source. Keep explicit overrides and Linux/rootless paths.
+    if [ "$(uname -s)" = "Darwin" ] && [ -z "${NVFL_DOCKER_SOCK:-}" ]; then
+        DOCKER_SOCK=/var/run/docker.sock
+    fi
 else
     echo "Using Docker socket on daemon host: $DOCKER_SOCK"
 fi
@@ -102,44 +107,35 @@ fi
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
 GROUP_ADD_ARGS=()
-if [ "$DOCKER_ENDPOINT_IS_LOCAL" = "true" ]; then
-    SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
-    HOST_OS=$(uname -s)
-    if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then
-        GROUP_ADD_ARGS+=(--group-add 0)
-    fi
-    if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
-        GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
-    fi
-else
-    if [ -n "${NVFL_DOCKER_SOCK_GID:-}" ]; then
-        case "$NVFL_DOCKER_SOCK_GID" in
-            *[!0-9]*)
-                echo "ERROR: NVFL_DOCKER_SOCK_GID must be a numeric group ID."
-                exit 1
-                ;;
-        esac
-        SOCK_GID="$NVFL_DOCKER_SOCK_GID"
-        echo "Using configured daemon-host Docker socket GID: $SOCK_GID"
-    elif ! SOCK_GID=$(
-        docker "${DOCKER_CLI_ARGS[@]}" run --rm \
-            --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
-            --entrypoint /usr/local/bin/python3 \
-            "$DOCKER_IMAGE" \
-            -c 'import os, stat, sys; s = os.stat("/var/run/docker.sock"); sys.exit("not a socket") if not stat.S_ISSOCK(s.st_mode) else print(s.st_gid)'
-    ); then
-        echo "ERROR: Docker socket could not be validated on the daemon host: $DOCKER_SOCK"
-        echo "Set NVFL_DOCKER_SOCK_GID to the verified numeric socket GID to bypass this probe."
-        exit 1
-    fi
-    case "$SOCK_GID" in
-        ""|*[!0-9]*)
-            echo "ERROR: invalid Docker socket GID reported by daemon-host probe: $SOCK_GID"
+# Probe the socket as mounted by the daemon: VM-backed local endpoints can
+# have a different socket group from the host (for example, Colima on macOS).
+if [ -n "${NVFL_DOCKER_SOCK_GID:-}" ]; then
+    case "$NVFL_DOCKER_SOCK_GID" in
+        *[!0-9]*)
+            echo "ERROR: NVFL_DOCKER_SOCK_GID must be a numeric group ID."
             exit 1
             ;;
     esac
-    GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
+    SOCK_GID="$NVFL_DOCKER_SOCK_GID"
+    echo "Using configured daemon-host Docker socket GID: $SOCK_GID"
+elif ! SOCK_GID=$(
+    docker "${DOCKER_CLI_ARGS[@]}" run --rm \
+        --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
+        --entrypoint /usr/local/bin/python3 \
+        "$DOCKER_IMAGE" \
+        -c 'import os, stat, sys; s = os.stat("/var/run/docker.sock"); sys.exit("not a socket") if not stat.S_ISSOCK(s.st_mode) else print(s.st_gid)'
+); then
+    echo "ERROR: Docker socket could not be validated on the daemon host: $DOCKER_SOCK"
+    echo "Set NVFL_DOCKER_SOCK_GID to the verified numeric socket GID to bypass this probe."
+    exit 1
 fi
+case "$SOCK_GID" in
+    ""|*[!0-9]*)
+        echo "ERROR: invalid Docker socket GID reported by daemon-host probe: $SOCK_GID"
+        exit 1
+        ;;
+esac
+GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 
 docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     --user "$(id -u):$(id -g)" \

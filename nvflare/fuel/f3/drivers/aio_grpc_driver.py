@@ -254,6 +254,8 @@ class Server:
         self.logger.debug("starting grpc server")
         try:
             await self.grpc_server.start()
+            if self.driver.closing or self.connector.stopped.is_set():
+                await self.shutdown()
             await self.grpc_server.wait_for_termination()
         except Exception as ex:
             conn_ctx.error = f"cannot start server: {type(ex)}: {secure_format_exception(ex)}"
@@ -268,7 +270,6 @@ class Server:
             # Without this, we may run into "excepthook" error at the end of the program since the GRPC server isn't
             # properly shutdown.
             await asyncio.sleep(self.grpc_server_stop_grace)
-            self.grpc_server = None
             self.logger.debug("GRPC Server is stopped!")
         except Exception as ex:
             self.logger.debug(f"exception shutdown server: {secure_format_exception(ex)}")

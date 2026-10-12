@@ -174,11 +174,16 @@ class ClientType:
 AUTH_CLIENT_NAME_FOR_SJ = "server_job"
 
 
-class JobFailureMsgKey:
+class JobOutcomeMsgKey:
+    """Payload keys for a client job process's terminal outcome, including success."""
 
     JOB_ID = "job_id"
     CODE = "code"
     REASON = "reason"
+
+
+# Compatibility name for callers using the original failure-only terminology.
+JobFailureMsgKey = JobOutcomeMsgKey
 
 
 class InternalFLContextKey:

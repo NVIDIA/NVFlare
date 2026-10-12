@@ -15,7 +15,7 @@
 import os
 import tempfile
 import threading
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -68,6 +68,47 @@ def test_stream_done_callback_is_scoped_per_stream():
     dispatch_stream_done(stream_ctx_2, None)
 
     assert calls == ["one.log", "two.log"]
+
+
+def test_stream_started_callback_is_called_once_per_accepted_stream():
+    calls = []
+
+    def stream_started_cb(stream_ctx, fl_ctx, **kwargs):
+        calls.append(stream_ctx[KEY_FILE_NAME])
+
+    factory = LogChunkConsumerFactory(
+        chunk_received_cb=None,
+        idle_timeout=0.0,
+        stream_done_cb=None,
+        cb_kwargs={},
+        stream_started_cb=stream_started_cb,
+    )
+
+    factory.get_consumer({KEY_FILE_NAME: "one.log"}, None)
+    factory.get_consumer({KEY_FILE_NAME: "two.log"}, None)
+
+    assert calls == ["one.log", "two.log"]
+
+
+def test_rejected_stream_does_not_start_a_consumer_or_watchdog():
+    started = Mock(return_value=False)
+    done = Mock()
+    factory = LogChunkConsumerFactory(
+        chunk_received_cb=None,
+        idle_timeout=30.0,
+        stream_done_cb=done,
+        cb_kwargs={},
+        stream_started_cb=started,
+    )
+    stream_ctx = {KEY_FILE_NAME: "late.log"}
+
+    with patch("nvflare.app_common.streamers.log_streamer._LogChunkConsumer") as consumer:
+        assert factory.get_consumer(stream_ctx, None) is None
+
+    consumer.assert_not_called()
+    started.assert_called_once_with(stream_ctx, None)
+    dispatch_stream_done(stream_ctx, None)
+    done.assert_not_called()
 
 
 def test_idle_timeout_ends_each_stream_independently():

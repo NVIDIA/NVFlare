@@ -122,6 +122,8 @@ class ConnManager(ConnMonitor):
         connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, threading.Event())
         driver.register_conn_monitor(self)
         with self.lock:
+            if self.stopped:
+                raise CommError(CommError.CLOSED, "Connection manager is stopped")
             self.connectors[handle] = connector
 
         log.debug(f"Connector {connector} is created")
@@ -134,12 +136,12 @@ class ConnManager(ConnMonitor):
     def remove_connector(self, handle: str):
         with self.lock:
             connector = self.connectors.pop(handle, None)
-            if connector:
-                connector.stopped.set()
-                connector.driver.shutdown()
-                log.debug(f"Connector {connector} is removed")
-            else:
-                log.error(f"Unknown connector handle: {handle}")
+        if connector:
+            connector.stopped.set()
+            connector.driver.shutdown()
+            log.debug(f"Connector {connector} is removed")
+        else:
+            log.error(f"Unknown connector handle: {handle}")
 
     def start(self):
         with self.lock:
@@ -157,12 +159,11 @@ class ConnManager(ConnMonitor):
         self.heartbeat_monitor.stop()
 
         with self.lock:
-            for handle in sorted(self.connectors.keys()):
-                connector = self.connectors[handle]
-                connector.stopped.set()
-                connector.driver.shutdown()
-
-        self.stopped = True
+            self.stopped = True
+            connectors = list(self.connectors.values())
+        for connector in connectors:
+            connector.stopped.set()
+            connector.driver.shutdown()
 
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)

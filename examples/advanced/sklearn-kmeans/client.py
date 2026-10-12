@@ -75,8 +75,8 @@ def main():
         print(f"current_round={curr_round}")
 
         if curr_round == 0:
-            # first round, compute initial center with kmeans++ method
-            # model will be None for this round
+            # Round 0 receives n_clusters and sends k-means++ seeds:
+            # these are exact training feature rows, without labels.
             n_clusters = global_param["n_clusters"]
             center_local, _ = kmeans_plusplus(x_train, n_clusters=n_clusters, random_state=0)
             params = {"center": center_local, "count": None}
@@ -106,6 +106,8 @@ def main():
             )
             kmeans.fit(x_train)
             center_local = kmeans.cluster_centers_
+            # Counts track sampled assignments in this fit, including repeats.
+            # A center can equal an individual training feature row.
             count_local = kmeans._counts
             params = {"center": center_local, "count": count_local}
 
@@ -118,7 +120,7 @@ def main():
             metrics={"metrics": homo},
             meta={"NUM_STEPS_CURRENT_ROUND": n_samples},
         )
-        # send model back to NVFlare
+        # Upload seeds or centers/counts, plus metric and training-size metadata.
         flare.send(output_model)
 
 

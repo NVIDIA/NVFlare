@@ -108,6 +108,8 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
 
 
 class JobRunner(FLComponent):
+    STARTING = object()
+
     def __init__(self, workspace_root: str) -> None:
         super().__init__()
         self.workspace_root = workspace_root
@@ -128,6 +130,8 @@ class JobRunner(FLComponent):
         if self.job_cert_valid_days <= 0:
             raise ValueError(f"{ConfigVarName.JOB_CERT_VALID_DAYS} must be positive, got {self.job_cert_valid_days}")
         self.lock = threading.Lock()
+        self._start_lock = threading.Lock()
+        self._starting_jobs = set()
 
     def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
         with self.lock:
@@ -717,6 +721,16 @@ class JobRunner(FLComponent):
                             self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
                             job_id, failed_clients = self._deploy_job(ready_job, sites, fl_ctx)
+                            # Claim start atomically with pre-run abort. Once claimed, abort
+                            # returns busy until startup finishes; deployment and launch stay unlocked.
+                            with self._start_lock:
+                                if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
+                                    self.log_info(
+                                        fl_ctx,
+                                        f"Job {ready_job.job_id} is no longer SUBMITTED after deployment; skipping start.",
+                                    )
+                                    continue
+                                self._starting_jobs.add(ready_job.job_id)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
 
                             deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
@@ -744,12 +758,6 @@ class JobRunner(FLComponent):
                             else:
                                 deployable_clients = client_sites
 
-                            if self._check_job_status(job_manager, ready_job.job_id, RunStatus.DISPATCHED, fl_ctx):
-                                self.log_info(
-                                    fl_ctx, f"Job: {ready_job.job_id} is not in DISPATCHED. It won't be start to run."
-                                )
-                                continue
-
                             self._start_run(
                                 job_id=job_id,
                                 job=ready_job,
@@ -766,8 +774,17 @@ class JobRunner(FLComponent):
                                     if job_id in self.running_jobs:
                                         del self.running_jobs[job_id]
                                     self._pending_client_outcomes.pop(job_id, None)
-                                self._stop_run(job_id, fl_ctx)
-                            job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+                                try:
+                                    self._stop_run(job_id, fl_ctx)
+                                except Exception as stop_error:
+                                    self.log_error(
+                                        fl_ctx, f"Failed to stop job {job_id}: {secure_format_exception(stop_error)}"
+                                    )
+                            with self._start_lock:
+                                if self._check_job_status(
+                                    job_manager, ready_job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx
+                                ):
+                                    job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
 
                             deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
                             if deploy_detail:
@@ -779,9 +796,23 @@ class JobRunner(FLComponent):
                             self.log_error(
                                 fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
                             )
+                        finally:
+                            with self._start_lock:
+                                self._starting_jobs.discard(ready_job.job_id)
             thread.join()
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
+
+    def abort_before_start(self, job_id: str, fl_ctx: FLContext):
+        """Abort an unclaimed job; return its previous status or STARTING if startup is claimed."""
+        manager = fl_ctx.get_engine().job_def_manager
+        with self._start_lock:
+            if job_id in self._starting_jobs:
+                return self.STARTING
+            status = manager.get_job(job_id, fl_ctx).meta.get(JobMetaKey.STATUS)
+            if status in (RunStatus.SUBMITTED, RunStatus.DISPATCHED):
+                manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+            return status
 
     @staticmethod
     def _check_job_status(job_manager, job_id, job_run_status, fl_ctx: FLContext):

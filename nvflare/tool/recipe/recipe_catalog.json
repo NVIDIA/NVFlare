@@ -3180,7 +3180,7 @@
     {
       "summary": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",
@@ -3191,7 +3191,7 @@
       },
       "detail": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",

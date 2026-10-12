@@ -78,6 +78,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
+from .admin import check_client_replies
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .message_send import ClientReply
@@ -1053,17 +1054,41 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         requests = {}
+        reservation_sites = set()
         for site_name, result in resource_check_results.items():
             is_resource_enough, token = result
             if is_resource_enough and token:
+                reservation_sites.add(site_name)
                 resource_requirements = resource_reqs.get(site_name, {})
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=resource_requirements)
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
                     requests.update({client.token: request})
-        if requests:
-            _ = self._send_admin_requests(requests, fl_ctx)
+
+        replies = self._send_admin_requests(requests, fl_ctx) if requests else []
+        replies_by_site = {reply.client_name: reply for reply in replies}
+        for site_name in sorted(reservation_sites):
+            client_reply = replies_by_site.get(site_name)
+            try:
+                timed_out = check_client_replies(
+                    [client_reply] if client_reply else [], [site_name], "cancel resources", strict=True
+                )
+            except RuntimeError as e:
+                self.logger.error(f"resource cancellation for {site_name} was not acknowledged: {e}")
+                continue
+            if timed_out:
+                self.logger.error(f"resource cancellation for {site_name} timed out")
+                continue
+
+            reply = client_reply.reply
+            if not isinstance(reply.body, Shareable):
+                self.logger.error(f"resource cancellation for {site_name} returned an invalid acknowledgement")
+                continue
+
+            cancellation_rc = reply.body.get_return_code()
+            if cancellation_rc != ReturnCode.OK:
+                self.logger.error(f"resource cancellation for {site_name} returned code {cancellation_rc}")
 
     def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         requests = {}

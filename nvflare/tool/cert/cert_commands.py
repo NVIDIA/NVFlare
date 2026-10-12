@@ -1624,7 +1624,25 @@ def _derive_identity_from_participant(project_name: str, participant: dict) -> d
     return identity
 
 
+def _validate_distributed_participant_features(participant: dict) -> bool:
+    for option in (PropKey.EXTERNAL_CERT, PropKey.EXTERNAL_JOB_CA):
+        value = participant.get(option)
+        if value is not None and value is not False:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"{option} is supported only by centralized 'nvflare provision'",
+            )
+            return False
+    return True
+
+
 def _validate_participant_connection_fields(participant: dict, identity: dict) -> bool:
+    if not _validate_distributed_participant_features(participant):
+        return False
+
     if PropKey.LISTENING_HOST in participant:
         output_error_message(
             "INVALID_ARGS",
@@ -2157,8 +2175,11 @@ def _validate_request_metadata(
             detail="site.yaml field 'cert_role' does not match request metadata",
         )
         return None
-    if _is_project_shaped_site_meta(site_meta):
-        participant = site_meta["participants"][0]
+    project_shaped_site = _is_project_shaped_site_meta(site_meta)
+    participant = site_meta["participants"][0] if project_shaped_site else site_meta
+    if not _validate_distributed_participant_features(participant):
+        return None
+    if project_shaped_site:
         if "connection_security" in participant:
             output_error_message(
                 "INVALID_ARGS",

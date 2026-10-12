@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import itertools
 import json
 import sys
 
@@ -21,7 +23,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
-from nvflare.app_opt.statistics.quantile_stats import compute_quantiles, merge_quantiles
+from nvflare.app_opt.statistics.quantile_stats import compute_quantiles, get_quantiles, merge_quantiles
 
 try:
     from fastdigest import TDigest
@@ -71,6 +73,31 @@ class MockDFStats2(DFStatisticsCore):
 
 
 class TestQuantile:
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
+    @pytest.mark.parametrize("client_order", list(itertools.permutations(("low", "empty", "high"))))
+    def test_empty_client_preserves_global_quantiles(self, client_order):
+        digest_key = StatisticsConstants.STATS_DIGEST_COORD
+        clients = {
+            "low": {"train": {"Feature": {digest_key: TDigest([1, 2, 3]).to_dict()}}},
+            "empty": {"train": {"Feature": {digest_key: {}}}},
+            "high": {"train": {"Feature": {digest_key: TDigest([4, 5, 6]).to_dict()}}},
+        }
+        stats = {client: clients[client] for client in client_order}
+        original = copy.deepcopy(stats)
+        config = {StatisticsConstants.STATS_QUANTILE: {"Feature": [0.0, 0.5, 1.0]}}
+
+        result = get_quantiles(stats, config, precision=4)
+
+        assert result == {"train": {"Feature": {0.0: 1.0, 0.5: 3.5, 1.0: 6.0}}}
+        assert stats == original
+
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
+    def test_all_empty_clients_keep_unavailable_quantiles(self):
+        empty = {"train": {"Feature": {StatisticsConstants.STATS_DIGEST_COORD: {}}}}
+        config = {StatisticsConstants.STATS_QUANTILE: {"Feature": [0.5]}}
+
+        assert get_quantiles({"a": empty, "b": empty}, config, precision=4) == {"train": {"Feature": {0.5: None}}}
+
     @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest1(self):
         # Small dataset

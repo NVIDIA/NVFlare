@@ -185,7 +185,9 @@ class CellChannelTopic:
     HEART_BEAT = "heart_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
-    REPORT_JOB_FAILURE = "report_job_failure"
+    # Keep the original wire value so existing clients and servers remain compatible.
+    REPORT_JOB_OUTCOME = "report_job_failure"
+    REPORT_JOB_FAILURE = REPORT_JOB_OUTCOME  # Compatibility alias.
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 

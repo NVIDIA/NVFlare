@@ -353,7 +353,9 @@ def test_negative_memory_gc_interval_is_rejected_before_execution(monkeypatch, c
 def test_copied_example_reports_missing_shared_application(tmp_path):
     script = tmp_path / "job.py"
     script.write_text((ADVANCED_DIR / "job.py").read_text())
-    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=10)
+    # The missing-checkout guard uses only the standard library. Isolate it from
+    # site initialization and environment hooks that can stall subprocess startup.
+    result = subprocess.run([sys.executable, "-I", "-S", str(script)], capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert "full NVFlare checkout" in result.stderr
     assert "Traceback" not in result.stderr

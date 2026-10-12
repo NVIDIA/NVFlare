@@ -19,7 +19,12 @@ from cryptography.x509.oid import ExtendedKeyUsageOID
 from nvflare.fuel.sec.cert_uri import JOB_URI_KIND, cert_uri, job_ca_marker_uri
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
-from nvflare.private.fed.utils.identity_utils import IdentityVerifier, InvalidAsserterCert, get_parent_site_name
+from nvflare.private.fed.utils.identity_utils import (
+    IdentityVerifier,
+    InvalidAsserterCert,
+    TokenVerifier,
+    get_parent_site_name,
+)
 
 _STUDY_URI = "https://nvidia.com/nvflare/v1/project/demo/study/study-a"
 
@@ -60,6 +65,15 @@ def _make_root_and_client_certs(extra_extensions=None, uri_names=None):
         uri_names=uri_names,
     )
     return root_cert, root_key, client_cert, client_key
+
+
+def test_expected_token_mismatch_is_quiet_without_suppressing_authentication_errors(caplog):
+    _root_cert, _root_key, cert, _key = _make_root_and_client_certs()
+    verifier = TokenVerifier(cert)
+    assert not verifier.verify("client", "token", b"invalid-signature", log_error=False)
+    assert not caplog.records
+    assert not verifier.verify("client", "token", b"invalid-signature")
+    assert "exception verifying token" in caplog.text
 
 
 def test_identity_verifier_accepts_direct_root_signed_cert(tmp_path):
