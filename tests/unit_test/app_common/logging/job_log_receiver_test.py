@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, call, patch
@@ -33,7 +34,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
-from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FILE, LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
 from nvflare.private.event import fire_event
@@ -586,6 +587,23 @@ def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_cl
     assert "trusted_client" in log_error.call_args.args[1]
     assert "log.json" in log_error.call_args.args[1]
     assert not receiver._incomplete_streams
+
+
+def test_server_job_hands_incomplete_logs_to_parent(log_transports, receiver_clock, tmp_path):
+    receiver, streamer, fl_ctx = log_transports()
+    engine = fl_ctx.get_engine()
+    engine.get_component.return_value = None
+    run_dir = tmp_path / "server-run"
+    engine.get_workspace = Mock()
+    engine.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
+
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 6.0
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    records = json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text())
+    assert records == [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
 
 
 def test_failed_stream_records_incomplete_log_after_callback(log_transports, receiver_clock):

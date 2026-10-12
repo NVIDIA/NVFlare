@@ -23,6 +23,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 
 LOG_STREAM_EVENT_TYPE = "stream_log"
 LIVE_LOG_TOPIC = "live_log"
+INCOMPLETE_LOG_STREAMS_FILE = ".incomplete_log_streams.json"
 
 # Resources.json var name. Default is True (streaming is allowed). To disable
 # live log streaming at a site, set this to False in the site's resources.json:

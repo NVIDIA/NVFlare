@@ -26,6 +26,7 @@ from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FILE
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths
@@ -345,6 +346,44 @@ def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):
     )
     assert not run_dir.exists()
     assert not result_root.exists()
+
+
+def test_save_workspace_publishes_incomplete_logs_before_terminal_archive(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
+    sidecar = run_dir / INCOMPLETE_LOG_STREAMS_FILE
+    sidecar.write_text(json.dumps(records))
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), missing, missing, missing)
+
+    def archive(_job_id, _dirs, _ctx):
+        job_manager.update_meta.assert_called_once_with(
+            "job-1", {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: records}, fl_ctx
+        )
+        assert not sidecar.exists()
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = archive
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once()
+
+
+def test_save_workspace_retries_incomplete_log_metadata_update(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sidecar = run_dir / INCOMPLETE_LOG_STREAMS_FILE
+    sidecar.write_text(json.dumps([{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]))
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), missing, missing, missing)
+    job_manager.update_meta.side_effect = RuntimeError("store unavailable")
+
+    with pytest.raises(RuntimeError, match="store unavailable"):
+        runner._save_workspace(fl_ctx)
+
+    assert sidecar.exists()
+    job_manager.save_workspace.assert_not_called()
 
 
 def test_save_workspace_destroys_job_credential_before_archiving(tmp_path):

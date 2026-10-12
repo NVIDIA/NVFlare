@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import shutil
 import tempfile
@@ -32,7 +33,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
-from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import (
+    ALLOW_LOG_STREAMING_VAR,
+    INCOMPLETE_LOG_STREAMS_FILE,
+    LIVE_LOG_TOPIC,
+    Channels,
+)
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.fuel.utils.app_config_utils import get_positive_float_var
 from nvflare.widgets.widget import Widget
@@ -285,6 +291,22 @@ class JobLogReceiver(Widget):
             if job_manager is not None:
                 for job_id, records in by_job.items():
                     job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: records}, fl_ctx)
+            else:
+                # The server-job subprocess has no JobManager. Hand this result
+                # to the parent through the shared run directory; JobRunner
+                # publishes it before the job reaches terminal status.
+                workspace = fl_ctx.get_workspace()
+                for job_id, records in by_job.items():
+                    run_dir = workspace.get_run_dir(job_id)
+                    os.makedirs(run_dir, exist_ok=True)
+                    fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
+                    try:
+                        with os.fdopen(fd, "w") as f:
+                            json.dump(records, f)
+                        os.replace(temp_path, os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE))
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)

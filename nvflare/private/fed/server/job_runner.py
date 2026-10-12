@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import threading
@@ -37,6 +38,7 @@ from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FILE
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
@@ -645,6 +647,15 @@ class JobRunner(FLComponent):
         else:
             workspace = fl_ctx.get_workspace()
             run_dir = workspace.get_run_dir(job_id)
+            incomplete_logs_path = os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE)
+            if os.path.isfile(incomplete_logs_path):
+                with open(incomplete_logs_path) as f:
+                    incomplete_logs = json.load(f)
+                if not isinstance(incomplete_logs, list):
+                    raise ValueError(f"Invalid incomplete log records for job {job_id}")
+                job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+                job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: incomplete_logs}, fl_ctx)
+                os.remove(incomplete_logs_path)
             # the archive is served by download_job; the job credential is dead and must not be in it
             if os.path.isdir(run_dir):
                 remove_job_cert(run_dir)

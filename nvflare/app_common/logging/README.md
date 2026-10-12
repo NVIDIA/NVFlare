@@ -166,7 +166,9 @@ and reason in the job's `incomplete_log_streams` metadata. The record appears in
 `nvflare job wait`, `nvflare job monitor`, `nvflare job meta`, and the downloaded
 `meta.json`. The job's execution status can still be `FINISHED:COMPLETED`;
 operators should check this field before treating downloaded live logs as
-complete.
+complete. In a server-job subprocess, the receiver writes the disposition to
+the shared run directory. The parent job runner publishes it to job metadata
+before archiving the workspace and setting terminal status.
 
 Site-injected streamers use `target_parent_server=True` and send to the
 long-lived receiver in server `resources.json`. That receiver is independent
