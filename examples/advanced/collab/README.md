@@ -11,7 +11,7 @@ programming model to custom training algorithms and collaboration topologies.
    `CollabRecipe` with synchronous FedAvg on synthetic PyTorch data.
 2. **Learn asynchronous execution:** [Simple async FL](simple_async/README.md)
    shows `collab.clients(blocking=False).train(...)`, arrival-driven model
-   updates, and immediate client refill in one file, using only NumPy.
+   updates, and immediate client refill in one class-free MNIST example.
 3. **Choose a direction below:** apply a training algorithm, explore another
    topology, or move to a larger model.
 
@@ -20,14 +20,14 @@ For the API concepts and call options, see the
 
 ## Asynchronous calls and aggregation
 
-Start with the small NumPy examples before moving to the full CIFAR-10 workflow.
+Start with the small examples before moving to the full CIFAR-10 workflow.
 A response callback by itself does not make a training loop asynchronous:
 `blocking=False` releases the calling thread, while the workflow determines
 whether clients can keep progressing across global-model updates.
 
 | Example | What to learn | Setup |
 |---|---|---|
-| [Simple async FL](simple_async/README.md) | Nonblocking dispatch, model updates as results arrive, and immediate refill of the finished client while others keep training | NumPy, synthetic data, CPU |
+| [Simple async FL](simple_async/README.md) | Nonblocking dispatch, model updates as results arrive, and immediate refill of the finished client while others keep training | PyTorch and torchvision, CPU; downloads MNIST on first run |
 | [In-time aggregation](async_aggregation/avg_intime.py) | `process_resp_cb` processes results during a **blocking** call; training still has round boundaries | NumPy, synthetic updates, CPU |
 | [CIFAR-10 FedBuff](pt_async_cifar10/README.md) | Buffered asynchronous FL with active-job limits, refill thresholds, model versions, and evaluation | PyTorch, torchvision, TensorBoard; prepare CIFAR-10 first |
 
@@ -62,9 +62,10 @@ checkout from the repository root:
 python -m pip install -e .
 ```
 
-Run the smallest asynchronous example directly:
+Install the MNIST example dependencies and run it directly:
 
 ```bash
+python -m pip install -r examples/advanced/collab/simple_async/requirements.txt
 cd examples/advanced/collab/simple_async
 python job.py
 ```
