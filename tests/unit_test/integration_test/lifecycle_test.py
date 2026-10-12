@@ -136,6 +136,24 @@ def test_exited_group_members_do_not_fail_site_or_background_cleanup(monkeypatch
     process.wait.assert_called_once_with(timeout=0)
 
 
+def test_site_teardown_succeeds_with_unreaped_zombie_child(clock, monkeypatch, tmp_path):
+    process = Mock(pid=1234, returncode=0)
+    # The launcher exits between the site-level check and the group probe.
+    process.poll.side_effect = [None, None, 0]
+    member = Mock(pid=2345, info={"status": psutil.STATUS_ZOMBIE})
+    monkeypatch.setattr(utils.psutil, "Process", lambda _: Mock(pid=process.pid))
+    monkeypatch.setattr(utils.psutil, "process_iter", lambda *_: [member])
+    monkeypatch.setattr(utils, "find_site_processes", lambda *_: set())
+    monkeypatch.setattr(utils.os, "getpgid", lambda _: process.pid)
+    killpg = Mock()  # The group still exists until the child's new parent reaps it.
+    monkeypatch.setattr(utils.os, "killpg", killpg)
+
+    utils.stop_site_processes(process, str(tmp_path), kill_timeout=0)
+
+    assert all(call_args.args[1] == 0 for call_args in killpg.call_args_list)
+    assert process.wait.call_count == 2
+
+
 def test_command_timeout_cleans_group_and_preserves_original_failure(monkeypatch):
     process = Mock(pid=1234)
     process.wait.side_effect = subprocess.TimeoutExpired("hung command", 1)
