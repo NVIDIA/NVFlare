@@ -202,7 +202,7 @@
       "nvflare": "2.9.0",
       "device": "cpu"
     },
-    "regression_tests_passed": 196,
+    "regression_tests_passed": 201,
     "multiprocess_cpu_smoke": {
       "status": "passed",
       "clients": 4,

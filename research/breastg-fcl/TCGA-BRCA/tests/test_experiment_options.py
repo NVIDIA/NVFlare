@@ -19,6 +19,7 @@ import copy
 import io
 import os
 import random
+import runpy
 import sys
 import tempfile
 import unittest
@@ -70,6 +71,8 @@ class ExperimentOptionsTest(unittest.TestCase):
         help_text = build_parser().format_help()
         self.assertNotIn("--test-split", help_text)
         self.assertNotIn("--use-g-encode", help_text)
+        self.assertNotIn("--input-dim", help_text)
+        self.assertEqual(opt.input_dim, opt.max_genes)
         for name in ("debug", "load_dir", "log_path", "dataset", "gamma", "gat_rounds", "class_per_task"):
             self.assertNotIn(name, opt)
             self.assertNotIn(f"--{name.replace('_', '-')}", help_text)
@@ -77,6 +80,7 @@ class ExperimentOptionsTest(unittest.TestCase):
     def test_removed_flags_fail_in_config_and_job_before_preparation(self):
         for entrypoint in (parse_args, job.main):
             for flag, value in (
+                ("--input-dim", "4"),
                 ("--test-split", "0.3"),
                 ("--use-g-encode", "false"),
                 ("--debug", "true"),
@@ -129,6 +133,25 @@ class ExperimentOptionsTest(unittest.TestCase):
                     job.main(self.arguments("clients") + ["--num-clients", value])
                 prepare.assert_not_called()
             self.assertFalse((self.root / "clients").exists())
+
+    def test_invalid_noise_parameters_fail_before_filesystem_or_preparation(self):
+        for flag in ("--sensitivity", "--epsilon"):
+            self.assert_invalid_before_preparation(flag, ("-1", "nan", "inf", "-inf"))
+
+    def test_overflowing_noise_scale_fails_before_filesystem_or_preparation(self):
+        self.assert_invalid_before_preparation("--epsilon", ("1e-320",))
+
+    def test_noise_defaults_and_explicit_zero_modes_are_preserved(self):
+        for sensitivity, epsilon, expected in ((1, 1, 1), (2, 4, 0.5), (1, 0, 0), (0, 1, 0)):
+            opt = parse_args(self.arguments("noise") + ["--sensitivity", str(sensitivity), "--epsilon", str(epsilon)])
+            self.assertEqual(opt.b, expected)
+
+    def test_importing_configuration_does_not_parse_or_create_directories(self):
+        with patch("os.makedirs") as makedirs:
+            namespace = runpy.run_path(str(Path(PROJECT_DIR) / "configs" / "TCGA_BRCA.py"))
+        makedirs.assert_not_called()
+        self.assertNotIn("opt", namespace)
+        self.assertTrue(callable(namespace["parse_args"]))
 
     def test_invalid_weight_decay_fails_before_filesystem_or_preparation(self):
         self.assert_invalid_before_preparation("--weight-decay", ("-0.1", "nan", "inf", "-inf"))
@@ -190,7 +213,7 @@ class ExperimentOptionsTest(unittest.TestCase):
                 "2",
                 "--num-task",
                 "1",
-                "--input-dim",
+                "--max-genes",
                 "4",
                 "--nh",
                 "8",

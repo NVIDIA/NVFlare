@@ -374,7 +374,7 @@ def _read_manifest(manifest_path, raw_dir):
                     "file_path": file_path,
                     "sample_id": row.get("sample_submitter_id", ""),
                     "sample_submitter_id": row.get("sample_submitter_id", ""),
-                    "case_id": row.get("case_submitter_id", ""),
+                    "case_id": row.get("case_id", ""),
                     "case_submitter_id": row.get("case_submitter_id", ""),
                     "sample_type": row.get("sample_type", ""),
                     "label_name": tissue_type,

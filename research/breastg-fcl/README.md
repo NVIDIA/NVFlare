@@ -432,9 +432,12 @@ Author validation reported on 2026-10-11 passed all **183 regression tests** in 
 `breastgfcl` environment. Scoped Black, isort, and flake8 checks, the example's
 license-header check, and `pip check` also passed.
 
-Maintenance validation on 2026-10-12 passed all **196 regression tests**,
+Maintenance validation on 2026-10-12 passed all **201 regression tests**,
 including offline TCIA checksum/workbook fixtures, unsupported-option rejection,
-positive experiment counts, and visualization failure handling. This CPU check
+positive experiment counts, visualization failure handling, and manifest UUID
+matching. Noise parameters must be finite and nonnegative; `epsilon = 0` keeps
+the documented no-noise behavior. Input width is derived from `--max-genes`,
+and importing configuration helpers does not create directories. This CPU check
 used Python 3.13.5, PyTorch 2.14.1, NumPy 2.5.4, and NVFlare 2.9.0.
 The multiprocess CPU smoke also completed four clients, three tasks and six
 rounds, with both metric CSVs and private graphs matching the final checkpoint.

@@ -27,6 +27,7 @@ PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
+from utils.dataset_utils import _read_manifest
 from utils.tcia_mri_utils import aggregate_mri_features, load_tcia_mri_features, normalize_training_mri_features
 
 
@@ -97,6 +98,41 @@ class TCIANormalizationTest(unittest.TestCase):
         self.assert_stats_equal(audit, other_audit)
         np.testing.assert_array_equal(normalized["patient-1"], modified["patient-1"])
         np.testing.assert_array_equal(normalized["patient-2"], modified["patient-2"])
+
+    def test_manifest_preserves_uuid_and_barcode_for_feature_matching(self):
+        patient = "TCGA-AA-0001"
+        case_uuid = "6a186809-3422-41d0-83d2-867145830936"
+        raw = self.root / "raw" / "file-id"
+        raw.mkdir(parents=True)
+        (raw / "expression.tsv").touch()
+        manifest = self.root / "manifest.tsv"
+        for uuid_value in (case_uuid, ""):
+            with self.subTest(uuid=uuid_value):
+                with manifest.open("w", newline="") as stream:
+                    writer = csv.DictWriter(
+                        stream,
+                        delimiter="\t",
+                        fieldnames=["file_id", "file_name", "case_id", "case_submitter_id", "tissue_type"],
+                    )
+                    writer.writeheader()
+                    writer.writerow(
+                        {
+                            "file_id": "file-id",
+                            "file_name": "expression.tsv",
+                            "case_id": uuid_value,
+                            "case_submitter_id": patient,
+                            "tissue_type": "Tumor",
+                        }
+                    )
+                records = _read_manifest(str(manifest), str(self.root / "raw"))
+                self.assertEqual(records[0]["case_id"], uuid_value)
+                self.assertEqual(records[0]["case_submitter_id"], patient)
+                for identifier in ([case_uuid, patient] if uuid_value else [patient]):
+                    features = {identifier: np.asarray([1.0, 2.0])}
+                    normalized, audit = normalize_training_mri_features(records, [0], features)
+                    _, matched = aggregate_mri_features(records, [0], normalized)
+                    self.assertEqual(audit["fit_ids"], [identifier])
+                    self.assertEqual(matched, [identifier])
 
     def test_matching_is_shared_between_fit_and_aggregation(self):
         ids = ["case-uuid", "patient-id", "sample-id", "sample-submitter", "file-id", "TCGA-AA-0006"]

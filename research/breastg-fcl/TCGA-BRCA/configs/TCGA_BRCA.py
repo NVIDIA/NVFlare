@@ -96,7 +96,6 @@ def build_parser():
     parser.add_argument("--tcia-dce-kinetics-path", default=DEFAULT_DCE_KINETICS_PATH)
     parser.add_argument("--tcia-dce-id-column", default=None)
     parser.add_argument("--max-genes", type=int, default=4096)
-    parser.add_argument("--input-dim", type=int, default=4096)
     parser.add_argument("--num-classes", type=int, default=2)
     parser.add_argument("--pin-memory", type=_str2bool, default=False)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -196,6 +195,15 @@ def finalize_opt(opt):
     if not math.isfinite(opt.weight_decay) or opt.weight_decay < 0:
         raise ValueError("--weight-decay must be finite and nonnegative")
 
+    for name in ("sensitivity", "epsilon"):
+        value = getattr(opt, name)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"--{name} must be finite and nonnegative")
+    opt.b = opt.sensitivity / opt.epsilon if opt.epsilon != 0 else 0.0
+    if not math.isfinite(opt.b):
+        raise ValueError("--sensitivity / --epsilon must produce a finite noise scale")
+    opt.input_dim = opt.max_genes
+
     if opt.device == "cuda" and not torch.cuda.is_available():
         opt.device = "cpu"
 
@@ -210,7 +218,6 @@ def finalize_opt(opt):
     os.makedirs(opt.data_dir, exist_ok=True)
     os.makedirs(opt.raw_dir, exist_ok=True)
 
-    opt.b = opt.sensitivity / opt.epsilon if opt.epsilon != 0 else 0.0
     opt.nc = opt.num_classes
     opt.ni = opt.nh
     opt.nt = opt.num_clients
@@ -229,6 +236,3 @@ def parse_args(args=None):
     parsed = parser.parse_args(args=args)
     opt = EasyDict(vars(parsed))
     return finalize_opt(opt)
-
-
-opt = parse_args(args=[])
