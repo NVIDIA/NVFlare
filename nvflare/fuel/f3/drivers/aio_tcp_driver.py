@@ -121,6 +121,8 @@ class AioTcpDriver(AioBaseDriver):
                 return
             await conn.read_loop()
         finally:
-            conn.close()
-            await writer.wait_closed()
-            self.close_connection(conn)
+            try:
+                conn.close()
+                await writer.wait_closed()
+            finally:
+                self.close_connection(conn)
