@@ -22,6 +22,7 @@ from functools import partial
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
@@ -98,6 +99,7 @@ class JobLogReceiver(Widget):
         # Keep receiver-owned references: stream_ctx comes from the sender and
         # must not control admission or completion bookkeeping.
         self._active_streams = {}
+        self._incomplete_streams = []
         self._accepting_streams = True
         self._stream_generation = object()
         self._active_stream_lock = threading.Condition()
@@ -187,14 +189,27 @@ class JobLogReceiver(Widget):
         with self._active_stream_lock:
             if not self._accepting_streams or (generation is not None and generation is not self._stream_generation):
                 return False
-            self._active_streams[id(stream_ctx)] = stream_ctx
+            client, job_id = self._get_trusted_stream_identity(fl_ctx)
+            log_file_name = self._sanitize_path_component(
+                LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+            )
+            self._active_streams[id(stream_ctx)] = (stream_ctx, client, job_id, log_file_name)
             self._quiet_since = None
             return True
 
-    def _mark_stream_done(self, stream_ctx: StreamContext):
+    @staticmethod
+    def _incomplete_record(client: str, log_file_name: str, reason: str) -> dict:
+        return {"client": client, "log_file": log_file_name, "reason": reason}
+
+    def _mark_stream_done(self, stream_ctx: StreamContext, incomplete_reason: str = None):
         with self._active_stream_lock:
             removed = self._active_streams.pop(id(stream_ctx), None)
             if removed is not None:
+                if incomplete_reason:
+                    _, client, job_id, log_file_name = removed
+                    self._incomplete_streams.append(
+                        (job_id, self._incomplete_record(client, log_file_name, incomplete_reason))
+                    )
                 if not self._active_streams:
                     self._quiet_since = time.monotonic()
                 self._active_stream_lock.notify_all()
@@ -234,12 +249,33 @@ class JobLogReceiver(Widget):
                     remaining = min(remaining, quiet_remaining)
                 self._active_stream_lock.wait(timeout=remaining)
             self._accepting_streams = False
+            incomplete_streams = list(self._incomplete_streams)
+            incomplete_streams.extend(
+                (job_id, self._incomplete_record(client, log_file_name, "end_run_timeout"))
+                for _, client, job_id, log_file_name in self._active_streams.values()
+            )
             # A timed-out transport can complete later, even after START_RUN.
             # Its callback must not affect the next run's readiness state.
             self._active_streams.clear()
+            self._incomplete_streams.clear()
             self._end_run_deadline = None
             self._quiet_since = None
             self._quiet_period = None
+
+        if incomplete_streams:
+            by_job = {}
+            for job_id, record in incomplete_streams:
+                by_job.setdefault(job_id, []).append(record)
+                self.log_error(
+                    fl_ctx,
+                    f"Live log '{record['log_file']}' from {record['client']} for job {job_id} is incomplete "
+                    f"({record['reason']}); downloaded job logs may be incomplete",
+                )
+
+            job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+            if job_manager is not None:
+                for job_id, records in by_job.items():
+                    job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: records}, fl_ctx)
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
@@ -267,10 +303,20 @@ class JobLogReceiver(Widget):
         f.flush()
 
     def _on_stream_done(self, stream_ctx: StreamContext, fl_ctx: FLContext):
+        incomplete_reason = None
         try:
             self._finalize_stream(stream_ctx, fl_ctx)
+            if LogStreamer.get_rc(stream_ctx) != ReturnCode.OK:
+                incomplete_reason = "stream_error"
+            elif not stream_ctx.get(_KEY_RECV_PATH):
+                log_file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+                if log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
+                    incomplete_reason = "no_data"
+        except Exception:
+            incomplete_reason = "persistence_error"
+            raise
         finally:
-            self._mark_stream_done(stream_ctx)
+            self._mark_stream_done(stream_ctx, incomplete_reason)
 
     def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)

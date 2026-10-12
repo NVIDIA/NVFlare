@@ -29,6 +29,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
@@ -271,6 +272,20 @@ def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_
     ready_ctx = FLContext()
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
+    receiver._on_end_run(EventType.END_RUN, fl_ctx)
+    job_manager.update_meta.assert_called_once_with(
+        "trusted_job",
+        {
+            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
+                {
+                    "client": "trusted_client",
+                    "log_file": WorkspaceConstants.LOG_FILE_NAME,
+                    "reason": "persistence_error",
+                }
+            ]
+        },
+        fl_ctx,
+    )
 
 
 @pytest.fixture
@@ -508,6 +523,8 @@ def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports,
     job_manager.set_client_data.assert_called_once()
     with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
         assert log_file.read() == b"before stop\nfinal bytes\n"
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    job_manager.update_meta.assert_not_called()
 
 
 def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receiver_clock, caplog):
@@ -540,6 +557,57 @@ def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receive
     assert not receiver._active_streams
     reply = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("late", data=b"late\n"), fl_ctx)
     assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    completed = streamer._handle_request(
+        TOPIC_STREAM_REQUEST, _log_request("complete", data=b"complete\n", eof=True), fl_ctx
+    )
+    assert completed.get_return_code() == ReturnCode.OK
+    stalled = streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
+    assert stalled.get_return_code() == ReturnCode.OK
+
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 6.0
+    with patch.object(receiver, "log_error") as log_error:
+        fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    job_manager.update_meta.assert_called_once_with(
+        "trusted_job",
+        {
+            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
+                {"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}
+            ]
+        },
+        fl_ctx,
+    )
+    assert "trusted_client" in log_error.call_args.args[1]
+    assert "log.json" in log_error.call_args.args[1]
+    assert not receiver._incomplete_streams
+
+
+def test_failed_stream_records_incomplete_log_after_callback(log_transports, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports()
+    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("failed", data=b"partial\n"), fl_ctx)
+    streamer._end_tx("failed", ReturnCode.TIMEOUT, fl_ctx)
+
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    job_manager.update_meta.assert_called_once_with(
+        "trusted_job",
+        {
+            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
+                {"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}
+            ]
+        },
+        fl_ctx,
+    )
 
 
 def test_start_run_reopens_admission_after_previous_run(log_transports, receiver_clock):

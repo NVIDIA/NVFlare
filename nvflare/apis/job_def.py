@@ -75,6 +75,7 @@ class JobMetaKey(str, Enum):
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
+    INCOMPLETE_LOG_STREAMS = "incomplete_log_streams"
     STUDY = "study"
     JOB_LAUNCHER_SPEC = "launcher_spec"
 

@@ -90,6 +90,7 @@ class TestJobMeta:
             "job_id": "abc123",
             "name": "hello-pt",
             "status": "FINISHED:COMPLETED",
+            "incomplete_log_streams": [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}],
             "study": "cancer",
             "submitter_name": "lead@nvidia.com",
             "submitter_role": "lead",
@@ -125,6 +126,8 @@ class TestJobMeta:
         assert "lead@nvidia.com (lead @ nvidia)" in captured.out
         assert "Status" in captured.out
         assert "Duration" in captured.out
+        assert "Incomplete logs" in captured.out
+        assert "site-2" in captured.out
         assert "3m 27s" in captured.out
         assert "Execution" in captured.out
         assert "BYOC" in captured.out

@@ -1532,6 +1532,7 @@ def _print_job_meta_human(meta: dict, print_func):
             "Status",
             [
                 ("Status", meta.get("status")),
+                ("Incomplete logs", meta.get("incomplete_log_streams")),
                 ("Submitted", _format_job_meta_timestamp(meta.get("submit_time_iso") or meta.get("submit_time"), True)),
                 ("Started", _format_job_meta_timestamp(meta.get("start_time"))),
                 ("Duration", _format_job_meta_duration(meta.get("duration"))),
@@ -2454,6 +2455,7 @@ def _summarize_monitor_meta(meta: dict, job_meta_key_cls) -> dict:
         "submitter_name": job_meta_key_cls.SUBMITTER_NAME.value,
         "submitter_org": job_meta_key_cls.SUBMITTER_ORG.value,
         "submitter_role": job_meta_key_cls.SUBMITTER_ROLE.value,
+        "incomplete_log_streams": job_meta_key_cls.INCOMPLETE_LOG_STREAMS.value,
     }
     summary = {}
     for out_key, meta_key in fields.items():
@@ -2760,6 +2762,8 @@ def _print_monitor_result_human(data: dict, print_func):
         print_func(f"  Name: {job_meta['job_name']}")
     if job_meta.get("study"):
         print_func(f"  Study: {job_meta['study']}")
+    for stream in job_meta.get("incomplete_log_streams") or []:
+        print_func(f"  Incomplete log: {stream['client']}/{stream['log_file']} ({stream['reason']})")
     metrics = data.get("last_stats") or {}
     if metrics:
         metric_str = " ".join(f"{k}={v}" for k, v in metrics.items())

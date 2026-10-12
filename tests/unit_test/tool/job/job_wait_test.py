@@ -129,6 +129,26 @@ class TestJobWait:
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
 
+    def test_completed_job_reports_incomplete_log_streams(self, capsys, monkeypatch):
+        from nvflare.apis.job_def import JobMetaKey
+        from nvflare.tool.job.job_cli import cmd_job_wait
+
+        incomplete = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
+        meta = _make_meta(status="FINISHED:COMPLETED")
+        meta[JobMetaKey.INCOMPLETE_LOG_STREAMS.value] = incomplete
+        mock_sess = MagicMock()
+        mock_sess.wait_for_job.return_value = meta
+
+        with _session_ctx(mock_sess):
+            cmd_job_wait(_make_args())
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["job_meta"]["incomplete_log_streams"] == incomplete
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with _session_ctx(mock_sess):
+            cmd_job_wait(_make_args())
+        assert "Incomplete log: site-2/log.json (end_run_timeout)" in capsys.readouterr().out
+
     def test_human_success_prints_terminal_summary_without_json_payload(self, capsys, monkeypatch):
         from nvflare.tool.job.job_cli import cmd_job_wait
 
