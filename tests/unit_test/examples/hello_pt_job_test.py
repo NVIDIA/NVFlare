@@ -70,6 +70,7 @@ def test_zero_flag_defaults_are_portable_and_bounded():
     args = job_module.define_parser().parse_args([])
 
     assert vars(args) == {
+        "execution_lifetime": "job",
         "data_root": "/tmp/nvflare/data",
         "dataset": "synthetic",
         "n_clients": 2,

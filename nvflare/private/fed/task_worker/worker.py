@@ -71,7 +71,7 @@ def _read_job_meta(workspace: Workspace, job_id: str) -> dict:
     return meta
 
 
-def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace):
+def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_context_keys=()):
     identity = bootstrap.identity
     app_root = workspace.get_app_dir(identity.job_id)
     runtime = TaskRuntime(workspace, identity.site_name, identity.job_id)
@@ -94,7 +94,7 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace):
             private=True,
             sticky=name not in (FLContextKey.TASK_ID, FLContextKey.TASK_NAME, FLContextKey.TASK_ATTEMPT_ID),
         )
-    protected = _PROTECTED_CONTEXT_KEYS
+    protected = _PROTECTED_CONTEXT_KEYS | set(protected_context_keys)
     for name, prop in bootstrap.context_properties.items():
         if name in protected:
             raise ValueError(f"worker bootstrap cannot override framework context property {name!r}")
@@ -165,8 +165,14 @@ def _execute(
     data: Shareable,
     workspace: Workspace,
     store: FileTaskArtifactStore,
+    *,
+    context_binding=None,
+    protected_context_keys=(),
+    analytics=None,
 ):
-    runtime, fl_ctx = _new_context(bootstrap, workspace)
+    runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
+    if context_binding is not None:
+        context_binding(fl_ctx, bootstrap.identity, store, analytics)
     executor = _build_compute_graph(bootstrap, workspace, fl_ctx, runtime)
     _restore_peer_context(data, fl_ctx)
 
@@ -205,7 +211,7 @@ def _execute(
     return result, runtime
 
 
-def run_worker(bootstrap_path: str) -> TaskCompletion:
+def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
     # Strip CJ bootstrap credentials from the environment before importing job
@@ -229,7 +235,7 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             AuditService.initialize(workspace.get_audit_file_path(identity.job_id))
             owns_auditor = True
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
-        _runtime, fl_ctx = _new_context(bootstrap, workspace)
+        _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
         _authorize_compute_graph(bootstrap, workspace, fl_ctx)
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
@@ -238,7 +244,19 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
         refresh_custom_dir_import_path(workspace.get_app_custom_dir(identity.job_id))
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
         data = store.read_input(identity)
-        result, runtime = _execute(bootstrap, data, workspace, store)
+        analytics = []
+        if context_binding is None:
+            result, runtime = _execute(bootstrap, data, workspace, store)
+        else:
+            result, runtime = _execute(
+                bootstrap,
+                data,
+                workspace,
+                store,
+                context_binding=context_binding,
+                protected_context_keys=protected_context_keys,
+                analytics=analytics,
+            )
         reference = store.stage_result(identity, result)
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
@@ -252,6 +270,8 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             "max_rss_native_units": usage.ru_maxrss,
             "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
         }
+        if analytics:
+            diagnostics["analytics"] = store.write_analytics(identity, analytics).to_dict()
         return store.commit_staged_result(
             identity,
             reference,

@@ -42,9 +42,9 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.script_utils import prepare_task_metadata
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey
 from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -311,23 +311,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._client_api = None
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:
-        context = self._context
-        return {
-            FLMetaKey.SITE_NAME: fl_ctx.get_identity_name(),
-            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
-            ConfigKey.TASK_NAME: task_name,
-            ConfigKey.TASK_EXCHANGE: {
-                ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                # The backend only transports the declared representation contract. The
-                # trainer-side Client API adapts at receive/send and computes DIFF natively.
-                ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
-                ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
-                ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
-                ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
-                ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
-                ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,
-            },
-        }
+        return prepare_task_metadata(self._context, fl_ctx.get_identity_name(), fl_ctx.get_job_id(), task_name)
 
     def _trainer_thread_is_alive(self) -> bool:
         thread = self._task_fn_thread

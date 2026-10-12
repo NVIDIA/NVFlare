@@ -207,6 +207,7 @@ class TaskSupervisor:
         abort_signal: Signal,
         request_factory: Callable[[TaskAttemptIdentity, str], TaskLaunchRequest],
         options: TaskSupervisorOptions = TaskSupervisorOptions(),
+        deadline_provider: Optional[Callable[[], Optional[float]]] = None,
     ) -> TaskSupervisorOutcome:
         if not isinstance(bootstrap, WorkerBootstrap) or not isinstance(options, TaskSupervisorOptions):
             raise TypeError("bootstrap and options must be worker bootstrap and supervisor options")
@@ -262,7 +263,7 @@ class TaskSupervisor:
             self._diagnostic(attempt, "launched", execution_id=handle.execution_id, supervisor_pid=os.getpid())
             if handle.request.identity != launch_identity:
                 raise ValueError("launcher handle does not match owned task attempt identity")
-            status = self._wait(attempt, abort_signal, options)
+            status = self._wait(attempt, abort_signal, options, deadline_provider)
             self._diagnostic(
                 attempt,
                 "settled",
@@ -315,12 +316,23 @@ class TaskSupervisor:
         with self._state_lock:
             return self._stopping or attempt.cancel_requested.is_set() or abort_signal.triggered
 
-    def _wait(self, attempt, abort_signal, options):
+    def _wait(self, attempt, abort_signal, options, deadline_provider=None):
         deadline = None if options.worker_timeout is None else time.monotonic() + options.worker_timeout
         while True:
             if self._aborted(attempt, abort_signal):
                 return self._cancel(attempt)
             remaining = None if deadline is None else deadline - time.monotonic()
+            if deadline_provider is not None:
+                caller_deadline = deadline_provider()
+                if caller_deadline is not None:
+                    if (
+                        isinstance(caller_deadline, bool)
+                        or not isinstance(caller_deadline, (int, float))
+                        or not math.isfinite(caller_deadline)
+                    ):
+                        raise ValueError("caller execution deadline must be finite or None")
+                    caller_remaining = caller_deadline - time.monotonic()
+                    remaining = caller_remaining if remaining is None else min(remaining, caller_remaining)
             if remaining is not None and remaining <= 0:
                 self._cancel(attempt)
                 raise TimeoutError("task worker timed out")
@@ -360,6 +372,15 @@ class TaskSupervisor:
         self._diagnostic(attempt, "receipt", receipt=receipt)
         self.cleanup_job_payloads()
         return True
+
+    def retain_attempt(self, identity: TaskAttemptIdentity):
+        """Keep evidence when caller-owned result processing fails after compute."""
+        with self._state_lock:
+            attempt = self._attempts.get(identity)
+            if attempt is not None:
+                attempt.failed = True
+        if attempt is not None:
+            self._diagnostic(attempt, "retained_by_caller")
 
     @contextmanager
     def transfer_reader(self, identity: TaskAttemptIdentity):

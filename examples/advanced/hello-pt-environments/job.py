@@ -101,6 +101,12 @@ def define_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--enable_log_streaming", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Keep client compute for the job, or start a fresh CPU worker for each task.",
+    )
+    parser.add_argument(
         "--launch_external_process",
         action="store_true",
         help="Run the shared client script in a separate subprocess instead of in-process.",
@@ -117,6 +123,12 @@ def define_parser() -> argparse.ArgumentParser:
 def parse_args(argv=None):
     parser = define_parser()
     args = parser.parse_args(argv)
+    if args.execution_lifetime == "task" and args.launch_external_process:
+        parser.error("--execution_lifetime task requires the in-process client script")
+    if args.execution_lifetime == "task" and args.evaluation == "cross-site":
+        parser.error(
+            "task lifetime supports final global evaluation; this script's cross-site submission needs job state"
+        )
     if args.client_memory_gc_rounds < 0:
         parser.error("--client_memory_gc_rounds must be >= 0")
     if args.env == "prod" and not args.startup_kit:
@@ -147,6 +159,7 @@ def create_recipe(args):
         train_args=train_args,
         launch_external_process=args.launch_external_process,
         client_memory_gc_rounds=args.client_memory_gc_rounds,
+        execution_lifetime=args.execution_lifetime,
     )
 
     if args.experiment_tracking != "none":

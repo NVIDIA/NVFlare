@@ -1,10 +1,87 @@
 # Task worker lifecycle and integration contract
 
 P3 provides one stateless Process worker for an ordinary Executor. P4 adds a plain,
-role-neutral TaskSupervisor that owns its execution and artifact lifetime. Client
-Job adapter wiring and the existing result submission path remain later integration
-work. Local completion, physical process settlement, and server receipt are
+role-neutral TaskSupervisor that owns its execution and artifact lifetime, plus
+the CPU Process client integration. The resident Client Job owns filters, analytics
+publication, result submission and receipts; its TaskWorkerExecutor launches a fresh
+compute worker for each assignment. Local completion, physical process settlement, and server receipt are
 separate facts.
+
+## Client configuration and script lifetime
+
+Client configuration accepts `execution_lifetime: "job"` (the default) or `"task"`.
+Job lifetime keeps the existing executors and Client API backends. Task lifetime
+authorizes inert executor and component specifications in the Client Job and again
+in the worker before importing application code. Compute instances are constructed
+only in the worker. Task data and result filters always stay in the Client Job.
+
+In task mode, components default to `execution_scope: "task"`; explicitly mark
+resident federation widgets and receivers `"job"`. Component references must stay
+within their scope, including IDs passed under arbitrary constructor argument
+names. Ordinary dictionaries are preserved. Nested components share their owning
+graph's scope. Jobs cannot configure the framework's internal adapter, launcher,
+environment policy or declared task state.
+
+`FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`,
+`job.to_clients(component, execution_scope="job")`,
+`job.set_component_scope(component_id, "job", target=...)`, and
+`recipe.set_execution_lifetime(...)` expose these controls. The unified and PyTorch
+FedAvg recipes also accept `execution_lifetime="task"`. Export validates the
+receiving sites' GPU resource/launcher settings; unrelated job-lifetime GPU apps
+in the same deployment remain valid.
+
+The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
+runs on the worker's main thread, receives one assigned model, and hands off one
+eager result through the existing Client API model, format, FULL/DIFF, metadata and
+rank semantics. The same receive/send loop exits after that send. Script arguments
+retain their boundaries, and supported secret placeholders resolve in the worker.
+Sending only hands off a local snapshot: script failure or finalizer failure still
+prevents completion. Analytics are captured synchronously and replayed by the Client
+Job after settlement; local worker handlers also receive those events.
+
+Script process memory, optimizer state and executor instances do not survive the
+assignment. Applications needing previous local model state must use a job-lifetime
+script or manage their own explicit persistence; this profile supplies no state
+declaration, promotion or aggregation admission mechanism. The hello-pt task example
+supports training and final global evaluation. Its cross-site local-model submission
+uses job-lifetime memory and therefore remains a job-lifetime option.
+
+The initial profile supports CPU Process workers on Linux and on macOS with Python
+3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,
+remote task launchers, and moving task orchestration to the Client Process are not
+part of this profile. No server capability negotiation is added.
+The Collab API's resident RPC service continues to use job lifetime.
+
+## Site policy
+
+Only the site's canonical `local/resources.json` or its default fallback supplies
+`task_execution`. Job application and job resource overrides cannot select it.
+The default launcher is ProcessTaskLauncher, environment forwarding is explicit,
+and artifact cleanup happens at job end. An optional site configuration is:
+
+```json
+{
+  "task_execution": {
+    "environment_variables": ["TRAINING_SECRET"],
+    "worker_timeout": 600,
+    "settlement_timeout": 10,
+    "poll_interval": 0.05,
+    "artifact_cleanup": "job"
+  }
+}
+```
+
+`artifact_cleanup: "retain"` keeps every attempt. `max_payload_bytes` optionally
+limits input and output payloads with the same policy. The job's executor definition
+can shorten `worker_timeout`, and ClientAPIExecutor's `result_wait_timeout` bounds
+the wait from script start until its local send. A timely send does not waive the
+worker deadline or physical settlement requirement.
+
+Workers receive only the framework's standard runtime environment allow-list plus
+site-approved variable names. Federation credentials, Client API bootstrap and GPU
+visibility cannot be forwarded; GPU visibility is disabled. Process workers share
+the site UID and filesystem, so this is process lifetime isolation, not a security
+sandbox. The site policy is excluded from client registration metadata.
 
 ## Execution and diagnostics
 

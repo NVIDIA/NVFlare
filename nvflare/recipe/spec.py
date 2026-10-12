@@ -508,6 +508,12 @@ class Recipe(ABC):
         """
         self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
+    def set_execution_lifetime(self, lifetime: str, clients: Optional[List[str]] = None):
+        """Select resident job compute or a fresh CPU Process worker per assignment."""
+        from nvflare.apis.task_execution import ExecutionLifetime
+
+        self._add_to_client_apps({"execution_lifetime": ExecutionLifetime.validate(lifetime)}, clients=clients)
+
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
         """Add top-level configuration parameters to config_fed_client.json.
 
@@ -657,7 +663,7 @@ class Recipe(ABC):
             file_names = ("log.json",)
 
         for name in file_names:
-            self._add_to_client_apps(JobLogStreamer(log_file_name=name))
+            self._add_to_client_apps(JobLogStreamer(log_file_name=name), execution_scope="job")
         self._job.to_server(JobLogReceiver())
 
     def enable_tensor_streaming(
@@ -724,6 +730,7 @@ class Recipe(ABC):
                 tensor_send_timeout=tensor_send_timeout,
             ),
             id="tensor_client_streamer",
+            execution_scope="job",
         )
         self._tensor_streaming_added = True
 

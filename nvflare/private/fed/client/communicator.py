@@ -33,6 +33,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
     CellChannel,
@@ -582,6 +583,10 @@ class Communicator:
         self.logger.debug(f"submitting update to parent FQCN: {parent_fqcn}")
 
         fqcn = FQCN.join([parent_fqcn, job_id])
+        source_guard = fl_ctx.get_prop(FLContextKey.TASK_RESULT_SOURCE_GUARD)
+        source_kwargs = (
+            {"fobs_ctx_props": {FOBSContextKey.SOURCE_READ_GUARD: source_guard}} if source_guard is not None else {}
+        )
         result = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
@@ -590,6 +595,7 @@ class Communicator:
             timeout=timeout,
             optional=optional,
             abort_signal=fl_ctx.get_run_abort_signal(),
+            **source_kwargs,
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)

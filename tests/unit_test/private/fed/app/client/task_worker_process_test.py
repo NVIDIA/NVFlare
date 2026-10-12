@@ -161,9 +161,11 @@ def test_cli_arms_guard_before_compute_and_exits_without_atexit_joins(monkeypatc
     monkeypatch.setattr("nvflare.apis.job_launcher_spec.pop_credential_env", lambda: events.append("strip_credentials"))
     monkeypatch.setattr(process, "_start_parent_guard", lambda _parent: events.append("guard"))
 
-    def compute(path):
+    def compute(path, *, context_binding, protected_context_keys):
         assert path == "/attempt/bootstrap.json"
         assert process.sys.argv == ["nvflare-task-worker"]
+        assert callable(context_binding)
+        assert "__client_api_backend_factory__" in protected_context_keys
         events.append("compute")
         if fails:
             raise RuntimeError("compute failure")

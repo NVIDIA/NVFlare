@@ -44,6 +44,12 @@ def define_parser() -> argparse.ArgumentParser:
     )
 
     add_dataset_arguments(parser)
+    parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Keep client compute for the job, or start a fresh CPU worker for each task.",
+    )
 
     return parser
 
@@ -65,6 +71,7 @@ def create_recipe(args):
         # Pass argv directly so a client-local path containing spaces, quotes,
         # or apostrophes keeps its exact argument boundary without shell parsing.
         train_args=train_args,
+        execution_lifetime=getattr(args, "execution_lifetime", "job"),
     )
     # Always verify the persisted final global model in the basic quickstart.
     add_final_global_evaluation(recipe)

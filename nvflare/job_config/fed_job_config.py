@@ -30,6 +30,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
+from nvflare.job_config.task_execution import prepare_task_execution, validate_task_resources
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.utils.process_utils import popen_in_new_session
@@ -142,6 +143,17 @@ class FedJobConfig:
 
         if self.meta_props:
             meta_json.update(self.meta_props)
+
+        for site, app_name in self.deploy_map.items():
+            app = self.fed_apps[app_name].client_app
+            if app and app.additional_params.get("execution_lifetime", "job") == "task":
+                # ALL_SITES also receives any site-specific overrides in meta.
+                sites = {site}
+                if site == "@ALL":
+                    sites.update(meta_json.get("resource_spec", {}))
+                    sites.update(meta_json.get("launcher_spec", {}))
+                for receiving_site in sites:
+                    validate_task_resources(meta_json, receiving_site)
 
         return json.dumps(meta_json, indent=4)
 
@@ -262,6 +274,11 @@ class FedJobConfig:
         shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
+        if gpu and any(
+            app.client_app and app.client_app.additional_params.get("execution_lifetime", "job") == "task"
+            for app in self.fed_apps.values()
+        ):
+            raise ValueError("task lifetime currently supports CPU Process execution without simulator GPU assignments")
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
             warn_on_potential_secrets_in_job_dir(job_root, job_name=self.job_name)
@@ -636,6 +653,7 @@ class FedJobConfig:
         # Add additional system parameters to the client app config
         if fed_app.client_app.additional_params:
             client_app.update(fed_app.client_app.additional_params)
+        prepare_task_execution(client_app)
 
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(client_config, "w") as outfile:
@@ -660,6 +678,8 @@ class FedJobConfig:
                     "args": self._get_args(component, custom_dir),
                 }
             )
+            if cid in app.component_scopes:
+                app_config["components"][-1]["execution_scope"] = app.component_scopes[cid]
 
         app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
         app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)

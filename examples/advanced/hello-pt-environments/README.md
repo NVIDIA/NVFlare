@@ -43,6 +43,24 @@ accuracy. The slower integration suite checks that simulation and POC produce id
 local runs currently report 75% on site-1 and 77% on site-2. Tests cover production argument handling, environment
 construction, and job export, but do not connect to a live production federation.
 
+## Choose the client compute lifetime
+
+The default `--execution_lifetime job` retains each client's script and optimizer
+for the job. `--execution_lifetime task` starts a fresh CPU Process worker for each
+training or final global evaluation task, using the same client script:
+
+```bash
+python job.py --execution_lifetime task
+python job.py --env poc --execution_lifetime task
+python job.py --env prod --startup-kit /path/to/admin/startup-kit --execution_lifetime task
+```
+
+Task lifetime requires the in-process script backend, so omit
+`--launch_external_process`. This script's cross-site local-model submission needs
+its previous in-memory model and uses job lifetime. Final global evaluation remains
+the default for both lifetimes. All participating clients need this task execution
+support; the production command still connects to an already-running system.
+
 ## Run a job-scoped local POC
 
 ```bash

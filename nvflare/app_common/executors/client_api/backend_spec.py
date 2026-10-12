@@ -41,6 +41,9 @@ if TYPE_CHECKING:
     # (client_api_executor imports this module to build the context).
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 
+# Set only by the trusted worker entry point, never by application JSON.
+CLIENT_API_BACKEND_FACTORY = "__client_api_backend_factory__"
+
 
 @dataclass(frozen=True)
 class ClientAPIBackendContext:

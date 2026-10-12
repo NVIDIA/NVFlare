@@ -31,6 +31,7 @@ class BaseAppConfig(ABC):
         self.task_data_filters = []  # list of tuples: (task_set, list of filters)
         self.task_result_filters = []  # list of tuples: (task_set, list of filters)
         self.components: Dict[str, object] = {}
+        self.component_scopes: Dict[str, str] = {}
         self.ext_scripts = []
         self._ext_script_destinations = {}
         self.ext_dirs = []

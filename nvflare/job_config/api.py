@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import builtins
 import os.path
 import re
 import uuid
@@ -21,6 +22,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.task_execution import ExecutionLifetime
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
@@ -189,6 +191,7 @@ class FedJob:
         mandatory_clients: Optional[List[str]] = None,
         meta_props: Optional[Dict[str, Any]] = None,
         fail_fast: bool = False,
+        execution_lifetime: str = ExecutionLifetime.JOB,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -198,6 +201,7 @@ class FedJob:
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
             meta_props: additional meta properties for the job (optional)
+            execution_lifetime: client compute lifetime, 'job' (default) or 'task'.
             fail_fast: if True, sets dead_client_grace_period to 0 so that a client already
                 reported dead is declared disconnected on the next monitor tick (~0.2 s) rather
                 than after the default 60-second grace period. The job then aborts only when the
@@ -229,6 +233,28 @@ class FedJob:
         self._deploy_map = {}
         self._deployed = False
         self._components = {}
+        self.execution_lifetime = ExecutionLifetime.validate(execution_lifetime)
+
+    def set_execution_lifetime(self, lifetime: str, target: Optional[str] = None):
+        """Set client compute lifetime; omit target to include future client apps."""
+        lifetime = ExecutionLifetime.validate(lifetime)
+        if target is None:
+            self.execution_lifetime = lifetime
+            for app in self._deploy_map.values():
+                if isinstance(app, ClientApp):
+                    app.add_params({"execution_lifetime": lifetime})
+        else:
+            if JobTargetType.get_target_type(target) != JobTargetType.CLIENT:
+                raise ValueError("execution lifetime applies to client apps")
+            self.to({"execution_lifetime": lifetime}, target)
+
+    def set_component_scope(self, comp_id: str, scope: str, target: str = ALL_SITES):
+        """Keep a client component resident ('job') or recreate it per task ('task')."""
+        scope = ExecutionLifetime.validate(scope)
+        app = self._deploy_map.get(target)
+        if not isinstance(app, ClientApp) or comp_id not in app.app_config.components:
+            raise ValueError(f"unknown client component {comp_id!r} for {target!r}")
+        app.app_config.component_scopes[comp_id] = scope
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -258,6 +284,8 @@ class FedJob:
 
     def _add_client_app(self, obj: ClientApp, target: str):
         self._deploy_map[target] = obj
+        if self.execution_lifetime != ExecutionLifetime.JOB:
+            obj.add_params({"execution_lifetime": self.execution_lifetime})
         if target not in self.clients:
             self.clients.append(target)
 
@@ -266,6 +294,7 @@ class FedJob:
         obj: Any,
         target: str,
         id=None,
+        execution_scope=None,
         **kwargs,
     ) -> Any:
         """Assign an object to the target. For end users.
@@ -274,6 +303,7 @@ class FedJob:
             obj: the object to be assigned
             target: the target that the object is assigned to
             id: the id of the object
+            execution_scope: optional 'job' or 'task' scope for client components.
             **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         If the obj provides the add_to_fed_job method, it will be called with the kwargs.
@@ -301,6 +331,10 @@ class FedJob:
         self._validate_target(target)
 
         target_type = JobTargetType.get_target_type(target)
+        if execution_scope is not None:
+            ExecutionLifetime.validate(execution_scope)
+            if target_type != JobTargetType.CLIENT or isinstance(obj, (Executor, str, dict)):
+                raise ValueError("execution_scope applies to client components")
         app = self._deploy_map.get(target)
         if not app:
             if target_type == JobTargetType.SERVER:
@@ -332,6 +366,7 @@ class FedJob:
                     raise ValueError(f"this object can only be assigned to client, but tried to assign to {target}")
 
         add_to_job_method = getattr(obj, _ADD_TO_JOB_METHOD_NAME, None)
+        prior_components = set(app.app_config.components)
         if add_to_job_method is not None:
             ctx = JobCtx(obj, target, id)
             result = add_to_job_method(self, ctx, **kwargs)
@@ -342,6 +377,15 @@ class FedJob:
         # add any other components the object might have referenced via id
         if self._components:
             self._add_referenced_components(obj, target)
+        if execution_scope is not None:
+            scoped = set(app.app_config.components) - prior_components
+            existing_id = app._oid_to_cid.get(builtins.id(obj))
+            if existing_id:
+                scoped.add(existing_id)
+            if not scoped:
+                raise ValueError("execution_scope requires a registered client component")
+            for cid in scoped:
+                self.set_component_scope(cid, execution_scope, target)
         return result
 
     def _add_referenced_components(self, base_component, target):

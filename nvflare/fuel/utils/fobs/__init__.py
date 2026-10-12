@@ -46,6 +46,8 @@ dumpf = dump_to_file
 
 
 class FOBSContextKey:
+    # Optional call-scoped context manager factory protecting source reads.
+    SOURCE_READ_GUARD = "source_read_guard"
     CELL = "cell"
     CORE_CELL = "core_cell"
     MESSAGE = "message"

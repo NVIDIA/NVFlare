@@ -177,11 +177,16 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
                 self._authorize_component_config(element, config_ctx, node)
                 args = element.get("args")
                 if isinstance(args, (dict, list)):
-                    self._authorize_component_config_tree(
-                        args,
-                        config_ctx,
-                        self._make_child_node(node, args, "args"),
-                    )
+                    args_node = self._make_child_node(node, args, "args")
+                    # Constructor arguments are a container. An argument named
+                    # path/name must not turn the whole mapping into a class
+                    # config and hide forbidden sibling components.
+                    entries = args.items() if isinstance(args, dict) else ((f"#{i + 1}", v) for i, v in enumerate(args))
+                    for key, value in entries:
+                        if isinstance(value, (dict, list)):
+                            self._authorize_component_config_tree(
+                                value, config_ctx, self._make_child_node(args_node, value, key)
+                            )
                 return
 
             for key, value in element.items():
