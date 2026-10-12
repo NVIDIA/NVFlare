@@ -153,4 +153,4 @@ model.eval()
   callback within **blocking, round-based** group calls.
 - [CIFAR-10 FedBuff](../pt_async_cifar10/README.md) adds buffered aggregation,
   scheduling controls, evaluation, and checkpointing.
-- [All Collab examples](../README.md) provides the broader learning path.
+- [All Collab examples](../README.md) lists the other available examples.
