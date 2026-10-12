@@ -560,6 +560,37 @@ def test_manager_requests_all_shutdowns_and_waits_for_completion_before_join():
     assert calls == ["request_first", "request_second", "completed", "join_connectors", "join_frames"]
 
 
+def test_manager_joins_executors_after_shutdown_completion_fails():
+    manager = ConnManager(Endpoint("failed_shutdown"))
+    calls = []
+    failed = Future()
+    failed.set_exception(RuntimeError("close failed"))
+
+    class TrackingFuture(Future):
+        def result(self, timeout=None):
+            calls.append("completed_second")
+            return super().result(timeout)
+
+    completed = TrackingFuture()
+    completed.set_result(None)
+    for completion in (failed, completed):
+        driver = MagicMock()
+        driver.shutdown.return_value = completion
+        manager.add_connector(driver, {"scheme": "tcp", "url": "tcp://localhost:1"}, Mode.ACTIVE)
+
+    with (
+        patch.object(manager.conn_mgr_executor, "shutdown", side_effect=lambda wait: calls.append("join_connectors")),
+        patch.object(manager.frame_mgr_executor, "shutdown", side_effect=lambda wait: calls.append("join_frames")),
+        pytest.raises(RuntimeError, match="close failed"),
+    ):
+        manager.stop()
+
+    manager.conn_mgr_executor.shutdown()
+    manager.frame_mgr_executor.shutdown()
+    assert calls == ["completed_second", "join_connectors", "join_frames"]
+    assert all(connector.stopped.is_set() for connector in manager.connectors.values())
+
+
 def test_async_shutdown_waits_for_connect_finalizer(listener_context):
     driver = AioTcpDriver()
     connector = ConnectorInfo("test", driver, {}, Mode.ACTIVE, 0, 0, False, threading.Event())

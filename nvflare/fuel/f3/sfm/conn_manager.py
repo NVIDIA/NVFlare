@@ -164,19 +164,35 @@ class ConnManager(ConnMonitor):
             self.stopped = True
             connectors = list(self.connectors.values())
         completions = []
+        first_error = None
         for connector in connectors:
             connector.stopped.set()
-            completion = connector.driver.shutdown()
+            try:
+                completion = connector.driver.shutdown()
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
+                continue
             if isinstance(completion, Future):
                 completions.append(completion)
 
         # Request cancellation from every driver before waiting for any one.
-        # The enclosing process supervisor owns the shutdown deadline.
         for completion in completions:
-            completion.result()
+            try:
+                completion.result()
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
 
-        self.conn_mgr_executor.shutdown(True)
-        self.frame_mgr_executor.shutdown(True)
+        for executor in (self.conn_mgr_executor, self.frame_mgr_executor):
+            try:
+                executor.shutdown(True)
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
+
+        if first_error is not None:
+            raise first_error
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 

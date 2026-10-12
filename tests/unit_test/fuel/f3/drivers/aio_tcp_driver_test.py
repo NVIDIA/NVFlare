@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import socket
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -69,7 +70,9 @@ def test_shutdown_runs_on_aio_loop_and_is_idempotent(monkeypatch):
 def test_shutdown_schedules_transport_close_on_owning_event_loop(target):
     context = MagicMock()
     if target == "connection":
-        connection = AioConnection(MagicMock(), context, MagicMock(), None)
+        connector = MagicMock()
+        connector.driver.is_stopping.return_value = False
+        connection = AioConnection(connector, context, MagicMock(), None)
         connection.writer = transport = MagicMock()
         close = connection.close
     else:
@@ -167,6 +170,110 @@ def test_connection_is_removed_when_writer_close_wait_fails():
         assert states == [ConnState.CONNECTED, ConnState.CLOSED]
 
     asyncio.run(connect())
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_shutdown_aborts_connection_when_peer_does_not_drain(active):
+    async def shutdown():
+        context = MagicMock()
+        context.get_event_loop.return_value = asyncio.get_running_loop()
+        context.run_coro.side_effect = asyncio.create_task
+        with patch.object(AioContext, "get_global_context", return_value=context):
+            driver = AioTcpDriver()
+        connector = ConnectorInfo(
+            "test", driver, {}, Mode.ACTIVE if active else Mode.PASSIVE, 0, 0, False, threading.Event()
+        )
+        driver.connector = connector
+        connected = asyncio.Event()
+        monitor = MagicMock()
+        monitor.state_change.side_effect = lambda conn: connected.set() if conn.state == ConnState.CONNECTED else None
+        driver.register_conn_monitor(monitor)
+
+        closed = asyncio.Event()
+        writer = MagicMock()
+        writer.get_extra_info.side_effect = lambda key, default=None: None
+        writer.transport.abort.side_effect = closed.set
+        writer.wait_closed = AsyncMock(side_effect=closed.wait)
+        reader = MagicMock()
+
+        async def readexactly(count):
+            await closed.wait()
+            raise asyncio.IncompleteReadError(b"", count)
+
+        reader.readexactly.side_effect = readexactly
+        operation = driver._create_connection(reader, writer)
+        connection = asyncio.create_task(driver._run_connect(connector, lambda: operation) if active else operation)
+
+        class _Server:
+            def close(self):
+                pass
+
+            async def wait_closed(self):
+                await connection
+
+        if not active:
+            driver.server = _Server()
+        completion = None
+        try:
+            await asyncio.wait_for(connected.wait(), 2)
+            connector.stopped.set()
+            completion = driver.shutdown()
+            await asyncio.wait_for(asyncio.shield(completion), 1)
+            await asyncio.wait_for(connection, 1)
+            assert closed.is_set()
+            assert not driver.connections
+        finally:
+            # Free the simulated stalled writer even if the regression returns.
+            closed.set()
+            if completion is not None:
+                await asyncio.wait_for(completion, 2)
+            await asyncio.wait_for(connection, 2)
+
+    asyncio.run(shutdown())
+
+
+def test_shutdown_releases_real_socket_with_queued_writes():
+    async def shutdown():
+        context = MagicMock()
+        context.get_event_loop.return_value = asyncio.get_running_loop()
+        context.run_coro.side_effect = asyncio.create_task
+        with patch.object(AioContext, "get_global_context", return_value=context):
+            driver = AioTcpDriver()
+        driver.connector = ConnectorInfo("test", driver, {}, Mode.PASSIVE, 0, 0, False, threading.Event())
+        connected, disconnected = asyncio.Event(), asyncio.Event()
+        monitor = MagicMock()
+        monitor.state_change.side_effect = lambda conn: (
+            connected.set() if conn.state == ConnState.CONNECTED else disconnected.set()
+        )
+        driver.register_conn_monitor(monitor)
+        server = await asyncio.start_server(driver._create_connection, "127.0.0.1", 0)
+        driver.server = server
+        peer = socket.socket()
+        peer.setblocking(False)
+        completion = None
+        writer = None
+        try:
+            await asyncio.get_running_loop().sock_connect(peer, server.sockets[0].getsockname())
+            await asyncio.wait_for(connected.wait(), 2)
+            writer = next(iter(driver.connections.values())).writer
+            writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+            writer.write(b"x" * (4 * 1024 * 1024))
+            assert writer.transport.get_write_buffer_size() > 0
+            driver.connector.stopped.set()
+            completion = driver.shutdown()
+            await asyncio.wait_for(asyncio.shield(completion), 2)
+            await asyncio.wait_for(disconnected.wait(), 2)
+            assert not driver.connections
+        finally:
+            if writer is not None:
+                writer.transport.abort()
+            peer.close()
+            if completion is not None:
+                await asyncio.wait_for(completion, 2)
+            server.close()
+            await asyncio.wait_for(server.wait_closed(), 2)
+
+    asyncio.run(shutdown())
 
 
 def test_listener_created_during_shutdown_is_closed():

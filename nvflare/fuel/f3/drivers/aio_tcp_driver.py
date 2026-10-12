@@ -96,8 +96,8 @@ class AioTcpDriver(AioBaseDriver):
             self.server = None
             if server:
                 server.close()
-            await self._cancel_connect_tasks()
             self.close_all()
+            await self._cancel_connect_tasks()
             if server:
                 await server.wait_closed()
 
