@@ -571,8 +571,10 @@ def setup_tcga_brca_loaders(opt):
 
     records = _read_manifest(manifest_path, raw_dir)
     targets = np.asarray([record["label"] for record in records], dtype=np.int64)
-    # Keep the fixed Normal/Tumor vocabulary when only one class was downloaded.
-    opt.num_classes = len(LABEL_MAP)
+    # Preserve explicit model width while keeping both fixed label indices valid.
+    opt.num_classes = getattr(opt, "num_classes", len(LABEL_MAP))
+    if not isinstance(opt.num_classes, int) or isinstance(opt.num_classes, bool) or opt.num_classes < len(LABEL_MAP):
+        raise ValueError("num_classes must be an integer of at least 2 for Normal/Tumor labels")
     opt.nc = opt.num_classes
 
     if getattr(opt, "task_split_strategy", "clinical_stage") == "clinical_stage":

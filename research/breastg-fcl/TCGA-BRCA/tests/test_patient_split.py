@@ -383,10 +383,11 @@ class BinaryClassVocabularyTest(unittest.TestCase):
             beta2=0.999,
         )
 
-    def assert_binary_model_for_download(self, available_labels):
+    def assert_binary_model_for_download(self, available_labels, num_classes=2):
         with tempfile.TemporaryDirectory() as directory, torch.random.fork_rng(devices=[]):
             torch.manual_seed(42)
             opt = self.make_partial_download(Path(directory), available_labels)
+            opt.num_classes = num_classes
             loaders = dataset_utils.setup_tcga_brca_loaders(opt)
             for client_id, tasks in loaders.items():
                 with self.subTest(client_id=client_id):
@@ -397,19 +398,27 @@ class BinaryClassVocabularyTest(unittest.TestCase):
                         labels = torch.cat([labels for _, labels in tasks[0][split]])
                         self.assertEqual(set(labels.tolist()), set(available_labels))
                     train_labels = torch.cat([labels for _, labels in train_loader])
-                    torch.testing.assert_close(client.task_label_counts[0], torch.bincount(train_labels, minlength=2))
-                    self.assertEqual((opt.num_classes, opt.nc), (2, 2))
+                    torch.testing.assert_close(
+                        client.task_label_counts[0], torch.bincount(train_labels, minlength=num_classes)
+                    )
+                    self.assertEqual((opt.num_classes, opt.nc), (num_classes, num_classes))
                     client.eval()
                     inputs, labels = next(iter(train_loader))
                     graph_row = torch.eye(opt.num_clients)[client_id].expand(len(labels), -1)
                     predictions = client.netF(client.netE(inputs, graph_row))
-                    self.assertEqual(tuple(predictions.shape), (len(labels), 2))
+                    self.assertEqual(tuple(predictions.shape), (len(labels), num_classes))
                     loss = F.nll_loss(predictions, labels)
                     self.assertTrue(torch.isfinite(loss))
                     loss.backward()
                     generated = client.netG(torch.zeros(len(labels), opt.noise_dim), labels, graph_row)
                     self.assertEqual(tuple(generated.shape), (len(labels), opt.nh))
                     self.assertTrue(torch.isfinite(generated).all())
+
+    def test_explicit_larger_class_width_is_preserved_for_real_data(self):
+        for num_classes in (3, 5):
+            for labels in ((1,), (0, 1)):
+                with self.subTest(num_classes=num_classes, labels=labels):
+                    self.assert_binary_model_for_download(labels, num_classes)
 
     def test_tumor_only_download_preserves_label_one_and_two_class_models(self):
         self.assert_binary_model_for_download((1,))

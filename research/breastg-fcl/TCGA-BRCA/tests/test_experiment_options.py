@@ -134,6 +134,9 @@ class ExperimentOptionsTest(unittest.TestCase):
                 prepare.assert_not_called()
             self.assertFalse((self.root / "clients").exists())
 
+    def test_insufficient_class_width_fails_before_filesystem_or_preparation(self):
+        self.assert_invalid_before_preparation("--num-classes", ("-1", "0", "1"))
+
     def test_invalid_noise_parameters_fail_before_filesystem_or_preparation(self):
         for flag in ("--sensitivity", "--epsilon"):
             self.assert_invalid_before_preparation(flag, ("-1", "nan", "inf", "-inf"))

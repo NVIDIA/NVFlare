@@ -225,7 +225,7 @@ class ParallelServerGFedCL:
 
         # Training loop for each task
         for task in range(self.opt.num_task):
-            logger.info(f"Training for task {task+1}/{self.opt.num_task}")
+            logger.info(f"Training for task {task + 1}/{self.opt.num_task}")
 
             # Clear CUDA cache between tasks if using GPU
             if self.device.type == "cuda":
@@ -239,7 +239,7 @@ class ParallelServerGFedCL:
 
             # Main training loop with the server and modified clients
             for r in range(self.opt.num_rounds):
-                logger.info(f"Round {r+1}/{self.opt.num_rounds}")
+                logger.info(f"Round {r + 1}/{self.opt.num_rounds}")
                 self.transport.set_round(task, r)
 
                 # PHASE 1: Collect client-noised encodings with current encoders (no training)
@@ -348,7 +348,7 @@ class ParallelServerGFedCL:
                     client.set_training_state(result["training_state"])
 
                 # Evaluate current performance for all clients on this task in parallel
-                logger.info(f"Evaluating clients for task {task+1} in parallel...")
+                logger.info(f"Evaluating clients for task {task + 1} in parallel...")
                 test_results = []
                 for i in range(0, len(self.clients), self.opt.max_in_flight):
                     batch_clients = self.clients[i : i + self.opt.max_in_flight]
@@ -369,13 +369,13 @@ class ParallelServerGFedCL:
                 # Calculate average accuracy across all clients for this round
                 avg_accuracy = sum(task_accuracies) / len(task_accuracies)
                 round_accuracy.append(avg_accuracy)
-                round_labels.append(f"Task {task+1}, Round {r+1}")
+                round_labels.append(f"Task {task + 1}, Round {r + 1}")
 
-                logger.info(f"Task {task+1}, Round {r+1} - Average Accuracy: {avg_accuracy:.2f}%")
+                logger.info(f"Task {task + 1}, Round {r + 1} - Average Accuracy: {avg_accuracy:.2f}%")
 
                 # NEW: Collect data for all tasks (including current and previous) during this round
                 round_all_tasks_data = {
-                    "round": f"Task {task+1}, Round {r+1}",
+                    "round": f"Task {task + 1}, Round {r + 1}",
                     "current_task": task,
                     "round_number": r + 1,
                     "tasks": {},
@@ -386,7 +386,7 @@ class ParallelServerGFedCL:
 
                 # Evaluate on all previous tasks for this round
                 if task > 0:
-                    logger.info(f"Evaluating performance on previous tasks during Task {task+1}, Round {r+1}...")
+                    logger.info(f"Evaluating performance on previous tasks during Task {task + 1}, Round {r + 1}...")
 
                     for prev_task in range(task):
                         prev_task_results = []
@@ -415,7 +415,7 @@ class ParallelServerGFedCL:
 
                             # Log and store the accuracy on this previous task
                             logger.info(
-                                f"  Task {task+1}, Round {r+1} - Accuracy on previous Task {prev_task+1}: {avg_prev_accuracy:.2f}%"
+                                f"  Task {task + 1}, Round {r + 1} - Accuracy on previous Task {prev_task + 1}: {avg_prev_accuracy:.2f}%"
                             )
                             round_all_tasks_data["tasks"][prev_task] = avg_prev_accuracy
 
@@ -439,7 +439,7 @@ class ParallelServerGFedCL:
             fieldnames = ["Round", "Current Task"]
             # Add columns for each task
             for t in range(self.opt.num_task):
-                fieldnames.append(f"Task {t+1} Accuracy")
+                fieldnames.append(f"Task {t + 1} Accuracy")
 
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
@@ -454,9 +454,9 @@ class ParallelServerGFedCL:
                 # Add accuracy for each task
                 for t in range(self.opt.num_task):
                     if t in round_data["tasks"]:
-                        row[f"Task {t+1} Accuracy"] = f"{round_data['tasks'][t]:.2f}"
+                        row[f"Task {t + 1} Accuracy"] = f"{round_data['tasks'][t]:.2f}"
                     else:
-                        row[f"Task {t+1} Accuracy"] = ""
+                        row[f"Task {t + 1} Accuracy"] = ""
 
                 writer.writerow(row)
 

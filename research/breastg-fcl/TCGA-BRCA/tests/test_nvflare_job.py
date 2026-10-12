@@ -382,7 +382,8 @@ class NVFlareJobTest(unittest.TestCase):
     def test_selection_precedes_cuda_queries_in_all_launcher_modes(self):
         # Run a fresh interpreter so an already imported config cannot hide an
         # early CUDA query. The query stub observes visibility, without a GPU.
-        script = textwrap.dedent("""
+        script = textwrap.dedent(
+            """
             import os
             import sys
             from unittest.mock import patch
@@ -408,7 +409,8 @@ class NVFlareJobTest(unittest.TestCase):
                      patch.object(job, 'run_simulator', side_effect=lambda *a: available()), \
                      patch.object(torch.cuda, 'empty_cache'):
                     job.main(sys.argv[1:])
-            """)
+            """
+        )
         for mode in ([], ["--export-only"], ["--run-exported-job", "/tmp/exported"]):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 env = dict(os.environ)
@@ -510,7 +512,8 @@ class NVFlareJobTest(unittest.TestCase):
                     prepare.assert_not_called()
 
     def test_nvflare_entrypoint_exports_a_smoke_job_without_ray(self):
-        script = textwrap.dedent("""
+        script = textwrap.dedent(
+            """
             import importlib.abc
             import sys
 
@@ -527,7 +530,8 @@ class NVFlareJobTest(unittest.TestCase):
 
             main.main(sys.argv[1:])
             assert not any(name == "ray" or name.startswith("ray.") for name in sys.modules)
-        """)
+        """
+        )
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "smoke export"
             result = subprocess.run(

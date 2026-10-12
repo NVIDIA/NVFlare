@@ -202,7 +202,8 @@
       "nvflare": "2.9.0",
       "device": "cpu"
     },
-    "regression_tests_passed": 201,
+    "regression_tests_passed": 203,
+    "class_width_override_smoke": "passed with --num-classes 3, four clients and six rounds",
     "multiprocess_cpu_smoke": {
       "status": "passed",
       "clients": 4,
@@ -210,6 +211,6 @@
       "rounds_per_task": 2
     },
     "changed_file_style_check": "passed",
-    "whole_example_style_check": "Existing E226 whitespace warnings in unchanged breastgfcl.py and utils/plot_utils.py."
+    "whole_example_style_check": "passed with Black 25.9.0, isort 5.13.2, and Flake8 7.1.1"
   }
 }

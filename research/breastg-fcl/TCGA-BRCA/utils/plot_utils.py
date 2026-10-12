@@ -225,7 +225,7 @@ def plot_all_tasks_accuracy(opt, all_tasks_accuracy, plots_dir=None):
             plt.plot(
                 valid_indices,
                 valid_acc,
-                label=f"Task {t+1}",
+                label=f"Task {t + 1}",
                 linestyle=line_styles[t % len(line_styles)],
                 marker=markers[t % len(markers)],
                 color=colors[t % len(colors)],
@@ -349,7 +349,7 @@ def plot_forgetting_metrics(opt, all_tasks_accuracy, plots_dir):
                 plt.plot(
                     round_indices,
                     forgetting_data,
-                    label=f"Task {prev_task+1} → Task {current_task+1}",
+                    label=f"Task {prev_task + 1} → Task {current_task + 1}",
                     marker="o",
                     linewidth=2,
                 )

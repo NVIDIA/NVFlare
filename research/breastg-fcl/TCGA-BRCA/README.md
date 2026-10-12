@@ -334,7 +334,7 @@ This differs from the original recorded environment and does not claim
 bitwise reproduction of its models. The same corrected implementation
 passed **183 regression tests** in the author validation reported on 2026-10-11
 and the multiprocess CPU smoke described below; see [validation results](../README.md#expected-results). Maintenance
-validation on 2026-10-12 passed the expanded **201-test** regression suite,
+validation on 2026-10-12 passed the expanded **203-test** regression suite,
 including offline TCIA workbook/download and CLI failure coverage.
 
 The standard launcher uses `--seed` for both data preparation and training.

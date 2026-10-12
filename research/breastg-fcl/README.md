@@ -37,6 +37,12 @@ stage defines the task sequence, while client heterogeneity arises from
 the assigned records and their TCIA summaries. TCIA features are used only
 for the graph, not concatenated to the prediction input.
 
+The `--num-classes` option defaults to 2 and accepts larger output widths,
+which are preserved during real-data preparation. Values below 2 cannot
+represent the fixed Normal=0/Tumor=1 labels and are rejected. Extra outputs
+do not add labels to the TCGA dataset.
+
+
 | Component | Operation | Training |
 | --- | --- | --- |
 | Encoder `E` | Expression vector + client graph row → latent | Client |
@@ -432,7 +438,7 @@ Author validation reported on 2026-10-11 passed all **183 regression tests** in 
 `breastgfcl` environment. Scoped Black, isort, and flake8 checks, the example's
 license-header check, and `pip check` also passed.
 
-Maintenance validation on 2026-10-12 passed all **201 regression tests**,
+Maintenance validation on 2026-10-12 passed all **203 regression tests**,
 including offline TCIA checksum/workbook fixtures, unsupported-option rejection,
 positive experiment counts, visualization failure handling, and manifest UUID
 matching. Noise parameters must be finite and nonnegative; `epsilon = 0` keeps
@@ -441,8 +447,10 @@ and importing configuration helpers does not create directories. This CPU check
 used Python 3.13.5, PyTorch 2.14.1, NumPy 2.5.4, and NVFlare 2.9.0.
 The multiprocess CPU smoke also completed four clients, three tasks and six
 rounds, with both metric CSVs and private graphs matching the final checkpoint.
-The project style check passed for all changed Python files. The whole-example
-check reported existing whitespace warnings in unchanged files.
+The project style check passed across the whole example using the repository
+pins: Black 25.9.0, isort 5.13.2, and Flake8 7.1.1. A separate CPU smoke
+with `--num-classes 3` completed all six rounds with three-wide predictor
+outputs and replay counts on all four clients.
 
 The NVFlare 2.9.0 Collab CPU smoke completed all six rounds across four
 client processes and three tasks, with replay and client-side latent
