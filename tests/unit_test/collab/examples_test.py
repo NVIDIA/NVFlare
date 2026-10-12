@@ -55,7 +55,7 @@ _EXAMPLES = [
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,
         "collab.simple_async.job",
-        SimpleNamespace(num_updates=20, data_root="/tmp/nvflare/data"),
+        None,
         ("torch", "torchvision"),
         id="simple_async",
     ),

@@ -31,11 +31,18 @@ Each update trains for one local epoch. `site-2` adds a one-second delay to
 illustrate a slower client. Actual completion order also depends on runtime,
 training, evaluation, and transport overhead.
 
-```bash
-python job.py --num-updates 40 --workspace-root /tmp/collab-mnist
+Settings are module-level constants near the top of [job.py](job.py):
+
+```python
+NUM_UPDATES = 20
+DATA_ROOT = "/tmp/nvflare/data"
+WORKSPACE_ROOT = "/tmp/nvflare/collab/simple_async"
 ```
 
-Use `--data-root` to change the MNIST cache from `/tmp/nvflare/data`.
+Edit `NUM_UPDATES` to run longer (for example, 40 updates), `DATA_ROOT` to move
+the MNIST cache, or `WORKSPACE_ROOT` to choose another output directory. Then
+run `python job.py`. Each worker imports these values from the example source;
+there are no command-line options or server/client property lookups for them.
 
 ## Model and data
 

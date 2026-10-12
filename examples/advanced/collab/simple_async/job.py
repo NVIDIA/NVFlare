@@ -17,7 +17,6 @@
 Run from this directory with: python job.py
 """
 
-import argparse
 import json
 import queue
 import time
@@ -31,6 +30,10 @@ from torchvision import datasets, transforms
 from nvflare.collab import CollabRecipe, collab
 from nvflare.recipe import SimEnv
 
+NUM_UPDATES = 20
+DATA_ROOT = "/tmp/nvflare/data"
+WORKSPACE_ROOT = "/tmp/nvflare/collab/simple_async"
+
 _train_loader = None
 
 
@@ -39,7 +42,7 @@ def make_model():
 
 
 def load_data(train):
-    data = datasets.MNIST(collab.get_app_prop("data_root"), train=train, transform=transforms.ToTensor())
+    data = datasets.MNIST(DATA_ROOT, train=train, transform=transforms.ToTensor())
     if train:
         # Two disjoint, equally sized shards; only this site's shard is trained on.
         data = Subset(data, range(collab.get_app_prop("index"), len(data), 2))
@@ -80,9 +83,8 @@ def evaluate(model, loader):
 def run():
     torch.set_num_threads(1)
     torch.manual_seed(0)
-    num_updates = collab.get_app_prop("num_updates")
-    if num_updates < len(collab.clients):
-        raise ValueError("num_updates must be at least the number of clients")
+    if NUM_UPDATES < len(collab.clients):
+        raise ValueError("NUM_UPDATES must be at least the number of clients")
     model, test_loader = make_model(), load_data(train=False)
     weights = {name: value.clone() for name, value in model.state_dict().items()}
     history = [{"update": 0, "seconds": 0.0, **evaluate(model, test_loader)}]
@@ -98,7 +100,7 @@ def run():
     calls = [collab.clients(blocking=False, timeout=120, process_resp_cb=accept_result).train(weights, 0)]
     submitted = len(collab.clients)
     version = 0
-    while version < num_updates:
+    while version < NUM_UPDATES:
         if collab.is_aborted:
             raise RuntimeError("Training aborted")
         # Failed calls do not invoke the success callback. Do not wait forever.
@@ -113,7 +115,7 @@ def run():
         staleness = version - base_version
         weights = {name: 0.5 * value + 0.5 * local_weights[name] for name, value in weights.items()}
         version += 1
-        if submitted < num_updates:
+        if submitted < NUM_UPDATES:
             # Refill only the finished client. Others keep their original snapshots.
             calls.append(
                 collab.get_clients([site])(blocking=False, timeout=120, process_resp_cb=accept_result).train(
@@ -127,7 +129,7 @@ def run():
         metrics = evaluate(model, test_loader)
         history.append({"update": version, "seconds": time.perf_counter() - started, **metrics})
         print(
-            f"Update {version}/{num_updates} from {site}: base_version={base_version}, "
+            f"Update {version}/{NUM_UPDATES} from {site}: base_version={base_version}, "
             f"staleness={staleness}, loss={metrics['loss']:.4f}, accuracy={metrics['accuracy']:.2%}",
             flush=True,
         )
@@ -146,31 +148,21 @@ def run():
     return weights
 
 
-def make_recipe(args):
-    if args.num_updates < 2:
-        raise ValueError("num_updates must be >= 2")
+def make_recipe():
+    if NUM_UPDATES < 2:
+        raise ValueError("NUM_UPDATES must be >= 2")
     # Collab uses this module's decorated functions; no server/client classes.
     recipe = CollabRecipe(job_name="collab_simple_async", min_clients=2)
-    recipe.set_server_prop("num_updates", args.num_updates)
-    recipe.set_server_prop("data_root", args.data_root)
-    recipe.set_client_prop("data_root", args.data_root)
     recipe.set_per_site_config({"site-1": {"index": 0, "delay": 0.0}, "site-2": {"index": 1, "delay": 1.0}})
     return recipe
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Simple asynchronous MNIST training with Collab")
-    parser.add_argument("--num-updates", type=int, default=20, help="Total accepted updates across both clients (>= 2)")
-    parser.add_argument("--data-root", default="/tmp/nvflare/data")
-    parser.add_argument("--workspace-root", default="/tmp/nvflare/collab/simple_async")
-    args = parser.parse_args()
-    if args.num_updates < 2:
-        parser.error("--num-updates must be >= 2")
+    recipe = make_recipe()
     # Download once before starting clients, avoiding concurrent downloads.
     for train_split in (True, False):
-        datasets.MNIST(args.data_root, train=train_split, download=True)
-    recipe = make_recipe(args)
-    run = recipe.execute(SimEnv(clients=recipe.configured_sites(), workspace_root=args.workspace_root))
+        datasets.MNIST(DATA_ROOT, train=train_split, download=True)
+    run = recipe.execute(SimEnv(clients=recipe.configured_sites(), workspace_root=WORKSPACE_ROOT))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 

@@ -47,7 +47,7 @@ def workflow(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "load_data", lambda train: [(torch.zeros(1, 2), torch.zeros(1, dtype=torch.long))])
     monkeypatch.setattr(module, "evaluate", lambda model, loader: {"loss": 0.0, "accuracy": 1.0})
     app = ServerApp(module)
-    app.set_prop("num_updates", 3)
+    monkeypatch.setattr(module, "NUM_UPDATES", 3)
     pending = queue.Queue()
     dispatched = []
     signal = Signal()
@@ -86,7 +86,7 @@ def workflow(monkeypatch, tmp_path):
                 pending=pending,
                 signal=signal,
                 run_dir=run_dir,
-                app=app,
+                module=module,
             )
         finally:
             signal.trigger(True)
@@ -102,8 +102,8 @@ def complete(call, weights):
 
 
 @pytest.mark.parametrize("num_updates", [2, 3])
-def test_refill_precedes_slow_response_and_respects_budget(workflow, num_updates):
-    workflow.app.set_prop("num_updates", num_updates)
+def test_refill_precedes_slow_response_and_respects_budget(workflow, monkeypatch, num_updates):
+    monkeypatch.setattr(workflow.module, "NUM_UPDATES", num_updates)
     future = workflow.start()
     initial = [workflow.pending.get(timeout=5) for _ in range(2)]
     by_site = {call[0].target_name: call for call in initial}
