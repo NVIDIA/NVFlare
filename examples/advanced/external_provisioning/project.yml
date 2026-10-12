@@ -1,0 +1,29 @@
+api_version: 3
+name: demo
+description: Public-root-only provisioning with externally managed credentials
+
+participants:
+  - name: server
+    type: server
+    org: org
+    external_cert: true
+    external_job_ca: true
+  - name: site-1
+    type: client
+    org: org
+    external_cert: true
+  - name: admin-sso
+    type: admin
+    admin_cert_provider:
+      provider: step_ca
+      provider_config:
+        ca_url: https://ca.example.com
+        provisioner: oidc
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  - path: nvflare.lighter.impl.cert.CertBuilder
+    args:
+      public_root_cert: rootCA.pem
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

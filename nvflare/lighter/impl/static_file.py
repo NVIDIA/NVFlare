@@ -843,6 +843,7 @@ class StaticFileBuilder(Builder):
         # other local resources
         dest_dir = ctx.get_local_dir(relay)
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+        ctx.build_from_template(ctx.get_ws_dir(relay), TemplateSectionKey.RELAY_README, ProvFileName.README_TXT)
 
     def build(self, project: Project, ctx: ProvisionContext):
         server = project.get_server()
