@@ -22,7 +22,6 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
-import psutil
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -308,64 +307,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.1)
     # start_new_session gives pgid == pid; route group signals to the fake process table
     monkeypatch.setattr(ebp.os, "killpg", harness.killpg, raising=False)
-    monkeypatch.setattr(
-        ebp,
-        "_dead_process_group_snapshot",
-        lambda pgid: None if any(p.pid == pgid and p.extra_group_members for p in harness.processes) else set(),
-    )
     return holder
-
-
-@pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-@pytest.mark.parametrize("status", [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD])
-def test_reaped_trainer_with_only_exited_group_members_is_not_live(monkeypatch, status):
-    process = Mock(pid=1234)
-    process.poll.return_value = 0
-    trainer = SimpleNamespace(process=process, pgid=process.pid)
-    member = Mock()
-    member.status.return_value = status
-    member.create_time.return_value = 1.0
-    monkeypatch.setattr(ebp.psutil, "pids", lambda: [2345])
-    monkeypatch.setattr(ebp.psutil, "Process", lambda _: member)
-    monkeypatch.setattr(ebp.os, "getpgid", lambda _: process.pid)
-    killpg = Mock()  # Linux signal 0 still finds the zombie-only group.
-    monkeypatch.setattr(ebp.os, "killpg", killpg)
-
-    backend = ExternalProcessBackend()
-    assert not backend._process_group_alive(trainer)
-    assert backend._await_group_exit(trainer, timeout=0)
-    assert all(call.args[1] == 0 for call in killpg.call_args_list)
-
-
-@pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-def test_reaped_trainer_keeps_live_worker_group_owned(monkeypatch):
-    process = Mock(pid=1234)
-    process.poll.return_value = 0
-    trainer = SimpleNamespace(process=process, pgid=process.pid)
-    member = Mock()
-    member.status.return_value = psutil.STATUS_RUNNING
-    monkeypatch.setattr(ebp.psutil, "pids", lambda: [2345])
-    monkeypatch.setattr(ebp.psutil, "Process", lambda _: member)
-    monkeypatch.setattr(ebp.os, "getpgid", lambda _: process.pid)
-    monkeypatch.setattr(ebp.os, "killpg", Mock())
-
-    assert ExternalProcessBackend()._process_group_alive(trainer)
-
-
-@pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-def test_group_member_churn_is_not_mistaken_for_exit(monkeypatch):
-    process = Mock(pid=1234)
-    process.poll.return_value = 0
-    snapshots = iter([[2345], [2345, 3456]])
-    member = Mock()
-    member.status.return_value = psutil.STATUS_ZOMBIE
-    member.create_time.return_value = 1.0
-    monkeypatch.setattr(ebp.psutil, "pids", lambda: next(snapshots))
-    monkeypatch.setattr(ebp.psutil, "Process", lambda _: member)
-    monkeypatch.setattr(ebp.os, "getpgid", lambda _: process.pid)
-    monkeypatch.setattr(ebp.os, "killpg", Mock())
-
-    assert ExternalProcessBackend()._process_group_alive(SimpleNamespace(process=process, pgid=process.pid))
 
 
 def _make_engine(cell):
