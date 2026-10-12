@@ -133,9 +133,11 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
             patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
             patch("nvflare.tool.poc.poc_commands._stop_poc"),
-            patch("nvflare.tool.poc.poc_commands.time.time", side_effect=[0, 31]),
+            patch("nvflare.tool.poc.poc_commands.time") as mock_time,
             patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
         ):
+            # Keep the clock mock local so logging and other threads cannot consume its values.
+            mock_time.time.side_effect = [0, 31]
             with pytest.raises(
                 CLIException,
                 match="system is still running after shutdown was requested",
