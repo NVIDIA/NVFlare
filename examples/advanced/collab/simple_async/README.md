@@ -14,7 +14,16 @@ recipe and launch code at the bottom.
 
 ## Run
 
-From the NVFlare repository root:
+With NVFlare installed, download and run the standalone example:
+
+```bash
+nvflare examples get collab-simple-async
+cd collab-simple-async
+python -m pip install -r requirements.txt
+python job.py
+```
+
+Alternatively, from the NVFlare repository root:
 
 ```bash
 python -m pip install -e ".[PT]"
@@ -149,8 +158,8 @@ model.eval()
 
 ## Next steps
 
-- [In-time aggregation](../async_aggregation/avg_intime.py) uses a response
+- [In-time aggregation](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/async_aggregation/avg_intime.py) uses a response
   callback within **blocking, round-based** group calls.
-- [CIFAR-10 FedBuff](../pt_async_cifar10/README.md) adds buffered aggregation,
+- [CIFAR-10 FedBuff](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/pt_async_cifar10/README.md) adds buffered aggregation,
   scheduling controls, evaluation, and checkpointing.
-- [All Collab examples](../README.md) lists the other available examples.
+- [All Collab examples](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/README.md) lists the other available examples.
