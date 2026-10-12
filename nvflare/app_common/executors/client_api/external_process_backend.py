@@ -30,6 +30,8 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
+import psutil
+
 from nvflare.apis.fl_constant import (
     CellMessageAuthHeaderKey,
     ConnectionSecurity,
@@ -107,6 +109,27 @@ _SHUTDOWN_RETRY_INTERVAL = 1.0
 _TERMINAL_INTENT_ABORT = "abort"
 _TERMINAL_INTENT_FAILURE = "failure"
 _TERMINAL_INTENT_SHUTDOWN = "shutdown"
+
+
+def _dead_process_group_snapshot(pgid: int) -> Optional[set[tuple[int, float]]]:
+    """Return stable identities of exited members, or None if any member may run."""
+    dead_members = set()
+    try:
+        # Enumerate raw PIDs so a process that vanishes during inspection is
+        # treated as uncertain: it might have forked after the PID snapshot.
+        for pid in psutil.pids():
+            try:
+                if os.getpgid(pid) != pgid:
+                    continue
+                process = psutil.Process(pid)
+                if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    return None
+                dead_members.add((pid, process.create_time()))
+            except (OSError, psutil.Error):
+                return None
+    except (OSError, psutil.Error):
+        return None
+    return dead_members
 
 
 class _TaskReadyCancelSignal(Signal):
@@ -825,17 +848,36 @@ class ExternalProcessBackend(CellBackendBase):
         process = trainer.process
         if os.name != "posix" or trainer.pgid is None:
             return process is not None and process.poll() is None
-        if process is not None:
-            process.poll()
+        if process is not None and process.poll() is None:
+            return True
         try:
             os.killpg(trainer.pgid, 0)
-            return True
         except ProcessLookupError:
             return False
         except Exception as e:
             # Probe failure must not let teardown abandon an owned group.
             self.logger.debug(f"cannot probe trainer process group {trainer.pgid}: {e}")
             return True
+
+        # Signal 0 also succeeds for zombie-only groups. Confirm two identical
+        # dead-only snapshots so a worker forked during inspection is not missed.
+        first = _dead_process_group_snapshot(trainer.pgid)
+        if first is None:
+            return True
+        second = _dead_process_group_snapshot(trainer.pgid)
+        if second is None or first != second:
+            return True
+        if second:
+            return False
+        # An empty scan can follow group disappearance between the probe and
+        # enumeration. Recheck before retiring the group.
+        try:
+            os.killpg(trainer.pgid, 0)
+        except ProcessLookupError:
+            return False
+        except Exception:
+            return True
+        return True
 
     def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""
