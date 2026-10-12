@@ -145,6 +145,10 @@
     "source_path": "examples/advanced/experiment-tracking",
     "category": "advanced"
   },
+  "external-provisioning": {
+    "source_path": "examples/advanced/external_provisioning",
+    "category": "advanced"
+  },
   "hello-pt-environments": {
     "source_path": "examples/advanced/hello-pt-environments",
     "category": "advanced",

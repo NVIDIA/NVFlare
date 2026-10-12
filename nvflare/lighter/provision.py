@@ -24,6 +24,7 @@ from typing import Optional
 from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import participant_from_dict
+from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
@@ -399,6 +400,9 @@ def _normalize_project_name(project_dict):
 
 
 def provision_for_edge(params, project_dict):
+    builders = prepare_builders(project_dict)
+    if any(isinstance(b, CertBuilder) and b.public_root_cert is not None for b in builders):
+        raise ValueError("public_root_cert is not supported by hierarchical edge provisioning")
     project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
@@ -407,7 +411,6 @@ def provision_for_edge(params, project_dict):
     if not participants:
         raise ValueError("missing 'participants' in project config")
     admins = [participant_from_dict(p) for p in participants if p.get("type") == "admin"]
-    builders = prepare_builders(project_dict)
     hierachical_provision(params, project, builders, admins)
 
 
@@ -433,6 +436,9 @@ def provision(
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
     builders = prepare_builders(project_dict)
+    for builder in builders:
+        if isinstance(builder, CertBuilder) and builder.public_root_cert is not None:
+            builder.public_root_cert = os.path.join(os.path.dirname(project_full_path), builder.public_root_cert)
     packager = prepare_packager(project_dict)
     provisioner = Provisioner(workspace_full_path, builders, packager)
     return provisioner.provision(project)

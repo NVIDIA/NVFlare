@@ -90,7 +90,9 @@ class TestParticipant:
             Participant(name="server", type="server", org="org", props={PropKey.EXTERNAL_CERT: "true"})
 
     def test_external_cert_is_limited_to_workload_participants(self):
-        with pytest.raises(ValueError, match="external_cert is supported only for server and client participants"):
+        with pytest.raises(
+            ValueError, match="external_cert is supported only for server, client and relay participants"
+        ):
             Participant(
                 name="admin@example.com",
                 type="admin",
