@@ -53,8 +53,6 @@ class ExperimentOptionsTest(unittest.TestCase):
         return [
             "--device",
             "cpu",
-            "--load-dir",
-            str(root / "load"),
             "--output-dir",
             str(root / "output"),
             "--data-dir",
@@ -72,10 +70,23 @@ class ExperimentOptionsTest(unittest.TestCase):
         help_text = build_parser().format_help()
         self.assertNotIn("--test-split", help_text)
         self.assertNotIn("--use-g-encode", help_text)
+        for name in ("debug", "load_dir", "log_path", "dataset", "gamma", "gat_rounds", "class_per_task"):
+            self.assertNotIn(name, opt)
+            self.assertNotIn(f"--{name.replace('_', '-')}", help_text)
 
     def test_removed_flags_fail_in_config_and_job_before_preparation(self):
         for entrypoint in (parse_args, job.main):
-            for flag, value in (("--test-split", "0.3"), ("--use-g-encode", "false")):
+            for flag, value in (
+                ("--test-split", "0.3"),
+                ("--use-g-encode", "false"),
+                ("--debug", "true"),
+                ("--load-dir", "unused"),
+                ("--log-path", "unused"),
+                ("--dataset", "unused"),
+                ("--gamma", "1"),
+                ("--gat-rounds", "1"),
+                ("--class-per-task", "1"),
+            ):
                 with self.subTest(entrypoint=entrypoint.__module__, flag=flag):
                     args = self.arguments("removed") + [flag, value]
                     with (
@@ -106,6 +117,18 @@ class ExperimentOptionsTest(unittest.TestCase):
 
     def test_invalid_training_fractions_fail_before_filesystem_or_preparation(self):
         self.assert_invalid_before_preparation("--train-split", ("0", "1", "-0.2", "1.2", "nan", "inf", "-inf"))
+
+    def test_nonpositive_counts_fail_before_filesystem_or_preparation(self):
+        for flag in ("--num-task", "--num-rounds", "--num-local-epochs", "--batch-size"):
+            self.assert_invalid_before_preparation(flag, ("0", "-1"))
+        for value in ("0", "-1"):
+            with self.assertRaisesRegex(ValueError, "--num-clients"):
+                parse_args(self.arguments("clients") + ["--num-clients", value])
+            with patch.object(job, "prepare_bundles") as prepare, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    job.main(self.arguments("clients") + ["--num-clients", value])
+                prepare.assert_not_called()
+            self.assertFalse((self.root / "clients").exists())
 
     def test_invalid_weight_decay_fails_before_filesystem_or_preparation(self):
         self.assert_invalid_before_preparation("--weight-decay", ("-0.1", "nan", "inf", "-inf"))

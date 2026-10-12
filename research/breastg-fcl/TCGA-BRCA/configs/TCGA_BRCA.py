@@ -44,7 +44,6 @@ import torch
 from easydict import EasyDict
 
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEFAULT_LOAD_DIR = os.path.join(PROJECT_DIR, "dump")
 DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_DIR, "dump")
 DEFAULT_DATA_DIR = os.path.join(PROJECT_DIR, "data")
 DEFAULT_RAW_DIR = os.path.join(DEFAULT_DATA_DIR, "raw")
@@ -77,13 +76,9 @@ def build_parser():
     parser = argparse.ArgumentParser(description="TCGA-BRCA GFedCL configuration")
 
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--debug", type=_str2bool, default=False)
 
-    parser.add_argument("--load-dir", default=DEFAULT_LOAD_DIR)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--log-path", default=None)
 
-    parser.add_argument("--dataset", default="TCGA-BRCA")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
     parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
     parser.add_argument("--manifest-path", default=DEFAULT_MANIFEST_PATH)
@@ -120,7 +115,6 @@ def build_parser():
     parser.add_argument("--lr-f", type=float, default=1e-4)
     parser.add_argument("--lr-e", type=float, default=1e-4)
     parser.add_argument("--lr-g", type=float, default=1e-4)
-    parser.add_argument("--gamma", type=float, default=1000)
     parser.add_argument("--beta1", type=float, default=0.9)
     parser.add_argument("--beta2", type=float, default=0.999)
     parser.add_argument(
@@ -131,7 +125,6 @@ def build_parser():
     )
     parser.add_argument("--shuffle", type=_str2bool, default=True)
 
-    parser.add_argument("--gat-rounds", type=int, default=10)
     parser.add_argument(
         "--gat-epochs",
         type=int,
@@ -153,7 +146,6 @@ def build_parser():
     parser.add_argument("--graph-epsilon", type=float, default=1e-8)
 
     parser.add_argument("--num-task", type=int, default=3)
-    parser.add_argument("--class-per-task", type=int, default=2)
     parser.add_argument("--num-local-epochs", type=int, default=20)
     parser.add_argument("--num-rounds", type=int, default=10)
     parser.add_argument("--num-clients", type=int, default=4)
@@ -195,12 +187,15 @@ def build_parser():
 
 
 def finalize_opt(opt):
+    for name in ("num_task", "num_rounds", "num_local_epochs", "num_clients", "batch_size"):
+        value = getattr(opt, name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError(f"--{name.replace('_', '-')} must be a positive integer")
     if not math.isfinite(opt.train_split) or not 0 < opt.train_split < 1:
         raise ValueError("--train-split must be finite and strictly between 0 and 1")
     if not math.isfinite(opt.weight_decay) or opt.weight_decay < 0:
         raise ValueError("--weight-decay must be finite and nonnegative")
 
-    opt.train = not opt.debug
     if opt.device == "cuda" and not torch.cuda.is_available():
         opt.device = "cpu"
 
@@ -211,13 +206,9 @@ def finalize_opt(opt):
     else:
         opt.output_dir_is_default = False
 
-    os.makedirs(opt.load_dir, exist_ok=True)
     os.makedirs(opt.output_dir, exist_ok=True)
     os.makedirs(opt.data_dir, exist_ok=True)
     os.makedirs(opt.raw_dir, exist_ok=True)
-
-    if opt.log_path is None:
-        opt.log_path = os.path.join(opt.output_dir, "run.log")
 
     opt.b = opt.sensitivity / opt.epsilon if opt.epsilon != 0 else 0.0
     opt.nc = opt.num_classes

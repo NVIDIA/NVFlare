@@ -149,8 +149,8 @@
     }
   ],
   "implementation_validation": {
-    "date": "2026-10-10",
-    "scope": "Validation of the implementation after review fixes; the original search protocol and paper metrics above remain unchanged.",
+    "date": "2026-10-11",
+    "scope": "Author-reported regression validation after review fixes; final refits were performed on 2026-10-10; the original search protocol and paper metrics above remain unchanged.",
     "environment": {
       "name": "breastgfcl Miniconda",
       "python": "3.10.22",
@@ -159,7 +159,7 @@
       "numpy": "2.2.6",
       "nvflare": "2.9.0"
     },
-    "regression_tests_passed": 171,
+    "regression_tests_passed": 183,
     "multiprocess_cpu_smoke": {
       "status": "passed",
       "data": "synthetic fixture",
@@ -191,5 +191,25 @@
     "results_documentation": "../../README.md#recorded-nvflare-experiment",
     "validation_documentation": "../../README.md#expected-results"
   },
-  "status": "graph_equations_and_public_sources_reproduced_exact_author_attention_blocked"
+  "status": "graph_equations_and_public_sources_reproduced_exact_author_attention_blocked",
+  "maintenance_validation": {
+    "date": "2026-10-12",
+    "scope": "Regression and CLI maintenance validation; does not rerun the real-data experiments or CUDA validation.",
+    "environment": {
+      "python": "3.13.5",
+      "pytorch": "2.14.1",
+      "numpy": "2.5.4",
+      "nvflare": "2.9.0",
+      "device": "cpu"
+    },
+    "regression_tests_passed": 196,
+    "multiprocess_cpu_smoke": {
+      "status": "passed",
+      "clients": 4,
+      "tasks": 3,
+      "rounds_per_task": 2
+    },
+    "changed_file_style_check": "passed",
+    "whole_example_style_check": "Existing E226 whitespace warnings in unchanged breastgfcl.py and utils/plot_utils.py."
+  }
 }

@@ -428,9 +428,18 @@ and metric files listed above. The CPU smoke test produces the same kinds
 of training artifacts from its synthetic fixture. Smoke-test accuracy is
 only a diagnostic of the synthetic workflow, not an expected TCGA score.
 
-Validation on 2026-10-10 passed all **171 regression tests** in the
+Author validation reported on 2026-10-11 passed all **183 regression tests** in the
 `breastgfcl` environment. Scoped Black, isort, and flake8 checks, the example's
 license-header check, and `pip check` also passed.
+
+Maintenance validation on 2026-10-12 passed all **196 regression tests**,
+including offline TCIA checksum/workbook fixtures, unsupported-option rejection,
+positive experiment counts, and visualization failure handling. This CPU check
+used Python 3.13.5, PyTorch 2.14.1, NumPy 2.5.4, and NVFlare 2.9.0.
+The multiprocess CPU smoke also completed four clients, three tasks and six
+rounds, with both metric CSVs and private graphs matching the final checkpoint.
+The project style check passed for all changed Python files. The whole-example
+check reported existing whitespace warnings in unchanged files.
 
 The NVFlare 2.9.0 Collab CPU smoke completed all six rounds across four
 client processes and three tasks, with replay and client-side latent

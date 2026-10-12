@@ -232,7 +232,9 @@ class NVFlareJobTest(unittest.TestCase):
             with patch.object(collab_job.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
                 collab_job.run_simulator(self.opt, output / "job", output)
             command = run.call_args.args[0]
-            self.assertEqual(command[command.index("--nvflare-workspace") + 1], self.opt.nvflare_workspace)
+            self.assertEqual(
+                command[command.index("--nvflare-workspace") + 1], str(Path(self.opt.nvflare_workspace).resolve())
+            )
             self.assertEqual(command[command.index("--nvflare-gpu") + 1], "1")
 
     def test_exported_recipe_executes_with_public_simenv_and_its_own_site_bundles(self):
@@ -245,7 +247,7 @@ class NVFlareJobTest(unittest.TestCase):
             self.opt.device = "cuda"
             with patch.object(collab_job, "make_recipe") as make_recipe:
                 collab_job.execute_exported_job(self.opt)
-            prepared = Path(self.opt.run_exported_job)
+            prepared = Path(self.opt.run_exported_job).resolve()
             make_recipe.assert_called_once_with(
                 prepared / "app_server" / "config" / "data" / "server.pt",
                 [prepared / f"app_site-{i}" / "config" / "data" / "site.pt" for i in (1, 2)],
@@ -380,8 +382,7 @@ class NVFlareJobTest(unittest.TestCase):
     def test_selection_precedes_cuda_queries_in_all_launcher_modes(self):
         # Run a fresh interpreter so an already imported config cannot hide an
         # early CUDA query. The query stub observes visibility, without a GPU.
-        script = textwrap.dedent(
-            """
+        script = textwrap.dedent("""
             import os
             import sys
             from unittest.mock import patch
@@ -407,8 +408,7 @@ class NVFlareJobTest(unittest.TestCase):
                      patch.object(job, 'run_simulator', side_effect=lambda *a: available()), \
                      patch.object(torch.cuda, 'empty_cache'):
                     job.main(sys.argv[1:])
-            """
-        )
+            """)
         for mode in ([], ["--export-only"], ["--run-exported-job", "/tmp/exported"]):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 env = dict(os.environ)
@@ -510,8 +510,7 @@ class NVFlareJobTest(unittest.TestCase):
                     prepare.assert_not_called()
 
     def test_nvflare_entrypoint_exports_a_smoke_job_without_ray(self):
-        script = textwrap.dedent(
-            """
+        script = textwrap.dedent("""
             import importlib.abc
             import sys
 
@@ -528,8 +527,7 @@ class NVFlareJobTest(unittest.TestCase):
 
             main.main(sys.argv[1:])
             assert not any(name == "ray" or name.startswith("ray.") for name in sys.modules)
-        """
-        )
+        """)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "smoke export"
             result = subprocess.run(

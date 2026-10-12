@@ -332,8 +332,10 @@ The reruns used the `breastgfcl` Miniconda environment with Python **3.10.22**,
 PyTorch **2.5.1** (CUDA **12.4**), NumPy **2.2.6**, and NVFlare **2.9.0**.
 This differs from the original recorded environment and does not claim
 bitwise reproduction of its models. The same corrected implementation
-passed **171 regression tests** and the multiprocess CPU smoke described
-below; see [validation results](../README.md#expected-results).
+passed **183 regression tests** in the author validation reported on 2026-10-11
+and the multiprocess CPU smoke described below; see [validation results](../README.md#expected-results). Maintenance
+validation on 2026-10-12 passed the expanded **196-test** regression suite,
+including offline TCIA workbook/download and CLI failure coverage.
 
 The standard launcher uses `--seed` for both data preparation and training.
 Changing it on each CLI run also changes the patient/task/client partition,

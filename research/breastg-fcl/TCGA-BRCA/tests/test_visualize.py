@@ -111,6 +111,38 @@ class VisualizeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self._assert_png(self.work_dir / output_path)
 
+    def test_cli_rejects_missing_empty_and_malformed_csv(self):
+        path = self.work_dir / "invalid.csv"
+        for content in (
+            None,
+            "",
+            "Round,Average Accuracy\n",
+            "Round,Average Accuracy\nTask 1,invalid\n",
+            "wrong,columns\na,b\n",
+            "Round,Average Accuracy\nTask 1,nan\n",
+        ):
+            with self.subTest(content=content):
+                path.unlink(missing_ok=True)
+                if content is not None:
+                    path.write_text(content)
+                output = self.work_dir / "invalid.png"
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(Path(PROJECT_DIR) / "visualize.py"),
+                        "--csv_path",
+                        str(path),
+                        "--output_path",
+                        str(output),
+                    ],
+                    env={**os.environ, "MPLBACKEND": "Agg"},
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(output.exists())
+
     def test_cli_saves_to_basename_in_working_directory(self):
         self._run_cli("curve.png")
 

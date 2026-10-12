@@ -48,6 +48,7 @@ Usage:
 """
 
 import argparse
+import math
 import os
 
 import matplotlib.pyplot as plt
@@ -103,21 +104,15 @@ def visualize_training_curve(csv_path, output_path, figsize=(12, 6), dpi=300):
         figsize: Tuple of (width, height) for the figure size
         dpi: DPI for the saved figure
     """
-    # Load data from CSV
-    try:
-        df = pd.read_csv(csv_path)
-        print(f"Loaded data from {csv_path}")
-
-        # Extract round labels and accuracy values
-        round_labels = df["Round"].tolist()
-
-        # Convert accuracy to float if it's stored as string
-        if isinstance(df["Average Accuracy"].iloc[0], str):
-            round_accuracy = [float(acc.strip("%")) for acc in df["Average Accuracy"]]
-        else:
-            round_accuracy = df["Average Accuracy"].tolist()
-    except Exception as e:
-        raise ValueError(f"Error loading CSV file: {e}") from e
+    # Propagate loading/schema errors so CLI callers receive a nonzero exit.
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        raise ValueError("Round accuracy CSV must contain at least one round")
+    round_labels = df["Round"].tolist()
+    round_accuracy = pd.to_numeric(df["Average Accuracy"].astype(str).str.rstrip("%"), errors="raise").tolist()
+    if not all(math.isfinite(value) for value in round_accuracy):
+        raise ValueError("Round accuracy CSV must contain finite accuracy values")
+    print(f"Loaded data from {csv_path}")
 
     # Determine task boundaries and end points
     task_boundaries = []
