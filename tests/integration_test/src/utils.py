@@ -63,13 +63,31 @@ def run_provision_command(project_yaml: str, workspace: str):
     run_command_and_wait(command)
 
 
-def process_group_alive(process):
-    process.poll()  # reap the leader before probing its group
+def process_group_has_live_members(pgid):
+    """A group with only unreaped zombies has no running processes to stop."""
     try:
-        os.killpg(process.pid, 0)
-        return True
+        os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
+
+    # Signal 0 checks whether the group exists, including zombie members.
+    # Check member state before treating the group as a surviving process.
+    for member in psutil.process_iter(["status"]):
+        try:
+            if os.getpgid(member.pid) == pgid and member.info["status"] not in (
+                psutil.STATUS_ZOMBIE,
+                psutil.STATUS_DEAD,
+            ):
+                return True
+        except (ProcessLookupError, psutil.NoSuchProcess):
+            continue
+    return False
+
+
+def process_group_alive(process):
+    if process.poll() is None:
+        return True
+    return process_group_has_live_members(process.pid)
 
 
 def stop_process_group(process, graceful_timeout=5.0, kill_timeout=5.0):

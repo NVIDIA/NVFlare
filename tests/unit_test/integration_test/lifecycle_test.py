@@ -19,8 +19,10 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
 
+import psutil
 import pytest
 
+from tests.integration_test import system_test
 from tests.integration_test.src import poc_site_launcher, site_launcher, utils
 from tests.integration_test.src.poc_site_launcher import POCSiteLauncher
 from tests.integration_test.src.site_launcher import ServerProperties
@@ -98,21 +100,40 @@ def test_dead_server_fails_before_attempting_connection(launcher, clock, monkeyp
     connect.assert_not_called()
 
 
-def test_stop_reaps_departed_leader_and_signals_remaining_owned_group(clock, monkeypatch):
+def test_stop_reaps_departed_leader_and_signals_remaining_owned_group(monkeypatch):
     process = Mock(pid=1234, returncode=0)
-    alive = [True]
+    process.poll.return_value = 0
+    member = Mock(pid=2345, info={"status": psutil.STATUS_RUNNING})
+    monkeypatch.setattr(utils.psutil, "process_iter", lambda *_: [member])
+    monkeypatch.setattr(utils.os, "getpgid", lambda _: process.pid)
 
     def killpg(pgid, sig):
         if sig:
-            alive[0] = False
-        elif not alive[0]:
-            raise ProcessLookupError(pgid)
+            member.info["status"] = psutil.STATUS_ZOMBIE
 
     killpg = Mock(side_effect=killpg)
     monkeypatch.setattr(utils.os, "killpg", killpg)
     utils.stop_process_group(process)
     assert call(1234, utils.signal.SIGTERM) in killpg.call_args_list
     process.poll.assert_called()
+
+
+@pytest.mark.parametrize("status", [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD])
+def test_exited_group_members_do_not_fail_site_or_background_cleanup(monkeypatch, status):
+    process = Mock(pid=1234, returncode=0)
+    process.poll.return_value = 0
+    member = Mock(pid=2345, info={"status": status})
+    monkeypatch.setattr(utils.psutil, "process_iter", lambda *_: [member])
+    monkeypatch.setattr(utils.os, "getpgid", lambda _: process.pid)
+    killpg = Mock()  # Linux can find a group containing only unreaped zombies.
+    monkeypatch.setattr(utils.os, "killpg", killpg)
+
+    utils.stop_process_group(process, graceful_timeout=0, kill_timeout=0)
+    system_test._stop_background_processes([("command", process, process.pid)], graceful_timeout=0, kill_timeout=0)
+
+    assert killpg.call_args_list
+    assert all(call_args.args[1] == 0 for call_args in killpg.call_args_list)
+    process.wait.assert_called_once_with(timeout=0)
 
 
 def test_command_timeout_cleans_group_and_preserves_original_failure(monkeypatch):

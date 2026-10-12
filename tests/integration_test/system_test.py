@@ -33,7 +33,12 @@ from tests.integration_test.src import (
     read_yaml,
     run_command_in_subprocess,
 )
-from tests.integration_test.src.utils import run_cleanup_steps, run_command_and_wait, wait_command_process
+from tests.integration_test.src.utils import (
+    process_group_has_live_members,
+    run_cleanup_steps,
+    run_command_and_wait,
+    wait_command_process,
+)
 
 
 def _print_newlines(repeat=5):
@@ -83,15 +88,12 @@ def _resolve_test_config_path(config_dir: str, path: str) -> str:
 
 
 def _is_process_group_alive(pgid: int) -> bool:
-    """Return whether a process group still has at least one member."""
+    """Return whether a process group still has a live member."""
 
     try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
+        return process_group_has_live_members(pgid)
     except PermissionError:
         return True
-    return True
 
 
 def _wait_for_process_groups(processes, timeout: float) -> list:
@@ -100,9 +102,7 @@ def _wait_for_process_groups(processes, timeout: float) -> list:
     deadline = time.monotonic() + timeout
     remaining = list(processes)
     while remaining:
-        # Reap direct children before probing the group: a terminated leader
-        # remains a zombie until poll()/wait(), and would otherwise make killpg
-        # report the group as alive even when no descendants remain.
+        # Reap direct children; the group probe also ignores unreaped zombies.
         for _, process, _ in remaining:
             process.poll()
 
