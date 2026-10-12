@@ -54,6 +54,13 @@ _EXAMPLES = [
     ),
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,
+        "collab.simple_async.job",
+        SimpleNamespace(num_updates=8),
+        (),
+        id="simple_async",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
         "collab.swarm.swarm",
         SimpleNamespace(num_clients=3, num_rounds=5),
         (),
