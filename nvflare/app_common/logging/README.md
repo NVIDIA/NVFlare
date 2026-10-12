@@ -161,7 +161,7 @@ window. Re-registering the receiver during the same run preserves its active
 streams.
 
 If an accepted stream is still active when that budget expires, or it ends
-without a persisted log, the receiver records the affected client, log file,
+without a persisted log, the job-level receiver records the affected client, log file,
 and reason in the job's `incomplete_log_streams` metadata. The record appears in
 `nvflare job wait`, `nvflare job monitor`, `nvflare job meta`, and the downloaded
 `meta.json`. The job's execution status can still be `FINISHED:COMPLETED`;

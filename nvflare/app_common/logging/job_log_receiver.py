@@ -20,7 +20,14 @@ from collections import OrderedDict
 from functools import partial
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FLContextKey,
+    ProcessType,
+    ReturnCode,
+    SystemComponents,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.storage import DataTypes
@@ -201,11 +208,13 @@ class JobLogReceiver(Widget):
     def _incomplete_record(client: str, log_file_name: str, reason: str) -> dict:
         return {"client": client, "log_file": log_file_name, "reason": reason}
 
-    def _mark_stream_done(self, stream_ctx: StreamContext, incomplete_reason: str = None):
+    def _mark_stream_done(
+        self, stream_ctx: StreamContext, incomplete_reason: str = None, record_incomplete: bool = True
+    ):
         with self._active_stream_lock:
             removed = self._active_streams.pop(id(stream_ctx), None)
             if removed is not None:
-                if incomplete_reason:
+                if incomplete_reason and record_incomplete:
                     _, client, job_id, log_file_name = removed
                     self._incomplete_streams.append(
                         (job_id, self._incomplete_record(client, log_file_name, incomplete_reason))
@@ -316,7 +325,11 @@ class JobLogReceiver(Widget):
             incomplete_reason = "persistence_error"
             raise
         finally:
-            self._mark_stream_done(stream_ctx, incomplete_reason)
+            # The long-lived parent receiver does not receive a per-job END_RUN,
+            # so retaining failed streams here would grow without bound.
+            self._mark_stream_done(
+                stream_ctx, incomplete_reason, record_incomplete=fl_ctx.get_process_type() != ProcessType.SERVER_PARENT
+            )
 
     def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)

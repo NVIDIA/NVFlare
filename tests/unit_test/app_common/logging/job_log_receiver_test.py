@@ -610,6 +610,15 @@ def test_failed_stream_records_incomplete_log_after_callback(log_transports, rec
     )
 
 
+def test_parent_receiver_does_not_retain_failed_streams(log_transports):
+    receiver, streamer, fl_ctx = log_transports(ProcessType.SERVER_PARENT)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("failed", data=b"partial\n"), fl_ctx)
+    streamer._end_tx("failed", ReturnCode.TIMEOUT, fl_ctx)
+
+    assert not receiver._active_streams
+    assert not receiver._incomplete_streams
+
+
 def test_start_run_reopens_admission_after_previous_run(log_transports, receiver_clock):
     receiver, streamer, fl_ctx = log_transports()
     assert not _ready_to_end(receiver)
