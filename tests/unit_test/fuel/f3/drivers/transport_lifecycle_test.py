@@ -480,6 +480,55 @@ def test_connection_close_notification_is_idempotent():
     assert states == [ConnState.CONNECTED, ConnState.CLOSED]
 
 
+def test_connection_admitted_before_shutdown_closes_after_connected_notification():
+    driver = TcpDriver()
+    entered = threading.Event()
+    resume = threading.Event()
+    close_started = threading.Event()
+    states = []
+    monitor = MagicMock()
+    monitor.state_change.side_effect = lambda conn: states.append(conn.state)
+    driver.register_conn_monitor(monitor)
+
+    class PausingConnection:
+        def __init__(self):
+            self.name = "racing_connection"
+            self.connector = SimpleNamespace(stopped=threading.Event())
+            self.state = ConnState.IDLE
+            self.pause_connected = True
+
+        def __setattr__(self, name, value):
+            if name == "state" and value == ConnState.CONNECTED and getattr(self, "pause_connected", False):
+                entered.set()
+                resume.wait(5)
+            object.__setattr__(self, name, value)
+
+        def close(self):
+            close_started.set()
+            driver.close_connection(self)
+
+    conn = PausingConnection()
+    adder = threading.Thread(target=driver.add_connection, args=(conn,))
+    closer = threading.Thread(target=driver.close_all)
+    try:
+        adder.start()
+        assert entered.wait(5)
+        driver.stop_connection_admission()
+        closer.start()
+        assert close_started.wait(5)
+    finally:
+        resume.set()
+        adder.join(5)
+        if closer.ident is not None:
+            closer.join(5)
+
+    assert not adder.is_alive()
+    assert not closer.is_alive()
+    assert not driver.connections
+    assert conn.state == ConnState.CLOSED
+    assert states == [ConnState.CONNECTED, ConnState.CLOSED]
+
+
 def test_manager_requests_all_shutdowns_and_waits_for_completion_before_join():
     manager = ConnManager(Endpoint("shutdown_order"))
     calls = []
