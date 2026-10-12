@@ -663,7 +663,7 @@ class Recipe(ABC):
             file_names = ("log.json",)
 
         for name in file_names:
-            self._add_to_client_apps(JobLogStreamer(log_file_name=name), execution_scope="job")
+            self._add_to_client_apps(JobLogStreamer(log_file_name=name))
         self._job.to_server(JobLogReceiver())
 
     def enable_tensor_streaming(
@@ -730,7 +730,6 @@ class Recipe(ABC):
                 tensor_send_timeout=tensor_send_timeout,
             ),
             id="tensor_client_streamer",
-            execution_scope="job",
         )
         self._tensor_streaming_added = True
 

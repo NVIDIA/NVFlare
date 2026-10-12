@@ -28,6 +28,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
@@ -81,18 +82,68 @@ def test_jobs_cannot_select_site_policy_or_state(field):
         prepare_task_execution(config)
 
 
-def test_scope_dependencies_use_argument_values_and_preserve_dicts():
+def test_compute_dependencies_use_argument_values_and_preserve_dicts():
     config = _config()
-    config["components"] = [{"id": "resident", "path": "unused.Resident", "execution_scope": "job"}]
-    config["executors"][0]["executor"]["args"]["source_model"] = "resident"
-    with pytest.raises(ValueError, match="another execution scope"):
-        prepare_task_execution(config)
-    del config["executors"][0]["executor"]["args"]["source_model"]
+    config["components"] = [
+        {"id": "model", "path": "unused.Model", "args": {"data_loader_id": "loader"}},
+        {"id": "loader", "path": "unused.Loader"},
+        {"id": "receiver", "path": "unused.Receiver"},
+    ]
+    config["executors"][0]["executor"]["args"]["source_model"] = "model"
     ordinary = {"config_type": "dict", "path": "data", "options": {"name": "model"}}
     config["executors"][0]["executor"]["args"]["options"] = ordinary
     plan = prepare_task_execution(config)
+    assert [c["id"] for c in plan.executors[0].components] == ["model", "loader"]
+    assert [c["id"] for c in plan.job_components] == ["receiver"]
     assert plan.executors[0].executor["args"]["options"] == ordinary
     assert config["executors"][0]["executor"]["args"]["options"] == ordinary
+    config["components"][1]["args"] = {"mutated": True}
+    assert "args" not in plan.executors[0].components[1]
+
+
+def test_each_executor_gets_its_own_dependency_graph():
+    config = _config()
+    config["components"] = [
+        {"id": "train_model", "path": "unused.Model", "component_dependencies": ["loader"]},
+        {"id": "eval_model", "path": "unused.Model", "args": {"data_loader_id": "loader"}},
+        {"id": "loader", "path": "unused.Loader"},
+        {"id": "receiver", "path": "unused.Receiver"},
+    ]
+    config["executors"] = [
+        {"tasks": ["train"], "executor": {"path": "unused.Trainer", "args": {"model_id": "train_model"}}},
+        {"tasks": ["eval"], "executor": {"path": "unused.Validator", "args": {"model_id": "eval_model"}}},
+    ]
+    plan = prepare_task_execution(config)
+    assert [c["id"] for c in plan.executors[0].components] == ["train_model", "loader"]
+    assert [c["id"] for c in plan.executors[1].components] == ["eval_model", "loader"]
+    assert [c["id"] for c in plan.job_components] == ["receiver"]
+
+
+@pytest.mark.parametrize("consumer", ["task_data_filters", "task_result_filters", "receiver"])
+def test_compute_dependencies_cannot_be_shared_with_cj_services(consumer):
+    config = _config(source_model="model")
+    config["components"] = [{"id": "model", "path": "unused.Model"}]
+    service = {"path": "unused.Service", "args": {"helper_id": "model"}}
+    if consumer == "receiver":
+        config["components"].append({"id": "receiver", **service})
+    else:
+        config[consumer] = [{"tasks": ["train"], "filters": [service]}]
+    with pytest.raises(ValueError, match="shared by compute and resident CJ services.*model"):
+        prepare_task_execution(config)
+
+
+def test_cj_filter_dependencies_stay_resident_and_task_names_are_not_references():
+    config = _config(source_model="train")
+    config["components"] = [
+        {"id": "train", "path": "unused.Model"},
+        {"id": "filter_helper", "path": "unused.Helper"},
+    ]
+    config["task_data_filters"] = [
+        {"tasks": ["train"], "filters": [{"path": "unused.Filter", "args": {"helper_id": "filter_helper"}}]}
+    ]
+    plan = prepare_task_execution(config)
+    assert [c["id"] for c in plan.executors[0].components] == ["train"]
+    assert [c["id"] for c in plan.job_components] == ["filter_helper"]
 
 
 def test_nested_scope_is_rejected():
@@ -101,7 +152,7 @@ def test_nested_scope_is_rejected():
         "path": "unused.Helper",
         "execution_scope": "job",
     }
-    with pytest.raises(ValueError, match="enclosing"):
+    with pytest.raises(ValueError, match="execution_scope is not supported"):
         prepare_task_execution(config)
 
 
@@ -185,14 +236,13 @@ def _configure(tmp_path, config, authorizer=None):
 
 def test_client_config_does_not_import_or_construct_task_graph(tmp_path):
     config = _config()
-    config["executors"][0]["executor"] = {"path": "never_imported.TaskExecutor", "args": {}}
+    config["executors"][0]["executor"] = {"path": "never_imported.TaskExecutor", "args": {"helper_id": "worker"}}
     config["components"] = [
         {"id": "worker", "path": "never_imported.Helper", "args": {"default_task_fetch_interval": -10}},
         {
             "id": "converter",
             "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
             "args": {"events_to_convert": ["analytix_log_stats"]},
-            "execution_scope": "job",
         },
     ]
     configurator = _configure(tmp_path, config)
@@ -276,6 +326,56 @@ while flare.is_running():
         current_round=model.current_round)
     flare.send(result)
 """
+
+
+def test_referenced_compute_dependency_is_recreated_for_each_assignment(native_task):
+    _, custom, context, policy = native_task
+    (custom / "compute_probe.py").write_text(
+        """
+import uuid
+from nvflare.apis.executor import Executor
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.shareable import Shareable
+
+class DataLoader(FLComponent):
+    def __init__(self):
+        super().__init__()
+        self.instance = str(uuid.uuid4())
+        self.calls = 0
+
+    def load(self):
+        self.calls += 1
+        return self.calls
+
+class Trainer(Executor):
+    def __init__(self, data_loader_id):
+        super().__init__()
+        self.data_loader_id = data_loader_id
+
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        loader = fl_ctx.get_engine().get_component(self.data_loader_id)
+        return Shareable({"calls": loader.load(), "instance": loader.instance})
+"""
+    )
+    config = _config()
+    config["executors"][0]["executor"] = {
+        "path": "compute_probe.Trainer",
+        "args": {"data_loader_id": "loader"},
+    }
+    config["components"] = [{"id": "loader", "path": "compute_probe.DataLoader"}]
+    plan = prepare_task_execution(config).executors[0]
+    adapter = TaskWorkerExecutor(plan.executor, plan.components, policy)
+    adapter.handle_event(EventType.START_RUN, context)
+    results = []
+    try:
+        for attempt in (1, 2):
+            context.set_prop(FLContextKey.TASK_ID, f"task-{attempt}", private=True, sticky=True)
+            context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{attempt}", private=True, sticky=True)
+            results.append(adapter.execute("train", Shareable(), context, Signal()))
+        assert [result["calls"] for result in results] == [1, 1]
+        assert results[0]["instance"] != results[1]["instance"]
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
 
 
 def _adapter(custom, context, policy, script=SCRIPT, **args):

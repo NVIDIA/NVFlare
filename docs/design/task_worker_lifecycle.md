@@ -15,20 +15,21 @@ authorizes inert executor and component specifications in the Client Job and aga
 in the worker before importing application code. Compute instances are constructed
 only in the worker. Task data and result filters always stay in the Client Job.
 
-In task mode, components default to `execution_scope: "task"`; explicitly mark
-resident federation widgets and receivers `"job"`. Component references must stay
-within their scope, including IDs passed under arbitrary constructor argument
-names. Ordinary dictionaries are preserved. Nested components share their owning
-graph's scope. Jobs cannot configure the framework's internal adapter, launcher,
+In task mode, each worker receives the executor and its referenced compute
+dependencies, including transitive component IDs passed under arbitrary constructor
+argument names or listed in `component_dependencies`. Other components, including
+tracking receivers and federation widgets, remain resident in the Client Job
+automatically. Ordinary dictionaries are preserved and nested compute helpers are
+created with their owning executor. A component cannot be shared between the compute
+graph and a resident service or task filter. There are no per-component lifetime
+flags. Jobs cannot configure the framework's internal adapter, launcher,
 environment policy or declared task state.
 
-`FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`,
-`job.to_clients(component, execution_scope="job")`,
-`job.set_component_scope(component_id, "job", target=...)`, and
+`FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`, and
 `recipe.set_execution_lifetime(...)` expose these controls. The unified and PyTorch
-FedAvg recipes also accept `execution_lifetime="task"`. Export validates the
-receiving sites' GPU resource/launcher settings; unrelated job-lifetime GPU apps
-in the same deployment remain valid.
+FedAvg and PyTorch FedProx recipes also accept `execution_lifetime="task"`. Export
+validates the receiving sites' GPU resource/launcher settings; unrelated job-lifetime
+GPU apps in the same deployment remain valid.
 
 The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
 runs on the worker's main thread, receives one assigned model, and hands off one

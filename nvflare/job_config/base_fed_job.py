@@ -140,4 +140,4 @@ class BaseFedJob(FedJob):
 
     def set_up_client(self, target: str):
         """Setup client components."""
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target, execution_scope="job")
+        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)

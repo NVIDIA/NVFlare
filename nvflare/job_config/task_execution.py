@@ -90,7 +90,7 @@ def _timeout(name, value):
     return value
 
 
-def _dependencies(config, ids, scope=None, component=False):
+def _dependencies(config, ids, component=False):
     """Track declared IDs and reference arguments without changing their values.
 
     Argument names do not determine references. In particular, the whole args
@@ -107,8 +107,8 @@ def _dependencies(config, ids, scope=None, component=False):
             except ConfigError:
                 pass
         if component:
-            if config.get("execution_scope", scope) != scope:
-                raise ValueError("nested components must share their enclosing execution_scope")
+            if "execution_scope" in config:
+                raise ValueError("component execution_scope is not supported; compute dependencies define placement")
             declared = config.get("component_dependencies", [])
             if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
                 raise ValueError("component_dependencies must be a list of component IDs")
@@ -122,10 +122,10 @@ def _dependencies(config, ids, scope=None, component=False):
         else:
             children = config.values()
         for value in children:
-            found.update(_dependencies(value, ids, scope))
+            found.update(_dependencies(value, ids))
     elif isinstance(config, (list, tuple)):
         for value in config:
-            found.update(_dependencies(value, ids, scope))
+            found.update(_dependencies(value, ids))
     elif isinstance(config, str) and config in ids:
         found.add(config)
     return found
@@ -154,30 +154,29 @@ def prepare_task_execution(client_config):
         raise ValueError("task execution requires client executors")
     if not isinstance(components, list):
         raise ValueError("client components must be a list")
-    scopes = {}
+    by_id = {}
     for component in components:
         if not isinstance(component, dict) or not isinstance(component.get("id"), str) or not component["id"]:
             raise ValueError("client components must have nonempty string IDs")
-        if component["id"] in scopes:
+        if component["id"] in by_id:
             raise ValueError(f"duplicate component ID {component['id']!r}")
-        scope = component.get("execution_scope", ExecutionLifetime.TASK)
-        if scope not in (ExecutionLifetime.JOB, ExecutionLifetime.TASK):
-            raise ValueError("component execution_scope must be 'job' or 'task'")
-        scopes[component["id"]] = scope
+        by_id[component["id"]] = component
+    ids = set(by_id)
+    references = {cid: _dependencies(spec, ids, component=True) for cid, spec in by_id.items()}
 
-    def validate_dependencies(config, scope, component=False):
-        conflicts = {name for name in _dependencies(config, set(scopes), scope, component) if scopes[name] != scope}
-        if conflicts:
-            raise ValueError(f"{scope}-owned component depends on another execution scope: {sorted(conflicts)}")
+    def closure(roots):
+        selected = set()
+        pending = set(roots)
+        while pending:
+            cid = pending.pop()
+            if cid not in selected:
+                selected.add(cid)
+                pending.update(references[cid] - selected)
+        return selected
 
-    for component in components:
-        validate_dependencies(component, scopes[component["id"]], component=True)
-    for name in ("task_data_filters", "task_result_filters"):
-        validate_dependencies(client_config.get(name, []), ExecutionLifetime.JOB)
-    worker_components = tuple(copy.deepcopy(c) for c in components if scopes[c["id"]] == ExecutionLifetime.TASK)
-    job_components = tuple(copy.deepcopy(c) for c in components if scopes[c["id"]] == ExecutionLifetime.JOB)
     scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
     plans = []
+    compute_ids = set()
     for definition in executors:
         if not isinstance(definition, dict) or not isinstance(definition.get("executor"), dict):
             raise ValueError("each executor must have a component specification")
@@ -197,7 +196,9 @@ def prepare_task_execution(client_config):
                     "task lifetime requires in_process Client API; external_process/attach use job lifetime"
                 )
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
-        validate_dependencies(config, "task", component=True)
+        worker_ids = closure(_dependencies(config, ids, component=True))
+        compute_ids.update(worker_ids)
+        worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in worker_ids)
         plans.append(
             TaskExecutorConfig(
                 copy.deepcopy(config),
@@ -206,4 +207,14 @@ def prepare_task_execution(client_config):
                 result_timeout,
             )
         )
+    # Existing filters and components outside the selected compute graph stay
+    # with the CJ. Site filters are added by the normal privacy pipeline there.
+    resident_roots = ids - compute_ids
+    for name in ("task_data_filters", "task_result_filters"):
+        for definition in client_config.get(name, []):
+            resident_roots.update(_dependencies(definition.get("filters", []), ids))
+    shared = closure(resident_roots) & compute_ids
+    if shared:
+        raise ValueError(f"components shared by compute and resident CJ services are not supported: {sorted(shared)}")
+    job_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in compute_ids)
     return TaskExecutionConfig(tuple(plans), job_components)

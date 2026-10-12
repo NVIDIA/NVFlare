@@ -117,9 +117,10 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return
+        compute_ids = {component["id"] for plan in self.task_execution.executors for component in plan.components}
         worker_paths = []
         for index, component in enumerate(self.config_data.get("components", []), 1):
-            if component.get("execution_scope", "task") == "task":
+            if component["id"] in compute_ids:
                 worker_paths.append((f"components.#{index}", component))
         for index, definition in enumerate(self.config_data["executors"], 1):
             worker_paths.append((f"executors.#{index}.executor", definition["executor"]))

@@ -22,6 +22,7 @@ from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.task_execution import prepare_task_execution
 from nvflare.recipe.fedavg import FedAvgRecipe
 
 
@@ -43,11 +44,12 @@ def test_export_preserves_job_default_and_supports_task_lifetime(tmp_path):
     assert "execution_lifetime" not in json.loads(path.read_text())
     job.set_execution_lifetime("task")
     converter = ConvertToFedEvent(["analytix_log_stats"])
-    job.to_clients(converter, id="converter", execution_scope="job")
+    job.to_clients(converter, id="converter")
     job.export_job(str(tmp_path))
     config = json.loads(path.read_text())
     assert config["execution_lifetime"] == "task"
-    assert config["components"][0]["execution_scope"] == "job"
+    assert prepare_task_execution(config).job_components[0]["id"] == "converter"
+    assert "execution_scope" not in config["components"][0]
     assert config["executors"][0]["executor"]["path"].endswith(".ClientAPIExecutor")
 
 
@@ -97,5 +99,6 @@ def test_recipe_exports_native_task_profile_with_resident_federation_widget(tmp_
     recipe._job.export_job(str(tmp_path / "export"))
     config = json.loads((tmp_path / "export" / recipe.name / "app" / "config" / "config_fed_client.json").read_text())
     assert config["execution_lifetime"] == "task"
-    assert next(c for c in config["components"] if c["id"] == "event_to_fed")["execution_scope"] == "job"
+    assert "event_to_fed" in {c["id"] for c in prepare_task_execution(config).job_components}
+    assert all("execution_scope" not in c for c in config["components"])
     assert config["executors"][0]["executor"]["args"]["execution_mode"] == "in_process"

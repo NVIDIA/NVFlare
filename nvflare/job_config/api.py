@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import builtins
 import os.path
 import re
 import uuid
@@ -248,14 +247,6 @@ class FedJob:
                 raise ValueError("execution lifetime applies to client apps")
             self.to({"execution_lifetime": lifetime}, target)
 
-    def set_component_scope(self, comp_id: str, scope: str, target: str = ALL_SITES):
-        """Keep a client component resident ('job') or recreate it per task ('task')."""
-        scope = ExecutionLifetime.validate(scope)
-        app = self._deploy_map.get(target)
-        if not isinstance(app, ClientApp) or comp_id not in app.app_config.components:
-            raise ValueError(f"unknown client component {comp_id!r} for {target!r}")
-        app.app_config.component_scopes[comp_id] = scope
-
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
         When generating job config, code from these packages will not be included into "custom" folder.
@@ -294,7 +285,6 @@ class FedJob:
         obj: Any,
         target: str,
         id=None,
-        execution_scope=None,
         **kwargs,
     ) -> Any:
         """Assign an object to the target. For end users.
@@ -303,7 +293,6 @@ class FedJob:
             obj: the object to be assigned
             target: the target that the object is assigned to
             id: the id of the object
-            execution_scope: optional 'job' or 'task' scope for client components.
             **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         If the obj provides the add_to_fed_job method, it will be called with the kwargs.
@@ -331,10 +320,6 @@ class FedJob:
         self._validate_target(target)
 
         target_type = JobTargetType.get_target_type(target)
-        if execution_scope is not None:
-            ExecutionLifetime.validate(execution_scope)
-            if target_type != JobTargetType.CLIENT or isinstance(obj, (Executor, str, dict)):
-                raise ValueError("execution_scope applies to client components")
         app = self._deploy_map.get(target)
         if not app:
             if target_type == JobTargetType.SERVER:
@@ -366,7 +351,6 @@ class FedJob:
                     raise ValueError(f"this object can only be assigned to client, but tried to assign to {target}")
 
         add_to_job_method = getattr(obj, _ADD_TO_JOB_METHOD_NAME, None)
-        prior_components = set(app.app_config.components)
         if add_to_job_method is not None:
             ctx = JobCtx(obj, target, id)
             result = add_to_job_method(self, ctx, **kwargs)
@@ -377,15 +361,6 @@ class FedJob:
         # add any other components the object might have referenced via id
         if self._components:
             self._add_referenced_components(obj, target)
-        if execution_scope is not None:
-            scoped = set(app.app_config.components) - prior_components
-            existing_id = app._oid_to_cid.get(builtins.id(obj))
-            if existing_id:
-                scoped.add(existing_id)
-            if not scoped:
-                raise ValueError("execution_scope requires a registered client component")
-            for cid in scoped:
-                self.set_component_scope(cid, execution_scope, target)
         return result
 
     def _add_referenced_components(self, base_component, target):

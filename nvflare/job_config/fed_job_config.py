@@ -678,8 +678,6 @@ class FedJobConfig:
                     "args": self._get_args(component, custom_dir),
                 }
             )
-            if cid in app.component_scopes:
-                app_config["components"][-1]["execution_scope"] = app.component_scopes[cid]
 
         app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
         app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)
