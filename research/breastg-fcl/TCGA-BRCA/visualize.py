@@ -117,8 +117,7 @@ def visualize_training_curve(csv_path, output_path, figsize=(12, 6), dpi=300):
         else:
             round_accuracy = df["Average Accuracy"].tolist()
     except Exception as e:
-        print(f"Error loading CSV file: {e}")
-        return
+        raise ValueError(f"Error loading CSV file: {e}") from e
 
     # Determine task boundaries and end points
     task_boundaries = []
