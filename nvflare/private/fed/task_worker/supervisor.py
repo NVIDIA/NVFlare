@@ -75,6 +75,7 @@ class TaskSupervisorOutcome:
     completion: Optional[TaskCompletion] = None
     analytics: tuple[dict, ...] = ()
     aborted: bool = False
+    execution_status: Optional[TaskExecutionStatus] = None
 
 
 @dataclass
@@ -182,7 +183,12 @@ class TaskSupervisor:
             self._cancel(attempt)
 
     def end_run(self):
-        """Close admission, cancel owned execution, then attempt safe cleanup."""
+        """Close admission, cancel owned execution, then attempt safe cleanup.
+
+        A concurrent staging/launch call may still be acquiring its handle.
+        The caller must join its running ``run`` call before discarding this
+        owner. That call cancels a late handle and retains unresolved ownership.
+        """
         with self._state_lock:
             self._stopping = True
         try:
@@ -208,8 +214,12 @@ class TaskSupervisor:
             raise TypeError("input_payload and abort_signal must be Shareable and Signal")
         if not isinstance(launcher, TaskLauncherSpec):
             raise TypeError("launcher must be a TaskLauncherSpec")
-        if os.path.abspath(bootstrap.artifact_root) != os.path.abspath(store.root_dir):
+        if not isinstance(store, FileTaskArtifactStore):
+            raise TypeError("store must be a FileTaskArtifactStore")
+        if os.path.realpath(bootstrap.artifact_root) != store.root_dir:
             raise ValueError("bootstrap artifact root does not match the owned store")
+        if bootstrap.max_payload_bytes != store.max_payload_bytes:
+            raise ValueError("bootstrap and owned store must use the same payload policy")
         if not self._execution_lock.acquire(blocking=False):
             raise RuntimeError("this task supervisor already has an active attempt")
         attempt = None
@@ -253,13 +263,24 @@ class TaskSupervisor:
             if handle.request.identity != launch_identity:
                 raise ValueError("launcher handle does not match owned task attempt identity")
             status = self._wait(attempt, abort_signal, options)
-            self._diagnostic(attempt, "settled", execution_id=handle.execution_id, exit_code=status.exit_code)
+            self._diagnostic(
+                attempt,
+                "settled",
+                execution_id=handle.execution_id,
+                exit_code=status.exit_code,
+                termination_signal=status.termination_signal,
+                failure_reason=status.failure_reason,
+                cancel_requested=status.cancel_requested,
+            )
             if self._aborted(attempt, abort_signal) or status.cancel_requested:
                 attempt.failed = True
-                return TaskSupervisorOutcome(identity=identity, aborted=True)
-            if not status.succeeded:
-                raise RuntimeError(f"task worker failed: {status.failure_reason or status}")
+                return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
             # Only a settled execution can authorize reading its completion.
+            # A later process failure cannot erase a fully verified completion.
+            # Keep abnormal-exit and post-publication failure artifacts anyway.
+            attempt.failed |= not status.succeeded or os.path.lexists(
+                os.path.join(store.attempt_dir(identity), "failure.json")
+            )
             result, completion = store.read_result(identity)
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
@@ -270,11 +291,11 @@ class TaskSupervisor:
             with self._state_lock:
                 if self._aborted(attempt, abort_signal):
                     attempt.failed = True
-                    return TaskSupervisorOutcome(identity=identity, aborted=True)
+                    return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
                 attempt.validated = True
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
             self._diagnostic(attempt, "validated", worker_pid=completion.worker_pid, worker_ppid=completion.worker_ppid)
-            return TaskSupervisorOutcome(identity, result, completion, analytics)
+            return TaskSupervisorOutcome(identity, result, completion, analytics, execution_status=status)
         except BaseException as e:
             if attempt is not None:
                 attempt.failed = True

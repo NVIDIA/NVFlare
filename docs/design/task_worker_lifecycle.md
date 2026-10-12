@@ -1,9 +1,10 @@
 # Task worker lifecycle and integration contract
 
-P3 provides one stateless Process worker for an ordinary Executor. P4 connects
-that worker to the Client Job supervisor and the existing result submission path.
-Local completion, physical process settlement, and server receipt are separate
-facts.
+P3 provides one stateless Process worker for an ordinary Executor. P4 adds a plain,
+role-neutral TaskSupervisor that owns its execution and artifact lifetime. Client
+Job adapter wiring and the existing result submission path remain later integration
+work. Local completion, physical process settlement, and server receipt are
+separate facts.
 
 ## Execution and diagnostics
 
@@ -66,8 +67,27 @@ P4 must validate completion identity, worker PID, payload size and digest, and
 confirm physical settlement before consuming a result. A fully verified completion
 is evidence of finished local computation even when a later process error or
 post-publication failure diagnostic exists. Those later facts do not erase local
-completion. The current standalone supervisor requires successful process status;
-the integration PR must implement and test the intended precedence explicitly.
+completion. TaskSupervisor returns the verified result and the observed execution
+status independently, retaining payloads when execution failed or failure.json
+exists. Missing or invalid completion still fails validation after settlement.
+
+The supervisor has one job lifetime and admits one active physical attempt at a
+time. Unconfirmed settlement permanently prevents further attempts on that
+instance and retains its handle and artifacts. end_run closes admission and
+cancels known execution. If launch is still acquiring a handle, the caller must
+join its run call before discarding the supervisor; that call owns and cancels
+the late handle. There is no reset or automatic physical retry.
+
+For publication, the caller validates the reply's workflow, task, and attempt
+before calling record_receipt. RETRY or unknown receipt retains the saved result.
+The default job-end cleanup requires confirmed settlement, a validated successful
+result, RECEIVED or TASK_CLOSED, and no outstanding transfer_reader leases. Each
+actual transport reader must hold a lease until its final source read, including
+after cancellation or receipt. Cleanup excludes new readers once release starts;
+failed cleanup retains that exclusion while allowing cleanup retries. Explicit
+retention and failed attempts keep their payloads. Completion and diagnostic
+records remain after successful payload release. Closure says nothing about an
+earlier upload's receipt or aggregation use.
 
 A local completion never overrides Client Job/task cancellation or authorizes
 network publication by itself. The adapter must drain pending launches during job

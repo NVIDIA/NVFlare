@@ -14,8 +14,10 @@
 
 import json
 import os
+import signal
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -36,8 +38,6 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
 )
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, read_bootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
@@ -56,11 +56,6 @@ class RecordingLauncher(TaskLauncherSpec):
 
     def launch_task(self, request):
         raise NotImplementedError()
-
-
-@pytest.fixture(autouse=True)
-def _initialize_fobs():
-    fobs.register(DictDecomposer(Shareable))
 
 
 def _attempt(tmp_path, *, attempt_id="attempt-1"):
@@ -440,18 +435,90 @@ def test_application_failure_receipt_still_retains_failed_result(tmp_path):
     assert _payload(attempt).exists()
 
 
-def test_worker_failure_is_settled_before_retaining_without_result_reads(tmp_path):
+def test_worker_failure_without_completion_is_settled_before_validation(tmp_path):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
     handle.wait_for_settlement.return_value = replace(SETTLED, exit_code=2)
-    attempt["store"].read_result = Mock()
-    with pytest.raises(RuntimeError, match="worker failed"):
+    original = attempt["launcher"].launch_task.side_effect
+
+    def incomplete(request):
+        original(request)
+        (_payload(attempt).parent / "completion.json").unlink()
+        return handle
+
+    attempt["launcher"].launch_task.side_effect = incomplete
+    with pytest.raises(IncompleteTaskArtifactError):
         supervisor.run(**attempt)
     handle.wait_for_settlement.assert_called_once()
     handle.cancel.assert_not_called()
-    attempt["store"].read_result.assert_not_called()
     supervisor.end_run()
     assert _payload(attempt).exists()
+
+
+@pytest.mark.parametrize(
+    "status",
+    [replace(SETTLED, exit_code=7), replace(SETTLED, exit_code=None, termination_signal=signal.SIGKILL)],
+)
+def test_verified_completion_survives_later_process_failure_but_retains_evidence(tmp_path, status):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    handle.wait_for_settlement.return_value = status
+    outcome = supervisor.run(**attempt)
+    assert outcome.result["value"] == 2
+    assert outcome.execution_status == status
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    supervisor.end_run()
+    assert _payload(attempt).exists()
+    assert _records(attempt)[1]["termination_signal"] == status.termination_signal
+
+
+def test_verified_completion_with_failure_diagnostic_retains_payload(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    original = attempt["launcher"].launch_task.side_effect
+
+    def post_publication_failure(request):
+        original(request)
+        attempt["store"].record_failure(
+            attempt["bootstrap"].identity,
+            worker_pid=os.getpid(),
+            worker_ppid=os.getppid(),
+            started_at=1.0,
+            failed_at=2.0,
+            error_type="OSError",
+            message="directory fsync failed after publication",
+        )
+        return handle
+
+    attempt["launcher"].launch_task.side_effect = post_publication_failure
+    outcome = supervisor.run(**attempt)
+    assert outcome.result["value"] == 2
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    supervisor.end_run()
+    assert _payload(attempt).exists()
+    assert (_payload(attempt).parent / "failure.json").exists()
+
+
+@pytest.mark.parametrize("bootstrap_limit, store_limit", [(None, 1000), (1000, None), (1000, 2000)])
+def test_store_and_worker_must_use_same_payload_policy(tmp_path, bootstrap_limit, store_limit):
+    supervisor = TaskSupervisor()
+    attempt, _ = _attempt(tmp_path)
+    attempt["bootstrap"] = replace(attempt["bootstrap"], max_payload_bytes=bootstrap_limit)
+    attempt["store"] = FileTaskArtifactStore(attempt["store"].root_dir, max_payload_bytes=store_limit)
+    with pytest.raises(ValueError, match="payload policy"):
+        supervisor.run(**attempt)
+    attempt["launcher"].launch_task.assert_not_called()
+    assert not Path(attempt["store"].attempt_dir(attempt["bootstrap"].identity)).exists()
+
+
+def test_trusted_artifact_directory_alias_matches_store(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, _ = _attempt(tmp_path)
+    Path(attempt["store"].root_dir).mkdir()
+    alias = tmp_path / "artifact-alias"
+    alias.symlink_to(attempt["store"].root_dir, target_is_directory=True)
+    attempt["bootstrap"] = replace(attempt["bootstrap"], artifact_root=str(alias))
+    assert supervisor.run(**attempt).result["value"] == 2
 
 
 def test_abort_during_settlement_does_not_read_result(tmp_path):
@@ -565,7 +632,8 @@ def test_options_reject_invalid_timeouts(name, value):
     os.name != "posix" or not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "P_PID")),
     reason="Process launcher requires supported POSIX waitid/WNOWAIT (macOS Python >= 3.13)",
 )
-def test_real_p3_worker_p2_launcher_settles_and_imports_this_checkout(tmp_path):
+@pytest.mark.parametrize("fault", ["none", "exit", "signal", "fsync", "cancel"])
+def test_real_p3_worker_p2_launcher_completion_and_settlement(tmp_path, fault):
     supervisor = TaskSupervisor()
     attempt, _ = _attempt(tmp_path)
     workspace = tmp_path / "workspace"
@@ -591,27 +659,93 @@ def test_real_p3_worker_p2_launcher_settles_and_imports_this_checkout(tmp_path):
     attempt["launcher"] = ProcessTaskLauncher(stop_grace_period=1.0, poll_interval=0.01)
     attempt["options"] = TaskSupervisorOptions(worker_timeout=30, poll_interval=0.01)
     repo_root = Path(__file__).resolve().parents[5]
+    marker = tmp_path / "completed"
+    # Inject failures at the actual completion boundary without replacing the
+    # real worker entry, authorization, guardian, or Process launcher.
+    injected_entry = f"""
+import os, signal, stat, time
+from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+original = FileTaskArtifactStore.commit_staged_result
+def commit(self, identity, *args, **kwargs):
+    if {fault!r} == 'fsync':
+        sync = os.fsync
+        def fail_once(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode) and os.path.exists(
+                os.path.join(self.attempt_dir(identity), 'completion.json')
+            ):
+                os.fsync = sync
+                raise OSError('injected directory fsync failure after completion')
+            return sync(fd)
+        os.fsync = fail_once
+    result = original(self, identity, *args, **kwargs)
+    if {fault!r} == 'exit':
+        os._exit(7)
+    if {fault!r} == 'signal':
+        os.kill(os.getpid(), signal.SIGKILL)
+    if {fault!r} == 'cancel':
+        with open({str(marker)!r}, 'w') as stream:
+            stream.write('completed')
+        while True:
+            time.sleep(0.01)
+    return result
+FileTaskArtifactStore.commit_staged_result = commit
+from nvflare.private.fed.app.client.task_worker_process import main
+main()
+"""
 
     def request_factory(identity, bootstrap_path):
+        argv = (
+            (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process")
+            if fault == "none"
+            else (sys.executable, "-c", injected_entry)
+        )
         return TaskLaunchRequest(
             identity.job_id,
             identity.site_name,
             identity.task_id,
             identity.attempt_id,
-            (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap", bootstrap_path),
+            (*argv, "--bootstrap", bootstrap_path),
             environment={"PYTHONPATH": str(repo_root)},
             cwd=str(repo_root),
         )
 
     attempt["request_factory"] = request_factory
+    if fault == "cancel":
+        with ThreadPoolExecutor() as pool:
+            running = pool.submit(supervisor.run, **attempt)
+            try:
+                deadline = time.monotonic() + 20
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                assert marker.exists(), "worker did not publish completion"
+                supervisor.cancel_active()
+                outcome = running.result(timeout=10)
+            finally:
+                supervisor.end_run()
+        assert outcome.aborted and outcome.result is None
+        assert outcome.execution_status.settled
+        assert supervisor._active is None
+        assert _payload(attempt).exists()
+        assert (_payload(attempt).parent / "completion.json").exists()
+        return
     outcome = supervisor.run(**attempt)
     assert outcome.result["value"] == 2
     assert outcome.result["pid"] != os.getpid()
     assert outcome.result["pid"] == outcome.completion.worker_pid
     assert Path(outcome.result["source"]).resolve() == repo_root / "nvflare" / "__init__.py"
+    assert outcome.execution_status.settled
+    if fault == "exit":
+        assert outcome.execution_status.exit_code == 7
+    elif fault == "signal":
+        assert outcome.execution_status.termination_signal == signal.SIGKILL
+    elif fault == "fsync":
+        assert outcome.execution_status.exit_code == 1
+        assert (_payload(attempt).parent / "failure.json").exists()
+    else:
+        assert outcome.execution_status.succeeded
     assert supervisor._active is None
     with supervisor.transfer_reader(outcome.identity):
         supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
         supervisor.end_run()
         assert _payload(attempt).exists()
-    assert not _payload(attempt).exists()
+    assert _payload(attempt).exists() is (fault != "none")
