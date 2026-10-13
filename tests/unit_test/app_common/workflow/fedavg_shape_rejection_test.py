@@ -110,10 +110,14 @@ def test_shape_rejection_keeps_fedavg_open_for_valid_subset(monkeypatch, backend
         ]
         for i, model in enumerate(contributions, start=1):
             client = Client(f"site-{i}", f"token-{i}")
-            task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+            task_name, task_id, task_data = comm.process_task_request(client, controller.fl_ctx)
             if i == 2:
                 before = snapshot_round(controller)
-            comm.process_submission(client, task_name, task_id, FLModelUtils.to_shareable(model), controller.fl_ctx)
+            result = FLModelUtils.to_shareable(model)
+            # Real clients echo the assignment cookie jar, including the attempt identity.
+            for name, value in (task_data.get_cookie_jar() or {}).items():
+                result.add_cookie(name, value)
+            comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
             accepted.append(controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
             assert task.completion_status is None
             if i == 2:
@@ -153,8 +157,10 @@ def test_no_accepted_contributions_prevents_update_and_save(monkeypatch, empty_r
             comm.broadcast(task, **kwargs)
             for i in range(1, 4):
                 client = Client(f"site-{i}", f"token-{i}")
-                task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+                task_name, task_id, task_data = comm.process_task_request(client, controller.fl_ctx)
                 result = FLModelUtils.to_shareable(FLModel(params={}))
+                for name, value in (task_data.get_cookie_jar() or {}).items():
+                    result.add_cookie(name, value)
                 comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
                 assert controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is False
             comm.check_tasks()
@@ -182,8 +188,10 @@ def test_shape_error_after_parameter_accumulation_is_fatal(monkeypatch):
         comm.broadcast(task, **kwargs)
         for i in range(1, 4):
             client = Client(f"site-{i}", f"token-{i}")
-            task_name, task_id, _ = comm.process_task_request(client, controller.fl_ctx)
+            task_name, task_id, task_data = comm.process_task_request(client, controller.fl_ctx)
             result = FLModelUtils.to_shareable(FLModel(params={"w": np.ones(2)}, metrics={"score": np.ones(2)}))
+            for name, value in (task_data.get_cookie_jar() or {}).items():
+                result.add_cookie(name, value)
             comm.process_submission(client, task_name, task_id, result, controller.fl_ctx)
             assert controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is False
         comm.check_tasks()

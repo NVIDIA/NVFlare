@@ -70,9 +70,10 @@ def test_shape_rejection_keeps_broadcast_open_for_later_valid_result(monkeypatch
             ({"early": np.array([100.0, 200.0]), "w": np.array([10.0])}, 4),
             ({"early": np.array([6.0, 8.0]), "w": np.array([5.0, 6.0])}, 3),
         ]
-        for client, (task_name, task_id, _), (data, steps) in zip(clients, assignments, contributions):
+        for client, (task_name, task_id, task_data), (data, steps) in zip(clients, assignments, contributions):
             result = DXO(DataKind.WEIGHT_DIFF, data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: steps}).to_shareable()
             result.set_peer_props({ReservedKey.IDENTITY_NAME: client.name})
+            result.set_cookie_jar(dict(task_data.get_cookie_jar()))
             result.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             comm.process_submission(client, task_name, task_id, result, fl_ctx)
             accepted.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
