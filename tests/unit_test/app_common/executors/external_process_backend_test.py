@@ -1906,43 +1906,107 @@ class TestHeartbeatAndOperationalLiveness:
             import sys
             import time
             from types import SimpleNamespace
+            from unittest.mock import patch
 
             from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             assert ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
             backend = ExternalProcessBackend()
-            worker_code = "import time; time.sleep(2)"
-            launcher_code = (
-                "import subprocess,sys; "
-                "p=subprocess.Popen([sys.executable, '-c', %r]); "
-                "print(p.pid, flush=True)" % worker_code
-            )
-            launcher = subprocess.Popen(
-                [sys.executable, "-c", launcher_code],
-                start_new_session=True,
-                stdout=subprocess.PIPE,
-                text=True,
-            )
-            worker_pid = int(launcher.stdout.readline())
-            assert launcher.wait(timeout=3) == 0
-            trainer = SimpleNamespace(process=launcher, pgid=launcher.pid)
-            assert backend._process_group_alive(trainer), "live orphaned worker was missed"
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline:
-                with open(f"/proc/{worker_pid}/stat") as stat_file:
-                    state = stat_file.read().rsplit(")", 1)[1].split()[0]
-                if state == "Z":
-                    break
-                time.sleep(0.02)
-            assert state == "Z", f"worker never became a zombie: {state}"
-            os.killpg(trainer.pgid, 0)  # the original liveness probe still succeeds
-            assert not backend._process_group_alive(trainer)
-            assert backend._await_group_exit(trainer, 0.1)
-            os.waitpid(worker_pid, 0)  # reap the adopted child before leaving the test process
+
+            def states(pid):
+                with open(f"/proc/{pid}/stat") as stat_file:
+                    leader = stat_file.read().rsplit(")", 1)[1].split()[0]
+                threads = []
+                for tid in os.listdir(f"/proc/{pid}/task"):
+                    try:
+                        with open(f"/proc/{pid}/task/{tid}/stat") as stat_file:
+                            threads.append(stat_file.read().rsplit(")", 1)[1].split()[0])
+                    except FileNotFoundError:
+                        continue
+                return leader, threads
+
+            def exercise(main_thread_exits):
+                read_fd, write_fd = os.pipe()
+                launcher = None
+                worker_pid = None
+                try:
+                    if main_thread_exits:
+                        worker_code = (
+                            "import ctypes,os,sys,threading; "
+                            "threading.Thread(target=lambda: os.read(int(sys.argv[1]), 1)).start(); "
+                            "ctypes.CDLL(None).pthread_exit(None)"
+                        )
+                    else:
+                        worker_code = "import os,sys; os.read(int(sys.argv[1]), 1)"
+                    launcher_code = (
+                        "import subprocess,sys; "
+                        f"p=subprocess.Popen([sys.executable, '-c', {worker_code!r}, {str(read_fd)!r}], "
+                        f"pass_fds=({read_fd},)); "
+                        "print(p.pid, flush=True)"
+                    )
+                    launcher = subprocess.Popen(
+                        [sys.executable, "-c", launcher_code],
+                        start_new_session=True,
+                        stdout=subprocess.PIPE,
+                        text=True,
+                        pass_fds=(read_fd,),
+                    )
+                    os.close(read_fd)
+                    read_fd = None
+                    worker_pid = int(launcher.stdout.readline())
+                    assert launcher.wait(timeout=5) == 0
+                    trainer = SimpleNamespace(process=launcher, pgid=launcher.pid)
+                    if main_thread_exits:
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            leader, threads = states(worker_pid)
+                            if leader == "Z" and any(state != "Z" for state in threads):
+                                break
+                            time.sleep(0.02)
+                        assert leader == "Z" and any(state != "Z" for state in threads)
+                    assert backend._process_group_alive(trainer), "live orphaned worker was missed"
+                    os.write(write_fd, b"x")
+                    os.close(write_fd)
+                    write_fd = None
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        leader, threads = states(worker_pid)
+                        if leader == "Z" and threads and all(state == "Z" for state in threads):
+                            break
+                        time.sleep(0.02)
+                    assert leader == "Z" and threads and all(state == "Z" for state in threads)
+                    os.killpg(trainer.pgid, 0)  # the original liveness probe still succeeds
+                    real_scandir = os.scandir
+
+                    def deny_task_status(path):
+                        if path.endswith("/task"):
+                            raise PermissionError("task status unavailable")
+                        return real_scandir(path)
+
+                    with patch.object(os, "scandir", deny_task_status):
+                        assert backend._process_group_alive(trainer), "unknown thread state must stay conservative"
+                    assert not backend._process_group_alive(trainer)
+                    assert backend._await_group_exit(trainer, 0.1)
+                finally:
+                    if read_fd is not None:
+                        os.close(read_fd)
+                    if write_fd is not None:
+                        os.close(write_fd)
+                    if launcher is not None:
+                        try:
+                            os.killpg(launcher.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        launcher.wait(timeout=5)
+                    if worker_pid is not None:
+                        os.waitpid(worker_pid, 0)
+
+            exercise(main_thread_exits=False)
+            exercise(main_thread_exits=True)
             """
         )
-        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=15)
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=20)
         assert result.returncode == 0, result.stdout + result.stderr
 
 

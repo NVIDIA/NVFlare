@@ -872,11 +872,42 @@ class ExternalProcessBackend(CellBackendBase):
                         continue
                     if state not in ("Z", "X", "x"):
                         return True
+                    # A process leader can be a zombie after pthread_exit()
+                    # while other threads in that process keep running.
+                    threads_live = self._linux_process_has_live_threads(entry.name)
+                    if threads_live is None:
+                        return None
+                    if threads_live:
+                        return True
                     found_zombie = True
         except (OSError, ValueError) as e:
             self.logger.debug(f"cannot inspect trainer process group {pgid} in procfs: {e}")
             return None
         return False if found_zombie else None
+
+    @staticmethod
+    def _linux_process_has_live_threads(pid: str) -> Optional[bool]:
+        """Return None unless procfs exposes at least one thread state."""
+        found_dead = False
+        try:
+            with os.scandir(f"/proc/{pid}/task") as threads:
+                for thread in threads:
+                    if not thread.name.isdecimal():
+                        continue
+                    try:
+                        with open(f"/proc/{pid}/task/{thread.name}/stat", encoding="utf-8") as stat_file:
+                            stat = stat_file.read()
+                    except FileNotFoundError:
+                        continue
+                    fields = stat[stat.rfind(")") + 2 :].split()
+                    if not fields:
+                        return None
+                    if fields[0] not in ("Z", "X", "x"):
+                        return True
+                    found_dead = True
+        except OSError:
+            return None
+        return False if found_dead else None
 
     def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""
