@@ -57,7 +57,8 @@ def main():
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
-        model.load_state_dict(input_model.params)
+        if input_model.params:
+            model.load_state_dict(input_model.params)
         model.to(device)
 
         steps = epochs * len(train_loader)

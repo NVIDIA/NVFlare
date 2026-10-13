@@ -4,12 +4,12 @@ FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
+ENV PYTHONPATH=/local/custom
 
 RUN pip install -U pip &&\
-    pip install nvflare~=2.7.1rc
+    pip install nvflare~=2.9.0
 COPY code/ /local/custom
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--once", "--verify"]
-
