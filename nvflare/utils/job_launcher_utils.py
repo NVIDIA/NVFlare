@@ -487,7 +487,9 @@ def _launcher_spec_has_byoc(mode: str, spec: dict) -> bool:
     if not isinstance(spec, dict):
         return False
     byoc_keys = DOCKER_JOB_BYOC_KEYS if mode == "docker" else {"image", "python_path"}
-    if byoc_keys.intersection(spec):
+    if any(key in spec for key in byoc_keys - {"image"}):
+        return True
+    if spec.get("image"):
         return True
     return mode == "slurm" and spec.get("additional_node_command") is not None
 

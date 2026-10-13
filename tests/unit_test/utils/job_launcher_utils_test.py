@@ -228,6 +228,8 @@ class TestHasByocLauncherSpec:
             {},
             {"launcher_spec": {"default": {"docker": {"shm_size": "8g"}}}},
             {"launcher_spec": {"site-1": {"k8s": {"num_of_gpus": 1}}}},
+            {"launcher_spec": {"site-1": {"docker": {"image": None}}}},
+            {"launcher_spec": {"site-1": {"docker": {"image": ""}}}},
             {"launcher_spec": {"site-1": {"slurm": {"additional_node_command": None}}}},
             {"resource_spec": {"site-1": {"num_of_gpus": 1}}},
         ],
@@ -246,6 +248,12 @@ class TestHasByocLauncherSpec:
         assert has_byoc_launcher_spec(meta)
         assert not has_byoc_launcher_spec(meta, "site-1")
         assert has_byoc_launcher_spec(meta, "site-2")
+
+    def test_null_docker_image_is_not_byoc_during_submission_or_site_resolution(self):
+        meta = {"launcher_spec": {"site-1": {"docker": {"image": None}}}}
+
+        assert not has_byoc_launcher_spec(meta)
+        assert not has_byoc_launcher_spec(meta, "site-1")
 
 
 class TestPortableResourceSpec:

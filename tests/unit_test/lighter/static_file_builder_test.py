@@ -373,14 +373,17 @@ class TestStaticFileBuilder:
             assert not authorized
 
         project_admin = Person("project_admin", "project_org", "project_admin")
-        authorized, error = authorizer.authorize(
-            AuthzContext(
-                user=project_admin,
-                submitter=project_admin,
-                right=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
+        for name, right in vars(AdminCommandNames).items():
+            if name.startswith("_") or not isinstance(right, str):
+                continue
+            authorized, error = authorizer.authorize(
+                AuthzContext(
+                    user=project_admin,
+                    submitter=project_admin,
+                    right=right,
+                )
             )
-        )
-        assert authorized, error
+            assert authorized, f"project_admin lost the '{right}' right: {error}"
 
     def test_master_template_allows_non_edge_regression_components(self):
         """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).

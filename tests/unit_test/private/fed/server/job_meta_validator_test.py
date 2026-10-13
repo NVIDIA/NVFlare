@@ -407,6 +407,23 @@ class TestJobMetaValidator:
         assert error == ""
         assert AppValidationKey.BYOC not in meta
 
+    def test_null_launcher_image_is_not_derived_as_byoc(self):
+        job_name = "study_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={
+                "deploy_map": {"app": ["server", "site-1"]},
+                JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"docker": {"image": None}}},
+            },
+            server_config={"format_version": 2, "workflows": []},
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert AppValidationKey.BYOC not in meta
+
     def test_ignores_user_byoc_true_without_custom_folder(self):
         meta = """
         {
