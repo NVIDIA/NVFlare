@@ -92,7 +92,7 @@ release-policy shape. CPU-only releases require exactly `cpu0`; GPU releases
 require exactly `cpu0` and `gpu0`. Signed CPU evidence must identify the approved
 TEE. Present failing GPU evidence cannot be ignored or downgraded to CPU-only.
 Expected EAR vectors are exact: SNP, TDX, and NVIDIA GPU use `(3,2,2)`
-for executables/hardware/configuration; the other five fields are zero.
+for executables/hardware/configuration, with no additional vector fields.
 
 Changing image digest, command, application security context, agent policy or
 trust configuration requires a newly generated and separately approved release.
