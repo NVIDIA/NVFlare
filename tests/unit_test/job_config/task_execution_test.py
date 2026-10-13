@@ -14,6 +14,7 @@
 
 
 import json
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -154,3 +155,44 @@ def test_invalid_component_scope_does_not_attach_a_filter_before_raising():
     assert app.task_result_filters == []
     job.to_clients(task_filter, filter_type=FilterType.TASK_RESULT)
     assert len(app.task_result_filters) == 1
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_fedjob_temporary_params_preserve_site_lifetimes_and_restore(tmp_path, fail):
+    job = _job()
+    for site, lifetime in (("site-1", "task"), ("site-2", "job")):
+        job.to(_executor(), site)
+        job.set_execution_lifetime(lifetime, target=site)
+        job.to({"timeout": 600}, site)
+    before = {target: dict(app.app_config.additional_params) for target, app in job._deploy_map.items()}
+
+    expected = pytest.raises(RuntimeError, match="deployment failed") if fail else nullcontext()
+    with expected:
+        with job.temporary_exec_params(server_exec_params={}, client_exec_params={}):
+            job.export_job(str(tmp_path))
+            for site, lifetime, version in (("site-1", "task", 3), ("site-2", "job", 2)):
+                path = tmp_path / job.name / f"app_{site}" / "config" / "config_fed_client.json"
+                config = json.loads(path.read_text())
+                assert config["execution_lifetime"] == lifetime
+                assert config["format_version"] == version
+                assert "timeout" not in config
+            assert job._deploy_map["server"].app_config.additional_params == {}
+            if fail:
+                raise RuntimeError("deployment failed")
+
+    after = {target: dict(app.app_config.additional_params) for target, app in job._deploy_map.items()}
+    assert after == before
+
+
+def test_fedjob_temporary_lifetime_override_restores_declared_task_job(tmp_path):
+    job = _job("task")
+    job.to_clients(_executor())
+    with job.temporary_exec_params(client_exec_params={"execution_lifetime": "job"}):
+        job.export_job(str(tmp_path / "temporary"))
+        path = tmp_path / "temporary" / job.name / "app" / "config" / "config_fed_client.json"
+        assert json.loads(path.read_text())["format_version"] == 2
+    job.export_job(str(tmp_path / "restored"))
+    path = tmp_path / "restored" / job.name / "app" / "config" / "config_fed_client.json"
+    config = json.loads(path.read_text())
+    assert config["execution_lifetime"] == "task"
+    assert config["format_version"] == 3

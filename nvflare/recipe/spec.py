@@ -316,58 +316,11 @@ class Recipe(ABC):
 
         return []
 
-    def _snapshot_additional_params(self) -> Dict[str, Dict]:
-        snapshot = {}
-        deploy_map = getattr(self._job, "_deploy_map", {})
-        for target, app in deploy_map.items():
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                snapshot[target] = dict(params)
-        return snapshot
-
-    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
-        deploy_map = getattr(self._job, "_deploy_map", {})
-        for target, app in deploy_map.items():
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                original = snapshot.get(target, {})
-                params.clear()
-                params.update(original)
-
-    def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
-        deploy_map = getattr(self._job, "_deploy_map", {})
-        for target in targets:
-            app = deploy_map.get(target)
-            if app is None:
-                continue
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                params.clear()
-                params.update(new_params)
-
     @contextmanager
     def _temporary_exec_params(
         self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
     ):
-        """Temporarily override per-target additional_params during execute/export.
-
-        Semantics:
-        - None: leave the target's existing additional_params unchanged.
-        - non-empty dict: temporarily apply/merge those params for the target.
-        - empty dict ({}): temporarily clear execution params for this call,
-          preserving the declared client execution lifetime.
-
-        Any original additional_params are restored when the context exits.
-        """
+        """Check recipe secret inputs, then delegate temporary job parameters."""
         if server_exec_params:
             warn_on_potential_secrets(server_exec_params, context="server_exec_params")
             warn_on_unsupported_secret_ref_keys(server_exec_params, context="server_exec_params")
@@ -375,36 +328,8 @@ class Recipe(ABC):
             warn_on_potential_secrets(client_exec_params, context="client_exec_params")
             warn_on_unsupported_secret_ref_keys(client_exec_params, context="client_exec_params")
 
-        params_snapshot = None
-        if server_exec_params is not None or client_exec_params is not None:
-            params_snapshot = self._snapshot_additional_params()
-
-        try:
-            if server_exec_params is not None:
-                if server_exec_params:
-                    self._job.to_server(server_exec_params)
-                else:
-                    # Preserve the long-standing "empty dict means temporarily clear params"
-                    # behavior rather than treating {} as a no-op.
-                    self._replace_additional_params_for_targets(["server"], {})
-
-            if client_exec_params is not None:
-                if client_exec_params:
-                    self._add_to_client_apps(client_exec_params)
-                else:
-                    client_targets = [target for target in getattr(self._job, "_deploy_map", {}) if target != "server"]
-                    for target in client_targets:
-                        current = params_snapshot.get(target, {})
-                        lifetime = (
-                            {"execution_lifetime": current["execution_lifetime"]}
-                            if "execution_lifetime" in current
-                            else {}
-                        )
-                        self._replace_additional_params_for_targets([target], lifetime)
+        with self._job.temporary_exec_params(server_exec_params, client_exec_params):
             yield
-        finally:
-            if params_snapshot is not None:
-                self._restore_additional_params(params_snapshot)
 
     def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
         """Add an object to client apps, preserving existing per-site structure.

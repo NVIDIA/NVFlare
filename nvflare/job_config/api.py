@@ -14,6 +14,7 @@
 import os.path
 import re
 import uuid
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.executor import Executor
@@ -246,6 +247,51 @@ class FedJob:
             if JobTargetType.get_target_type(target) != JobTargetType.CLIENT:
                 raise ValueError("execution lifetime applies to client apps")
             self.to({"execution_lifetime": lifetime}, target)
+
+    @contextmanager
+    def temporary_exec_params(
+        self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ):
+        """Temporarily apply execution parameters without changing the declared job.
+
+        None preserves existing parameters. A nonempty dictionary merges overrides.
+        An empty dictionary clears parameters, retaining each client's declared
+        execution lifetime. Restore all original parameters even when use fails.
+        """
+        if server_exec_params is None and client_exec_params is None:
+            yield
+            return
+
+        snapshot = {target: dict(app.app_config.additional_params) for target, app in self._deploy_map.items()}
+        client_targets = [
+            target for target, app in self._deploy_map.items() if isinstance(app.app_config, ClientAppConfig)
+        ]
+        if client_exec_params and not client_targets:
+            client_targets = [ALL_SITES]
+        overrides = {SERVER_SITE_NAME: server_exec_params}
+        overrides.update(dict.fromkeys(client_targets, client_exec_params))
+
+        try:
+            for target, extra in overrides.items():
+                if extra is None:
+                    continue
+                if extra:
+                    self.to(extra, target)
+                elif target in self._deploy_map:
+                    params = self._deploy_map[target].app_config.additional_params
+                    retained = (
+                        {"execution_lifetime": params["execution_lifetime"]}
+                        if target != SERVER_SITE_NAME and "execution_lifetime" in params
+                        else {}
+                    )
+                    params.clear()
+                    params.update(retained)
+            yield
+        finally:
+            for target, app in self._deploy_map.items():
+                params = app.app_config.additional_params
+                params.clear()
+                params.update(snapshot.get(target, {}))
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
