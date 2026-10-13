@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -2218,6 +2219,49 @@ class TestPTFedAvgModelPersistence:
 
         assert torch.equal(loaded.params["weight"], params["weight"])
         assert loaded.metrics is None  # No metadata
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_metadata_sidecar_symlink_escape(self, tmp_path, operation):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        filepath = tmp_path / "model.pt"
+        torch.save({"weight": torch.tensor([1.0])}, filepath)
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.metadata"
+        outside.write_bytes(b"outside must remain unchanged")
+        metadata = tmp_path / "model.pt.metadata"
+        metadata.symlink_to(outside)
+        controller = PTFedAvg()
+
+        with pytest.raises(ValueError, match="model metadata path"):
+            if operation == "load":
+                controller.load_model_file(str(filepath))
+            else:
+                controller.save_model_file(FLModel(params={"weight": torch.tensor([2.0])}), str(filepath))
+        assert outside.read_bytes() == b"outside must remain unchanged"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_checkpoint_alias_preserves_its_metadata_sidecar(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        target = tmp_path / "target.pt"
+        alias = tmp_path / "current.pt"
+        alias.symlink_to(target)
+        controller = PTFedAvg(save_filename=alias.name)
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model(model)
+        loaded = controller.load_model()
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (tmp_path / "current.pt.metadata").is_file()
+        assert not (tmp_path / "target.pt.metadata").exists()
 
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""

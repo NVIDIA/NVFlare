@@ -17,6 +17,7 @@
 import errno
 import os
 import stat
+from unittest.mock import Mock
 
 import pytest
 
@@ -122,8 +123,17 @@ class TestPTFileModelPersistorInit:
                 sticky=False,
             )
 
-        with pytest.raises(ValueError, match=expected_error):
-            PTFileModelPersistor(**persistor_kwargs)._initialize(fl_ctx)
+        persistor = PTFileModelPersistor(**persistor_kwargs)
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        persistor.system_panic.assert_called_once()
+        call = persistor.system_panic.call_args
+        assert expected_error in call.kwargs["reason"]
+        assert call.kwargs["fl_ctx"] is fl_ctx
+        assert not hasattr(persistor, "_ckpt_save_path")
+        assert not hasattr(persistor, "_best_ckpt_save_path")
 
     def test_initialize_accepts_checkpoint_write_paths_under_app_root(self, tmp_path):
         from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor

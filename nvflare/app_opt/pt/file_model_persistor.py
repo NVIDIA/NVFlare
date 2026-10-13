@@ -163,17 +163,22 @@ class PTFileModelPersistor(ModelPersistor):
                 )
 
         log_dir = fl_ctx.get_prop(AppConstants.LOG_DIR)
-        if log_dir:
-            self.log_dir = resolve_path_under_root(app_root, log_dir, "checkpoint directory")
-        else:
-            self.log_dir = app_root
-
-        self._ckpt_save_path = resolve_path_under_root(
-            self.log_dir, self.global_model_file_name, "global model file name"
-        )
-        self._best_ckpt_save_path = resolve_path_under_root(
-            self.log_dir, self.best_global_model_file_name, "best global model file name"
-        )
+        try:
+            resolved_log_dir = (
+                resolve_path_under_root(app_root, log_dir, "checkpoint directory") if log_dir else app_root
+            )
+            ckpt_save_path = resolve_path_under_root(
+                resolved_log_dir, self.global_model_file_name, "global model file name"
+            )
+            best_ckpt_save_path = resolve_path_under_root(
+                resolved_log_dir, self.best_global_model_file_name, "best global model file name"
+            )
+        except (TypeError, ValueError) as error:
+            self.system_panic(reason=f"Invalid checkpoint path configuration: {error}", fl_ctx=fl_ctx)
+            return
+        self.log_dir = resolved_log_dir
+        self._ckpt_save_path = ckpt_save_path
+        self._best_ckpt_save_path = best_ckpt_save_path
 
         ckpt_preload_path = fl_ctx.get_prop(AppConstants.CKPT_PRELOAD_PATH)
         if ckpt_preload_path:

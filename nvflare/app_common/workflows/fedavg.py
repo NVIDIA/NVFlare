@@ -476,7 +476,9 @@ class FedAvg(BaseFedAvg):
             return super().load_model()
         elif self.save_filename:
             # Try to load from file
-            filepath = resolve_path_under_root(self.get_run_dir(), self.save_filename, "save_filename")
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             if os.path.exists(filepath):
                 self.info(f"Loading model from {filepath}")
                 return self.load_model_file(filepath)
@@ -500,7 +502,9 @@ class FedAvg(BaseFedAvg):
             super().save_model(model)
         elif self.save_filename:
             # Use simple file-based saving
-            filepath = resolve_path_under_root(self.get_run_dir(), self.save_filename, "save_filename")
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             self.save_model_file(model, filepath)
             self.info(f"Model saved to {filepath}")
         else:
