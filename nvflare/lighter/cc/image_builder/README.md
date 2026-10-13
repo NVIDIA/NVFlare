@@ -146,7 +146,14 @@ operator must validate the signed quote, replay TDX CCEL where applicable, verif
 the TCB references, and complete the design's acceptance matrix. An acceptance
 report must identify the exact manifest hash and contain successful, hashed
 evidence for every check returned by `cvm.artifacts.bundle.required_acceptance_checks`
-for that platform and CPU/GPU profile:
+for that platform and CPU/GPU profile.
+
+The repository supplies
+[`acceptance_runner.py`](../../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner.py),
+which runs the complete exact-manifest Trustee and hardware suites and refuses to
+write a report when a required check is missing. See
+[BUILD_GUIDE.md](BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval) for
+its isolated-lab inputs and invocation.
 
 ```sh
 sudo ./cvmctl admin approve /path/to/bundle /path/to/acceptance-report.json \

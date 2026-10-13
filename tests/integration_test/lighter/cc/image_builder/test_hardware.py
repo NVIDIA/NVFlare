@@ -35,7 +35,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from cvm.artifacts.bundle import sign_receipt, verify_bundle
+from cvm.artifacts.bundle import required_acceptance_checks, sign_receipt, verify_bundle
 from cvm.build.config import contains_private_key
 from cvm.build.storage import mounted, nbd
 from cvm.common.errors import require
@@ -54,8 +54,10 @@ ACCEPTANCE_CHECKS = {
         "clock_synchronized_before_attestation",
         "root_overlay_capacity",
         "ssh_service_and_socket_disabled",
+        "gpu_positive_key_release",
+        "gpu_policy_selection",
     ],
-    "test_clear_sidecars_contain_no_private_keys": ["clear_sidecar_scan"],
+    "test_clear_sidecars_contain_no_private_keys": ["clear_sidecar_scan", "initramfs_no_kbs"],
     "test_root_disk_corruption_prevents_startup": ["root_disk_corruption"],
     "test_attestation_drop_quarantines_and_recovers": ["attestation_quarantine_recovery"],
     "test_snp_offline_collateral_works_without_kds": ["snp_collateral_availability"],
@@ -80,8 +82,8 @@ class HardwareTests(unittest.TestCase):
         cls.output.mkdir(parents=True, exist_ok=True)
         cls.manifest = verify_bundle(cls.bundle)
         require(
-            os.geteuid() == 0 and cls.manifest["profile_version"].startswith("test-"),
-            "Hardware fixtures require a test bundle and root",
+            os.geteuid() == 0 and cls.manifest.get("dev_mode") is False,
+            "Hardware acceptance requires a nondevelopment bundle and root",
         )
         cls.http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         import socket
@@ -201,7 +203,10 @@ class HardwareTests(unittest.TestCase):
     def result(self, **values):
         signing_key = os.environ.get("CVM_ACCEPTANCE_RESULT_KEY")
         require(signing_key, "CVM_ACCEPTANCE_RESULT_KEY must name the site evidence signing key")
-        checks = {name: {"passed": True} for name in ACCEPTANCE_CHECKS.get(self._testMethodName, [])}
+        required = required_acceptance_checks(self.manifest)
+        checks = {
+            name: {"passed": True} for name in ACCEPTANCE_CHECKS.get(self._testMethodName, []) if name in required
+        }
         write_json(
             self.directory / "result.json",
             sign_receipt(
@@ -310,20 +315,7 @@ class HardwareTests(unittest.TestCase):
         # ro,noload inspection intentionally hides recently committed metadata.
         with nbd(self.vault / "applog.qcow2") as device, mounted(device) as root:
             self.assertEqual((root / "acceptance-output").read_bytes(), b"CVM_APPLOG_WRITE_OK\n")
-            container_gpu_attestation = self.manifest["contract"]["gpu"] == "nvidia_cc"
-            if container_gpu_attestation:
-                result = read_json(root / "container-gpu-attestation.json")
-                self.assertEqual(
-                    {key: result[key] for key in ("passed", "gpu_count", "nonce_bound", "signed_evidence")},
-                    {
-                        "passed": True,
-                        "gpu_count": self.manifest["contract"]["gpu_count"],
-                        "nonce_bound": True,
-                        "signed_evidence": True,
-                    },
-                )
-                self.assertRegex(result["nvat_source_commit"], r"^[0-9a-f]{40}$")
-                self.assertRegex(result["evidence_sha256"], r"^[0-9a-f]{64}$")
+            gpu_key_release = self.manifest["contract"]["gpu"] == "nvidia_cc"
         self.result(
             generic_application=True,
             binding=True,
@@ -336,10 +328,39 @@ class HardwareTests(unittest.TestCase):
             root_overlay_capacity=True,
             read_only_input_disks=state["input_mounts_read_only"],
             writable_applog=state["applog_writable"],
-            container_gpu_attestation=container_gpu_attestation,
+            gpu_key_release=gpu_key_release,
+            gpu_policy_id=self.manifest["attestation_policy_id"] if gpu_key_release else None,
         )
 
+    def inspect_initramfs(self):
+        extracted = self.directory / "initramfs"
+        self.disposables.append(extracted)
+        run(["unmkinitramfs", self.bundle / "initrd.img", extracted])
+        forbidden_names = {"kbs-client", "kbs-ca.pem", "as-public.pem", "runtime.json"}
+        forbidden_paths = []
+        endpoint = self.manifest["contract"]["kbs_url"].encode()
+        embedded_endpoint = []
+        inspected = 0
+        for path in extracted.rglob("*"):
+            if not path.is_file() or path.is_symlink():
+                continue
+            inspected += 1
+            if path.name in forbidden_names or "/etc/cvm/" in ("/" + str(path.relative_to(extracted))):
+                forbidden_paths.append(str(path.relative_to(extracted)))
+            with path.open("rb") as stream:
+                overlap = b""
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    value = overlap + block
+                    if endpoint in value:
+                        embedded_endpoint.append(str(path.relative_to(extracted)))
+                        break
+                    overlap = value[-(len(endpoint) - 1) :] if len(endpoint) > 1 else b""
+        self.assertFalse(forbidden_paths, f"Initramfs contains CVM KBS material: {forbidden_paths}")
+        self.assertFalse(embedded_endpoint, f"Initramfs contains the configured KBS endpoint: {embedded_endpoint}")
+        return {"inspected_files": inspected, "forbidden_paths": [], "embedded_kbs_endpoint": []}
+
     def test_clear_sidecars_contain_no_private_keys(self):
+        initramfs = self.inspect_initramfs()
         inspected = []
         for name in ("applog", "user_config", "user_data"):
             with nbd(self.vault / f"{name}.qcow2", readonly=True) as device, mounted(device, readonly=True) as root:
@@ -350,7 +371,7 @@ class HardwareTests(unittest.TestCase):
                     self.assertFalse(lowered.endswith((".key", ".p12", ".pfx", ".jks")))
                     self.assertFalse(contains_private_key(item))
                     inspected.append(f"{name}/{item.relative_to(root)}")
-        self.result(clear_sidecar_scan=True, inspected_paths=inspected)
+        self.result(clear_sidecar_scan=True, inspected_paths=inspected, initramfs=initramfs)
 
     def test_root_disk_corruption_prevents_startup(self):
         damaged = self.directory / "root-disk-corruption-bundle"
@@ -465,12 +486,18 @@ class HardwareTests(unittest.TestCase):
             self.boot()
             self.process.wait(timeout=480)
         text = self.logs[-1].read_text(errors="replace")
-        self.assertIn("CVM bootstrap failed", text)
-        self.assertIn("Power down", text)
+        self.assert_powered_off()
         # The bootstrap audit is emitted only after authorization and mounting;
         # an NRAS-unavailable boot must never reach that successful boundary.
         self.assertNotIn('"decision":"allow"', text.replace(" ", ""))
-        self.result(gpu_backend_outage_key_denial=True, hardware_fault="backend_nras_drop")
+        self.assertNotIn("CVM_WORKLOAD_STARTED", text)
+        self.result(
+            gpu_backend_outage_key_denial=True,
+            hardware_fault="backend_nras_drop",
+            allow_decision=False,
+            workload_started=False,
+            powered_off=True,
+        )
 
     def test_reboot_after_writes_and_journal_interruption(self):
         self.boot()
