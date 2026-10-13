@@ -21,8 +21,6 @@ participants:
         provisioner: oidc
   - name: automation@example.com
     type: admin
-    org: org
-    role: project_admin
     external_cert: true
 
 builders:

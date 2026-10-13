@@ -42,9 +42,11 @@ Deploy credentials from your PKI into each participant's `startup` directory:
 
 For the file-based `automation@example.com` example, IT installs a matching RSA-2048
 key and leaf-first PEM chain in the admin kit's `startup/client.key` and
-`startup/client.crt` before login. The approved CN, organization and role belong in
-the certificate, which must chain to `rootCA.pem`. No SSO is required; missing or
-invalid files fail existing runtime checks without fallback.
+`startup/client.crt` before login. The certificate CN must exactly match the admin
+`name`, which must be email-shaped (e.g. `automation@example.com`, not `automation`).
+Omit `org` and `role` from this admin's YAML; both come from the certificate, which
+must chain to `rootCA.pem`. Non-SSO machine accounts use the same naming contract.
+Missing or invalid files fail existing runtime checks without fallback.
 
 See the [provisioning guide](../../../docs/programming_guide/provisioning_system.rst#public-root-only-provisioning)
 for certificate profiles, supported CA constraints and legacy

@@ -269,20 +269,23 @@ class Participant(Entity):
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
-        if admin_cert_provider and org:
-            raise ValueError(f"admin '{name}' with admin_cert_provider must not define org; org comes from issued cert")
+        admin_identity_from_cert = admin_cert_provider or (
+            type == ParticipantType.ADMIN and self.get_prop(PropKey.EXTERNAL_CERT) is True
+        )
+        if admin_identity_from_cert and org:
+            raise ValueError(f"admin '{name}' with external credentials must not define org; org comes from cert")
         if org:
             err, reason = name_check(org, "org")
             if err:
                 raise ValueError(reason)
-        elif not admin_cert_provider:
+        elif not admin_identity_from_cert:
             raise ValueError(f"missing participant {PropKey.ORG}")
 
         if type == ParticipantType.ADMIN:
-            if admin_cert_provider:
+            if admin_identity_from_cert:
                 if props.get(PropKey.ROLE):
                     raise ValueError(
-                        f"admin '{name}' with admin_cert_provider must not define role; role comes from issued cert"
+                        f"admin '{name}' with external credentials must not define role; role comes from cert"
                     )
             elif not props:
                 raise ValueError(f"missing role for admin '{name}'")

@@ -737,6 +737,7 @@ credential source for each participant:
    * - Admin
      - Either ``admin_cert_provider`` or ``external_cert: true``; never both.
        For file-based admins, IT installs ``startup/client.crt`` and ``startup/client.key`` before login.
+       The certificate CN must match the email-shaped admin ``name``. Omit ``org`` and ``role``; the cert supplies them.
 
 Provisioning checks these settings and reports the participant name and required
 setting for any incomplete configuration. The admin provider obtains credentials
