@@ -152,6 +152,7 @@ class FedJobConfig:
                 if site == "@ALL":
                     sites.update(meta_json.get("resource_spec", {}))
                     sites.update(meta_json.get("launcher_spec", {}))
+                    sites.difference_update({"server", "@default", "default"})
                 for receiving_site in sites:
                     validate_task_resources(meta_json, receiving_site)
 
@@ -653,6 +654,8 @@ class FedJobConfig:
         # Add additional system parameters to the client app config
         if fed_app.client_app.additional_params:
             client_app.update(fed_app.client_app.additional_params)
+        if client_app.get("execution_lifetime", "job") == "task":
+            client_app["format_version"] = 3
         prepare_task_execution(client_app)
 
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)

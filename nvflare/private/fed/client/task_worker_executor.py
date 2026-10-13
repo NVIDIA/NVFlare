@@ -35,7 +35,7 @@ from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, Worker
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .task_execution_policy import TaskExecutionPolicy
-from .task_worker_client_api import result_wait_deadline
+from .task_worker_binding import result_wait_deadline
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 
@@ -79,7 +79,11 @@ class TaskWorkerExecutor(Executor):
                 with self._state_lock:
                     self._ending = True
                 self.supervisor.end_run()
-                if event_type == EventType.END_RUN and not self._done.wait(self.policy.settlement_timeout):
+                if (
+                    event_type == EventType.END_RUN
+                    and not self._done.wait(self.policy.settlement_timeout)
+                    and self.supervisor.owns_execution
+                ):
                     self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
@@ -113,6 +117,7 @@ class TaskWorkerExecutor(Executor):
         if not self._gate.acquire(blocking=False):
             raise RuntimeError("task worker executor already has an active attempt")
         self._done.clear()
+        identity = workspace = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
@@ -163,24 +168,38 @@ class TaskWorkerExecutor(Executor):
                 abort_signal=abort_signal,
                 request_factory=request_factory,
                 options=self.options,
-                deadline_provider=partial(result_wait_deadline, store, identity, self.result_wait_timeout),
+                deadline_provider=partial(
+                    result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
+                ),
             )
             if outcome.aborted or abort_signal.triggered:
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
             fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
-            fl_ctx.set_prop(
-                FLContextKey.TASK_RESULT_SOURCE_GUARD,
-                partial(self.supervisor.transfer_reader, identity),
-                private=True,
-                sticky=False,
-            )
             self._replay_analytics(outcome.analytics, fl_ctx)
             return outcome.result
         finally:
+            if (
+                workspace is not None
+                and not self.supervisor.owns_execution
+                and not self.supervisor.settlement_unconfirmed
+            ):
+                self._replay_worker_log(workspace, identity, fl_ctx)
             self._done.set()
             self._gate.release()
             self._report_issues(fl_ctx)
+
+    def _replay_worker_log(self, workspace, identity, fl_ctx):
+        """Make worker diagnostics visible to the existing CJ log streamer."""
+        path = os.path.join(workspace.get_log_root(identity.job_id), f"task_{identity.attempt_id}_log.txt")
+        try:
+            with open(path, encoding="utf-8", errors="replace") as stream:
+                for line in stream:
+                    self.log_info(fl_ctx, f"[task {identity.attempt_id}] {line.rstrip()}")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            self.log_warning(fl_ctx, f"could not replay task worker log {path}: {e}")
 
     def _replay_analytics(self, records, fl_ctx):
         for record in records:

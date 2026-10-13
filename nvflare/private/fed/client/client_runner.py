@@ -15,7 +15,6 @@ import fnmatch
 import threading
 import time
 import uuid
-from contextlib import nullcontext
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -604,15 +603,13 @@ class ClientRunner(TBI):
 
         task_reply = self._process_task(task, fl_ctx)
 
-        source_guard = fl_ctx.get_prop(FLContextKey.TASK_RESULT_SOURCE_GUARD)
-        with source_guard() if source_guard is not None else nullcontext():
-            self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
-            self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
+        self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
+        self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-            send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
-            fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
-            self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
-            self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+        send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
+        self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
+        self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
 

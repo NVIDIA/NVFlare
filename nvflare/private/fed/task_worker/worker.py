@@ -236,13 +236,19 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             owns_auditor = True
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
-        _authorize_compute_graph(bootstrap, workspace, fl_ctx)
+        builder = _authorize_compute_graph(bootstrap, workspace, fl_ctx)
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
             logging.basicConfig(level=logging.INFO)
         refresh_custom_dir_import_path(workspace.get_app_custom_dir(identity.job_id))
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
+        # The same serialization registrations are needed on both sides of
+        # the payload handoff, before decoding input or building the trainer.
+        for index, original in enumerate(bootstrap.components):
+            spec = _thaw_json(original)
+            if builder.get_class_path(spec) == "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister":
+                builder.build_component(spec, builder.make_component_node(spec, index + 1))
         data = store.read_input(identity)
         analytics = []
         if context_binding is None:

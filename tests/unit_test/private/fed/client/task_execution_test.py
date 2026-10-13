@@ -13,9 +13,13 @@
 # limitations under the License.
 
 import argparse
+import importlib
 import json
 import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -25,25 +29,28 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, TaskResultReceipt
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus, TaskLauncherSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, validate_task_resources
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
-from nvflare.private.fed.task_worker.artifacts import IncompleteTaskArtifactError
+from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 
 def _config(**args):
     return {
-        "format_version": 2,
+        "format_version": 3,
         "execution_lifetime": "task",
         "executors": [
             {
@@ -110,8 +117,20 @@ def test_each_executor_gets_its_own_dependency_graph():
         {"id": "receiver", "path": "unused.Receiver"},
     ]
     config["executors"] = [
-        {"tasks": ["train"], "executor": {"path": "unused.Trainer", "args": {"model_id": "train_model"}}},
-        {"tasks": ["eval"], "executor": {"path": "unused.Validator", "args": {"model_id": "eval_model"}}},
+        {
+            "tasks": ["train"],
+            "executor": {
+                "path": CLIENT_API_EXECUTOR_PATH,
+                "args": {"execution_mode": "in_process", "model_id": "train_model"},
+            },
+        },
+        {
+            "tasks": ["eval"],
+            "executor": {
+                "path": CLIENT_API_EXECUTOR_PATH,
+                "args": {"execution_mode": "in_process", "model_id": "eval_model"},
+            },
+        },
     ]
     plan = prepare_task_execution(config)
     assert [c["id"] for c in plan.executors[0].components] == ["train_model", "loader"]
@@ -159,7 +178,31 @@ def test_nested_scope_is_rejected():
 def test_collab_rpc_service_requires_job_lifetime():
     config = _config()
     config["executors"][0]["executor"] = {"path": "nvflare.collab.runtime.executor.CollabExecutor"}
-    with pytest.raises(ValueError, match="resident federation RPC"):
+    with pytest.raises(ValueError, match="not supported.*use job lifetime"):
+        prepare_task_execution(config)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "nvflare.app_common.ccwf.client_ctl.ClientControllerExecutor",
+        "nvflare.app_opt.flower.executors.flower_executor.FlowerExecutor",
+        "nvflare.app_opt.xgboost.tree_based.executor.XGBTreeExecutor",
+        "nvflare.app_common.psi.dh_psi.dh_psi_executor.DhPSIExecutor",
+        "custom.UnqualifiedExecutor",
+    ],
+)
+def test_initial_task_profile_rejects_unqualified_executors_without_importing(path):
+    config = _config()
+    config["executors"][0]["executor"] = {"path": path}
+    with pytest.raises(ValueError, match="not supported.*use job lifetime"):
+        prepare_task_execution(config)
+
+
+def test_task_config_requires_format_that_older_clients_reject():
+    config = _config()
+    config["format_version"] = 2
+    with pytest.raises(ValueError, match="older clients reject"):
         prepare_task_execution(config)
 
 
@@ -236,7 +279,7 @@ def _configure(tmp_path, config, authorizer=None):
 
 def test_client_config_does_not_import_or_construct_task_graph(tmp_path):
     config = _config()
-    config["executors"][0]["executor"] = {"path": "never_imported.TaskExecutor", "args": {"helper_id": "worker"}}
+    config["executors"][0]["executor"]["args"]["helper_id"] = "worker"
     config["components"] = [
         {"id": "worker", "path": "never_imported.Helper", "args": {"default_task_fetch_interval": -10}},
         {
@@ -256,8 +299,8 @@ def test_client_config_does_not_import_or_construct_task_graph(tmp_path):
 def test_authorization_rejects_nested_compute_before_application_import(tmp_path):
     config = _config()
     config["executors"][0]["executor"] = {
-        "path": "never_imported.TaskExecutor",
-        "args": {"path": "/data", "helper": {"path": "never_imported.Forbidden"}},
+        "path": CLIENT_API_EXECUTOR_PATH,
+        "args": {"execution_mode": "in_process", "path": "/data", "helper": {"path": "never_imported.Forbidden"}},
     }
     seen = []
 
@@ -268,14 +311,14 @@ def test_authorization_rejects_nested_compute_before_application_import(tmp_path
     with pytest.raises(Exception, match="blocked helper"):
         _configure(tmp_path, config, authorizer)
     assert seen == [
-        ("never_imported.TaskExecutor", "executors.#1.executor"),
+        (CLIENT_API_EXECUTOR_PATH, "executors.#1.executor"),
         ("never_imported.Forbidden", "executors.#1.executor.args.helper"),
     ]
     assert "never_imported" not in sys.modules
 
 
 @pytest.fixture
-def native_task(tmp_path, monkeypatch):
+def native_task(tmp_path, monkeypatch, isolated_fobs):
     if not hasattr(os, "waitid"):
         pytest.skip("CPU Process task execution requires waitid/WNOWAIT")
     nvflare_fobs_initialize()
@@ -322,7 +365,8 @@ while flare.is_running():
     flare.log("accuracy", 0.75, AnalyticsDataType.SCALAR, global_step=model.current_round)
     result = FLModel(params={"w": model.params["w"] + 1},
         metrics={"pid": os.getpid(), "main_thread": threading.current_thread() is threading.main_thread(),
-                 "argv": sys.argv[1:], "site": flare.get_site_name(), "job": flare.get_job_id()},
+                 "argv": sys.argv[1:], "site": flare.get_site_name(), "job": flare.get_job_id(),
+                 "metadata": model.meta},
         current_round=model.current_round)
     flare.send(result)
 """
@@ -363,8 +407,9 @@ class Trainer(Executor):
         "args": {"data_loader_id": "loader"},
     }
     config["components"] = [{"id": "loader", "path": "compute_probe.DataLoader"}]
-    plan = prepare_task_execution(config).executors[0]
-    adapter = TaskWorkerExecutor(plan.executor, plan.components, policy)
+    # Exercise the generic worker runtime directly; the initial exported task
+    # profile permits only ClientAPIExecutor and the qualified NPTrainer.
+    adapter = TaskWorkerExecutor(config["executors"][0]["executor"], config["components"], policy)
     adapter.handle_event(EventType.START_RUN, context)
     results = []
     try:
@@ -411,6 +456,8 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert metrics["main_thread"] is True
     assert metrics["argv"] == ["--label", "two words", "local-placeholder"]
     assert (metrics["site"], metrics["job"]) == ("site-1", "job-1")
+    assert metrics["metadata"][FLMetaKey.JOB_ID] == "job-1"
+    assert metrics["metadata"][FLMetaKey.SITE_NAME] == "site-1"
     assert context.get_engine().fire_event.call_count > 0
     identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
     payload = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
@@ -418,11 +465,9 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert len(files) == 1
     context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
-    with context.get_prop(FLContextKey.TASK_RESULT_SOURCE_GUARD)():
-        adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
-        adapter.handle_event(EventType.END_RUN, context)
-        assert files[0].exists()
+    adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
     assert not files[0].exists()
+    adapter.handle_event(EventType.END_RUN, context)
     assert identity.attempt_id == "attempt-1"
 
 
@@ -436,7 +481,7 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
 def test_script_failure_cannot_publish_completion(native_task, script):
     root, custom, context, policy = native_task
     adapter, data = _adapter(custom, context, policy, script=script)
-    with pytest.raises(IncompleteTaskArtifactError):
+    with pytest.raises(RuntimeError, match="task worker .* failed:"):
         adapter.execute("train", data, context, Signal())
     adapter.handle_event(EventType.END_RUN, context)
     assert not list((root / "job-1" / ".nvflare").rglob("completion.json"))
@@ -454,14 +499,147 @@ def test_result_wait_timeout_cancels_the_real_worker(native_task):
     assert not list((root / "job-1" / ".nvflare").rglob("completion.json"))
 
 
-def test_timely_local_send_does_not_timeout_during_script_finalization(native_task):
+def test_result_wait_timeout_includes_script_finalization(native_task):
     _, custom, context, policy = native_task
     adapter, data = _adapter(
         custom, context, policy, script=SCRIPT + "\nimport time\ntime.sleep(0.4)\n", result_wait_timeout=0.2
     )
-    result = adapter.execute("train", data, context, Signal())
-    np.testing.assert_array_equal(from_shareable(result).data["w"], [2, 3])
+    with pytest.raises(TimeoutError, match="timed out"):
+        adapter.execute("train", data, context, Signal())
     adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_default_post_send_bound_stops_a_script_even_without_result_wait_timeout(native_task):
+    _, custom, context, policy = native_task
+    assert policy.finalization_timeout == 30
+    policy = replace(policy, finalization_timeout=0.1)
+    adapter, data = _adapter(custom, context, policy, script=SCRIPT + "\nimport time\ntime.sleep(10)\n")
+    with pytest.raises(TimeoutError, match="timed out"):
+        adapter.execute("train", data, context, Signal())
+    adapter.handle_event(EventType.END_RUN, context)
+    assert not adapter.supervisor.settlement_unconfirmed
+
+
+@pytest.mark.parametrize("event", [EventType.END_RUN, EventType.ABORT_TASK])
+def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_false_panic(
+    native_task, monkeypatch, event
+):
+    _, _, context, policy = native_task
+
+    class SettledLauncher(TaskLauncherSpec):
+        def launch_task(self, request):
+            bootstrap = read_bootstrap(request.argv[4])
+            FileTaskArtifactStore(bootstrap.artifact_root).commit_result(bootstrap.identity, Shareable({"done": True}))
+            status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
+            return SimpleNamespace(
+                request=request,
+                execution_id="settled-probe",
+                poll=lambda: status,
+                wait_for_settlement=lambda **_: status,
+                cancel=Mock(return_value=status),
+            )
+
+    reading, proceed = threading.Event(), threading.Event()
+    original = FileTaskArtifactStore.read_result
+
+    def blocked_read(store, identity):
+        reading.set()
+        assert proceed.wait(5)
+        return original(store, identity)
+
+    monkeypatch.setattr(FileTaskArtifactStore, "read_result", blocked_read)
+    adapter = TaskWorkerExecutor(
+        {"path": "unused.Executor"}, (), replace(policy, launcher=SettledLauncher(), settlement_timeout=0.01)
+    )
+    adapter.system_panic = Mock()
+    adapter.handle_event(EventType.START_RUN, context)
+    with ThreadPoolExecutor() as pool:
+        running = pool.submit(adapter.execute, "train", Shareable(), context, Signal())
+        try:
+            assert reading.wait(5)
+            assert not adapter.supervisor.owns_execution
+            adapter.handle_event(event, context)
+            adapter.system_panic.assert_not_called()
+        finally:
+            proceed.set()
+        assert running.result(timeout=5).get_return_code() == ReturnCode.TASK_ABORTED
+
+
+def test_worker_log_is_replayed_through_cj_logging(native_task):
+    root, custom, context, policy = native_task
+    (root / "local" / "log_config.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "handlers": {"file": {"class": "logging.FileHandler", "filename": "log.txt"}},
+                "root": {"level": "INFO", "handlers": ["file"]},
+            }
+        )
+    )
+    adapter, data = _adapter(
+        custom, context, policy, script="import logging\nlogging.warning('trainer probe log')\n" + SCRIPT
+    )
+    adapter.log_info = Mock()
+    adapter.execute("train", data, context, Signal())
+    assert any("trainer probe log" in str(call.args) for call in adapter.log_info.call_args_list)
+    adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_registered_decomposer_is_available_before_worker_input_decode(native_task, monkeypatch):
+    _, custom, context, policy = native_task
+    (custom / "task_codec.py").write_text(
+        """
+from nvflare.fuel.utils.fobs import Decomposer
+
+class Counter:
+    def __init__(self, value):
+        self.value = value
+
+class CounterDecomposer(Decomposer):
+    def supported_type(self):
+        return Counter
+
+    def decompose(self, obj, manager):
+        return obj.value
+
+    def recompose(self, data, manager):
+        return Counter(data)
+"""
+    )
+    monkeypatch.syspath_prepend(str(custom))
+    codec = importlib.import_module("task_codec")
+    monkeypatch.setitem(sys.modules, "task_codec", codec)
+    # This is the same registration the resident CJ component performs.
+    DecomposerRegister(["task_codec.CounterDecomposer"])
+    (custom / "train.py").write_text(
+        """
+import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import FLModel
+flare.init()
+model = flare.receive()
+flare.send(FLModel(metrics={"decoded": model.meta["custom"].value}))
+"""
+    )
+    config = _config(params_exchange_format="numpy", server_expected_format="numpy")
+    config["components"] = [
+        {
+            "id": "codec",
+            "path": "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister",
+            "args": {"classes": ["task_codec.CounterDecomposer"]},
+        }
+    ]
+    plan = prepare_task_execution(config).executors[0]
+    adapter = TaskWorkerExecutor(plan.executor, plan.components, policy)
+    adapter.handle_event(EventType.START_RUN, context)
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    data = FLModelUtils.to_shareable(FLModel(params={"w": np.ones(2)}, meta={"custom": codec.Counter(41)}))
+    try:
+        result = adapter.execute("train", data, context, Signal())
+        assert FLModelUtils.from_shareable(result).metrics["decoded"] == 41
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
 
 
 def test_receipts_ignore_other_identity_and_retain_filtered_failure():

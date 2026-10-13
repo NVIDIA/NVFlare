@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Plain ownership of a task worker, its validated result, and transfer readers.
+"""Plain ownership of a task worker and its validated in-memory result.
 
 The trusted caller supplies bootstrap configuration and a launch request factory,
 translates its own lifecycle events, and validates receipt replies before passing
@@ -25,7 +25,6 @@ import math
 import os
 import threading
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -42,7 +41,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
 )
 
-from .artifacts import FileTaskArtifactStore, TaskCompletion
+from .artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError, TaskCompletion
 from .protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
 
 
@@ -89,7 +88,6 @@ class _Attempt:
     validated: bool = False
     failed: bool = False
     receipt: Optional[str] = None
-    readers: int = 0
     releasing: bool = False
     released: bool = False
 
@@ -101,9 +99,9 @@ class TaskSupervisor:
     Unconfirmed settlement permanently fences this instance, even if a later
     cleanup succeeds. There is no reset or automatic physical retry.
 
-    Default cleanup occurs at job end, after confirmed settlement, a validated
-    successful result, terminal receipt/closure, and release of every transfer
-    reader. ``retain_artifacts=True`` disables payload release. Completion and
+    Default cleanup follows confirmed settlement, a decoded successful result
+    and terminal receipt/closure. Uploads use the decoded in-memory result.
+    ``retain_artifacts=True`` disables payload release. Completion and
     supervisor diagnostics remain after payload release in either case.
     """
 
@@ -125,6 +123,12 @@ class TaskSupervisor:
     def settlement_unconfirmed(self) -> bool:
         with self._state_lock:
             return self._settlement_unconfirmed
+
+    @property
+    def owns_execution(self) -> bool:
+        """Staging/launch or physical execution is still outstanding."""
+        with self._state_lock:
+            return self._active is not None and not self._active.settled
 
     def take_issues(self):
         """Drain diagnostic/cleanup errors for caller-owned logging."""
@@ -178,6 +182,8 @@ class TaskSupervisor:
             if attempt is None:
                 return
             attempt.cancel_requested.set()
+            if attempt.settled:
+                return
             handle = attempt.handle
         if handle is not None:
             self._cancel(attempt)
@@ -256,7 +262,7 @@ class TaskSupervisor:
                 # Acquiring a handle is ownership, including post-spawn errors.
                 with self._state_lock:
                     attempt.handle = e.handle
-                self._diagnostic(attempt, "launch_failed", execution_id=e.handle.execution_id)
+                self._diagnostic(attempt, "launch_failed", execution_id=getattr(e.handle, "execution_id", None))
                 raise
             with self._state_lock:
                 attempt.handle = handle
@@ -273,7 +279,7 @@ class TaskSupervisor:
                 failure_reason=status.failure_reason,
                 cancel_requested=status.cancel_requested,
             )
-            if self._aborted(attempt, abort_signal) or status.cancel_requested:
+            if self._aborted(attempt, abort_signal):
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
             # Only a settled execution can authorize reading its completion.
@@ -282,7 +288,16 @@ class TaskSupervisor:
             attempt.failed |= not status.succeeded or os.path.lexists(
                 os.path.join(store.attempt_dir(identity), "failure.json")
             )
-            result, completion = store.read_result(identity)
+            try:
+                result, completion = store.read_result(identity)
+            except IncompleteTaskArtifactError as e:
+                failure = store.read_failure(identity)
+                if failure is not None:
+                    raise RuntimeError(
+                        f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
+                raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
             worker_pid = getattr(handle, "process_group_id", None)
@@ -382,58 +397,32 @@ class TaskSupervisor:
         if attempt is not None:
             self._diagnostic(attempt, "retained_by_caller")
 
-    @contextmanager
-    def transfer_reader(self, identity: TaskAttemptIdentity):
-        """Hold before starting a transfer, through its last source read.
-
-        Every asynchronous transfer must keep this lease until its reader has
-        finished, including after cancellation or a terminal transport reply.
-        Cleanup cannot race acquisition; once release starts, new leases fail.
-        """
-        with self._state_lock:
-            attempt = self._attempts.get(identity)
-            if attempt is None or not attempt.validated or attempt.releasing or attempt.released:
-                raise RuntimeError("task payload is not available for transfer")
-            attempt.readers += 1
-        try:
-            yield
-        finally:
-            with self._state_lock:
-                attempt.readers -= 1
-            self.cleanup_job_payloads()
-
     def cleanup_job_payloads(self):
         """Idempotently release eligible payloads; keep evidence on uncertainty."""
-        if not self._execution_lock.acquire(blocking=False):
-            return
-        try:
+        with self._state_lock:
+            if self._retain_artifacts or self._settlement_unconfirmed:
+                return
+            attempts = list(self._attempts.values())
+        for attempt in attempts:
             with self._state_lock:
-                if self._retain_artifacts or not self._stopping or self._settlement_unconfirmed or self._active:
-                    return
-                attempts = list(self._attempts.values())
-            for attempt in attempts:
+                if (
+                    not attempt.settled
+                    or not attempt.validated
+                    or attempt.failed
+                    or attempt.receipt is None
+                    or attempt.releasing
+                    or attempt.released
+                ):
+                    continue
+                attempt.releasing = True
+            try:
+                attempt.store.release_payloads(attempt.identity)
+            except Exception as e:
                 with self._state_lock:
-                    if (
-                        not attempt.settled
-                        or not attempt.validated
-                        or attempt.failed
-                        or attempt.receipt is None
-                        or attempt.readers
-                        or attempt.released
-                    ):
-                        continue
-                    attempt.releasing = True
-                try:
-                    attempt.store.release_payloads(attempt.identity)
-                except Exception as e:
-                    # A partially completed unlink is not a readable payload.
-                    # Keep release fenced, retain evidence and report the issue.
-                    with self._state_lock:
-                        self._issues.append(("warning", f"failed to release task payloads: {e}"))
-                    self._diagnostic(attempt, "release_failed", message=str(e))
-                else:
-                    with self._state_lock:
-                        attempt.released = True
-                    self._diagnostic(attempt, "released")
-        finally:
-            self._execution_lock.release()
+                    attempt.failed = True
+                    self._issues.append(("warning", f"failed to release task payloads: {e}"))
+                self._diagnostic(attempt, "release_failed", message=str(e))
+            else:
+                with self._state_lock:
+                    attempt.released = True
+                self._diagnostic(attempt, "released")

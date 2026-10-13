@@ -426,6 +426,23 @@ class FileTaskArtifactStore:
         completion = self.read_completion(identity)
         return self._read_payload(identity, completion.result), completion
 
+    def read_failure(self, identity: TaskAttemptIdentity):
+        """Read a settled worker's diagnostic without treating it as completion."""
+        self._check_identity(identity)
+        try:
+            with _open_protocol_file(os.path.join(self.attempt_dir(identity), "failure.json")) as stream:
+                encoded = stream.read(_MAX_RECORD_BYTES + 1)
+        except FileNotFoundError:
+            return None
+        if len(encoded) > _MAX_RECORD_BYTES:
+            raise ValueError("task failure record is too large")
+        record = _load_json(encoded)
+        if record.get("schema_version") != SCHEMA_VERSION or record.get("identity") != identity.to_dict():
+            raise ValueError("task failure record has an invalid identity or schema")
+        if not all(isinstance(record.get(key), str) for key in ("error_type", "message")):
+            raise ValueError("task failure record has an invalid error")
+        return record
+
     def record_failure(
         self,
         identity: TaskAttemptIdentity,

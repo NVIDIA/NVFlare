@@ -45,68 +45,6 @@ RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY = fobs.FOBSContextKey.RECEIVER_IDS
 RESULT_UPLOAD_PROGRESS_INTERVAL = 30.0
 
 
-class _GuardedDownloadable(Downloadable):
-    """Keep a source lease through registration, callbacks and actual reads.
-
-    Transaction termination can time out waiting for a producer. A separate
-    lease around produce() prevents source cleanup while that producer is still
-    reading, even after the transaction releases its registration lease.
-    """
-
-    def __init__(self, wrapped, guard_factory):
-        super().__init__(wrapped.base_obj)
-        self._wrapped = wrapped
-        self._guard_factory = guard_factory
-        self._registration_guard = guard_factory()
-        self._registration_guard.__enter__()
-        self._release_lock = threading.Lock()
-        self._released = False
-        self._active_reads = 0
-
-    def set_transaction(self, tx_id, ref_id):
-        return self._wrapped.set_transaction(tx_id, ref_id)
-
-    def produce(self, state, requester):
-        with self._release_lock:
-            if self._released:
-                raise RuntimeError("download source has been released")
-            self._active_reads += 1
-        try:
-            with self._guard_factory():
-                return self._wrapped.produce(state, requester)
-        finally:
-            with self._release_lock:
-                self._active_reads -= 1
-                release = self._released and self._active_reads == 0
-            if release:
-                self._release_source()
-
-    def downloaded_to_one(self, receiver, status):
-        return self._wrapped.downloaded_to_one(receiver, status)
-
-    def downloaded_to_all(self):
-        return self._wrapped.downloaded_to_all()
-
-    def transaction_done(self, tx_id, status):
-        return self._wrapped.transaction_done(tx_id, status)
-
-    def release(self):
-        with self._release_lock:
-            if self._released:
-                return
-            self._released = True
-            release = self._active_reads == 0
-        if release:
-            self._release_source()
-
-    def _release_source(self):
-        try:
-            self._wrapped.release()
-        finally:
-            self.base_obj = None
-            self._registration_guard.__exit__(None, None, None)
-
-
 class ResultUploadProgressContextKey:
     JOB_ID = "job_id"
     TASK_ID = "task_id"
@@ -885,17 +823,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
-                guard_factory = fobs_ctx.get(fobs.FOBSContextKey.SOURCE_READ_GUARD)
-                if guard_factory is not None:
-                    if not callable(guard_factory):
-                        raise TypeError("source read guard must be a context manager factory")
-                    obj = _GuardedDownloadable(obj, guard_factory)
-                try:
-                    downloader.add_object(obj, ref_id=ref_id)
-                except BaseException:
-                    if guard_factory is not None:
-                        obj.release()
-                    raise
+                downloader.add_object(obj, ref_id=ref_id)
 
     def _finalize_lazy_batch(self, mgr: DatumManager):
         """Post-callback used when re-emitting a LazyDownloadRef batch.

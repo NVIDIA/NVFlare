@@ -363,7 +363,8 @@ class Recipe(ABC):
         Semantics:
         - None: leave the target's existing additional_params unchanged.
         - non-empty dict: temporarily apply/merge those params for the target.
-        - empty dict ({}): temporarily clear the target's additional_params for this call.
+        - empty dict ({}): temporarily clear execution params for this call,
+          preserving the declared client execution lifetime.
 
         Any original additional_params are restored when the context exits.
         """
@@ -392,7 +393,14 @@ class Recipe(ABC):
                     self._add_to_client_apps(client_exec_params)
                 else:
                     client_targets = [target for target in getattr(self._job, "_deploy_map", {}) if target != "server"]
-                    self._replace_additional_params_for_targets(client_targets, {})
+                    for target in client_targets:
+                        current = params_snapshot.get(target, {})
+                        lifetime = (
+                            {"execution_lifetime": current["execution_lifetime"]}
+                            if "execution_lifetime" in current
+                            else {}
+                        )
+                        self._replace_additional_params_for_targets([target], lifetime)
             yield
         finally:
             if params_snapshot is not None:

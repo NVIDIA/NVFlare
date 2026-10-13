@@ -28,20 +28,28 @@ from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.converter_utils import convert_params
+from nvflare.client.in_process.adapters import TASK_RESULT_STOP_REASON, TOPIC_ABORT, TOPIC_GLOBAL_RESULT
+from nvflare.client.in_process.adapters import TOPIC_LOCAL_RESULT as TOPIC_LOCAL_RESULT
+from nvflare.client.in_process.adapters import TOPIC_LOG_DATA as TOPIC_LOG_DATA
+from nvflare.client.in_process.adapters import TOPIC_STOP, JobInProcessAdapter
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
 
-TOPIC_LOG_DATA = "LOG_DATA"
-TOPIC_STOP = "STOP"
-TOPIC_ABORT = "ABORT"
-TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
-TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
+__all__ = [
+    "InProcessClientAPI",
+    "TOPIC_ABORT",
+    "TOPIC_GLOBAL_RESULT",
+    "TOPIC_LOCAL_RESULT",
+    "TOPIC_LOG_DATA",
+    "TOPIC_STOP",
+]
+
 _END_RUN_STOP_REASON = "END_RUN received"
 _API_SHUTDOWN_STOP_REASON = "API shutdown called."
-_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON}
+_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON, TASK_RESULT_STOP_REASON}
 
 
 def _stop_log_level(reason):
@@ -53,6 +61,8 @@ class InProcessClientAPI(APISpec):
         self,
         task_metadata: dict,
         result_check_interval: float = 2.0,
+        *,
+        adapter=None,
     ):
         """Initializes the InProcessClientAPI.
 
@@ -63,7 +73,7 @@ class InProcessClientAPI(APISpec):
         super().__init__()  # Initialize memory management from base class
 
         self.data_bus = DataBus()
-        self._subscribe_to_data_bus()
+        self._adapter = adapter if adapter is not None else JobInProcessAdapter()
 
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
@@ -82,10 +92,7 @@ class InProcessClientAPI(APISpec):
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
         self._receive_error: Optional[Exception] = None
-
-    def _subscribe_to_data_bus(self):
-        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
-        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
+        self._adapter.bind(self, self.__receive_callback, self.__ask_to_abort)
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -211,7 +218,7 @@ class InProcessClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        self._publish_result(shareable)
+        self._adapter.publish_result(shareable)
 
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -278,13 +285,7 @@ class InProcessClientAPI(APISpec):
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
-        self._publish_log(msg)
-
-    def _publish_result(self, shareable):
-        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
-
-    def _publish_log(self, message):
-        self.event_manager.fire_event(TOPIC_LOG_DATA, message)
+        self._adapter.publish_log(msg)
 
     def clear(self):
         self.fl_model = None
@@ -373,6 +374,4 @@ class InProcessClientAPI(APISpec):
         """
         self.closed = True
         self._receive_error = None
-        self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
-        self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
-        self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)
+        self._adapter.close()

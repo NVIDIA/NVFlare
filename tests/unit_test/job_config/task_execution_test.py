@@ -18,10 +18,12 @@ import json
 import numpy as np
 import pytest
 
+from nvflare.apis.filter import Filter
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.defs import FilterType
 from nvflare.job_config.task_execution import prepare_task_execution
 from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -48,6 +50,7 @@ def test_export_preserves_job_default_and_supports_task_lifetime(tmp_path):
     job.export_job(str(tmp_path))
     config = json.loads(path.read_text())
     assert config["execution_lifetime"] == "task"
+    assert config["format_version"] == 3
     assert prepare_task_execution(config).job_components[0]["id"] == "converter"
     assert "execution_scope" not in config["components"][0]
     assert config["executors"][0]["executor"]["path"].endswith(".ClientAPIExecutor")
@@ -69,6 +72,20 @@ def test_all_clients_task_export_rejects_site_specific_gpu(tmp_path):
     job.to_clients(_executor())
     with pytest.raises(ValueError, match="GPUs"):
         job.export_job(str(tmp_path))
+
+
+def test_task_export_accepts_gpu_server_and_zero_gpu_client_memory_settings(tmp_path):
+    job = _job(
+        "task",
+        {
+            "resource_spec": {
+                "server": {"num_of_gpus": 1},
+                "@default": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 24},
+            }
+        },
+    )
+    job.to_clients(_executor())
+    job.export_job(str(tmp_path))
 
 
 def test_invalid_task_configuration_keeps_previous_export(tmp_path):
@@ -102,3 +119,38 @@ def test_recipe_exports_native_task_profile_with_resident_federation_widget(tmp_
     assert "event_to_fed" in {c["id"] for c in prepare_task_execution(config).job_components}
     assert all("execution_scope" not in c for c in config["components"])
     assert config["executors"][0]["executor"]["args"]["execution_mode"] == "in_process"
+
+
+def test_clearing_recipe_exec_params_preserves_task_lifetime_and_decomposer_registration(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("pass\n")
+    recipe = FedAvgRecipe(
+        min_clients=1,
+        model=np.zeros(2),
+        framework=FrameworkType.NUMPY,
+        train_script=str(script),
+        execution_lifetime="task",
+    )
+    recipe.add_decomposers(["nvflare.app_common.decomposers.common_decomposers.FLModelDecomposer"])
+    recipe.export(str(tmp_path / "export"), client_exec_params={})
+    config = json.loads((tmp_path / "export" / recipe.name / "app" / "config" / "config_fed_client.json").read_text())
+    assert config["execution_lifetime"] == "task"
+    assert config["format_version"] == 3
+    plan = prepare_task_execution(config)
+    assert "decomposer_reg" in {c["id"] for c in plan.job_components}
+    assert "decomposer_reg" in {c["id"] for c in plan.executors[0].components}
+
+
+def test_invalid_component_scope_does_not_attach_a_filter_before_raising():
+    class Passthrough(Filter):
+        def process(self, shareable, fl_ctx):
+            return shareable
+
+    job = _job()
+    task_filter = Passthrough()
+    with pytest.raises(ValueError, match="execution_scope"):
+        job.to_clients(task_filter, filter_type=FilterType.TASK_RESULT, execution_scope="job")
+    app = job._deploy_map["@ALL"].app_config
+    assert app.task_result_filters == []
+    job.to_clients(task_filter, filter_type=FilterType.TASK_RESULT)
+    assert len(app.task_result_filters) == 1

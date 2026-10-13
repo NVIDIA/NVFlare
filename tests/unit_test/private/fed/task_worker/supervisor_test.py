@@ -130,13 +130,59 @@ def test_result_and_analytics_reads_follow_confirmed_settlement(tmp_path):
     assert supervisor._active is None
 
 
+def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+
+    def fail(request):
+        handle.request = request
+        attempt["store"].record_failure(
+            attempt["bootstrap"].identity,
+            worker_pid=os.getpid(),
+            worker_ppid=os.getppid(),
+            started_at=1,
+            failed_at=2,
+            error_type="ValueError",
+            message="trainer rejected its input",
+        )
+        return handle
+
+    attempt["launcher"].launch_task.side_effect = fail
+    with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
+        supervisor.run(**attempt)
+    assert (_payload(attempt).parent / "failure.json").exists()
+
+
+def test_launch_error_without_handle_preserves_original_exception(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, _ = _attempt(tmp_path)
+    attempt["launcher"].launch_task.side_effect = TaskLaunchError("spawn denied", None)
+    with pytest.raises(TaskLaunchError, match="spawn denied"):
+        supervisor.run(**attempt)
+    assert supervisor._active is None
+    assert not supervisor.settlement_unconfirmed
+
+
+def test_group_teardown_does_not_discard_a_committed_result(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    handle.wait_for_settlement.return_value = replace(
+        SETTLED, cancel_requested=True, failure_reason="leader exited while descendants remained"
+    )
+    outcome = supervisor.run(**attempt)
+    assert not outcome.aborted
+    assert outcome.result["value"] == 2
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    assert _payload(attempt).exists()
+
+
 @pytest.mark.parametrize("receipt", [TaskResultReceipt.RECEIVED, TaskResultReceipt.TASK_CLOSED])
-def test_terminal_receipt_releases_at_job_end_and_preserves_diagnostics(tmp_path, receipt):
+def test_terminal_receipt_releases_immediately_and_preserves_diagnostics(tmp_path, receipt):
     supervisor = TaskSupervisor()
     attempt, _ = _attempt(tmp_path)
     outcome = supervisor.run(**attempt)
     assert supervisor.record_receipt(outcome.identity, receipt)
-    assert _payload(attempt).exists()
+    assert not _payload(attempt).exists()
 
     supervisor.end_run()
     supervisor.end_run()
@@ -144,9 +190,6 @@ def test_terminal_receipt_releases_at_job_end_and_preserves_diagnostics(tmp_path
     assert not _payload(attempt).exists()
     assert (_payload(attempt).parent / "completion.json").exists()
     assert _records(attempt)[-1]["event"] == "released"
-    with pytest.raises(RuntimeError, match="not available"):
-        with supervisor.transfer_reader(outcome.identity):
-            pass
     with pytest.raises(RuntimeError, match="stopping"):
         supervisor.run(**_attempt(tmp_path, attempt_id="attempt-2")[0])
 
@@ -176,71 +219,48 @@ def test_receipt_uses_full_identity_and_terminal_observation_is_monotonic(tmp_pa
     assert not _payload(attempt).exists()
 
 
-def test_transfer_readers_hold_payload_through_closure_end_run_and_exceptions(tmp_path):
+def test_cleanup_does_not_block_next_assignment_or_another_receipt(tmp_path):
     supervisor = TaskSupervisor()
-    attempt, _ = _attempt(tmp_path)
-    outcome = supervisor.run(**attempt)
-    with pytest.raises(ValueError, match="reader failed"):
-        with supervisor.transfer_reader(outcome.identity):
-            with supervisor.transfer_reader(outcome.identity):
-                supervisor.record_receipt(outcome.identity, TaskResultReceipt.TASK_CLOSED)
-                supervisor.end_run()
-            assert _payload(attempt).exists()
-            raise ValueError("reader failed")
-    assert not _payload(attempt).exists()
-
-
-def test_cleanup_in_flight_excludes_new_reader_and_repeated_cleanup(tmp_path):
-    supervisor = TaskSupervisor()
-    attempt, _ = _attempt(tmp_path)
-    outcome = supervisor.run(**attempt)
-    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    first, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**first)
     releasing, proceed = threading.Event(), threading.Event()
-    release = attempt["store"].release_payloads
+    release = first["store"].release_payloads
 
     def blocked_release(identity):
         releasing.set()
         assert proceed.wait(5)
         release(identity)
 
-    attempt["store"].release_payloads = Mock(side_effect=blocked_release)
+    first["store"].release_payloads = Mock(side_effect=blocked_release)
     with ThreadPoolExecutor() as pool:
-        future = pool.submit(supervisor.end_run)
+        receipting = pool.submit(supervisor.record_receipt, outcome.identity, TaskResultReceipt.RECEIVED)
         try:
             assert releasing.wait(5)
-            with pytest.raises(RuntimeError, match="not available"):
-                with supervisor.transfer_reader(outcome.identity):
-                    pass
+            second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+            next_outcome = supervisor.run(**second)
+            supervisor.record_receipt(next_outcome.identity, TaskResultReceipt.RECEIVED)
             supervisor.cleanup_job_payloads()
-            assert _payload(attempt).exists()
+            assert not _payload(second).exists()
+            assert _payload(first).exists()
         finally:
             proceed.set()
-        future.result(timeout=5)
-    attempt["store"].release_payloads.assert_called_once()
+        receipting.result(timeout=5)
+    assert not _payload(first).exists()
+    first["store"].release_payloads.assert_called_once()
 
 
-def test_partial_cleanup_failure_retains_evidence_and_reader_fence_then_can_retry(tmp_path):
+def test_cleanup_failure_retains_diagnostics_and_does_not_block_new_work(tmp_path):
     supervisor = TaskSupervisor()
-    attempt, _ = _attempt(tmp_path)
-    outcome = supervisor.run(**attempt)
+    first, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**first)
+    first["store"].release_payloads = Mock(side_effect=OSError("release failed"))
     supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
-    release = attempt["store"].release_payloads
-
-    def partial_release(identity):
-        (_payload(attempt).parent / "input.fobs").unlink()
-        raise OSError("release failed")
-
-    attempt["store"].release_payloads = partial_release
-    supervisor.end_run()
-    assert _payload(attempt).exists()
+    assert _payload(first).exists()
     assert supervisor.take_issues() == [("warning", "failed to release task payloads: release failed")]
-    with pytest.raises(RuntimeError, match="not available"):
-        with supervisor.transfer_reader(outcome.identity):
-            pass
-    attempt["store"].release_payloads = release
     supervisor.cleanup_job_payloads()
-    assert not _payload(attempt).exists()
-    assert (_payload(attempt).parent / "completion.json").exists()
+    first["store"].release_payloads.assert_called_once()
+    second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+    assert supervisor.run(**second).result["value"] == 2
 
 
 def test_explicit_retention_preserves_all_payloads(tmp_path):
@@ -548,7 +568,7 @@ def test_mismatched_launch_request_does_not_launch_and_retains_staged_input(tmp_
     assert (_payload(attempt).parent / "input.fobs").exists()
 
 
-def test_end_run_while_worker_lives_retains_earlier_received_payloads(tmp_path):
+def test_end_run_while_worker_lives_keeps_only_unresolved_payloads(tmp_path):
     supervisor = TaskSupervisor()
     first, _ = _attempt(tmp_path)
     outcome = supervisor.run(**first)
@@ -571,7 +591,7 @@ def test_end_run_while_worker_lives_retains_earlier_received_payloads(tmp_path):
             assert cancelling.wait(5)
             ending = pool.submit(supervisor.end_run)
             supervisor.cleanup_job_payloads()
-            assert _payload(first).exists()
+            assert not _payload(first).exists()
             assert _payload(second).exists()
         finally:
             proceed.set()
@@ -744,8 +764,6 @@ main()
     else:
         assert outcome.execution_status.succeeded
     assert supervisor._active is None
-    with supervisor.transfer_reader(outcome.identity):
-        supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
-        supervisor.end_run()
-        assert _payload(attempt).exists()
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    supervisor.end_run()
     assert _payload(attempt).exists() is (fault != "none")

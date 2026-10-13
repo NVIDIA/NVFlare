@@ -118,6 +118,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         if self.task_execution is None:
             return
         compute_ids = {component["id"] for plan in self.task_execution.executors for component in plan.components}
+        compute_ids.difference_update(component["id"] for component in self.task_execution.job_components)
         worker_paths = []
         for index, component in enumerate(self.config_data.get("components", []), 1):
             if component["id"] in compute_ids:

@@ -143,7 +143,7 @@ def main():
     _start_parent_guard(parent_pid)
     exit_code = 1
     try:
-        from nvflare.private.fed.client.task_worker_client_api import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
+        from nvflare.private.fed.client.task_worker_binding import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
         from nvflare.private.fed.task_worker.worker import run_worker
 
         run_worker(

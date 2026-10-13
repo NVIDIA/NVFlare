@@ -17,7 +17,7 @@
 Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes",
 "Client API Backends"). One ClientAPIExecutor delegates to one mode-specific backend:
 
-- in_process: trainer runs inside the Client Job (CJ) process over DataBus
+- in_process: trainer runs in its execution owner (CJ for job lifetime, a fresh worker for task lifetime)
 - external_process: NVFlare launches and owns the trainer process tree over Cell
 - attach: externally owned trainer rendezvous over Cell
 
@@ -107,7 +107,8 @@ class ClientAPIBackendSpec(ABC):
 
     Lifecycle ownership per execution mode:
 
-    - in_process: the backend runs the trainer inside the CJ process and owns its thread.
+    - in_process: job lifetime owns a continuing trainer thread in the CJ;
+      task lifetime runs one assignment on the worker's main thread.
     - external_process: the backend launches and owns the external trainer process tree; it must
       not stop the trainer before the payload transfer of a pending result reaches terminal state.
     - attach: the backend owns only its protocol session. The trainer process is externally

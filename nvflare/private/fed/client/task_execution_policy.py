@@ -77,11 +77,12 @@ class _SiteBuilder(ComponentBuilder):
 class TaskExecutionPolicy:
     launcher: TaskLauncherSpec
     environment_variables: tuple[str, ...] = ()
-    artifact_cleanup: str = "job"
+    artifact_cleanup: str = "receipt"
     worker_timeout: float | None = None
     settlement_timeout: float = 10.0
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
+    finalization_timeout: float = 30.0
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -103,6 +104,7 @@ class TaskExecutionPolicy:
             "settlement_timeout",
             "poll_interval",
             "max_payload_bytes",
+            "finalization_timeout",
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
@@ -115,9 +117,9 @@ class TaskExecutionPolicy:
             raise ValueError(
                 "task environment policy cannot forward federation credentials, API bootstrap, or GPU visibility"
             )
-        cleanup = config.get("artifact_cleanup", "job")
-        if cleanup not in ("job", "retain"):
-            raise ValueError("artifact_cleanup must be 'job' or 'retain'")
+        cleanup = config.get("artifact_cleanup", "receipt")
+        if cleanup not in ("receipt", "retain"):
+            raise ValueError("artifact_cleanup must be 'receipt' or 'retain'")
         options = TaskSupervisorOptions(
             worker_timeout=_timeout("worker_timeout", config.get("worker_timeout")),
             settlement_timeout=config.get("settlement_timeout", 10.0),
@@ -125,6 +127,9 @@ class TaskExecutionPolicy:
         )
         limit = config.get("max_payload_bytes")
         _require_payload_limit(limit)
+        finalization_timeout = _timeout("finalization_timeout", config.get("finalization_timeout", 30.0))
+        if finalization_timeout is None or finalization_timeout <= 0:
+            raise ValueError("finalization_timeout must be finite and positive")
         launcher_config = config.get("launcher")
         launcher = ProcessTaskLauncher() if launcher_config is None else _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or launcher.launch_mode != "process":
@@ -137,6 +142,7 @@ class TaskExecutionPolicy:
             options.settlement_timeout,
             options.poll_interval,
             limit,
+            finalization_timeout,
         )
 
     def worker_environment(self):

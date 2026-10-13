@@ -10,6 +10,8 @@ separate facts.
 ## Client configuration and script lifetime
 
 Client configuration accepts `execution_lifetime: "job"` (the default) or `"task"`.
+Task-lifetime exports use client `format_version: 3`, which older clients reject
+instead of silently running with job lifetime. Job-lifetime exports keep version 2.
 Job lifetime keeps the existing executors and Client API backends. Task lifetime
 authorizes inert executor and component specifications in the Client Job and again
 in the worker before importing application code. Compute instances are constructed
@@ -25,13 +27,21 @@ graph and a resident service or task filter. There are no per-component lifetime
 flags. Jobs cannot configure the framework's internal adapter, launcher,
 environment policy or declared task state.
 
+The initial profile permits in-process ClientAPIExecutor and NPTrainer. Executors
+requiring federation messaging or other resident engine services use job lifetime;
+unqualified executors fail validation before export or application imports.
+DecomposerRegister remains in the CJ and is also staged in the worker so both
+processes register payload codecs before decoding. This serialization setup is
+independent of trainer lifetime.
+
 `FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`, and
 `recipe.set_execution_lifetime(...)` expose these controls. The unified and PyTorch
 FedAvg and PyTorch FedProx recipes also accept `execution_lifetime="task"`. Export
 validates the receiving sites' GPU resource/launcher settings; unrelated job-lifetime
 GPU apps in the same deployment remain valid.
 
-The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
+Both lifetimes use the same InProcessClientAPI with small job/task input and
+result adapters. The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
 runs on the worker's main thread, receives one assigned model, and hands off one
 eager result through the existing Client API model, format, FULL/DIFF, metadata and
 rank semantics. The same receive/send loop exits after that send. Script arguments
@@ -39,6 +49,9 @@ retain their boundaries, and supported secret placeholders resolve in the worker
 Sending only hands off a local snapshot: script failure or finalizer failure still
 prevents completion. Analytics are captured synchronously and replayed by the Client
 Job after settlement; local worker handlers also receive those events.
+Worker log lines are replayed through CJ logging after settlement, making them
+available to the existing JobLogStreamer. Worker failures include their original
+error type, message and diagnostic path in the CJ exception.
 
 Script process memory, optimizer state and executor instances do not survive the
 assignment. Applications needing previous local model state must use a job-lifetime
@@ -58,7 +71,7 @@ The Collab API's resident RPC service continues to use job lifetime.
 Only the site's canonical `local/resources.json` or its default fallback supplies
 `task_execution`. Job application and job resource overrides cannot select it.
 The default launcher is ProcessTaskLauncher, environment forwarding is explicit,
-and artifact cleanup happens at job end. An optional site configuration is:
+and successful payloads are released after terminal receipt. An optional site configuration is:
 
 ```json
 {
@@ -67,7 +80,8 @@ and artifact cleanup happens at job end. An optional site configuration is:
     "worker_timeout": 600,
     "settlement_timeout": 10,
     "poll_interval": 0.05,
-    "artifact_cleanup": "job"
+    "finalization_timeout": 30,
+    "artifact_cleanup": "receipt"
   }
 }
 ```
@@ -75,8 +89,10 @@ and artifact cleanup happens at job end. An optional site configuration is:
 `artifact_cleanup: "retain"` keeps every attempt. `max_payload_bytes` optionally
 limits input and output payloads with the same policy. The job's executor definition
 can shorten `worker_timeout`, and ClientAPIExecutor's `result_wait_timeout` bounds
-the wait from script start until its local send. A timely send does not waive the
-worker deadline or physical settlement requirement.
+the complete wait for the worker's result, including script exit and finalizers.
+After a local send, the site also imposes a finite `finalization_timeout` (30 seconds
+by default), including when result_wait_timeout is unset. Sending does not waive
+either deadline or the physical settlement requirement.
 
 Workers receive only the framework's standard runtime environment allow-list plus
 site-approved variable names. Federation credentials, Client API bootstrap and GPU
@@ -158,18 +174,16 @@ the late handle. There is no reset or automatic physical retry.
 
 For publication, the caller validates the reply's workflow, task, and attempt
 before calling record_receipt. RETRY or unknown receipt retains the saved result.
-The default job-end cleanup requires confirmed settlement, a validated successful
-result, RECEIVED or TASK_CLOSED, and no outstanding transfer_reader leases. Each
-actual transport reader must hold a lease until its final source read, including
-after cancellation or receipt. Cleanup excludes new readers once release starts;
-failed cleanup retains that exclusion while allowing cleanup retries. Explicit
-retention and failed attempts keep their payloads. Completion and diagnostic
+Default cleanup requires confirmed settlement, a decoded successful result and
+RECEIVED or TASK_CLOSED. Uploads use that in-memory snapshot, so no disk-reader
+leases are required. Cleanup is independent of admission of the next assignment.
+Explicit retention, failed cleanup and failed attempts keep their evidence. Completion and diagnostic
 records remain after successful payload release. Closure says nothing about an
 earlier upload's receipt or aggregation use.
 
 A local completion never overrides Client Job/task cancellation or authorizes
 network publication by itself. The adapter must drain pending launches during job
 shutdown, recheck cancellation before sending, retain the saved result through
-receipt retries, and keep artifact files until every actual transport reader has
-finished. Sim/POC/Prod E2E tests must exercise these boundaries, including process
+receipt retries, and release successful disk payloads after terminal receipt.
+Sim/POC/Prod E2E tests must exercise these boundaries, including process
 termination and filesystem failure after completion publication.

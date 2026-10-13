@@ -26,6 +26,8 @@ from nvflare.fuel.utils.component_builder import ConfigType
 
 CLIENT_API_EXECUTOR_PATH = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"
+SUPPORTED_TASK_EXECUTORS = {CLIENT_API_EXECUTOR_PATH, "nvflare.app_common.np.np_trainer.NPTrainer"}
+DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister"
 
 
 def _effective_settings(settings, site_name, default_key):
@@ -52,6 +54,8 @@ def _gpu_resource(value):
 
     if isinstance(value, dict):
         for name, item in value.items():
+            if name == "mem_per_gpu_in_GiB" and value.get("num_of_gpus") == 0:
+                continue
             if "gpu" in str(name).lower() and nonempty(item):
                 return True
             if _gpu_resource(item):
@@ -146,6 +150,8 @@ def prepare_task_execution(client_config):
             raise ValueError("TaskWorkerExecutor is framework-managed; select execution_lifetime='task'")
     if lifetime == ExecutionLifetime.JOB:
         return None
+    if "format_version" in client_config and client_config["format_version"] != 3:
+        raise ValueError("task lifetime requires client format_version 3 so older clients reject it")
     if "task_state" in client_config:
         raise ValueError("declared task state is not supported by this task execution profile")
     executors = client_config.get("executors")
@@ -175,6 +181,11 @@ def prepare_task_execution(client_config):
         return selected
 
     scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
+    serialization_ids = {
+        cid
+        for cid, spec in by_id.items()
+        if get_class_path_from_config(spec, resolve_name=scanner.get_module_name) == DECOMPOSER_REGISTER_PATH
+    }
     plans = []
     compute_ids = set()
     for definition in executors:
@@ -184,8 +195,8 @@ def prepare_task_execution(client_config):
         path = get_class_path_from_config(config, resolve_name=scanner.get_module_name)
         if path == TASK_EXECUTOR_PATH:
             raise ValueError("TaskWorkerExecutor is framework-managed; select execution_lifetime='task'")
-        if path == "nvflare.collab.runtime.executor.CollabExecutor":
-            raise ValueError("CollabExecutor requires job lifetime for its resident federation RPC service")
+        if path not in SUPPORTED_TASK_EXECUTORS:
+            raise ValueError(f"executor {path!r} is not supported by this task profile; use job lifetime")
         args = config.get("args", {})
         if not isinstance(args, dict):
             raise ValueError("executor args must be a dict")
@@ -198,7 +209,7 @@ def prepare_task_execution(client_config):
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
         worker_ids = closure(_dependencies(config, ids, component=True))
         compute_ids.update(worker_ids)
-        worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in worker_ids)
+        worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in worker_ids | serialization_ids)
         plans.append(
             TaskExecutorConfig(
                 copy.deepcopy(config),
@@ -209,12 +220,14 @@ def prepare_task_execution(client_config):
         )
     # Existing filters and components outside the selected compute graph stay
     # with the CJ. Site filters are added by the normal privacy pipeline there.
-    resident_roots = ids - compute_ids
+    resident_roots = (ids - compute_ids) | serialization_ids
     for name in ("task_data_filters", "task_result_filters"):
         for definition in client_config.get(name, []):
             resident_roots.update(_dependencies(definition.get("filters", []), ids))
-    shared = closure(resident_roots) & compute_ids
+    shared = (closure(resident_roots) & compute_ids) - serialization_ids
     if shared:
         raise ValueError(f"components shared by compute and resident CJ services are not supported: {sorted(shared)}")
-    job_components = tuple(copy.deepcopy(c) for c in components if c["id"] not in compute_ids)
+    job_components = tuple(
+        copy.deepcopy(c) for c in components if c["id"] not in compute_ids or c["id"] in serialization_ids
+    )
     return TaskExecutionConfig(tuple(plans), job_components)
