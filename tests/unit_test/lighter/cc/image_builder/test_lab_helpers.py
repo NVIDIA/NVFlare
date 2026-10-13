@@ -248,7 +248,7 @@ class LabStateTests(unittest.TestCase):
     def test_acceptance_runner_interrupts_suite_group_and_keeps_streamed_log(self):
         runner = load_helper("acceptance_runner")
         process = Mock(pid=1234)
-        process.poll.return_value = None
+        process.poll.side_effect = [None, None, 0]
         process.wait.side_effect = [runner._SuiteSignal(runner.signal.SIGTERM), 0]
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -264,6 +264,37 @@ class LabStateTests(unittest.TestCase):
         self.assertNotEqual(popen.call_args.kwargs["stdout"], runner.subprocess.PIPE)
         killpg.assert_called_once_with(1234, runner.signal.SIGINT)
         process.wait.assert_called_with(timeout=runner.SUITE_SHUTDOWN_SECONDS)
+
+    def test_acceptance_runner_stops_qemu_left_without_its_launcher(self):
+        runner = load_helper("acceptance_runner")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            delivery = output / "case/delivery"
+            delivery.mkdir(parents=True)
+            (delivery / "vault.qcow2").touch()
+            state_path = output / "runtime.json"
+            write_json(
+                state_path,
+                {
+                    "vault_directory": str(delivery.resolve()),
+                    "launcher_pid": 100,
+                    "launcher_start": 1,
+                    "qemu_pid": 200,
+                    "qemu_start": 2,
+                },
+            )
+            with (
+                patch.object(runner, "runtime_state_path", return_value=state_path),
+                patch.object(runner, "shutdown", side_effect=BuildError("launcher exited")),
+                patch.object(runner, "_process_start", side_effect=[2, 2, FileNotFoundError]),
+                patch.object(runner, "qmp_powerdown") as powerdown,
+                patch.object(runner.time, "sleep"),
+                patch.object(runner, "require_detached") as detached,
+            ):
+                runner._shutdown_vaults(output)
+            powerdown.assert_called_once_with(runner.qmp_socket_path(delivery))
+            detached.assert_called_once_with(delivery)
+            self.assertFalse(state_path.exists())
 
     def test_bootstrap_publishes_only_successfully_verified_firewall_status(self):
         for failure in (None, "apply", "verify"):

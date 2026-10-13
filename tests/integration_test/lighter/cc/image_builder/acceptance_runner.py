@@ -25,6 +25,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[5]
@@ -35,9 +36,20 @@ sys.path[:0] = [str(BUILDER), str(UNIT_TESTS)]
 from cvm.artifacts.acceptance import aggregate  # noqa: E402
 from cvm.artifacts.bundle import load_signing_key, verify_bundle  # noqa: E402
 from cvm.common.errors import BuildError, require  # noqa: E402
-from cvm.common.io import write_json  # noqa: E402
+from cvm.common.io import read_json, write_json  # noqa: E402
+from cvm.host.launcher import (  # noqa: E402
+    GRACEFUL_SHUTDOWN_SECONDS,
+    SHUTDOWN_WAIT_SECONDS,
+    _process_start,
+    qmp_powerdown,
+    qmp_socket_path,
+    require_detached,
+    runtime_state_path,
+    shutdown,
+)
 
-SUITE_SHUTDOWN_SECONDS = 30
+SUITE_SHUTDOWN_SECONDS = SHUTDOWN_WAIT_SECONDS + 10
+ORPHAN_TERMINATE_SECONDS = 30
 
 
 class _SuiteSignal(Exception):
@@ -45,22 +57,86 @@ class _SuiteSignal(Exception):
         self.signum = signum
 
 
-def _stop_suite(process):
-    """Give the suite a bounded interrupt window so unittest cleanups can run."""
-    if process.poll() is not None:
+def _same_process(pid, started):
+    try:
+        return _process_start(pid) == started
+    except FileNotFoundError:
+        return False
+
+
+def _wait_process(pid, started, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _same_process(pid, started):
+            return True
+        time.sleep(0.2)
+    return not _same_process(pid, started)
+
+
+def _terminate_recorded_qemu(delivery, state):
+    """Stop an orphan only when its protected runtime identity still matches."""
+    require(state.get("vault_directory") == str(delivery.resolve()), "Acceptance QEMU state names another vault")
+    pid = state.get("qemu_pid")
+    started = state.get("qemu_start")
+    require(type(pid) is int and type(started) is int, "Invalid acceptance QEMU runtime state")
+    if not _same_process(pid, started):
         return
     try:
-        os.killpg(process.pid, signal.SIGINT)
+        qmp_powerdown(qmp_socket_path(delivery))
+    except (OSError, ValueError, BuildError):
+        pass
+    if _wait_process(pid, started, GRACEFUL_SHUTDOWN_SECONDS):
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         return
+    if _wait_process(pid, started, ORPHAN_TERMINATE_SECONDS):
+        return
     try:
-        process.wait(timeout=SUITE_SHUTDOWN_SECONDS)
-    except subprocess.TimeoutExpired:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    require(_wait_process(pid, started, 10), "Acceptance QEMU did not stop")
+
+
+def _shutdown_vaults(output):
+    """Stop every copied acceptance delivery, including a launcher-orphaned QEMU."""
+    for delivery in sorted(output.glob("*/delivery")):
+        if not (delivery / "vault.qcow2").is_file():
+            continue
+        state_path = runtime_state_path(delivery)
+        state = read_json(state_path) if state_path.is_file() and not state_path.is_symlink() else None
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            shutdown(delivery)
+        except BuildError:
+            if state:
+                _terminate_recorded_qemu(delivery, state)
+        require_detached(delivery)
+        state_path.unlink(missing_ok=True)
+
+
+def _stop_suite(process, output):
+    """Give the suite a bounded interrupt window so unittest cleanups can run."""
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGINT)
         except ProcessLookupError:
             pass
-        process.wait()
+    try:
+        if process.poll() is None:
+            try:
+                process.wait(timeout=SUITE_SHUTDOWN_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+        _shutdown_vaults(output)
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
 
 
 def required_environment():
@@ -108,7 +184,7 @@ def run_suite(pattern, environment, output):
                 previous_handlers[signum] = signal.signal(signum, interrupted)
             returncode = process.wait()
         except BaseException as error:
-            _stop_suite(process)
+            _stop_suite(process, output)
             if isinstance(error, _SuiteSignal):
                 name = signal.Signals(error.signum).name
                 raise BuildError(f"{pattern} interrupted by {name}; cleanup was given a bounded grace period") from None
