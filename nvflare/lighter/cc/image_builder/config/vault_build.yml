@@ -6,7 +6,9 @@ image_id: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 # Optional: omit to build for every platform available in cvm_image.
 # platforms: [intel_tdx]
 requires_gpu: false
-vault_drive_size: 8
+# Example only. Include the retained archive, expanded image, application files,
+# filesystem/Docker overhead, and expected runtime writes; see BUILD_GUIDE.md.
+vault_drive_size: 32
 applog_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1

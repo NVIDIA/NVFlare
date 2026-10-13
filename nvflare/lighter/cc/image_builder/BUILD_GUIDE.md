@@ -605,6 +605,36 @@ docker image inspect --format '{{.Id}}' "$image"
 docker save "$image" -o inputs/application.tar
 ```
 
+Size the vault before building it. The vault keeps `application.tar` after first
+boot and also stores the expanded image under Docker's `/vault/docker/data`, so
+the archive size by itself is not sufficient. Use the image's `Size` value before
+removing it from the build host:
+
+```sh
+image_bytes=$(docker image inspect --format '{{.Size}}' "$image")
+archive_bytes=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' inputs/application.tar)
+printf 'image_bytes=%s archive_bytes=%s\n' "$image_bytes" "$archive_bytes"
+```
+
+Choose `vault_drive_size` in GiB using this baseline:
+
+```text
+content = archive_bytes + image_bytes + application_files_bytes
+safety_margin = max(2 GiB, 20% of content)
+vault_drive_size >= ceil((content + safety_margin + expected_runtime_writes) / 1 GiB)
+```
+
+`expected_runtime_writes` includes container logs, caches, downloaded models and
+anything written below `/vault/application/runtime` or
+`/vault/application/data`. Increase the margin for images with high layer
+expansion or workloads whose write volume is uncertain. Vault Build scans every
+saved-image layer that `docker load` will import and rejects a configured vault
+below its startup estimate; that check reserves the safety margin but cannot
+predict application runtime writes. If the local Python cannot inspect a layer's
+compression format, the builder prints a warning and uses its stored size as a
+lower bound. Validate the chosen capacity under the workload's expected peak
+write volume.
+
 Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
@@ -618,7 +648,8 @@ requires_gpu: false
 # Optional with container.attestation_credentials. This is the verifier's
 # maximum accepted EAR age, not the signed EAR lifetime.
 # max_token_age_seconds: 300
-vault_drive_size: 8
+# Example only; calculate this value for the saved image and workload.
+vault_drive_size: 32
 applog_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1

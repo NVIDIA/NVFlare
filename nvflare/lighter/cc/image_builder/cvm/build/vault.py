@@ -49,6 +49,10 @@ from .storage import (
     sidecar,
 )
 
+GIB = 1024**3
+FILESYSTEM_BLOCK_BYTES = 4096
+MINIMUM_VAULT_HEADROOM_BYTES = 2 * GIB
+
 
 def populate(root, app):
     for directory in ("docker", "docker/data", "containerd", "config", "application", "services", "scripts"):
@@ -80,22 +84,41 @@ def _numeric_owner(user):
     return uid, gid
 
 
-def validated_image(path, image_id):
+def _validated_image(path, image_id):
     try:
-        normalized, image = _archive_image(path, image_id)
+        normalized, image, layers = _archive_image(path, image_id)
         container = image.get("config") or {}
         require(isinstance(container, dict), "Invalid Docker image configuration")
         user = container.get("User", "")
         require(isinstance(user, str), "Invalid Docker image USER")
-        return normalized, _numeric_owner(user)
+        return normalized, _numeric_owner(user), layers
     except (BuildError, OSError, ValueError, KeyError, TypeError, AttributeError, EOFError, tarfile.TarError):
         # Archives can embed private paths, image metadata or credentials. Do not
         # expose parser exceptions, even though this check precedes key creation.
         raise ConfigurationError("Invalid docker_archive; regenerate it with docker save and verify image_id") from None
 
 
+def validated_image(path, image_id):
+    normalized, owner, _ = _validated_image(path, image_id)
+    return normalized, owner
+
+
 def validate_archive(path, image_id):
     return validated_image(path, image_id)[0]
+
+
+def _entry_layers(entry):
+    layers = entry["Layers"]
+    require(
+        isinstance(layers, list)
+        and all(
+            isinstance(name, str) and name and not name.startswith("/") and ".." not in Path(name).parts
+            for name in layers
+        )
+        and len(set(layers)) == len(layers),
+        "Invalid Docker image layer list",
+    )
+    return tuple(layers)
 
 
 def _archive_image(path, image_id):
@@ -107,7 +130,10 @@ def _archive_image(path, image_id):
         entries = json.load(archive.extractfile(member))
         require(isinstance(entries, list) and entries, "Empty Docker save archive")
         configurations = {}
+        archive_layers = []
+        archive_layer_set = set()
         for entry in entries:
+            require(isinstance(entry, dict), "Invalid Docker save entry")
             filename = entry["Config"]
             require(
                 isinstance(filename, str) and not filename.startswith("/") and ".." not in Path(filename).parts,
@@ -117,9 +143,19 @@ def _archive_image(path, image_id):
             require(member.isfile() and member.size < 16 * 1024**2, "Invalid Docker image configuration")
             data = archive.extractfile(member).read()
             digest = "sha256:" + hashlib.sha256(data).hexdigest()
-            configurations[digest] = json.loads(data)
+            image = json.loads(data)
+            layers = _entry_layers(entry)
+            for layer in layers:
+                require(archive.getmember(layer).isfile(), "Invalid Docker image layer")
+                if layer not in archive_layer_set:
+                    archive_layers.append(layer)
+                    archive_layer_set.add(layer)
+            if digest in configurations:
+                require(configurations[digest][1] == layers, "Ambiguous Docker image layers")
+            configurations[digest] = (image, layers)
         if image_id in configurations:
-            return image_id, configurations[image_id]
+            image, _ = configurations[image_id]
+            return image_id, image, tuple(archive_layers)
         # Docker's containerd store reports an OCI manifest/index digest as Id;
         # the guest's classic store reports the image configuration digest.
         # Authenticate that graph before normalizing to the guest's identity.
@@ -147,8 +183,79 @@ def _archive_image(path, image_id):
             else:
                 image = value["config"]["digest"]
                 require(image in configurations, "OCI image is absent from Docker save manifest")
-                return image, configurations[image]
+                configuration, _ = configurations[image]
+                return image, configuration, tuple(archive_layers)
         raise BuildError("OCI manifest nesting exceeds the supported limit")
+
+
+def _allocated_file_bytes(size):
+    return ((size + FILESYSTEM_BLOCK_BYTES - 1) // FILESYSTEM_BLOCK_BYTES) * FILESYSTEM_BLOCK_BYTES
+
+
+def _application_file_bytes(path):
+    if not path:
+        return 0
+    identities = set()
+    total = 0
+    for item in (Path(path), *Path(path).rglob("*")):
+        status = item.lstat()
+        identity = (status.st_dev, status.st_ino)
+        if item.is_file() and not item.is_symlink():
+            if identity in identities:
+                continue
+            identities.add(identity)
+            total += _allocated_file_bytes(status.st_size)
+        else:
+            total += FILESYSTEM_BLOCK_BYTES
+    return total
+
+
+def _estimated_layer_bytes(path, layers, capacity):
+    """Estimate overlay2 allocation without extracting image content on the host."""
+    total = 0
+    complete = True
+    with tarfile.open(path, "r:*") as archive:
+        for name in layers:
+            member = archive.getmember(name)
+            try:
+                with archive.extractfile(member) as stream, tarfile.open(fileobj=stream, mode="r|*") as layer:
+                    for item in layer:
+                        total += _allocated_file_bytes(item.size) if item.isfile() else FILESYSTEM_BLOCK_BYTES
+                        if total > capacity:
+                            return total, complete
+            except tarfile.ReadError:
+                # Older Python versions cannot inspect every compression format
+                # Docker can import. The stored layer size remains a safe lower
+                # bound, and the caller reports that the estimate is incomplete.
+                total += member.size
+                complete = False
+    return total, complete
+
+
+def validate_vault_capacity(app, layers):
+    """Reject a vault that cannot hold its archive and estimated imported image."""
+    capacity = app["vault_drive_size"] * GIB
+    try:
+        archive_bytes = Path(app["docker_archive"]).stat().st_size
+        application_bytes = _application_file_bytes(app.get("application_files"))
+        layer_bytes, complete = _estimated_layer_bytes(app["docker_archive"], layers, capacity)
+    except (OSError, ValueError, EOFError, tarfile.TarError):
+        raise ConfigurationError("Cannot estimate vault storage from docker_archive and application_files") from None
+    content_bytes = archive_bytes + application_bytes + layer_bytes
+    safety_bytes = max(MINIMUM_VAULT_HEADROOM_BYTES, (content_bytes + 4) // 5)
+    required_bytes = content_bytes + safety_bytes
+    required_gib = (required_bytes + GIB - 1) // GIB
+    require_config(
+        capacity >= required_bytes,
+        f"vault_drive_size is {app['vault_drive_size']} GiB but the Docker archive and imported image require "
+        f"at least {required_gib} GiB; increase it and add space for expected application runtime writes",
+    )
+    if not complete:
+        print(
+            "WARNING: Some Docker layers use an unsupported compression format; vault sizing used their stored size. "
+            "Add extra capacity for their expanded size and application runtime writes.",
+            flush=True,
+        )
 
 
 def delivery(directory, app, manifest, digest, internal, bundle, trusted_keys=()):
@@ -343,7 +450,8 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
         set(profiles["contract"]["bootstrap_egress"]) <= set(app["allowed_out_ports"]),
         "Application must preserve bootstrap egress",
     )
-    app["image_id"], owner = validated_image(app["docker_archive"], app["image_id"])
+    app["image_id"], owner, layers = _validated_image(app["docker_archive"], app["image_id"])
+    validate_vault_capacity(app, layers)
     app["_application_owner"] = _numeric_owner(app["container"].get("user")) if app["container"].get("user") else owner
     if dev:
         require(

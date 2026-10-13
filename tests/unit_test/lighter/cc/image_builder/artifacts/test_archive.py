@@ -35,6 +35,7 @@ from cvm.artifacts.oci import (
     publish,
 )
 from cvm.artifacts.packaging import package_bundle, package_deliveries
+from cvm.build import vault
 from cvm.build.vault import delivery, validate_archive, validated_image
 from cvm.common.errors import BuildError, ConfigurationError
 from cvm.common.io import canonical, digest_file, read_json, write_json
@@ -257,14 +258,23 @@ class ArchiveTests(unittest.TestCase):
     def archive(self, directory, *, tamper=False, ambiguous=False, user=""):
         config = canonical({"architecture": "amd64", "os": "linux", "config": {"Cmd": ["serve"], "User": user}})
         config_id = "sha256:" + hashlib.sha256(config).hexdigest()
+        layer_data = io.BytesIO()
+        with tarfile.open(fileobj=layer_data, mode="w:gz") as layer:
+            payload = b"application layer" * 512
+            item = tarfile.TarInfo("opt/application/payload")
+            item.size = len(payload)
+            layer.addfile(item, io.BytesIO(payload))
+        layer_blob = layer_data.getvalue()
+        layer_name = "blobs/sha256/" + hashlib.sha256(layer_blob).hexdigest()
         manifest = canonical({"config": {"digest": config_id}})
         manifest_id = "sha256:" + hashlib.sha256(manifest).hexdigest()
         descriptor = {"digest": manifest_id, "platform": {"architecture": "amd64", "os": "linux"}}
         index = canonical({"manifests": [descriptor] * (2 if ambiguous else 1)})
         index_id = "sha256:" + hashlib.sha256(index).hexdigest()
         members = {
-            "manifest.json": canonical([{"Config": "blobs/sha256/" + config_id[7:]}]),
+            "manifest.json": canonical([{"Config": "blobs/sha256/" + config_id[7:], "Layers": [layer_name]}]),
             "blobs/sha256/" + config_id[7:]: config,
+            layer_name: layer_blob,
             "blobs/sha256/" + manifest_id[7:]: manifest + (b"x" if tamper else b""),
             "blobs/sha256/" + index_id[7:]: index,
         }
@@ -302,6 +312,19 @@ class ArchiveTests(unittest.TestCase):
                 path, config_id, _ = self.archive(directory, user=user)
                 with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive"):
                     validated_image(path, config_id)
+
+    def test_vault_capacity_accounts_for_archive_imported_layers_and_headroom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory)
+            _, _, layers = vault._validated_image(path, config_id)
+            app = {"docker_archive": path, "vault_drive_size": 2}
+            with self.assertRaisesRegex(
+                ConfigurationError,
+                "vault_drive_size is 2 GiB.*at least 3 GiB.*runtime writes",
+            ):
+                vault.validate_vault_capacity(app, layers)
+            app["vault_drive_size"] = 3
+            vault.validate_vault_capacity(app, layers)
 
     def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
         secret = "secret-archive-metadata"
