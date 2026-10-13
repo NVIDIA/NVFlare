@@ -14,6 +14,7 @@
 import os
 import stat
 import struct
+import threading
 import time
 from threading import Event
 from types import SimpleNamespace
@@ -90,6 +91,64 @@ def _wait_until(condition, timeout=15.0) -> bool:
 def _frame(payload: bytes) -> bytes:
     length = PREFIX_LEN + len(payload)
     return struct.pack(">I", length) + bytes(PREFIX_LEN - 4) + payload
+
+
+@pytest.mark.parametrize("operation", ["remove", "stop"])
+def test_passive_reader_finishes_before_shutdown_returns(tmp_path, operation):
+    state = _State()
+    server = _make_comm(NODE_A, state)
+    client = _make_comm(NODE_B, state)
+    reader_closing = Event()
+    release_reader = Event()
+    completed = Event()
+    worker = None
+
+    try:
+        handle, url, _ = server.start_listener("shared-file", {"root_dir": str(tmp_path), **FAST_PARAMS})
+        server.start()
+        client.add_connector(url, Mode.ACTIVE)
+        client.start()
+        assert state.ready[NODE_B].wait(5)
+
+        driver = server.conn_manager.connectors[handle].driver
+        assert _wait_until(lambda: bool(driver.connections))
+        conn = next(iter(driver.connections.values()))
+        assert _wait_until(lambda: conn.reader.file is not None)
+        reader_thread = next(
+            t for t in threading.enumerate() if t.name == f"file_conn_{os.path.basename(conn.conn_dir)}"
+        )
+        original_close = conn.reader.close
+
+        def delayed_close():
+            reader_closing.set()
+            assert release_reader.wait(5)
+            original_close()
+
+        conn.reader.close = delayed_close
+
+        def shut_down():
+            if operation == "remove":
+                server.remove_connector(handle)
+            else:
+                server.stop()
+            completed.set()
+
+        worker = threading.Thread(target=shut_down)
+        worker.start()
+        assert reader_closing.wait(5)
+        assert not completed.wait(0.1), "shutdown returned before the passive reader closed its file"
+        release_reader.set()
+        worker.join(5)
+        assert completed.is_set()
+        assert not reader_thread.is_alive()
+        assert conn.reader.file is None
+        assert state.disconnected[NODE_B].is_set()
+    finally:
+        release_reader.set()
+        client.stop()
+        server.stop()
+        if worker is not None:
+            worker.join(5)
 
 
 class TestParseFileUrl:

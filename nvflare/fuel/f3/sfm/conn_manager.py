@@ -78,6 +78,9 @@ class ConnManager(ConnMonitor):
 
         # Active connectors
         self.connectors: Dict[str, ConnectorInfo] = {}
+        # A connector remains owned until its driver has finished shutdown,
+        # including when removal races a manager-wide stop.
+        self._connector_cleanups: Dict[str, Future] = {}
 
         # A dict of SFM connections, key is connection name
         self.sfm_conns: Dict[str, SfmConnection] = {}
@@ -135,13 +138,30 @@ class ConnManager(ConnMonitor):
 
     def remove_connector(self, handle: str):
         with self.lock:
-            connector = self.connectors.pop(handle, None)
+            completion = self._connector_cleanups.get(handle)
+            connector = None if completion else self.connectors.pop(handle, None)
+            if connector:
+                completion = Future()
+                self._connector_cleanups[handle] = completion
         if connector:
             connector.stopped.set()
-            completion = connector.driver.shutdown()
-            if isinstance(completion, Future):
-                completion.result()
+            try:
+                driver_completion = connector.driver.shutdown()
+                if isinstance(driver_completion, Future):
+                    driver_completion.result()
+            except BaseException as ex:
+                completion.set_exception(ex)
+                raise
+            else:
+                completion.set_result(None)
+            finally:
+                with self.lock:
+                    self._connector_cleanups.pop(handle, None)
             log.debug(f"Connector {connector} is removed")
+        elif completion:
+            completion.result()
+            with self.lock:
+                self.connectors.pop(handle, None)
         else:
             log.error(f"Unknown connector handle: {handle}")
 
@@ -162,21 +182,36 @@ class ConnManager(ConnMonitor):
 
         with self.lock:
             self.stopped = True
-            connectors = list(self.connectors.values())
-        completions = []
+            connectors = []
+            for handle, connector in self.connectors.items():
+                if handle not in self._connector_cleanups:
+                    completion = Future()
+                    self._connector_cleanups[handle] = completion
+                    connectors.append((connector, completion))
+            completions = list(self._connector_cleanups.values())
+        driver_completions = []
         first_error = None
-        for connector in connectors:
+        for connector, completion in connectors:
             connector.stopped.set()
             try:
-                completion = connector.driver.shutdown()
+                driver_completion = connector.driver.shutdown()
             except Exception as ex:
-                if first_error is None:
-                    first_error = ex
+                completion.set_exception(ex)
                 continue
-            if isinstance(completion, Future):
-                completions.append(completion)
+            if isinstance(driver_completion, Future):
+                driver_completions.append((driver_completion, completion))
+            else:
+                completion.set_result(None)
 
         # Request cancellation from every driver before waiting for any one.
+        for driver_completion, completion in driver_completions:
+            try:
+                driver_completion.result()
+            except Exception as ex:
+                completion.set_exception(ex)
+            else:
+                completion.set_result(None)
+
         for completion in completions:
             try:
                 completion.result()
@@ -499,20 +534,32 @@ class ConnManager(ConnMonitor):
         if conn_props:
             endpoint.conn_props.update(conn_props)
 
-        sfm_endpoint = self.sfm_endpoints.get(endpoint_name)
-        if sfm_endpoint:
-            old_state = sfm_endpoint.endpoint.state
-            sfm_endpoint.endpoint = endpoint
-        else:
-            old_state = EndpointState.IDLE
-            sfm_endpoint = SfmEndpoint(endpoint)
+        # Closing the connection removes it from sfm_conns under this same lock.
+        # A frame worker that passed its initial stopped check must not attach
+        # that connection or publish READY after the close notification.
+        with self.lock:
+            if (
+                self.stopped
+                or sfm_conn.closed
+                or getattr(sfm_conn.conn, "state", None) == ConnState.CLOSED
+                or (sfm_conn.registered and self.sfm_conns.get(sfm_conn.get_name()) is not sfm_conn)
+            ):
+                return
 
-        sfm_endpoint.add_connection(sfm_conn)
-        sfm_conn.sfm_endpoint = sfm_endpoint
-        self.sfm_endpoints[endpoint_name] = sfm_endpoint
+            sfm_endpoint = self.sfm_endpoints.get(endpoint_name)
+            if sfm_endpoint:
+                old_state = sfm_endpoint.endpoint.state
+                sfm_endpoint.endpoint = endpoint
+            else:
+                old_state = EndpointState.IDLE
+                sfm_endpoint = SfmEndpoint(endpoint)
 
-        if endpoint.state != old_state:
-            self.notify_monitors(endpoint)
+            sfm_endpoint.add_connection(sfm_conn)
+            sfm_conn.sfm_endpoint = sfm_endpoint
+            self.sfm_endpoints[endpoint_name] = sfm_endpoint
+
+            if endpoint.state != old_state:
+                self.notify_monitors(endpoint)
 
     def notify_monitors(self, endpoint: Endpoint):
 
@@ -532,6 +579,7 @@ class ConnManager(ConnMonitor):
 
         sfm_conn = SfmConnection(connection, self.local_endpoint)
         with self.lock:
+            sfm_conn.registered = True
             self.sfm_conns[sfm_conn.get_name()] = sfm_conn
 
         connection.register_frame_receiver(SfmFrameReceiver(self, sfm_conn))
@@ -548,6 +596,7 @@ class ConnManager(ConnMonitor):
                 return
 
             sfm_conn = self.sfm_conns.pop(name)
+            sfm_conn.closed = True
             sfm_endpoint = sfm_conn.sfm_endpoint
             if sfm_endpoint is None:
                 log.debug(f"Connection {name} is closed before SFM handshake")

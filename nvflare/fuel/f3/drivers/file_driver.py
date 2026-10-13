@@ -540,6 +540,8 @@ class FileDriver(BaseDriver):
         super().__init__()
         self.stop_event = threading.Event()
         self.dir_lock = threading.Lock()
+        self._reader_lock = threading.RLock()
+        self._reader_threads = set()
         self.handled_dirs = set()
         self.done_dirs: Dict[str, float] = {}
         self.logger = get_obj_logger(self)
@@ -633,12 +635,18 @@ class FileDriver(BaseDriver):
 
         conn = FileConnection(conn_dir, connector, cfg)
         try:
-            if not self.add_connection(conn):
-                return
+            with self._reader_lock:
+                if not self.add_connection(conn):
+                    return
+                self._reader_threads.add(threading.current_thread())
             conn.read_loop(self.stop_event)
         finally:
-            conn.close()
-            self.close_connection(conn)
+            try:
+                conn.close()
+                self.close_connection(conn)
+            finally:
+                with self._reader_lock:
+                    self._reader_threads.discard(threading.current_thread())
             if not conn.received_anything:
                 # Nothing ever arrived (e.g. the listener is dead); remove our own dir so
                 # reconnect attempts don't accumulate directories on the shared filesystem
@@ -648,6 +656,11 @@ class FileDriver(BaseDriver):
         self.stop_connection_admission()
         self.stop_event.set()
         self.close_all()
+        with self._reader_lock:
+            readers = list(self._reader_threads)
+        for reader in readers:
+            if reader is not threading.current_thread():
+                reader.join()
 
     # Internal methods
 
@@ -690,12 +703,24 @@ class FileDriver(BaseDriver):
             with self.dir_lock:
                 self.handled_dirs.add(entry)
             conn = FileConnection(conn_dir, connector, cfg)
-            if not self.add_connection(conn):
+            with self._reader_lock:
+                admitted = self.add_connection(conn)
+                if admitted:
+                    t = threading.Thread(
+                        target=self._conn_loop, args=(conn, entry), name=f"file_conn_{entry}", daemon=True
+                    )
+                    self._reader_threads.add(t)
+                    try:
+                        t.start()
+                    except BaseException:
+                        self._reader_threads.discard(t)
+                        conn.close()
+                        self.close_connection(conn)
+                        raise
+            if not admitted:
                 with self.dir_lock:
                     self.done_dirs[entry] = time.monotonic()
                 continue
-            t = threading.Thread(target=self._conn_loop, args=(conn, entry), name=f"file_conn_{entry}", daemon=True)
-            t.start()
             new_conns += 1
         return new_conns
 
@@ -705,10 +730,14 @@ class FileDriver(BaseDriver):
         except Exception as ex:
             self.logger.error(f"Connection {conn} closed due to error: {secure_format_exception(ex)}")
         finally:
-            conn.close()
-            self.close_connection(conn)
-            with self.dir_lock:
-                self.done_dirs[entry] = time.monotonic()
+            try:
+                conn.close()
+                self.close_connection(conn)
+                with self.dir_lock:
+                    self.done_dirs[entry] = time.monotonic()
+            finally:
+                with self._reader_lock:
+                    self._reader_threads.discard(threading.current_thread())
 
     def _gc_conn_dirs(self, conns_dir: str, cfg: _ConnConfig, entries: list):
         """Remove ended connection dirs after a locally-timed grace period (no cross-node clock

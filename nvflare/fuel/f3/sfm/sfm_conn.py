@@ -60,6 +60,8 @@ class SfmConnection:
         self.conn = conn
         self.local_endpoint = local_endpoint
         self.sfm_endpoint = None
+        self.registered = False
+        self.closed = False
         self.last_activity = 0
         self.sequence = 0
         self.lock = threading.Lock()

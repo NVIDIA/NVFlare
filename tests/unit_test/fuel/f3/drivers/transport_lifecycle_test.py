@@ -38,6 +38,7 @@ from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
+from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
@@ -99,6 +100,66 @@ def test_connector_added_during_stop_is_rejected():
             connector.stopped.set()
         manager.conn_mgr_executor.shutdown()
         manager.frame_mgr_executor.shutdown()
+
+
+def test_stop_waits_for_concurrent_connector_removal():
+    manager = ConnManager(Endpoint("remove_stop_race"))
+    driver = TcpDriver()
+    handle = manager.add_connector(driver, {"scheme": "tcp", "url": "tcp://localhost:1234"}, Mode.PASSIVE)
+    native_cleanup = Future()
+    removal_started = threading.Event()
+    stop_returned = threading.Event()
+
+    def shutdown():
+        removal_started.set()
+        return native_cleanup
+
+    with patch.object(driver, "shutdown", side_effect=shutdown):
+        remover = threading.Thread(target=manager.remove_connector, args=(handle,))
+        stopper = threading.Thread(target=lambda: (manager.stop(), stop_returned.set()))
+        remover.start()
+        try:
+            assert removal_started.wait(5)
+            stopper.start()
+            assert not stop_returned.wait(0.1), "stop returned while removal still owned native cleanup"
+            native_cleanup.set_result(None)
+            remover.join(5)
+            stopper.join(5)
+            assert not remover.is_alive()
+            assert not stopper.is_alive()
+            assert stop_returned.is_set()
+            driver.shutdown.assert_called_once()
+        finally:
+            if not native_cleanup.done():
+                native_cleanup.set_result(None)
+            remover.join(5)
+            if stopper.ident is not None:
+                stopper.join(5)
+
+
+def test_closed_connection_cannot_publish_late_ready():
+    manager = ConnManager(Endpoint("local"))
+    conn = MagicMock()
+    conn.name = "closed_before_handshake"
+    conn.state = ConnState.CONNECTED
+    conn.connector.mode = Mode.PASSIVE
+    conn.get_conn_properties.return_value = {}
+    monitor = MagicMock()
+    manager.add_endpoint_monitor(monitor)
+
+    try:
+        manager.handle_new_connection(conn)
+        sfm_conn = manager.sfm_conns[conn.name]
+        conn.state = ConnState.CLOSED
+        manager.close_connection(conn)
+
+        # This is the worker that decoded HELLO before the close and resumes
+        # endpoint attachment after the transport has been removed.
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "peer"})
+        assert manager.find_endpoint("peer") is None
+        monitor.state_change.assert_not_called()
+    finally:
+        manager.stop()
 
 
 def test_grpc_bind_failure_stops_server_and_propagates():
@@ -725,6 +786,68 @@ def test_async_tcp_shutdown_interrupts_pending_server_tls_handshake(operation, l
         assert not stopper.is_alive()
         if operation == "remove":
             manager.stop()
+
+
+@pytest.mark.parametrize("operation", ["remove", "stop"])
+def test_async_tcp_shutdown_owns_raw_socket_before_tls_factory(operation, listener_context, monkeypatch, tmp_path):
+    driver = AioTcpDriver()
+    manager = ConnManager(Endpoint(f"raw_tls_{operation}"))
+    tls = _server_tls_context(tmp_path)
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", lambda *args, **kwargs: tls)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
+    handle = manager.add_connector(driver, params, Mode.PASSIVE)
+    accepted = threading.Event()
+    release_accept = threading.Event()
+    shutdown_done = threading.Event()
+    errors = []
+    original_accept = driver._accept_tls_socket
+
+    def delayed_accept(conn):
+        accepted.set()
+        assert release_accept.wait(5)
+        original_accept(conn)
+
+    monkeypatch.setattr(driver, "_accept_tls_socket", delayed_accept)
+    manager.start()
+    deadline = time.monotonic() + 5
+    while driver.server is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert driver.server is not None
+    peer = socket.create_connection(("127.0.0.1", port), timeout=2)
+
+    def shut_down():
+        try:
+            if operation == "remove":
+                manager.remove_connector(handle)
+            else:
+                manager.stop()
+        except Exception as ex:
+            errors.append(ex)
+        finally:
+            shutdown_done.set()
+
+    stopper = threading.Thread(target=shut_down)
+    try:
+        assert accepted.wait(5)
+        stopper.start()
+        assert not shutdown_done.wait(0.1), "shutdown returned before the raw accepted socket was released"
+        release_accept.set()
+        stopper.join(5)
+        assert not stopper.is_alive()
+        assert not errors
+        peer.settimeout(2)
+        assert peer.recv(1) == b""
+        assert not driver._pending_sockets
+        assert not driver._accept_tasks
+    finally:
+        release_accept.set()
+        peer.close()
+        if stopper.ident is not None:
+            stopper.join(5)
+        manager.stop()
 
 
 def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch, tmp_path):
