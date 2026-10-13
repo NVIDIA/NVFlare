@@ -51,6 +51,7 @@ from .storage import (
 
 GIB = 1024**3
 FILESYSTEM_BLOCK_BYTES = 4096
+STAT_BLOCK_BYTES = 512
 MINIMUM_VAULT_HEADROOM_BYTES = 2 * GIB
 
 
@@ -192,6 +193,13 @@ def _allocated_file_bytes(size):
     return ((size + FILESYSTEM_BLOCK_BYTES - 1) // FILESYSTEM_BLOCK_BYTES) * FILESYSTEM_BLOCK_BYTES
 
 
+def _stored_file_bytes(status):
+    blocks = getattr(status, "st_blocks", None)
+    if blocks is None:
+        return _allocated_file_bytes(status.st_size)
+    return _allocated_file_bytes(min(status.st_size, blocks * STAT_BLOCK_BYTES))
+
+
 def _application_file_bytes(path):
     if not path:
         return 0
@@ -204,7 +212,9 @@ def _application_file_bytes(path):
             if identity in identities:
                 continue
             identities.add(identity)
-            total += _allocated_file_bytes(status.st_size)
+            # copy_tree uses tar --sparse, so holes are not allocated in the
+            # vault. Round the source's stored blocks to the target block size.
+            total += _stored_file_bytes(status)
         else:
             total += FILESYSTEM_BLOCK_BYTES
     return total

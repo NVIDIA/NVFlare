@@ -255,7 +255,9 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaises(BuildError):
                 materialize("registry.example.org/cvm/example:latest", root / "mutable")
 
-    def archive(self, directory, *, tamper=False, ambiguous=False, user=""):
+    def archive(
+        self, directory, *, tamper=False, ambiguous=False, user="", shared_layer=False, unsupported_layer=False
+    ):
         config = canonical({"architecture": "amd64", "os": "linux", "config": {"Cmd": ["serve"], "User": user}})
         config_id = "sha256:" + hashlib.sha256(config).hexdigest()
         layer_data = io.BytesIO()
@@ -264,19 +266,29 @@ class ArchiveTests(unittest.TestCase):
             item = tarfile.TarInfo("opt/application/payload")
             item.size = len(payload)
             layer.addfile(item, io.BytesIO(payload))
-        layer_blob = layer_data.getvalue()
+        layer_blob = b"unsupported layer compression" if unsupported_layer else layer_data.getvalue()
         layer_name = "blobs/sha256/" + hashlib.sha256(layer_blob).hexdigest()
+        entries = [{"Config": "blobs/sha256/" + config_id[7:], "Layers": [layer_name]}]
+        extra = {}
+        if shared_layer:
+            shared_config = canonical(
+                {"architecture": "amd64", "os": "linux", "config": {"Cmd": ["other"], "User": user}}
+            )
+            shared_config_id = "sha256:" + hashlib.sha256(shared_config).hexdigest()
+            entries.append({"Config": "blobs/sha256/" + shared_config_id[7:], "Layers": [layer_name]})
+            extra["blobs/sha256/" + shared_config_id[7:]] = shared_config
         manifest = canonical({"config": {"digest": config_id}})
         manifest_id = "sha256:" + hashlib.sha256(manifest).hexdigest()
         descriptor = {"digest": manifest_id, "platform": {"architecture": "amd64", "os": "linux"}}
         index = canonical({"manifests": [descriptor] * (2 if ambiguous else 1)})
         index_id = "sha256:" + hashlib.sha256(index).hexdigest()
         members = {
-            "manifest.json": canonical([{"Config": "blobs/sha256/" + config_id[7:], "Layers": [layer_name]}]),
+            "manifest.json": canonical(entries),
             "blobs/sha256/" + config_id[7:]: config,
             layer_name: layer_blob,
             "blobs/sha256/" + manifest_id[7:]: manifest + (b"x" if tamper else b""),
             "blobs/sha256/" + index_id[7:]: index,
+            **extra,
         }
         path = Path(directory) / "save.tar"
         with tarfile.open(path, "w") as archive:
@@ -317,14 +329,41 @@ class ArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path, config_id, _ = self.archive(directory)
             _, _, layers = vault._validated_image(path, config_id)
-            app = {"docker_archive": path, "vault_drive_size": 2}
-            with self.assertRaisesRegex(
-                ConfigurationError,
-                "vault_drive_size is 2 GiB.*at least 3 GiB.*runtime writes",
+            app = {"docker_archive": path, "vault_drive_size": 3}
+            with patch.object(vault, "_estimated_layer_bytes", return_value=(0, True)):
+                vault.validate_vault_capacity(app, layers)
+            with (
+                patch.object(vault, "_estimated_layer_bytes", return_value=(vault.GIB, True)),
+                self.assertRaisesRegex(ConfigurationError, "vault_drive_size is 3 GiB.*at least 4 GiB"),
             ):
                 vault.validate_vault_capacity(app, layers)
-            app["vault_drive_size"] = 3
-            vault.validate_vault_capacity(app, layers)
+
+    def test_vault_capacity_counts_shared_layers_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, shared_layer=True)
+            _, _, layers = vault._validated_image(path, config_id)
+            self.assertEqual(len(layers), 1)
+            expected, complete = vault._estimated_layer_bytes(path, layers, vault.GIB)
+            self.assertTrue(complete)
+            self.assertGreater(expected, 0)
+
+    def test_vault_capacity_warns_for_unsupported_layer_compression(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, unsupported_layer=True)
+            _, _, layers = vault._validated_image(path, config_id)
+            app = {"docker_archive": path, "vault_drive_size": 3}
+            with patch("sys.stdout", new_callable=io.StringIO) as output:
+                vault.validate_vault_capacity(app, layers)
+            self.assertIn("unsupported compression format", output.getvalue())
+
+    def test_vault_capacity_uses_allocated_size_for_sparse_application_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sparse = root / "sparse"
+            with sparse.open("wb") as stream:
+                stream.seek(100 * vault.GIB)
+                stream.write(b"x")
+            self.assertLess(vault._application_file_bytes(root), vault.GIB)
 
     def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
         secret = "secret-archive-metadata"
