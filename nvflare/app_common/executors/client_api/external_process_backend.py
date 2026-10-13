@@ -25,6 +25,7 @@ import os
 import secrets
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -829,13 +830,53 @@ class ExternalProcessBackend(CellBackendBase):
             process.poll()
         try:
             os.killpg(trainer.pgid, 0)
-            return True
         except ProcessLookupError:
             return False
         except Exception as e:
             # Probe failure must not let teardown abandon an owned group.
             self.logger.debug(f"cannot probe trainer process group {trainer.pgid}: {e}")
             return True
+        if sys.platform == "linux" and process is not None and process.returncode is not None:
+            # Linux retains a process group containing only unreaped zombies.
+            # Such a group passes killpg(0), but cannot serve tasks/results and
+            # cannot be removed by TERM/KILL. On unavailable/incomplete procfs,
+            # keep the conservative killpg result.
+            live = self._linux_group_has_live_members(trainer.pgid)
+            if live is False:
+                # A worker may fork while the first /proc snapshot is read.
+                live = self._linux_group_has_live_members(trainer.pgid)
+            if live is not None:
+                return live
+        return True
+
+    def _linux_group_has_live_members(self, pgid: int) -> Optional[bool]:
+        """Return None when procfs cannot establish the group's state."""
+        found_zombie = False
+        try:
+            with os.scandir("/proc") as entries:
+                for entry in entries:
+                    if not entry.name.isdecimal():
+                        continue
+                    try:
+                        with open(f"/proc/{entry.name}/stat", encoding="utf-8") as stat_file:
+                            stat = stat_file.read()
+                    except FileNotFoundError:
+                        # The process exited between listing and reading /proc.
+                        continue
+                    # comm is enclosed in parentheses and can itself contain ')'.
+                    fields = stat[stat.rfind(")") + 2 :].split()
+                    if len(fields) < 4:
+                        return None
+                    state, _, group, session = fields[:4]
+                    if int(group) != pgid or int(session) != pgid:
+                        continue
+                    if state not in ("Z", "X", "x"):
+                        return True
+                    found_zombie = True
+        except (OSError, ValueError) as e:
+            self.logger.debug(f"cannot inspect trainer process group {pgid} in procfs: {e}")
+            return None
+        return False if found_zombie else None
 
     def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""

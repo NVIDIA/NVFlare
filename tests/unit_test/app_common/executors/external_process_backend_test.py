@@ -17,6 +17,8 @@
 import os
 import signal
 import subprocess
+import sys
+import textwrap
 import threading
 import time
 from types import SimpleNamespace
@@ -1890,6 +1892,58 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             process.extra_group_members = False
             backend.finalize(FLContext())
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux procfs and subreaper semantics")
+    def test_zombie_only_worker_group_is_not_alive(self):
+        # A container PID 1 may leave orphaned trainer workers unreaped. Isolate
+        # subreaper state and zombies in a child process so pytest owns neither.
+        script = textwrap.dedent(
+            """
+            import ctypes
+            import os
+            import signal
+            import subprocess
+            import sys
+            import time
+            from types import SimpleNamespace
+
+            from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+
+            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+            assert ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+            backend = ExternalProcessBackend()
+            worker_code = "import time; time.sleep(2)"
+            launcher_code = (
+                "import subprocess,sys; "
+                "p=subprocess.Popen([sys.executable, '-c', %r]); "
+                "print(p.pid, flush=True)" % worker_code
+            )
+            launcher = subprocess.Popen(
+                [sys.executable, "-c", launcher_code],
+                start_new_session=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            worker_pid = int(launcher.stdout.readline())
+            assert launcher.wait(timeout=3) == 0
+            trainer = SimpleNamespace(process=launcher, pgid=launcher.pid)
+            assert backend._process_group_alive(trainer), "live orphaned worker was missed"
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                with open(f"/proc/{worker_pid}/stat") as stat_file:
+                    state = stat_file.read().rsplit(")", 1)[1].split()[0]
+                if state == "Z":
+                    break
+                time.sleep(0.02)
+            assert state == "Z", f"worker never became a zombie: {state}"
+            os.killpg(trainer.pgid, 0)  # the original liveness probe still succeeds
+            assert not backend._process_group_alive(trainer)
+            assert backend._await_group_exit(trainer, 0.1)
+            os.waitpid(worker_pid, 0)  # reap the adopted child before leaving the test process
+            """
+        )
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 class TestClosedGate:
