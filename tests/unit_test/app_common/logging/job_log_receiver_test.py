@@ -30,7 +30,6 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
@@ -213,11 +212,11 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
     }
 
     receiver._on_chunk_received(b"error\n", stream_ctx, fl_ctx)
-    with patch.object(receiver, "log_info") as log_info:
-        with pytest.raises(RuntimeError, match="storage failed"):
-            receiver._on_stream_done(stream_ctx, fl_ctx)
+    with patch.object(receiver, "log_info") as log_info, patch.object(receiver, "log_exception") as log_exception:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
 
     log_info.assert_not_called()
+    log_exception.assert_called_once()
 
 
 def test_job_log_receiver_delays_end_run_until_all_active_streams_finish(receiver_clock):
@@ -253,20 +252,15 @@ def test_job_log_receiver_delays_end_run_until_all_active_streams_finish(receive
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
 
 
-def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_path, receiver_clock):
-    receiver = JobLogReceiver(dest_dir=str(tmp_path))
-    fl_ctx = _make_recv_fl_ctx()
-    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-    job_manager.set_client_data.side_effect = RuntimeError("storage failed")
-    stream_ctx = {
-        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
-        StreamContextKey.RC: ReturnCode.OK,
-    }
-
-    receiver._on_stream_started(stream_ctx, fl_ctx)
-    receiver._on_chunk_received(b"log line\n", stream_ctx, fl_ctx)
-    with pytest.raises(RuntimeError, match="storage failed"):
-        receiver._on_stream_done(stream_ctx, fl_ctx)
+def test_server_job_reports_failed_workspace_move(log_transports, tmp_path, receiver_clock):
+    receiver, streamer, fl_ctx = log_transports(receiver=JobLogReceiver(idle_timeout=0))
+    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    with patch.object(receiver, "_effective_dest_dir", return_value=str(tmp_path / "staging")):
+        with patch("nvflare.app_common.logging.job_log_receiver.shutil.move", side_effect=OSError("disk full")):
+            reply = streamer._handle_request(
+                TOPIC_STREAM_REQUEST, _log_request("failed-save", data=b"log line\n", eof=True), fl_ctx
+            )
+    assert reply.get_return_code() == ReturnCode.OK
 
     assert not _ready_to_end(receiver)
     receiver_clock.return_value = 0.5
@@ -274,19 +268,9 @@ def test_job_log_receiver_releases_readiness_when_stream_finalization_fails(tmp_
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
     receiver._on_end_run(EventType.END_RUN, fl_ctx)
-    job_manager.update_meta.assert_called_once_with(
-        "trusted_job",
-        {
-            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
-                {
-                    "client": "trusted_client",
-                    "log_file": WorkspaceConstants.LOG_FILE_NAME,
-                    "reason": "persistence_error",
-                }
-            ]
-        },
-        fl_ctx,
-    )
+    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
+        {"client": "trusted_client", "log_file": "log.json", "reason": "persistence_error"}
+    ]
 
 
 @pytest.fixture
@@ -302,14 +286,18 @@ def log_transports(tmp_path, receiver_clock):
     """Use the real receiving protocol with separate parent/job receiver instances."""
     transports = []
 
-    def create(process_type=ProcessType.SERVER_JOB, receiver=None):
+    def create(process_type=ProcessType.SERVER_JOB, receiver=None, with_job_manager=None):
         if receiver is None:
             receiver = JobLogReceiver(dest_dir=str(tmp_path / str(len(transports))), idle_timeout=0)
         streamer = ObjectStreamer(Mock())
         transports.append(streamer)
         fl_ctx = _make_recv_fl_ctx()
         engine = Mock(spec=StreamableEngine)
-        engine.get_component = Mock(return_value=Mock())
+        if with_job_manager is None:
+            with_job_manager = process_type == ProcessType.SERVER_PARENT
+        engine.get_component = Mock(return_value=Mock() if with_job_manager else None)
+        engine.get_workspace = Mock()
+        engine.get_workspace.return_value.get_run_dir.return_value = str(tmp_path / f"run-{len(transports)}")
         engine.get_client_from_name = Mock(return_value=_allowed_client())
         engine.fire_event = lambda event, ctx: fire_event(event, [receiver], ctx)
         engine.register_stream_processing.side_effect = streamer.register_stream_processing
@@ -325,6 +313,14 @@ def log_transports(tmp_path, receiver_clock):
         for tx_id in list(streamer.tx_table):
             streamer._end_tx(tx_id, ReturnCode.TASK_ABORTED, streamer.tx_table[tx_id].consumer._fl_ctx)
         streamer.shutdown()
+
+
+def _set_server_job_workspace(fl_ctx, tmp_path):
+    engine = fl_ctx.get_engine()
+    engine.get_component.return_value = None
+    run_dir = tmp_path / "server-run"
+    engine.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
+    return run_dir
 
 
 def _log_request(tx_id, seq=0, data=b"", eof=False, heartbeat=False, stream_ctx=None):
@@ -368,7 +364,7 @@ def test_sender_marker_cannot_hide_another_active_stream(log_transports, receive
 
 
 def test_initial_readiness_accepts_a_delayed_first_message(log_transports, receiver_clock):
-    receiver, streamer, fl_ctx = log_transports()
+    receiver, streamer, fl_ctx = log_transports(with_job_manager=True)
     entered = threading.Event()
     resume = threading.Event()
     on_started = receiver._on_stream_started
@@ -408,7 +404,7 @@ def test_initial_readiness_accepts_a_delayed_first_message(log_transports, recei
 
 
 def test_end_run_drains_a_stream_admitted_after_last_ready_result(log_transports, receiver_clock):
-    receiver, streamer, fl_ctx = log_transports()
+    receiver, streamer, fl_ctx = log_transports(with_job_manager=True)
     assert not _ready_to_end(receiver)
     receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
@@ -469,7 +465,6 @@ def test_end_run_closes_admission_after_successful_draining(log_transports, rece
     assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
     assert not receiver._active_streams
     assert not streamer.tx_table
-    fl_ctx.get_engine().get_component.return_value.set_client_data.assert_not_called()
 
 
 def test_late_stream_completion_restarts_the_quiet_window(log_transports, receiver_clock):
@@ -504,7 +499,7 @@ def test_end_run_wait_for_late_stream_uses_only_remaining_budget(log_transports,
 
 
 def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports, receiver_clock):
-    receiver, streamer, fl_ctx = log_transports()
+    receiver, streamer, fl_ctx = log_transports(with_job_manager=True)
     job_manager = fl_ctx.get_engine().get_component.return_value
     during_storage = []
     job_manager.set_client_data.side_effect = lambda *args: during_storage.append(_ready_to_end(receiver))
@@ -525,7 +520,6 @@ def test_accepted_stream_blocks_readiness_until_eof_is_persisted(log_transports,
     with open(job_manager.set_client_data.call_args.args[1], "rb") as log_file:
         assert log_file.read() == b"before stop\nfinal bytes\n"
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
-    job_manager.update_meta.assert_not_called()
 
 
 def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receiver_clock, caplog):
@@ -560,9 +554,9 @@ def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receive
     assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
 
-def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_clock):
+def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_clock, tmp_path):
     receiver, streamer, fl_ctx = log_transports()
-    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
     completed = streamer._handle_request(
         TOPIC_STREAM_REQUEST, _log_request("complete", data=b"complete\n", eof=True), fl_ctx
     )
@@ -575,40 +569,17 @@ def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_cl
     with patch.object(receiver, "log_error") as log_error:
         fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    job_manager.update_meta.assert_called_once_with(
-        "trusted_job",
-        {
-            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
-                {"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}
-            ]
-        },
-        fl_ctx,
-    )
+    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
+        {"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}
+    ]
     assert "trusted_client" in log_error.call_args.args[1]
     assert "log.json" in log_error.call_args.args[1]
     assert not receiver._incomplete_streams
 
 
-def test_server_job_hands_incomplete_logs_to_parent(log_transports, receiver_clock, tmp_path):
+def test_failed_stream_records_incomplete_log_after_callback(log_transports, receiver_clock, tmp_path):
     receiver, streamer, fl_ctx = log_transports()
-    engine = fl_ctx.get_engine()
-    engine.get_component.return_value = None
-    run_dir = tmp_path / "server-run"
-    engine.get_workspace = Mock()
-    engine.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
-    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
-
-    assert not _ready_to_end(receiver)
-    receiver_clock.return_value = 6.0
-    fire_event(EventType.END_RUN, [receiver], fl_ctx)
-
-    records = json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text())
-    assert records == [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
-
-
-def test_failed_stream_records_incomplete_log_after_callback(log_transports, receiver_clock):
-    receiver, streamer, fl_ctx = log_transports()
-    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
     streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("failed", data=b"partial\n"), fl_ctx)
     streamer._end_tx("failed", ReturnCode.TIMEOUT, fl_ctx)
 
@@ -617,15 +588,25 @@ def test_failed_stream_records_incomplete_log_after_callback(log_transports, rec
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    job_manager.update_meta.assert_called_once_with(
-        "trusted_job",
-        {
-            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
-                {"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}
-            ]
-        },
+    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
+        {"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}
+    ]
+
+
+def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiver_clock, tmp_path):
+    receiver, streamer, fl_ctx = log_transports()
+    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    reply = streamer._handle_request(
+        TOPIC_STREAM_REQUEST,
+        _log_request("empty", eof=True, stream_ctx={KEY_FILE_NAME: "log_fl.txt"}),
         fl_ctx,
     )
+    assert reply.get_return_code() == ReturnCode.OK
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 0.5
+    assert _ready_to_end(receiver)
+    fire_event(EventType.END_RUN, [receiver], fl_ctx)
+    assert not (run_dir / INCOMPLETE_LOG_STREAMS_FILE).exists()
 
 
 def test_parent_receiver_does_not_retain_failed_streams(log_transports):

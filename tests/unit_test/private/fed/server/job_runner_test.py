@@ -386,6 +386,36 @@ def test_save_workspace_retries_incomplete_log_metadata_update(tmp_path):
     job_manager.save_workspace.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "sidecar_content",
+    ["{not json", "{}", '[{"client": "site-2", "log_file": 3, "reason": "end_run_timeout"}]'],
+)
+def test_save_workspace_archives_after_invalid_incomplete_log_records(tmp_path, sidecar_content):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sidecar = run_dir / INCOMPLETE_LOG_STREAMS_FILE
+    sidecar.write_text(sidecar_content)
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), missing, missing, missing)
+    runner.log_error = MagicMock()
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.update_meta.assert_called_once_with(
+        "job-1",
+        {
+            JobMetaKey.INCOMPLETE_LOG_STREAMS.value: [
+                {"client": "unknown", "log_file": "unknown", "reason": "invalid_record"}
+            ]
+        },
+        fl_ctx,
+    )
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
+    runner.log_error.assert_called_once()
+    assert not run_dir.exists()
+
+
 def test_save_workspace_destroys_job_credential_before_archiving(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

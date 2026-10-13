@@ -142,6 +142,23 @@ class TestJobMeta:
         assert "name: hello-pt" not in captured.out
         assert captured.err == ""
 
+    def test_meta_human_formats_invalid_incomplete_log_record(self, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_meta
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {
+            "job_id": "abc123",
+            "incomplete_log_streams": [{"client": "site-2"}],
+        }
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_meta(self._make_args())
+
+        output = capsys.readouterr().out
+        assert "Incomplete logs" in output
+        assert "invalid record" in output
+
     def test_meta_not_found_exits_1(self, capsys):
         """job meta JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_meta

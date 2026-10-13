@@ -149,6 +149,21 @@ class TestJobWait:
             cmd_job_wait(_make_args())
         assert "Incomplete log: site-2/log.json (end_run_timeout)" in capsys.readouterr().out
 
+    def test_human_output_handles_invalid_incomplete_log_records(self, capsys, monkeypatch):
+        from nvflare.apis.job_def import JobMetaKey
+        from nvflare.tool.job.job_cli import cmd_job_wait
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        meta = _make_meta(status="FINISHED:COMPLETED")
+        meta[JobMetaKey.INCOMPLETE_LOG_STREAMS.value] = [None, {"client": "site-2"}]
+        mock_sess = MagicMock()
+        mock_sess.wait_for_job.return_value = meta
+
+        with _session_ctx(mock_sess):
+            cmd_job_wait(_make_args())
+
+        assert capsys.readouterr().out.count("Incomplete log: invalid record") == 2
+
     def test_human_success_prints_terminal_summary_without_json_payload(self, capsys, monkeypatch):
         from nvflare.tool.job.job_cli import cmd_job_wait
 

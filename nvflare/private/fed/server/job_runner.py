@@ -649,13 +649,39 @@ class JobRunner(FLComponent):
             run_dir = workspace.get_run_dir(job_id)
             incomplete_logs_path = os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE)
             if os.path.isfile(incomplete_logs_path):
-                with open(incomplete_logs_path) as f:
-                    incomplete_logs = json.load(f)
-                if not isinstance(incomplete_logs, list):
-                    raise ValueError(f"Invalid incomplete log records for job {job_id}")
+                try:
+                    with open(incomplete_logs_path) as f:
+                        incomplete_logs = json.load(f)
+                    if (
+                        not isinstance(incomplete_logs, list)
+                        or not incomplete_logs
+                        or any(
+                            not isinstance(record, dict)
+                            or any(
+                                not isinstance(record.get(key), str) or not record[key]
+                                for key in ("client", "log_file", "reason")
+                            )
+                            for record in incomplete_logs
+                        )
+                    ):
+                        raise ValueError("expected a nonempty list of client/log_file/reason string records")
+                    incomplete_logs = [
+                        {key: record[key] for key in ("client", "log_file", "reason")} for record in incomplete_logs
+                    ]
+                except (OSError, UnicodeError, ValueError) as e:
+                    self.log_error(
+                        fl_ctx, f"Invalid incomplete live-log records for job {job_id}: {secure_format_exception(e)}"
+                    )
+                    incomplete_logs = [{"client": "unknown", "log_file": "unknown", "reason": "invalid_record"}]
                 job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
                 job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: incomplete_logs}, fl_ctx)
-                os.remove(incomplete_logs_path)
+                try:
+                    os.remove(incomplete_logs_path)
+                except OSError as e:
+                    self.log_error(
+                        fl_ctx,
+                        f"Could not remove incomplete live-log records for job {job_id}: {secure_format_exception(e)}",
+                    )
             # the archive is served by download_job; the job credential is dead and must not be in it
             if os.path.isdir(run_dir):
                 remove_job_cert(run_dir)

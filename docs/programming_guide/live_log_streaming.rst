@@ -162,6 +162,16 @@ Stored logs can be retrieved with the FLARE Console command
 If the stream ends with a non-OK return code (e.g. idle timeout), the
 **partial** file is retained at the path above and a warning is logged.
 
+For a **job-level** receiver, accepted streams that time out during server-job
+shutdown or fail to save are listed in the job's ``incomplete_log_streams``
+metadata. Each record identifies the client, log file, and reason. The field
+is visible in ``nvflare job wait``, ``nvflare job monitor``, ``nvflare job meta``,
+and the downloaded ``meta.json``. A job may still report
+``FINISHED:COMPLETED`` because computation and log delivery are separate.
+An absent field means no incomplete accepted stream was detected; it does not
+prove every client log arrived. A stream never accepted before shutdown and
+streams sent to the long-lived parent receiver are outside this field's scope.
+
 SiteLogStreamer (client, site widget)
 -------------------------------------
 

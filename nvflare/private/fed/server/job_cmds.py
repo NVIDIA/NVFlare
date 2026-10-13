@@ -1613,6 +1613,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                # Log completeness is also server-owned run output, not a job definition input.
+                meta.pop(JobMetaKey.INCOMPLETE_LOG_STREAMS.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):

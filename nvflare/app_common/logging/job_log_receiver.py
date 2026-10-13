@@ -30,7 +30,6 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import (
@@ -287,26 +286,21 @@ class JobLogReceiver(Widget):
                     f"({record['reason']}); downloaded job logs may be incomplete",
                 )
 
-            job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-            if job_manager is not None:
-                for job_id, records in by_job.items():
-                    job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: records}, fl_ctx)
-            else:
-                # The server-job subprocess has no JobManager. Hand this result
-                # to the parent through the shared run directory; JobRunner
-                # publishes it before the job reaches terminal status.
-                workspace = fl_ctx.get_workspace()
-                for job_id, records in by_job.items():
-                    run_dir = workspace.get_run_dir(job_id)
-                    os.makedirs(run_dir, exist_ok=True)
-                    fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
-                    try:
-                        with os.fdopen(fd, "w") as f:
-                            json.dump(records, f)
-                        os.replace(temp_path, os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE))
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
+            # The server-job subprocess has no JobManager. Hand this result
+            # to the parent through the shared run directory; JobRunner
+            # publishes it before the job reaches terminal status.
+            workspace = fl_ctx.get_workspace()
+            for job_id, records in by_job.items():
+                run_dir = workspace.get_run_dir(job_id)
+                os.makedirs(run_dir, exist_ok=True)
+                fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(records, f)
+                    os.replace(temp_path, os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE))
+                finally:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
@@ -336,13 +330,7 @@ class JobLogReceiver(Widget):
     def _on_stream_done(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         incomplete_reason = None
         try:
-            self._finalize_stream(stream_ctx, fl_ctx)
-            if LogStreamer.get_rc(stream_ctx) != ReturnCode.OK:
-                incomplete_reason = "stream_error"
-            elif not stream_ctx.get(_KEY_RECV_PATH):
-                log_file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
-                if log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
-                    incomplete_reason = "no_data"
+            incomplete_reason = self._finalize_stream(stream_ctx, fl_ctx)
         except Exception:
             incomplete_reason = "persistence_error"
             raise
@@ -368,7 +356,7 @@ class JobLogReceiver(Widget):
                 fl_ctx,
                 f"Live log stream from {client} job {job_id} ended with rc={rc}; partial log retained at {file_path}",
             )
-            return
+            return "stream_error"
 
         file_path = stream_ctx.get(_KEY_RECV_PATH)
         log_type = self._sanitize_path_component(
@@ -378,6 +366,8 @@ class JobLogReceiver(Widget):
             if log_type == WorkspaceConstants.ERROR_LOG_FILE_NAME:
                 return
             self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
+            # An accepted stream can finish normally with an empty source file.
+            # No staging file is opened in that case; absence is not a save error.
             return
 
         engine = fl_ctx.get_engine()
@@ -396,11 +386,15 @@ class JobLogReceiver(Widget):
                         return
                     except Exception:
                         self.log_exception(fl_ctx, f"Failed to move live log to workspace; retained at {file_path}")
-                        return
+                        return "persistence_error"
             self.log_info(fl_ctx, f"Live log '{log_type}' from {client} retained at {file_path}")
             return
         data_type = self._storage_data_type(log_type)
-        job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
+        try:
+            job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
+        except Exception:
+            self.log_exception(fl_ctx, f"Failed to store live log '{log_type}' from {client} for job {job_id}")
+            return "persistence_error"
         self.log_info(fl_ctx, f"Saved live log '{log_type}' from {client} for job {job_id}")
 
     def _register(self, event_type: str, fl_ctx: FLContext):

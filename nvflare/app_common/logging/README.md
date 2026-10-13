@@ -160,13 +160,14 @@ and old completion callbacks cannot alter the new run's tracking or quiet
 window. Re-registering the receiver during the same run preserves its active
 streams.
 
-If an accepted stream is still active when that budget expires, or it ends
-without a persisted log, the job-level receiver records the affected client, log file,
-and reason in the job's `incomplete_log_streams` metadata. The record appears in
+If an accepted stream is still active when that budget expires, ends with a
+transport error, or fails to save, the job-level receiver records the affected
+client, log file, and reason in the job's `incomplete_log_streams` metadata. The record appears in
 `nvflare job wait`, `nvflare job monitor`, `nvflare job meta`, and the downloaded
 `meta.json`. The job's execution status can still be `FINISHED:COMPLETED`;
-operators should check this field before treating downloaded live logs as
-complete. In a server-job subprocess, the receiver writes the disposition to
+the field identifies detected incomplete streams. An absent field does not
+prove that all client logs arrived: streams never accepted before `END_RUN`
+cannot be tracked. In a server-job subprocess, the receiver writes the disposition to
 the shared run directory. The parent job runner publishes it to job metadata
 before archiving the workspace and setting terminal status.
 
@@ -174,7 +175,9 @@ Site-injected streamers use `target_parent_server=True` and send to the
 long-lived receiver in server `resources.json`. That receiver is independent
 of the server job process and stays available after its `END_RUN`. It does not
 need to delay server-job teardown. The client still joins its streaming thread
-in `END_RUN` to complete its flush before exiting.
+in `END_RUN` to complete its flush before exiting. The job-level
+`incomplete_log_streams` field does not cover streams handled by this parent
+receiver.
 
 ## 9. Drain Behavior
 

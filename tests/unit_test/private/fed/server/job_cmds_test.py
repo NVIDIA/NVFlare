@@ -961,6 +961,29 @@ def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch)
     assert "submit_token" not in engine.job_def_manager.created_metas[0]
 
 
+def test_user_job_meta_cannot_claim_incomplete_logs_at_submission(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    conn = _submit_conn(
+        engine,
+        _zip_bytes(
+            {
+                "meta.json": '{"incomplete_log_streams": [{"client": "fake", "log_file": "log.json", "reason": "fake"}]}',
+                "app/config/config_fed_server.json": "{}",
+            }
+        ),
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert _submitted_job_id(conn)
+    assert JobMetaKey.INCOMPLETE_LOG_STREAMS.value not in engine.submit_event_meta
+    assert JobMetaKey.INCOMPLETE_LOG_STREAMS.value not in engine.job_def_manager.created_metas[0]
+
+
 def test_canonical_hash_ignores_signature_artifacts(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)

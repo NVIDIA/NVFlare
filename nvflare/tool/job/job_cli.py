@@ -1400,6 +1400,22 @@ def _format_job_meta_value(value):
     return str(value)
 
 
+def _format_incomplete_log_streams(value) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return ["invalid record"]
+    result = []
+    for stream in value:
+        if not isinstance(stream, dict) or any(
+            not isinstance(stream.get(key), str) or not stream[key] for key in ("client", "log_file", "reason")
+        ):
+            result.append("invalid record")
+        else:
+            result.append(f"{stream['client']}/{stream['log_file']} ({stream['reason']})")
+    return result
+
+
 def _format_deploy_map(deploy_map):
     if not isinstance(deploy_map, dict) or not deploy_map:
         return "-"
@@ -1532,7 +1548,7 @@ def _print_job_meta_human(meta: dict, print_func):
             "Status",
             [
                 ("Status", meta.get("status")),
-                ("Incomplete logs", meta.get("incomplete_log_streams")),
+                ("Incomplete logs", "; ".join(_format_incomplete_log_streams(meta.get("incomplete_log_streams")))),
                 ("Submitted", _format_job_meta_timestamp(meta.get("submit_time_iso") or meta.get("submit_time"), True)),
                 ("Started", _format_job_meta_timestamp(meta.get("start_time"))),
                 ("Duration", _format_job_meta_duration(meta.get("duration"))),
@@ -2762,8 +2778,8 @@ def _print_monitor_result_human(data: dict, print_func):
         print_func(f"  Name: {job_meta['job_name']}")
     if job_meta.get("study"):
         print_func(f"  Study: {job_meta['study']}")
-    for stream in job_meta.get("incomplete_log_streams") or []:
-        print_func(f"  Incomplete log: {stream['client']}/{stream['log_file']} ({stream['reason']})")
+    for stream in _format_incomplete_log_streams(job_meta.get("incomplete_log_streams")):
+        print_func(f"  Incomplete log: {stream}")
     metrics = data.get("last_stats") or {}
     if metrics:
         metric_str = " ".join(f"{k}={v}" for k, v in metrics.items())
