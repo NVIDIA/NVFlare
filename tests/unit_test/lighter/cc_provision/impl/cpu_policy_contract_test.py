@@ -22,10 +22,21 @@ from nvflare.app_opt.confidential_computing.trustee_claims import TRUST_VECTOR
 ROOT = Path(__file__).resolve().parents[5]
 
 
-def test_cpu_policy_emits_exact_authorizer_trust_vector():
-    policy = (ROOT / "examples/devops/coco/service/policies/default_cpu.rego").read_text()
+def _trust_claims(policy):
     match = re.search(r"(?ms)^trust_claims := \{\n(?P<body>.*?)^\}", policy)
     assert match
-    claims = dict(re.findall(r'^\s*"([^"]+)":\s*([a-z][a-z0-9_-]*),?$', match.group("body"), re.MULTILINE))
+    return re.findall(r'^\s*"([^"]+)":\s*([^,\n]+),?\s*$', match.group("body"), re.MULTILINE)
 
-    assert claims == {name: name for name in TRUST_VECTOR}
+
+def test_cpu_policy_emits_exact_authorizer_trust_vector():
+    policy = (ROOT / "examples/devops/coco/service/policies/default_cpu.rego").read_text()
+    entries = _trust_claims(policy)
+    names = [name for name, _ in entries]
+
+    assert len(names) == len(set(names))
+    assert set(names) == set(TRUST_VECTOR)
+    assert dict(entries) == {name: name for name in TRUST_VECTOR}
+
+
+def test_trust_claim_parser_includes_numeric_padding():
+    assert _trust_claims('trust_claims := {\n    "storage-opaque": 0,\n}\n') == [("storage-opaque", "0")]
