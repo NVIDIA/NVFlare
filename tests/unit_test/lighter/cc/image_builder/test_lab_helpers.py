@@ -76,7 +76,8 @@ class LabProfileTests(unittest.TestCase):
         ):
             result = lab_kbs.verifier_config([{"gpu": "none"}])
 
-        self.assertEqual(result, base)
+        self.assertEqual(result, {"dcap_verifier": {"tcb_update_type": "standard"}})
+        self.assertNotIn("nvidia_verifier", result)
 
     def test_lab_kbs_rejects_conflicting_nvidia_verifier_urls(self):
         lab_kbs = load_helper("lab_kbs")
