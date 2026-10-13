@@ -436,18 +436,18 @@ this runbook. For the wider protocol threat model and lifecycle, see the
    (CPU-only) or exactly `cpu0` and `gpu0` (CPU plus GPU). Every present
    submodule must carry its exact approved vector:
 
-   | Appraisal | `executables` | `hardware` | `configuration` | Other five vector fields |
-   | --- | --- | --- | --- | --- |
-   | SNP CPU | 3 | 2 | 3 | All 0 |
-   | TDX CPU | 3 | 2 | 2 | All 0 |
-   | NVIDIA GPU | 3 | 2 | 3 | All 0 |
+   | Appraisal | `executables` | `hardware` | `configuration` |
+   | --- | --- | --- | --- |
+   | SNP CPU | 3 | 2 | 2 |
+   | TDX CPU | 3 | 2 | 2 |
+   | NVIDIA GPU | 3 | 2 | 2 |
 
-   The other fields are `file-system`, `instance-identity`, `runtime-opaque`,
-   `storage-opaque`, and `sourced-data`. CPU annotated evidence must identify
-   exactly one supported platform (`snp` or `tdx`) with a nonempty hardware
-   claims object. The type is selected from the AS-signed evidence, not from
-   an unsigned hint or by trying both trust vectors. Missing, unknown, or
-   ambiguous CPU types are rejected. The GPU vector does not change for TDX.
+   These vectors contain exactly the three listed keys. Unappraised AR4SI
+   categories are omitted rather than asserted with a zero value. CPU annotated
+   evidence must identify exactly one supported platform (`snp` or `tdx`) with
+   a nonempty hardware claims object. The type is selected from the AS-signed
+   evidence, not from an unsigned hint or by trying both trust vectors. Missing,
+   unknown, or ambiguous CPU types are rejected. The GPU vector does not change for TDX.
    Missing CPU evidence, unknown/extra submodules, malformed appraisals, and
    failed CPU or GPU vectors are rejected. A present but failed GPU appraisal
    never falls back to CPU-only verification. These are not universal success
