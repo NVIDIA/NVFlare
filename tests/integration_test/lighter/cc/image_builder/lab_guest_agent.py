@@ -151,7 +151,14 @@ def cross_vault(path):
     command = [CONFIG["kbs_client"], "--url", CONFIG["kbs_url"], "--cert-file", CONFIG["kbs_cert"]]
     with memory_file(pem) as private:
         token = run(
-            command + ["attest", "--tee-key-file", f"/proc/self/fd/{private}"],
+            command
+            + [
+                "attest",
+                "--tee-key-file",
+                f"/proc/self/fd/{private}",
+                "--attestation-policy-selector",
+                CONFIG["attestation_policy_selector"],
+            ],
             pass_fds=(private,),
             timeout=240 if CONFIG["gpu"] == "nvidia_cc" else 60,
             env=dict(os.environ, RUST_LOG="off"),
@@ -310,10 +317,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({"requested_poweroff": True})
             run(["systemctl", "poweroff", "--no-block"])
         elif url.path == "/cross-vault":
-            try:
-                self.respond(cross_vault(urllib.parse.parse_qs(url.query)["resource"][0]))
-            except Exception:
-                self.respond({"test_failed": True})
+            self.respond(cross_vault(urllib.parse.parse_qs(url.query)["resource"][0]))
         else:
             self.send_error(404)
 

@@ -133,6 +133,72 @@ class LabProfileTests(unittest.TestCase):
 
 
 class LabStateTests(unittest.TestCase):
+    def test_cross_vault_attestation_uses_profile_policy_selector(self):
+        agent = load_helper("lab_guest_agent")
+        agent.CONFIG = {
+            "kbs_client": "/usr/bin/kbs-client",
+            "kbs_url": "https://kbs.example.org",
+            "kbs_cert": "/etc/cvm/kbs.pem",
+            "gpu": "none",
+            "attestation_policy_selector": "cvm-cpu-profile",
+        }
+        key = Mock()
+        key.private_bytes.return_value = b"private key"
+        with (
+            patch("cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", return_value=key),
+            patch.object(agent, "validate_resource"),
+            patch.object(agent, "read_json", return_value={"digest": "ab" * 32}),
+            patch.object(agent, "memory_file", return_value=contextlib.nullcontext(17)),
+            patch.object(agent, "run", return_value=b"token") as run,
+            patch.object(agent, "validate_token", side_effect=BuildError("stop after validation")),
+            self.assertRaisesRegex(BuildError, "stop after validation"),
+        ):
+            agent.cross_vault("keys/other/resource")
+
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command,
+            [
+                "/usr/bin/kbs-client",
+                "--url",
+                "https://kbs.example.org",
+                "--cert-file",
+                "/etc/cvm/kbs.pem",
+                "attest",
+                "--tee-key-file",
+                "/proc/self/fd/17",
+                "--attestation-policy-selector",
+                "cvm-cpu-profile",
+            ],
+        )
+
+    def test_cross_vault_handler_reports_only_safe_diagnostics(self):
+        agent = load_helper("lab_guest_agent")
+        server = agent.http.server.HTTPServer(("127.0.0.1", 0), agent.Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        try:
+            for error, diagnostic in (
+                (BuildError("Wrong appraisal policy"), "Wrong appraisal policy"),
+                (OSError("SECRET_SENTINEL"), "Test fixture exception"),
+            ):
+                with self.subTest(error=type(error).__name__), patch.object(agent, "cross_vault", side_effect=error):
+                    connection = http.client.HTTPConnection(*server.server_address, timeout=3)
+                    try:
+                        connection.request("POST", "/cross-vault?resource=keys/other/resource")
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 200)
+                        detail = json.loads(response.read())
+                        self.assertEqual(detail["fault_error"], type(error).__name__)
+                        self.assertEqual(detail["diagnostic"], diagnostic)
+                        self.assertNotIn("SECRET_SENTINEL", json.dumps(detail))
+                    finally:
+                        connection.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+            server.server_close()
+
     def test_bootstrap_publishes_only_successfully_verified_firewall_status(self):
         for failure in (None, "apply", "verify"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
