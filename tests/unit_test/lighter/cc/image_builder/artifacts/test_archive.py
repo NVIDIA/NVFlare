@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from cvm.artifacts.oci import (
@@ -364,6 +365,21 @@ class ArchiveTests(unittest.TestCase):
                 stream.seek(100 * vault.GIB)
                 stream.write(b"x")
             self.assertLess(vault._application_file_bytes(root), vault.GIB)
+
+    def test_vault_capacity_does_not_trust_compressed_source_allocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "compressed"
+            source.write_bytes(b"x" * 8192)
+            actual = source.stat()
+            compressed = SimpleNamespace(
+                st_dev=actual.st_dev,
+                st_ino=actual.st_ino,
+                st_size=actual.st_size,
+                st_blocks=1,
+            )
+            self.assertEqual(vault._stored_file_bytes(source, compressed), 8192)
+            with patch.object(vault.os, "lseek", side_effect=OSError("extent discovery unavailable")):
+                self.assertEqual(vault._stored_file_bytes(source, compressed), 8192)
 
     def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
         secret = "secret-archive-metadata"

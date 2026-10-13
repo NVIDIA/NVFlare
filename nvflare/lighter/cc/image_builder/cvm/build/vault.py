@@ -15,6 +15,7 @@
 """Seal application vaults and assemble standalone deliveries."""
 
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -51,7 +52,6 @@ from .storage import (
 
 GIB = 1024**3
 FILESYSTEM_BLOCK_BYTES = 4096
-STAT_BLOCK_BYTES = 512
 MINIMUM_VAULT_HEADROOM_BYTES = 2 * GIB
 
 
@@ -193,11 +193,45 @@ def _allocated_file_bytes(size):
     return ((size + FILESYSTEM_BLOCK_BYTES - 1) // FILESYSTEM_BLOCK_BYTES) * FILESYSTEM_BLOCK_BYTES
 
 
-def _stored_file_bytes(status):
-    blocks = getattr(status, "st_blocks", None)
-    if blocks is None:
-        return _allocated_file_bytes(status.st_size)
-    return _allocated_file_bytes(min(status.st_size, blocks * STAT_BLOCK_BYTES))
+def _stored_file_bytes(path, status):
+    """Estimate target allocation from logical data extents, preserving sparse holes."""
+    size = status.st_size
+    if not size:
+        return 0
+    seek_data = getattr(os, "SEEK_DATA", None)
+    seek_hole = getattr(os, "SEEK_HOLE", None)
+    if seek_data is None or seek_hole is None:
+        return _allocated_file_bytes(size)
+    descriptor = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino, opened.st_size) != (status.st_dev, status.st_ino, size):
+            return _allocated_file_bytes(max(size, opened.st_size))
+        total = 0
+        offset = 0
+        while offset < size:
+            try:
+                data = os.lseek(descriptor, offset, seek_data)
+            except OSError as error:
+                if error.errno == errno.ENXIO:
+                    return total
+                return _allocated_file_bytes(size)
+            hole = os.lseek(descriptor, data, seek_hole)
+            if data < offset or data >= size or hole <= data:
+                return _allocated_file_bytes(size)
+            total += _allocated_file_bytes(min(hole, size) - data)
+            offset = hole
+        return total
+    except OSError:
+        # Filesystems may not implement SEEK_DATA/SEEK_HOLE. Counting the full
+        # logical size is conservative for the uncompressed ext4 vault.
+        return _allocated_file_bytes(size)
+    finally:
+        if descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
 
 
 def _application_file_bytes(path):
@@ -212,9 +246,9 @@ def _application_file_bytes(path):
             if identity in identities:
                 continue
             identities.add(identity)
-            # copy_tree uses tar --sparse, so holes are not allocated in the
-            # vault. Round the source's stored blocks to the target block size.
-            total += _stored_file_bytes(status)
+            # copy_tree uses tar --sparse, so preserve logical holes while
+            # ignoring compression savings from the source filesystem.
+            total += _stored_file_bytes(item, status)
         else:
             total += FILESYSTEM_BLOCK_BYTES
     return total
