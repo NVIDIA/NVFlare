@@ -201,10 +201,11 @@ class TokenVerifier:
         self.public_key = cert.public_key()
         self.logger = get_obj_logger(self)
 
-    def verify(self, client_name, token, signature):
+    def verify(self, client_name, token, signature, log_error=True):
         try:
             verify_content(content=client_name + token, signature=signature, public_key=self.public_key)
             return True
         except Exception as ex:
-            self.logger.error(f"exception verifying token: {client_name=}: {secure_format_exception(ex)}")
+            if log_error:
+                self.logger.error(f"exception verifying token: {client_name=}: {secure_format_exception(ex)}")
             return False
