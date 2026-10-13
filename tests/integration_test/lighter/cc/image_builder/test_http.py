@@ -15,6 +15,7 @@
 """Real HTTPS contracts with disposable signed EAR fixtures (not hardware proof)."""
 
 import base64
+import contextlib
 import json
 import os
 import shutil
@@ -138,6 +139,25 @@ class HttpTests(unittest.TestCase):
         self.paths.append(path)
         return digest, path, secret
 
+    def evidence_case(self, **parameters):
+        """Keep useful subtest labels unless this run can sign acceptance evidence."""
+        return contextlib.nullcontext() if self.evidence_enabled else self.subTest(**parameters)
+
+    @staticmethod
+    def gpu_claims(manifest, policy=None):
+        from common.test_gpu_composite import gpu_submod
+
+        if manifest.get("contract", {}).get("gpu") != "nvidia_cc":
+            return {}
+        policy = policy or manifest["attestation_policy_id"]
+        return {f"gpu{index}": gpu_submod(policy, index) for index in range(manifest["contract"]["gpu_count"])}
+
+    def retrieval_claims(self, claims):
+        claims = dict(claims)
+        if "gpu_submods" not in claims and self.manifest.get("contract", {}).get("gpu") == "nvidia_cc":
+            claims["gpu_submods"] = self.gpu_claims(self.manifest, claims.get("policy"))
+        return claims
+
     def token(self, digest, tee, *, status="affirming", policy=None, expired=False, signer="as", gpu_submods=None):
         key = serialization.load_pem_private_key((self.pki / (signer + ".key")).read_bytes(), None)
         public = key.public_key().public_numbers()
@@ -203,6 +223,7 @@ class HttpTests(unittest.TestCase):
         return (body + "." + encode(r.to_bytes(32, "big") + s.to_bytes(32, "big"))).encode()
 
     def retrieve(self, digest, path, **claims):
+        claims = self.retrieval_claims(claims)
         tee = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         pem = tee.private_bytes(
             serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()
@@ -278,7 +299,7 @@ class HttpTests(unittest.TestCase):
         if not mappings:
             self.skipTest("HTTP-only lab has no bare-metal CVM profile")
         for selector, policy_ids in mappings.items():
-            with self.subTest(selector=selector):
+            with self.evidence_case(selector=selector):
                 self.assertEqual(len(policy_ids), 1)
                 token = run(
                     [
@@ -310,7 +331,7 @@ class HttpTests(unittest.TestCase):
     def test_negative_wrong_policy_and_expired_ear_denied(self):
         digest, path, _ = self.create()
         for claims in ({"status": "contraindicated"}, {"policy": "unselected"}, {"expired": True}):
-            with self.subTest(claims=claims), self.assertRaises(BuildError):
+            with self.evidence_case(claims=claims), self.assertRaises(BuildError):
                 self.retrieve(digest, path, **claims)
         self.result(denied_cases=["contraindicated", "wrong_policy", "expired"])
 
@@ -321,7 +342,7 @@ class HttpTests(unittest.TestCase):
                 self.retrieve(digest, path, signer=signer)
 
     def test_gpu_keys_require_composite_ear_and_matching_policy(self):
-        from common.test_gpu_composite import gpu_submod, invalid_submods
+        from common.test_gpu_composite import invalid_submods
 
         gpu_manifest = self.manifest
         if self.manifest.get("contract", {}).get("gpu") != "nvidia_cc" and self.evidence_enabled:
@@ -338,11 +359,11 @@ class HttpTests(unittest.TestCase):
             policy = gpu_manifest["attestation_policy_id"]
             count = gpu_manifest["contract"]["gpu_count"]
             with self.assertRaises(BuildError):
-                self.retrieve(digest, path)
-            valid = {f"gpu{i}": gpu_submod(policy, i) for i in range(count)}
+                self.retrieve(digest, path, gpu_submods={})
+            valid = self.gpu_claims(gpu_manifest)
             self.assertEqual(self.retrieve(digest, path, gpu_submods=valid), secret)
             for submods in invalid_submods(policy, count):
-                with self.subTest(submods=submods), self.assertRaises(BuildError):
+                with self.evidence_case(submods=submods), self.assertRaises(BuildError):
                     self.retrieve(digest, path, gpu_submods=submods)
         finally:
             api(self.admin, "POST", "resource-policy", canonical({"policy": encode(self.published_policy)}))

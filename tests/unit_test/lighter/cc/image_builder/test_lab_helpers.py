@@ -170,6 +170,31 @@ class LabStateTests(unittest.TestCase):
         with patch.dict(os.environ, values, clear=True):
             self.assertEqual(runner.required_environment(), values)
 
+    def test_gpu_retrievals_include_composite_claims_unless_cpu_only_is_explicit(self):
+        trustee = load_helper("test_http")
+        case = trustee.HttpTests()
+        case.manifest = {
+            "attestation_policy_id": "gpu-policy",
+            "contract": {"gpu": "nvidia_cc", "gpu_count": 2},
+        }
+        claims = case.retrieval_claims({})
+        self.assertEqual(set(claims["gpu_submods"]), {"gpu0", "gpu1"})
+        self.assertTrue(
+            all(submod["ear.appraisal-policy-id"] == "gpu-policy" for submod in claims["gpu_submods"].values())
+        )
+        self.assertEqual(case.retrieval_claims({"gpu_submods": {}}), {"gpu_submods": {}})
+
+    def test_failed_acceptance_case_cannot_reach_the_evidence_signer(self):
+        trustee = load_helper("test_http")
+        case = trustee.HttpTests("test_negative_wrong_policy_and_expired_ear_denied")
+        case.evidence_enabled = True
+        case.create = Mock(return_value=(b"digest", "keys/build/binding", b"secret"))
+        case.retrieve = Mock(side_effect=(BuildError("denied"), None, BuildError("denied")))
+        case.result = Mock()
+        with self.assertRaises(AssertionError):
+            case.test_negative_wrong_policy_and_expired_ear_denied()
+        case.result.assert_not_called()
+
     def test_acceptance_runner_executes_both_suites_and_selects_gpu_tests(self):
         runner = load_helper("acceptance_runner")
         for gpu in ("none", "nvidia_cc"):
