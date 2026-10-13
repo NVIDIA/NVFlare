@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import Participant
 
 
@@ -83,3 +84,16 @@ class TestParticipant:
     def test_invalid_type(self, invalid_type):
         with pytest.raises(ValueError):
             _ = Participant(name="server", type=invalid_type, org="org")
+
+    def test_external_cert_must_be_bool(self):
+        with pytest.raises(ValueError, match="external_cert.*must be bool"):
+            Participant(name="server", type="server", org="org", props={PropKey.EXTERNAL_CERT: "true"})
+
+    def test_external_cert_is_limited_to_workload_participants(self):
+        with pytest.raises(ValueError, match="external_cert is supported only for server and client participants"):
+            Participant(
+                name="admin@example.com",
+                type="admin",
+                org="org",
+                props={"role": "project_admin", PropKey.EXTERNAL_CERT: True},
+            )
