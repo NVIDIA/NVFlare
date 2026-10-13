@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainCons
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FALLBACK
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_CTX_KEY
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -42,7 +42,7 @@ def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
 
 
-def test_update_run_status_retains_incomplete_log_fallback_for_job_runner():
+def test_update_run_status_retains_incomplete_logs_for_job_runner():
     server = object.__new__(FederatedServer)
     server.lock = threading.Lock()
     server.engine = MagicMock()
@@ -51,7 +51,7 @@ def test_update_run_status_retains_incomplete_log_fallback_for_job_runner():
     records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
     request = new_cell_message(
         {CellMessageHeaderKeys.JOB_ID: "job-1", MessageHeaderKey.TOPIC: ServerCommandNames.UPDATE_RUN_STATUS},
-        {"execution_error": False, INCOMPLETE_LOG_STREAMS_FALLBACK: {"job-1": records}},
+        {"execution_error": False, INCOMPLETE_LOG_STREAMS_CTX_KEY: {"job-1": records}},
     )
 
     reply = server._listen_command(request)

@@ -33,7 +33,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FALLBACK
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_CTX_KEY
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -45,11 +45,11 @@ from nvflare.private.fed.server.server_engine import ServerEngine
 
 
 @pytest.mark.parametrize("acknowledged", [True, False])
-def test_update_job_run_status_waits_for_incomplete_log_fallback_ack(acknowledged):
+def test_update_job_run_status_waits_for_incomplete_log_ack(acknowledged):
     records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
     manager = FLContextManager(job_id="job-1")
     with manager.new_context() as fl_ctx:
-        fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_FALLBACK, {"job-1": records}, private=True, sticky=True)
+        fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY, {"job-1": records}, private=True, sticky=True)
 
     engine = ServerEngine.__new__(ServerEngine)
     engine.new_context = manager.new_context
@@ -65,7 +65,7 @@ def test_update_job_run_status_waits_for_incomplete_log_fallback_ack(acknowledge
             engine.update_job_run_status()
 
     sent = engine.server.cell.send_request.call_args.kwargs["request"]
-    assert sent.payload[INCOMPLETE_LOG_STREAMS_FALLBACK] == {"job-1": records}
+    assert sent.payload[INCOMPLETE_LOG_STREAMS_CTX_KEY] == {"job-1": records}
     engine.server.cell.fire_and_forget.assert_not_called()
 
 

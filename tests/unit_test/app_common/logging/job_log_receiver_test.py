@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, call, patch
@@ -33,12 +32,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
-from nvflare.app_common.logging.constants import (
-    INCOMPLETE_LOG_STREAMS_FALLBACK,
-    INCOMPLETE_LOG_STREAMS_FILE,
-    LIVE_LOG_TOPIC,
-    Channels,
-)
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_CTX_KEY, LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
 from nvflare.private.event import fire_event
@@ -259,7 +253,7 @@ def test_job_log_receiver_delays_end_run_until_all_active_streams_finish(receive
 
 def test_server_job_reports_failed_workspace_move(log_transports, tmp_path, receiver_clock):
     receiver, streamer, fl_ctx = log_transports(receiver=JobLogReceiver(idle_timeout=0))
-    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    _set_server_job_workspace(fl_ctx, tmp_path)
     with patch.object(receiver, "_effective_dest_dir", return_value=str(tmp_path / "staging")):
         with patch("nvflare.app_common.logging.job_log_receiver.shutil.move", side_effect=OSError("disk full")):
             reply = streamer._handle_request(
@@ -273,9 +267,9 @@ def test_server_job_reports_failed_workspace_move(log_transports, tmp_path, rece
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
     receiver._on_end_run(EventType.END_RUN, fl_ctx)
-    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
-        {"client": "trusted_client", "log_file": "log.json", "reason": "persistence_error"}
-    ]
+    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+        "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "persistence_error"}]
+    }
 
 
 @pytest.fixture
@@ -561,7 +555,7 @@ def test_readiness_timeout_still_bounds_a_stalled_stream(log_transports, receive
 
 def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_clock, tmp_path):
     receiver, streamer, fl_ctx = log_transports()
-    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    _set_server_job_workspace(fl_ctx, tmp_path)
     completed = streamer._handle_request(
         TOPIC_STREAM_REQUEST, _log_request("complete", data=b"complete\n", eof=True), fl_ctx
     )
@@ -574,9 +568,9 @@ def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_cl
     with patch.object(receiver, "log_error") as log_error:
         fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
-        {"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}
-    ]
+    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+        "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
+    }
     assert "trusted_client" in log_error.call_args.args[1]
     assert "log.json" in log_error.call_args.args[1]
     assert not receiver._incomplete_streams
@@ -584,7 +578,7 @@ def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_cl
 
 def test_failed_stream_records_incomplete_log_after_callback(log_transports, receiver_clock, tmp_path):
     receiver, streamer, fl_ctx = log_transports()
-    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    _set_server_job_workspace(fl_ctx, tmp_path)
     streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("failed", data=b"partial\n"), fl_ctx)
     streamer._end_tx("failed", ReturnCode.TIMEOUT, fl_ctx)
 
@@ -593,33 +587,14 @@ def test_failed_stream_records_incomplete_log_after_callback(log_transports, rec
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
-        {"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}
-    ]
-
-
-@pytest.mark.parametrize("write_operation", ["tempfile.mkstemp", "json.dump", "os.replace"])
-def test_failed_incomplete_log_sidecar_uses_completion_fallback(
-    log_transports, receiver_clock, tmp_path, write_operation
-):
-    receiver, streamer, fl_ctx = log_transports()
-    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
-    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
-    assert not _ready_to_end(receiver)
-    receiver_clock.return_value = 6.0
-
-    with patch(f"nvflare.app_common.logging.job_log_receiver.{write_operation}", side_effect=OSError("disk full")):
-        fire_event(EventType.END_RUN, [receiver], fl_ctx)
-
-    records = [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
-    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_FALLBACK) == {"trusted_job": records}
-    assert not (run_dir / INCOMPLETE_LOG_STREAMS_FILE).exists()
-    assert not receiver._incomplete_streams
+    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+        "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}]
+    }
 
 
 def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiver_clock, tmp_path):
     receiver, streamer, fl_ctx = log_transports()
-    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    _set_server_job_workspace(fl_ctx, tmp_path)
     reply = streamer._handle_request(
         TOPIC_STREAM_REQUEST,
         _log_request("empty", eof=True, stream_ctx={KEY_FILE_NAME: "log_fl.txt"}),
@@ -630,7 +605,7 @@ def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiv
     receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
-    assert not (run_dir / INCOMPLETE_LOG_STREAMS_FILE).exists()
+    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) is None
 
 
 def test_parent_receiver_does_not_retain_failed_streams(log_transports):

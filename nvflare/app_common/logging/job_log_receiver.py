@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 import os
 import shutil
 import tempfile
@@ -34,8 +33,7 @@ from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import (
     ALLOW_LOG_STREAMING_VAR,
-    INCOMPLETE_LOG_STREAMS_FALLBACK,
-    INCOMPLETE_LOG_STREAMS_FILE,
+    INCOMPLETE_LOG_STREAMS_CTX_KEY,
     LIVE_LOG_TOPIC,
     Channels,
 )
@@ -286,35 +284,9 @@ class JobLogReceiver(Widget):
                     f"({record['reason']}); downloaded job logs may be incomplete",
                 )
 
-            # The server-job subprocess has no JobManager. Hand this result
-            # to the parent through the shared run directory; JobRunner
-            # publishes it before the job reaches terminal status.
-            fallback = {}
-            for job_id, records in by_job.items():
-                temp_path = None
-                try:
-                    workspace = fl_ctx.get_workspace()
-                    run_dir = workspace.get_run_dir(job_id)
-                    os.makedirs(run_dir, exist_ok=True)
-                    fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
-                    with os.fdopen(fd, "w") as f:
-                        json.dump(records, f)
-                    os.replace(temp_path, os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE))
-                except Exception:
-                    fallback[job_id] = records
-                    self.log_exception(fl_ctx, f"Failed to write incomplete live-log records for job {job_id}")
-                finally:
-                    if temp_path:
-                        try:
-                            os.remove(temp_path)
-                        except FileNotFoundError:
-                            pass
-                        except OSError:
-                            self.log_exception(fl_ctx, f"Failed to remove temporary live-log records for job {job_id}")
-
-            # The job process reports completion to the parent after END_RUN.
-            # Carry records in that message if the filesystem handoff failed.
-            if fallback and not fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_FALLBACK, fallback, private=True, sticky=True):
+            # The job process includes this sticky property in its completion
+            # message. The parent publishes it before archiving the workspace.
+            if not fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY, by_job, private=True, sticky=True):
                 fl_ctx.set_prop(FLContextKey.FATAL_SYSTEM_ERROR, True, private=True, sticky=True)
                 return
 
