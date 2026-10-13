@@ -134,6 +134,26 @@ class ExperimentOptionsTest(unittest.TestCase):
                 prepare.assert_not_called()
             self.assertFalse((self.root / "clients").exists())
 
+    def test_dimension_aliases_update_effective_configuration(self):
+        for arguments in (["--nc", "3", "--ni", "8"], ["--num-classes", "3", "--nh", "8"]):
+            with self.subTest(arguments=arguments):
+                opt = parse_args(self.arguments("aliases") + arguments)
+                self.assertEqual((opt.num_classes, opt.nc, opt.nh, opt.ni), (3, 3, 8, 8))
+                self.assertIn("--nc", build_parser().format_help())
+                self.assertIn("--ni", build_parser().format_help())
+
+    def test_alias_and_primary_flags_share_standard_last_value_behavior(self):
+        for arguments, expected in (
+            (["--nc", "3", "--num-classes", "5", "--ni", "8", "--nh", "16"], (5, 16)),
+            (["--num-classes", "5", "--nc", "3", "--nh", "16", "--ni", "8"], (3, 8)),
+        ):
+            opt = parse_args(self.arguments("alias-order") + arguments)
+            self.assertEqual((opt.num_classes, opt.nh), expected)
+            self.assertEqual((opt.nc, opt.ni), expected)
+
+    def test_class_alias_rejects_invalid_width_before_preparation(self):
+        self.assert_invalid_before_preparation("--nc", ("-1", "0", "1"))
+
     def test_insufficient_class_width_fails_before_filesystem_or_preparation(self):
         self.assert_invalid_before_preparation("--num-classes", ("-1", "0", "1"))
 
@@ -210,6 +230,8 @@ class ExperimentOptionsTest(unittest.TestCase):
         opt = parse_args(
             self.arguments("bundles")
             + [
+                "--nc",
+                "3",
                 "--weight-decay",
                 "0.125",
                 "--num-clients",
@@ -218,7 +240,7 @@ class ExperimentOptionsTest(unittest.TestCase):
                 "1",
                 "--max-genes",
                 "4",
-                "--nh",
+                "--ni",
                 "8",
                 "--noise-dim",
                 "3",
@@ -233,6 +255,10 @@ class ExperimentOptionsTest(unittest.TestCase):
             ]
         )
         workflow, server, sites = prepare_bundles(opt, smoke=True)
+        self.assertEqual(server["opt"]["num_classes"], 3)
+        self.assertEqual(server["opt"]["nh"], 8)
+        self.assertEqual(workflow.clients[0].netF.num_classes, 3)
+        self.assertEqual(workflow.clients[0].netG.hidden_dim, 8)
         self.assertEqual(server["opt"]["weight_decay"], 0.125)
         self.assertEqual(workflow.server.optimizer_D.param_groups[0]["weight_decay"], 0.125)
         for site, client in zip(sites, server["clients"]):

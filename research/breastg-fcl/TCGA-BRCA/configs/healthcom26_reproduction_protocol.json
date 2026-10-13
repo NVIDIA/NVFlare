@@ -212,5 +212,11 @@
     },
     "changed_file_style_check": "passed",
     "whole_example_style_check": "passed with Black 25.9.0, isort 5.13.2, and Flake8 7.1.1"
+  },
+  "cli_alias_validation": {
+    "date": "2026-10-13",
+    "regression_tests_passed": 206,
+    "whole_example_style_check": "passed with repository-pinned tools",
+    "scope": "Effective --nc/--ni aliases, precedence, invalid class widths and prepared model dimensions; no real-data experiment or CUDA rerun."
   }
 }

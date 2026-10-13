@@ -41,6 +41,8 @@ The `--num-classes` option defaults to 2 and accepts larger output widths,
 which are preserved during real-data preparation. Values below 2 cannot
 represent the fixed Normal=0/Tumor=1 labels and are rejected. Extra outputs
 do not add labels to the TCGA dataset.
+`--nc` is an alias of `--num-classes`, and `--ni` is an alias of `--nh`.
+Each pair sets the same value; if both forms are supplied, the last value wins.
 
 
 | Component | Operation | Training |
@@ -451,6 +453,10 @@ The project style check passed across the whole example using the repository
 pins: Black 25.9.0, isort 5.13.2, and Flake8 7.1.1. A separate CPU smoke
 with `--num-classes 3` completed all six rounds with three-wide predictor
 outputs and replay counts on all four clients.
+
+CLI alias validation on 2026-10-13 passed all **206 regression tests** and
+the whole-example pinned style check, including effective alias values,
+last-value precedence, invalid class widths, and prepared model dimensions.
 
 The NVFlare 2.9.0 Collab CPU smoke completed all six rounds across four
 client processes and three tasks, with replay and client-side latent

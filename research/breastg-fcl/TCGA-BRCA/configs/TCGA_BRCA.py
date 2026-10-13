@@ -97,7 +97,12 @@ def build_parser():
     parser.add_argument("--tcia-dce-id-column", default=None)
     parser.add_argument("--max-genes", type=int, default=4096)
     parser.add_argument(
-        "--num-classes", type=int, default=2, help="Output class count; at least 2 for Normal/Tumor labels"
+        "--num-classes",
+        "--nc",
+        dest="num_classes",
+        type=int,
+        default=2,
+        help="Output class count; at least 2 for Normal/Tumor labels",
     )
     parser.add_argument("--pin-memory", type=_str2bool, default=False)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -157,12 +162,10 @@ def build_parser():
         default=None,
         help="Compatibility option; graph embedding dimension is set by --num-clients.",
     )
-    parser.add_argument("--nh", type=int, default=800)
+    parser.add_argument("--nh", "--ni", dest="nh", type=int, default=800)
     parser.add_argument(
         "--noise-dim", type=int, default=100, help="Noise width for the graph-conditioned latent replay generator."
     )
-    parser.add_argument("--ni", type=int, default=800)
-    parser.add_argument("--nc", type=int, default=2)
     parser.add_argument(
         "--nd-out",
         type=int,
@@ -193,7 +196,7 @@ def finalize_opt(opt):
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ValueError(f"--{name.replace('_', '-')} must be a positive integer")
     if not isinstance(opt.num_classes, int) or isinstance(opt.num_classes, bool) or opt.num_classes < 2:
-        raise ValueError("--num-classes must be an integer of at least 2 for Normal/Tumor labels")
+        raise ValueError("--num-classes/--nc must be an integer of at least 2 for Normal/Tumor labels")
     if not math.isfinite(opt.train_split) or not 0 < opt.train_split < 1:
         raise ValueError("--train-split must be finite and strictly between 0 and 1")
     if not math.isfinite(opt.weight_decay) or opt.weight_decay < 0:

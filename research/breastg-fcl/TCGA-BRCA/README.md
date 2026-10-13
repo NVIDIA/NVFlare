@@ -336,6 +336,7 @@ passed **183 regression tests** in the author validation reported on 2026-10-11
 and the multiprocess CPU smoke described below; see [validation results](../README.md#expected-results). Maintenance
 validation on 2026-10-12 passed the expanded **203-test** regression suite,
 including offline TCIA workbook/download and CLI failure coverage.
+The 2026-10-13 alias update passed all **206 regression tests**.
 
 The standard launcher uses `--seed` for both data preparation and training.
 Changing it on each CLI run also changes the patient/task/client partition,
