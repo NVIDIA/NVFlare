@@ -34,8 +34,6 @@ NUM_UPDATES = 20
 DATA_ROOT = "/tmp/nvflare/data"
 WORKSPACE_ROOT = "/tmp/nvflare/collab/simple_async"
 
-_train_loader = None
-
 
 def make_model():
     return nn.Sequential(nn.Flatten(), nn.Linear(28 * 28, 128), nn.ReLU(), nn.Linear(128, 10))
@@ -51,15 +49,19 @@ def load_data(train):
 
 @collab.publish
 def train(weights, version):
-    global _train_loader
-    if _train_loader is None:
+    # Reuse this client's loader across updates without a module-global cache.
+    # App properties persist for the job; call-context properties last one call.
+    train_loader = collab.get_app_prop("train_loader")
+    if train_loader is None:
         torch.set_num_threads(1)
         torch.manual_seed(collab.get_app_prop("index"))
-        _train_loader = load_data(train=True)
+        # Load this client's MNIST shard only once, avoiding repeated disk reads.
+        train_loader = load_data(train=True)
+        collab.set_app_prop("train_loader", train_loader)
     model = make_model()
     model.load_state_dict(weights)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    for images, labels in _train_loader:
+    for images, labels in train_loader:
         optimizer.zero_grad()
         loss = nn.functional.cross_entropy(model(images), labels)
         loss.backward()

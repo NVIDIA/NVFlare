@@ -25,7 +25,8 @@ import pytest
 
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.collab.api.app import ServerApp
+from nvflare.collab import collab
+from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.constants import FL_CONTEXT_PROP
 from nvflare.collab.api.proxy import Proxy
 
@@ -150,3 +151,33 @@ def test_abort_while_waiting_terminates(workflow):
     workflow.signal.trigger(True)
     with pytest.raises(RuntimeError, match="Training aborted"):
         future.result(timeout=5)
+
+
+def test_train_loader_is_cached_per_client_app(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3] / "examples" / "advanced"))
+    module = importlib.import_module("collab.simple_async.job")
+    loaded_indices = []
+
+    def load_data(train):
+        assert train
+        index = collab.get_app_prop("index")
+        loaded_indices.append(index)
+        data = torch.utils.data.TensorDataset(torch.ones(2, 2), torch.full((2,), index, dtype=torch.long))
+        return torch.utils.data.DataLoader(data, batch_size=2)
+
+    monkeypatch.setattr(module, "make_model", lambda: torch.nn.Linear(2, 2))
+    monkeypatch.setattr(module, "load_data", load_data)
+    weights = module.make_model().state_dict()
+
+    # Two clients, followed by a fresh app for the first client (a new job).
+    for index in (0, 1, 0):
+        app = ClientApp(module)
+        app.set_prop("index", index)
+        app.set_prop("delay", 0)
+        for version in range(2):
+            # Each invocation has a new call context but the same client app.
+            with app.new_context("server", f"site-{index + 1}"):
+                _, returned_version = module.train(weights, version)
+                assert returned_version == version
+
+    assert loaded_indices == [0, 1, 0]

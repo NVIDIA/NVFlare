@@ -65,6 +65,8 @@ The 60,000 training images are split into two disjoint, equally sized shards
 using alternating dataset indices. Each simulated site trains only on its
 30,000-image shard. A single local download supplies both simulated sites;
 for distributed deployment, prepare the corresponding data at each site.
+Each client caches its training loader in a Collab app property, keeping it
+local and reusable across updates for the lifetime of the job.
 The server evaluates each global model on the separate 10,000-image MNIST test
 set. That test data is never used for client training.
 
