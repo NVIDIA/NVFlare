@@ -165,7 +165,7 @@ def test_cli_arms_guard_before_compute_and_exits_without_atexit_joins(monkeypatc
         assert path == "/attempt/bootstrap.json"
         assert process.sys.argv == ["nvflare-task-worker"]
         assert callable(context_binding)
-        assert "__client_api_backend_factory__" in protected_context_keys
+        assert protected_context_keys == {"__client_name__", "__process_type__"}
         events.append("compute")
         if fails:
             raise RuntimeError("compute failure")

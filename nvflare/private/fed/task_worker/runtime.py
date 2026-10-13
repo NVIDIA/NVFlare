@@ -18,13 +18,10 @@ import threading
 from contextlib import contextmanager
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import EventScope, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.private.event import fire_event
-from nvflare.security.logging import secure_format_exception
 
 
 class UnsupportedTaskRuntimeService(RuntimeError):
@@ -55,18 +52,17 @@ class TaskRuntime:
     """Own task-local context and components without a client/server engine contract.
 
     ``FLContext.get_engine()`` exposes this compatibility adapter to existing
-    compute components. It reuses the context manager and event dispatcher;
-    federation services and job supervision stay with the calling job runtime.
+    compute components. It provides component lookup, logging compatibility and abort;
+    event dispatch and federation services stay with the calling job runtime.
     """
 
     def __init__(self, workspace: Workspace, identity_name: str, job_id: str):
         self._workspace = workspace
         self._components = {}
-        self._handlers = []
-        self._event_observers = []
+        self.compute_components = []
         self._state_lock = threading.Lock()
         self._completed = False
-        self._active_events = 0
+        self._active_calls = 0
         self._failure = None
         self.abort_signal = _TaskAbortSignal(self)
         self._context_manager = FLContextManager(
@@ -76,15 +72,14 @@ class TaskRuntime:
             private_stickers={FLContextKey.RUN_ABORT_SIGNAL: self.abort_signal},
         )
 
-    def set_compute_graph(self, components, executor, handlers=None):
-        """Install the attempt's graph, including its nested constructor components."""
+    def set_compute_graph(self, components, executor, instances=()):
+        """Keep construction order for direct initialization and reverse cleanup."""
         self._components = dict(components)
-        self._handlers = []
+        self.compute_components = []
         seen = set()
-        for component in [*(handlers or ()), *components.values(), executor]:
-            # Aliases and the executor may refer to an already registered object.
-            if isinstance(component, FLComponent) and id(component) not in seen:
-                self._handlers.append(component)
+        for component in [*instances, *components.values(), executor]:
+            if id(component) not in seen:
+                self.compute_components.append(component)
                 seen.add(id(component))
 
     def get_component(self, component_id: str):
@@ -99,45 +94,42 @@ class TaskRuntime:
     def new_context(self) -> FLContext:
         return self._context_manager.new_context()
 
-    def add_event_observer(self, observer):
-        """Bind a role-specific durable event sink without importing a job engine."""
-        self._event_observers.append(observer)
-
-    def fire_event(self, event_type: str, fl_ctx: FLContext):
-        fatal_error = None
-        if event_type == EventType.FATAL_SYSTEM_ERROR:
-            message = str(fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error")
-            fatal_error = RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {message}")
+    @contextmanager
+    def operation(self):
+        """Keep direct compute/analytics calls ordered with completion publication."""
         with self._state_lock:
             self._require_open()
-            if fatal_error is not None:
-                self._fail_locked(fatal_error)
-            self._active_events += 1
+            self._active_calls += 1
         try:
-            # Application callbacks may nest events or signal abort. Never hold
-            # the completion lock while running them.
-            captured = False
-            for observer in self._event_observers:
-                captured = observer(event_type, fl_ctx) or captured
-            if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION and not captured:
-                self._unsupported("federated events")
-            fire_event(
-                event=event_type, handlers=self._handlers, ctx=fl_ctx, exception_handler=self._record_event_error
-            )
-        except BaseException as e:
-            self._record_event_error(e)
+            yield
+        except BaseException as error:
+            self.fail(error)
             raise
         finally:
             with self._state_lock:
-                self._active_events -= 1
+                self._active_calls -= 1
 
-    def _record_event_error(self, error):
-        # Shared FLContext diagnostics can be cleared by another dispatch.
-        # Latch the failure directly, while this event still owns admission.
-        failure = RuntimeError(f"task runtime event handler failed: {secure_format_exception(error)}")
-        failure.__cause__ = error
+    def fail(self, error):
         with self._state_lock:
-            self._fail_locked(failure)
+            self._require_open()
+            self._fail_locked(error)
+
+    def fire_event(self, event_type: str, fl_ctx: FLContext):
+        """Compatibility for FLComponent panic/logging; never dispatch handlers."""
+        if event_type == EventType.FATAL_SYSTEM_ERROR:
+            message = str(fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error")
+            self.fail(RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {message}"))
+        elif event_type not in (
+            EventType.INFO_LOG_AVAILABLE,
+            EventType.DEBUG_LOG_AVAILABLE,
+            EventType.WARNING_LOG_AVAILABLE,
+            EventType.ERROR_LOG_AVAILABLE,
+            EventType.CRITICAL_LOG_AVAILABLE,
+        ):
+            error = UnsupportedTaskRuntimeService("task worker runtime does not provide event dispatch")
+            self.fail(error)
+            raise error
+        # FLComponent logging already wrote the message before this notification.
 
     def _fail_locked(self, failure):
         if self._failure is None:
@@ -159,17 +151,17 @@ class TaskRuntime:
 
     @contextmanager
     def completion_guard(self):
-        """Order final publication against abort and event failure reporting.
+        """Order final publication against abort and direct failure reporting.
 
         Use only around the final filesystem publication, after serialization
-        and verification. Fail closed if an application event is still running.
-        Once publication wins, subsequent events and abort requests are rejected.
+        and verification. Fail closed if a direct operation is still running.
+        Once publication wins, subsequent operations and abort requests are rejected.
         """
         with self._state_lock:
             self._require_open()
             self._raise_if_failed_locked()
-            if self._active_events:
-                raise RuntimeError("task runtime event handlers are still active")
+            if self._active_calls:
+                raise RuntimeError("task runtime operations are still active")
             yield
             self._completed = True
 

@@ -668,3 +668,90 @@ def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     adapter._record_receipt(context)
     adapter.supervisor.retain_attempt.assert_called_once_with(identity)
     adapter.supervisor.record_receipt.assert_called_once_with(identity, TaskResultReceipt.RECEIVED)
+
+
+def test_client_api_worker_uses_direct_backend_without_event_dispatch(native_task, monkeypatch):
+    from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+    from nvflare.private.fed.client.task_worker_binding import bind_client_task_context
+    from nvflare.private.fed.task_worker import (
+        FileTaskArtifactStore,
+        TaskAttemptIdentity,
+        WorkerBootstrap,
+        worker,
+        write_bootstrap,
+    )
+
+    root, custom, context, _policy = native_task
+    (custom / "train.py").write_text(SCRIPT)
+    executor = ClientAPIExecutor(
+        execution_mode="in_process",
+        task_script_path="train.py",
+        params_exchange_format="numpy",
+        server_expected_format="numpy",
+    )
+    handler = Mock(side_effect=AssertionError("executor events must not run in a task worker"))
+    monkeypatch.setattr(executor, "handle_event", handler)
+    monkeypatch.setattr("nvflare.apis.utils.event.fire_event_to_components", handler)
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    identity = TaskAttemptIdentity("job-1", "site-1", "task-1", "train", "direct-api")
+    store = FileTaskArtifactStore(str(root / "artifacts"))
+    store.create_attempt(identity)
+    data = DXO(DataKind.WEIGHTS, {"w": np.array([1.0])}).to_shareable()
+    data.set_header(AppConstants.CURRENT_ROUND, 3)
+    store.write_input(identity, data)
+    path = store.bootstrap_path(identity)
+    write_bootstrap(path, WorkerBootstrap(identity, store.root_dir, str(root), {}))
+    worker.run_worker(path, context_binding=bind_client_task_context)
+    result, completion = store.read_result(identity)
+    np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])
+    assert "analytics" in completion.diagnostics
+    handler.assert_not_called()
+
+
+def test_task_backend_keeps_initialization_error_when_cleanup_also_fails(native_task, monkeypatch):
+    from nvflare.app_common.executors.client_api import task_in_process_backend
+    from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+    from nvflare.client.in_process.api import InProcessClientAPI
+
+    _root, _custom, context, _policy = native_task
+    executor = ClientAPIExecutor(
+        execution_mode="in_process",
+        task_script_path="train.py",
+        params_exchange_format="numpy",
+        server_expected_format="numpy",
+    )
+    monkeypatch.setattr(
+        task_in_process_backend, "TaskScriptRunner", Mock(side_effect=ValueError("primary setup failure"))
+    )
+    close = InProcessClientAPI.close
+
+    def close_then_fail(api):
+        close(api)
+        raise OSError("secondary cleanup failure")
+
+    monkeypatch.setattr(InProcessClientAPI, "close", close_then_fail)
+    backend = task_in_process_backend.TaskInProcessBackend()
+    with pytest.raises(ValueError, match="primary setup failure"):
+        backend.initialize(executor._build_backend_context(), context)
+    assert backend._api is None
+
+
+def test_task_backend_finalizes_api_even_if_script_cleanup_fails():
+    from nvflare.app_common.executors.client_api.task_in_process_backend import TaskInProcessBackend
+
+    backend = TaskInProcessBackend()
+    runner = Mock(release_runtime=Mock(side_effect=ValueError("script cleanup failure")))
+    api = Mock(close=Mock(side_effect=OSError("API cleanup failure")))
+    backend._runner, backend._api = runner, api
+    with pytest.raises(ValueError, match="script cleanup failure"):
+        backend.finalize(FLContext())
+    api.close.assert_called_once()
+    # Cleanup consumes ownership even if a resource reports failure.
+    backend.finalize(FLContext())
+    runner.release_runtime.assert_called_once()
+    api.close.assert_called_once()

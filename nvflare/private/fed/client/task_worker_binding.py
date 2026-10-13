@@ -22,16 +22,13 @@ import time
 from functools import partial
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.apis.dxo import DataKind, from_shareable
-from nvflare.apis.fl_constant import EventScope, FLContextKey
-from nvflare.apis.shareable import Shareable
-from nvflare.app_common.executors.client_api.backend_spec import CLIENT_API_BACKEND_FACTORY
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_common.executors.client_api.task_in_process_backend import TaskInProcessBackend
-from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.private.fed.task_worker.artifacts import require_eager_shareable
 from nvflare.private.fed.task_worker.protocol import _atomic_publish, _open_regular
 
-CLIENT_TASK_CONTEXT_KEYS = {CLIENT_API_BACKEND_FACTORY, FLContextKey.CLIENT_NAME, FLContextKey.PROCESS_TYPE}
+CLIENT_TASK_CONTEXT_KEYS = {FLContextKey.CLIENT_NAME, FLContextKey.PROCESS_TYPE}
 
 
 def _mark_progress(store, identity, name):
@@ -74,39 +71,41 @@ def _mark_result(store, identity, shareable):
     _mark_progress(store, identity, "script_result_sent.json")
 
 
+class _ClientAPITaskRunner:
+    """Drive a Client API backend directly, without an executor event lifecycle."""
+
+    def __init__(self, executor, backend):
+        self._context = executor._build_backend_context()
+        self._backend = backend
+
+    def initialize(self, fl_ctx):
+        self._backend.initialize(self._context, fl_ctx)
+
+    def execute(self, task_name, data, fl_ctx, abort_signal):
+        return self._backend.execute(task_name, data, fl_ctx, abort_signal)
+
+    def finalize(self, fl_ctx):
+        self._backend.finalize(fl_ctx)
+
+
 def bind_client_task_context(fl_ctx, identity, store, analytics):
     fl_ctx.set_prop(FLContextKey.CLIENT_NAME, identity.site_name, private=True, sticky=True)
     fl_ctx.set_prop(FLContextKey.PROCESS_TYPE, "client_task_worker", private=True, sticky=True)
-    fl_ctx.set_prop(
-        CLIENT_API_BACKEND_FACTORY,
-        partial(
-            TaskInProcessBackend,
+
+    def capture_analytics(dxo):
+        with fl_ctx.get_engine().operation():
+            analytics.append(
+                {"event_type": ANALYTIC_EVENT_TYPE, "data": copy.deepcopy(dxo.to_shareable()), "federated": False}
+            )
+
+    def adapt_executor(executor):
+        if type(executor) is not ClientAPIExecutor:
+            return executor
+        backend = TaskInProcessBackend(
             on_started=partial(_mark_progress, store, identity, "result_wait_started.json"),
             on_result=partial(_mark_result, store, identity),
-        ),
-        private=True,
-        sticky=True,
-    )
-    fl_ctx.get_engine().add_event_observer(partial(_capture_analytics, analytics))
+            on_log=capture_analytics,
+        )
+        return _ClientAPITaskRunner(executor, backend)
 
-
-def _capture_analytics(records, event_type, fl_ctx):
-    if event_type not in (ANALYTIC_EVENT_TYPE, FED_ANALYTIC_EVENT_TYPE):
-        return False
-    data = fl_ctx.get_prop(FLContextKey.EVENT_DATA)
-    if not isinstance(data, Shareable):
-        return False
-    try:
-        dxo = from_shareable(data)
-    except (ValueError, TypeError):
-        return False
-    if dxo.data_kind != DataKind.ANALYTIC:
-        return False
-    records.append(
-        {
-            "event_type": event_type,
-            "data": copy.deepcopy(data),
-            "federated": fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION,
-        }
-    )
-    return True
+    return adapt_executor

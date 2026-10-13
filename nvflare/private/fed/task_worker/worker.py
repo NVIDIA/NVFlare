@@ -20,9 +20,8 @@ import resource
 import sys
 import time
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
@@ -124,18 +123,8 @@ def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ct
     executor = builder.build_component(executor_config, builder.make_component_node(executor_config))
     if not isinstance(executor, Executor):
         raise TypeError(f"worker executor config built {type(executor)} instead of Executor")
-    # START_RUN/END_RUN are attempt-scoped initialization adapters here. Only
-    # the explicitly selected compute graph receives them; job-scoped
-    # handlers are neither copied nor replayed.
-    runtime.set_compute_graph(components, executor, handlers=builder.handlers)
+    runtime.set_compute_graph(components, executor, instances=builder.components)
     return executor
-
-
-def _fire_checked(runtime: TaskRuntime, event_type: str, fl_ctx: FLContext):
-    fl_ctx.remove_prop(FLContextKey.EVENT_DATA, force_removal=True)
-    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.LOCAL, private=True, sticky=False)
-    runtime.fire_event(event_type, fl_ctx)
-    runtime.raise_if_failed()
 
 
 def _restore_peer_context(data: Shareable, fl_ctx: FLContext):
@@ -157,42 +146,57 @@ def _execute(
     analytics=None,
 ):
     runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
+    adapt_executor = None
     if context_binding is not None:
-        context_binding(fl_ctx, bootstrap.identity, store, analytics)
+        adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
     executor = _build_compute_graph(bootstrap, workspace, fl_ctx, runtime)
+    if adapt_executor is not None:
+        runner = adapt_executor(executor)
+        runtime.set_compute_graph(
+            runtime.get_all_components(),
+            runner,
+            instances=[runner if c is executor else c for c in runtime.compute_components],
+        )
+        executor = runner
     _restore_peer_context(data, fl_ctx)
 
-    started = False
+    initialized = []
     first_error = None
     try:
-        started = True
-        _fire_checked(runtime, EventType.ABOUT_TO_START_RUN, fl_ctx)
-        _fire_checked(runtime, EventType.START_RUN, fl_ctx)
+        for component in runtime.compute_components:
+            # Include partially initialized objects in cleanup. Hooks must be
+            # idempotent and tolerate partial setup.
+            initialized.append(component)
+            initialize = getattr(component, "initialize", None)
+            if initialize is not None:
+                with runtime.operation():
+                    initialize(fl_ctx)
+            runtime.raise_if_failed()
         fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
-        _fire_checked(runtime, EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
+        with runtime.operation():
+            result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
         runtime.raise_if_failed()
         if not isinstance(result, Shareable):
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
-        _fire_checked(runtime, EventType.AFTER_TASK_EXECUTION, fl_ctx)
-    except BaseException as e:
-        first_error = e
+    except BaseException as error:
+        first_error = error
     finally:
-        if started:
-            for event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
-                try:
-                    _fire_checked(runtime, event_type, fl_ctx)
-                except BaseException as e:
-                    # Finalizers must all run, but cannot replace the failure
-                    # that caused cleanup, or an earlier finalizer failure.
-                    if first_error is None:
-                        first_error = e
+        for component in reversed(initialized):
+            try:
+                finalize = getattr(component, "finalize", None)
+                if finalize is not None:
+                    with runtime.operation():
+                        finalize(fl_ctx)
+                runtime.raise_if_failed()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
     if first_error is not None:
         raise first_error
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     if not isinstance(result, Shareable):
-        raise TypeError("task hooks must leave a Shareable result")
+        raise TypeError("executor finalization must leave a Shareable result")
     runtime.raise_if_failed()
     return result, runtime
 

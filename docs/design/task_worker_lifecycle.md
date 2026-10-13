@@ -48,7 +48,8 @@ rank semantics. The same receive/send loop exits after that send. Script argumen
 retain their boundaries, and supported secret placeholders resolve in the worker.
 Sending only hands off a local snapshot: script failure or finalizer failure still
 prevents completion. Analytics are captured synchronously and replayed by the Client
-Job after settlement; local worker handlers also receive those events.
+Job after settlement. The worker captures these records directly through the
+Client API adapter; it has no local analytics event handlers.
 Worker log lines are replayed through CJ logging after settlement, making them
 available to the existing JobLogStreamer. Worker failures include their original
 error type, message and diagnostic path in the CJ exception.
@@ -108,15 +109,30 @@ the job audit sink first, preserving allow-all and warn-mode authorization recor
 The current builder repeats authorization during graph construction; these checks
 are safe but can be consolidated in a later optimization.
 
-START_RUN and END_RUN apply only to the selected attempt compute graph, including
-nested FLComponents constructed for executor/component arguments. Each instance
-receives lifecycle and task events once, with children registered before parents.
-On a Python exception, both cleanup events are attempted and the first exception is
-retained in failure.json. Later cleanup exceptions cannot overwrite it.
+The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and
+`finalize(fl_ctx)` calls. Optional initialize/finalize methods apply only to the
+selected compute graph, including nested dependencies. Each instance initializes
+once in construction order (nested dependencies before their parents); cleanup unwinds the attempted initializations in reverse
+order, including an object whose initialization failed. Finalizers must tolerate
+partial initialization and repeated cleanup. Cleanup continues after a failure;
+the first failure is retained in failure.json and later cleanup errors cannot
+replace it. Lifecycle events, registered event handlers and before/after-task
+event hooks are not dispatched in the worker. Components that require them must
+use job lifetime or provide the direct lifecycle methods for this profile.
+
+For Client API scripts, a small adapter directly drives the task backend's
+initialize/execute/finalize methods. ClientAPIExecutor supplies validated settings
+but its event lifecycle is not invoked. The shared event dispatcher and job-mode
+backend selection require no task-worker hooks. Existing FLComponent logging is
+written normally; its subsequent log-event notifications are ignored. The
+system_panic compatibility call latches a failure without dispatching handlers;
+other event requests fail explicitly. Filters, widgets, application events and
+federation event routing remain owned by the CJ.
+
 Wall-clock start/end timestamps are diagnostic and may move backward. Elapsed
-time is measured with time.monotonic(). The worker has no SIGTERM handler: launcher cancellation can terminate it without
-END_RUN. Executors must support this stateless one-shot cancellation contract;
-END_RUN is not a guaranteed cleanup mechanism after process termination.
+time uses time.monotonic(). Launcher cancellation can terminate the worker without
+running finalizers. Executors must support this stateless one-shot cancellation
+contract; finalization is not guaranteed after process termination.
 
 The guardian distinguishes worker exit from Client Job loss. While the Client Job
 lives, the launcher owns descendant settling and shutdown deadlines. Client Job
@@ -147,10 +163,10 @@ artifact writes also require read/write permission for the durability barrier.
 
 ## Completion and supervisor integration
 
-The worker serializes completion publication with fatal, abort, and event-failure
+The worker serializes completion publication with fatal, abort, and direct failure
 reporting. A failure observed before the publication decision prevents completion.
-An application callback still in progress also prevents it. Successful publication
-closes the runtime to subsequent application events and abort requests.
+A direct compute or analytics operation still in progress also prevents it.
+Successful publication closes the runtime to subsequent operations and abort requests.
 
 A valid completion.json can coexist with a later nonzero process exit, such as
 SIGKILL after publication, or with failure.json if the directory fsync fails after

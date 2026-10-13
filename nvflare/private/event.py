@@ -15,16 +15,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.event import fire_event_to_components
 
 
-def fire_event(event: str, handlers: list, ctx: FLContext, *, exception_handler=None):
+def fire_event(event: str, handlers: list, ctx: FLContext):
     """Fires the specified event and invokes the list of handlers.
 
     Args:
         event: the event to be fired
         handlers: handlers to be invoked
         ctx: context for cross-component data sharing
-        exception_handler: optional sink for component callback failures
 
     Returns: N/A
 
     """
-    return fire_event_to_components(event, handlers, ctx, exception_handler=exception_handler)
+    return fire_event_to_components(event, handlers, ctx)

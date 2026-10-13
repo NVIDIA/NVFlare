@@ -33,11 +33,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import contains_lazy_download_ref, get_filters, materialize_lazy_download_refs
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.client_api.backend_spec import (
-    CLIENT_API_BACKEND_FACTORY,
-    ClientAPIBackendContext,
-    ClientAPIBackendSpec,
-)
+from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
@@ -332,7 +328,7 @@ class ClientAPIExecutor(Executor):
         if event_type == EventType.START_RUN:
             super().handle_event(event_type, fl_ctx)
             try:
-                self._backend = self._create_backend(fl_ctx)
+                self._backend = self._create_backend()
                 self._backend.initialize(self._build_backend_context(), fl_ctx)
             except Exception as e:
                 # initialize() owns rollback; finalizing a partial backend is unsafe.
@@ -358,8 +354,6 @@ class ClientAPIExecutor(Executor):
                 try:
                     backend.finalize(fl_ctx)
                 except Exception:
-                    if getattr(backend, "failure_is_fatal", False):
-                        raise
                     self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
             super().handle_event(event_type, fl_ctx)
         else:
@@ -394,10 +388,6 @@ class ClientAPIExecutor(Executor):
             # branch below, which is its existing behavior.)
             raise
         except Exception:
-            if getattr(backend, "failure_is_fatal", False):
-                # A disposable worker must not commit a successful script send
-                # after the script subsequently failed.
-                raise
             self.log_error(fl_ctx, secure_format_traceback())
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
@@ -548,15 +538,7 @@ class ClientAPIExecutor(Executor):
             cuda_empty_cache=self._cuda_empty_cache,
         )
 
-    def _create_backend(self, fl_ctx=None) -> ClientAPIBackendSpec:
-        factory = fl_ctx.get_prop(CLIENT_API_BACKEND_FACTORY) if fl_ctx is not None else None
-        if factory is not None:
-            if not callable(factory):
-                raise TypeError("worker Client API backend factory must be callable")
-            backend = factory()
-            if not isinstance(backend, ClientAPIBackendSpec):
-                raise TypeError("worker factory must produce a ClientAPIBackendSpec")
-            return backend
+    def _create_backend(self) -> ClientAPIBackendSpec:
         if self._execution_mode == ExecutionMode.IN_PROCESS:
             return self._create_in_process_backend()
         if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:

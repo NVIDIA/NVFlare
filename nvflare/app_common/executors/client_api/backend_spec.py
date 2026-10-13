@@ -41,9 +41,6 @@ if TYPE_CHECKING:
     # (client_api_executor imports this module to build the context).
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 
-# Set only by the trusted worker entry point, never by application JSON.
-CLIENT_API_BACKEND_FACTORY = "__client_api_backend_factory__"
-
 
 @dataclass(frozen=True)
 class ClientAPIBackendContext:
@@ -103,7 +100,7 @@ class ClientAPIBackendContext:
 
 
 class ClientAPIBackendSpec(ABC):
-    """The narrow lifecycle contract that ClientAPIExecutor drives on its backend.
+    """The narrow lifecycle contract driven by a job executor or task adapter.
 
     Lifecycle ownership per execution mode:
 
@@ -117,7 +114,7 @@ class ClientAPIBackendSpec(ABC):
 
     @abstractmethod
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
-        """Prepares the backend for the run. Called once when the executor handles START_RUN.
+        """Prepares the backend once, through START_RUN in a job or directly in a task worker.
 
         ``context`` is the frozen snapshot of the executor's configuration plus a back-reference to
         the executor (for ``fire_log_analytics`` and logging). A backend should read all of its
@@ -157,7 +154,8 @@ class ClientAPIBackendSpec(ABC):
         should return an error reply (e.g. ReturnCode.EXECUTION_EXCEPTION) rather than raise;
         exceptions that do escape are converted to EXECUTION_EXCEPTION replies by the executor,
         except UnsafeJobError which the executor lets propagate so ClientRunner can apply its
-        dedicated UNSAFE_JOB handling.
+        dedicated UNSAFE_JOB handling. The task adapter instead propagates setup, execution
+        and cleanup failures so a disposable worker cannot publish successful completion.
 
         Args:
             task_name: name of the task.
@@ -179,7 +177,7 @@ class ClientAPIBackendSpec(ABC):
 
     @abstractmethod
     def finalize(self, fl_ctx: FLContext) -> None:
-        """Releases backend resources. Called when the executor handles END_RUN.
+        """Releases backend resources, through END_RUN in a job or directly in a task worker.
 
         The backend tears down per its mode's lifecycle ownership: stop the in-process trainer
         thread; send SHUTDOWN and stop the owned process tree (honoring the executor's
@@ -187,7 +185,8 @@ class ClientAPIBackendSpec(ABC):
         external_process.
 
         Contract: must be idempotent and must not raise. Not called if ``initialize()`` raised
-        (see the cleanup-on-failure contract on ``initialize()``).
+        (see the cleanup-on-failure contract on ``initialize()``). Task cleanup is idempotent
+        and may report a failure to prevent completion; rollback preserves the original error.
 
         Args:
             fl_ctx: the FLContext of the END_RUN event.

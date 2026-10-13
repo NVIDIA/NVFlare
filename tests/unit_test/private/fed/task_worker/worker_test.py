@@ -28,10 +28,9 @@ import psutil
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
@@ -57,7 +56,6 @@ _PROBE_MODULE = """
 import json
 import os
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.shareable import Shareable
@@ -74,11 +72,17 @@ class NamedFailureHelper(FLComponent):
         super().__init__()
         self.label, self.phase, self.marker_path = label, phase, marker_path
 
-    def handle_event(self, event_type, fl_ctx):
+    def record(self, action):
         with open(self.marker_path, "a") as stream:
-            stream.write(json.dumps([self.label, event_type]) + "\\n")
-        if event_type == self.phase:
+            stream.write(json.dumps([self.label, action]) + "\\n")
+        if action == self.phase:
             raise ValueError(self.label)
+
+    def initialize(self, fl_ctx):
+        self.record("initialize")
+
+    def finalize(self, fl_ctx):
+        self.record("finalize")
 
 
 class ProbeExecutor(Executor):
@@ -86,10 +90,13 @@ class ProbeExecutor(Executor):
         super().__init__()
         self.marker_path = marker_path
 
-    def handle_event(self, event_type, fl_ctx):
-        if event_type in (EventType.START_RUN, EventType.END_RUN):
-            with open(self.marker_path, "a") as stream:
-                stream.write(event_type + "\\n")
+    def initialize(self, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write("initialize\\n")
+
+    def finalize(self, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write("finalize\\n")
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         try:
@@ -135,15 +142,20 @@ class LifecycleHelper(FLComponent):
         self.fail_at = fail_at
         self.started = False
 
-    def handle_event(self, event_type, fl_ctx):
+    def record(self, action):
         with open(self.marker_path, "a") as stream:
-            stream.write(json.dumps([self.label, event_type]) + "\\n")
-        if event_type == EventType.START_RUN:
-            if self.helper is not None and not self.helper.started:
-                raise RuntimeError("nested helper must start before its parent")
-            self.started = True
-        if event_type == self.fail_at:
+            stream.write(json.dumps([self.label, action]) + "\\n")
+        if action == self.fail_at:
             raise ValueError("nested helper lifecycle failure")
+
+    def initialize(self, fl_ctx):
+        if self.helper is not None and not self.helper.started:
+            raise RuntimeError("nested helper must initialize before its parent")
+        self.record("initialize")
+        self.started = True
+
+    def finalize(self, fl_ctx):
+        self.record("finalize")
 
 
 class NestedExecutor(Executor):
@@ -277,7 +289,7 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert result["context"] == "transported"
     assert "does not provide a federation Cell" in result["unsupported"]
     assert result["credentials"] == []
-    assert marker.read_text().splitlines() == ["_start_run", "_end_run"]
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
     assert completion.completed_at >= completion.started_at
     assert completion.diagnostics["user_cpu_seconds"] >= 0
     assert store.read_input(identity)["value"] == 3
@@ -300,7 +312,7 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
 
     assert process.returncode != 0
     assert "deliberate worker failure" in process.stderr
-    assert marker.read_text().splitlines() == ["_start_run", "_end_run"]
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
     failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
@@ -309,8 +321,8 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
 
 
 @pytest.mark.parametrize("location", ["executor", "component"])
-@pytest.mark.parametrize("fail_at", [None, EventType.START_RUN, EventType.END_RUN])
-def test_nested_compute_graph_receives_lifecycle_events(tmp_path, location, fail_at):
+@pytest.mark.parametrize("fail_at", [None, "initialize", "finalize"])
+def test_nested_compute_graph_uses_direct_lifecycle(tmp_path, location, fail_at):
     workspace_root = _workspace(tmp_path)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("nested-lifecycle")
@@ -346,24 +358,19 @@ def test_nested_compute_graph_receives_lifecycle_events(tmp_path, location, fail
         with pytest.raises(IncompleteTaskArtifactError):
             store.read_result(identity)
 
-    events = [EventType.ABOUT_TO_START_RUN, EventType.START_RUN]
-    if fail_at != EventType.START_RUN:
-        events.extend([EventType.BEFORE_TASK_EXECUTION, EventType.AFTER_TASK_EXECUTION])
-    events.extend([EventType.ABOUT_TO_END_RUN, EventType.END_RUN])
+    initialized_labels = labels if fail_at != "initialize" else ["leaf"]
     observed = [json.loads(line) for line in marker.read_text().splitlines()]
-    assert observed == [[label, event] for event in events for label in labels]
+    assert observed == (
+        [[label, "initialize"] for label in initialized_labels]
+        + [[label, "finalize"] for label in reversed(initialized_labels)]
+    )
 
 
-def test_task_runtime_dispatches_each_component_instance_once():
+def test_task_runtime_keeps_each_compute_instance_once():
     runtime = TaskRuntime(None, "endpoint", "job")
-    calls = []
-    component = FLComponent()
-    component.handle_event = lambda event, _ctx: calls.append(event)
-    runtime.set_compute_graph({"first": component, "alias": component}, component)
-
-    runtime.fire_event(EventType.START_RUN, runtime.new_context())
-
-    assert calls == [EventType.START_RUN]
+    component = object()
+    runtime.set_compute_graph({"first": component, "alias": component}, component, instances=[component])
+    assert runtime.compute_components == [component]
 
 
 def test_component_authorization_rejects_custom_executor_before_import(tmp_path):
@@ -567,10 +574,6 @@ def test_task_runtime_owns_local_context_and_component_views():
     assert fl_ctx.get_run_abort_signal() is runtime.abort_signal
     assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) is None
     assert fl_ctx.get_process_type() is None
-    runtime.fire_event("local", fl_ctx)
-    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True, sticky=False)
-    with pytest.raises(UnsupportedTaskRuntimeService, match="federated events"):
-        runtime.fire_event("federated", fl_ctx)
 
 
 def test_task_runtime_panic_latches_first_failure_and_triggers_abort():
@@ -595,128 +598,74 @@ def test_resetting_abort_signal_cannot_restore_success():
         pytest.fail("an aborted attempt must not publish completion")
 
 
-@pytest.mark.parametrize("callback_kind", ["handler", "observer"])
-def test_background_event_failure_is_latched(callback_kind):
-    runtime = TaskRuntime(None, "endpoint", "job")
-
-    def fail(*args):
-        raise ValueError("background callback failed")
-
-    if callback_kind == "observer":
-        runtime.add_event_observer(fail)
-    else:
-        component = FLComponent()
-        component.handle_event = fail
-        runtime.set_compute_graph({}, component)
-
-    def dispatch():
-        if callback_kind == "observer":
-            with pytest.raises(ValueError, match="background callback failed"):
-                runtime.fire_event("background", runtime.new_context())
-        else:
-            runtime.fire_event("background", runtime.new_context())
-
-    callback = threading.Thread(target=dispatch, daemon=True)
-    callback.start()
-    callback.join(timeout=5)
-    assert not callback.is_alive()
-    with pytest.raises(RuntimeError, match="event handler failed"), runtime.completion_guard():
-        pytest.fail("a failed background callback must prevent completion")
-
-
-@pytest.mark.parametrize("first", ["callback", "panic", "abort"])
-def test_task_runtime_preserves_first_failure_across_categories(first):
+@pytest.mark.parametrize("federated", [False, True])
+def test_task_runtime_rejects_general_events_and_cannot_ignore_the_failure(federated):
     runtime = TaskRuntime(None, "endpoint", "job")
     component = FLComponent()
-
-    def fail(*args):
-        raise ValueError("FIRST_CALLBACK_FAILURE")
-
-    component.handle_event = fail
+    component.handle_event = Mock()
     runtime.set_compute_graph({}, component)
     ctx = runtime.new_context()
+    with pytest.raises(UnsupportedTaskRuntimeService, match="event dispatch"):
+        if federated:
+            component.fire_fed_event("custom", Shareable(), ctx)
+        else:
+            component.fire_event("custom", ctx)
+    component.handle_event.assert_not_called()
+    with pytest.raises(UnsupportedTaskRuntimeService), runtime.completion_guard():
+        pytest.fail("catching an unsupported event request must not permit completion")
+
+
+@pytest.mark.parametrize("first", ["operation", "panic", "abort"])
+def test_task_runtime_preserves_first_failure_across_categories(first):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    ctx = runtime.new_context()
+    component = FLComponent()
     if first == "panic":
         component.system_panic("FIRST_PANIC_FAILURE", ctx)
     elif first == "abort":
         runtime.abort_signal.trigger(True)
-    runtime.fire_event("callback", ctx)
-    if first == "callback":
+    with pytest.raises(ValueError, match="FIRST_OPERATION_FAILURE"):
+        with runtime.operation():
+            raise ValueError("FIRST_OPERATION_FAILURE")
+    if first == "operation":
         component.system_panic("LATER_PANIC_FAILURE", ctx)
         runtime.abort_signal.trigger(True)
-    expected = {"callback": "FIRST_CALLBACK_FAILURE", "panic": "FIRST_PANIC_FAILURE", "abort": "was aborted"}
-    with pytest.raises(RuntimeError, match=expected[first]), runtime.completion_guard():
+    expected = {"operation": "FIRST_OPERATION_FAILURE", "panic": "FIRST_PANIC_FAILURE", "abort": "was aborted"}
+    with pytest.raises((ValueError, RuntimeError), match=expected[first]), runtime.completion_guard():
         pytest.fail("a later failure must not replace the first failure")
 
 
-def test_shared_context_diagnostic_removal_cannot_allow_worker_completion(tmp_path, monkeypatch):
-    published = threading.Event()
-    release = threading.Event()
-    callbacks = []
-
-    class RaceExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            if event_type == "background":
-                raise ValueError("shared-context callback failure")
-            if event_type in (EventType.AFTER_TASK_EXECUTION, EventType.ABOUT_TO_END_RUN):
-                fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
-                release.set()
-                for callback in callbacks:
-                    callback.join(timeout=5)
-                    assert not callback.is_alive()
-
+def test_direct_failure_does_not_depend_on_shared_context_diagnostics(tmp_path, monkeypatch):
+    class FailingExecutor(Executor):
         def execute(self, task_name, data, fl_ctx, abort_signal):
-            set_prop = fl_ctx.set_prop
+            raise ValueError("compute failure")
 
-            def publish_diagnostic(key, value, **kwargs):
-                result = set_prop(key, value, **kwargs)
-                if key == FLContextKey.EXCEPTIONS and threading.current_thread() in callbacks:
-                    published.set()
-                    assert release.wait(timeout=5)
-                return result
-
-            monkeypatch.setattr(fl_ctx, "set_prop", publish_diagnostic)
-            callback = threading.Thread(target=fl_ctx.get_engine().fire_event, args=("background", fl_ctx))
-            callbacks.append(callback)
-            callback.start()
-            assert published.wait(timeout=5)
-            return Shareable({"computed": True})
+        def finalize(self, fl_ctx):
+            fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, Shareable({"computed": True}), private=True, sticky=False)
 
     def graph(_bootstrap, _workspace, _ctx, runtime):
-        executor = RaceExecutor()
+        executor = FailingExecutor()
         runtime.set_compute_graph({}, executor)
         return executor
 
     monkeypatch.setattr(worker, "_build_compute_graph", graph)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("shared-context-race")
+    identity = _identity("context-diagnostics")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
-    try:
-        with pytest.raises(RuntimeError, match="shared-context callback failure"):
-            worker.run_worker(path)
-    finally:
-        release.set()
-        for callback in callbacks:
-            callback.join(timeout=5)
-            assert not callback.is_alive()
+    with pytest.raises(ValueError, match="compute failure"):
+        worker.run_worker(path)
     failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
-    assert "shared-context callback failure" in failure["message"]
+    assert failure["error_type"] == "ValueError"
+    assert "compute failure" in failure["message"]
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
 
 
-@pytest.mark.parametrize(
-    "phase",
-    [
-        EventType.START_RUN,
-        EventType.BEFORE_TASK_EXECUTION,
-        EventType.AFTER_TASK_EXECUTION,
-        EventType.ABOUT_TO_END_RUN,
-        EventType.END_RUN,
-    ],
-)
-def test_fresh_worker_keeps_first_same_class_handler_failure(tmp_path, phase):
+@pytest.mark.parametrize("phase", ["initialize", "finalize"])
+def test_fresh_worker_keeps_first_same_class_lifecycle_failure(tmp_path, phase):
     workspace = _workspace(tmp_path)
-    marker = tmp_path / "events.jsonl"
+    marker = tmp_path / "lifecycle.jsonl"
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("same-class-failure")
     helpers = tuple(
@@ -731,45 +680,43 @@ def test_fresh_worker_keeps_first_same_class_handler_failure(tmp_path, phase):
         store,
         identity,
         workspace,
-        {"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(tmp_path / "executor-events")}},
+        {"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(tmp_path / "executor-lifecycle")}},
         Shareable({"value": 1}),
         components=(*helpers, {"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 1}}),
     )
     process = _run_process(path)
     assert process.returncode == 1, process.stderr
     failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
-    assert "FIRST_FAILURE" in failure["message"]
-    assert "SECOND_FAILURE" not in failure["message"]
-    assert "FIRST_FAILURE" in process.stderr and "SECOND_FAILURE" in process.stderr
+    # Cleanup unwinds in reverse dependency order.
+    first = "FIRST_FAILURE" if phase == "initialize" else "SECOND_FAILURE"
+    assert first in failure["message"]
     events = [json.loads(line) for line in marker.read_text().splitlines()]
-    assert [label for label, event in events if event == phase] == ["FIRST_FAILURE", "SECOND_FAILURE"]
-    assert all(
-        any(event == finalizer for _, event in events) for finalizer in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN)
+    assert [label for label, action in events if action == "initialize"] == (
+        ["FIRST_FAILURE"] if phase == "initialize" else ["FIRST_FAILURE", "SECOND_FAILURE"]
+    )
+    assert [label for label, action in events if action == "finalize"] == (
+        ["FIRST_FAILURE"] if phase == "initialize" else ["SECOND_FAILURE", "FIRST_FAILURE"]
     )
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_completion(identity)
 
 
-def test_completion_rejects_an_event_still_running(tmp_path):
+def test_completion_rejects_a_direct_operation_still_running(tmp_path):
     runtime = TaskRuntime(None, "endpoint", "job")
-    started = threading.Event()
-    release = threading.Event()
+    started, release = threading.Event(), threading.Event()
 
-    def observe(*args):
-        started.set()
-        assert release.wait(timeout=5)
-        raise ValueError("event failed after the completion attempt")
+    def compute():
+        with pytest.raises(ValueError, match="operation failed"):
+            with runtime.operation():
+                started.set()
+                assert release.wait(timeout=5)
+                raise ValueError("operation failed")
 
-    def dispatch():
-        with pytest.raises(ValueError, match="event failed"):
-            runtime.fire_event("background", runtime.new_context())
-
-    runtime.add_event_observer(observe)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("active-event")
+    identity = _identity("active-operation")
     store.create_attempt(identity)
     reference = store.stage_result(identity, Shareable())
-    callback = threading.Thread(target=dispatch, daemon=True)
+    callback = threading.Thread(target=compute, daemon=True)
     callback.start()
     try:
         assert started.wait(timeout=5)
@@ -781,7 +728,7 @@ def test_completion_rejects_an_event_still_running(tmp_path):
         release.set()
         callback.join(timeout=5)
     assert not callback.is_alive()
-    with pytest.raises(RuntimeError, match="event handler failed"):
+    with pytest.raises(ValueError, match="operation failed"):
         runtime.raise_if_failed()
 
 
@@ -848,17 +795,14 @@ def test_failed_completion_publication_releases_runtime_guard(tmp_path, monkeypa
         runtime.raise_if_failed()
 
 
-def test_nested_event_can_abort_without_holding_publication_lock():
+def test_direct_operation_can_abort_without_holding_publication_lock():
     runtime = TaskRuntime(None, "endpoint", "job")
 
-    def observe(event_type, ctx):
-        if event_type == "outer":
-            runtime.fire_event("inner", ctx)
-        else:
+    def compute():
+        with runtime.operation():
             runtime.abort_signal.trigger(True)
 
-    runtime.add_event_observer(observe)
-    callback = threading.Thread(target=runtime.fire_event, args=("outer", runtime.new_context()), daemon=True)
+    callback = threading.Thread(target=compute, daemon=True)
     callback.start()
     callback.join(timeout=5)
     assert not callback.is_alive()
@@ -866,37 +810,42 @@ def test_nested_event_can_abort_without_holding_publication_lock():
         runtime.raise_if_failed()
 
 
-@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.AFTER_TASK_EXECUTION, EventType.END_RUN])
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 def test_worker_panic_never_commits_completion_and_still_finalizes(tmp_path, monkeypatch, phase):
-    events = []
+    calls = []
 
     class PanicExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def initialize(self, fl_ctx):
+            calls.append("initialize")
+            if phase == "initialize":
                 self.system_panic("compute panic", fl_ctx)
 
-        def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            calls.append("execute")
             if phase == "execute":
                 self.system_panic("compute panic", fl_ctx)
             return Shareable({"done": True})
 
-    def build_graph(_bootstrap, _workspace, _fl_ctx, runtime):
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            if phase == "finalize":
+                self.system_panic("compute panic", fl_ctx)
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
         executor = PanicExecutor()
         runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", build_graph)
-    workspace = _workspace(tmp_path)
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("panic")
-    path = _stage(store, identity, workspace, {"path": "worker_components.RaiseExecutor"}, Shareable())
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     with pytest.raises(RuntimeError, match="FATAL_SYSTEM_ERROR: compute panic"):
         worker.run_worker(path)
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_completion(identity)
-    failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
     assert "compute panic" in failure["message"]
 
 
@@ -906,18 +855,6 @@ def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
     monkeypatch.setattr(worker, "get_job_meta_from_workspace", lambda *_args: [])
     with pytest.raises(RuntimeError, match="metadata must be a dict"):
         worker._read_job_meta(None, "job")
-
-
-def test_checked_event_surfaces_component_failure_with_original_cause():
-    runtime = TaskRuntime(None, "endpoint", "job")
-    component = FLComponent()
-    error = ValueError("initializer failed")
-    component.handle_event = Mock(side_effect=error)
-    runtime.set_compute_graph({}, component)
-    with pytest.raises(RuntimeError, match="handler failed.*initializer failed") as raised:
-        worker._fire_checked(runtime, EventType.START_RUN, runtime.new_context())
-    assert raised.value.__cause__ is error
-    assert runtime.abort_signal.triggered
 
 
 def test_peer_context_is_restored_from_staged_shareable():
@@ -940,19 +877,17 @@ def test_worker_rejects_non_executor_component(tmp_path, monkeypatch):
 def test_invalid_executor_result_still_finalizes_compute_graph(tmp_path, monkeypatch):
     workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
     bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
-    executor = SimpleNamespace(execute=lambda *_args: {})
-    monkeypatch.setattr(worker, "_build_compute_graph", lambda *_args: executor)
-    events = []
-    monkeypatch.setattr(worker, "_fire_checked", lambda _engine, event, _ctx: events.append(event))
+    finalized = Mock()
+    executor = SimpleNamespace(execute=lambda *_args: {}, finalize=finalized)
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
     with pytest.raises(TypeError, match="instead of Shareable"):
         worker._execute(bootstrap, Shareable(), workspace, None)
-    assert events == [
-        EventType.ABOUT_TO_START_RUN,
-        EventType.START_RUN,
-        EventType.BEFORE_TASK_EXECUTION,
-        EventType.ABOUT_TO_END_RUN,
-        EventType.END_RUN,
-    ]
+    finalized.assert_called_once()
 
 
 def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(tmp_path, monkeypatch):
@@ -968,32 +903,28 @@ def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(t
     assert sys.path == previous_path
 
 
-@pytest.mark.parametrize(
-    "phase",
-    [
-        EventType.ABOUT_TO_START_RUN,
-        EventType.START_RUN,
-        EventType.BEFORE_TASK_EXECUTION,
-        EventType.AFTER_TASK_EXECUTION,
-        EventType.ABOUT_TO_END_RUN,
-        EventType.END_RUN,
-    ],
-)
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 @pytest.mark.parametrize("fault", ["exception", "abort"])
 def test_lifecycle_failure_or_abort_never_publishes_completion(tmp_path, monkeypatch, phase, fault):
-    events = []
+    calls = []
 
     class FailingExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def check(self, action, fl_ctx):
+            calls.append(action)
+            if action == phase:
                 if fault == "exception":
                     raise RuntimeError("lifecycle failure")
                 fl_ctx.get_run_abort_signal().trigger(True)
 
-        def execute(self, *args):
-            events.append("execute")
+        def initialize(self, fl_ctx):
+            self.check("initialize", fl_ctx)
+
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            self.check("execute", fl_ctx)
             return Shareable({"produced": True})
+
+        def finalize(self, fl_ctx):
+            self.check("finalize", fl_ctx)
 
     def graph(_bootstrap, _workspace, _ctx, runtime):
         executor = FailingExecutor()
@@ -1006,43 +937,39 @@ def test_lifecycle_failure_or_abort_never_publishes_completion(tmp_path, monkeyp
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     with pytest.raises(RuntimeError):
         worker.run_worker(path)
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     assert not Path(store.attempt_dir(identity), "completion.json").exists()
     assert not Path(store.attempt_dir(identity), "result.fobs").exists()
 
 
-def test_hook_replacement_is_committed_after_end_run_and_attempt_cannot_rerun(tmp_path, monkeypatch):
-    events = []
+def test_direct_finalization_precedes_completion_and_attempt_cannot_rerun(tmp_path, monkeypatch):
+    calls = []
 
-    class HookExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == EventType.AFTER_TASK_EXECUTION:
-                fl_ctx.set_prop(FLContextKey.TASK_RESULT, Shareable({"hooked": True}), private=True, sticky=False)
-            if event_type == EventType.END_RUN:
-                assert not Path(store.attempt_dir(identity), "completion.json").exists()
-                fl_ctx.get_prop(FLContextKey.TASK_RESULT)["finalized"] = True
-
+    class FinalizingExecutor(Executor):
         def execute(self, *args):
-            events.append("execute")
+            calls.append("execute")
             return Shareable({"original": True})
 
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            assert not Path(store.attempt_dir(identity), "completion.json").exists()
+            fl_ctx.get_prop(FLContextKey.TASK_RESULT)["finalized"] = True
+
     def graph(_bootstrap, _workspace, _ctx, runtime):
-        executor = HookExecutor()
+        executor = FinalizingExecutor()
         runtime.set_compute_graph({}, executor)
         return executor
 
     monkeypatch.setattr(worker, "_build_compute_graph", graph)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("hooks")
+    identity = _identity("finalize")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     worker.run_worker(path)
     result, completion = store.read_result(identity)
-    assert result["hooked"] and result["finalized"]
-    assert "original" not in result
+    assert result["original"] and result["finalized"]
     with pytest.raises(FileExistsError):
         worker.run_worker(path)
-    assert events.count("execute") == 1
+    assert calls == ["execute", "finalize"]
     assert store.read_completion(identity) == completion
     assert not Path(store.attempt_dir(identity), "failure.json").exists()
 
@@ -1374,23 +1301,28 @@ def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutd
             handle.cancel()
 
 
-@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.ABOUT_TO_END_RUN])
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_failure_record_keeps_first_exception_through_cleanup(tmp_path, monkeypatch, phase, cleanup_fails):
-    events = []
+    calls = []
 
     class FailingExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def initialize(self, fl_ctx):
+            calls.append("initialize")
+            if phase == "initialize":
                 raise ValueError("ROOT CAUSE from first failure")
-            if cleanup_fails and event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
-                raise RuntimeError("secondary cleanup failure")
 
         def execute(self, *args):
             if phase == "execute":
                 raise ValueError("ROOT CAUSE from first failure")
             return Shareable()
+
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            if phase == "finalize":
+                raise ValueError("ROOT CAUSE from first failure")
+            if cleanup_fails:
+                raise RuntimeError("secondary cleanup failure")
 
     def graph(_bootstrap, _workspace, _ctx, runtime):
         executor = FailingExecutor()
@@ -1401,14 +1333,13 @@ def test_failure_record_keeps_first_exception_through_cleanup(tmp_path, monkeypa
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("first-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
-    with pytest.raises((ValueError, RuntimeError), match="ROOT CAUSE"):
+    with pytest.raises(ValueError, match="ROOT CAUSE"):
         worker.run_worker(path)
     failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert failure["error_type"] == "ValueError"
     assert "ROOT CAUSE" in failure["message"]
-    assert "ValueError" in failure["message"]
     assert "secondary cleanup failure" not in failure["message"]
-    assert events.count(EventType.ABOUT_TO_END_RUN) == 1
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     assert not Path(store.attempt_dir(identity), "completion.json").exists()
 
 
@@ -1566,3 +1497,16 @@ def test_worker_matches_cj_custom_module_precedence(tmp_path, monkeypatch):
     finally:
         sys.modules.pop(dependency_name, None)
         sys.modules.pop(executor_name, None)
+
+
+def test_flcomponent_logging_does_not_dispatch_handlers():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    component = FLComponent()
+    component.handle_event = Mock()
+    runtime.set_compute_graph({}, component)
+    ctx = runtime.new_context()
+    component.log_info(ctx, "message already logged")
+    component.log_warning(ctx, "message already logged")
+    component.log_error(ctx, "message already logged")
+    component.handle_event.assert_not_called()
+    runtime.raise_if_failed()

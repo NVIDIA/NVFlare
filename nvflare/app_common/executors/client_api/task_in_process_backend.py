@@ -14,6 +14,8 @@
 
 """Run one in-process Client API assignment on the task worker's main thread."""
 
+import logging
+
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendSpec
@@ -28,10 +30,8 @@ from nvflare.fuel.data_event.data_bus import DataBus
 
 
 class TaskInProcessBackend(ClientAPIBackendSpec):
-    failure_is_fatal = True
-
-    def __init__(self, *, on_started=None, on_result=None):
-        self._on_started, self._on_result = on_started, on_result
+    def __init__(self, *, on_started=None, on_result=None, on_log=None):
+        self._on_started, self._on_result, self._on_log = on_started, on_result, on_log
         self._api = None
         self._runner = None
         self._executed = False
@@ -51,7 +51,8 @@ class TaskInProcessBackend(ClientAPIBackendSpec):
 
             def log_handler(message):
                 message["tag"] = message.pop("key")
-                context.executor.fire_log_analytics(fl_ctx, create_analytic_dxo(**message))
+                if self._on_log is not None:
+                    self._on_log(create_analytic_dxo(**message))
 
             self._adapter = TaskInProcessAdapter(self._on_result, log_handler)
             self._api = InProcessClientAPI(metadata, adapter=self._adapter)
@@ -63,7 +64,10 @@ class TaskInProcessBackend(ClientAPIBackendSpec):
                 script_args=context.task_script_args,
             )
         except BaseException:
-            self.finalize(fl_ctx)
+            try:
+                self.finalize(fl_ctx)
+            except BaseException:
+                logging.getLogger(__name__).exception("Task Client API cleanup failed during initialization")
             raise
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
@@ -92,10 +96,23 @@ class TaskInProcessBackend(ClientAPIBackendSpec):
     def finalize(self, fl_ctx):
         api, self._api = self._api, None
         runner, self._runner = self._runner, None
-        if runner is not None:
-            runner.release_runtime()
-        if api is not None:
-            api.close()
+        first_error = None
+        try:
+            if runner is not None:
+                runner.release_runtime()
+        except BaseException as error:
+            first_error = error
+        try:
+            if api is not None:
+                api.close()
+        except BaseException as error:
+            if first_error is None:
+                first_error = error
+            else:
+                logging.getLogger(__name__).exception("Task Client API cleanup also failed")
+        finally:
             bus = DataBus()
-            if bus.get_data(CLIENT_API_KEY) is api:
+            if api is not None and bus.get_data(CLIENT_API_KEY) is api:
                 bus.put_data(CLIENT_API_KEY, None)
+        if first_error is not None:
+            raise first_error

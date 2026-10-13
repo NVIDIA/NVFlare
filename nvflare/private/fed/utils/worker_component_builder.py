@@ -13,7 +13,6 @@
 # limitations under the License.
 """Site-policy-authorized component construction for task workers."""
 
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
@@ -33,7 +32,7 @@ class WorkerComponentBuilder(ComponentBuilder):
         self.fl_ctx = fl_ctx
         self.workspace = workspace
         self.component_path_authorizer = ComponentPathAuthorizer()
-        self.handlers = []
+        self.components = []
 
     def get_module_scanner(self):
         return self.module_scanner
@@ -95,8 +94,6 @@ class WorkerComponentBuilder(ComponentBuilder):
             node = self.make_component_node(config_dict)
         self.authorize_tree(config_dict, node)
         component = super().build_component(config_dict)
-        # Recursive construction returns nested components before their parent,
-        # matching ClientJsonConfigurator's lifecycle registration order.
-        if isinstance(component, FLComponent):
-            self.handlers.append(component)
+        # Nested dependencies are constructed before their parents.
+        self.components.append(component)
         return component
