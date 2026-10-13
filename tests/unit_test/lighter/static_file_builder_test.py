@@ -349,7 +349,9 @@ class TestStaticFileBuilder:
     def test_master_template_cc_authz_denies_byoc_to_all_roles(self):
         import yaml
 
-        from nvflare.fuel.sec.authz import Authorizer, AuthzContext, Person
+        from nvflare.apis.fl_constant import AdminCommandNames
+        from nvflare.fuel.sec.authz import AuthzContext, Person
+        from nvflare.security.security import FLAuthorizer
 
         template = _load_master_template()
         policy = yaml.safe_load(template["cc_authz"])
@@ -359,8 +361,7 @@ class TestStaticFileBuilder:
         assert permissions["org_admin"]["byoc"] == "none"
         assert permissions["lead"]["byoc"] == "none"
 
-        authorizer = Authorizer(site_org="site_org")
-        assert authorizer.load_policy(policy) == ""
+        authorizer = FLAuthorizer(for_org="site_org", policy_config=policy)
         for role in ("project_admin", "org_admin", "lead", "member"):
             authorized, _ = authorizer.authorize(
                 AuthzContext(
@@ -370,6 +371,16 @@ class TestStaticFileBuilder:
                 )
             )
             assert not authorized
+
+        project_admin = Person("project_admin", "project_org", "project_admin")
+        authorized, error = authorizer.authorize(
+            AuthzContext(
+                user=project_admin,
+                submitter=project_admin,
+                right=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
+            )
+        )
+        assert authorized, error
 
     def test_master_template_allows_non_edge_regression_components(self):
         """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).

@@ -353,6 +353,7 @@ cc_authz: |
         "clone_job": "any",
         "manage_job": "any",
         "download_job": "any",
+        "download_job_components": "any",
         "view": "any",
         "operate": "any",
         "shell_commands": "any",
