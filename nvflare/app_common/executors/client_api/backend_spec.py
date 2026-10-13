@@ -17,7 +17,7 @@
 Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes",
 "Client API Backends"). One ClientAPIExecutor delegates to one mode-specific backend:
 
-- in_process: trainer runs in its execution owner (CJ for job lifetime, a fresh worker for task lifetime)
+- in_process: trainer runs inside the Client Job (CJ) process over DataBus
 - external_process: NVFlare launches and owns the trainer process tree over Cell
 - attach: externally owned trainer rendezvous over Cell
 
@@ -100,12 +100,11 @@ class ClientAPIBackendContext:
 
 
 class ClientAPIBackendSpec(ABC):
-    """The narrow lifecycle contract driven by a job executor or task adapter.
+    """The narrow lifecycle contract that ClientAPIExecutor drives on its backend.
 
     Lifecycle ownership per execution mode:
 
-    - in_process: job lifetime owns a continuing trainer thread in the CJ;
-      task lifetime runs one assignment on the worker's main thread.
+    - in_process: the backend runs the trainer inside the CJ process and owns its thread.
     - external_process: the backend launches and owns the external trainer process tree; it must
       not stop the trainer before the payload transfer of a pending result reaches terminal state.
     - attach: the backend owns only its protocol session. The trainer process is externally
@@ -114,7 +113,7 @@ class ClientAPIBackendSpec(ABC):
 
     @abstractmethod
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
-        """Prepares the backend once, through START_RUN in a job or directly in a task worker.
+        """Prepares the backend for the run. Called once when the executor handles START_RUN.
 
         ``context`` is the frozen snapshot of the executor's configuration plus a back-reference to
         the executor (for ``fire_log_analytics`` and logging). A backend should read all of its
@@ -154,8 +153,7 @@ class ClientAPIBackendSpec(ABC):
         should return an error reply (e.g. ReturnCode.EXECUTION_EXCEPTION) rather than raise;
         exceptions that do escape are converted to EXECUTION_EXCEPTION replies by the executor,
         except UnsafeJobError which the executor lets propagate so ClientRunner can apply its
-        dedicated UNSAFE_JOB handling. The task adapter instead propagates setup, execution
-        and cleanup failures so a disposable worker cannot publish successful completion.
+        dedicated UNSAFE_JOB handling.
 
         Args:
             task_name: name of the task.
@@ -177,7 +175,7 @@ class ClientAPIBackendSpec(ABC):
 
     @abstractmethod
     def finalize(self, fl_ctx: FLContext) -> None:
-        """Releases backend resources, through END_RUN in a job or directly in a task worker.
+        """Releases backend resources. Called when the executor handles END_RUN.
 
         The backend tears down per its mode's lifecycle ownership: stop the in-process trainer
         thread; send SHUTDOWN and stop the owned process tree (honoring the executor's
@@ -185,8 +183,7 @@ class ClientAPIBackendSpec(ABC):
         external_process.
 
         Contract: must be idempotent and must not raise. Not called if ``initialize()`` raised
-        (see the cleanup-on-failure contract on ``initialize()``). Task cleanup is idempotent
-        and may report a failure to prevent completion; rollback preserves the original error.
+        (see the cleanup-on-failure contract on ``initialize()``).
 
         Args:
             fl_ctx: the FLContext of the END_RUN event.

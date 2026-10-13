@@ -120,8 +120,10 @@ replace it. Lifecycle events, registered event handlers and before/after-task
 event hooks are not dispatched in the worker. Components that require them must
 use job lifetime or provide the direct lifecycle methods for this profile.
 
-For Client API scripts, a small adapter directly drives the task backend's
-initialize/execute/finalize methods. ClientAPIExecutor supplies validated settings
+For Client API scripts, one private task runner directly initializes the shared
+InProcessClientAPI, stages input through TaskInProcessAdapter, executes the script
+and finalizes its resources. It has no separate mode-specific backend or backend
+interface wrapper. ClientAPIExecutor supplies validated settings
 but its event lifecycle is not invoked. The shared event dispatcher and job-mode
 backend selection require no task-worker hooks. Existing FLComponent logging is
 written normally; its subsequent log-event notifications are ignored. The

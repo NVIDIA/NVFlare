@@ -29,23 +29,14 @@ from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, Trans
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.converter_utils import convert_params
 from nvflare.client.in_process.adapters import TASK_RESULT_STOP_REASON, TOPIC_ABORT, TOPIC_GLOBAL_RESULT
-from nvflare.client.in_process.adapters import TOPIC_LOCAL_RESULT as TOPIC_LOCAL_RESULT
-from nvflare.client.in_process.adapters import TOPIC_LOG_DATA as TOPIC_LOG_DATA
+from nvflare.client.in_process.adapters import TOPIC_LOCAL_RESULT as TOPIC_LOCAL_RESULT  # noqa: F401 - public export
+from nvflare.client.in_process.adapters import TOPIC_LOG_DATA as TOPIC_LOG_DATA  # noqa: F401 - public export
 from nvflare.client.in_process.adapters import TOPIC_STOP, JobInProcessAdapter
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
-
-__all__ = [
-    "InProcessClientAPI",
-    "TOPIC_ABORT",
-    "TOPIC_GLOBAL_RESULT",
-    "TOPIC_LOCAL_RESULT",
-    "TOPIC_LOG_DATA",
-    "TOPIC_STOP",
-]
 
 _END_RUN_STOP_REASON = "END_RUN received"
 _API_SHUTDOWN_STOP_REASON = "API shutdown called."
