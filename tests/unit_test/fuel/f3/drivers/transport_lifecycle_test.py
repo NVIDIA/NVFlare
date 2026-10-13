@@ -15,6 +15,7 @@
 """Regression coverage for transport lifecycle fixes, independent of certificate renewal."""
 
 import asyncio
+import os
 import socket
 import ssl
 import threading
@@ -800,17 +801,18 @@ def test_async_tcp_shutdown_owns_raw_socket_before_tls_factory(operation, listen
     params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
     handle = manager.add_connector(driver, params, Mode.PASSIVE)
     accepted = threading.Event()
-    release_accept = threading.Event()
+    release_accept = asyncio.Event()
     shutdown_done = threading.Event()
     errors = []
-    original_accept = driver._accept_tls_socket
+    loop = listener_context.get_event_loop()
+    original_accept = loop.connect_accepted_socket
 
-    def delayed_accept(conn):
+    async def delayed_accept(factory, conn, **kwargs):
         accepted.set()
-        assert release_accept.wait(5)
-        original_accept(conn)
+        await release_accept.wait()
+        return await original_accept(factory, conn, **kwargs)
 
-    monkeypatch.setattr(driver, "_accept_tls_socket", delayed_accept)
+    monkeypatch.setattr(loop, "connect_accepted_socket", delayed_accept)
     manager.start()
     deadline = time.monotonic() + 5
     while driver.server is None and time.monotonic() < deadline:
@@ -832,25 +834,28 @@ def test_async_tcp_shutdown_owns_raw_socket_before_tls_factory(operation, listen
     stopper = threading.Thread(target=shut_down)
     try:
         assert accepted.wait(5)
+        assert len(driver._pending_sockets) == 1
         stopper.start()
-        assert not shutdown_done.wait(0.1), "shutdown returned before the raw accepted socket was released"
-        release_accept.set()
         stopper.join(5)
         assert not stopper.is_alive()
+        assert shutdown_done.is_set()
         assert not errors
         peer.settimeout(2)
         assert peer.recv(1) == b""
         assert not driver._pending_sockets
         assert not driver._accept_tasks
     finally:
-        release_accept.set()
+        loop.call_soon_threadsafe(release_accept.set)
         peer.close()
         if stopper.ident is not None:
             stopper.join(5)
         manager.stop()
 
 
-def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch, tmp_path):
+@pytest.mark.parametrize("high_fd", [False, True])
+def test_async_tcp_tls_listener_accepts_connection(high_fd, listener_context, monkeypatch, tmp_path):
+    if high_fd and os.name == "nt":
+        pytest.skip("Windows socket handles do not use POSIX file descriptor numbers")
     driver = AioTcpDriver()
     manager = ConnManager(Endpoint("accepted_server_tls"))
     tls = _server_tls_context(tmp_path)
@@ -860,16 +865,27 @@ def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch
         port = reservation.getsockname()[1]
     params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
     manager.add_connector(driver, params, Mode.PASSIVE)
-    manager.start()
-    deadline = time.monotonic() + 5
-    while driver.server is None and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert driver.server is not None
-
-    client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    client_tls.check_hostname = False
-    client_tls.verify_mode = ssl.CERT_NONE
+    reserved_fds = []
+    if high_fd:
+        try:
+            while not reserved_fds or reserved_fds[-1] < 1024:
+                reserved_fds.append(os.open(os.devnull, os.O_RDONLY))
+        except OSError:
+            for fd in reserved_fds:
+                os.close(fd)
+            pytest.skip("Open-file limit is too low to create a high-numbered listener")
     try:
+        manager.start()
+        deadline = time.monotonic() + 5
+        while driver.server is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert driver.server is not None
+        if high_fd:
+            assert driver.server.sockets[0].fileno() >= 1024
+
+        client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        client_tls.check_hostname = False
+        client_tls.verify_mode = ssl.CERT_NONE
         with socket.create_connection(("127.0.0.1", port), timeout=2) as raw_peer:
             with client_tls.wrap_socket(raw_peer, server_hostname="localhost") as peer:
                 deadline = time.monotonic() + 5
@@ -881,6 +897,8 @@ def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch
                 assert peer.recv(1) == b""
     finally:
         manager.stop()
+        for fd in reserved_fds:
+            os.close(fd)
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

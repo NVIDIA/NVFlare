@@ -13,9 +13,7 @@
 # limitations under the License.
 import asyncio
 import logging
-import select
 import socket
-import threading
 from concurrent.futures import CancelledError
 from typing import Any, Dict, List
 
@@ -34,56 +32,48 @@ log = logging.getLogger(__name__)
 class _TlsListener:
     """Accept raw sockets before handing them to asyncio's TLS transport."""
 
-    def __init__(self, sockets, on_accept):
+    def __init__(self, loop, sockets, on_accept):
         self.sockets = sockets
         self.on_accept = on_accept
-        self._stopped = threading.Event()
-        self._closed = asyncio.Event()
-        self._wake_reader, self._wake_writer = socket.socketpair()
-        self._thread = threading.Thread(target=self._accept_loop, name="aio_tcp_tls_accept", daemon=True)
-        self._thread.start()
+        self._stopped = False
+        self._failure = None
+        self._tasks = [loop.create_task(self._accept_loop(loop, listener)) for listener in sockets]
 
-    def _accept_loop(self):
+    async def _accept_loop(self, loop, listener):
         try:
-            while not self._stopped.is_set():
+            while not self._stopped:
                 try:
-                    readable, _, _ = select.select([self._wake_reader, *self.sockets], [], [])
-                except (OSError, ValueError):
-                    break
-                if self._wake_reader in readable:
-                    break
-                for listener in readable:
-                    try:
-                        conn, _ = listener.accept()
-                    except (BlockingIOError, OSError):
-                        continue
-                    try:
-                        conn.setblocking(False)
-                        self.on_accept(conn)
-                    except Exception:
-                        conn.close()
-                        log.exception("Failed to register accepted TLS socket")
-        finally:
-            self._wake_reader.close()
-            self._wake_writer.close()
+                    conn, _ = await loop.sock_accept(listener)
+                except (OSError, ValueError) as ex:
+                    if not self._stopped:
+                        self._failure = ex
+                        log.exception("TLS listener stopped accepting connections")
+                        self.close()
+                    return
+                try:
+                    self.on_accept(conn)
+                except Exception:
+                    conn.close()
+                    log.exception("Failed to register accepted TLS socket")
+        except asyncio.CancelledError:
+            return
 
     def close(self):
-        if self._stopped.is_set():
+        if self._stopped:
             return
-        self._stopped.set()
+        self._stopped = True
         for listener in self.sockets:
             listener.close()
-        try:
-            self._wake_writer.send(b"x")
-        except OSError:
-            pass
-        self._closed.set()
+        for task in self._tasks:
+            task.cancel()
 
     async def wait_closed(self):
-        await asyncio.to_thread(self._thread.join)
+        await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def serve_forever(self):
-        await self._closed.wait()
+        await self.wait_closed()
+        if self._failure:
+            raise self._failure
 
 
 class AioTcpDriver(AioBaseDriver):
@@ -94,7 +84,6 @@ class AioTcpDriver(AioBaseDriver):
         self.ssl_context = None
         self._accept_tasks = set()
         self._pending_sockets = set()
-        self._pending_lock = threading.Lock()
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -161,11 +150,9 @@ class AioTcpDriver(AioBaseDriver):
             await self._cancel_connect_tasks()
             if isinstance(server, _TlsListener):
                 # No accept callback can publish a socket after the accept
-                # thread has joined. Close raw sockets before task cancellation.
+                # loops have finished. Close raw sockets before task cancellation.
                 await server.wait_closed()
-                with self._pending_lock:
-                    pending = list(self._pending_sockets)
-                for conn in pending:
+                for conn in list(self._pending_sockets):
                     conn.close()
             await self._cancel_accept_tasks()
             if server and not isinstance(server, _TlsListener):
@@ -181,21 +168,12 @@ class AioTcpDriver(AioBaseDriver):
     def _tls_protocol_factory(self):
         return asyncio.StreamReaderProtocol(asyncio.StreamReader(), self._create_connection)
 
-    def _accept_tls_socket(self, conn):
-        with self._pending_lock:
-            if self.is_stopping() or self.connector.stopped.is_set():
-                conn.close()
-                return
-            self._pending_sockets.add(conn)
-        try:
-            self.aio_ctx.get_event_loop().call_soon_threadsafe(self._start_tls_socket, conn)
-        except Exception:
-            with self._pending_lock:
-                self._pending_sockets.discard(conn)
-            conn.close()
-            raise
-
     def _start_tls_socket(self, conn):
+        if self.is_stopping() or self.connector.stopped.is_set():
+            conn.close()
+            return
+        self._pending_sockets.add(conn)
+
         async def accept():
             try:
                 if self.is_stopping() or self.connector.stopped.is_set():
@@ -210,14 +188,21 @@ class AioTcpDriver(AioBaseDriver):
                 conn.close()
                 log.debug(f"TLS accept failed: {ex}")
             finally:
-                with self._pending_lock:
-                    self._pending_sockets.discard(conn)
+                self._pending_sockets.discard(conn)
                 if self.is_stopping() or self.connector.stopped.is_set():
                     conn.close()
 
         task = asyncio.create_task(accept())
         self._accept_tasks.add(task)
-        task.add_done_callback(self._accept_tasks.discard)
+
+        def done(completed):
+            self._accept_tasks.discard(completed)
+            # Cancellation before the coroutine starts never runs its finally.
+            if completed.cancelled():
+                self._pending_sockets.discard(conn)
+                conn.close()
+
+        task.add_done_callback(done)
 
     async def _tcp_connect(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=False)
@@ -248,15 +233,22 @@ class AioTcpDriver(AioBaseDriver):
                 for listener in sockets:
                     listener.close()
                 raise
-            self.server = _TlsListener(sockets, self._accept_tls_socket)
+            self.server = _TlsListener(loop, sockets, self._start_tls_socket)
         else:
             self.server = await asyncio.start_server(self._create_connection, host, port)
         if self.is_stopping() or self.connector.stopped.is_set():
-            self.server.close()
-            await self.server.wait_closed()
+            server = self.server
+            self.server = None
+            server.close()
+            await server.wait_closed()
             return
         if isinstance(self.server, _TlsListener):
-            await self.server.serve_forever()
+            server = self.server
+            try:
+                await server.serve_forever()
+            finally:
+                if self.server is server:
+                    await self._async_shutdown()
         else:
             async with self.server:
                 await self.server.serve_forever()
