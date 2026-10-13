@@ -1548,7 +1548,10 @@ def _print_job_meta_human(meta: dict, print_func):
             "Status",
             [
                 ("Status", meta.get("status")),
-                ("Incomplete logs", "; ".join(_format_incomplete_log_streams(meta.get("incomplete_log_streams")))),
+                (
+                    "Incomplete logs",
+                    "; ".join(_format_incomplete_log_streams(meta.get("incomplete_log_streams"))) or None,
+                ),
                 ("Submitted", _format_job_meta_timestamp(meta.get("submit_time_iso") or meta.get("submit_time"), True)),
                 ("Started", _format_job_meta_timestamp(meta.get("start_time"))),
                 ("Duration", _format_job_meta_duration(meta.get("duration"))),

@@ -171,6 +171,7 @@ class FLContextKey:
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    INCOMPLETE_LOG_STREAMS = "__incomplete_log_streams__"
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"

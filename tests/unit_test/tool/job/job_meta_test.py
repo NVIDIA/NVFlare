@@ -159,6 +159,18 @@ class TestJobMeta:
         assert "Incomplete logs" in output
         assert "invalid record" in output
 
+    def test_meta_human_omits_incomplete_logs_without_records(self, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_meta
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"job_id": "abc123", "status": "FINISHED:COMPLETED"}
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_meta(self._make_args())
+
+        assert "Incomplete logs" not in capsys.readouterr().out
+
     def test_meta_not_found_exits_1(self, capsys):
         """job meta JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_meta

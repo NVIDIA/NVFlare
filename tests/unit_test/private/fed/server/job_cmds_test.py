@@ -962,7 +962,19 @@ def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch)
 
 
 def test_user_job_meta_cannot_claim_incomplete_logs_at_submission(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
+    fake_logs = [{"client": "fake", "log_file": "log.json", "reason": "fake"}]
+
+    class _Validator:
+        def validate(self, folder_name, zip_file_name):
+            assert folder_name == "job_folder"
+            assert isinstance(zip_file_name, bytes)
+            return True, "", {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: fake_logs}
+
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        _Validator,
+    )
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()

@@ -32,7 +32,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
-from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_CTX_KEY, LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
 from nvflare.private.event import fire_event
@@ -267,7 +267,7 @@ def test_server_job_reports_failed_workspace_move(log_transports, tmp_path, rece
     receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, ready_ctx)
     assert ready_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False) is False
     receiver._on_end_run(EventType.END_RUN, fl_ctx)
-    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+    assert fl_ctx.get_prop(FLContextKey.INCOMPLETE_LOG_STREAMS) == {
         "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "persistence_error"}]
     }
 
@@ -568,7 +568,7 @@ def test_end_run_records_only_unfinished_client_logs(log_transports, receiver_cl
     with patch.object(receiver, "log_error") as log_error:
         fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+    assert fl_ctx.get_prop(FLContextKey.INCOMPLETE_LOG_STREAMS) == {
         "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
     }
     assert "trusted_client" in log_error.call_args.args[1]
@@ -587,9 +587,33 @@ def test_failed_stream_records_incomplete_log_after_callback(log_transports, rec
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
 
-    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) == {
+    assert fl_ctx.get_prop(FLContextKey.INCOMPLETE_LOG_STREAMS) == {
         "trusted_job": [{"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}]
     }
+
+
+def test_failed_context_handoff_logs_error_without_failing_job(log_transports, receiver_clock, tmp_path):
+    receiver, streamer, fl_ctx = log_transports()
+    _set_server_job_workspace(fl_ctx, tmp_path)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("failed", data=b"partial\n"), fl_ctx)
+    streamer._end_tx("failed", ReturnCode.TIMEOUT, fl_ctx)
+    receiver_clock.return_value = 0.5
+    original_set_prop = fl_ctx.set_prop
+
+    def reject_log_records(*args, **kwargs):
+        if args and args[0] == FLContextKey.INCOMPLETE_LOG_STREAMS:
+            return False
+        return original_set_prop(*args, **kwargs)
+
+    with (
+        patch.object(fl_ctx, "set_prop", side_effect=reject_log_records) as set_prop,
+        patch.object(receiver, "log_error") as log_error,
+    ):
+        fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    assert any(call.args and call.args[0] == FLContextKey.INCOMPLETE_LOG_STREAMS for call in set_prop.call_args_list)
+    assert not fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+    assert any("Could not attach incomplete live-log records" in call.args[1] for call in log_error.call_args_list)
 
 
 def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiver_clock, tmp_path):
@@ -605,7 +629,7 @@ def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiv
     receiver_clock.return_value = 0.5
     assert _ready_to_end(receiver)
     fire_event(EventType.END_RUN, [receiver], fl_ctx)
-    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY) is None
+    assert fl_ctx.get_prop(FLContextKey.INCOMPLETE_LOG_STREAMS) is None
 
 
 def test_parent_receiver_does_not_retain_failed_streams(log_transports):

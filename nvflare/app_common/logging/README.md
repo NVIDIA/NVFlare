@@ -161,15 +161,19 @@ window. Re-registering the receiver during the same run preserves its active
 streams.
 
 If an accepted stream is still active when that budget expires, ends with a
-transport error, or fails to save, the job-level receiver records the affected
-client, log file, and reason in the job's `incomplete_log_streams` metadata. The record appears in
+transport error, or fails to save, the job-level receiver logs the affected
+client, log file, and reason as an error. The parent publishes received records
+in the job's `incomplete_log_streams` metadata. The record appears in
 `nvflare job wait`, `nvflare job monitor`, `nvflare job meta`, and the downloaded
 `meta.json`. The job's execution status can still be `FINISHED:COMPLETED`;
 the field identifies detected incomplete streams. An absent field does not
 prove that all client logs arrived: streams never accepted before `END_RUN`
 cannot be tracked. The server-job completion message carries detected records
 to the parent, which publishes them to job metadata before archiving the
-workspace and setting terminal status.
+workspace and setting terminal status. A failed handoff is logged as an error
+in the server-job log without changing the job's execution status.
+Aborted jobs may have no such field because their completion status is sent
+before `END_RUN`; `FINISHED:ABORTED` already indicates logs may be incomplete.
 
 Site-injected streamers use `target_parent_server=True` and send to the
 long-lived receiver in server `resources.json`. That receiver is independent

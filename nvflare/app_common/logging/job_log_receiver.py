@@ -31,12 +31,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
-from nvflare.app_common.logging.constants import (
-    ALLOW_LOG_STREAMING_VAR,
-    INCOMPLETE_LOG_STREAMS_CTX_KEY,
-    LIVE_LOG_TOPIC,
-    Channels,
-)
+from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.fuel.utils.app_config_utils import get_positive_float_var
 from nvflare.widgets.widget import Widget
@@ -286,8 +281,10 @@ class JobLogReceiver(Widget):
 
             # The job process includes this sticky property in its completion
             # message. The parent publishes it before archiving the workspace.
-            if not fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY, by_job, private=True, sticky=True):
-                fl_ctx.set_prop(FLContextKey.FATAL_SYSTEM_ERROR, True, private=True, sticky=True)
+            if not fl_ctx.set_prop(FLContextKey.INCOMPLETE_LOG_STREAMS, by_job, private=True, sticky=True):
+                self.log_error(
+                    fl_ctx, "Could not attach incomplete live-log records to the server-job completion message"
+                )
                 return
 
         with self._active_stream_lock:

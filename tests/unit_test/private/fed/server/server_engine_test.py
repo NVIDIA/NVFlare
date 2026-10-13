@@ -33,7 +33,6 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_CTX_KEY
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -44,29 +43,35 @@ from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine import ServerEngine
 
 
-@pytest.mark.parametrize("acknowledged", [True, False])
-def test_update_job_run_status_waits_for_incomplete_log_ack(acknowledged):
+@pytest.mark.parametrize("ack_result", ["ok", "timeout", "missing", "error"])
+def test_update_job_run_status_keeps_successful_job_status_when_log_ack_fails(ack_result):
     records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
     manager = FLContextManager(job_id="job-1")
     with manager.new_context() as fl_ctx:
-        fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_CTX_KEY, {"job-1": records}, private=True, sticky=True)
+        fl_ctx.set_prop(FLContextKey.INCOMPLETE_LOG_STREAMS, {"job-1": records}, private=True, sticky=True)
 
     engine = ServerEngine.__new__(ServerEngine)
     engine.new_context = manager.new_context
     engine.server = MagicMock()
-    engine.server.cell.send_request.return_value.get_header.return_value = (
-        CellReturnCode.OK if acknowledged else CellReturnCode.TIMEOUT
-    )
-
-    if acknowledged:
-        engine.update_job_run_status()
+    engine.logger = MagicMock()
+    if ack_result == "error":
+        engine.server.cell.send_request.side_effect = RuntimeError("reply lost")
+    elif ack_result == "missing":
+        engine.server.cell.send_request.return_value = None
     else:
-        with pytest.raises(RuntimeError, match="Failed to report incomplete live logs"):
-            engine.update_job_run_status()
+        engine.server.cell.send_request.return_value.get_header.return_value = (
+            CellReturnCode.OK if ack_result == "ok" else CellReturnCode.TIMEOUT
+        )
+
+    engine.update_job_run_status()
 
     sent = engine.server.cell.send_request.call_args.kwargs["request"]
-    assert sent.payload[INCOMPLETE_LOG_STREAMS_CTX_KEY] == {"job-1": records}
+    assert sent.payload[FLContextKey.INCOMPLETE_LOG_STREAMS] == {"job-1": records}
     engine.server.cell.fire_and_forget.assert_not_called()
+    if ack_result == "ok":
+        engine.logger.error.assert_not_called()
+    else:
+        engine.logger.error.assert_called_once()
 
 
 @pytest.mark.parametrize(
