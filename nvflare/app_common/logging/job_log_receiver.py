@@ -34,6 +34,7 @@ from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import (
     ALLOW_LOG_STREAMING_VAR,
+    INCOMPLETE_LOG_STREAMS_FALLBACK,
     INCOMPLETE_LOG_STREAMS_FILE,
     LIVE_LOG_TOPIC,
     Channels,
@@ -271,7 +272,6 @@ class JobLogReceiver(Widget):
             # A timed-out transport can complete later, even after START_RUN.
             # Its callback must not affect the next run's readiness state.
             self._active_streams.clear()
-            self._incomplete_streams.clear()
             self._end_run_deadline = None
             self._quiet_since = None
             self._quiet_period = None
@@ -289,18 +289,37 @@ class JobLogReceiver(Widget):
             # The server-job subprocess has no JobManager. Hand this result
             # to the parent through the shared run directory; JobRunner
             # publishes it before the job reaches terminal status.
-            workspace = fl_ctx.get_workspace()
+            fallback = {}
             for job_id, records in by_job.items():
-                run_dir = workspace.get_run_dir(job_id)
-                os.makedirs(run_dir, exist_ok=True)
-                fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
+                temp_path = None
                 try:
+                    workspace = fl_ctx.get_workspace()
+                    run_dir = workspace.get_run_dir(job_id)
+                    os.makedirs(run_dir, exist_ok=True)
+                    fd, temp_path = tempfile.mkstemp(prefix=".incomplete_log_streams-", dir=run_dir)
                     with os.fdopen(fd, "w") as f:
                         json.dump(records, f)
                     os.replace(temp_path, os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE))
+                except Exception:
+                    fallback[job_id] = records
+                    self.log_exception(fl_ctx, f"Failed to write incomplete live-log records for job {job_id}")
                 finally:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
+                    if temp_path:
+                        try:
+                            os.remove(temp_path)
+                        except FileNotFoundError:
+                            pass
+                        except OSError:
+                            self.log_exception(fl_ctx, f"Failed to remove temporary live-log records for job {job_id}")
+
+            # The job process reports completion to the parent after END_RUN.
+            # Carry records in that message if the filesystem handoff failed.
+            if fallback and not fl_ctx.set_prop(INCOMPLETE_LOG_STREAMS_FALLBACK, fallback, private=True, sticky=True):
+                fl_ctx.set_prop(FLContextKey.FATAL_SYSTEM_ERROR, True, private=True, sticky=True)
+                return
+
+        with self._active_stream_lock:
+            self._incomplete_streams.clear()
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)

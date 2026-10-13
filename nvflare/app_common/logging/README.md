@@ -169,7 +169,9 @@ the field identifies detected incomplete streams. An absent field does not
 prove that all client logs arrived: streams never accepted before `END_RUN`
 cannot be tracked. In a server-job subprocess, the receiver writes the disposition to
 the shared run directory. The parent job runner publishes it to job metadata
-before archiving the workspace and setting terminal status.
+before archiving the workspace and setting terminal status. If that directory
+cannot be written, the server-job completion message carries the same records
+to the parent instead.
 
 Site-injected streamers use `target_parent_server=True` and send to the
 long-lived receiver in server `resources.json`. That receiver is independent

@@ -33,7 +33,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamableEngine, StreamContextKey
-from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FILE, LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import (
+    INCOMPLETE_LOG_STREAMS_FALLBACK,
+    INCOMPLETE_LOG_STREAMS_FILE,
+    LIVE_LOG_TOPIC,
+    Channels,
+)
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
 from nvflare.private.event import fire_event
@@ -591,6 +596,25 @@ def test_failed_stream_records_incomplete_log_after_callback(log_transports, rec
     assert json.loads((run_dir / INCOMPLETE_LOG_STREAMS_FILE).read_text()) == [
         {"client": "trusted_client", "log_file": "log.json", "reason": "stream_error"}
     ]
+
+
+@pytest.mark.parametrize("write_operation", ["tempfile.mkstemp", "json.dump", "os.replace"])
+def test_failed_incomplete_log_sidecar_uses_completion_fallback(
+    log_transports, receiver_clock, tmp_path, write_operation
+):
+    receiver, streamer, fl_ctx = log_transports()
+    run_dir = _set_server_job_workspace(fl_ctx, tmp_path)
+    streamer._handle_request(TOPIC_STREAM_REQUEST, _log_request("stalled", data=b"partial\n"), fl_ctx)
+    assert not _ready_to_end(receiver)
+    receiver_clock.return_value = 6.0
+
+    with patch(f"nvflare.app_common.logging.job_log_receiver.{write_operation}", side_effect=OSError("disk full")):
+        fire_event(EventType.END_RUN, [receiver], fl_ctx)
+
+    records = [{"client": "trusted_client", "log_file": "log.json", "reason": "end_run_timeout"}]
+    assert fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_FALLBACK) == {"trusted_job": records}
+    assert not (run_dir / INCOMPLETE_LOG_STREAMS_FILE).exists()
+    assert not receiver._incomplete_streams
 
 
 def test_empty_log_file_does_not_report_incomplete_stream(log_transports, receiver_clock, tmp_path):

@@ -119,6 +119,7 @@ class JobRunner(FLComponent):
         self.scheduler = None
         self.running_jobs = {}
         self._finished_job_states = {}
+        self._pending_incomplete_log_streams = {}
         self._pending_client_outcomes = {}
         self._client_outcome_deadlines = {}
         self.client_outcome_wait_timeout = ConfigService.get_float_var(
@@ -142,6 +143,11 @@ class JobRunner(FLComponent):
     def resolve_client_outcome(self, job_id: str, client_name: str):
         with self.lock:
             self._pending_client_outcomes.get(job_id, set()).discard(client_name)
+
+    def record_incomplete_log_streams(self, job_id: str, records):
+        """Keep the server-job completion-message fallback until metadata is published."""
+        with self.lock:
+            self._pending_incomplete_log_streams[job_id] = records
 
     def get_client_outcome_jobs(self, client_name: str = None) -> set:
         with self.lock:
@@ -648,10 +654,16 @@ class JobRunner(FLComponent):
             workspace = fl_ctx.get_workspace()
             run_dir = workspace.get_run_dir(job_id)
             incomplete_logs_path = os.path.join(run_dir, INCOMPLETE_LOG_STREAMS_FILE)
-            if os.path.isfile(incomplete_logs_path):
+            with self.lock:
+                fallback_logs = self._pending_incomplete_log_streams.get(job_id)
+            has_sidecar = os.path.isfile(incomplete_logs_path)
+            if has_sidecar or fallback_logs is not None:
                 try:
-                    with open(incomplete_logs_path) as f:
-                        incomplete_logs = json.load(f)
+                    if fallback_logs is not None:
+                        incomplete_logs = fallback_logs
+                    elif has_sidecar:
+                        with open(incomplete_logs_path) as f:
+                            incomplete_logs = json.load(f)
                     if (
                         not isinstance(incomplete_logs, list)
                         or not incomplete_logs
@@ -675,13 +687,16 @@ class JobRunner(FLComponent):
                     incomplete_logs = [{"client": "unknown", "log_file": "unknown", "reason": "invalid_record"}]
                 job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
                 job_manager.update_meta(job_id, {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: incomplete_logs}, fl_ctx)
-                try:
-                    os.remove(incomplete_logs_path)
-                except OSError as e:
-                    self.log_error(
-                        fl_ctx,
-                        f"Could not remove incomplete live-log records for job {job_id}: {secure_format_exception(e)}",
-                    )
+                with self.lock:
+                    self._pending_incomplete_log_streams.pop(job_id, None)
+                if has_sidecar:
+                    try:
+                        os.remove(incomplete_logs_path)
+                    except OSError as e:
+                        self.log_error(
+                            fl_ctx,
+                            f"Could not remove incomplete live-log records for job {job_id}: {secure_format_exception(e)}",
+                        )
             # the archive is served by download_job; the job credential is dead and must not be in it
             if os.path.isdir(run_dir):
                 remove_job_cert(run_dir)

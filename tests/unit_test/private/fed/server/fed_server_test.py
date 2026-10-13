@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst
+from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst, ServerCommandNames
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FALLBACK
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -30,6 +32,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
+from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
@@ -37,6 +40,25 @@ from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, 
 
 def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
+
+
+def test_update_run_status_retains_incomplete_log_fallback_for_job_runner():
+    server = object.__new__(FederatedServer)
+    server.lock = threading.Lock()
+    server.engine = MagicMock()
+    server.engine.run_processes = {"job-1": {}}
+    server.engine.job_runner = JobRunner(workspace_root="/tmp")
+    records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
+    request = new_cell_message(
+        {CellMessageHeaderKeys.JOB_ID: "job-1", MessageHeaderKey.TOPIC: ServerCommandNames.UPDATE_RUN_STATUS},
+        {"execution_error": False, INCOMPLETE_LOG_STREAMS_FALLBACK: {"job-1": records}},
+    )
+
+    reply = server._listen_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    assert server.engine.job_runner._pending_incomplete_log_streams["job-1"] == records
+    assert server.engine.run_processes["job-1"][RunProcessKey.PROCESS_FINISHED] is True
 
 
 class _TestServer(BaseServer):

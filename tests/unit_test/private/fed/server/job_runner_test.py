@@ -386,6 +386,43 @@ def test_save_workspace_retries_incomplete_log_metadata_update(tmp_path):
     job_manager.save_workspace.assert_not_called()
 
 
+def test_save_workspace_publishes_completion_fallback_without_sidecar(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), missing, missing, missing)
+    records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
+    runner.record_incomplete_log_streams("job-1", records)
+
+    def archive(_job_id, _dirs, _ctx):
+        job_manager.update_meta.assert_called_once_with(
+            "job-1", {JobMetaKey.INCOMPLETE_LOG_STREAMS.value: records}, fl_ctx
+        )
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = archive
+    runner._save_workspace(fl_ctx)
+
+    assert "job-1" not in runner._pending_incomplete_log_streams
+    job_manager.save_workspace.assert_called_once()
+
+
+def test_save_workspace_keeps_completion_fallback_for_metadata_retry(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), missing, missing, missing)
+    records = [{"client": "site-2", "log_file": "log.json", "reason": "end_run_timeout"}]
+    runner.record_incomplete_log_streams("job-1", records)
+    job_manager.update_meta.side_effect = RuntimeError("store unavailable")
+
+    with pytest.raises(RuntimeError, match="store unavailable"):
+        runner._save_workspace(fl_ctx)
+
+    assert runner._pending_incomplete_log_streams["job-1"] == records
+    job_manager.save_workspace.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "sidecar_content",
     ["{not json", "{}", '[{"client": "site-2", "log_file": 3, "reason": "end_run_timeout"}]'],

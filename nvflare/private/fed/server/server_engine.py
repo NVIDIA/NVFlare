@@ -48,6 +48,7 @@ from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FALLBACK
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
@@ -875,14 +876,30 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         with self.new_context() as fl_ctx:
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
             data = {"execution_error": execution_error}
+            incomplete_logs = fl_ctx.get_prop(INCOMPLETE_LOG_STREAMS_FALLBACK)
+            if incomplete_logs:
+                data[INCOMPLETE_LOG_STREAMS_FALLBACK] = incomplete_logs
             job_id = fl_ctx.get_job_id()
             request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, data)
-            self.server.cell.fire_and_forget(
-                targets=FQCN.ROOT_SERVER,
-                channel=CellChannel.SERVER_PARENT_LISTENER,
-                topic=ServerCommandNames.UPDATE_RUN_STATUS,
-                message=request,
-            )
+            if incomplete_logs:
+                # The sidecar could not be written. Wait for the parent to
+                # acknowledge this only remaining copy before exiting.
+                reply = self.server.cell.send_request(
+                    target=FQCN.ROOT_SERVER,
+                    channel=CellChannel.SERVER_PARENT_LISTENER,
+                    topic=ServerCommandNames.UPDATE_RUN_STATUS,
+                    request=request,
+                    timeout=5.0,
+                )
+                if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellMsgReturnCode.OK:
+                    raise RuntimeError(f"Failed to report incomplete live logs for job {job_id} to parent server")
+            else:
+                self.server.cell.fire_and_forget(
+                    targets=FQCN.ROOT_SERVER,
+                    channel=CellChannel.SERVER_PARENT_LISTENER,
+                    topic=ServerCommandNames.UPDATE_RUN_STATUS,
+                    message=request,
+                )
 
     def notify_dead_job(self, job_id: str, client_name: str, reason: str):
         shareable = Shareable()

@@ -87,10 +87,12 @@ class ServerAppRunner(Runner):
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
-            self.update_job_run_status()
-            self.server.status = ServerStatus.STOPPED
-            self.server.engine.engine_info.status = MachineStatus.STOPPED
-            self.server.stop_training()
+            try:
+                self.update_job_run_status()
+            finally:
+                self.server.status = ServerStatus.STOPPED
+                self.server.engine.engine_info.status = MachineStatus.STOPPED
+                self.server.stop_training()
 
     def sync_up_parents_process(self, args):
         self.server.engine.sync_clients_from_main_process()

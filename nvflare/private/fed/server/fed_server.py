@@ -45,6 +45,7 @@ from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import INCOMPLETE_LOG_STREAMS_FALLBACK
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -597,6 +598,9 @@ class FederatedServer(BaseServer):
             with self.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
                 if run_process_info is not None:
+                    fallback = data.get(INCOMPLETE_LOG_STREAMS_FALLBACK)
+                    if isinstance(fallback, dict) and job_id in fallback:
+                        self.engine.job_runner.record_incomplete_log_streams(job_id, fallback[job_id])
                     if execution_error:
                         run_process_info[RunProcessKey.PROCESS_EXE_ERROR] = True
                         self.engine.exception_run_processes[job_id] = run_process_info

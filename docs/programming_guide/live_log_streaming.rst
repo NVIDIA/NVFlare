@@ -171,6 +171,8 @@ and the downloaded ``meta.json``. A job may still report
 An absent field means no incomplete accepted stream was detected; it does not
 prove every client log arrived. A stream never accepted before shutdown and
 streams sent to the long-lived parent receiver are outside this field's scope.
+If the server-job run directory cannot be written, its completion message
+carries the detected incomplete-stream records to the parent server.
 
 SiteLogStreamer (client, site widget)
 -------------------------------------
