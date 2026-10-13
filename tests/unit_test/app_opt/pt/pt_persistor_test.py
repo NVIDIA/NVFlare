@@ -20,6 +20,10 @@ import stat
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
+
 
 class TestPTFileModelPersistorInit:
     """Tests for PTFileModelPersistor initialization with source_ckpt_file_full_name."""
@@ -87,6 +91,58 @@ class TestPTFileModelPersistorInit:
             assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.pt"
         except ImportError:
             pytest.skip("PyTorch not installed")
+
+    @pytest.mark.parametrize(
+        ("persistor_kwargs", "log_dir", "expected_error"),
+        [
+            ({}, "{outside}", "checkpoint directory"),
+            ({}, "../outside", "checkpoint directory"),
+            ({"global_model_file_name": "{outside}"}, None, "global model file name"),
+            ({"global_model_file_name": "../outside.pt"}, None, "global model file name"),
+            ({"best_global_model_file_name": "{outside}"}, None, "best global model file name"),
+            ({"best_global_model_file_name": "../outside.pt"}, None, "best global model file name"),
+        ],
+    )
+    def test_initialize_rejects_checkpoint_write_paths_outside_app_root(
+        self, tmp_path, persistor_kwargs, log_dir, expected_error
+    ):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        app_root.mkdir()
+        outside = str(tmp_path / "outside")
+        persistor_kwargs = {name: value.format(outside=outside) for name, value in persistor_kwargs.items()}
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        if log_dir:
+            fl_ctx.set_prop(
+                AppConstants.LOG_DIR,
+                log_dir.format(outside=outside),
+                private=True,
+                sticky=False,
+            )
+
+        with pytest.raises(ValueError, match=expected_error):
+            PTFileModelPersistor(**persistor_kwargs)._initialize(fl_ctx)
+
+    def test_initialize_accepts_checkpoint_write_paths_under_app_root(self, tmp_path):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        app_root.mkdir()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+
+        persistor = PTFileModelPersistor(
+            global_model_file_name="current/model.pt",
+            best_global_model_file_name="best/model.pt",
+        )
+        persistor._initialize(fl_ctx)
+
+        assert persistor.log_dir == str(app_root / "models")
+        assert persistor._ckpt_save_path == str(app_root / "models" / "current" / "model.pt")
+        assert persistor._best_ckpt_save_path == str(app_root / "models" / "best" / "model.pt")
 
 
 class _PersistenceManager:

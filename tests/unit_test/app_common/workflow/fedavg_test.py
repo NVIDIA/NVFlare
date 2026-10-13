@@ -2054,6 +2054,35 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "save_model_file")
         assert hasattr(controller, "load_model_file")
 
+    @pytest.mark.parametrize("save_filename", ["{outside}", "../outside.pt"])
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_model_paths_outside_run_dir(self, tmp_path, save_filename, operation):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        outside = str(tmp_path / "outside.pt")
+        controller = FedAvg(save_filename=save_filename.format(outside=outside))
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+
+        with pytest.raises(ValueError, match="save_filename"):
+            if operation == "load":
+                controller.load_model()
+            else:
+                controller.save_model(FLModel(params={}))
+
+    def test_accepts_model_path_under_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        controller = FedAvg(save_filename="models/model.pt")
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        controller.save_model_file = MagicMock()
+        model = FLModel(params={})
+
+        controller.save_model(model)
+
+        controller.save_model_file.assert_called_once_with(model, str(run_dir / "models" / "model.pt"))
+
 
 class TestPTFedAvgModel:
     """Test PTFedAvg model type handling."""

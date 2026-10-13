@@ -31,6 +31,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.fuel.utils import fobs
@@ -163,12 +164,16 @@ class PTFileModelPersistor(ModelPersistor):
 
         log_dir = fl_ctx.get_prop(AppConstants.LOG_DIR)
         if log_dir:
-            self.log_dir = os.path.join(app_root, log_dir)
+            self.log_dir = resolve_path_under_root(app_root, log_dir, "checkpoint directory")
         else:
             self.log_dir = app_root
 
-        self._ckpt_save_path = os.path.join(self.log_dir, self.global_model_file_name)
-        self._best_ckpt_save_path = os.path.join(self.log_dir, self.best_global_model_file_name)
+        self._ckpt_save_path = resolve_path_under_root(
+            self.log_dir, self.global_model_file_name, "global model file name"
+        )
+        self._best_ckpt_save_path = resolve_path_under_root(
+            self.log_dir, self.best_global_model_file_name, "best global model file name"
+        )
 
         ckpt_preload_path = fl_ctx.get_prop(AppConstants.CKPT_PRELOAD_PATH)
         if ckpt_preload_path:
