@@ -142,20 +142,26 @@ class LabStateTests(unittest.TestCase):
         for suite in suites:
             methods = {name for name in dir(suite.HttpTests if suite is trustee else suite.HardwareTests)}
             self.assertLessEqual(set(suite.ACCEPTANCE_CHECKS), methods)
-        generated = Counter(
-            check for suite in suites for checks in suite.ACCEPTANCE_CHECKS.values() for check in checks
-        )
         for platform, gpu in (
             ("intel_tdx", "none"),
             ("amd_sev_snp", "none"),
             ("intel_tdx", "nvidia_cc"),
             ("amd_sev_snp", "nvidia_cc"),
         ):
-            manifest = {"platform": platform, "contract": {"gpu": gpu}}
-            required = required_acceptance_checks(manifest)
-            with self.subTest(platform=platform, gpu=gpu):
-                self.assertEqual(set(generated) & required, required)
-                self.assertTrue(all(generated[check] == 1 for check in required))
+            for vault_prescan in (True, False):
+                manifest = {"platform": platform, "contract": {"gpu": gpu, "vault_prescan": vault_prescan}}
+                required = required_acceptance_checks(manifest)
+                generated = Counter(
+                    check
+                    for checks in (
+                        *hardware.applicable_acceptance_checks(manifest).values(),
+                        *trustee.ACCEPTANCE_CHECKS.values(),
+                    )
+                    for check in checks
+                )
+                with self.subTest(platform=platform, gpu=gpu, vault_prescan=vault_prescan):
+                    self.assertEqual(set(generated) & required, required)
+                    self.assertTrue(all(generated[check] == 1 for check in required))
 
     def test_acceptance_runner_requires_all_external_inputs(self):
         runner = load_helper("acceptance_runner")

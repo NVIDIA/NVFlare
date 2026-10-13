@@ -69,7 +69,18 @@ ACCEPTANCE_CHECKS = {
     "test_interrupted_docker_load_retries": ["interrupted_docker_load"],
     "test_wrong_header_binding_prevents_startup": ["wrong_binding"],
     "test_payload_corruption_prevents_startup": ["payload_corruption", "header_snapshot"],
+    "test_prescan_disabled_corruption_powers_off_on_read": ["payload_corruption", "header_snapshot"],
 }
+
+
+def applicable_acceptance_checks(manifest):
+    """Select the corruption evidence case that applies to the measured profile."""
+    selected = dict(ACCEPTANCE_CHECKS)
+    if manifest["contract"]["vault_prescan"]:
+        del selected["test_prescan_disabled_corruption_powers_off_on_read"]
+    else:
+        del selected["test_payload_corruption_prevents_startup"]
+    return selected
 
 
 @unittest.skipUnless(os.environ.get("CVM_HARDWARE_TESTS") == "1", "Opt-in real TEE acceptance")
@@ -205,7 +216,9 @@ class HardwareTests(unittest.TestCase):
         require(signing_key, "CVM_ACCEPTANCE_RESULT_KEY must name the site evidence signing key")
         required = required_acceptance_checks(self.manifest)
         checks = {
-            name: {"passed": True} for name in ACCEPTANCE_CHECKS.get(self._testMethodName, []) if name in required
+            name: {"passed": True}
+            for name in applicable_acceptance_checks(self.manifest).get(self._testMethodName, [])
+            if name in required
         }
         write_json(
             self.directory / "result.json",
