@@ -131,24 +131,10 @@ def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ct
     return executor
 
 
-def _raise_event_errors(fl_ctx: FLContext, event_type: str):
-    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-    if not exceptions:
-        return
-    fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
-    names = ", ".join(sorted(str(name) for name in exceptions))
-    first = next(iter(exceptions.values()))
-    raise RuntimeError(
-        f"task worker {event_type} handler failed ({names}): {secure_format_exception(first)}"
-    ) from first
-
-
 def _fire_checked(runtime: TaskRuntime, event_type: str, fl_ctx: FLContext):
-    fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
     fl_ctx.remove_prop(FLContextKey.EVENT_DATA, force_removal=True)
     fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.LOCAL, private=True, sticky=False)
     runtime.fire_event(event_type, fl_ctx)
-    _raise_event_errors(fl_ctx, event_type)
     runtime.raise_if_failed()
 
 

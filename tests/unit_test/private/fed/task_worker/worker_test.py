@@ -69,6 +69,18 @@ class ValueComponent(FLComponent):
         self.value = value
 
 
+class NamedFailureHelper(FLComponent):
+    def __init__(self, label, phase, marker_path):
+        super().__init__()
+        self.label, self.phase, self.marker_path = label, phase, marker_path
+
+    def handle_event(self, event_type, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write(json.dumps([self.label, event_type]) + "\\n")
+        if event_type == self.phase:
+            raise ValueError(self.label)
+
+
 class ProbeExecutor(Executor):
     def __init__(self, marker_path):
         super().__init__()
@@ -612,6 +624,132 @@ def test_background_event_failure_is_latched(callback_kind):
         pytest.fail("a failed background callback must prevent completion")
 
 
+@pytest.mark.parametrize("first", ["callback", "panic", "abort"])
+def test_task_runtime_preserves_first_failure_across_categories(first):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    component = FLComponent()
+
+    def fail(*args):
+        raise ValueError("FIRST_CALLBACK_FAILURE")
+
+    component.handle_event = fail
+    runtime.set_compute_graph({}, component)
+    ctx = runtime.new_context()
+    if first == "panic":
+        component.system_panic("FIRST_PANIC_FAILURE", ctx)
+    elif first == "abort":
+        runtime.abort_signal.trigger(True)
+    runtime.fire_event("callback", ctx)
+    if first == "callback":
+        component.system_panic("LATER_PANIC_FAILURE", ctx)
+        runtime.abort_signal.trigger(True)
+    expected = {"callback": "FIRST_CALLBACK_FAILURE", "panic": "FIRST_PANIC_FAILURE", "abort": "was aborted"}
+    with pytest.raises(RuntimeError, match=expected[first]), runtime.completion_guard():
+        pytest.fail("a later failure must not replace the first failure")
+
+
+def test_shared_context_diagnostic_removal_cannot_allow_worker_completion(tmp_path, monkeypatch):
+    published = threading.Event()
+    release = threading.Event()
+    callbacks = []
+
+    class RaceExecutor(Executor):
+        def handle_event(self, event_type, fl_ctx):
+            if event_type == "background":
+                raise ValueError("shared-context callback failure")
+            if event_type in (EventType.AFTER_TASK_EXECUTION, EventType.ABOUT_TO_END_RUN):
+                fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
+                release.set()
+                for callback in callbacks:
+                    callback.join(timeout=5)
+                    assert not callback.is_alive()
+
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            set_prop = fl_ctx.set_prop
+
+            def publish_diagnostic(key, value, **kwargs):
+                result = set_prop(key, value, **kwargs)
+                if key == FLContextKey.EXCEPTIONS and threading.current_thread() in callbacks:
+                    published.set()
+                    assert release.wait(timeout=5)
+                return result
+
+            monkeypatch.setattr(fl_ctx, "set_prop", publish_diagnostic)
+            callback = threading.Thread(target=fl_ctx.get_engine().fire_event, args=("background", fl_ctx))
+            callbacks.append(callback)
+            callback.start()
+            assert published.wait(timeout=5)
+            return Shareable({"computed": True})
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = RaceExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("shared-context-race")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    try:
+        with pytest.raises(RuntimeError, match="shared-context callback failure"):
+            worker.run_worker(path)
+    finally:
+        release.set()
+        for callback in callbacks:
+            callback.join(timeout=5)
+            assert not callback.is_alive()
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "shared-context callback failure" in failure["message"]
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_result(identity)
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        EventType.START_RUN,
+        EventType.BEFORE_TASK_EXECUTION,
+        EventType.AFTER_TASK_EXECUTION,
+        EventType.ABOUT_TO_END_RUN,
+        EventType.END_RUN,
+    ],
+)
+def test_fresh_worker_keeps_first_same_class_handler_failure(tmp_path, phase):
+    workspace = _workspace(tmp_path)
+    marker = tmp_path / "events.jsonl"
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("same-class-failure")
+    helpers = tuple(
+        {
+            "id": label,
+            "path": "worker_components.NamedFailureHelper",
+            "args": {"label": label, "phase": phase, "marker_path": str(marker)},
+        }
+        for label in ("FIRST_FAILURE", "SECOND_FAILURE")
+    )
+    path = _stage(
+        store,
+        identity,
+        workspace,
+        {"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(tmp_path / "executor-events")}},
+        Shareable({"value": 1}),
+        components=(*helpers, {"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 1}}),
+    )
+    process = _run_process(path)
+    assert process.returncode == 1, process.stderr
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "FIRST_FAILURE" in failure["message"]
+    assert "SECOND_FAILURE" not in failure["message"]
+    assert "FIRST_FAILURE" in process.stderr and "SECOND_FAILURE" in process.stderr
+    events = [json.loads(line) for line in marker.read_text().splitlines()]
+    assert [label for label, event in events if event == phase] == ["FIRST_FAILURE", "SECOND_FAILURE"]
+    assert all(
+        any(event == finalizer for _, event in events) for finalizer in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN)
+    )
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+
+
 def test_completion_rejects_an_event_still_running(tmp_path):
     runtime = TaskRuntime(None, "endpoint", "job")
     started = threading.Event()
@@ -770,17 +908,16 @@ def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
         worker._read_job_meta(None, "job")
 
 
-def test_checked_event_surfaces_component_failure_and_clears_exception_state():
-    fl_ctx = FLContext()
+def test_checked_event_surfaces_component_failure_with_original_cause():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    component = FLComponent()
     error = ValueError("initializer failed")
-    engine = SimpleNamespace(
-        fire_event=lambda *_args: fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"helper": error}),
-        raise_if_failed=lambda: None,
-    )
-    with pytest.raises(RuntimeError, match="helper.*initializer failed") as raised:
-        worker._fire_checked(engine, EventType.START_RUN, fl_ctx)
+    component.handle_event = Mock(side_effect=error)
+    runtime.set_compute_graph({}, component)
+    with pytest.raises(RuntimeError, match="handler failed.*initializer failed") as raised:
+        worker._fire_checked(runtime, EventType.START_RUN, runtime.new_context())
     assert raised.value.__cause__ is error
-    assert fl_ctx.get_prop(FLContextKey.EXCEPTIONS) is None
+    assert runtime.abort_signal.triggered
 
 
 def test_peer_context_is_restored_from_staged_shareable():

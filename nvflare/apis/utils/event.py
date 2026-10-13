@@ -24,13 +24,15 @@ _KEY_EVENT_DEPTH = "###event_depth"
 _MAX_EVENT_DEPTH = 20
 
 
-def fire_event_to_components(event: str, components: List[FLComponent], ctx: FLContext):
+def fire_event_to_components(event: str, components: List[FLComponent], ctx: FLContext, *, exception_handler=None):
     """Fires the specified event and invokes the list of handlers.
 
     Args:
         event: the event to be fired
         components: components to be invoked
         ctx: context for cross-component data sharing
+        exception_handler: optional sink called when a component callback fails,
+            before logging or updating the shared context diagnostics
 
     Returns: N/A
 
@@ -72,13 +74,18 @@ def fire_event_to_components(event: str, components: List[FLComponent], ctx: FLC
                     # no explicitly defined CBs - call the default handler.
                     h.handle_event(event, ctx)
             except Exception as e:
-                h.log_exception(
-                    ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False
-                )
+                if exception_handler is not None:
+                    exception_handler(e)
                 exceptions = ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if not exceptions:
                     exceptions = {}
-                    ctx.set_prop(FLContextKey.EXCEPTIONS, exceptions, sticky=False, private=True)
-                exceptions[h.name] = e
+                # Keep the first failure under the compatibility name. Distinct
+                # same-class instances must not overwrite each other's errors.
+                key = h.name if h.name not in exceptions else f"{h.name}@{id(h):x}"
+                exceptions.setdefault(key, e)
+                ctx.set_prop(FLContextKey.EXCEPTIONS, exceptions, sticky=False, private=True)
+                h.log_exception(
+                    ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False
+                )
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

@@ -15,6 +15,7 @@
 """JSON bootstrap types shared by the job-based supervisor and task worker."""
 
 import json
+import logging
 import math
 import os
 import stat
@@ -27,6 +28,7 @@ from typing import Any, Mapping, Sequence
 SCHEMA_VERSION = 1
 _MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 _MAX_IDENTITY_VALUE_LENGTH = 4096
+_LOGGER = logging.getLogger(__name__)
 
 
 def _freeze_json(value, depth=0):
@@ -126,6 +128,7 @@ def _publish_exclusive(directory, name, writer, *, publication_guard=nullcontext
     temporary = f".{name}.{uuid.uuid4().hex}"
     try:
         fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600, dir_fd=directory_fd)
+        publication_failed = False
         try:
             with os.fdopen(fd, "w+b") as stream:
                 writer(stream)
@@ -136,11 +139,20 @@ def _publish_exclusive(directory, name, writer, *, publication_guard=nullcontext
             with publication_guard():
                 os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd, follow_symlinks=False)
                 os.fsync(directory_fd)
+        except BaseException:
+            publication_failed = True
+            raise
         finally:
             try:
                 os.unlink(temporary, dir_fd=directory_fd)
             except FileNotFoundError:
                 pass
+            except OSError:
+                if not publication_failed:
+                    raise
+                _LOGGER.warning(
+                    "Cannot remove publication temporary %s; preserving primary failure", temporary, exc_info=True
+                )
     finally:
         os.close(directory_fd)
 

@@ -41,7 +41,7 @@ class _TaskAbortSignal(Signal):
     def trigger(self, value):
         with self._runtime._state_lock:
             self._runtime._require_open()
-            self._runtime._aborted = True
+            self._runtime._fail_locked(RuntimeError("task runtime was aborted"))
             super().trigger(value)
 
     def reset(self, value=None):
@@ -67,9 +67,7 @@ class TaskRuntime:
         self._state_lock = threading.Lock()
         self._completed = False
         self._active_events = 0
-        self._aborted = False
-        self._fatal_error = None
-        self._event_error = None
+        self._failure = None
         self.abort_signal = _TaskAbortSignal(self)
         self._context_manager = FLContextManager(
             engine=self,
@@ -108,14 +106,13 @@ class TaskRuntime:
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fatal_error = None
         if event_type == EventType.FATAL_SYSTEM_ERROR:
-            fatal_error = str(fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error")
+            message = str(fl_ctx.get_prop(FLContextKey.EVENT_DATA) or "fatal system error")
+            fatal_error = RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {message}")
         with self._state_lock:
             self._require_open()
-            if fatal_error is not None and self._fatal_error is None:
-                self._fatal_error = fatal_error
-                self._abort_locked()
+            if fatal_error is not None:
+                self._fail_locked(fatal_error)
             self._active_events += 1
-        error = None
         try:
             # Application callbacks may nest events or signal abort. Never hold
             # the completion lock while running them.
@@ -124,22 +121,27 @@ class TaskRuntime:
                 captured = observer(event_type, fl_ctx) or captured
             if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION and not captured:
                 self._unsupported("federated events")
-            fire_event(event=event_type, handlers=self._handlers, ctx=fl_ctx)
+            fire_event(
+                event=event_type, handlers=self._handlers, ctx=fl_ctx, exception_handler=self._record_event_error
+            )
         except BaseException as e:
-            error = e
+            self._record_event_error(e)
             raise
         finally:
-            exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-            if error is None and exceptions:
-                error = next(iter(exceptions.values()))
             with self._state_lock:
-                if error is not None and self._event_error is None:
-                    self._event_error = error
-                    self._abort_locked()
                 self._active_events -= 1
 
-    def _abort_locked(self):
-        self._aborted = True
+    def _record_event_error(self, error):
+        # Shared FLContext diagnostics can be cleared by another dispatch.
+        # Latch the failure directly, while this event still owns admission.
+        failure = RuntimeError(f"task runtime event handler failed: {secure_format_exception(error)}")
+        failure.__cause__ = error
+        with self._state_lock:
+            self._fail_locked(failure)
+
+    def _fail_locked(self, failure):
+        if self._failure is None:
+            self._failure = failure
         Signal.trigger(self.abort_signal, True)
 
     def _require_open(self):
@@ -152,15 +154,8 @@ class TaskRuntime:
             self._raise_if_failed_locked()
 
     def _raise_if_failed_locked(self):
-        if self._fatal_error is not None:
-            raise RuntimeError(f"task runtime received FATAL_SYSTEM_ERROR: {self._fatal_error}")
-
-        if self._event_error is not None:
-            raise RuntimeError(
-                f"task runtime event handler failed: {secure_format_exception(self._event_error)}"
-            ) from self._event_error
-        if self._aborted:
-            raise RuntimeError("task runtime was aborted")
+        if self._failure is not None:
+            raise self._failure
 
     @contextmanager
     def completion_guard(self):
