@@ -484,15 +484,18 @@ Today the image is `docker load`ed at build time so it lands in `/var/lib/docker
 - Start with an archive-only vault: after vault verification, load the image on first boot and launch the expected image id. The load runs in the owning CVM's ordered startup path. Record success on authenticated storage only after `docker load` succeeds and the expected image id is present; later boots reuse that verified Docker state. If loading is interrupted before success is recorded, the next boot verifies the state and retries the load before starting the application. Partial Docker state or an unfinished progress record never counts as completion, and no workload starts on a failed or mismatched load. The previous CVM must have exited and released the vault before this next boot (§4.1, D8). No cross-CVM load lock, loading-marker heartbeat or stale-holder election is needed. Pre-populating a data-root is deferred until daemon-version compatibility is tested.
 - Pin the Docker/containerd storage configuration. Any independently configured containerd content/snapshot store must also live under `/vault`; moving Docker's `data-root` alone is insufficient for such a configuration. These daemons and socket activation paths require successful vault initialization and active integrity monitoring.
 
-The archive and imported layer data coexist for the life of the vault. Before
-creating disks or publishing a key, Stage 2 scans every saved-image layer that
-`docker load` will import and requires enough capacity for the retained archive,
-estimated overlay allocation, application files, and a safety margin equal to
-the larger of 2 GiB or 20 percent of that static content. This estimate
-intentionally excludes workload-specific runtime growth, which the operator adds
-when selecting `vault_drive_size`. Unsupported layer compression produces a
-lower-bound warning instead of silently claiming a complete estimate. The user
-guide defines the corresponding sizing formula and distinguishes bytes from GiB.
+The retained archive, Docker's temporary extraction of that archive, and imported
+layer data coexist during first boot. Before creating disks or publishing a key,
+Stage 2 scans the complete saved-image archive and every distinct layer chain that
+`docker load` will import. It requires enough usable filesystem capacity for the
+retained archive, temporary extraction, estimated overlay allocation, application
+files, and a safety margin equal to the larger of 2 GiB or 20 percent of that
+static peak. The comparison conservatively removes the LUKS2/dm-integrity/ext4
+overhead from the configured raw drive size. This estimate intentionally excludes
+workload-specific runtime growth, which the operator adds when selecting
+`vault_drive_size`. Unsupported layer compression produces a lower-bound warning
+instead of silently claiming a complete estimate. The user guide defines the
+corresponding sizing formula and distinguishes bytes from GiB.
 
 ### 7.4 Reference measurement computation
 

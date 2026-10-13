@@ -19,6 +19,7 @@ import errno
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import tarfile
@@ -53,6 +54,7 @@ from .storage import (
 GIB = 1024**3
 FILESYSTEM_BLOCK_BYTES = 4096
 MINIMUM_VAULT_HEADROOM_BYTES = 2 * GIB
+VAULT_USABLE_PERCENT = 90
 
 
 def populate(root, app):
@@ -115,11 +117,36 @@ def _entry_layers(entry):
         and all(
             isinstance(name, str) and name and not name.startswith("/") and ".." not in Path(name).parts
             for name in layers
-        )
-        and len(set(layers)) == len(layers),
+        ),
         "Invalid Docker image layer list",
     )
     return tuple(layers)
+
+
+def _resolved_archive_file(archive, name):
+    """Resolve a regular member or a safe in-archive link without host extraction."""
+    current = name
+    seen = set()
+    for _ in range(32):
+        require(
+            isinstance(current, str)
+            and current
+            and not posixpath.isabs(current)
+            and ".." not in Path(current).parts,
+            "Invalid Docker archive member",
+        )
+        require(current not in seen, "Docker archive link cycle")
+        seen.add(current)
+        member = archive.getmember(current)
+        if member.isfile():
+            return member
+        require(member.issym() or member.islnk(), "Invalid Docker image layer")
+        target = member.linkname
+        require(isinstance(target, str) and target, "Invalid Docker archive link")
+        if member.issym():
+            target = posixpath.join(posixpath.dirname(current), target)
+        current = posixpath.normpath(target)
+    raise BuildError("Docker archive link nesting exceeds the supported limit")
 
 
 def _archive_image(path, image_id):
@@ -132,7 +159,7 @@ def _archive_image(path, image_id):
         require(isinstance(entries, list) and entries, "Empty Docker save archive")
         configurations = {}
         archive_layers = []
-        archive_layer_set = set()
+        archive_chains = set()
         for entry in entries:
             require(isinstance(entry, dict), "Invalid Docker save entry")
             filename = entry["Config"]
@@ -146,11 +173,14 @@ def _archive_image(path, image_id):
             digest = "sha256:" + hashlib.sha256(data).hexdigest()
             image = json.loads(data)
             layers = _entry_layers(entry)
+            chain = []
             for layer in layers:
-                require(archive.getmember(layer).isfile(), "Invalid Docker image layer")
-                if layer not in archive_layer_set:
+                _resolved_archive_file(archive, layer)
+                chain.append(layer)
+                identity = tuple(chain)
+                if identity not in archive_chains:
                     archive_layers.append(layer)
-                    archive_layer_set.add(layer)
+                    archive_chains.add(identity)
             if digest in configurations:
                 require(configurations[digest][1] == layers, "Ambiguous Docker image layers")
             configurations[digest] = (image, layers)
@@ -260,7 +290,7 @@ def _estimated_layer_bytes(path, layers, capacity):
     complete = True
     with tarfile.open(path, "r:*") as archive:
         for name in layers:
-            member = archive.getmember(name)
+            member = _resolved_archive_file(archive, name)
             try:
                 with archive.extractfile(member) as stream, tarfile.open(fileobj=stream, mode="r|*") as layer:
                     for item in layer:
@@ -276,22 +306,37 @@ def _estimated_layer_bytes(path, layers, capacity):
     return total, complete
 
 
+def _estimated_archive_extraction_bytes(path, capacity):
+    """Estimate Docker's temporary extraction of the complete save archive."""
+    total = 0
+    with tarfile.open(path, "r:*") as archive:
+        for member in archive:
+            total += _allocated_file_bytes(member.size) if member.isfile() else FILESYSTEM_BLOCK_BYTES
+            if total > capacity:
+                break
+    return total
+
+
 def validate_vault_capacity(app, layers):
     """Reject a vault that cannot hold its archive and estimated imported image."""
-    capacity = app["vault_drive_size"] * GIB
+    raw_capacity = app["vault_drive_size"] * GIB
+    usable_capacity = max(0, (raw_capacity - HEADER_BYTES) * VAULT_USABLE_PERCENT // 100)
     try:
         archive_bytes = Path(app["docker_archive"]).stat().st_size
         application_bytes = _application_file_bytes(app.get("application_files"))
-        layer_bytes, complete = _estimated_layer_bytes(app["docker_archive"], layers, capacity)
+        extracted_archive_bytes = _estimated_archive_extraction_bytes(app["docker_archive"], usable_capacity)
+        layer_bytes, complete = _estimated_layer_bytes(app["docker_archive"], layers, usable_capacity)
     except (OSError, ValueError, EOFError, tarfile.TarError):
         raise ConfigurationError("Cannot estimate vault storage from docker_archive and application_files") from None
-    content_bytes = archive_bytes + application_bytes + layer_bytes
+    content_bytes = archive_bytes + extracted_archive_bytes + application_bytes + layer_bytes
     safety_bytes = max(MINIMUM_VAULT_HEADROOM_BYTES, (content_bytes + 4) // 5)
     required_bytes = content_bytes + safety_bytes
-    required_gib = (required_bytes + GIB - 1) // GIB
+    required_raw_bytes = HEADER_BYTES + (required_bytes * 100 + VAULT_USABLE_PERCENT - 1) // VAULT_USABLE_PERCENT
+    required_gib = (required_raw_bytes + GIB - 1) // GIB
     require_config(
-        capacity >= required_bytes,
-        f"vault_drive_size is {app['vault_drive_size']} GiB but the Docker archive and imported image require "
+        usable_capacity >= required_bytes,
+        f"vault_drive_size is {app['vault_drive_size']} GiB but the retained archive, temporary extraction, and "
+        f"imported image require "
         f"at least {required_gib} GiB; increase it and add space for expected application runtime writes",
     )
     if not complete:
