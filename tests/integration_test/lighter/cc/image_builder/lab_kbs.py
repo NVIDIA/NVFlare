@@ -38,6 +38,20 @@ from cvm.trustee.client import encode
 from cvm.trustee.provenance import provenance
 
 
+def verifier_config(profiles):
+    """Return the lab verifier configuration required by the selected profiles."""
+    result = read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"]
+    gpu_urls = {
+        profile["gpu_attestation_url"].rstrip("/").removesuffix("/gpu")
+        for profile in profiles
+        if profile["gpu"] == "nvidia_cc"
+    }
+    require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
+    if gpu_urls:
+        result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}
+    return result
+
+
 def main(directory):
     directory = Path(directory).resolve()
     pki = Path(read_json(directory / "lab-state.json")["pki"])
@@ -69,7 +83,7 @@ def main(directory):
     (storage / "repository").mkdir(mode=0o700, exist_ok=True)
     policy_id_map = {}
     immutable_as_policies = {}
-    gpu_verification = False
+    profiles = []
     lab_state = read_json(directory / "lab-state.json")
     profile_paths = lab_state.get("profiles")
     if profile_paths is None:
@@ -78,6 +92,7 @@ def main(directory):
     policy_ids = set()
     for profile_path in profile_paths:
         profile = build_config.profile(profile_path)
+        profiles.append(profile)
         profile_contract = contract(profile)
         reference_id = reference_record_name(profile["profile_version"], profile_contract)
         selector = profile["attestation_policy_selector"]
@@ -90,7 +105,6 @@ def main(directory):
         cpu_policy.write_text(render_reference_policy(Path(profile["attestation_policy"]).read_text(), reference_id))
         immutable_as_policies[policy_id + "_cpu"] = digest_file(cpu_policy)
         if profile["gpu"] == "nvidia_cc":
-            gpu_verification = True
             gpu_policy = policies / (policy_id + "_gpu.rego")
             gpu_policy.write_text(render_gpu_policy(read_json(profile["gpu_policy"]), reference_id))
             immutable_as_policies[policy_id + "_gpu"] = digest_file(gpu_policy)
@@ -142,7 +156,7 @@ def main(directory):
         "attestation_service": {
             "type": "coco_as_builtin",
             "policy_id_map": policy_id_map,
-            "verifier_config": read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"],
+            "verifier_config": verifier_config(profiles),
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",
@@ -151,11 +165,6 @@ def main(directory):
         },
         "plugins": [{"name": "resource", "storage_backend_type": "kvstorage"}],
     }
-    if gpu_verification:
-        config["attestation_service"]["verifier_config"]["nvidia_verifier"] = {
-            "type": "Remote",
-            "verifier_url": "https://nras.attestation.nvidia.com/v4/attest",
-        }
     write_json(state / "kbs.json", config)
     # Only the lab issuer has the signing key; builders get a fixed-role token.
     key = serialization.load_pem_private_key((pki / "kbs-admin.key").read_bytes(), None)
