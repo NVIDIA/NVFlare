@@ -24,6 +24,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -41,11 +42,17 @@ from cvm.trustee.provenance import provenance
 def verifier_config(profiles):
     """Return the lab verifier configuration required by the selected profiles."""
     result = read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"]
-    gpu_urls = {
-        profile["gpu_attestation_url"].rstrip("/").removesuffix("/gpu")
-        for profile in profiles
-        if profile["gpu"] == "nvidia_cc"
-    }
+    gpu_urls = set()
+    for profile in profiles:
+        if profile["gpu"] != "nvidia_cc":
+            continue
+        endpoint = urllib.parse.urlsplit(profile["gpu_attestation_url"])
+        path = endpoint.path.rstrip("/")
+        require(
+            path.endswith("/gpu") and not endpoint.query and not endpoint.fragment,
+            "Lab NVIDIA verifier URL must end in /gpu and must not contain a query or fragment",
+        )
+        gpu_urls.add(urllib.parse.urlunsplit((endpoint.scheme, endpoint.netloc, path.removesuffix("/gpu"), "", "")))
     require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
     if gpu_urls:
         result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}

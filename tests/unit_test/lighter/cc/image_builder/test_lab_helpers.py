@@ -95,6 +95,27 @@ class LabProfileTests(unittest.TestCase):
         ):
             lab_kbs.verifier_config(profiles)
 
+    def test_lab_kbs_rejects_invalid_nvidia_verifier_endpoints(self):
+        lab_kbs = load_helper("lab_kbs")
+        invalid = (
+            "https://nras.example.org",
+            "https://nras.example.org/v4/attest",
+            "https://nras.example.org/v4/attest/gpu?tenant=lab",
+            "https://nras.example.org/v4/attest/gpu#fragment",
+        )
+        for endpoint in invalid:
+            profiles = [{"gpu": "nvidia_cc", "gpu_attestation_url": endpoint}]
+            with (
+                self.subTest(endpoint=endpoint),
+                patch.object(
+                    lab_kbs,
+                    "read_json",
+                    return_value={"attestation_service": {"verifier_config": {}}},
+                ),
+                self.assertRaisesRegex(BuildError, "must end in /gpu"),
+            ):
+                lab_kbs.verifier_config(profiles)
+
     def test_selected_profiles_require_only_their_own_references(self):
         prepare = load_helper("prepare_lab")
         for selected in (None, ["intel_tdx"], ["amd_sev_snp"]):
