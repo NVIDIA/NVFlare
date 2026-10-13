@@ -142,35 +142,27 @@ class LabStateTests(unittest.TestCase):
             "gpu": "none",
             "attestation_policy_selector": "cvm-cpu-profile",
         }
-        key = Mock()
-        key.private_bytes.return_value = b"private key"
         with (
-            patch("cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", return_value=key),
             patch.object(agent, "validate_resource"),
             patch.object(agent, "read_json", return_value={"digest": "ab" * 32}),
-            patch.object(agent, "memory_file", return_value=contextlib.nullcontext(17)),
-            patch.object(agent, "run", return_value=b"token") as run,
-            patch.object(agent, "validate_token", side_effect=BuildError("stop after validation")),
-            self.assertRaisesRegex(BuildError, "stop after validation"),
+            patch.object(agent, "_fresh_credentials", side_effect=BuildError("stop after attestation")) as fresh,
+            self.assertRaisesRegex(BuildError, "stop after attestation"),
         ):
             agent.cross_vault("keys/other/resource")
 
-        command = run.call_args.args[0]
-        self.assertEqual(
-            command,
-            [
-                "/usr/bin/kbs-client",
-                "--url",
-                "https://kbs.example.org",
-                "--cert-file",
-                "/etc/cvm/kbs.pem",
-                "attest",
-                "--tee-key-file",
-                "/proc/self/fd/17",
-                "--attestation-policy-selector",
-                "cvm-cpu-profile",
-            ],
-        )
+        self.assertIs(fresh.call_args.args[0], agent.CONFIG)
+        self.assertEqual(fresh.call_args.args[1], bytes.fromhex("ab" * 32))
+        self.assertGreater(fresh.call_args.args[2](), 0)
+
+    def test_cross_vault_reports_missing_policy_selector(self):
+        agent = load_helper("lab_guest_agent")
+        agent.CONFIG = {"gpu": "none"}
+        with (
+            patch.object(agent, "validate_resource"),
+            patch.object(agent, "read_json", side_effect=AssertionError("binding must not be read")),
+            self.assertRaisesRegex(BuildError, "runtime.json lacks attestation_policy_selector"),
+        ):
+            agent.cross_vault("keys/other/resource")
 
     def test_cross_vault_handler_reports_only_safe_diagnostics(self):
         agent = load_helper("lab_guest_agent")
