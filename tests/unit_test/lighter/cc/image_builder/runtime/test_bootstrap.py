@@ -883,7 +883,7 @@ class SupervisorTests(unittest.TestCase):
             self.assertLess(supervisor.time.monotonic() - started, 2)
             tick.assert_called_once_with({}, Path(directory), 1)
 
-    def test_periodic_failure_or_timeout_revokes_gpu_and_records_failure(self):
+    def test_periodic_failure_or_timeout_defers_gpu_revocation_and_records_failure(self):
         for failure in (BuildError("denied"), BuildError("timeout")):
             with (
                 self.subTest(failure=failure),
@@ -894,7 +894,10 @@ class SupervisorTests(unittest.TestCase):
                 state = Path(directory)
                 with self.assertRaises(BuildError):
                     supervisor.periodic_tick({"gpu": "nvidia_cc"}, state, 1)
-                readiness.assert_called_once_with({"gpu": "nvidia_cc"}, False)
+                # Quarantine must stop the workload before it clears GPU Ready
+                # state, otherwise the CUDA container can fail the unit and
+                # activate FailureAction=poweroff-force.
+                readiness.assert_not_called()
                 self.assertEqual(execute.call_args.kwargs["timeout"], supervisor.GPU_PERIODIC_TIMEOUT_SECONDS)
                 self.assertEqual(read_json(state / "periodic.json")["result"], "failed")
 
@@ -913,17 +916,6 @@ class SupervisorTests(unittest.TestCase):
             self.assertNotIn("NOTIFY_SOCKET", execute.call_args.kwargs["env"])
             readiness.assert_not_called()
             self.assertEqual(execute.call_args.args[0][-3:], ["-m", "cvm.runtime.bootstrap", "periodic"])
-
-    def test_gpu_reset_failure_cannot_turn_a_failed_tick_into_success(self):
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            patch.object(supervisor, "run", side_effect=BuildError("denied")),
-            patch.object(supervisor, "readiness", side_effect=BuildError("GPU unavailable")),
-        ):
-            state = Path(directory)
-            with self.assertRaises(BuildError):
-                supervisor.periodic_tick({}, state, 1)
-            self.assertEqual(read_json(state / "periodic.json")["result"], "failed")
 
     def test_failed_tick_enters_quarantine_instead_of_powering_off_at_once(self):
         events = []
@@ -968,7 +960,7 @@ class SupervisorTests(unittest.TestCase):
             patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
         ):
             state = Path(directory)
-            supervisor.quarantine({"gpu": "none"}, ["cvm_app.service", "app_x.service"], state)
+            supervisor.quarantine({"gpu": "nvidia_cc"}, ["cvm_app.service", "app_x.service"], state)
             self.assertFalse((state / "quarantine.json").exists())
         self.assertEqual(
             [c[:2] if c[0] != "emit" else c for c in commands],

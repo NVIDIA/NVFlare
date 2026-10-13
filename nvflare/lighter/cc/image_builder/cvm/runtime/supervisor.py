@@ -122,10 +122,11 @@ def periodic_tick(config, state, sequence):
     except Exception:
         watchdog(REVOCATION_TIMEOUT_SECONDS)
         record.update(result="failed", finished_at=time.time(), duration_seconds=time.monotonic() - started)
-        try:
-            readiness(config, False)
-        finally:
-            write_json(state / "periodic.json", record)
+        # Quarantine stops the application units before clearing GPU Ready
+        # state. Revoking readiness while a CUDA workload is still running can
+        # make cvm_app.service fail and trigger its forced-poweroff policy
+        # before the guest has entered quarantine.
+        write_json(state / "periodic.json", record)
         raise
     record.update(result="success", finished_at=time.time(), duration_seconds=time.monotonic() - started)
     write_json(state / "periodic.json", record)
