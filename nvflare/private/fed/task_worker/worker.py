@@ -161,7 +161,6 @@ def _execute(
     _restore_peer_context(data, fl_ctx)
 
     initialized = []
-    first_error = None
     try:
         for component in runtime.compute_components:
             # Include partially initialized objects in cleanup. Hooks must be
@@ -180,7 +179,7 @@ def _execute(
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     except BaseException as error:
-        first_error = error
+        runtime.fail(error)
     finally:
         for component in reversed(initialized):
             try:
@@ -188,12 +187,9 @@ def _execute(
                 if finalize is not None:
                     with runtime.operation():
                         finalize(fl_ctx)
-                runtime.raise_if_failed()
             except BaseException as error:
-                if first_error is None:
-                    first_error = error
-    if first_error is not None:
-        raise first_error
+                runtime.fail(error)
+    runtime.raise_if_failed()
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     if not isinstance(result, Shareable):
         raise TypeError("executor finalization must leave a Shareable result")

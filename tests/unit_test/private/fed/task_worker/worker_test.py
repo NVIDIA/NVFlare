@@ -1510,3 +1510,46 @@ def test_flcomponent_logging_does_not_dispatch_handlers():
     component.log_error(ctx, "message already logged")
     component.handle_event.assert_not_called()
     runtime.raise_if_failed()
+
+
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
+@pytest.mark.parametrize("first", ["panic", "abort"])
+def test_direct_exception_cannot_replace_an_earlier_panic_or_abort(tmp_path, monkeypatch, phase, first):
+    calls = []
+
+    class FailingExecutor(Executor):
+        def check(self, action, fl_ctx):
+            calls.append(action)
+            if action == phase:
+                if first == "panic":
+                    self.system_panic("FIRST_PANIC", fl_ctx)
+                else:
+                    fl_ctx.get_run_abort_signal().trigger(True)
+                raise ValueError("SECONDARY_DIRECT_ERROR")
+
+        def initialize(self, fl_ctx):
+            self.check("initialize", fl_ctx)
+
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            self.check("execute", fl_ctx)
+            return Shareable()
+
+        def finalize(self, fl_ctx):
+            self.check("finalize", fl_ctx)
+
+    def graph(_bootstrap, _workspace, _ctx, runtime):
+        executor = FailingExecutor()
+        runtime.set_compute_graph({}, executor)
+        return executor
+
+    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("first-direct-failure")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    with pytest.raises(RuntimeError, match="FIRST_PANIC" if first == "panic" else "aborted"):
+        worker.run_worker(path)
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "SECONDARY_DIRECT_ERROR" not in failure["message"]
+    assert calls.count("finalize") == 1
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
