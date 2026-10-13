@@ -23,6 +23,12 @@ directory unless `build_tools.bare_metal_cvm.output_root` selects an external
 private build location. Common delivery records are written to
 `cc_manifests/<participant>.json`.
 
+The bundled client job uses `ClientAPIExecutor` to launch
+`/local/custom/client.py` from the measured application image. Because the job
+does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
+the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
+replace it with a package prefix or add it to the global default allowlist.
+
 See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
 the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),
 and the [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md).
