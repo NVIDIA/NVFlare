@@ -32,6 +32,7 @@ from nvflare.utils.job_launcher_utils import (
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_resource_manager_spec,
+    has_byoc_launcher_spec,
     portable_memory_to_bytes,
     portable_memory_to_mib,
     refresh_custom_dir_import_path,
@@ -205,6 +206,46 @@ class TestGetJobLauncherSpec:
     def test_slurm_falls_back_to_resource_spec(self):
         meta = {"resource_spec": {"site-1": {"slurm": {"nodes": 2}}}}
         assert get_job_launcher_spec(meta, "site-1", "slurm") == {"nodes": 2}
+
+
+class TestHasByocLauncherSpec:
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {"launcher_spec": {"default": {"docker": {"image": "repo/img:v1"}}}},
+            {"launcher_spec": {"site-1": {"docker": {"entrypoint": "/bin/sh"}}}},
+            {"launcher_spec": {"site-1": {"k8s": {"python_path": "/usr/bin/python"}}}},
+            {"launcher_spec": {"site-1": {"slurm": {"additional_node_command": "python setup.py"}}}},
+            {"resource_spec": {"site-1": {"docker": {"image": "legacy/img:v1"}}}},
+        ],
+    )
+    def test_detects_job_controlled_launcher_content(self, meta):
+        assert has_byoc_launcher_spec(meta)
+
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {},
+            {"launcher_spec": {"default": {"docker": {"shm_size": "8g"}}}},
+            {"launcher_spec": {"site-1": {"k8s": {"num_of_gpus": 1}}}},
+            {"launcher_spec": {"site-1": {"slurm": {"additional_node_command": None}}}},
+            {"resource_spec": {"site-1": {"num_of_gpus": 1}}},
+        ],
+    )
+    def test_ignores_site_owned_or_resource_only_content(self, meta):
+        assert not has_byoc_launcher_spec(meta)
+
+    def test_site_resolution_honors_null_override(self):
+        meta = {
+            "launcher_spec": {
+                "default": {"slurm": {"additional_node_command": "python setup.py"}},
+                "site-1": {"slurm": {"additional_node_command": None}},
+            }
+        }
+
+        assert has_byoc_launcher_spec(meta)
+        assert not has_byoc_launcher_spec(meta, "site-1")
+        assert has_byoc_launcher_spec(meta, "site-2")
 
 
 class TestPortableResourceSpec:

@@ -348,7 +348,17 @@ cc_authz: |
   {
     "format_version": "1.0",
     "permissions": {
-      "project_admin": "any",
+      "project_admin": {
+        "submit_job": "any",
+        "clone_job": "any",
+        "manage_job": "any",
+        "download_job": "any",
+        "view": "any",
+        "operate": "any",
+        "shell_commands": "any",
+        "byoc": "none",
+        "server-predeployed-flwr": "any"
+      },
       "org_admin": {
         "submit_job": "none",
         "clone_job": "none",

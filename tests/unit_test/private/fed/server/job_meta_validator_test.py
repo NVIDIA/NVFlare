@@ -364,6 +364,49 @@ class TestJobMetaValidator:
         assert error == ""
         assert FlowerConstant.FLOWER_PREDEPLOYED not in meta
 
+    @pytest.mark.parametrize(
+        "launcher_spec",
+        [
+            {"default": {"docker": {"image": "repo/img:v1"}}},
+            {"site-1": {"docker": {"entrypoint": "/bin/sh"}}},
+            {"site-1": {"k8s": {"python_path": "/usr/bin/python"}}},
+            {"site-1": {"slurm": {"additional_node_command": "python setup.py"}}},
+        ],
+    )
+    def test_launcher_content_is_derived_as_byoc(self, launcher_spec):
+        job_name = "launcher_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={
+                "deploy_map": {"app": ["server", "site-1"]},
+                JobMetaKey.JOB_LAUNCHER_SPEC.value: launcher_spec,
+            },
+            server_config={"format_version": 2, "workflows": []},
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert meta[AppValidationKey.BYOC] is True
+
+    def test_resource_only_launcher_options_are_not_derived_as_byoc(self):
+        job_name = "resource_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={
+                "deploy_map": {"app": ["server", "site-1"]},
+                JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"docker": {"shm_size": "8g"}}},
+            },
+            server_config={"format_version": 2, "workflows": []},
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert AppValidationKey.BYOC not in meta
+
     def test_ignores_user_byoc_true_without_custom_folder(self):
         meta = """
         {
