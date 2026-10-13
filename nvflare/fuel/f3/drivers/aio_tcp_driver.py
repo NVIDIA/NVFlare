@@ -149,6 +149,11 @@ class AioTcpDriver(AioBaseDriver):
         finally:
             try:
                 conn.close()
-                await writer.wait_closed()
             finally:
-                self.close_connection(conn)
+                try:
+                    self.close_connection(conn)
+                finally:
+                    # The read side has ended. A peer that stops reading can
+                    # otherwise keep queued writes and wait_closed() pending.
+                    writer.transport.abort()
+            await writer.wait_closed()

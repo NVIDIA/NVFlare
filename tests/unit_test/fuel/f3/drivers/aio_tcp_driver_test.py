@@ -276,6 +276,49 @@ def test_shutdown_releases_real_socket_with_queued_writes():
     asyncio.run(shutdown())
 
 
+def test_peer_eof_removes_connection_with_queued_writes():
+    async def disconnect():
+        context = MagicMock()
+        context.get_event_loop.return_value = asyncio.get_running_loop()
+        context.run_coro.side_effect = asyncio.create_task
+        with patch.object(AioContext, "get_global_context", return_value=context):
+            driver = AioTcpDriver()
+        driver.connector = ConnectorInfo("test", driver, {}, Mode.PASSIVE, 0, 0, False, threading.Event())
+        connected, disconnected = asyncio.Event(), asyncio.Event()
+        monitor = MagicMock()
+        monitor.state_change.side_effect = lambda conn: (
+            connected.set() if conn.state == ConnState.CONNECTED else disconnected.set()
+        )
+        driver.register_conn_monitor(monitor)
+        server = await asyncio.start_server(driver._create_connection, "127.0.0.1", 0)
+        driver.server = server
+        peer = socket.socket()
+        peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        peer.setblocking(False)
+        writer = None
+        try:
+            await asyncio.get_running_loop().sock_connect(peer, server.sockets[0].getsockname())
+            await asyncio.wait_for(connected.wait(), 2)
+            writer = next(iter(driver.connections.values())).writer
+            writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+            writer.write(b"x" * (8 * 1024 * 1024))
+            assert writer.transport.get_write_buffer_size() > 0
+
+            # The peer closes its write half but keeps its read half open and
+            # does not drain the queued data.
+            peer.shutdown(socket.SHUT_WR)
+            await asyncio.wait_for(disconnected.wait(), 1)
+            assert not driver.connections
+        finally:
+            if writer is not None:
+                writer.transport.abort()
+            peer.close()
+            server.close()
+            await asyncio.wait_for(server.wait_closed(), 2)
+
+    asyncio.run(disconnect())
+
+
 def test_listener_created_during_shutdown_is_closed():
     async def shutdown():
         context = MagicMock()
