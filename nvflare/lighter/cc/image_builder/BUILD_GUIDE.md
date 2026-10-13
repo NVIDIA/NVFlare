@@ -434,9 +434,14 @@ sudo env \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
-  tests/integration_test/lighter/cc/image_builder/acceptance_runner.py \
+  ../../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner \
   target/cvm_PROFILE/PLATFORM /srv/cvm/acceptance-report.json
 ```
+
+The wrapper uses `CVM_BUILDER_PYTHON`, the builder's `.venv/bin/python`, or
+`python3`, in the same order as `cvmctl`. When using a dedicated environment
+outside the builder directory, pass its absolute interpreter path as
+`CVM_BUILDER_PYTHON` in the `sudo env` command above.
 
 The output directory must not already exist. The runner enables the network,
 interruption, revocation, and GPU fault cases required by the selected manifest;

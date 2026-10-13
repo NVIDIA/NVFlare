@@ -245,6 +245,26 @@ class LabStateTests(unittest.TestCase):
                 aggregate_results.assert_called_once_with(bundle.resolve(), [output.resolve()], [public_key])
                 self.assertEqual(read_json(report), aggregate)
 
+    def test_acceptance_runner_interrupts_suite_group_and_keeps_streamed_log(self):
+        runner = load_helper("acceptance_runner")
+        process = Mock(pid=1234)
+        process.poll.return_value = None
+        process.wait.side_effect = [runner._SuiteSignal(runner.signal.SIGTERM), 0]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with (
+                patch.object(runner.subprocess, "Popen", return_value=process) as popen,
+                patch.object(runner.signal, "signal", return_value=runner.signal.SIG_DFL),
+                patch.object(runner.os, "killpg") as killpg,
+                self.assertRaisesRegex(BuildError, "interrupted by SIGTERM.*bounded grace period"),
+            ):
+                runner.run_suite("test_http.py", {}, output)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertIs(popen.call_args.kwargs["stderr"], runner.subprocess.STDOUT)
+        self.assertNotEqual(popen.call_args.kwargs["stdout"], runner.subprocess.PIPE)
+        killpg.assert_called_once_with(1234, runner.signal.SIGINT)
+        process.wait.assert_called_with(timeout=runner.SUITE_SHUTDOWN_SECONDS)
+
     def test_bootstrap_publishes_only_successfully_verified_firewall_status(self):
         for failure in (None, "apply", "verify"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:

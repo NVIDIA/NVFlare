@@ -349,6 +349,11 @@ class HardwareTests(unittest.TestCase):
         extracted = self.directory / "initramfs"
         self.disposables.append(extracted)
         run(["unmkinitramfs", self.bundle / "initrd.img", extracted])
+        main_init = extracted / "main/init"
+        self.assertTrue(
+            main_init.is_file() and not main_init.is_symlink(),
+            "unmkinitramfs did not extract the main initramfs init",
+        )
         forbidden_names = {"kbs-client", "kbs-ca.pem", "as-public.pem", "runtime.json"}
         forbidden_paths = []
         endpoint = self.manifest["contract"]["kbs_url"].encode()
@@ -368,6 +373,7 @@ class HardwareTests(unittest.TestCase):
                         embedded_endpoint.append(str(path.relative_to(extracted)))
                         break
                     overlap = value[-(len(endpoint) - 1) :] if len(endpoint) > 1 else b""
+        self.assertGreater(inspected, 0)
         self.assertFalse(forbidden_paths, f"Initramfs contains CVM KBS material: {forbidden_paths}")
         self.assertFalse(embedded_endpoint, f"Initramfs contains the configured KBS endpoint: {embedded_endpoint}")
         return {"inspected_files": inspected, "forbidden_paths": [], "embedded_kbs_endpoint": []}

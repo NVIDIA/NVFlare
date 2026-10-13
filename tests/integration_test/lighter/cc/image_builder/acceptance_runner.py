@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@ in BUILD_GUIDE.md; the offline bundle approval key is never passed to this runne
 """
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -33,8 +34,33 @@ sys.path[:0] = [str(BUILDER), str(UNIT_TESTS)]
 
 from cvm.artifacts.acceptance import aggregate  # noqa: E402
 from cvm.artifacts.bundle import load_signing_key, verify_bundle  # noqa: E402
-from cvm.common.errors import require  # noqa: E402
+from cvm.common.errors import BuildError, require  # noqa: E402
 from cvm.common.io import write_json  # noqa: E402
+
+SUITE_SHUTDOWN_SECONDS = 30
+
+
+class _SuiteSignal(Exception):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+def _stop_suite(process):
+    """Give the suite a bounded interrupt window so unittest cleanups can run."""
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGINT)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=SUITE_SHUTDOWN_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
 
 
 def required_environment():
@@ -62,9 +88,35 @@ def run_suite(pattern, environment, output):
         pattern,
         "-v",
     ]
-    result = subprocess.run(command, cwd=REPOSITORY, env=environment, capture_output=True, text=True)
-    (output / (pattern.removesuffix(".py") + ".log")).write_text(result.stdout + result.stderr)
-    require(result.returncode == 0, f"{pattern} failed; inspect its retained runner log")
+    log_path = output / (pattern.removesuffix(".py") + ".log")
+    previous_handlers = {}
+
+    def interrupted(signum, _frame):
+        raise _SuiteSignal(signum)
+
+    with log_path.open("wb") as log:
+        process = subprocess.Popen(
+            command,
+            cwd=REPOSITORY,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        try:
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                previous_handlers[signum] = signal.signal(signum, interrupted)
+            returncode = process.wait()
+        except BaseException as error:
+            _stop_suite(process)
+            if isinstance(error, _SuiteSignal):
+                name = signal.Signals(error.signum).name
+                raise BuildError(f"{pattern} interrupted by {name}; cleanup was given a bounded grace period") from None
+            raise
+        finally:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
+    require(returncode == 0, f"{pattern} failed; inspect its retained runner log")
 
 
 def main(argv=None):

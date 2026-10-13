@@ -660,7 +660,7 @@ sudo env PYTHONPATH="$PYTHONPATH" \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \
   CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
-  tests/integration_test/lighter/cc/image_builder/acceptance_runner.py \
+  tests/integration_test/lighter/cc/image_builder/acceptance_runner \
   /path/to/test-bundle /path/to/acceptance-report.json
 ```
 
