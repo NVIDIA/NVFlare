@@ -19,6 +19,11 @@ participants:
       provider_config:
         ca_url: https://ca.example.com
         provisioner: oidc
+  - name: automation@example.com
+    type: admin
+    org: org
+    role: project_admin
+    external_cert: true
 
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder

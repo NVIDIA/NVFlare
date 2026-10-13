@@ -89,13 +89,6 @@ class TestParticipant:
         with pytest.raises(ValueError, match="external_cert.*must be bool"):
             Participant(name="server", type="server", org="org", props={PropKey.EXTERNAL_CERT: "true"})
 
-    def test_external_cert_is_limited_to_workload_participants(self):
-        with pytest.raises(
-            ValueError, match="external_cert is supported only for server, client and relay participants"
-        ):
-            Participant(
-                name="admin@example.com",
-                type="admin",
-                org="org",
-                props={"role": "project_admin", PropKey.EXTERNAL_CERT: True},
-            )
+    def test_external_cert_rejects_unsupported_participant_type(self):
+        with pytest.raises(ValueError, match="external_cert is supported only for server, client, relay and admin"):
+            Participant(name="other", type="other", org="org", props={PropKey.EXTERNAL_CERT: True})

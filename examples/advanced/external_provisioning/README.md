@@ -24,8 +24,8 @@ in each startup kit and generates ordinary configuration. It neither issues
 certificates nor reads credential history from earlier kits.
 
 Every server, client and relay must set `external_cert: true`; the server must also
-set `external_job_ca: true`. Every admin must have an `admin_cert_provider`. These
-are existing credential-source settings. Provisioning fails with the participant
+set `external_job_ca: true`. Each admin selects either `admin_cert_provider` or
+`external_cert: true` for IT-installed files; selecting both is an error. Provisioning fails with the participant
 name and required setting if any credential would still need local issuance.
 There is no provisioning issuer setting or CA adapter in this feature. The sample's
 Step CA configuration belongs to the existing admin SSO provider and runs on the
@@ -38,7 +38,13 @@ Deploy credentials from your PKI into each participant's `startup` directory:
 | Server | `server.crt`, `server.key`, `job_ca.crt`, `job_ca.key` |
 | Client | `client.crt`, `client.key`; also `server.crt`, `server.key` when it has a listener |
 | Relay | `client.crt`, `client.key`, `server.crt`, `server.key` |
-| Admin | Its configured certificate provider obtains credentials |
+| Admin | Provider-acquired credentials, or `client.crt` and `client.key` with `external_cert: true` |
+
+For the file-based `automation@example.com` example, IT installs a matching RSA-2048
+key and leaf-first PEM chain in the admin kit's `startup/client.key` and
+`startup/client.crt` before login. The approved CN, organization and role belong in
+the certificate, which must chain to `rootCA.pem`. No SSO is required; missing or
+invalid files fail existing runtime checks without fallback.
 
 See the [provisioning guide](../../../docs/programming_guide/provisioning_system.rst#public-root-only-provisioning)
 for certificate profiles, supported CA constraints and legacy

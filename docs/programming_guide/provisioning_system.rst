@@ -512,7 +512,7 @@ Only admin participants with ``admin_cert_provider`` receive provider-backed sta
 kits. The generated ``sso-admin-kit`` startup kit contains
 ``admin_cert_provider`` in ``fed_admin.json`` and omits static admin
 ``client.crt`` and ``client.key``. Traditional admin participants still receive
-static admin certificate material. The admin client invokes the configured
+static admin certificate material unless ``external_cert: true`` is set. The admin client invokes the configured
 provider when the cached certificate is missing, invalid, expired, or close to
 expiry. Cached certificate material is stored under
 ``~/.nvflare/admin_certificates`` and can be removed manually to force fresh
@@ -735,7 +735,8 @@ credential source for each participant:
    * - Client or relay
      - ``external_cert: true`` (also covers listener credentials)
    * - Admin
-     - ``admin_cert_provider``; see :ref:`admin_certificate_provider_configuration`
+     - Either ``admin_cert_provider`` or ``external_cert: true``; never both.
+       For file-based admins, IT installs ``startup/client.crt`` and ``startup/client.key`` before login.
 
 Provisioning checks these settings and reports the participant name and required
 setting for any incomplete configuration. The admin provider obtains credentials
