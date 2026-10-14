@@ -23,6 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config
 from nvflare.fuel.utils.component_builder import ConfigType
 from nvflare.job_config.defs import ExecutionLifetime
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource_manager_spec
 
 CLIENT_API_EXECUTOR_PATH = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"
@@ -30,46 +31,25 @@ SUPPORTED_TASK_EXECUTORS = {CLIENT_API_EXECUTOR_PATH, "nvflare.app_common.np.np_
 DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister"
 
 
-def _effective_settings(settings, site_name, default_key):
-    if not isinstance(settings, dict):
-        return {}
-    result = copy.deepcopy(settings.get(default_key, {}))
-    if not isinstance(result, dict):
-        result = {}
-    override = settings.get(site_name, {})
-    if isinstance(override, dict):
-        for name, value in override.items():
-            if isinstance(value, dict) and isinstance(result.get(name), dict):
-                result[name] = _effective_settings({"default": result[name], "site": value}, "site", "default")
-            else:
-                result[name] = copy.deepcopy(value)
-    return result
-
-
-def _gpu_resource(value):
-    def nonempty(item):
-        if isinstance(item, dict):
-            return any(nonempty(child) for child in item.values())
-        return item is not None and item is not False and item != 0 and item != [] and item != ""
-
-    if isinstance(value, dict):
-        for name, item in value.items():
-            if name == "mem_per_gpu_in_GiB" and value.get("num_of_gpus") == 0:
-                continue
-            if "gpu" in str(name).lower() and nonempty(item):
-                return True
-            if _gpu_resource(item):
-                return True
-    elif isinstance(value, list):
-        return any(_gpu_resource(item) for item in value)
-    return False
-
-
 def validate_task_resources(meta, site_name):
-    """Only inspect resources of the site receiving this task-lifetime app."""
-    for key, default in (("resource_spec", "@default"), ("launcher_spec", "default")):
-        if _gpu_resource(_effective_settings(meta.get(key, {}), site_name, default)):
+    """Use the same receiving-site resource resolution as job launchers."""
+    for spec in (get_resource_manager_spec(meta, site_name), get_job_launcher_spec(meta, site_name, "process")):
+        if spec.get("num_of_gpus", 0):
             raise ValueError("task lifetime currently supports CPU Process execution; this site requests GPUs")
+
+
+def validate_task_workflows(workflows):
+    """Reject workflows that require client compute state across assignments."""
+    for workflow in workflows:
+        controller = workflow.controller
+        classes = {f"{cls.__module__}.{cls.__name__}" for cls in type(controller).__mro__}
+        if "nvflare.app_common.workflows.scaffold.Scaffold" in classes:
+            raise ValueError("Scaffold requires persistent client control state; use job lifetime")
+        if (
+            "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" in classes
+            and controller._submit_model_task_name
+        ):
+            raise ValueError("cross-site local model submission requires earlier client state; use job lifetime")
 
 
 @dataclass(frozen=True)
@@ -94,6 +74,17 @@ def _timeout(name, value):
     return value
 
 
+def _declared_dependencies(config, ids):
+    if "execution_scope" in config:
+        raise ValueError("component execution_scope is not supported; compute dependencies define placement")
+    declared = config.get("component_dependencies", [])
+    if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
+        raise ValueError("component_dependencies must be a list of component IDs")
+    if set(declared) - ids:
+        raise ValueError(f"unknown component_dependencies: {sorted(set(declared) - ids)}")
+    return set(declared)
+
+
 def _dependencies(config, ids, component=False):
     """Track declared IDs and reference arguments without changing their values.
 
@@ -111,14 +102,7 @@ def _dependencies(config, ids, component=False):
             except ConfigError:
                 pass
         if component:
-            if "execution_scope" in config:
-                raise ValueError("component execution_scope is not supported; compute dependencies define placement")
-            declared = config.get("component_dependencies", [])
-            if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
-                raise ValueError("component_dependencies must be a list of component IDs")
-            if set(declared) - ids:
-                raise ValueError(f"unknown component_dependencies: {sorted(set(declared) - ids)}")
-            found.update(declared)
+            found.update(_declared_dependencies(config, ids))
             args = config.get("args", {})
             if not isinstance(args, dict):
                 raise ValueError("component args must be a dict")
@@ -207,7 +191,9 @@ def prepare_task_execution(client_config):
                     "task lifetime requires in_process Client API; external_process/attach use job lifetime"
                 )
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
-        worker_ids = closure(_dependencies(config, ids, component=True))
+        # Qualified executors do not accept component references as arguments.
+        # In particular, script argv strings must never relocate CJ services.
+        worker_ids = closure(_declared_dependencies(config, ids))
         compute_ids.update(worker_ids)
         worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in worker_ids | serialization_ids)
         plans.append(

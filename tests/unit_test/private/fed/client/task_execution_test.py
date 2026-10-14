@@ -96,7 +96,7 @@ def test_compute_dependencies_use_argument_values_and_preserve_dicts():
         {"id": "loader", "path": "unused.Loader"},
         {"id": "receiver", "path": "unused.Receiver"},
     ]
-    config["executors"][0]["executor"]["args"]["source_model"] = "model"
+    config["executors"][0]["executor"]["component_dependencies"] = ["model"]
     ordinary = {"config_type": "dict", "path": "data", "options": {"name": "model"}}
     config["executors"][0]["executor"]["args"]["options"] = ordinary
     plan = prepare_task_execution(config)
@@ -121,14 +121,16 @@ def test_each_executor_gets_its_own_dependency_graph():
             "tasks": ["train"],
             "executor": {
                 "path": CLIENT_API_EXECUTOR_PATH,
-                "args": {"execution_mode": "in_process", "model_id": "train_model"},
+                "args": {"execution_mode": "in_process"},
+                "component_dependencies": ["train_model"],
             },
         },
         {
             "tasks": ["eval"],
             "executor": {
                 "path": CLIENT_API_EXECUTOR_PATH,
-                "args": {"execution_mode": "in_process", "model_id": "eval_model"},
+                "args": {"execution_mode": "in_process"},
+                "component_dependencies": ["eval_model"],
             },
         },
     ]
@@ -140,7 +142,8 @@ def test_each_executor_gets_its_own_dependency_graph():
 
 @pytest.mark.parametrize("consumer", ["task_data_filters", "task_result_filters", "receiver"])
 def test_compute_dependencies_cannot_be_shared_with_cj_services(consumer):
-    config = _config(source_model="model")
+    config = _config()
+    config["executors"][0]["executor"]["component_dependencies"] = ["model"]
     config["components"] = [{"id": "model", "path": "unused.Model"}]
     service = {"path": "unused.Service", "args": {"helper_id": "model"}}
     if consumer == "receiver":
@@ -152,7 +155,8 @@ def test_compute_dependencies_cannot_be_shared_with_cj_services(consumer):
 
 
 def test_cj_filter_dependencies_stay_resident_and_task_names_are_not_references():
-    config = _config(source_model="train")
+    config = _config()
+    config["executors"][0]["executor"]["component_dependencies"] = ["train"]
     config["components"] = [
         {"id": "train", "path": "unused.Model"},
         {"id": "filter_helper", "path": "unused.Helper"},
@@ -167,10 +171,14 @@ def test_cj_filter_dependencies_stay_resident_and_task_names_are_not_references(
 
 def test_nested_scope_is_rejected():
     config = _config()
-    config["executors"][0]["executor"]["args"]["helper"] = {
-        "path": "unused.Helper",
-        "execution_scope": "job",
-    }
+    config["components"] = [
+        {
+            "id": "helper",
+            "path": "unused.Helper",
+            "args": {"nested": {"path": "unused.Helper", "execution_scope": "job"}},
+        }
+    ]
+    config["executors"][0]["executor"]["component_dependencies"] = ["helper"]
     with pytest.raises(ValueError, match="execution_scope is not supported"):
         prepare_task_execution(config)
 
@@ -220,7 +228,7 @@ def test_cpu_validation_only_considers_receiving_site():
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
-    meta = {"launcher_spec": {"default": {"gpu_config": {"gpu_ids": [0]}}, "site-1": {"gpu_config": {"gpu_ids": []}}}}
+    meta = {"launcher_spec": {"default": {"process": {"num_of_gpus": 1}}, "site-1": {"process": {"num_of_gpus": 0}}}}
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
@@ -279,7 +287,7 @@ def _configure(tmp_path, config, authorizer=None):
 
 def test_client_config_does_not_import_or_construct_task_graph(tmp_path):
     config = _config()
-    config["executors"][0]["executor"]["args"]["helper_id"] = "worker"
+    config["executors"][0]["executor"]["component_dependencies"] = ["worker"]
     config["components"] = [
         {"id": "worker", "path": "never_imported.Helper", "args": {"default_task_fetch_interval": -10}},
         {
@@ -757,3 +765,89 @@ def test_task_runner_finalizes_api_even_if_script_cleanup_fails():
     runner.finalize(FLContext())
     script.release_runtime.assert_called_once()
     api.close.assert_called_once()
+
+
+def test_script_arguments_do_not_relocate_resident_services():
+    config = _config(task_script_args=["--metric_writer", "client_receiver"])
+    config["components"] = [
+        {"id": "client_receiver", "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"}
+    ]
+    plan = prepare_task_execution(config)
+    assert plan.executors[0].components == ()
+    assert plan.job_components[0]["id"] == "client_receiver"
+    assert plan.executors[0].executor["args"]["task_script_args"] == ["--metric_writer", "client_receiver"]
+
+
+@pytest.mark.parametrize("kind", ["fifo", "symlink"])
+def test_worker_log_replay_rejects_special_files_without_blocking(tmp_path, kind):
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    path = tmp_path / "task_attempt_log.txt"
+    if kind == "fifo":
+        os.mkfifo(path)
+    else:
+        target = tmp_path / "actual.txt"
+        target.write_text("must not replay\n")
+        path.symlink_to(target)
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter.log_warning = Mock()
+    adapter.log_info = Mock()
+    workspace = SimpleNamespace(get_log_root=lambda _: str(tmp_path))
+    with ThreadPoolExecutor() as pool:
+        replay = pool.submit(adapter._replay_worker_log, workspace, identity, FLContext())
+        try:
+            replay.result(timeout=1)
+        except TimeoutError:
+            # Release the old blocking reader before reporting the regression.
+            with path.open("w") as writer:
+                writer.write("release reader\n")
+            replay.result(timeout=5)
+            pytest.fail("worker log replay blocked on a FIFO")
+    adapter.log_warning.assert_called_once()
+    adapter.log_info.assert_not_called()
+
+
+def test_worker_log_replay_has_a_finite_size_and_line_bound(tmp_path):
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    (tmp_path / "task_attempt_log.txt").write_text("log line\n" * 4097 + "x" * (1024 * 1024))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter.log_warning = Mock()
+    adapter.log_info = Mock()
+    adapter._replay_worker_log(SimpleNamespace(get_log_root=lambda _: str(tmp_path)), identity, FLContext())
+    assert adapter.log_info.call_count <= 4096
+    adapter.log_warning.assert_called_once()
+
+
+def test_execute_releases_owner_even_if_log_replay_fails(tmp_path, monkeypatch):
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+    from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOutcome
+
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter._started = True
+    adapter._identity = Mock(return_value=identity)
+    result = Shareable({"done": True})
+    adapter.supervisor = SimpleNamespace(
+        run=Mock(return_value=TaskSupervisorOutcome(identity, result=result)),
+        owns_execution=False,
+        settlement_unconfirmed=False,
+        take_issues=lambda: [],
+    )
+    run_dir = tmp_path / "job"
+    run_dir.mkdir()
+    workspace = SimpleNamespace(get_run_dir=lambda _: str(run_dir), get_root_dir=lambda: str(tmp_path))
+    context = FLContext()
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    monkeypatch.setattr(adapter, "_replay_worker_log", Mock(side_effect=RuntimeError("logging failed")))
+    with pytest.raises(RuntimeError, match="logging failed"):
+        adapter.execute("train", Shareable(), context, Signal())
+    assert adapter._done.is_set()
+    assert adapter._gate.acquire(blocking=False)
+    adapter._gate.release()
+
+
+def test_gpu_named_application_options_are_not_resource_requests():
+    validate_task_resources({"resource_spec": {"site-1": {"gpu_cache_enabled": True}}}, "site-1")

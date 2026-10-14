@@ -31,7 +31,7 @@ from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
-from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap
+from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, _open_regular
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
@@ -179,23 +179,33 @@ class TaskWorkerExecutor(Executor):
             self._replay_analytics(outcome.analytics, fl_ctx)
             return outcome.result
         finally:
-            if (
-                workspace is not None
-                and not self.supervisor.owns_execution
-                and not self.supervisor.settlement_unconfirmed
-            ):
-                self._replay_worker_log(workspace, identity, fl_ctx)
-            self._done.set()
-            self._gate.release()
-            self._report_issues(fl_ctx)
+            try:
+                if (
+                    workspace is not None
+                    and not self.supervisor.owns_execution
+                    and not self.supervisor.settlement_unconfirmed
+                ):
+                    self._replay_worker_log(workspace, identity, fl_ctx)
+            finally:
+                self._done.set()
+                self._gate.release()
+                self._report_issues(fl_ctx)
 
     def _replay_worker_log(self, workspace, identity, fl_ctx):
-        """Make worker diagnostics visible to the existing CJ log streamer."""
-        path = os.path.join(workspace.get_log_root(identity.job_id), f"task_{identity.attempt_id}_log.txt")
+        """Replay bounded diagnostics from a regular file to the CJ log streamer."""
+        log_root = os.path.realpath(workspace.get_log_root(identity.job_id))
+        path = os.path.join(log_root, f"task_{identity.attempt_id}_log.txt")
+        max_bytes, max_lines = 1024 * 1024, 4096
         try:
-            with open(path, encoding="utf-8", errors="replace") as stream:
-                for line in stream:
-                    self.log_info(fl_ctx, f"[task {identity.attempt_id}] {line.rstrip()}")
+            # The worker controls this file. Reject links/devices/FIFOs without
+            # blocking and bound reads even when a file keeps growing.
+            with _open_regular(path) as stream:
+                data = stream.read(max_bytes + 1)
+            lines = data[:max_bytes].decode("utf-8", errors="replace").splitlines()
+            for line in lines[:max_lines]:
+                self.log_info(fl_ctx, f"[task {identity.attempt_id}] {line.rstrip()}")
+            if len(data) > max_bytes or len(lines) > max_lines:
+                self.log_warning(fl_ctx, f"task worker log replay truncated; full log remains at {path}")
         except FileNotFoundError:
             pass
         except Exception as e:

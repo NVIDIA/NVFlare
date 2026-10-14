@@ -196,3 +196,79 @@ def test_fedjob_temporary_lifetime_override_restores_declared_task_job(tmp_path)
     config = json.loads(path.read_text())
     assert config["execution_lifetime"] == "task"
     assert config["format_version"] == 3
+
+
+@pytest.mark.parametrize("order", ["all_first", "site_first"])
+def test_all_clients_app_cannot_drop_a_site_lifetime(tmp_path, order):
+    job = _job()
+    if order == "all_first":
+        job.to_clients(_executor())
+        with pytest.raises(ValueError, match="@ALL"):
+            job.set_execution_lifetime("task", target="site-1")
+        assert "site-1" not in job._deploy_map
+    else:
+        job.set_execution_lifetime("task", target="site-1")
+        job.to_clients(_executor())
+        with pytest.raises(ValueError, match="@ALL"):
+            job.export_job(str(tmp_path))
+
+
+def test_task_export_accepts_nested_cpu_override_of_gpu_default(tmp_path):
+    job = _job(meta={"resource_spec": {"@default": {"num_of_gpus": 1}, "site-1": {"process": {"num_of_gpus": 0}}}})
+    job.to(_executor(), "site-1")
+    job.set_execution_lifetime("task", target="site-1")
+    job.export_job(str(tmp_path))
+
+
+@pytest.mark.parametrize("target", ["server", "clients"])
+def test_temporary_params_do_not_create_undeclared_apps(tmp_path, target):
+    job = _job() if target == "clients" else FedJob(name="client-only")
+    if target == "server":
+        job.to(_executor(), "site-1")
+    before = dict(job._deploy_map)
+    clients = list(job.clients)
+    keyword = "client_exec_params" if target == "clients" else "server_exec_params"
+    with pytest.raises(ValueError, match="declared"):
+        with job.temporary_exec_params(**{keyword: {"timeout": 1}}):
+            pass
+    assert job._deploy_map == before
+    assert job.clients == clients
+    job.export_job(str(tmp_path))
+    configs = list((tmp_path / job.name).rglob("config_fed_client.json"))
+    assert len(configs) == (0 if target == "clients" else 1)
+
+
+def test_scaffold_recipe_requires_persistent_client_state(tmp_path):
+    from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+    script = tmp_path / "train.py"
+    script.write_text("pass\n")
+    recipe = ScaffoldRecipe(min_clients=1, train_script=str(script))
+    recipe.set_execution_lifetime("task")
+    with pytest.raises(ValueError, match="Scaffold.*job lifetime"):
+        recipe.export(str(tmp_path / "export"))
+
+
+@pytest.mark.parametrize("task_first", [False, True])
+def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, task_first):
+    from nvflare.recipe.utils import add_cross_site_evaluation
+
+    script = tmp_path / "train.py"
+    script.write_text("pass\n")
+    recipe = FedAvgRecipe(min_clients=1, framework=FrameworkType.NUMPY, model=np.zeros(2), train_script=str(script))
+    if task_first:
+        recipe.set_execution_lifetime("task")
+    add_cross_site_evaluation(recipe)
+    if not task_first:
+        recipe.set_execution_lifetime("task")
+    with pytest.raises(ValueError, match="local model submission.*job lifetime"):
+        recipe.export(str(tmp_path / "export"))
+
+
+def test_global_model_evaluation_allows_task_lifetime(tmp_path):
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+    job = _job("task")
+    job.to_server(CrossSiteModelEval(submit_model_task_name=""))
+    job.to_clients(_executor())
+    job.export_job(str(tmp_path))

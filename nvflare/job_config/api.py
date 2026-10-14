@@ -245,6 +245,8 @@ class FedJob:
         else:
             if JobTargetType.get_target_type(target) != JobTargetType.CLIENT:
                 raise ValueError("execution lifetime applies to client apps")
+            if ALL_SITES in self._deploy_map and target != ALL_SITES:
+                raise ValueError("site-specific execution lifetime cannot be combined with an @ALL client app")
             self.to({"execution_lifetime": lifetime}, target)
 
     @contextmanager
@@ -255,7 +257,8 @@ class FedJob:
 
         None preserves existing parameters. A nonempty dictionary merges overrides.
         An empty dictionary clears parameters, retaining each client's declared
-        execution lifetime. Restore all original parameters even when use fails.
+        execution lifetime. Only declared apps can be overridden. Restore all
+        original parameters even when use fails.
         """
         if server_exec_params is None and client_exec_params is None:
             yield
@@ -266,7 +269,9 @@ class FedJob:
             target for target, app in self._deploy_map.items() if isinstance(app.app_config, ClientAppConfig)
         ]
         if client_exec_params and not client_targets:
-            client_targets = [ALL_SITES]
+            raise ValueError("client execution overrides require a declared client app")
+        if server_exec_params and SERVER_SITE_NAME not in self._deploy_map:
+            raise ValueError("server execution overrides require a declared server app")
         overrides = {SERVER_SITE_NAME: server_exec_params}
         overrides.update(dict.fromkeys(client_targets, client_exec_params))
 
@@ -275,7 +280,7 @@ class FedJob:
                 if extra is None:
                     continue
                 if extra:
-                    self.to(extra, target)
+                    self._deploy_map[target].add_params(extra)
                 elif target in self._deploy_map:
                     params = self._deploy_map[target].app_config.additional_params
                     retained = (
@@ -697,6 +702,11 @@ class FedJob:
         self.job.set_site_app(target, app_name)
 
     def _set_all_apps(self):
+        if ALL_SITES in self._deploy_map and any(
+            target not in (ALL_SITES, SERVER_SITE_NAME) and "execution_lifetime" in app.app_config.additional_params
+            for target, app in self._deploy_map.items()
+        ):
+            raise ValueError("site-specific execution lifetime cannot be combined with an @ALL client app")
         if not self._deployed:
             if ALL_SITES in self._deploy_map:
                 if SERVER_SITE_NAME not in self._deploy_map:

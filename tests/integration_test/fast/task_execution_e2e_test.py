@@ -16,11 +16,14 @@
 import importlib
 import json
 import os
+import socket
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
 import torch
+import yaml
 
 from nvflare.recipe import SimEnv
 from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
@@ -61,10 +64,27 @@ def test_native_hello_pt_training_and_final_evaluation(tmp_path, monkeypatch, li
             if environment == "sim"
             else example.create_environment(args)
         )
-        run = recipe.execute(env)
-        result = run.get_result(timeout=240, clean_up=False)
-        assert result is not None
-        assert run.get_status() in example.SUCCESS_STATUSES
+        if environment == "poc":
+            project = yaml.safe_load((REPO_ROOT / "tests/integration_test/data/projects/client_api.yml").read_text())
+            # Reserve both ports together so xdist workers cannot reuse 8002/8003.
+            with ExitStack() as stack:
+                sockets = [stack.enter_context(socket.socket()) for _ in range(2)]
+                for sock in sockets:
+                    sock.bind(("127.0.0.1", 0))
+                server = next(p for p in project["participants"] if p["type"] == "server")
+                server["fed_learn_port"], server["admin_port"] = [s.getsockname()[1] for s in sockets]
+            next(p for p in project["participants"] if p["type"] == "admin")["name"] = env.username
+            project_path = tmp_path / "project.yml"
+            project_path.write_text(yaml.safe_dump(project))
+            env.project_conf_path = str(project_path)
+        try:
+            run = recipe.execute(env)
+            result = run.get_result(timeout=240, clean_up=False)
+            assert result is not None
+            assert run.get_status() in example.SUCCESS_STATUSES
+        finally:
+            if environment == "poc":
+                env.stop(clean_up=False)
     root = Path(result)
     model_files = list(root.rglob("FL_global_model.pt"))
     assert len(model_files) == 1

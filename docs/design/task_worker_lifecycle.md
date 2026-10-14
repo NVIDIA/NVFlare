@@ -17,9 +17,10 @@ authorizes inert executor and component specifications in the Client Job and aga
 in the worker before importing application code. Compute instances are constructed
 only in the worker. Task data and result filters always stay in the Client Job.
 
-In task mode, each worker receives the executor and its referenced compute
-dependencies, including transitive component IDs passed under arbitrary constructor
-argument names or listed in `component_dependencies`. Other components, including
+In task mode, each worker receives the executor and its explicit
+`component_dependencies`. Executor arguments, including script argv, never select
+components. Within the selected component graph, constructor references and
+`component_dependencies` include transitive dependencies. Other components, including
 tracking receivers and federation widgets, remain resident in the Client Job
 automatically. Ordinary dictionaries are preserved and nested compute helpers are
 created with their owning executor. A component cannot be shared between the compute
@@ -38,7 +39,11 @@ independent of trainer lifetime.
 `recipe.set_execution_lifetime(...)` expose these controls. The unified and PyTorch
 FedAvg and PyTorch FedProx recipes also accept `execution_lifetime="task"`. Export
 validates the receiving sites' GPU resource/launcher settings; unrelated job-lifetime
-GPU apps in the same deployment remain valid.
+GPU apps in the same deployment remain valid. Resource defaults and receiving-site
+Process overrides use the normal launcher resource resolvers. An `@ALL` client app
+cannot be combined with a site-specific lifetime; use named client apps for
+per-site lifetimes. Temporary execution-parameter overrides apply only to declared
+apps and restore their original parameters after use.
 
 Both lifetimes use the same InProcessClientAPI with small job/task input and
 result adapters. The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
@@ -51,7 +56,9 @@ prevents completion. Analytics are captured synchronously and replayed by the Cl
 Job after settlement. The worker captures these records directly through the
 Client API adapter; it has no local analytics event handlers.
 Worker log lines are replayed through CJ logging after settlement, making them
-available to the existing JobLogStreamer. Worker failures include their original
+available to the existing JobLogStreamer. Replay accepts only regular files, reads
+at most 1 MiB and emits at most 4,096 lines; truncated logs remain in the workspace.
+Worker failures include their original
 error type, message and diagnostic path in the CJ exception.
 
 Script process memory, optimizer state and executor instances do not survive the
@@ -59,7 +66,10 @@ assignment. Applications needing previous local model state must use a job-lifet
 script or manage their own explicit persistence; this profile supplies no state
 declaration, promotion or aggregation admission mechanism. The hello-pt task example
 supports training and final global evaluation. Its cross-site local-model submission
-uses job-lifetime memory and therefore remains a job-lifetime option.
+uses job-lifetime memory and therefore remains a job-lifetime option. Export rejects
+Scaffold, which retains client control state between rounds, and cross-site
+evaluation that requests local model submission. Global-only evaluation remains
+supported.
 
 The initial profile supports CPU Process workers on Linux and on macOS with Python
 3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,
