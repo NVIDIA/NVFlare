@@ -38,6 +38,16 @@ readme_fc: |
   With external_cert: true, client.crt and client.key must be installed before start.sh is run.
   If listening_host is configured, also install server.crt and server.key for the client listener.
 
+readme_relay: |
+  Federated Learning Relay package
+
+  Run startup/start.sh to start the relay.
+
+  With external_cert: true, install client.crt and client.key for the relay endpoint,
+  and server.crt and server.key for its listener, before starting the relay.
+  Place all four files beside rootCA.pem in the startup directory.
+  Safeguard both private keys.
+
 readme_fs: |
   *********************************
   Federated Learning Server package
