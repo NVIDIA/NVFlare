@@ -102,6 +102,18 @@ def revoke_vault(config):
         close_vault()
 
 
+def best_effort_revoke(config):
+    """Try to remove readiness and the key without masking a terminal failure."""
+    try:
+        watchdog(REVOCATION_TIMEOUT_SECONDS)
+    except Exception:
+        pass
+    try:
+        revoke_vault(config)
+    except Exception:
+        pass
+
+
 def periodic_tick(config, state, sequence):
     started = time.monotonic()
     record = {"sequence": sequence, "result": "running", "started_at": time.time()}
@@ -122,10 +134,11 @@ def periodic_tick(config, state, sequence):
     except Exception:
         watchdog(REVOCATION_TIMEOUT_SECONDS)
         record.update(result="failed", finished_at=time.time(), duration_seconds=time.monotonic() - started)
-        try:
-            readiness(config, False)
-        finally:
-            write_json(state / "periodic.json", record)
+        # Quarantine stops the application units before clearing GPU Ready
+        # state. Revoking readiness while a CUDA workload is still running can
+        # make cvm_app.service fail and trigger its forced-poweroff policy
+        # before the guest has entered quarantine.
+        write_json(state / "periodic.json", record)
         raise
     record.update(result="success", finished_at=time.time(), duration_seconds=time.monotonic() - started)
     write_json(state / "periodic.json", record)
@@ -141,10 +154,16 @@ def quarantine(config, units, state):
     """
     # PID 1 terminates this guest if stop/unmount or a Python operation stalls.
     # Logging has a separate bounded queue and cannot defer revocation.
-    watchdog(REVOCATION_TIMEOUT_SECONDS)
-    write_json(state / "quarantine.json", {"started_at": time.time(), "units": list(units)})
-    run(["systemctl", "stop", *units], timeout=120)
-    run(["systemctl", "stop", "docker.service", "containerd.service"], timeout=120)
+    try:
+        watchdog(REVOCATION_TIMEOUT_SECONDS)
+        write_json(state / "quarantine.json", {"started_at": time.time(), "units": list(units)})
+        run(["systemctl", "stop", *units], timeout=120)
+        run(["systemctl", "stop", "docker.service", "containerd.service"], timeout=120)
+    except Exception:
+        # PID 1 still forces poweroff. Try to remove GPU Ready and the vault key
+        # first, while preserving the stop/configuration error as the cause.
+        best_effort_revoke(config)
+        raise
     revoke_vault(config)
     emit("quarantine")
     environment = dict(os.environ)
@@ -204,7 +223,21 @@ def supervise(config, units, state):
                 periodic_tick(config, state, sequence)
                 deadline = next_periodic_deadline(config, state, fallback)
             except BuildError:
-                quarantine(config, units, state)
-                deadline = next_periodic_deadline(config, state)
+                try:
+                    quarantine(config, units, state)
+                    deadline = next_periodic_deadline(config, state)
+                except Exception:
+                    # A successful reopen makes the vault and GPU available
+                    # before quarantine removes its flag, emits the decision,
+                    # and restarts the units. Any terminal failure in that
+                    # recovery tail must revoke access again before PID 1's
+                    # forced-poweroff path takes over.
+                    best_effort_revoke(config)
+                    raise
+            except Exception:
+                # Internal failures do not enter the recovery loop. Revoke what
+                # we can before this service failure makes PID 1 power off.
+                best_effort_revoke(config)
+                raise
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)

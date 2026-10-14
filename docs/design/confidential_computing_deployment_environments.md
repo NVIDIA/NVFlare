@@ -321,7 +321,7 @@ workload:
 bare_metal_cvm:
   cvm_image: oci://registry.example.org/cvm/tdx_cpu@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   storage:
-    vault_size_gib: 16
+    vault_size_gib: 32  # Example only; calculate for the image and workload.
     applog_size_gib: 1
     user_config_size_gib: 1
     user_data_size_gib: 1
@@ -335,6 +335,14 @@ bare_metal_cvm:
 `cvm_image` remains either an immutable registry reference or a pulled
 directory. Its approved contract must match `cpu_tee` and `gpu_tee`. The
 application image identity comes from the Docker archive.
+
+The vault retains that archive while Docker stores the expanded layers in the
+same filesystem. Capacity therefore covers the archive, imported image,
+application files, expected runtime writes, and a safety margin. The initial
+margin is the larger of 2 GiB or 20 percent of static content. Round the total up
+to GiB and increase it for workloads with uncertain or high write volume. The
+builder rejects capacity below the startup estimate; application runtime growth
+remains an operator sizing input.
 
 The network lists contain operator-requested additions, not the complete
 generated policy. `BareMetalCVMDeployment` derives the federation, admin,

@@ -4,6 +4,10 @@ cpu_tee: amd_sev_snp
 gpu_tee: nvidia_cc
 attestation:
   service: trustee
+# This measured-image executor fixes in-process mode and the measured script
+# path. Keep this as an exact, reviewed per-site grant.
+class_allow_list:
+  - cvm_client_api_executor.CVMClientAPIExecutor
 workload:
   source:
     type: docker_archive
@@ -11,6 +15,7 @@ workload:
 bare_metal_cvm:
   cvm_image: /srv/cvm/images/amd-gpu
   storage:
-    vault_size_gib: 16
+    # GPU images are often large; calculate this from the saved image and workload.
+    vault_size_gib: 32
   network:
     allowed_out_ports: [8443]

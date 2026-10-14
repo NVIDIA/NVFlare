@@ -11,6 +11,7 @@ workload:
 bare_metal_cvm:
   cvm_image: /srv/cvm/images/tdx-cpu
   storage:
-    vault_size_gib: 16
+    # Example only; size for the archive, expanded image, and runtime writes.
+    vault_size_gib: 32
   network:
     allowed_out_ports: [8443]

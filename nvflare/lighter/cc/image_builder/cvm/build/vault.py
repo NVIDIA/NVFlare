@@ -15,9 +15,11 @@
 """Seal application vaults and assemble standalone deliveries."""
 
 import contextlib
+import errno
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import tarfile
@@ -48,6 +50,11 @@ from .storage import (
     set_tree_owner,
     sidecar,
 )
+
+GIB = 1024**3
+FILESYSTEM_BLOCK_BYTES = 4096
+MINIMUM_VAULT_HEADROOM_BYTES = 2 * GIB
+VAULT_USABLE_PERCENT = 90
 
 
 def populate(root, app):
@@ -80,22 +87,66 @@ def _numeric_owner(user):
     return uid, gid
 
 
-def validated_image(path, image_id):
+def _validated_image(path, image_id):
     try:
-        normalized, image = _archive_image(path, image_id)
+        normalized, image, layers = _archive_image(path, image_id)
         container = image.get("config") or {}
         require(isinstance(container, dict), "Invalid Docker image configuration")
         user = container.get("User", "")
         require(isinstance(user, str), "Invalid Docker image USER")
-        return normalized, _numeric_owner(user)
+        return normalized, _numeric_owner(user), layers
     except (BuildError, OSError, ValueError, KeyError, TypeError, AttributeError, EOFError, tarfile.TarError):
         # Archives can embed private paths, image metadata or credentials. Do not
         # expose parser exceptions, even though this check precedes key creation.
         raise ConfigurationError("Invalid docker_archive; regenerate it with docker save and verify image_id") from None
 
 
+def validated_image(path, image_id):
+    normalized, owner, _ = _validated_image(path, image_id)
+    return normalized, owner
+
+
 def validate_archive(path, image_id):
     return validated_image(path, image_id)[0]
+
+
+def _entry_layers(entry):
+    layers = entry["Layers"]
+    require(
+        isinstance(layers, list)
+        and all(
+            isinstance(name, str) and name and not name.startswith("/") and ".." not in Path(name).parts
+            for name in layers
+        ),
+        "Invalid Docker image layer list",
+    )
+    return tuple(layers)
+
+
+def _resolved_archive_file(archive, name):
+    """Resolve a regular member or a safe in-archive link without host extraction."""
+    current = name
+    seen = set()
+    for _ in range(32):
+        require(
+            isinstance(current, str)
+            and current
+            and not posixpath.isabs(current)
+            and ".." not in Path(current).parts,
+            "Invalid Docker archive member",
+        )
+        require(current not in seen, "Docker archive link cycle")
+        seen.add(current)
+        member = archive.getmember(current)
+        if member.isfile():
+            return member
+        require(member.issym() or member.islnk(), "Invalid Docker image layer")
+        target = member.linkname
+        require(isinstance(target, str) and target, "Invalid Docker archive link")
+        if member.issym():
+            target = posixpath.join(posixpath.dirname(current), target)
+        current = posixpath.normpath(target)
+    raise BuildError("Docker archive link nesting exceeds the supported limit")
 
 
 def _archive_image(path, image_id):
@@ -107,7 +158,10 @@ def _archive_image(path, image_id):
         entries = json.load(archive.extractfile(member))
         require(isinstance(entries, list) and entries, "Empty Docker save archive")
         configurations = {}
+        archive_layers = []
+        archive_chains = set()
         for entry in entries:
+            require(isinstance(entry, dict), "Invalid Docker save entry")
             filename = entry["Config"]
             require(
                 isinstance(filename, str) and not filename.startswith("/") and ".." not in Path(filename).parts,
@@ -117,9 +171,22 @@ def _archive_image(path, image_id):
             require(member.isfile() and member.size < 16 * 1024**2, "Invalid Docker image configuration")
             data = archive.extractfile(member).read()
             digest = "sha256:" + hashlib.sha256(data).hexdigest()
-            configurations[digest] = json.loads(data)
+            image = json.loads(data)
+            layers = _entry_layers(entry)
+            chain = []
+            for layer in layers:
+                _resolved_archive_file(archive, layer)
+                chain.append(layer)
+                identity = tuple(chain)
+                if identity not in archive_chains:
+                    archive_layers.append(layer)
+                    archive_chains.add(identity)
+            if digest in configurations:
+                require(configurations[digest][1] == layers, "Ambiguous Docker image layers")
+            configurations[digest] = (image, layers)
         if image_id in configurations:
-            return image_id, configurations[image_id]
+            image, _ = configurations[image_id]
+            return image_id, image, tuple(archive_layers)
         # Docker's containerd store reports an OCI manifest/index digest as Id;
         # the guest's classic store reports the image configuration digest.
         # Authenticate that graph before normalizing to the guest's identity.
@@ -147,8 +214,137 @@ def _archive_image(path, image_id):
             else:
                 image = value["config"]["digest"]
                 require(image in configurations, "OCI image is absent from Docker save manifest")
-                return image, configurations[image]
+                configuration, _ = configurations[image]
+                return image, configuration, tuple(archive_layers)
         raise BuildError("OCI manifest nesting exceeds the supported limit")
+
+
+def _allocated_file_bytes(size):
+    return ((size + FILESYSTEM_BLOCK_BYTES - 1) // FILESYSTEM_BLOCK_BYTES) * FILESYSTEM_BLOCK_BYTES
+
+
+def _stored_file_bytes(path, status):
+    """Estimate target allocation from logical data extents, preserving sparse holes."""
+    size = status.st_size
+    if not size:
+        return 0
+    seek_data = getattr(os, "SEEK_DATA", None)
+    seek_hole = getattr(os, "SEEK_HOLE", None)
+    if seek_data is None or seek_hole is None:
+        return _allocated_file_bytes(size)
+    descriptor = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino, opened.st_size) != (status.st_dev, status.st_ino, size):
+            return _allocated_file_bytes(max(size, opened.st_size))
+        total = 0
+        offset = 0
+        while offset < size:
+            try:
+                data = os.lseek(descriptor, offset, seek_data)
+            except OSError as error:
+                if error.errno == errno.ENXIO:
+                    return total
+                return _allocated_file_bytes(size)
+            hole = os.lseek(descriptor, data, seek_hole)
+            if data < offset or data >= size or hole <= data:
+                return _allocated_file_bytes(size)
+            total += _allocated_file_bytes(min(hole, size) - data)
+            offset = hole
+        return total
+    except OSError:
+        # Filesystems may not implement SEEK_DATA/SEEK_HOLE. Counting the full
+        # logical size is conservative for the uncompressed ext4 vault.
+        return _allocated_file_bytes(size)
+    finally:
+        if descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+
+
+def _application_file_bytes(path):
+    if not path:
+        return 0
+    identities = set()
+    total = 0
+    for item in (Path(path), *Path(path).rglob("*")):
+        status = item.lstat()
+        identity = (status.st_dev, status.st_ino)
+        if item.is_file() and not item.is_symlink():
+            if identity in identities:
+                continue
+            identities.add(identity)
+            # copy_tree uses tar --sparse, so preserve logical holes while
+            # ignoring compression savings from the source filesystem.
+            total += _stored_file_bytes(item, status)
+        else:
+            total += FILESYSTEM_BLOCK_BYTES
+    return total
+
+
+def _estimated_layer_bytes(path, layers, capacity):
+    """Estimate overlay2 allocation without extracting image content on the host."""
+    total = 0
+    complete = True
+    with tarfile.open(path, "r:*") as archive:
+        for name in layers:
+            member = _resolved_archive_file(archive, name)
+            try:
+                with archive.extractfile(member) as stream, tarfile.open(fileobj=stream, mode="r|*") as layer:
+                    for item in layer:
+                        total += _allocated_file_bytes(item.size) if item.isfile() else FILESYSTEM_BLOCK_BYTES
+                        if total > capacity:
+                            return total, complete
+            except tarfile.ReadError:
+                # Older Python versions cannot inspect every compression format
+                # Docker can import. The stored layer size remains a safe lower
+                # bound, and the caller reports that the estimate is incomplete.
+                total += member.size
+                complete = False
+    return total, complete
+
+
+def _estimated_archive_extraction_bytes(path, capacity):
+    """Estimate Docker's temporary extraction of the complete save archive."""
+    total = 0
+    with tarfile.open(path, "r:*") as archive:
+        for member in archive:
+            total += _allocated_file_bytes(member.size) if member.isfile() else FILESYSTEM_BLOCK_BYTES
+            if total > capacity:
+                break
+    return total
+
+
+def validate_vault_capacity(app, layers):
+    """Reject a vault that cannot hold its archive and estimated imported image."""
+    raw_capacity = app["vault_drive_size"] * GIB
+    usable_capacity = max(0, (raw_capacity - HEADER_BYTES) * VAULT_USABLE_PERCENT // 100)
+    try:
+        archive_bytes = Path(app["docker_archive"]).stat().st_size
+        application_bytes = _application_file_bytes(app.get("application_files"))
+        extracted_archive_bytes = _estimated_archive_extraction_bytes(app["docker_archive"], usable_capacity)
+        layer_bytes, complete = _estimated_layer_bytes(app["docker_archive"], layers, usable_capacity)
+    except (OSError, ValueError, EOFError, tarfile.TarError):
+        raise ConfigurationError("Cannot estimate vault storage from docker_archive and application_files") from None
+    content_bytes = archive_bytes + extracted_archive_bytes + application_bytes + layer_bytes
+    safety_bytes = max(MINIMUM_VAULT_HEADROOM_BYTES, (content_bytes + 4) // 5)
+    required_bytes = content_bytes + safety_bytes
+    required_raw_bytes = HEADER_BYTES + (required_bytes * 100 + VAULT_USABLE_PERCENT - 1) // VAULT_USABLE_PERCENT
+    required_gib = (required_raw_bytes + GIB - 1) // GIB
+    require_config(
+        usable_capacity >= required_bytes,
+        f"vault_drive_size is {app['vault_drive_size']} GiB but the retained archive, temporary extraction, and "
+        f"imported image require "
+        f"at least {required_gib} GiB; increase it and add space for expected application runtime writes",
+    )
+    if not complete:
+        print(
+            "WARNING: Some Docker layers use an unsupported compression format; vault sizing used their stored size. "
+            "Add extra capacity for their expanded size and application runtime writes.",
+            flush=True,
+        )
 
 
 def delivery(directory, app, manifest, digest, internal, bundle, trusted_keys=()):
@@ -343,7 +539,8 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
         set(profiles["contract"]["bootstrap_egress"]) <= set(app["allowed_out_ports"]),
         "Application must preserve bootstrap egress",
     )
-    app["image_id"], owner = validated_image(app["docker_archive"], app["image_id"])
+    app["image_id"], owner, layers = _validated_image(app["docker_archive"], app["image_id"])
+    validate_vault_capacity(app, layers)
     app["_application_owner"] = _numeric_owner(app["container"].get("user")) if app["container"].get("user") else owner
     if dev:
         require(

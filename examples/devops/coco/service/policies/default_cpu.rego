@@ -130,15 +130,13 @@ tdx_params_digest := digest if {
     digest := digests[0]
 }
 
+# NVFlare and the generated KBS policy compare this signed vector exactly.
+# Emit only the claims appraised by this policy; omitted AR4SI categories are
+# not assertions with a zero value.
 trust_claims := {
     "executables": executables,
     "hardware": hardware,
     "configuration": configuration,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
 }
 
 extensions := [
