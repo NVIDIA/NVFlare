@@ -28,6 +28,8 @@ import grpc
 import pytest
 from aiohttp import web
 
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import ConnState
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
@@ -37,7 +39,7 @@ from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
@@ -159,6 +161,90 @@ def test_closed_connection_cannot_publish_late_ready():
         manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "peer"})
         assert manager.find_endpoint("peer") is None
         monitor.state_change.assert_not_called()
+    finally:
+        manager.stop()
+
+
+def test_ready_callback_can_change_connectors_and_close_connection():
+    manager = ConnManager(Endpoint("callback_local"))
+    conn = MagicMock()
+    conn.name = "callback_conn"
+    conn.state = ConnState.CONNECTED
+    conn.connector.mode = Mode.PASSIVE
+    conn.get_conn_properties.return_value = {}
+    observed = []
+    notified = threading.Event()
+
+    def connected(agent):
+        endpoint = agent.endpoint
+        assert manager.lock.acquire(blocking=False), "READY callback ran under the manager lock"
+        manager.lock.release()
+        handle = manager.add_connector(TcpDriver(), {"scheme": "tcp", "url": "tcp://localhost:1234"}, Mode.PASSIVE)
+        manager.remove_connector(handle)
+        closer = threading.Thread(target=manager.close_connection, args=(conn,), daemon=True)
+        closer.start()
+        closer.join(2)
+        assert not closer.is_alive(), "close waited for the READY callback to release the manager lock"
+        observed.append(endpoint.state)
+
+    def disconnected(agent):
+        observed.append(EndpointState.DISCONNECTED)
+        notified.set()
+
+    cell = CoreCell.__new__(CoreCell)
+    cell.my_info = FqcnInfo("callback_local")
+    cell.logger = MagicMock()
+    cell.credential_manager = MagicMock()
+    cell.agents = {}
+    cell.agent_lock = threading.Lock()
+    cell.cell_connected_cb = connected
+    cell.cell_connected_cb_args = ()
+    cell.cell_connected_cb_kwargs = {}
+    cell.cell_disconnected_cb = disconnected
+    cell.cell_disconnected_cb_args = ()
+    cell.cell_disconnected_cb_kwargs = {}
+    cell.log_error = MagicMock()
+    manager.add_endpoint_monitor(cell)
+    try:
+        manager.handle_new_connection(conn)
+        manager.update_endpoint(manager.sfm_conns[conn.name], {HandshakeKeys.ENDPOINT_NAME: "callback_peer"})
+        assert notified.wait(3)
+        assert observed == [EndpointState.READY, EndpointState.DISCONNECTED]
+    finally:
+        manager.stop()
+
+
+def test_ready_callback_can_stop_manager_from_frame_worker():
+    manager = ConnManager(Endpoint("callback_stop_local"))
+    conn = MagicMock()
+    conn.name = "callback_stop_conn"
+    conn.state = ConnState.CONNECTED
+    conn.connector.mode = Mode.PASSIVE
+    conn.get_conn_properties.return_value = {}
+    callback_done = threading.Event()
+    errors = []
+
+    def on_state_change(endpoint):
+        if endpoint.state == EndpointState.READY:
+            try:
+                assert manager.lock.acquire(blocking=False), "READY callback ran under the manager lock"
+                manager.lock.release()
+                manager.stop()
+            except Exception as ex:
+                errors.append(ex)
+            finally:
+                callback_done.set()
+
+    manager.add_endpoint_monitor(SimpleNamespace(state_change=on_state_change))
+    try:
+        manager.handle_new_connection(conn)
+        sfm_conn = manager.sfm_conns[conn.name]
+        worker = manager.frame_mgr_executor.submit(
+            manager.update_endpoint, sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "callback_stop_peer"}
+        )
+        worker.result(5)
+        assert callback_done.wait(5), "connected callback blocked during manager shutdown"
+        assert not errors
     finally:
         manager.stop()
 

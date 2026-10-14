@@ -15,7 +15,9 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
+from copy import copy
 from typing import Dict, List, Optional
 
 import msgpack
@@ -99,6 +101,10 @@ class ConnManager(ConnMonitor):
         self.conn_mgr_executor = ThreadPoolExecutor(CONN_THREAD_POOL_SIZE, "conn_mgr")
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
+        self._endpoint_notifications = deque()
+        self._notification_condition = threading.Condition(self.lock)
+        self._notification_thread = None
+        self._notification_stopping = False
         self.null_conn = NullConnection()
         stats = StatsPoolManager.get_pool("sfm_send_frame")
         if not stats:
@@ -225,6 +231,13 @@ class ConnManager(ConnMonitor):
             except Exception as ex:
                 if first_error is None:
                     first_error = ex
+
+        with self._notification_condition:
+            self._notification_stopping = True
+            self._notification_condition.notify_all()
+            notifier = self._notification_thread
+        if notifier and notifier is not threading.current_thread():
+            notifier.join()
 
         if first_error is not None:
             raise first_error
@@ -430,7 +443,8 @@ class ConnManager(ConnMonitor):
                     # Report the failed attempt without touching an existing endpoint of the same name.
                     endpoint = Endpoint(name, data)
                     endpoint.state = EndpointState.ERROR
-                    self.notify_monitors(endpoint)
+                    with self.lock:
+                        self._queue_endpoint_notification(endpoint)
                     return
 
                 if prefix.type == Types.HELLO:
@@ -559,7 +573,35 @@ class ConnManager(ConnMonitor):
             self.sfm_endpoints[endpoint_name] = sfm_endpoint
 
             if endpoint.state != old_state:
+                self._queue_endpoint_notification(endpoint)
+
+    def _queue_endpoint_notification(self, endpoint: Endpoint):
+        """Queue a state snapshot while holding self.lock, in mutation order."""
+        if not self.monitors or self._notification_stopping:
+            return
+        self._endpoint_notifications.append(copy(endpoint))
+        if self._notification_thread is None:
+            self._notification_thread = threading.Thread(
+                target=self._deliver_endpoint_notifications, name="endpoint_notifications", daemon=True
+            )
+            self._notification_thread.start()
+        self._notification_condition.notify()
+
+    def _deliver_endpoint_notifications(self):
+        # The queue preserves mutation order. No manager or driver lock is held
+        # when invoking callbacks, which may remove connectors or stop the cell.
+        while True:
+            with self._notification_condition:
+                while not self._endpoint_notifications and not self._notification_stopping:
+                    self._notification_condition.wait()
+                if not self._endpoint_notifications:
+                    return
+                endpoint = self._endpoint_notifications.popleft()
+            try:
                 self.notify_monitors(endpoint)
+            except Exception as ex:
+                log.error(f"Endpoint monitor failed: {secure_format_exception(ex)}")
+                log.debug(secure_format_traceback())
 
     def notify_monitors(self, endpoint: Endpoint):
 
@@ -608,7 +650,7 @@ class ConnManager(ConnMonitor):
             state = EndpointState.READY if sfm_endpoint.connections else EndpointState.DISCONNECTED
             sfm_endpoint.endpoint.state = state
             if old_state != state:
-                self.notify_monitors(sfm_endpoint.endpoint)
+                self._queue_endpoint_notification(sfm_endpoint.endpoint)
 
     def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send message to itself"""

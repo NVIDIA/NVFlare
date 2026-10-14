@@ -18,6 +18,7 @@ import threading
 import time
 from threading import Event
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -37,6 +38,7 @@ from nvflare.fuel.f3.drivers.file_driver import (
 )
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN
 
 APP_ID = 321
@@ -149,6 +151,96 @@ def test_passive_reader_finishes_before_shutdown_returns(tmp_path, operation):
         server.stop()
         if worker is not None:
             worker.join(5)
+
+
+def test_active_reader_shutdown_waits_for_cleanup_not_worker_exit(tmp_path):
+    (tmp_path / "conns").mkdir()
+    driver = FileDriver()
+    driver.register_conn_monitor(MagicMock())
+    params = {"url": f"shared-file://0{tmp_path}", **FAST_PARAMS}
+    connector = ConnectorInfo("active", driver, params, Mode.ACTIVE, 0, 0, False, Event())
+    keep_worker_alive = Event()
+    connect_returned = Event()
+    shutdown_returned = Event()
+    errors = []
+
+    def connect():
+        try:
+            driver.connect(connector)
+            connect_returned.set()
+            keep_worker_alive.wait()
+        except Exception as ex:
+            errors.append(ex)
+
+    def shut_down():
+        try:
+            driver.shutdown()
+        except Exception as ex:
+            errors.append(ex)
+        finally:
+            shutdown_returned.set()
+
+    worker = threading.Thread(target=connect, daemon=True)
+    stopper = threading.Thread(target=shut_down, daemon=True)
+    worker.start()
+    try:
+        assert _wait_until(lambda: bool(driver.connections), timeout=5)
+        conn = next(iter(driver.connections.values()))
+        stopper.start()
+        assert shutdown_returned.wait(3), "shutdown waited for the long-lived worker after connection cleanup"
+        assert connect_returned.wait(3)
+        assert worker.is_alive()
+        assert conn.reader.file is None
+        assert not driver.connections
+        assert not errors
+    finally:
+        keep_worker_alive.set()
+        driver.stop_event.set()
+        worker.join(5)
+        if stopper.ident is not None:
+            stopper.join(5)
+
+
+@pytest.mark.parametrize("operation", ["remove", "stop"])
+def test_active_shared_file_connector_shutdown_returns_with_idle_executor(tmp_path, operation):
+    (tmp_path / "conns").mkdir()
+    manager = ConnManager(Endpoint(f"active_file_{operation}"))
+    driver = FileDriver()
+    params = {"scheme": "shared-file", "url": f"shared-file://0{tmp_path}", **FAST_PARAMS}
+    handle = manager.add_connector(driver, params, Mode.ACTIVE)
+    completed = Event()
+    errors = []
+
+    def shut_down():
+        try:
+            if operation == "remove":
+                manager.remove_connector(handle)
+            else:
+                manager.stop()
+        except Exception as ex:
+            errors.append(ex)
+        finally:
+            completed.set()
+
+    stopper = threading.Thread(target=shut_down, daemon=True)
+    try:
+        manager.start()
+        assert _wait_until(lambda: bool(driver.connections), timeout=5)
+        stopper.start()
+        assert completed.wait(3), f"{operation} waited for the conn_mgr executor worker to exit"
+        assert not errors
+        assert not driver.connections
+    finally:
+        connector = manager.connectors.get(handle)
+        if connector:
+            connector.stopped.set()
+        driver.stop_event.set()
+        # If the old reader.join() regression returns, retiring the pool releases
+        # its worker so the failed test cannot strand a non-daemon thread.
+        manager.conn_mgr_executor.shutdown(wait=False)
+        if stopper.ident is not None:
+            stopper.join(5)
+        manager.stop()
 
 
 class TestParseFileUrl:

@@ -541,7 +541,7 @@ class FileDriver(BaseDriver):
         self.stop_event = threading.Event()
         self.dir_lock = threading.Lock()
         self._reader_lock = threading.RLock()
-        self._reader_threads = set()
+        self._reader_cleanups: Dict[threading.Thread, threading.Event] = {}
         self.handled_dirs = set()
         self.done_dirs: Dict[str, float] = {}
         self.logger = get_obj_logger(self)
@@ -634,33 +634,36 @@ class FileDriver(BaseDriver):
         os.rename(tmp_dir, conn_dir)
 
         conn = FileConnection(conn_dir, connector, cfg)
+        reader = threading.current_thread()
+        cleaned_up = threading.Event()
         try:
             with self._reader_lock:
                 if not self.add_connection(conn):
                     return
-                self._reader_threads.add(threading.current_thread())
+                self._reader_cleanups[reader] = cleaned_up
             conn.read_loop(self.stop_event)
         finally:
             try:
                 conn.close()
                 self.close_connection(conn)
+                if not conn.received_anything:
+                    # Nothing ever arrived (e.g. the listener is dead); remove our own dir so
+                    # reconnect attempts don't accumulate directories on the shared filesystem
+                    shutil.rmtree(conn_dir, ignore_errors=True)
             finally:
                 with self._reader_lock:
-                    self._reader_threads.discard(threading.current_thread())
-            if not conn.received_anything:
-                # Nothing ever arrived (e.g. the listener is dead); remove our own dir so
-                # reconnect attempts don't accumulate directories on the shared filesystem
-                shutil.rmtree(conn_dir, ignore_errors=True)
+                    self._reader_cleanups.pop(reader, None)
+                    cleaned_up.set()
 
     def shutdown(self):
         self.stop_connection_admission()
         self.stop_event.set()
         self.close_all()
         with self._reader_lock:
-            readers = list(self._reader_threads)
-        for reader in readers:
+            readers = list(self._reader_cleanups.items())
+        for reader, cleaned_up in readers:
             if reader is not threading.current_thread():
-                reader.join()
+                cleaned_up.wait()
 
     # Internal methods
 
@@ -706,14 +709,16 @@ class FileDriver(BaseDriver):
             with self._reader_lock:
                 admitted = self.add_connection(conn)
                 if admitted:
+                    cleaned_up = threading.Event()
                     t = threading.Thread(
-                        target=self._conn_loop, args=(conn, entry), name=f"file_conn_{entry}", daemon=True
+                        target=self._conn_loop, args=(conn, entry, cleaned_up), name=f"file_conn_{entry}", daemon=True
                     )
-                    self._reader_threads.add(t)
+                    self._reader_cleanups[t] = cleaned_up
                     try:
                         t.start()
                     except BaseException:
-                        self._reader_threads.discard(t)
+                        self._reader_cleanups.pop(t, None)
+                        cleaned_up.set()
                         conn.close()
                         self.close_connection(conn)
                         raise
@@ -724,7 +729,7 @@ class FileDriver(BaseDriver):
             new_conns += 1
         return new_conns
 
-    def _conn_loop(self, conn: FileConnection, entry: str):
+    def _conn_loop(self, conn: FileConnection, entry: str, cleaned_up: threading.Event):
         try:
             conn.read_loop(self.stop_event)
         except Exception as ex:
@@ -737,7 +742,8 @@ class FileDriver(BaseDriver):
                     self.done_dirs[entry] = time.monotonic()
             finally:
                 with self._reader_lock:
-                    self._reader_threads.discard(threading.current_thread())
+                    self._reader_cleanups.pop(threading.current_thread(), None)
+                    cleaned_up.set()
 
     def _gc_conn_dirs(self, conns_dir: str, cfg: _ConnConfig, entries: list):
         """Remove ended connection dirs after a locally-timed grace period (no cross-node clock
