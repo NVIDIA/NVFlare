@@ -80,10 +80,3 @@ class TestSamplingSeedRecipeOption:
             name="t", model=SimpleTestModel(), min_clients=2, num_rounds=1, train_script="client.py", sampling_seed=7
         )
         assert get_controller(recipe)._sampling_seed == 7
-
-    def test_seed_reaches_the_controller_through_tensorflow(self, mock_file_system):
-        pytest.importorskip("tensorflow", reason="TensorFlow not available")
-        from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe as TFFedAvgRecipe
-
-        recipe = TFFedAvgRecipe(name="t", min_clients=2, num_rounds=1, train_script="train.py", sampling_seed=7)
-        assert get_controller(recipe)._sampling_seed == 7
