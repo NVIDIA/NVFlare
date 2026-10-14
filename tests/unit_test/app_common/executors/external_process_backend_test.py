@@ -1912,6 +1912,9 @@ class TestHeartbeatAndOperationalLiveness:
 
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             assert ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+            assert ctypes.CDLL(None).prctl(15, b"\\xff") == 0  # PR_SET_NAME with invalid UTF-8
+            with open(f"/proc/{os.getpid()}/stat", "rb") as stat_file:
+                assert b"\\xff" in stat_file.read()
             backend = ExternalProcessBackend()
 
             def states(pid):
@@ -1986,6 +1989,26 @@ class TestHeartbeatAndOperationalLiveness:
 
                     with patch.object(os, "scandir", deny_task_status):
                         assert backend._process_group_alive(trainer), "unknown thread state must stay conservative"
+
+                    real_open = open
+
+                    for error in (PermissionError, ProcessLookupError):
+                        def deny_stat(path, *args, **kwargs):
+                            if path == f"/proc/{os.getpid()}/stat":
+                                raise error("unrelated stat unavailable")
+                            return real_open(path, *args, **kwargs)
+
+                        with patch("builtins.open", deny_stat):
+                            assert not backend._process_group_alive(trainer), "unrelated stat hid zombie group"
+
+                    def deny_group_stat(path, *args, **kwargs):
+                        if path == f"/proc/{worker_pid}/stat":
+                            raise PermissionError("trainer stat unavailable")
+                        return real_open(path, *args, **kwargs)
+
+                    with patch("builtins.open", deny_group_stat):
+                        assert backend._process_group_alive(trainer), "unknown trainer state must stay conservative"
+
                     assert not backend._process_group_alive(trainer)
                     assert backend._await_group_exit(trainer, 0.1)
                 finally:

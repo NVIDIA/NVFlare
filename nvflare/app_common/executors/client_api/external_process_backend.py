@@ -858,19 +858,26 @@ class ExternalProcessBackend(CellBackendBase):
                     if not entry.name.isdecimal():
                         continue
                     try:
-                        with open(f"/proc/{entry.name}/stat", encoding="utf-8") as stat_file:
-                            stat = stat_file.read()
-                    except FileNotFoundError:
-                        # The process exited between listing and reading /proc.
+                        fields = self._read_linux_proc_stat_fields(f"/proc/{entry.name}/stat")
+                        if len(fields) < 4:
+                            raise ValueError("incomplete procfs stat")
+                        state, _, group, session = fields[:4]
+                        group, session = int(group), int(session)
+                    except (OSError, ValueError):
+                        # An unrelated process may disappear or have an unreadable
+                        # stat file. Preserve the conservative result if it might
+                        # belong to the trainer group.
+                        try:
+                            if os.getpgid(int(entry.name)) == pgid:
+                                return None
+                        except ProcessLookupError:
+                            pass
+                        except OSError:
+                            return None
                         continue
-                    # comm is enclosed in parentheses and can itself contain ')'.
-                    fields = stat[stat.rfind(")") + 2 :].split()
-                    if len(fields) < 4:
-                        return None
-                    state, _, group, session = fields[:4]
-                    if int(group) != pgid or int(session) != pgid:
+                    if group != pgid or session != pgid:
                         continue
-                    if state not in ("Z", "X", "x"):
+                    if state not in (b"Z", b"X", b"x"):
                         return True
                     # A process leader can be a zombie after pthread_exit()
                     # while other threads in that process keep running.
@@ -886,6 +893,16 @@ class ExternalProcessBackend(CellBackendBase):
         return False if found_zombie else None
 
     @staticmethod
+    def _read_linux_proc_stat_fields(path: str) -> list[bytes]:
+        with open(path, "rb") as stat_file:
+            stat = stat_file.read()
+        # comm can contain arbitrary bytes and ')'; only the suffix has fields.
+        end_of_comm = stat.rfind(b")")
+        if end_of_comm < 0:
+            raise ValueError("missing comm delimiter in procfs stat")
+        return stat[end_of_comm + 1 :].split()
+
+    @staticmethod
     def _linux_process_has_live_threads(pid: str) -> Optional[bool]:
         """Return None unless procfs exposes at least one thread state."""
         found_dead = False
@@ -895,17 +912,17 @@ class ExternalProcessBackend(CellBackendBase):
                     if not thread.name.isdecimal():
                         continue
                     try:
-                        with open(f"/proc/{pid}/task/{thread.name}/stat", encoding="utf-8") as stat_file:
-                            stat = stat_file.read()
+                        fields = ExternalProcessBackend._read_linux_proc_stat_fields(
+                            f"/proc/{pid}/task/{thread.name}/stat"
+                        )
                     except FileNotFoundError:
                         continue
-                    fields = stat[stat.rfind(")") + 2 :].split()
                     if not fields:
                         return None
-                    if fields[0] not in ("Z", "X", "x"):
+                    if fields[0] not in (b"Z", b"X", b"x"):
                         return True
                     found_dead = True
-        except OSError:
+        except (OSError, ValueError):
             return None
         return False if found_dead else None
 
