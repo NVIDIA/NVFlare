@@ -108,10 +108,11 @@ class PTFedAvg(FedAvg):
         fobs.register(TensorDecomposer)
         super().run()
 
-    @staticmethod
-    def _metadata_path(filepath: str) -> str:
-        directory, filename = os.path.split(os.path.abspath(filepath))
-        return resolve_path_under_root(directory, f"{filename}.metadata", "model metadata path", preserve_leaf=True)
+    def _metadata_path(self, filepath: str) -> str:
+        run_dir = os.path.realpath(self.get_run_dir())
+        sidecar = f"{os.path.abspath(filepath)}.metadata"
+        relative_sidecar = os.path.relpath(sidecar, run_dir)
+        return resolve_path_under_root(run_dir, relative_sidecar, "model metadata path", preserve_leaf=True)
 
     def save_model_file(self, model: FLModel, filepath: str) -> None:
         """Save model using PyTorch's torch.save.

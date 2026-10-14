@@ -2190,6 +2190,7 @@ class TestPTFedAvgModelPersistence:
             metrics={"accuracy": 0.85},
         )
         filepath = str(tmp_path / "test_model.pt")
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Save and load
         controller.save_model_file(model, filepath)
@@ -2213,6 +2214,7 @@ class TestPTFedAvgModelPersistence:
         params = {"weight": torch.tensor([1.0, 2.0])}
         filepath = str(tmp_path / "model_no_metadata.pt")
         torch.save(params, filepath)
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Load without metadata file
         loaded = controller.load_model_file(filepath)
@@ -2234,6 +2236,7 @@ class TestPTFedAvgModelPersistence:
         metadata = tmp_path / "model.pt.metadata"
         metadata.symlink_to(outside)
         controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         with pytest.raises(ValueError, match="model metadata path"):
             if operation == "load":
@@ -2241,6 +2244,29 @@ class TestPTFedAvgModelPersistence:
             else:
                 controller.save_model_file(FLModel(params={"weight": torch.tensor([2.0])}), str(filepath))
         assert outside.read_bytes() == b"outside must remain unchanged"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_allows_metadata_sidecar_symlink_within_run_directory(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        models = tmp_path / "models"
+        metadata = tmp_path / "metadata"
+        models.mkdir()
+        metadata.mkdir()
+        filepath = models / "current.pt"
+        sidecar = models / "current.pt.metadata"
+        sidecar.symlink_to("../metadata/current.metadata")
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model_file(model, str(filepath))
+        loaded = controller.load_model_file(str(filepath))
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (metadata / "current.metadata").is_file()
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
     def test_checkpoint_alias_preserves_its_metadata_sidecar(self, tmp_path):
