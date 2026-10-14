@@ -993,7 +993,10 @@ def test_async_tcp_tls_listener_accepts_connection(high_fd, listener_context, mo
             os.close(fd)
 
 
-def test_async_tcp_tls_default_wildcard_url_accepts_client(listener_context, monkeypatch, tmp_path):
+@pytest.mark.parametrize("ipv6_unavailable_order", [None, "ipv6-first", "ipv4-first"])
+def test_async_tcp_tls_default_wildcard_url_accepts_client(
+    ipv6_unavailable_order, listener_context, monkeypatch, tmp_path
+):
     driver = AioTcpDriver()
     manager = ConnManager(Endpoint("default_tls_listener"))
     tls = _server_tls_context(tmp_path)
@@ -1011,13 +1014,34 @@ def test_async_tcp_tls_default_wildcard_url_accepts_client(listener_context, mon
     original_getaddrinfo = loop.getaddrinfo
     resolved = threading.Event()
     resolved_hosts = []
+    attempted_ipv6 = threading.Event()
+
+    if ipv6_unavailable_order:
+        original_socket = socket.socket
+
+        def socket_without_ipv6(*args, **kwargs):
+            family = args[0] if args else kwargs.get("family", socket.AF_INET)
+            if family == socket.AF_INET6:
+                attempted_ipv6.set()
+                raise OSError(errno.EAFNOSUPPORT, "IPv6 is disabled")
+            return original_socket(*args, **kwargs)
+
+        monkeypatch.setattr(socket, "socket", socket_without_ipv6)
 
     async def linux_getaddrinfo(host, *args, **kwargs):
         resolved_hosts.append(host)
         resolved.set()
         if host == "":
             raise socket.gaierror(socket.EAI_NONAME, "empty bind host")
-        return await original_getaddrinfo(host, *args, **kwargs)
+        addresses = await original_getaddrinfo(host, *args, **kwargs)
+        if ipv6_unavailable_order:
+            ipv4_addresses = [address for address in addresses if address[0] == socket.AF_INET]
+            assert ipv4_addresses
+            ipv6_address = (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("::", port, 0, 0))
+            if ipv6_unavailable_order == "ipv6-first":
+                return [ipv6_address, *ipv4_addresses]
+            return [*ipv4_addresses, ipv6_address]
+        return addresses
 
     monkeypatch.setattr(loop, "getaddrinfo", linux_getaddrinfo)
     try:
@@ -1039,6 +1063,8 @@ def test_async_tcp_tls_default_wildcard_url_accepts_client(listener_context, mon
                     time.sleep(0.01)
                 assert len(driver.connections) == 1
                 assert next(iter(driver.connections.values())).secure
+        if ipv6_unavailable_order:
+            assert attempted_ipv6.is_set()
     finally:
         manager.stop()
 

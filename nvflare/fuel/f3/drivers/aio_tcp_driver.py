@@ -253,9 +253,15 @@ class AioTcpDriver(AioBaseDriver):
             loop = asyncio.get_running_loop()
             addresses = await loop.getaddrinfo(host or None, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
             sockets = []
+            socket_error = None
             try:
                 for family, sock_type, proto, _, address in addresses:
-                    listener = socket.socket(family, sock_type, proto)
+                    try:
+                        listener = socket.socket(family, sock_type, proto)
+                    except OSError as ex:
+                        # A resolved address family may not be supported by this host.
+                        socket_error = ex
+                        continue
                     try:
                         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                         if family == socket.AF_INET6:
@@ -267,6 +273,8 @@ class AioTcpDriver(AioBaseDriver):
                         listener.close()
                         raise
                     sockets.append(listener)
+                if not sockets:
+                    raise OSError(f"Could not create TLS listener on any address for {host}:{port}") from socket_error
             except BaseException:
                 for listener in sockets:
                     listener.close()
