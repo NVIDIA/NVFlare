@@ -16,6 +16,7 @@ import asyncio
 import random
 import threading
 import time
+from concurrent.futures import CancelledError
 from typing import Any, Dict, List
 
 import grpc
@@ -35,7 +36,7 @@ from nvflare.fuel.f3.drivers.grpc_driver import GrpcDriver
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
-from .base_driver import BaseDriver
+from .aio_base_driver import AioBaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.streamer_pb2 import Frame
 from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
@@ -88,9 +89,9 @@ class AioStreamSession(Connection):
     def get_conn_properties(self) -> dict:
         return self.conn_props
 
-    async def _abort(self):
+    async def _abort(self, context):
         try:
-            self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
+            await context.abort(grpc.StatusCode.CANCELLED, "service closed")
         except:
             # ignore exception (if any) when aborting
             pass
@@ -101,13 +102,13 @@ class AioStreamSession(Connection):
             if self.read_task:
                 try:
                     self.logger.info("canceling read_output: connection is closed")
-                    self.read_task.cancel()
+                    self.aio_ctx.get_event_loop().call_soon_threadsafe(self.read_task.cancel)
                 except Exception as ex:
                     self.logger.debug(f"exception cancelling read task: {secure_format_exception(ex)}")
                 self.read_task = None
 
             if self.context:
-                self.aio_ctx.run_coro(self._abort())
+                self.aio_ctx.run_coro(self._abort(self.context))
                 self.context = None
 
             if self.channel:
@@ -206,7 +207,8 @@ class Servicer(StreamerServicer):
                 context=context,
             )
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
-            self.server.driver.add_connection(connection)
+            if not self.server.driver.add_connection(connection):
+                return
             self.aio_ctx.run_coro(connection.read_loop(request_iterator))
             while True:
                 item = await connection.read_oq()
@@ -275,7 +277,7 @@ class Server:
             self.logger.debug(f"exception shutdown server: {secure_format_exception(ex)}")
 
 
-class AioGrpcDriver(BaseDriver):
+class AioGrpcDriver(AioBaseDriver):
 
     aio_ctx = None
 
@@ -339,7 +341,7 @@ class AioGrpcDriver(BaseDriver):
         conn_ctx.waiter.wait()
         self.logger.debug("SERVER: server is done")
 
-    async def _start_connect(self, connector: ConnectorInfo, aio_ctx: AioContext, conn_ctx: _ConnCtx):
+    async def _start_connect(self, connector: ConnectorInfo, aio_ctx: AioContext):
         self.logger.debug("Started _start_connect coro")
         self.connector = connector
         params = connector.params
@@ -347,6 +349,7 @@ class AioGrpcDriver(BaseDriver):
 
         self.logger.debug(f"CLIENT: trying to connect {address}")
         connection = None
+        channel = None
         try:
             secure = ssl_required(params)
             if secure:
@@ -366,52 +369,46 @@ class AioGrpcDriver(BaseDriver):
                 conn_props[DriverParams.PEER_CN.value] = "N/A"
 
             connection = AioStreamSession(aio_ctx=aio_ctx, connector=connector, conn_props=conn_props, channel=channel)
+            if not self.add_connection(connection):
+                return
             self.logger.debug(f"CLIENT: start streaming on connection {connection}")
             msg_iter = stub.Stream(connection.generate_output())
-            conn_ctx.conn = connection
             await connection.read_loop(msg_iter)
         except asyncio.CancelledError:
             self.logger.info("CLIENT: RPC cancelled")
         except Exception as ex:
-            conn_ctx.error = f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}"
-            self.logger.debug(conn_ctx.error)
+            self.logger.debug(f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}")
             self.logger.debug(secure_format_traceback())
+            raise
         finally:
+            if channel:
+                await channel.close()
             if connection:
+                connection.channel = None
                 connection.close()
+                self.close_connection(connection)
         self.logger.info(f"finished connection {connection}")
-        conn_ctx.waiter.set()
 
     def connect(self, connector: ConnectorInfo):
         self.logger.debug("CLIENT: connect called")
         aio_ctx = AioContext.get_global_context()
-        conn_ctx = _ConnCtx()
-        aio_ctx.run_coro(self._start_connect(connector, aio_ctx, conn_ctx))
-        time.sleep(0.2)
-        while not conn_ctx.conn and not conn_ctx.error:
-            time.sleep(0.1)
-
-        self.logger.debug("CLIENT: connect completed")
-        if conn_ctx.error:
-            raise CommError(CommError.ERROR, conn_ctx.error)
-
-        self.add_connection(conn_ctx.conn)
-        conn_ctx.waiter.wait()
-        self.close_connection(conn_ctx.conn)
+        try:
+            aio_ctx.run_coro(self._run_connect(connector, lambda: self._start_connect(connector, aio_ctx))).result()
+        except CancelledError:
+            self.logger.debug("CLIENT: connection cancelled")
 
     def shutdown(self):
-        if self.closing:
-            return
-
+        self.stop_connection_admission()
         self.closing = True
-        self.close_all()
+        aio_ctx = AioContext.get_global_context()
+        return aio_ctx.run_coro(self._async_shutdown())
 
-        if self.server:
-            aio_ctx = AioContext.get_global_context()
-            self.logger.debug("Start shutting down AIO grpc server ...")
-            aio_ctx.run_coro(self.server.shutdown())
-            time.sleep(self.server.grpc_server_stop_grace + 0.1)
-            self.logger.debug("Finished shutting down AIO grpc server")
+    async def _async_shutdown(self):
+        async with self._shutdown_lock:
+            await self._cancel_connect_tasks()
+            self.close_all()
+            if self.server:
+                await self.server.shutdown()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

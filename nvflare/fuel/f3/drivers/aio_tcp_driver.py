@@ -17,9 +17,9 @@ from concurrent.futures import CancelledError
 from typing import Any, Dict, List
 
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.aio_base_driver import AioBaseDriver
 from nvflare.fuel.f3.drivers.aio_conn import AioConnection
 from nvflare.fuel.f3.drivers.aio_context import AioContext
-from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
@@ -28,12 +28,13 @@ from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 log = logging.getLogger(__name__)
 
 
-class AioTcpDriver(BaseDriver):
+class AioTcpDriver(AioBaseDriver):
     def __init__(self):
         super().__init__()
         self.aio_ctx = AioContext.get_global_context()
         self.server = None
         self.ssl_context = None
+        self._accept_tasks = set()
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -50,7 +51,8 @@ class AioTcpDriver(BaseDriver):
         self._run(connector, Mode.ACTIVE)
 
     def shutdown(self):
-        self.aio_ctx.get_event_loop().call_soon_threadsafe(self._shutdown_on_loop)
+        self.stop_connection_admission()
+        return self.aio_ctx.run_coro(self._async_shutdown())
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
@@ -64,7 +66,15 @@ class AioTcpDriver(BaseDriver):
             raise CommError(CommError.ERROR, f"Connector mode doesn't match driver mode for {self.connector}")
 
         try:
-            self.aio_ctx.run_coro(self._async_run(mode)).result()
+            operation = (
+                self._run_connect(connector, lambda: self._async_run(mode))
+                if mode == Mode.ACTIVE
+                else self._async_run(mode)
+            )
+            if self.is_stopping() or connector.stopped.is_set():
+                operation.close()
+                return
+            self.aio_ctx.run_coro(operation).result()
         except CancelledError:
             log.debug(f"Connector {self.connector} is cancelled")
 
@@ -81,14 +91,36 @@ class AioTcpDriver(BaseDriver):
 
         await coroutine
 
-    def _shutdown_on_loop(self):
-        server = self.server
-        self.server = None
-        self.close_all()
-        if server:
-            # close() cancels serve_forever(), which then waits for active transports.
-            # Do not wait here: connection callbacks need the ConnManager lock held by the caller.
-            server.close()
+    async def _async_shutdown(self):
+        async with self._shutdown_lock:
+            server = self.server
+            self.server = None
+            if server:
+                server.close()
+            self.close_all()
+            await self._cancel_connect_tasks()
+            await self._cancel_accept_tasks()
+            if server:
+                await server.wait_closed()
+
+    async def _cancel_accept_tasks(self):
+        tasks = list(self._accept_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _tls_protocol_factory(self):
+        # The protocol factory runs in asyncio's accept task before TLS
+        # negotiation. Keep that task so shutdown can close sockets that have
+        # not reached _create_connection() yet.
+        task = asyncio.current_task()
+        if task is not None:
+            self._accept_tasks.add(task)
+            task.add_done_callback(self._accept_tasks.discard)
+            if self.is_stopping() or self.connector.stopped.is_set():
+                task.cancel()
+        return asyncio.StreamReaderProtocol(asyncio.StreamReader(), self._create_connection)
 
     async def _tcp_connect(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=False)
@@ -97,16 +129,31 @@ class AioTcpDriver(BaseDriver):
 
     async def _tcp_listen(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
-        self.server = await asyncio.start_server(self._create_connection, host, port, ssl=self.ssl_context)
+        if self.ssl_context:
+            self.server = await asyncio.get_running_loop().create_server(
+                self._tls_protocol_factory, host, port, ssl=self.ssl_context
+            )
+        else:
+            self.server = await asyncio.start_server(self._create_connection, host, port)
         async with self.server:
-            if self.connector.stopped.is_set():
+            if self.is_stopping() or self.connector.stopped.is_set():
                 return
             await self.server.serve_forever()
 
     async def _create_connection(self, reader, writer):
         conn = AioConnection(self.connector, self.aio_ctx, reader, writer, self.ssl_context is not None)
-        self.add_connection(conn)
-        if self.connector.stopped.is_set():
-            conn.close()
-        await conn.read_loop()
-        self.close_connection(conn)
+        try:
+            if not self.add_connection(conn):
+                return
+            await conn.read_loop()
+        finally:
+            try:
+                conn.close()
+            finally:
+                try:
+                    self.close_connection(conn)
+                finally:
+                    # The read side has ended. A peer that stops reading can
+                    # otherwise keep queued writes and wait_closed() pending.
+                    writer.transport.abort()
+            await writer.wait_closed()

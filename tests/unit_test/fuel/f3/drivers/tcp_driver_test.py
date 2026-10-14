@@ -161,10 +161,9 @@ def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
             shutdown.join(2)
             assert not shutdown.is_alive(), "an idle TLS handshake blocked shutdown"
             assert driver.server.socket.fileno() == -1
-            # The accepted socket can still complete TLS after the shutdown snapshot.
-            context = get_ssl_context(connector.params, ssl_server=False)
-            with context.wrap_socket(peer) as secured_peer:
-                assert secured_peer.recv(1) == b""
+            # The driver owns and closes the pending handshake, even though no
+            # completed connection has entered its connection registry yet.
+            assert peer.recv(1) == b""
 
 
 def test_tls_handshake_honors_longer_url_connection_timeout(tls_listener):

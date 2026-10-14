@@ -69,6 +69,20 @@ class TcpDriver(BaseDriver):
     def __init__(self):
         super().__init__()
         self.server = None
+        self._pending_sockets = set()
+
+    def register_pending_socket(self, sock):
+        with self.conn_lock:
+            admitted = not self._connection_admission_closed
+            if admitted:
+                self._pending_sockets.add(sock)
+        if not admitted:
+            sock.close()
+        return admitted
+
+    def release_pending_socket(self, sock):
+        with self.conn_lock:
+            self._pending_sockets.discard(sock)
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -84,7 +98,7 @@ class TcpDriver(BaseDriver):
         # Pair publication with shutdown's snapshot. Once published, serve_forever()
         # must run so that a concurrent server.shutdown() can finish.
         with self.conn_lock:
-            stopped = connector.stopped.is_set()
+            stopped = self._connection_admission_closed or connector.stopped.is_set()
             if not stopped:
                 self.server = server
         if stopped:
@@ -105,23 +119,34 @@ class TcpDriver(BaseDriver):
             context = get_ssl_context(params, ssl_server=False)
             if context:
                 sock = context.wrap_socket(sock)
-            sock.connect((host, port))
-            sock.settimeout(None)
+            if not self.register_pending_socket(sock):
+                return
+            try:
+                sock.connect((host, port))
+                sock.settimeout(None)
+            finally:
+                self.release_pending_socket(sock)
         except Exception:
             sock.close()
             raise
 
         connection = SocketConnection(sock, connector, bool(context))
-        self.add_connection(connection)
-        # Shutdown may have missed this connection while connect/TLS was still in progress.
-        if connector.stopped.is_set():
-            connection.close()
+        if not self.add_connection(connection):
+            return
         connection.read_loop()
         self.close_connection(connection)
 
     def shutdown(self):
+        self.stop_connection_admission()
         with self.conn_lock:
             server = self.server
+            pending = list(self._pending_sockets)
+        for sock in pending:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            sock.close()
         if server:
             server.shutdown()
         self.close_all()

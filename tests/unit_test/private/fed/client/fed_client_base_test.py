@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import socket
+import ssl
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext, suppress
@@ -183,8 +184,8 @@ def probe_credentials(tmp_path, monkeypatch):
 
 @pytest.mark.timeout(15)
 @pytest.mark.parametrize("scheme", ["stcp", "satcp"])
-@pytest.mark.parametrize("finish_tls", [False, True])
-def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, scheme, finish_tls):
+@pytest.mark.parametrize("reply_after_stop", [False, True])
+def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, scheme, reply_after_stop):
     server_credentials, credentials = probe_credentials
     signal = Signal()
     stopped = threading.Event()
@@ -210,26 +211,30 @@ def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, schem
             {},
             signal,
             60,
-            3 if finish_tls else 0.3,
+            60,  # Cancellation must release TLS well before its connection timeout.
         )
         connection = None
         try:
             connection, _ = listener.accept()
             signal.trigger(True)
-            if finish_tls:
-                # Complete TLS only after shutdown has scanned the empty connection set.
+            # Cancellation must finish while the peer stays open and sends no TLS reply.
+            with pytest.raises(RuntimeError, match="cancelled"):
+                future.result(timeout=3)
+            if reply_after_stop:
                 assert stopped.wait(2)
                 context = get_ssl_context({**server_credentials, "scheme": "stcp"}, ssl_server=True)
                 connection.settimeout(3)
-                connection = context.wrap_socket(connection, server_side=True)
-            with connection:
-                # Cancellation must finish even while the remote socket stays open.
-                with pytest.raises(RuntimeError, match="cancelled"):
-                    future.result(timeout=3)
-                connection.settimeout(1)
-                with suppress(ConnectionResetError, BrokenPipeError):
-                    while connection.recv(4096):
-                        pass  # EOF, a reset or a broken pipe confirms the probe closed its socket.
+                # The driver now owns the pending socket. A late TLS response
+                # must fail because shutdown has already closed that socket.
+                with pytest.raises((ssl.SSLError, ConnectionResetError, BrokenPipeError)):
+                    with context.wrap_socket(connection, server_side=True):
+                        pass
+            else:
+                with connection:
+                    connection.settimeout(1)
+                    with suppress(ConnectionResetError, BrokenPipeError):
+                        while connection.recv(4096):
+                            pass  # EOF, a reset or a broken pipe confirms the probe closed its socket.
         finally:
             signal.trigger(True)
             if connection:
@@ -254,7 +259,7 @@ def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security, u
 
         def track_connection(connection):
             connections.append(connection)
-            add_connection(connection)
+            return add_connection(connection)
 
         monkeypatch.setattr(driver, "add_connection", track_connection)
         captured = _create_cell_credentials(
