@@ -303,8 +303,8 @@ class Participant(Entity):
             raise ValueError(
                 f"external_cert for {type} '{name}' must be bool but got {external_cert.__class__.__name__}"
             )
-        if external_cert and type not in (ParticipantType.SERVER, ParticipantType.CLIENT):
-            raise ValueError("external_cert is supported only for server and client participants")
+        if external_cert and type not in (ParticipantType.SERVER, ParticipantType.CLIENT, ParticipantType.RELAY):
+            raise ValueError("external_cert is supported only for server, client and relay participants")
 
         external_job_ca = self.get_prop(PropKey.EXTERNAL_JOB_CA)
         if external_job_ca is not None and not isinstance(external_job_ca, bool):
