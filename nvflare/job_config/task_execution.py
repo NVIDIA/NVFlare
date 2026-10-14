@@ -33,8 +33,10 @@ DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.Decomposer
 
 def validate_task_resources(meta, site_name):
     """Use the same receiving-site resource resolution as job launchers."""
-    for spec in (get_resource_manager_spec(meta, site_name), get_job_launcher_spec(meta, site_name, "process")):
-        if spec.get("num_of_gpus", 0):
+    specs = [get_resource_manager_spec(meta, site_name)]
+    specs.extend(get_job_launcher_spec(meta, site_name, mode) for mode in ("process", "docker", "k8s", "slurm"))
+    for spec in specs:
+        if spec.get("num_of_gpus", 0) or spec.get("gpus_per_node", 0):
             raise ValueError("task lifetime currently supports CPU Process execution; this site requests GPUs")
 
 

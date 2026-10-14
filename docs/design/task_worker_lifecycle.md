@@ -40,7 +40,9 @@ independent of trainer lifetime.
 FedAvg and PyTorch FedProx recipes also accept `execution_lifetime="task"`. Export
 validates the receiving sites' GPU resource/launcher settings; unrelated job-lifetime
 GPU apps in the same deployment remain valid. Resource defaults and receiving-site
-Process overrides use the normal launcher resource resolvers. An `@ALL` client app
+overrides use the normal launcher resource resolvers. The resource manager and all
+four launcher modes (Process, Docker, Kubernetes and Slurm) are checked; nonzero
+`num_of_gpus` or `gpus_per_node` requests are rejected for task clients. An `@ALL` client app
 cannot be combined with a site-specific lifetime; use named client apps for
 per-site lifetimes. Temporary execution-parameter overrides apply only to declared
 apps and restore their original parameters after use.

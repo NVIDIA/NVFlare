@@ -851,3 +851,37 @@ def test_execute_releases_owner_even_if_log_replay_fails(tmp_path, monkeypatch):
 
 def test_gpu_named_application_options_are_not_resource_requests():
     validate_task_resources({"resource_spec": {"site-1": {"gpu_cache_enabled": True}}}, "site-1")
+
+
+@pytest.mark.parametrize(
+    "mode,gpu_field",
+    [("process", "num_of_gpus"), ("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")],
+)
+def test_cpu_validation_resolves_launcher_defaults_and_zero_site_overrides(mode, gpu_field):
+    meta = {"launcher_spec": {"default": {mode: {gpu_field: 1}}, "site-1": {mode: {gpu_field: 0}}}}
+    validate_task_resources(meta, "site-1")
+    with pytest.raises(ValueError, match="GPUs"):
+        validate_task_resources(meta, "site-2")
+    # GPU allocations unrelated to the receiving site must not reject it.
+    validate_task_resources({"launcher_spec": {"server": {mode: {gpu_field: 1}}}}, "site-1")
+    validate_task_resources({"resource_spec": {"site-2": {mode: {gpu_field: 1}}}}, "site-1")
+
+
+def test_cpu_validation_does_not_drop_nested_gpu_modes_with_portable_defaults():
+    meta = {
+        "resource_spec": {
+            "@default": {"num_of_gpus": 1},
+            "site-1": {"process": {"num_of_gpus": 0}, "slurm": {"gpus_per_node": 1}},
+        }
+    }
+    with pytest.raises(ValueError, match="GPUs"):
+        validate_task_resources(meta, "site-1")
+
+
+def test_cpu_validation_falls_back_to_nested_resources_for_missing_launcher_modes():
+    meta = {
+        "launcher_spec": {"site-1": {"process": {"num_of_gpus": 0}}},
+        "resource_spec": {"site-1": {"docker": {"num_of_gpus": 1}}},
+    }
+    with pytest.raises(ValueError, match="GPUs"):
+        validate_task_resources(meta, "site-1")

@@ -272,3 +272,21 @@ def test_global_model_evaluation_allows_task_lifetime(tmp_path):
     job.to_server(CrossSiteModelEval(submit_model_task_name=""))
     job.to_clients(_executor())
     job.export_job(str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "mode,gpu_field",
+    [("process", "num_of_gpus"), ("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")],
+)
+@pytest.mark.parametrize("meta_key", ["launcher_spec", "resource_spec"])
+def test_task_export_rejects_gpu_requests_in_every_launcher_mode(tmp_path, mode, gpu_field, meta_key):
+    resources = {gpu_field: 0}
+    job = _job("task", {meta_key: {"site-1": {mode: resources}}})
+    job.to(_executor(), "site-1")
+    job.export_job(str(tmp_path))
+    config_path = tmp_path / job.name / "app_site-1" / "config" / "config_fed_client.json"
+    before = config_path.read_bytes()
+    resources[gpu_field] = 1
+    with pytest.raises(ValueError, match="CPU Process.*GPUs"):
+        job.export_job(str(tmp_path))
+    assert config_path.read_bytes() == before
