@@ -117,16 +117,25 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return
-        worker_paths = []
+        worker_paths = [
+            (f"components.#{index}", component)
+            for index, component in enumerate(self.config_data.get("components", []), 1)
+            if component["id"] in self.task_execution.compute_component_ids
+        ]
         for index, definition in enumerate(self.config_data["executors"], 1):
             worker_paths.append((f"executors.#{index}.executor", definition["executor"]))
-        # Authorize executor specifications before importing application code.
+        # Authorize compute specifications before importing application code.
         # The trusted adapter is never a component selected by the job.
         for path, component in worker_paths:
             node = Node(component)
             node.paths = path.split(".")
             self._authorize_component_config_tree(component, config_ctx, node, force_current=True)
         self._worker_config_paths = tuple(path for path, _ in worker_paths)
+        if self.task_execution.compute_component_ids:
+            # The resident statistics privacy filters decode these payloads too.
+            from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
+
+            fobs_registration()
         from .task_execution_policy import TaskExecutionPolicy
 
         self.task_policy = TaskExecutionPolicy.from_workspace(self.workspace_obj)

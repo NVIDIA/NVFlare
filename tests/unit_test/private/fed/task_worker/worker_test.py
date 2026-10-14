@@ -15,7 +15,6 @@
 import json
 import os
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -964,89 +963,8 @@ def _live(process):
         return False
 
 
-@pytest.mark.parametrize("reap_owner", [False, True])
-@pytest.mark.parametrize("worker_exits", [False, True])
-def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, reap_owner, worker_exits):
-    if not hasattr(os, "waitid"):
-        pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
-    workspace_root = _workspace(tmp_path)
-    marker = tmp_path / "members.json"
-    leader_exited = tmp_path / "leader-exited"
-    custom = workspace_root / "job-1" / "app_site-1" / "custom" / "hanging.py"
-    custom.write_text(
-        "import json,os,subprocess,sys,time\n"
-        "from pathlib import Path\n"
-        "from nvflare.apis.executor import Executor\n"
-        "from nvflare.apis.shareable import Shareable\n"
-        "class HangingExecutor(Executor):\n"
-        " def execute(self,*args):\n"
-        "  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])\n"
-        f"  Path({str(marker.with_suffix('.tmp'))!r}).write_text(json.dumps([os.getpid(),child.pid]))\n"
-        f"  os.replace({str(marker.with_suffix('.tmp'))!r}, {str(marker)!r})\n"
-        + ("  return Shareable()\n" if worker_exits else "  time.sleep(30)\n")
-    )
-    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("parent-loss")
-    path = _stage(store, identity, workspace_root, {"path": "hanging.HangingExecutor"}, Shareable())
-    repo_root = str(Path(__file__).resolve().parents[5])
-    env = {key: value for key, value in os.environ.items() if key not in JobProcessEnv.ALL}
-    env["PYTHONPATH"] = repo_root
-    code = (
-        "import os,sys\n"
-        "from pathlib import Path\n"
-        "import time\n"
-        "from nvflare.apis.task_launcher_spec import TaskLaunchRequest,TaskLaunchError,TaskExecutionPhase\n"
-        "from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher\n"
-        f"request=TaskLaunchRequest('job-1','site-1','task-1','parent-loss',"
-        f"(sys.executable,'-m','nvflare.private.fed.app.client.task_worker_process','--bootstrap',{path!r}),"
-        f"environment=dict(os.environ),cwd={repo_root!r})\n"
-        "try:\n"
-        " handle=ProcessTaskLauncher(descendant_settle_timeout=20).launch_task(request)\n"
-        "except TaskLaunchError as error:\n"
-        " error.handle.cancel()\n"
-        " raise\n"
-        "try:\n"
-        f" if {worker_exits!r}:\n"
-        "  while handle.poll().phase != TaskExecutionPhase.TERMINAL: time.sleep(0.01)\n"
-        f"  Path({str(leader_exited)!r}).touch()\n"
-        " handle.wait_for_settlement(timeout=25)\n"
-        "finally:\n"
-        " if not handle.poll().settled: handle.cancel()\n"
-    )
-    members = []
-    with (tmp_path / "owner.log").open("w") as log:
-        owner = subprocess.Popen([sys.executable, "-c", code], cwd=repo_root, env=env, stdout=log, stderr=log)
-        try:
-            _wait_until(marker.exists)
-            pids = json.loads(marker.read_text())
-            members = [psutil.Process(pid) for pid in pids]
-            if worker_exits:
-                _wait_until(leader_exited.exists)
-                assert not _live(members[0])
-                assert _live(members[1])
-            else:
-                assert all(_live(p) for p in members)
-            assert os.getpgid(members[1].pid) == pids[0]
-            owner.kill()
-            if reap_owner:
-                owner.wait(timeout=5)
-            # In the other case the owner remains an unreaped zombie; no wait,
-            # poll or external reaping of the task leader is used by this test.
-            _wait_until(lambda: not any(_live(p) for p in members))
-            assert Path(store.attempt_dir(identity), "completion.json").exists() == worker_exits
-        finally:
-            if owner.poll() is None:
-                owner.kill()
-            owner.wait(timeout=5)
-            # Identity-checked fallback only for a failed regression, never reap
-            # the task leader, whose launcher lived in the terminated owner.
-            for member in members:
-                if _live(member):
-                    member.kill()
-
-
 @pytest.mark.parametrize("shutdown", ["cancel", "normal", "stubborn"])
-def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutdown):
+def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
     if not hasattr(os, "waitid"):
         pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
     workspace_root = _workspace(tmp_path)

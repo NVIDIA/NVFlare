@@ -95,7 +95,7 @@ def test_only_decomposer_registration_is_repeated_in_worker(authorize):
             },
         ),
     )
-    with pytest.raises(ValueError, match="only DecomposerRegister"):
+    with pytest.raises(ValueError, match="only decomposer registration"):
         check({"path": "allowed.Executor"}, components=({"id": "helper", "path": "allowed.Helper"},))
 
 
@@ -134,3 +134,17 @@ def test_warn_policy_is_preserved(authorize):
     check, _ctx, resources = authorize
     resources.write_text(json.dumps({"class_allow_list": [], "class_list_enforcement_mode": "warn"}))
     check({"path": "unlisted.Executor"})
+
+
+def test_statistics_generator_is_authorized_before_import(authorize):
+    check, _ctx, resources = authorize
+    resources.write_text(json.dumps({"class_allow_list": ["allowed.", "nvflare."]}))
+    executor = {
+        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "args": {"generator_id": "generator"},
+    }
+    check(executor, components=({"id": "generator", "path": "allowed.Statistics"},))
+    with pytest.raises(ComponentNotAuthorized, match="forbidden.Statistics.*components.#1"):
+        check(executor, components=({"id": "generator", "path": "forbidden.Statistics"},))
+    with pytest.raises(ValueError, match="generator_id"):
+        check(executor)

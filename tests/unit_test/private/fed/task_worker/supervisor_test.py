@@ -681,7 +681,7 @@ def test_real_p3_worker_p2_launcher_completion_and_settlement(tmp_path, fault):
     repo_root = Path(__file__).resolve().parents[5]
     marker = tmp_path / "completed"
     # Inject failures at the actual completion boundary without replacing the
-    # real worker entry, authorization, guardian, or Process launcher.
+    # real worker entry, authorization, or Process launcher.
     injected_entry = f"""
 import os, signal, stat, time
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore

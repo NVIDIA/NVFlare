@@ -17,24 +17,29 @@ authorizes inert executor and component specifications in the Client Job and aga
 in the worker before importing application code. Compute instances are constructed
 only in the worker. Task data and result filters always stay in the Client Job.
 
-In task mode, each worker constructs only its executor. Models and dataloaders
-are created by the Client API script; NPTrainer requires no helper components.
-All configured application components, including receivers, widgets and filter
-dependencies, remain resident in the Client Job. Only DecomposerRegister is also
-constructed in the worker to register payload codecs before input decoding.
-Task workers do not build nested components, place dependency graphs or invoke
-helper lifecycles. `component_dependencies` and `execution_scope` are rejected
-on worker specifications. Applications requiring component graphs use job lifetime.
+In task mode, each worker constructs its executor and the explicitly supported
+compute dependency, if any. Client API scripts create their own models and
+dataloaders. StatisticsExecutor brings only the generator named by its
+`generator_id` into the worker. Its existing task handler initializes and finalizes
+the generator; the worker does not supply a generic helper lifecycle. The generator
+must initialize from local data on each assignment and cannot rely on memory from
+an earlier statistics task or pre-run handshake. The dataframe and image statistics
+examples expose `--execution_lifetime task` for this profile.
+
+Receivers, widgets, privacy filters and their cleansers remain resident in CJ.
+The statistics payload codecs are registered in CJ for its privacy filters and in
+the worker by the existing statistics handler. DecomposerRegister also remains in
+CJ and is constructed in the worker before input decoding when custom payload
+codecs are configured. This serialization setup is independent of compute lifetime.
+Task workers do not build nested components or place dependency graphs.
+`component_dependencies` and `execution_scope` are rejected on worker specifications.
 Ordinary constructor dictionaries marked `config_type: "dict"` remain data.
 Jobs cannot configure the framework's internal adapter, launcher, environment
 policy or declared task state.
 
-The initial profile permits in-process ClientAPIExecutor and NPTrainer. Executors
-requiring federation messaging or other resident engine services use job lifetime;
-unqualified executors fail validation before export or application imports.
-DecomposerRegister remains in the CJ and is also staged in the worker so both
-processes register payload codecs before decoding. This serialization setup is
-independent of trainer lifetime.
+The profile permits in-process ClientAPIExecutor, StatisticsExecutor and NPTrainer.
+Executors requiring federation messaging or other resident engine services use job
+lifetime; unqualified executors fail validation before export or application imports.
 
 `FedJob(execution_lifetime="task")` and `job.set_execution_lifetime(...)` expose
 these controls at the Job API level. The unified and PyTorch FedAvg and PyTorch
@@ -118,10 +123,11 @@ sandbox. The site policy is excluded from client registration metadata.
 
 ## Execution and diagnostics
 
-The worker checks executor and decomposer specifications against site component
-policy before application logging, custom imports, decomposers or input decoding.
+The worker checks executor, statistics generator and decomposer specifications
+against site component policy before application logging, custom imports,
+decomposers or input decoding.
 It initializes the job audit sink first, preserving allow-all and warn-mode
-authorization records. Both are constructed directly through the existing class
+authorization records. Compute objects and codec registration use the existing class
 loader; no separate worker component builder is needed.
 
 The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and `finalize(fl_ctx)`
@@ -147,9 +153,11 @@ time uses time.monotonic(). Launcher cancellation can terminate the worker witho
 running finalizers. Executors must support this stateless one-shot cancellation
 contract; finalization is not guaranteed after process termination.
 
-The guardian distinguishes worker exit from Client Job loss. While the Client Job
-lives, the launcher owns descendant settling and shutdown deadlines. Client Job
-loss triggers immediate cleanup of the owned process group.
+There is no per-task guardian process. CJ owns the worker process group through
+its launcher, including normal cancellation, descendant settlement and shutdown
+deadlines. Abrupt CJ death can leave an active worker or its descendants running.
+Independent crash cleanup owned by CP is a follow-up; this profile does not claim
+that guarantee.
 
 ## Payload storage
 

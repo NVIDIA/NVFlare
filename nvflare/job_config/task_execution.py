@@ -27,7 +27,12 @@ from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource
 
 CLIENT_API_EXECUTOR_PATH = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"
-SUPPORTED_TASK_EXECUTORS = {CLIENT_API_EXECUTOR_PATH, "nvflare.app_common.np.np_trainer.NPTrainer"}
+STATISTICS_EXECUTOR_PATH = "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor"
+SUPPORTED_TASK_EXECUTORS = {
+    CLIENT_API_EXECUTOR_PATH,
+    STATISTICS_EXECUTOR_PATH,
+    "nvflare.app_common.np.np_trainer.NPTrainer",
+}
 DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister"
 
 
@@ -65,6 +70,7 @@ class TaskExecutorConfig:
 @dataclass(frozen=True)
 class TaskExecutionConfig:
     executors: tuple[TaskExecutorConfig, ...]
+    compute_component_ids: frozenset[str] = frozenset()
 
 
 def _timeout(name, value):
@@ -148,6 +154,7 @@ def prepare_task_execution(client_config):
     for component in serialization_components:
         task_constructor_args(component)
     plans = []
+    compute_ids = set()
     for definition in executors:
         if not isinstance(definition, dict) or not isinstance(definition.get("executor"), dict):
             raise ValueError("each executor must have a component specification")
@@ -159,18 +166,27 @@ def prepare_task_execution(client_config):
             raise ValueError(f"executor {path!r} is not supported by this task profile; use job lifetime")
         args = task_constructor_args(config)
         result_timeout = None
+        worker_components = serialization_components
         if path == CLIENT_API_EXECUTOR_PATH:
             if args.get("execution_mode") != "in_process":
                 raise ValueError(
                     "task lifetime requires in_process Client API; external_process/attach use job lifetime"
                 )
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
+        elif path == STATISTICS_EXECUTOR_PATH:
+            generator_id = args.get("generator_id")
+            if not isinstance(generator_id, str) or generator_id not in by_id or generator_id in serialization_ids:
+                raise ValueError("StatisticsExecutor requires a configured statistics generator_id")
+            generator = by_id[generator_id]
+            task_constructor_args(generator)
+            compute_ids.add(generator_id)
+            worker_components = (*serialization_components, copy.deepcopy(generator))
         plans.append(
             TaskExecutorConfig(
                 copy.deepcopy(config),
-                serialization_components,
+                worker_components,
                 _timeout("worker_timeout", definition.get("worker_timeout")),
                 result_timeout,
             )
         )
-    return TaskExecutionConfig(tuple(plans))
+    return TaskExecutionConfig(tuple(plans), frozenset(compute_ids))

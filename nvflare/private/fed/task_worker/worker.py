@@ -27,13 +27,14 @@ from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.abstract.statistics_spec import Statistics
 from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import configure_logging
-from nvflare.job_config.task_execution import DECOMPOSER_REGISTER_PATH, task_constructor_args
+from nvflare.job_config.task_execution import DECOMPOSER_REGISTER_PATH, STATISTICS_EXECUTOR_PATH, task_constructor_args
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
@@ -75,10 +76,10 @@ def _read_job_meta(workspace: Workspace, job_id: str) -> dict:
     return meta
 
 
-def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_context_keys=()):
+def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_context_keys=(), *, components=None):
     identity = bootstrap.identity
     app_root = workspace.get_app_dir(identity.job_id)
-    runtime = TaskRuntime(workspace, identity.site_name, identity.job_id)
+    runtime = TaskRuntime(workspace, identity.site_name, identity.job_id, components=components)
     fl_ctx = runtime.new_context()
     built_ins = {
         FLContextKey.APP_ROOT: app_root,
@@ -115,7 +116,15 @@ def _authorize_bootstrap(bootstrap, workspace, fl_ctx):
     """Check site policy before logging factories, codecs or executor imports."""
     authorizer = ComponentPathAuthorizer()
     config = bootstrap.to_dict()
-    specs = [("executor", config["executor"])]
+    executor = config["executor"]
+    generator_id = (
+        executor.get("args", {}).get("generator_id") if _class_path(executor) == STATISTICS_EXECUTOR_PATH else None
+    )
+    if _class_path(executor) == STATISTICS_EXECUTOR_PATH and (
+        not isinstance(generator_id, str) or generator_id not in {spec["id"] for spec in config["components"]}
+    ):
+        raise ValueError("StatisticsExecutor requires a configured statistics generator_id")
+    specs = [("executor", executor)]
     specs.extend((f"components.#{index}", spec) for index, spec in enumerate(config["components"], 1))
     for path, spec in specs:
         # Normalize aliases without importing the selected class.
@@ -129,8 +138,10 @@ def _authorize_bootstrap(bootstrap, workspace, fl_ctx):
         except UnsafeComponentError as error:
             raise ComponentNotAuthorized(f"component not authorized: {error}") from error
         task_constructor_args(spec)
-        if path != "executor" and class_path != DECOMPOSER_REGISTER_PATH:
-            raise ValueError("task workers accept only DecomposerRegister in components; use job lifetime")
+        if path != "executor" and class_path != DECOMPOSER_REGISTER_PATH and spec.get("id") != generator_id:
+            raise ValueError(
+                "task workers accept only decomposer registration and the statistics generator in components"
+            )
 
 
 def _build_executor(config):
@@ -163,7 +174,19 @@ def _execute(
     protected_context_keys=(),
     analytics=None,
 ):
-    runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
+    components = {}
+    for original in bootstrap.components:
+        spec = _thaw_json(original)
+        if _class_path(spec) != DECOMPOSER_REGISTER_PATH:
+            component = (
+                None
+                if spec.get("disabled") is True
+                else instantiate_class(_class_path(spec), task_constructor_args(spec))
+            )
+            if not isinstance(component, Statistics):
+                raise TypeError(f"statistics generator {spec['id']!r} must implement Statistics")
+            components[spec["id"]] = component
+    runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys, components=components or None)
     adapt_executor = None
     if context_binding is not None:
         adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
@@ -239,7 +262,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # the payload handoff, before decoding input or building the trainer.
         for original in bootstrap.components:
             spec = _thaw_json(original)
-            if spec.get("disabled") is not True:
+            if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
                 instantiate_class(_class_path(spec), task_constructor_args(spec))
         data = store.read_input(identity)
         analytics = []

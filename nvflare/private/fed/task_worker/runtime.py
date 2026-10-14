@@ -56,8 +56,10 @@ class TaskRuntime:
     event dispatch and federation services stay with the calling job runtime.
     """
 
-    def __init__(self, workspace: Workspace, identity_name: str, job_id: str):
+    def __init__(self, workspace: Workspace, identity_name: str, job_id: str, components=None):
         self._workspace = workspace
+        # Only explicitly staged compute dependencies are available here.
+        self._components = None if components is None else dict(components)
         self._state_lock = threading.Lock()
         self._completed = False
         self._active_calls = 0
@@ -153,8 +155,10 @@ class TaskRuntime:
 
     # Explicit compatibility guards keep existing compute components from
     # silently requesting network or job-lifetime services inside an attempt.
-    def get_component(self, *args, **kwargs):
-        self._unsupported("job component lookup")
+    def get_component(self, component_id=None):
+        if self._components is None:
+            self._unsupported("job component lookup")
+        return self._components.get(component_id)
 
     def get_all_components(self):
         self._unsupported("job component lookup")

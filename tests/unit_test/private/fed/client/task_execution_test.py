@@ -39,7 +39,12 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.client.decomposers import register_framework_decomposers
-from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, validate_task_resources
+from nvflare.job_config.task_execution import (
+    CLIENT_API_EXECUTOR_PATH,
+    STATISTICS_EXECUTOR_PATH,
+    prepare_task_execution,
+    validate_task_resources,
+)
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
@@ -799,3 +804,129 @@ def test_cpu_validation_falls_back_to_nested_resources_for_missing_launcher_mode
     }
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-1")
+
+
+def _statistics_config():
+    config = _config()
+    config["executors"][0]["executor"] = {"path": STATISTICS_EXECUTOR_PATH, "args": {"generator_id": "stats_generator"}}
+    config["components"] = [
+        {"id": "stats_generator", "path": "stats_probe.ProbeStatistics"},
+        {
+            "id": "min_count",
+            "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+            "args": {"min_count": 5},
+        },
+    ]
+    config["task_result_filters"] = [
+        {
+            "tasks": ["fed_stats"],
+            "filters": [
+                {
+                    "path": "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
+                    "args": {"result_cleanser_ids": ["min_count"]},
+                }
+            ],
+        }
+    ]
+    return config
+
+
+def test_statistics_generator_runs_only_in_worker_while_privacy_filter_stays_resident(tmp_path):
+    config = _statistics_config()
+    authorized = []
+
+    def authorize(config_dict, config_ctx, node):
+        authorized.append(config_dict.get("path"))
+        return ""
+
+    # stats_probe does not exist in this process: CJ must not import it.
+    configurator = _configure(tmp_path, config, authorize)
+    assert STATISTICS_EXECUTOR_PATH in authorized
+    assert "stats_probe.ProbeStatistics" in authorized
+    assert set(configurator.components) == {"min_count"}
+    assert len(configurator.task_result_filter_chains) == 1
+    adapter = configurator.executors[0].executor
+    assert isinstance(adapter, TaskWorkerExecutor)
+    assert [c["id"] for c in adapter.component_specs] == ["stats_generator"]
+    config["components"][0]["path"] = "changed.AfterPlanning"
+    assert adapter.component_specs[0]["path"] == "stats_probe.ProbeStatistics"
+
+
+@pytest.mark.parametrize("generator_id", [None, 1, "missing"])
+def test_statistics_requires_explicit_configured_generator(generator_id):
+    config = _statistics_config()
+    config["executors"][0]["executor"]["args"]["generator_id"] = generator_id
+    with pytest.raises(ValueError, match="generator_id"):
+        prepare_task_execution(config)
+
+
+def test_statistics_generator_has_fresh_direct_lifecycle_for_each_assignment(native_task):
+    from nvflare.app_common.abstract.statistics_spec import StatisticConfig
+    from nvflare.app_common.app_constant import StatisticsConstants as StC
+    from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
+    from nvflare.fuel.utils import fobs
+
+    root, custom, context, policy = native_task
+    marker = root / "stats_lifecycle.jsonl"
+    (custom / "stats_probe.py").write_text(
+        """
+import json, os
+from nvflare.app_common.abstract.statistics_spec import Statistics, Feature, DataType
+
+class ProbeStatistics(Statistics):
+    def __init__(self, marker):
+        super().__init__()
+        self.marker = marker
+        self.calls = 0
+
+    def record(self, event):
+        with open(self.marker, "a") as out:
+            out.write(json.dumps([event, os.getpid(), self.calls]) + "\\n")
+
+    def initialize(self, fl_ctx):
+        self.record("initialize")
+
+    def features(self):
+        return {"train": [Feature("x", DataType.INT)]}
+
+    def count(self, dataset_name, feature_name):
+        self.calls += 1
+        return 8
+
+    def finalize(self, fl_ctx):
+        self.record("finalize")
+"""
+    )
+    config = _statistics_config()
+    config["components"][0]["args"] = {"marker": str(marker)}
+    plan = prepare_task_execution(config).executors[0]
+    adapter = TaskWorkerExecutor(plan.executor, plan.components, policy)
+    adapter.handle_event(EventType.START_RUN, context)
+    fobs_registration()
+    data = Shareable(
+        {
+            StC.STATISTICS_TASK_KEY: StC.STATS_1st_STATISTICS,
+            StC.STATS_TARGET_STATISTICS: fobs.dumps([StatisticConfig("count", {})]),
+        }
+    )
+    try:
+        for attempt in (1, 2):
+            context.set_prop(FLContextKey.TASK_ID, f"stats-task-{attempt}", private=True, sticky=True)
+            context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"stats-attempt-{attempt}", private=True, sticky=True)
+            result = adapter.execute(StC.FED_STATS_TASK, data, context, Signal())
+            assert result.get_return_code() == ReturnCode.OK
+            dxo = from_shareable(result)
+            assert dxo.data_kind == DataKind.STATISTICS
+            stats = fobs.loads(dxo.data[StC.STATS_1st_STATISTICS])
+            assert stats["count"] == {"train": {"x": 8}}
+            assert stats["failure_count"] == {"train": {"x": 0}}
+            assert fobs.loads(dxo.data[StC.STATS_FEATURES])["train"][0].feature_name == "x"
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+    events = [json.loads(line) for line in marker.read_text().splitlines()]
+    assert [entry[0] for entry in events] == ["initialize", "finalize", "initialize", "finalize"]
+    assert [entry[2] for entry in events] == [0, 1, 0, 1]
+    assert events[0][1] == events[1][1]
+    assert events[2][1] == events[3][1]
+    assert events[0][1] != events[2][1]
+    assert all(entry[1] != os.getpid() for entry in events)
