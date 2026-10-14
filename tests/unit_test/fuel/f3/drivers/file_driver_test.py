@@ -144,7 +144,7 @@ def test_passive_reader_finishes_before_shutdown_returns(tmp_path, operation):
         assert completed.is_set()
         assert not reader_thread.is_alive()
         assert conn.reader.file is None
-        assert state.disconnected[NODE_B].is_set()
+        assert state.disconnected[NODE_B].wait(5)
     finally:
         release_reader.set()
         client.stop()
