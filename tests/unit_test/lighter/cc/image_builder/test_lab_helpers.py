@@ -24,9 +24,11 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+from collections import Counter
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from cvm.artifacts.bundle import required_acceptance_checks
 from cvm.build import config
 from cvm.common.errors import BuildError
 from cvm.common.io import read_json, write_json
@@ -205,6 +207,168 @@ class LabProfileTests(unittest.TestCase):
 
 
 class LabStateTests(unittest.TestCase):
+    def test_official_suites_generate_every_required_acceptance_check(self):
+        hardware = load_helper("test_hardware")
+        trustee = load_helper("test_http")
+        suites = (hardware, trustee)
+        for suite in suites:
+            methods = {name for name in dir(suite.HttpTests if suite is trustee else suite.HardwareTests)}
+            self.assertLessEqual(set(suite.ACCEPTANCE_CHECKS), methods)
+        for platform, gpu in (
+            ("intel_tdx", "none"),
+            ("amd_sev_snp", "none"),
+            ("intel_tdx", "nvidia_cc"),
+            ("amd_sev_snp", "nvidia_cc"),
+        ):
+            for vault_prescan in (True, False):
+                manifest = {"platform": platform, "contract": {"gpu": gpu, "vault_prescan": vault_prescan}}
+                required = required_acceptance_checks(manifest)
+                generated = Counter(
+                    check
+                    for checks in (
+                        *hardware.applicable_acceptance_checks(manifest).values(),
+                        *trustee.ACCEPTANCE_CHECKS.values(),
+                    )
+                    for check in checks
+                )
+                with self.subTest(platform=platform, gpu=gpu, vault_prescan=vault_prescan):
+                    self.assertEqual(set(generated) & required, required)
+                    self.assertTrue(all(generated[check] == 1 for check in required))
+
+    def test_acceptance_runner_requires_all_external_inputs(self):
+        runner = load_helper("acceptance_runner")
+        with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(BuildError, "CVM_ACCEPTANCE_VAULT"):
+            runner.required_environment()
+        values = {
+            "CVM_ACCEPTANCE_VAULT": "/vault",
+            "CVM_ACCEPTANCE_RESULT_KEY": "/evidence.key",
+            "CVM_LAB_DIRECTORY": "/lab",
+            "CVM_OTHER_RESOURCE": "keys/other/binding",
+        }
+        with patch.dict(os.environ, values, clear=True):
+            self.assertEqual(runner.required_environment(), values)
+
+    def test_gpu_retrievals_include_composite_claims_unless_cpu_only_is_explicit(self):
+        trustee = load_helper("test_http")
+        case = trustee.HttpTests()
+        case.manifest = {
+            "attestation_policy_id": "gpu-policy",
+            "contract": {"gpu": "nvidia_cc", "gpu_count": 2},
+        }
+        claims = case.retrieval_claims({})
+        self.assertEqual(set(claims["gpu_submods"]), {"gpu0", "gpu1"})
+        self.assertTrue(
+            all(submod["ear.appraisal-policy-id"] == "gpu-policy" for submod in claims["gpu_submods"].values())
+        )
+        self.assertEqual(case.retrieval_claims({"gpu_submods": {}}), {"gpu_submods": {}})
+
+    def test_failed_acceptance_case_cannot_reach_the_evidence_signer(self):
+        trustee = load_helper("test_http")
+        case = trustee.HttpTests("test_negative_wrong_policy_and_expired_ear_denied")
+        case.evidence_enabled = True
+        case.create = Mock(return_value=(b"digest", "keys/build/binding", b"secret"))
+        case.retrieve = Mock(side_effect=(BuildError("denied"), None, BuildError("denied")))
+        case.result = Mock()
+        with self.assertRaises(AssertionError):
+            case.test_negative_wrong_policy_and_expired_ear_denied()
+        case.result.assert_not_called()
+
+    def test_acceptance_runner_executes_both_suites_and_selects_gpu_tests(self):
+        runner = load_helper("acceptance_runner")
+        for gpu in ("none", "nvidia_cc"):
+            with self.subTest(gpu=gpu), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                bundle = root / "bundle"
+                vault = root / "vault"
+                lab = root / "lab"
+                output = root / "evidence"
+                report = root / "acceptance-report.json"
+                bundle.mkdir()
+                vault.mkdir()
+                (lab / "lab-kbs").mkdir(parents=True)
+                (lab / "lab-kbs/admin.json").touch()
+                environment = {
+                    "CVM_ACCEPTANCE_VAULT": str(vault),
+                    "CVM_ACCEPTANCE_RESULT_KEY": str(root / "evidence.key"),
+                    "CVM_LAB_DIRECTORY": str(lab),
+                    "CVM_OTHER_RESOURCE": "keys/other/binding",
+                    "CVM_ACCEPTANCE_OUTPUT": str(output),
+                }
+                signing_key = Mock()
+                public_key = signing_key.public_key.return_value
+                aggregate = {"schema_version": 1, "checks": {}}
+                manifest = {"production_ready": True, "contract": {"gpu": gpu}}
+                with (
+                    patch.dict(os.environ, environment, clear=True),
+                    patch.object(runner, "verify_bundle", return_value=manifest),
+                    patch.object(runner, "load_signing_key", return_value=signing_key),
+                    patch.object(runner, "run_suite") as run_suite,
+                    patch.object(runner, "aggregate", return_value=aggregate) as aggregate_results,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    runner.main([bundle, report])
+                self.assertEqual(
+                    [call.args[0] for call in run_suite.call_args_list], ["test_http.py", "test_hardware.py"]
+                )
+                suite_environment = run_suite.call_args_list[0].args[1]
+                self.assertEqual(suite_environment["CVM_BUNDLE"], str(bundle.resolve()))
+                self.assertEqual(suite_environment["CVM_VAULT"], str(vault.resolve()))
+                self.assertEqual(suite_environment.get("CVM_GPU_HARDWARE_TESTS"), "1" if gpu == "nvidia_cc" else None)
+                aggregate_results.assert_called_once_with(bundle.resolve(), [output.resolve()], [public_key])
+                self.assertEqual(read_json(report), aggregate)
+
+    def test_acceptance_runner_interrupts_suite_group_and_keeps_streamed_log(self):
+        runner = load_helper("acceptance_runner")
+        process = Mock(pid=1234)
+        process.poll.side_effect = [None, None, 0]
+        process.wait.side_effect = [runner._SuiteSignal(runner.signal.SIGTERM), 0]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with (
+                patch.object(runner.subprocess, "Popen", return_value=process) as popen,
+                patch.object(runner.signal, "signal", return_value=runner.signal.SIG_DFL),
+                patch.object(runner.os, "killpg") as killpg,
+                self.assertRaisesRegex(BuildError, "interrupted by SIGTERM.*bounded grace period"),
+            ):
+                runner.run_suite("test_http.py", {}, output)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertIn("--catch", popen.call_args.args[0])
+        self.assertIs(popen.call_args.kwargs["stderr"], runner.subprocess.STDOUT)
+        self.assertNotEqual(popen.call_args.kwargs["stdout"], runner.subprocess.PIPE)
+        killpg.assert_called_once_with(1234, runner.signal.SIGINT)
+        process.wait.assert_called_with(timeout=runner.SUITE_SHUTDOWN_SECONDS)
+
+    def test_acceptance_runner_stops_qemu_left_without_its_launcher(self):
+        runner = load_helper("acceptance_runner")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            delivery = output / "case/delivery"
+            delivery.mkdir(parents=True)
+            (delivery / "vault.qcow2").touch()
+            state_path = output / "runtime.json"
+            write_json(
+                state_path,
+                {
+                    "vault_directory": str(delivery.resolve()),
+                    "launcher_pid": 100,
+                    "launcher_start": 1,
+                    "qemu_pid": 200,
+                    "qemu_start": 2,
+                },
+            )
+            with (
+                patch.object(runner, "runtime_state_path", return_value=state_path),
+                patch.object(runner, "shutdown", side_effect=BuildError("launcher exited")),
+                patch.object(runner, "_process_start", side_effect=[2, 2, FileNotFoundError]),
+                patch.object(runner, "qmp_powerdown") as powerdown,
+                patch.object(runner.time, "sleep"),
+                patch.object(runner, "require_detached") as detached,
+            ):
+                runner._shutdown_vaults(output)
+            powerdown.assert_called_once_with(runner.qmp_socket_path(delivery))
+            detached.assert_called_once_with(delivery)
+            self.assertFalse(state_path.exists())
+
     def test_cross_vault_attestation_uses_profile_policy_selector(self):
         agent = load_helper("lab_guest_agent")
         agent.CONFIG = {
@@ -365,3 +529,30 @@ class LabStateTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "HTTP 500.*No verified firewall"):
             case.ready()
         case.request.assert_called_once()
+
+    def test_gpu_denial_accepts_stable_poweroff_without_a_final_bootstrap_message(self):
+        hardware = load_helper("test_hardware")
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "boot.log"
+            log.write_text("systemd: Forcibly powering off\nPower down\n")
+            case = hardware.HardwareTests()
+            case.logs = [log]
+            case.assert_powered_off()
+
+    def test_hardware_acceptance_allows_an_exact_production_named_profile(self):
+        hardware = load_helper("test_hardware")
+        manifest = {"profile_version": "cpu-production-r1", "dev_mode": False}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = {
+                "CVM_BUNDLE": str(root / "bundle"),
+                "CVM_VAULT": str(root / "vault"),
+                "CVM_HARDWARE_OUTPUT": str(root / "evidence"),
+            }
+            with (
+                patch.dict(os.environ, environment, clear=True),
+                patch.object(hardware, "verify_bundle", return_value=manifest),
+                patch.object(hardware.os, "geteuid", return_value=0),
+            ):
+                hardware.HardwareTests.setUpClass()
+        self.assertEqual(hardware.HardwareTests.manifest, manifest)
