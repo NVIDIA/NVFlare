@@ -201,7 +201,7 @@ class Server:
         self.grpc_server.wait_for_termination()
 
     def shutdown(self):
-        self.grpc_server.stop(grace=0.5).wait()
+        return self.grpc_server.stop(grace=0.5)
 
 
 class GrpcDriver(BaseDriver):
@@ -300,7 +300,7 @@ class GrpcDriver(BaseDriver):
         self.closing = True
         self.close_all()
         if self.server:
-            self.server.shutdown()
+            return self.server.shutdown()
 
     @staticmethod
     def setup_grpc_env_var():

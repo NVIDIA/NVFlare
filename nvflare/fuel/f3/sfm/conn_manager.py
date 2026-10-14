@@ -141,6 +141,8 @@ class ConnManager(ConnMonitor):
             completion = connector.driver.shutdown()
             if isinstance(completion, Future):
                 completion.result()
+            elif isinstance(completion, threading.Event):
+                completion.wait()
             log.debug(f"Connector {connector} is removed")
         else:
             log.error(f"Unknown connector handle: {handle}")
@@ -173,13 +175,16 @@ class ConnManager(ConnMonitor):
                 if first_error is None:
                     first_error = ex
                 continue
-            if isinstance(completion, Future):
+            if isinstance(completion, (Future, threading.Event)):
                 completions.append(completion)
 
         # Request cancellation from every driver before waiting for any one.
         for completion in completions:
             try:
-                completion.result()
+                if isinstance(completion, Future):
+                    completion.result()
+                else:
+                    completion.wait()
             except Exception as ex:
                 if first_error is None:
                     first_error = ex

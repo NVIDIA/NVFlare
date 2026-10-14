@@ -126,7 +126,10 @@ def test_grpc_server_shutdown_is_repeatable(asynchronous):
         asyncio.run(shutdown())
         assert native_server.stop.await_count == 2
     else:
-        grpc_driver.Server.shutdown(server)
+        stopped = threading.Event()
+        stopped.set()
+        native_server.stop.return_value = stopped
+        assert grpc_driver.Server.shutdown(server) is stopped
         grpc_driver.Server.shutdown(server)
         assert native_server.stop.call_count == 2
 
@@ -545,12 +548,21 @@ def test_manager_requests_all_shutdowns_and_waits_for_completion_before_join():
 
     completion = Completion()
     completion.set_result(None)
+
+    class StopEvent(threading.Event):
+        def wait(self, timeout=None):
+            assert calls[:2] == ["request_first", "request_second"]
+            calls.append("grpc_completed")
+            return super().wait(timeout)
+
+    grpc_completion = StopEvent()
+    grpc_completion.set()
     for name in ("first", "second"):
         driver = MagicMock()
 
         def shutdown(name=name):
             calls.append(f"request_{name}")
-            return completion if name == "first" else None
+            return completion if name == "first" else grpc_completion
 
         driver.shutdown.side_effect = shutdown
         manager.add_connector(driver, {"scheme": "tcp", "url": "tcp://localhost:1"}, Mode.ACTIVE)
@@ -561,7 +573,41 @@ def test_manager_requests_all_shutdowns_and_waits_for_completion_before_join():
         manager.stop()
     manager.conn_mgr_executor.shutdown()
     manager.frame_mgr_executor.shutdown()
-    assert calls == ["request_first", "request_second", "completed", "join_connectors", "join_frames"]
+    assert calls == [
+        "request_first",
+        "request_second",
+        "completed",
+        "grpc_completed",
+        "join_connectors",
+        "join_frames",
+    ]
+
+
+def test_remove_connector_waits_for_grpc_shutdown_completion():
+    manager = ConnManager(Endpoint("grpc_removal"))
+    driver = MagicMock()
+    shutdown_done = threading.Event()
+    entered_wait = threading.Event()
+
+    class StopEvent(threading.Event):
+        def wait(self, timeout=None):
+            entered_wait.set()
+            return super().wait(timeout)
+
+    completion = StopEvent()
+    driver.shutdown.return_value = completion
+    handle = manager.add_connector(driver, {"scheme": "grpc", "url": "grpc://localhost:1"}, Mode.ACTIVE)
+    remover = threading.Thread(target=lambda: (manager.remove_connector(handle), shutdown_done.set()), daemon=True)
+    try:
+        remover.start()
+        assert entered_wait.wait(2)
+        assert not shutdown_done.is_set()
+    finally:
+        completion.set()
+        remover.join(2)
+        manager.conn_mgr_executor.shutdown()
+        manager.frame_mgr_executor.shutdown()
+    assert shutdown_done.is_set()
 
 
 def test_manager_joins_executors_after_shutdown_completion_fails():
