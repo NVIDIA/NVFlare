@@ -25,7 +25,6 @@ from functools import partial
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
-from nvflare.app_common.executors.client_api.script_utils import prepare_task_metadata
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
@@ -101,7 +100,7 @@ class _ClientAPITaskRunner:
         try:
             self._task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
             register_framework_decomposers(context.params_exchange_format, context.server_expected_format)
-            metadata = prepare_task_metadata(context, fl_ctx.get_identity_name(), fl_ctx.get_job_id(), self._task_name)
+            metadata = context.build_task_metadata(fl_ctx.get_identity_name(), fl_ctx.get_job_id(), self._task_name)
 
             def log_handler(message):
                 message["tag"] = message.pop("key")

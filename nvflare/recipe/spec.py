@@ -27,7 +27,7 @@ from nvflare.fuel.utils.secret_utils import (
     warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.defs import FilterType
+from nvflare.job_config.defs import ExecutionLifetime, FilterType
 from nvflare.recipe import _args, _run_summary
 
 # Preserve the existing public default while keeping argument handling private.
@@ -443,8 +443,6 @@ class Recipe(ABC):
 
     def set_execution_lifetime(self, lifetime: str, clients: Optional[List[str]] = None):
         """Select resident job compute or a fresh CPU Process worker per assignment."""
-        from nvflare.apis.task_execution import ExecutionLifetime
-
         self._add_to_client_apps({"execution_lifetime": ExecutionLifetime.validate(lifetime)}, clients=clients)
 
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):

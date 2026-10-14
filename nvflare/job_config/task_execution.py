@@ -19,10 +19,10 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from nvflare.apis.task_execution import ExecutionLifetime
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config
 from nvflare.fuel.utils.component_builder import ConfigType
+from nvflare.job_config.defs import ExecutionLifetime
 
 CLIENT_API_EXECUTOR_PATH = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"

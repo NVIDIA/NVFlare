@@ -42,7 +42,6 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
-from nvflare.app_common.executors.client_api.script_utils import prepare_task_metadata
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.decomposers import register_framework_decomposers
@@ -311,7 +310,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._client_api = None
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:
-        return prepare_task_metadata(self._context, fl_ctx.get_identity_name(), fl_ctx.get_job_id(), task_name)
+        return self._context.build_task_metadata(fl_ctx.get_identity_name(), fl_ctx.get_job_id(), task_name)
 
     def _trainer_thread_is_alive(self) -> bool:
         thread = self._task_fn_thread

@@ -22,13 +22,12 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-from nvflare.apis.task_execution import ExecutionLifetime
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
-from .defs import FilterType, JobTargetType
+from .defs import ExecutionLifetime, FilterType, JobTargetType
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
