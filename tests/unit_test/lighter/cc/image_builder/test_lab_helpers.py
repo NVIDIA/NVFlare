@@ -44,6 +44,78 @@ def load_helper(name):
 
 
 class LabProfileTests(unittest.TestCase):
+    def test_lab_kbs_adds_profile_nvidia_remote_verifier(self):
+        lab_kbs = load_helper("lab_kbs")
+        base = {"dcap_verifier": {"tcb_update_type": "standard"}}
+        profiles = [
+            {
+                "gpu": "nvidia_cc",
+                "gpu_attestation_url": "https://nras.example.org/v4/attest/gpu/",
+            }
+        ]
+        with patch.object(
+            lab_kbs,
+            "read_json",
+            return_value={"attestation_service": {"verifier_config": base}},
+        ):
+            result = lab_kbs.verifier_config(profiles)
+
+        self.assertEqual(result["dcap_verifier"], {"tcb_update_type": "standard"})
+        self.assertEqual(
+            result["nvidia_verifier"],
+            {"type": "Remote", "verifier_url": "https://nras.example.org/v4/attest"},
+        )
+
+    def test_cpu_lab_kbs_does_not_add_nvidia_verifier(self):
+        lab_kbs = load_helper("lab_kbs")
+        base = {"dcap_verifier": {"tcb_update_type": "standard"}}
+        with patch.object(
+            lab_kbs,
+            "read_json",
+            return_value={"attestation_service": {"verifier_config": base}},
+        ):
+            result = lab_kbs.verifier_config([{"gpu": "none"}])
+
+        self.assertEqual(result, {"dcap_verifier": {"tcb_update_type": "standard"}})
+        self.assertNotIn("nvidia_verifier", result)
+
+    def test_lab_kbs_rejects_conflicting_nvidia_verifier_urls(self):
+        lab_kbs = load_helper("lab_kbs")
+        profiles = [
+            {"gpu": "nvidia_cc", "gpu_attestation_url": "https://first.example.org/v4/attest/gpu"},
+            {"gpu": "nvidia_cc", "gpu_attestation_url": "https://second.example.org/v4/attest/gpu"},
+        ]
+        with (
+            patch.object(
+                lab_kbs,
+                "read_json",
+                return_value={"attestation_service": {"verifier_config": {}}},
+            ),
+            self.assertRaisesRegex(BuildError, "must use the same NVIDIA verifier URL"),
+        ):
+            lab_kbs.verifier_config(profiles)
+
+    def test_lab_kbs_rejects_invalid_nvidia_verifier_endpoints(self):
+        lab_kbs = load_helper("lab_kbs")
+        invalid = (
+            "https://nras.example.org",
+            "https://nras.example.org/v4/attest",
+            "https://nras.example.org/v4/attest/gpu?tenant=lab",
+            "https://nras.example.org/v4/attest/gpu#fragment",
+        )
+        for endpoint in invalid:
+            profiles = [{"gpu": "nvidia_cc", "gpu_attestation_url": endpoint}]
+            with (
+                self.subTest(endpoint=endpoint),
+                patch.object(
+                    lab_kbs,
+                    "read_json",
+                    return_value={"attestation_service": {"verifier_config": {}}},
+                ),
+                self.assertRaisesRegex(BuildError, "must end in /gpu"),
+            ):
+                lab_kbs.verifier_config(profiles)
+
     def test_selected_profiles_require_only_their_own_references(self):
         prepare = load_helper("prepare_lab")
         for selected in (None, ["intel_tdx"], ["amd_sev_snp"]):
