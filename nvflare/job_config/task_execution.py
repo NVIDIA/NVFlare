@@ -65,7 +65,6 @@ class TaskExecutorConfig:
 @dataclass(frozen=True)
 class TaskExecutionConfig:
     executors: tuple[TaskExecutorConfig, ...]
-    job_components: tuple[dict, ...]
 
 
 def _timeout(name, value):
@@ -174,7 +173,4 @@ def prepare_task_execution(client_config):
                 result_timeout,
             )
         )
-    # All application components and filters remain resident. Only payload
-    # decomposer registration is repeated in the worker before input decoding.
-    job_components = tuple(copy.deepcopy(c) for c in components)
-    return TaskExecutionConfig(tuple(plans), job_components)
+    return TaskExecutionConfig(tuple(plans))

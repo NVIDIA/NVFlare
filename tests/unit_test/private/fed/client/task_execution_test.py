@@ -101,7 +101,7 @@ def test_application_components_and_filter_dependencies_stay_resident():
     ]
     plan = prepare_task_execution(config)
     assert plan.executors[0].components == ()
-    assert [c["id"] for c in plan.job_components] == ["train", "loader", "filter_helper"]
+    assert [c["id"] for c in config["components"]] == ["train", "loader", "filter_helper"]
     assert plan.executors[0].executor["args"]["task_script_args"] == ["--model", "train"]
 
 
@@ -676,15 +676,20 @@ def test_task_runner_finalizes_api_even_if_script_cleanup_fails():
     api.close.assert_called_once()
 
 
-def test_script_arguments_do_not_relocate_resident_services():
+def test_script_arguments_do_not_relocate_resident_services(tmp_path):
     config = _config(task_script_args=["--metric_writer", "client_receiver"])
     config["components"] = [
-        {"id": "client_receiver", "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"}
+        {
+            "id": "client_receiver",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {"events_to_convert": ["analytix_log_stats"]},
+        }
     ]
-    plan = prepare_task_execution(config)
-    assert plan.executors[0].components == ()
-    assert plan.job_components[0]["id"] == "client_receiver"
-    assert plan.executors[0].executor["args"]["task_script_args"] == ["--metric_writer", "client_receiver"]
+    configurator = _configure(tmp_path, config)
+    assert set(configurator.components) == {"client_receiver"}
+    adapter = configurator.executors[0].executor
+    assert adapter.component_specs == ()
+    assert adapter.executor_spec["args"]["task_script_args"] == ["--metric_writer", "client_receiver"]
 
 
 @pytest.mark.parametrize("kind", ["fifo", "symlink"])

@@ -52,7 +52,7 @@ def test_export_preserves_job_default_and_supports_task_lifetime(tmp_path):
     config = json.loads(path.read_text())
     assert config["execution_lifetime"] == "task"
     assert config["format_version"] == 3
-    assert prepare_task_execution(config).job_components[0]["id"] == "converter"
+    assert config["components"][0]["id"] == "converter"
     assert "execution_scope" not in config["components"][0]
     assert config["executors"][0]["executor"]["path"].endswith(".ClientAPIExecutor")
 
@@ -116,7 +116,7 @@ def test_recipe_exports_native_task_profile_with_resident_federation_widget(tmp_
     recipe.export(str(tmp_path / "export"))
     config = json.loads((tmp_path / "export" / recipe.name / "app" / "config" / "config_fed_client.json").read_text())
     assert config["execution_lifetime"] == "task"
-    assert "event_to_fed" in {c["id"] for c in prepare_task_execution(config).job_components}
+    assert "event_to_fed" in {c["id"] for c in config["components"]}
     assert all("execution_scope" not in c for c in config["components"])
     assert config["executors"][0]["executor"]["args"]["execution_mode"] == "in_process"
 
@@ -137,7 +137,7 @@ def test_clearing_recipe_exec_params_preserves_task_lifetime_and_decomposer_regi
     assert config["execution_lifetime"] == "task"
     assert config["format_version"] == 3
     plan = prepare_task_execution(config)
-    assert "decomposer_reg" in {c["id"] for c in plan.job_components}
+    assert "decomposer_reg" in {c["id"] for c in config["components"]}
     assert "decomposer_reg" in {c["id"] for c in plan.executors[0].components}
 
 
