@@ -250,6 +250,29 @@ def test_invalid_root_extensions_have_actionable_errors(tmp_path, project, inval
     assert not list((tmp_path / "workspace/demo").glob("prod_*"))
 
 
+@pytest.mark.parametrize("path_length", [0, 1, None])
+def test_public_root_requires_room_for_job_ca(tmp_path, project, path_length):
+    p, key, _ = project
+    root = generate_cert(
+        Identity("enterprise", "org"),
+        Identity("enterprise", "org"),
+        key,
+        key.public_key(),
+        ca=True,
+        ca_path_length=path_length,
+    )
+    (tmp_path / "rootCA.pem").write_bytes(serialize_cert(root))
+    ctx = provision(tmp_path, p)
+    if path_length == 0:
+        assert ctx[CtxKey.BUILD_ERROR]
+        assert "path_length=0 cannot support the required subordinate job CA" in str(ctx[CtxKey.ERRORS])
+        assert not list((tmp_path / "workspace/demo").glob("prod_*"))
+    else:
+        assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get(CtxKey.ERRORS)
+        kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "server/startup"
+        assert (kit / "rootCA.pem").read_bytes() == serialize_cert(root)
+
+
 @pytest.mark.parametrize("public_first", [True, False])
 def test_public_root_rejects_duplicate_cert_builders(tmp_path, project, public_first):
     public = CertBuilder(public_root_cert=str(tmp_path / "rootCA.pem"))

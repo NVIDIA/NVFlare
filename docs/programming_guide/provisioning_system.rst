@@ -710,9 +710,13 @@ Content-integrity checks remain required; the job CA is not a CC/HE content-sign
 Public-root-only provisioning
 ========================================
 
-Use this mode to distribute your enterprise public trust root and startup
-configuration while deployment tooling supplies the credentials. Add the
-following argument to ``CertBuilder`` in ``project.yml``:
+Public-root-only provisioning receives the root CA certificate, which contains
+its public key. The root CA private key stays with your enterprise PKI. Internal
+enterprise CAs are supported, regardless of browser or public-internet trust.
+
+Provisioning distributes this certificate and startup configuration while
+deployment tooling supplies the credentials. Add the following argument to
+``CertBuilder`` in ``project.yml``:
 
 .. code-block:: yaml
 
@@ -746,9 +750,10 @@ when they satisfy FLARE's identity, key, and chain requirements.
 
 The root path is relative to ``project.yml`` (the current directory for Python
 API callers). It must contain exactly one currently valid, self-signed PEM CA
-certificate with critical CA BasicConstraints and ``keyCertSign`` usage. Supply
-a certificate-only PEM file. Provisioning writes it as ``startup/rootCA.pem`` in
-every kit. Reprovisioning creates new kits; deployment tooling must install the
+certificate with critical CA BasicConstraints and ``keyCertSign`` usage. Its
+``path_length`` must permit at least the subordinate job CA: use a value of one
+or greater, or leave the constraint unrestricted. Supply a certificate-only PEM
+file. Provisioning writes it as ``startup/rootCA.pem`` in every kit. Reprovisioning creates new kits; deployment tooling must install the
 external credentials in each deployed kit.
 
 Use the complete example below with your own root and admin provider settings:

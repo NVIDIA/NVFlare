@@ -262,6 +262,8 @@ class CertBuilder(Builder):
             raise ValueError("public trust root requires CA BasicConstraints and KeyUsage with keyCertSign") from ex
         if not bc.critical or not bc.value.ca or not ku.value.key_cert_sign:
             raise ValueError("public trust root must be a CA with keyCertSign")
+        if bc.value.path_length == 0:
+            raise ValueError("public root path_length=0 cannot support the required subordinate job CA")
         try:
             root.verify_directly_issued_by(root)
         except (InvalidSignature, ValueError) as ex:
