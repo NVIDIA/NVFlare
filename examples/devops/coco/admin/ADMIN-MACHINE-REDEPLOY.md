@@ -271,7 +271,7 @@ unique prefix derived from `RELEASE_NAME` and checks all of the following:
 | Request kind and path | Resource plugin and only `default/image-key/RELEASE`, `default/sig-public-key/RELEASE`, `default/security-policy/RELEASE` |
 | Submodules | Exactly `cpu0` for CPU-only; exactly `cpu0` and `gpu0` for GPU |
 | CPU evidence type | Exactly the approved signed `snp` or `tdx` evidence, never an unsigned runtime hint |
-| Trust vectors | SNP CPU, TDX CPU, and NVIDIA GPU use `(3,2,2)` for executables/hardware/configuration; all other fields zero |
+| Trust vectors | SNP CPU, TDX CPU, and NVIDIA GPU contain exactly executables/hardware/configuration with values `(3,2,2)` |
 | GPU type | GPU releases require nonempty NVIDIA evidence in `gpu0`; CPU-only releases require `gpu0` to be absent |
 | InitData | Exact SHA-256 claim for SNP; exact 48-byte zero-padded claim and matching quoted MRCONFIGID for TDX |
 | Image | Immutable encrypted digest appears in the validated image identifiers and the approved container OCI annotations |

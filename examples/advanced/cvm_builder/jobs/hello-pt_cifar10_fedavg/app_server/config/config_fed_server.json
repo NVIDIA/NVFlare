@@ -6,7 +6,9 @@
             "path": "nvflare.app_common.workflows.fedavg.FedAvg",
             "args": {
                 "num_clients": 1,
-                "num_rounds": 2
+                "num_rounds": 2,
+                "persistor_id": "",
+                "save_filename": null
             }
         }
     ],
@@ -32,23 +34,6 @@
                     "analytix_log_stats",
                     "fed.analytix_log_stats"
                 ]
-            }
-        },
-        {
-            "id": "persistor",
-            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
-            "args": {
-                "model": {
-                    "path": "simple_network.SimpleNetwork",
-                    "args": {}
-                }
-            }
-        },
-        {
-            "id": "locator",
-            "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
-            "args": {
-                "pt_persistor_id": "persistor"
             }
         }
     ],
