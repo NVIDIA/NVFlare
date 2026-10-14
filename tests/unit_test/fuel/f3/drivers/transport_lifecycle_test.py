@@ -39,6 +39,7 @@ from nvflare.fuel.f3.drivers.aio_http_driver import AioHttpDriver
 from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.file_driver import FileDriver
+from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
@@ -990,6 +991,56 @@ def test_async_tcp_tls_listener_accepts_connection(high_fd, listener_context, mo
         manager.stop()
         for fd in reserved_fds:
             os.close(fd)
+
+
+def test_async_tcp_tls_default_wildcard_url_accepts_client(listener_context, monkeypatch, tmp_path):
+    driver = AioTcpDriver()
+    manager = ConnManager(Endpoint("default_tls_listener"))
+    tls = _server_tls_context(tmp_path)
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", lambda *args, **kwargs: tls)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    _, listen_url = driver.get_urls("satcp", {"host": "server.example", "port": port})
+    assert listen_url == f"satcp://0:{port}"
+    params = parse_url(listen_url)
+    assert params["host"] == ""
+    manager.add_connector(driver, params, Mode.PASSIVE)
+
+    loop = listener_context.get_event_loop()
+    original_getaddrinfo = loop.getaddrinfo
+    resolved = threading.Event()
+    resolved_hosts = []
+
+    async def linux_getaddrinfo(host, *args, **kwargs):
+        resolved_hosts.append(host)
+        resolved.set()
+        if host == "":
+            raise socket.gaierror(socket.EAI_NONAME, "empty bind host")
+        return await original_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(loop, "getaddrinfo", linux_getaddrinfo)
+    try:
+        manager.start()
+        assert resolved.wait(5)
+        assert resolved_hosts[0] is None
+        deadline = time.monotonic() + 5
+        while driver.server is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert driver.server is not None
+
+        client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        client_tls.check_hostname = False
+        client_tls.verify_mode = ssl.CERT_NONE
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_peer:
+            with client_tls.wrap_socket(raw_peer, server_hostname="localhost"):
+                deadline = time.monotonic() + 5
+                while not driver.connections and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                assert len(driver.connections) == 1
+                assert next(iter(driver.connections.values())).secure
+    finally:
+        manager.stop()
 
 
 @pytest.mark.parametrize("error_name", ["ECONNABORTED", "EMFILE"])

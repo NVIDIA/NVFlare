@@ -251,7 +251,7 @@ class AioTcpDriver(AioBaseDriver):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
         if self.ssl_context:
             loop = asyncio.get_running_loop()
-            addresses = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
+            addresses = await loop.getaddrinfo(host or None, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
             sockets = []
             try:
                 for family, sock_type, proto, _, address in addresses:
