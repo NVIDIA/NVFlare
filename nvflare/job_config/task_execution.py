@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Derive a task compute graph without importing or constructing application code."""
+"""Validate the CPU task profile without importing or constructing application code."""
 
 import copy
 import math
@@ -76,49 +76,35 @@ def _timeout(name, value):
     return value
 
 
-def _declared_dependencies(config, ids):
-    if "execution_scope" in config:
-        raise ValueError("component execution_scope is not supported; compute dependencies define placement")
-    declared = config.get("component_dependencies", [])
-    if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
-        raise ValueError("component_dependencies must be a list of component IDs")
-    if set(declared) - ids:
-        raise ValueError(f"unknown component_dependencies: {sorted(set(declared) - ids)}")
-    return set(declared)
+def task_constructor_args(config):
+    """Task workers construct an executor directly, without component graphs."""
+    for key in ("execution_scope", "component_dependencies"):
+        if key in config:
+            raise ValueError(f"{key} is not supported by this task profile; use job lifetime")
+    args = config.get("args", {})
+    if not isinstance(args, dict):
+        raise ValueError("component args must be a dict")
+    scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
 
-
-def _dependencies(config, ids, component=False):
-    """Track declared IDs and reference arguments without changing their values.
-
-    Argument names do not determine references. In particular, the whole args
-    mapping is a container, even when a constructor argument is named 'path'.
-    Ordinary dictionaries are preserved; this function never instantiates them.
-    """
-    found = set()
-    if isinstance(config, dict):
-        if not component and config.get("config_type", ConfigType.COMPONENT) == ConfigType.COMPONENT:
+    def check(value):
+        if isinstance(value, dict):
+            if value.get("config_type") == ConfigType.DICT:
+                return
             try:
-                scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
-                get_class_path_from_config(config, resolve_name=scanner.get_module_name)
-                component = True
+                get_class_path_from_config(value, resolve_name=scanner.get_module_name)
             except ConfigError:
                 pass
-        if component:
-            found.update(_declared_dependencies(config, ids))
-            args = config.get("args", {})
-            if not isinstance(args, dict):
-                raise ValueError("component args must be a dict")
-            children = args.values()
-        else:
-            children = config.values()
-        for value in children:
-            found.update(_dependencies(value, ids))
-    elif isinstance(config, (list, tuple)):
-        for value in config:
-            found.update(_dependencies(value, ids))
-    elif isinstance(config, str) and config in ids:
-        found.add(config)
-    return found
+            else:
+                raise ValueError("nested components are not supported by task workers; use job lifetime")
+            for child in value.values():
+                check(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                check(child)
+
+    for value in args.values():
+        check(value)
+    return args
 
 
 def prepare_task_execution(client_config):
@@ -153,27 +139,16 @@ def prepare_task_execution(client_config):
         if component["id"] in by_id:
             raise ValueError(f"duplicate component ID {component['id']!r}")
         by_id[component["id"]] = component
-    ids = set(by_id)
-    references = {cid: _dependencies(spec, ids, component=True) for cid, spec in by_id.items()}
-
-    def closure(roots):
-        selected = set()
-        pending = set(roots)
-        while pending:
-            cid = pending.pop()
-            if cid not in selected:
-                selected.add(cid)
-                pending.update(references[cid] - selected)
-        return selected
-
     scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
     serialization_ids = {
         cid
         for cid, spec in by_id.items()
         if get_class_path_from_config(spec, resolve_name=scanner.get_module_name) == DECOMPOSER_REGISTER_PATH
     }
+    serialization_components = tuple(copy.deepcopy(c) for c in components if c["id"] in serialization_ids)
+    for component in serialization_components:
+        task_constructor_args(component)
     plans = []
-    compute_ids = set()
     for definition in executors:
         if not isinstance(definition, dict) or not isinstance(definition.get("executor"), dict):
             raise ValueError("each executor must have a component specification")
@@ -183,9 +158,7 @@ def prepare_task_execution(client_config):
             raise ValueError("TaskWorkerExecutor is framework-managed; select execution_lifetime='task'")
         if path not in SUPPORTED_TASK_EXECUTORS:
             raise ValueError(f"executor {path!r} is not supported by this task profile; use job lifetime")
-        args = config.get("args", {})
-        if not isinstance(args, dict):
-            raise ValueError("executor args must be a dict")
+        args = task_constructor_args(config)
         result_timeout = None
         if path == CLIENT_API_EXECUTOR_PATH:
             if args.get("execution_mode") != "in_process":
@@ -193,29 +166,15 @@ def prepare_task_execution(client_config):
                     "task lifetime requires in_process Client API; external_process/attach use job lifetime"
                 )
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
-        # Qualified executors do not accept component references as arguments.
-        # In particular, script argv strings must never relocate CJ services.
-        worker_ids = closure(_declared_dependencies(config, ids))
-        compute_ids.update(worker_ids)
-        worker_components = tuple(copy.deepcopy(c) for c in components if c["id"] in worker_ids | serialization_ids)
         plans.append(
             TaskExecutorConfig(
                 copy.deepcopy(config),
-                worker_components,
+                serialization_components,
                 _timeout("worker_timeout", definition.get("worker_timeout")),
                 result_timeout,
             )
         )
-    # Existing filters and components outside the selected compute graph stay
-    # with the CJ. Site filters are added by the normal privacy pipeline there.
-    resident_roots = (ids - compute_ids) | serialization_ids
-    for name in ("task_data_filters", "task_result_filters"):
-        for definition in client_config.get(name, []):
-            resident_roots.update(_dependencies(definition.get("filters", []), ids))
-    shared = (closure(resident_roots) & compute_ids) - serialization_ids
-    if shared:
-        raise ValueError(f"components shared by compute and resident CJ services are not supported: {sorted(shared)}")
-    job_components = tuple(
-        copy.deepcopy(c) for c in components if c["id"] not in compute_ids or c["id"] in serialization_ids
-    )
+    # All application components and filters remain resident. Only payload
+    # decomposer registration is repeated in the worker before input decoding.
+    job_components = tuple(copy.deepcopy(c) for c in components)
     return TaskExecutionConfig(tuple(plans), job_components)

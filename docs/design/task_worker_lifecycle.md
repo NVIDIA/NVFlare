@@ -17,16 +17,17 @@ authorizes inert executor and component specifications in the Client Job and aga
 in the worker before importing application code. Compute instances are constructed
 only in the worker. Task data and result filters always stay in the Client Job.
 
-In task mode, each worker receives the executor and its explicit
-`component_dependencies`. Executor arguments, including script argv, never select
-components. Within the selected component graph, constructor references and
-`component_dependencies` include transitive dependencies. Other components, including
-tracking receivers and federation widgets, remain resident in the Client Job
-automatically. Ordinary dictionaries are preserved and nested compute helpers are
-created with their owning executor. A component cannot be shared between the compute
-graph and a resident service or task filter. There are no per-component lifetime
-flags. Jobs cannot configure the framework's internal adapter, launcher,
-environment policy or declared task state.
+In task mode, each worker constructs only its executor. Models and dataloaders
+are created by the Client API script; NPTrainer requires no helper components.
+All configured application components, including receivers, widgets and filter
+dependencies, remain resident in the Client Job. Only DecomposerRegister is also
+constructed in the worker to register payload codecs before input decoding.
+Task workers do not build nested components, place dependency graphs or invoke
+helper lifecycles. `component_dependencies` and `execution_scope` are rejected
+on worker specifications. Applications requiring component graphs use job lifetime.
+Ordinary constructor dictionaries marked `config_type: "dict"` remain data.
+Jobs cannot configure the framework's internal adapter, launcher, environment
+policy or declared task state.
 
 The initial profile permits in-process ClientAPIExecutor and NPTrainer. Executors
 requiring federation messaging or other resident engine services use job lifetime;
@@ -117,22 +118,18 @@ sandbox. The site policy is excluded from client registration metadata.
 
 ## Execution and diagnostics
 
-The worker checks the original compute graph against site component policy before
-application logging, custom imports, decomposers, or input decoding. It initializes
-the job audit sink first, preserving allow-all and warn-mode authorization records.
-The current builder repeats authorization during graph construction; these checks
-are safe but can be consolidated in a later optimization.
+The worker checks executor and decomposer specifications against site component
+policy before application logging, custom imports, decomposers or input decoding.
+It initializes the job audit sink first, preserving allow-all and warn-mode
+authorization records. Both are constructed directly through the existing class
+loader; no separate worker component builder is needed.
 
-The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and
-`finalize(fl_ctx)` calls. Optional initialize/finalize methods apply only to the
-selected compute graph, including nested dependencies. Each instance initializes
-once in construction order (nested dependencies before their parents); cleanup unwinds the attempted initializations in reverse
-order, including an object whose initialization failed. Finalizers must tolerate
-partial initialization and repeated cleanup. Cleanup continues after a failure;
-the first failure is retained in failure.json and later cleanup errors cannot
-replace it. Lifecycle events, registered event handlers and before/after-task
-event hooks are not dispatched in the worker. Components that require them must
-use job lifetime or provide the direct lifecycle methods for this profile.
+The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and `finalize(fl_ctx)`
+calls on its executor or Client API runner. Finalization also runs after partial
+initialization and execution failure. The first failure is retained in failure.json;
+a later cleanup error cannot replace it. Decomposer registration is constructor
+setup, with no lifecycle calls. Lifecycle events, registered event handlers and
+before/after-task event hooks are not dispatched in the worker.
 
 For Client API scripts, one private task runner directly initializes the shared
 InProcessClientAPI, stages input through TaskInProcessAdapter, executes the script

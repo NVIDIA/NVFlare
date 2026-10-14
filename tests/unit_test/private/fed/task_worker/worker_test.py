@@ -61,30 +61,6 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.shareable import Shareable
 
 
-class ValueComponent(FLComponent):
-    def __init__(self, value):
-        super().__init__()
-        self.value = value
-
-
-class NamedFailureHelper(FLComponent):
-    def __init__(self, label, phase, marker_path):
-        super().__init__()
-        self.label, self.phase, self.marker_path = label, phase, marker_path
-
-    def record(self, action):
-        with open(self.marker_path, "a") as stream:
-            stream.write(json.dumps([self.label, action]) + "\\n")
-        if action == self.phase:
-            raise ValueError(self.label)
-
-    def initialize(self, fl_ctx):
-        self.record("initialize")
-
-    def finalize(self, fl_ctx):
-        self.record("finalize")
-
-
 class ProbeExecutor(Executor):
     def __init__(self, marker_path):
         super().__init__()
@@ -106,7 +82,7 @@ class ProbeExecutor(Executor):
         else:
             unsupported = "missing explicit failure"
         return Shareable({
-            "value": shareable["value"] + fl_ctx.get_engine().get_component("value").value,
+            "value": shareable["value"] + 4,
             "pid": os.getpid(),
             "site": fl_ctx.get_identity_name(),
             "job_id": fl_ctx.get_job_id(),
@@ -123,51 +99,13 @@ class RaiseExecutor(ProbeExecutor):
 
 
 class ReferenceExecutor(Executor):
-    def __init__(self, source_model, options):
+    def __init__(self, value, options):
         super().__init__()
-        self.source_model = source_model
+        self.value = value
         self.options = options
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
-        component = fl_ctx.get_engine().get_component(self.source_model)
-        return Shareable({"value": component.value + shareable["value"], "options": self.options})
-
-
-class LifecycleHelper(FLComponent):
-    def __init__(self, marker_path, label, helper=None, fail_at=None):
-        super().__init__()
-        self.marker_path = marker_path
-        self.label = label
-        self.helper = helper
-        self.fail_at = fail_at
-        self.started = False
-
-    def record(self, action):
-        with open(self.marker_path, "a") as stream:
-            stream.write(json.dumps([self.label, action]) + "\\n")
-        if action == self.fail_at:
-            raise ValueError("nested helper lifecycle failure")
-
-    def initialize(self, fl_ctx):
-        if self.helper is not None and not self.helper.started:
-            raise RuntimeError("nested helper must initialize before its parent")
-        self.record("initialize")
-        self.started = True
-
-    def finalize(self, fl_ctx):
-        self.record("finalize")
-
-
-class NestedExecutor(Executor):
-    def __init__(self, helper=None):
-        super().__init__()
-        self.helper = helper
-
-    def execute(self, task_name, shareable, fl_ctx, abort_signal):
-        helper = self.helper or fl_ctx.get_engine().get_component("parent").helper
-        if not helper.started or not helper.helper.started:
-            raise RuntimeError("nested helpers were not initialized")
-        return Shareable({"initialized": True})
+        return Shareable({"value": self.value + shareable["value"], "options": self.options})
 """ % (
     JobProcessEnv.ALL,
 )
@@ -197,6 +135,8 @@ def _identity(attempt_id, task_id="task-1", task_name="train"):
 
 
 def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None):
+    if not executor:
+        executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer"}
     store.create_attempt(identity)
     store.write_input(identity, data)
     bootstrap = WorkerBootstrap(
@@ -270,7 +210,6 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
         identity,
         workspace_root,
         executor={"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(marker)}},
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
         context_properties={"explicit_value": ContextProperty("transported", private=True, sticky=False)},
         data=Shareable({"value": 3}),
     )
@@ -320,59 +259,6 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
     assert failure["error_type"] == "ValueError"
 
 
-@pytest.mark.parametrize("location", ["executor", "component"])
-@pytest.mark.parametrize("fail_at", [None, "initialize", "finalize"])
-def test_nested_compute_graph_uses_direct_lifecycle(tmp_path, location, fail_at):
-    workspace_root = _workspace(tmp_path)
-    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("nested-lifecycle")
-    marker = tmp_path / "nested-events.jsonl"
-
-    def helper_config(label, helper=None, fail_at=None):
-        return {
-            "path": "worker_components.LifecycleHelper",
-            "args": {"marker_path": str(marker), "label": label, "helper": helper, "fail_at": fail_at},
-        }
-
-    helper = helper_config("helper", helper_config("leaf", fail_at=fail_at))
-    executor = {"path": "worker_components.NestedExecutor", "args": {}}
-    components = ()
-    labels = ["leaf", "helper"]
-    if location == "executor":
-        executor["args"]["helper"] = helper
-    else:
-        components = ({"id": "parent", **helper_config("parent", helper)},)
-        labels.append("parent")
-    path = _stage(store, identity, workspace_root, executor, Shareable(), components=components)
-
-    process = _run_process(path)
-
-    if fail_at is None:
-        assert process.returncode == 0, process.stderr
-        result, _completion = store.read_result(identity)
-        assert result["initialized"] is True
-    else:
-        assert process.returncode != 0
-        failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
-        assert "nested helper lifecycle failure" in failure["message"]
-        with pytest.raises(IncompleteTaskArtifactError):
-            store.read_result(identity)
-
-    initialized_labels = labels if fail_at != "initialize" else ["leaf"]
-    observed = [json.loads(line) for line in marker.read_text().splitlines()]
-    assert observed == (
-        [[label, "initialize"] for label in initialized_labels]
-        + [[label, "finalize"] for label in reversed(initialized_labels)]
-    )
-
-
-def test_task_runtime_keeps_each_compute_instance_once():
-    runtime = TaskRuntime(None, "endpoint", "job")
-    component = object()
-    runtime.set_compute_graph({"first": component, "alias": component}, component, instances=[component])
-    assert runtime.compute_components == [component]
-
-
 def test_component_authorization_rejects_custom_executor_before_import(tmp_path):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
@@ -405,7 +291,7 @@ def test_component_authorization_rejects_custom_executor_before_import(tmp_path)
         store.read_result(identity)
 
 
-def test_nested_component_is_authorized_before_any_component_import(tmp_path):
+def test_nested_component_is_rejected_before_any_component_import(tmp_path):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
     (workspace_root / "local" / "resources.json.default").write_text(
@@ -441,8 +327,7 @@ def test_nested_component_is_authorized_before_any_component_import(tmp_path):
     process = _run_process(store.bootstrap_path(identity))
 
     assert process.returncode != 0
-    assert "forbidden_nested.ForbiddenNested" in process.stderr
-    assert "not in allow_list" in process.stderr
+    assert "nested components are not supported" in process.stderr
     assert not import_marker.exists()
 
 
@@ -538,6 +423,8 @@ def test_unmodified_np_validator_runs_in_worker(tmp_path):
 @pytest.mark.parametrize(
     "service",
     [
+        "get_component",
+        "get_all_components",
         "get_cell",
         "register_aux_message_handler",
         "send_aux_request",
@@ -559,15 +446,10 @@ def test_task_runtime_explicitly_rejects_job_based_services(service):
         getattr(runtime, service)()
 
 
-def test_task_runtime_owns_local_context_and_component_views():
-    workspace, component = object(), object()
+def test_task_runtime_owns_local_context():
+    workspace = object()
     runtime = TaskRuntime(workspace, "endpoint", "job")
-    runtime.set_compute_graph({"helper": component}, FLComponent())
     assert runtime.get_workspace() is workspace
-    assert runtime.get_component("helper") is component
-    view = runtime.get_all_components()
-    view.clear()
-    assert runtime.get_component("helper") is component
     fl_ctx = runtime.new_context()
     assert fl_ctx.get_identity_name() == "endpoint"
     assert fl_ctx.get_job_id() == "job"
@@ -579,7 +461,6 @@ def test_task_runtime_owns_local_context_and_component_views():
 def test_task_runtime_panic_latches_first_failure_and_triggers_abort():
     runtime = TaskRuntime(None, "endpoint", "job")
     component = FLComponent()
-    runtime.set_compute_graph({}, component)
     fl_ctx = runtime.new_context()
     component.system_panic("first failure", fl_ctx)
     component.system_panic("later failure", fl_ctx)
@@ -603,7 +484,6 @@ def test_task_runtime_rejects_general_events_and_cannot_ignore_the_failure(feder
     runtime = TaskRuntime(None, "endpoint", "job")
     component = FLComponent()
     component.handle_event = Mock()
-    runtime.set_compute_graph({}, component)
     ctx = runtime.new_context()
     with pytest.raises(UnsupportedTaskRuntimeService, match="event dispatch"):
         if federated:
@@ -644,12 +524,11 @@ def test_direct_failure_does_not_depend_on_shared_context_diagnostics(tmp_path, 
             fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
             fl_ctx.set_prop(FLContextKey.TASK_RESULT, Shareable({"computed": True}), private=True, sticky=False)
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("context-diagnostics")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -660,45 +539,6 @@ def test_direct_failure_does_not_depend_on_shared_context_diagnostics(tmp_path, 
     assert "compute failure" in failure["message"]
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
-
-
-@pytest.mark.parametrize("phase", ["initialize", "finalize"])
-def test_fresh_worker_keeps_first_same_class_lifecycle_failure(tmp_path, phase):
-    workspace = _workspace(tmp_path)
-    marker = tmp_path / "lifecycle.jsonl"
-    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("same-class-failure")
-    helpers = tuple(
-        {
-            "id": label,
-            "path": "worker_components.NamedFailureHelper",
-            "args": {"label": label, "phase": phase, "marker_path": str(marker)},
-        }
-        for label in ("FIRST_FAILURE", "SECOND_FAILURE")
-    )
-    path = _stage(
-        store,
-        identity,
-        workspace,
-        {"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(tmp_path / "executor-lifecycle")}},
-        Shareable({"value": 1}),
-        components=(*helpers, {"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 1}}),
-    )
-    process = _run_process(path)
-    assert process.returncode == 1, process.stderr
-    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
-    # Cleanup unwinds in reverse dependency order.
-    first = "FIRST_FAILURE" if phase == "initialize" else "SECOND_FAILURE"
-    assert first in failure["message"]
-    events = [json.loads(line) for line in marker.read_text().splitlines()]
-    assert [label for label, action in events if action == "initialize"] == (
-        ["FIRST_FAILURE"] if phase == "initialize" else ["FIRST_FAILURE", "SECOND_FAILURE"]
-    )
-    assert [label for label, action in events if action == "finalize"] == (
-        ["FIRST_FAILURE"] if phase == "initialize" else ["SECOND_FAILURE", "FIRST_FAILURE"]
-    )
-    with pytest.raises(IncompleteTaskArtifactError):
-        store.read_completion(identity)
 
 
 def test_completion_rejects_a_direct_operation_still_running(tmp_path):
@@ -831,12 +671,11 @@ def test_worker_panic_never_commits_completion_and_still_finalizes(tmp_path, mon
             if phase == "finalize":
                 self.system_panic("compute panic", fl_ctx)
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = PanicExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("panic")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -864,27 +703,22 @@ def test_peer_context_is_restored_from_staged_shareable():
     assert fl_ctx.get_peer_context().get_prop("origin") == "server"
 
 
-def test_worker_rejects_non_executor_component(tmp_path, monkeypatch):
-    workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
-    bootstrap = WorkerBootstrap(_identity("invalid-executor"), str(tmp_path), workspace.get_root_dir(), {})
-    engine, fl_ctx = worker._new_context(bootstrap, workspace)
-    builder = Mock(build_component=lambda *_args: object())
-    monkeypatch.setattr(worker, "WorkerComponentBuilder", lambda **_kwargs: builder)
+def test_worker_rejects_non_executor_component(monkeypatch):
+    monkeypatch.setattr(worker, "instantiate_class", lambda *_args: object())
     with pytest.raises(TypeError, match="instead of Executor"):
-        worker._build_compute_graph(bootstrap, workspace, fl_ctx, engine)
+        worker._build_executor({"path": "nvflare.app_common.np.np_trainer.NPTrainer"})
 
 
-def test_invalid_executor_result_still_finalizes_compute_graph(tmp_path, monkeypatch):
+def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch):
     workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
     bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
     finalized = Mock()
     executor = SimpleNamespace(execute=lambda *_args: {}, finalize=finalized)
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
-        runtime.set_compute_graph({}, executor)
+    def build_executor(_config):
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
         worker._execute(bootstrap, Shareable(), workspace, None)
     finalized.assert_called_once()
@@ -926,12 +760,11 @@ def test_lifecycle_failure_or_abort_never_publishes_completion(tmp_path, monkeyp
         def finalize(self, fl_ctx):
             self.check("finalize", fl_ctx)
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("lifecycle")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -955,12 +788,11 @@ def test_direct_finalization_precedes_completion_and_attempt_cannot_rerun(tmp_pa
             assert not Path(store.attempt_dir(identity), "completion.json").exists()
             fl_ctx.get_prop(FLContextKey.TASK_RESULT)["finalized"] = True
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = FinalizingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("finalize")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -974,7 +806,7 @@ def test_direct_finalization_precedes_completion_and_attempt_cannot_rerun(tmp_pa
     assert not Path(store.attempt_dir(identity), "failure.json").exists()
 
 
-def test_entire_graph_is_authorized_before_import_logging_or_decoding(tmp_path, monkeypatch):
+def test_executor_is_authorized_before_import_logging_or_decoding(tmp_path, monkeypatch):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text('{"byoc":false}')
     (workspace_root / "local" / "resources.json.default").write_text('{"class_allow_list":["allowed.First"]}')
@@ -986,13 +818,12 @@ def test_entire_graph_is_authorized_before_import_logging_or_decoding(tmp_path, 
         workspace_root,
         {"path": "forbidden.Executor"},
         Shareable(),
-        components=({"id": "first", "path": "allowed.First"},),
     )
     imported = Mock(side_effect=AssertionError("import before authorization"))
     monkeypatch.setattr(worker, "configure_logging", imported)
     monkeypatch.setattr(worker, "fobs_initialize", imported)
     monkeypatch.setattr(FileTaskArtifactStore, "read_input", imported)
-    monkeypatch.setattr(worker, "_build_compute_graph", imported)
+    monkeypatch.setattr(worker, "_build_executor", imported)
     with pytest.raises(Exception, match="not in allow_list"):
         worker.run_worker(path)
     imported.assert_not_called()
@@ -1024,12 +855,11 @@ def test_failure_during_result_serialization_leaves_only_a_staged_result(tmp_pat
             runtime_context.append(ctx)
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     stage = FileTaskArtifactStore.stage_result
 
     def stage_then_panic(store, identity, data):
@@ -1058,9 +888,8 @@ def test_background_failure_before_completion_publication(tmp_path, monkeypatch,
             runtime_context.append(ctx)
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
     def background_callback():
@@ -1096,7 +925,7 @@ def test_background_failure_before_completion_publication(tmp_path, monkeypatch,
 
         return publish(directory, name, staged_writer if name == "completion.json" else writer, **kwargs)
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("background-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1324,12 +1153,11 @@ def test_failure_record_keeps_first_exception_through_cleanup(tmp_path, monkeypa
             if cleanup_fails:
                 raise RuntimeError("secondary cleanup failure")
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("first-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1365,9 +1193,8 @@ def test_fresh_worker_preserves_component_authorization_audit(tmp_path, policy, 
         store,
         identity,
         workspace_root,
-        {"path": "worker_components.ReferenceExecutor", "args": {"source_model": "value", "options": {}}},
+        {"path": "worker_components.ReferenceExecutor", "args": {"value": 4, "options": {}}},
         Shareable({"value": 3}),
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
     )
     process = _run_process(path)
     assert process.returncode == 0, process.stderr
@@ -1378,7 +1205,6 @@ def test_fresh_worker_preserves_component_authorization_audit(tmp_path, policy, 
     assert identity.job_id in text
     if policy.get("class_list_enforcement_mode") == "warn":
         assert "worker_components.ReferenceExecutor" in text
-        assert "worker_components.ValueComponent" in text
 
 
 def test_worker_applies_payload_policy_from_bootstrap(tmp_path):
@@ -1391,10 +1217,9 @@ def test_worker_applies_payload_policy_from_bootstrap(tmp_path):
         workspace_root,
         {
             "path": "worker_components.ReferenceExecutor",
-            "args": {"source_model": "value", "options": {"large": "x" * 1024}},
+            "args": {"value": 4, "options": {"large": "x" * 1024}},
         },
         Shareable({"value": 3}),
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
     )
     assert read_bootstrap(path).max_payload_bytes == 512
     process = _run_process(path)
@@ -1410,12 +1235,11 @@ def test_completion_remains_readable_after_directory_fsync_failure(tmp_path, mon
         def execute(self, *args):
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("post-publication-error")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1446,12 +1270,11 @@ def test_backward_wall_clock_does_not_discard_completed_compute(tmp_path, monkey
         def execute(self, *args):
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("backward-clock")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1503,7 +1326,6 @@ def test_flcomponent_logging_does_not_dispatch_handlers():
     runtime = TaskRuntime(None, "endpoint", "job")
     component = FLComponent()
     component.handle_event = Mock()
-    runtime.set_compute_graph({}, component)
     ctx = runtime.new_context()
     component.log_info(ctx, "message already logged")
     component.log_warning(ctx, "message already logged")
@@ -1537,12 +1359,11 @@ def test_direct_exception_cannot_replace_an_earlier_panic_or_abort(tmp_path, mon
         def finalize(self, fl_ctx):
             self.check("finalize", fl_ctx)
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("first-direct-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())

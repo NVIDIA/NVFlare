@@ -117,15 +117,10 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return
-        compute_ids = {component["id"] for plan in self.task_execution.executors for component in plan.components}
-        compute_ids.difference_update(component["id"] for component in self.task_execution.job_components)
         worker_paths = []
-        for index, component in enumerate(self.config_data.get("components", []), 1):
-            if component["id"] in compute_ids:
-                worker_paths.append((f"components.#{index}", component))
         for index, definition in enumerate(self.config_data["executors"], 1):
             worker_paths.append((f"executors.#{index}.executor", definition["executor"]))
-        # Authorize the original graph before importing any application code.
+        # Authorize executor specifications before importing application code.
         # The trusted adapter is never a component selected by the job.
         for path, component in worker_paths:
             node = Node(component)

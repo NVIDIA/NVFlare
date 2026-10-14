@@ -23,13 +23,18 @@ import time
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
+from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import configure_logging
+from nvflare.job_config.task_execution import DECOMPOSER_REGISTER_PATH, task_constructor_args
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
-from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
@@ -101,29 +106,42 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_con
     return runtime, fl_ctx
 
 
-def _authorize_compute_graph(bootstrap, workspace, fl_ctx):
-    builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=workspace)
+def _class_path(config):
+    scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
+    return get_class_path_from_config(config, resolve_name=scanner.get_module_name)
+
+
+def _authorize_bootstrap(bootstrap, workspace, fl_ctx):
+    """Check site policy before logging factories, codecs or executor imports."""
+    authorizer = ComponentPathAuthorizer()
     config = bootstrap.to_dict()
-    for index, component in enumerate(config["components"]):
-        builder.authorize_tree(component, builder.make_component_node(component, index + 1))
-    builder.authorize_tree(config["executor"])
-    return builder
+    specs = [("executor", config["executor"])]
+    specs.extend((f"components.#{index}", spec) for index, spec in enumerate(config["components"], 1))
+    for path, spec in specs:
+        # Normalize aliases without importing the selected class.
+        class_path = _class_path(spec)
+        node = Node(spec)
+        node.paths = path.split(".")
+        try:
+            authorizer.authorize_component_config(
+                {**spec, "path": class_path}, node, fl_ctx=fl_ctx, workspace=workspace
+            )
+        except UnsafeComponentError as error:
+            raise ComponentNotAuthorized(f"component not authorized: {error}") from error
+        task_constructor_args(spec)
+        if path != "executor" and class_path != DECOMPOSER_REGISTER_PATH:
+            raise ValueError("task workers accept only DecomposerRegister in components; use job lifetime")
 
 
-def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ctx: FLContext, runtime: TaskRuntime):
-    builder = _authorize_compute_graph(bootstrap, workspace, fl_ctx)
-    components = {}
-    for index, original in enumerate(bootstrap.components):
-        config = _thaw_json(original)
-        component_id = config.get("id")
-        node = builder.make_component_node(config, index + 1)
-        components[component_id] = builder.build_component(config, node)
-
-    executor_config = _thaw_json(bootstrap.executor)
-    executor = builder.build_component(executor_config, builder.make_component_node(executor_config))
+def _build_executor(config):
+    config = _thaw_json(config)
+    executor = (
+        None
+        if config.get("disabled") is True
+        else instantiate_class(_class_path(config), task_constructor_args(config))
+    )
     if not isinstance(executor, Executor):
         raise TypeError(f"worker executor config built {type(executor)} instead of Executor")
-    runtime.set_compute_graph(components, executor, instances=builder.components)
     return executor
 
 
@@ -149,28 +167,17 @@ def _execute(
     adapt_executor = None
     if context_binding is not None:
         adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
-    executor = _build_compute_graph(bootstrap, workspace, fl_ctx, runtime)
+    executor = _build_executor(bootstrap.executor)
     if adapt_executor is not None:
-        runner = adapt_executor(executor)
-        runtime.set_compute_graph(
-            runtime.get_all_components(),
-            runner,
-            instances=[runner if c is executor else c for c in runtime.compute_components],
-        )
-        executor = runner
+        executor = adapt_executor(executor)
     _restore_peer_context(data, fl_ctx)
 
-    initialized = []
     try:
-        for component in runtime.compute_components:
-            # Include partially initialized objects in cleanup. Hooks must be
-            # idempotent and tolerate partial setup.
-            initialized.append(component)
-            initialize = getattr(component, "initialize", None)
-            if initialize is not None:
-                with runtime.operation():
-                    initialize(fl_ctx)
-            runtime.raise_if_failed()
+        initialize = getattr(executor, "initialize", None)
+        if initialize is not None:
+            with runtime.operation():
+                initialize(fl_ctx)
+        runtime.raise_if_failed()
         fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
         with runtime.operation():
             result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
@@ -181,14 +188,13 @@ def _execute(
     except BaseException as error:
         runtime.fail(error)
     finally:
-        for component in reversed(initialized):
-            try:
-                finalize = getattr(component, "finalize", None)
-                if finalize is not None:
-                    with runtime.operation():
-                        finalize(fl_ctx)
-            except BaseException as error:
-                runtime.fail(error)
+        try:
+            finalize = getattr(executor, "finalize", None)
+            if finalize is not None:
+                with runtime.operation():
+                    finalize(fl_ctx)
+        except BaseException as error:
+            runtime.fail(error)
     runtime.raise_if_failed()
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     if not isinstance(result, Shareable):
@@ -222,7 +228,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             owns_auditor = True
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
-        builder = _authorize_compute_graph(bootstrap, workspace, fl_ctx)
+        _authorize_bootstrap(bootstrap, workspace, fl_ctx)
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
@@ -231,10 +237,10 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
         # The same serialization registrations are needed on both sides of
         # the payload handoff, before decoding input or building the trainer.
-        for index, original in enumerate(bootstrap.components):
+        for original in bootstrap.components:
             spec = _thaw_json(original)
-            if builder.get_class_path(spec) == "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister":
-                builder.build_component(spec, builder.make_component_node(spec, index + 1))
+            if spec.get("disabled") is not True:
+                instantiate_class(_class_path(spec), task_constructor_args(spec))
         data = store.read_input(identity)
         analytics = []
         if context_binding is None:

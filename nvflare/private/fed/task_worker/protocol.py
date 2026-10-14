@@ -235,8 +235,9 @@ class WorkerBootstrap:
     """Trusted, inert configuration for one fresh, stateless task worker.
 
     ``executor`` and ``components`` retain normal NVFlare JSON component shapes.
-    The worker builds only this selected compute graph; it does not reconstruct a
-    live job engine or replay the supervising job's handler graph.
+    ``components`` contains only optional DecomposerRegister specifications,
+    registered before payload decoding. The worker constructs one executor,
+    without a job component graph or a live job engine.
     """
 
     identity: TaskAttemptIdentity

@@ -49,17 +49,15 @@ class _TaskAbortSignal(Signal):
 
 
 class TaskRuntime:
-    """Own task-local context and components without a client/server engine contract.
+    """Own task-local context without a client/server engine contract.
 
     ``FLContext.get_engine()`` exposes this compatibility adapter to existing
-    compute components. It provides component lookup, logging compatibility and abort;
+    compute executors. It provides context, logging compatibility and abort;
     event dispatch and federation services stay with the calling job runtime.
     """
 
     def __init__(self, workspace: Workspace, identity_name: str, job_id: str):
         self._workspace = workspace
-        self._components = {}
-        self.compute_components = []
         self._state_lock = threading.Lock()
         self._completed = False
         self._active_calls = 0
@@ -71,22 +69,6 @@ class TaskRuntime:
             job_id=job_id,
             private_stickers={FLContextKey.RUN_ABORT_SIGNAL: self.abort_signal},
         )
-
-    def set_compute_graph(self, components, executor, instances=()):
-        """Keep construction order for direct initialization and reverse cleanup."""
-        self._components = dict(components)
-        self.compute_components = []
-        seen = set()
-        for component in [*instances, *components.values(), executor]:
-            if id(component) not in seen:
-                self.compute_components.append(component)
-                seen.add(id(component))
-
-    def get_component(self, component_id: str):
-        return self._components.get(component_id)
-
-    def get_all_components(self) -> dict:
-        return dict(self._components)
 
     def get_workspace(self) -> Workspace:
         return self._workspace
@@ -171,6 +153,12 @@ class TaskRuntime:
 
     # Explicit compatibility guards keep existing compute components from
     # silently requesting network or job-lifetime services inside an attempt.
+    def get_component(self, *args, **kwargs):
+        self._unsupported("job component lookup")
+
+    def get_all_components(self):
+        self._unsupported("job component lookup")
+
     def get_cell(self):
         self._unsupported("a federation Cell")
 
