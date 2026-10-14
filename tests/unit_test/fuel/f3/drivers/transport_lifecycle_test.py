@@ -28,6 +28,7 @@ import pytest
 from aiohttp import web
 
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import ConnState
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
 from nvflare.fuel.f3.drivers.aio_context import AioContext
@@ -36,7 +37,8 @@ from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -840,3 +842,61 @@ def test_grpc_connector_shutdown_cannot_miss_late_admission(asynchronous, phase,
         listener.join(5)
         assert not stopper.is_alive()
         assert not listener.is_alive()
+
+
+@pytest.mark.parametrize("scheme", ["tcp", "atcp", "grpc", "agrpc", "http"])
+def test_dropped_peer_reconnects_with_consistent_endpoint_state(scheme):
+    states = {"server": [], "client": []}
+    received = threading.Event()
+
+    class Monitor:
+        def state_change(self, endpoint):
+            states[endpoint.name].append(endpoint.state)
+
+    class Receiver:
+        def process_message(self, endpoint, connection, app_id, message):
+            if message.payload == b"after reconnect":
+                received.set()
+
+    def wait_for(predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.02)
+        return False
+
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+
+    server = Communicator(Endpoint("server"))
+    client = Communicator(Endpoint("client"))
+    server.register_monitor(Monitor())
+    client.register_monitor(Monitor())
+    server.register_message_receiver(531, Receiver())
+    try:
+        _, url, _ = server.start_listener(scheme, {"host": "127.0.0.1", "port": port})
+        server.start()
+        client.add_connector(url, Mode.ACTIVE)
+        client.start()
+        assert wait_for(lambda: states["server"] and states["client"]), states
+        assert states["server"][-1] == EndpointState.READY, states
+        assert states["client"][-1] == EndpointState.READY, states
+
+        # Closing the active peer must clear both endpoint views and allow its
+        # connector to retry. The next connection must carry data normally.
+        next(iter(client.conn_manager.sfm_conns.values())).conn.close()
+        for name in ("server", "client"):
+            assert wait_for(lambda name=name: EndpointState.DISCONNECTED in states[name]), states
+            assert wait_for(
+                lambda name=name: len(states[name]) >= 3 and states[name][-1] == EndpointState.READY
+            ), states
+
+        assert len(server.conn_manager.sfm_conns) == 1
+        assert len(client.conn_manager.sfm_conns) == 1
+        client.send(Endpoint("server"), 531, Message({}, b"after reconnect"))
+        assert received.wait(5)
+    finally:
+        client.stop()
+        server.stop()
