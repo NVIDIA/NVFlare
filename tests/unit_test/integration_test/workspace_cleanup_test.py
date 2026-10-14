@@ -26,7 +26,7 @@ import psutil
 import pytest
 
 from tests.integration_test import system_test
-from tests.integration_test.src import provision_site_launcher, site_launcher, utils
+from tests.integration_test.src import poc_site_launcher, provision_site_launcher, site_launcher, utils
 from tests.integration_test.src.poc_site_launcher import POCSiteLauncher
 from tests.integration_test.src.provision_site_launcher import ProvisionSiteLauncher
 from tests.integration_test.src.site_launcher import SiteLauncher, SiteProperties
@@ -123,6 +123,69 @@ def test_cleanup_reaps_detached_workspace_job_and_trainer_without_touching_sibli
         for process in started:
             process.wait(timeout=5)
             process.stdout.close()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="site sessions use POSIX process groups")
+def test_cleanup_retry_retains_orphaned_trainer_identity(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    root = workspace / "site-1"
+    root.mkdir(parents=True)
+    script = tmp_path / "process_tree.py"
+    script.write_text(_PROCESS_SCRIPT)
+    job = subprocess.Popen(
+        [sys.executable, str(script), "job", "-m", str(root)],
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    trainer = None
+    original_kill = psutil.Process.kill
+    try:
+        assert select.select([job.stdout], [], [], 10)[0], "job did not reach readiness"
+        trainer = psutil.Process(json.loads(job.stdout.readline())["trainer"])
+        assert all(str(root) not in argument for argument in trainer.cmdline())
+
+        launcher = POCSiteLauncher.__new__(POCSiteLauncher)
+        SiteLauncher.__init__(launcher)
+        launcher.poc_dir = str(workspace)
+        launcher.poc_temp_dir = str(workspace)
+        properties = SiteProperties("site-1", str(root), None)
+        launcher.client_properties["site-1"] = properties
+        monkeypatch.setattr(poc_site_launcher, "cleanup_job_and_snapshot", lambda *_: None)
+        deny_trainer_once = True
+
+        def fail_first_trainer_kill(process):
+            nonlocal deny_trainer_once
+            if process.pid == trainer.pid and deny_trainer_once:
+                deny_trainer_once = False
+                raise psutil.AccessDenied(process.pid)
+            return original_kill(process)
+
+        monkeypatch.setattr(psutil.Process, "kill", fail_first_trainer_kill)
+        with pytest.raises(RuntimeError, match="Preserving workspace") as caught:
+            launcher.cleanup()
+        assert job.poll() is not None, str(caught.value)
+        assert trainer.is_running() and trainer.status() != psutil.STATUS_ZOMBIE
+        assert trainer in properties.owned_processes
+        assert not properties.processes_stopped
+        assert workspace.exists()
+
+        launcher.cleanup()
+        assert not workspace.exists()
+        assert not trainer.is_running() or trainer.status() == psutil.STATUS_ZOMBIE
+        assert properties.processes_stopped
+        assert not properties.owned_processes
+    finally:
+        if trainer is not None:
+            try:
+                if trainer.is_running() and trainer.status() != psutil.STATUS_ZOMBIE:
+                    original_kill(trainer)
+            except psutil.NoSuchProcess:
+                pass
+        if job.poll() is None:
+            job.kill()
+        job.wait(timeout=5)
+        job.stdout.close()
 
 
 def test_departed_launcher_never_looks_up_or_signals_reused_pid(tmp_path, monkeypatch):

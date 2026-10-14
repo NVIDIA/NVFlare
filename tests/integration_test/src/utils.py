@@ -155,9 +155,9 @@ def _process_running(process):
         return False
 
 
-def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=()):
-    """Stop the launcher and workspace jobs, including descendants in new sessions."""
-    owned = set(known_processes)
+def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=None):
+    """Stop the launcher and workspace jobs, retaining discovered identities for retries."""
+    owned = known_processes if known_processes is not None else set()
 
     def capture_descendants():
         parents = []

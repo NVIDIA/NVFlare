@@ -28,6 +28,7 @@ class SiteProperties:
         self.root_dir = root_dir
         self.process = process
         self.processes_stopped = False
+        self.owned_processes = set()
 
 
 class ServerProperties(SiteProperties):
@@ -38,12 +39,13 @@ class ServerProperties(SiteProperties):
 
 def kill_process(site_prop: SiteProperties, graceful_stop=None):
     site_prop.processes_stopped = False
-    owned = set()
+    owned = site_prop.owned_processes
 
     def force_stop():
         stop_site_processes(site_prop.process, site_prop.root_dir, known_processes=owned)
         site_prop.process = None
         site_prop.processes_stopped = True
+        owned.clear()
         print(f"Stopped {site_prop.name}.")
 
     steps = []
