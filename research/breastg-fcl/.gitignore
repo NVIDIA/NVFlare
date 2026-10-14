@@ -1,0 +1,38 @@
+# Data and generated experiment outputs
+data/
+**/data/
+**/dump/
+dump_tinyimagenet/
+TCGA-BRCA/metadata/downloaded_files.json
+
+# Dataset artifacts and checkpoints
+*.bin
+*.pdf
+*.h5
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.tflite
+checkpoints/
+
+# Generated reports and media
+*.csv
+
+# Archives
+*.tar.gz
+*.zip
+
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.tox/
+
+# System files
+.DS_Store
