@@ -654,20 +654,24 @@ sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
 sudo env PYTHONPATH="$PYTHONPATH" CVM_NETWORK_TESTS=1 \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
 
-env CVM_HTTP_TESTS=1 CVM_LAB_DIRECTORY=/path/to/isolated-lab \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_http.py -v
-
-sudo env PYTHONPATH="$PYTHONPATH" CVM_HARDWARE_TESTS=1 CVM_EXTENDED_AGENT=1 \
-  CVM_NETWORK_FAULTS=1 \
-  CVM_BUNDLE=/path/to/test-bundle CVM_VAULT=/path/to/test-delivery \
+sudo env PYTHONPATH="$PYTHONPATH" \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
-  CVM_HARDWARE_OUTPUT=/path/to/new-evidence-directory \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_hardware.py -v
+  CVM_LAB_DIRECTORY=/path/to/isolated-lab \
+  CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
+  tests/integration_test/lighter/cc/image_builder/acceptance_runner \
+  /path/to/test-bundle /path/to/acceptance-report.json
 ```
 
-Add `CVM_GPU_HARDWARE_TESTS=1` only on a configured NVIDIA CC GPU host; it
-enables the mandatory NRAS failure/poweroff acceptance case for GPU profiles.
+The runner selects CPU or GPU requirements from the exact manifest, runs the
+live Trustee protocol/control-plane suite and hardware suite, and fails during
+aggregation if any mandatory result is absent. For GPU profiles it automatically
+enables the NRAS denial/poweroff cases and therefore must run with the isolated
+Trustee backend on the same dedicated NVIDIA CC GPU host. To debug one suite in
+isolation, invoke `test_http.py` with `CVM_HTTP_TESTS=1` or `test_hardware.py`
+with `CVM_HARDWARE_TESTS=1`; those lower-level commands do not establish that the
+complete required set was generated.
 
 For the hardware fault tests, explicitly include `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py` as
 executable application payload and `tests/integration_test/lighter/cc/image_builder/app_acceptance.service` as a service,
@@ -680,7 +684,12 @@ fixture accepts the deliberately stopped container's termination status while
 preparing its fault; integrity supervision stays active and reboot restores the
 normal measured application exit policy.
 
-The fault agent writes its sentinels under `/vault/application/runtime`, within
+The exact-manifest Trustee tests generate signed evidence for negative appraisal,
+policy selection/readback, role denial, durable upload retry, key revocation,
+retirement retry, and GPU cross-class denial. The hardware tests generate the
+remaining signed evidence, including an extracted-initramfs inspection that
+rejects CVM KBS files and the configured endpoint. The fault agent writes its
+sentinels under `/vault/application/runtime`, within
 the production application's writable paths. Before its corruption scan it uses
 `POSIX_FADV_DONTNEED` to evict cached plaintext, then runs the production buffered
 scanner without changing protected kernel tunables.

@@ -17,8 +17,13 @@
 import errno
 import os
 import stat
+from unittest.mock import Mock
 
 import pytest
+
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
 
 
 class TestPTFileModelPersistorInit:
@@ -87,6 +92,129 @@ class TestPTFileModelPersistorInit:
             assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.pt"
         except ImportError:
             pytest.skip("PyTorch not installed")
+
+    @pytest.mark.parametrize(
+        ("persistor_kwargs", "log_dir", "expected_error"),
+        [
+            ({}, "{outside}", "checkpoint directory"),
+            ({}, "../outside", "checkpoint directory"),
+            ({"global_model_file_name": "{outside}"}, None, "global model file name"),
+            ({"global_model_file_name": "../outside.pt"}, None, "global model file name"),
+            ({"global_model_file_name": "../checkpoints/model.pt"}, "models", "global model file name"),
+            ({"best_global_model_file_name": "{outside}"}, None, "best global model file name"),
+            ({"best_global_model_file_name": "../outside.pt"}, None, "best global model file name"),
+            ({"best_global_model_file_name": "../checkpoints/model.pt"}, "models", "best global model file name"),
+        ],
+    )
+    def test_initialize_rejects_unsafe_checkpoint_write_paths(
+        self, tmp_path, persistor_kwargs, log_dir, expected_error
+    ):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        app_root.mkdir()
+        outside = str(tmp_path / "outside")
+        persistor_kwargs = {name: value.format(outside=outside) for name, value in persistor_kwargs.items()}
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        if log_dir:
+            fl_ctx.set_prop(
+                AppConstants.LOG_DIR,
+                log_dir.format(outside=outside),
+                private=True,
+                sticky=False,
+            )
+
+        persistor = PTFileModelPersistor(**persistor_kwargs)
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        persistor.system_panic.assert_called_once()
+        call = persistor.system_panic.call_args
+        assert expected_error in call.kwargs["reason"]
+        assert call.kwargs["fl_ctx"] is fl_ctx
+        assert not hasattr(persistor, "_ckpt_save_path")
+        assert not hasattr(persistor, "_best_ckpt_save_path")
+
+    def test_initialize_accepts_checkpoint_write_paths_under_app_root(self, tmp_path):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        app_root.mkdir()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+
+        persistor = PTFileModelPersistor(
+            global_model_file_name="current/model.pt",
+            best_global_model_file_name="best/model.pt",
+        )
+        persistor._initialize(fl_ctx)
+
+        assert persistor.log_dir == str(app_root / "models")
+        assert persistor._ckpt_save_path == str(app_root / "models" / "current" / "model.pt")
+        assert persistor._best_ckpt_save_path == str(app_root / "models" / "best" / "model.pt")
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize(
+        ("file_name_arg", "save_path_attr"),
+        [
+            ("global_model_file_name", "_ckpt_save_path"),
+            ("best_global_model_file_name", "_best_ckpt_save_path"),
+        ],
+    )
+    def test_initialize_allows_checkpoint_link_elsewhere_in_app_root(self, tmp_path, file_name_arg, save_path_attr):
+        import torch
+
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        models = app_root / "models"
+        checkpoints = app_root / "checkpoints"
+        models.mkdir(parents=True)
+        checkpoints.mkdir()
+        alias = models / "current.pt"
+        target = checkpoints / "current.pt"
+        alias.symlink_to("../checkpoints/current.pt")
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+        persistor = PTFileModelPersistor(**{file_name_arg: alias.name})
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        persistor.system_panic.assert_not_called()
+        assert getattr(persistor, save_path_attr) == str(target)
+        persistor.persistence_manager = _PersistenceManager({"model": {"weight": torch.tensor([1.0])}})
+        persistor.persistence_manager.get_persist_model_format = Mock(return_value="PT")
+        persistor.save_model_file(getattr(persistor, save_path_attr))
+        assert target.is_file()
+        assert persistor.get_model_inventory(fl_ctx)[alias.name].location == str(alias)
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("file_name_arg", ["global_model_file_name", "best_global_model_file_name"])
+    def test_initialize_rejects_checkpoint_link_outside_app_root(self, tmp_path, file_name_arg):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        models = app_root / "models"
+        models.mkdir(parents=True)
+        outside = tmp_path / "outside.pt"
+        alias = models / "current.pt"
+        alias.symlink_to(outside)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+        persistor = PTFileModelPersistor(**{file_name_arg: alias.name})
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        assert file_name_arg.replace("_", " ") in persistor.system_panic.call_args.kwargs["reason"]
+        assert not hasattr(persistor, "_ckpt_save_path")
+        assert not outside.exists()
 
 
 class _PersistenceManager:

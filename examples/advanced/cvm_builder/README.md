@@ -11,7 +11,16 @@ approval, and trusted CVM Builder settings. Each protected participant selects
 - [`cc_site-1.yml`](cc_site-1.yml) selects an SNP plus NVIDIA CC CVM.
 
 Build the Docker-save archive described in [docker/README.md](docker/README.md),
-replace the placeholder image and credential paths, then run:
+replace the placeholder image and credential paths, and supply approved generic
+CVM artifacts at the two `cvm_image` paths. Production approval is a separate,
+one-time operation for each exact generic CPU/GPU bundle. The builder's official
+[`acceptance_runner.py`](../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner.py)
+runs the complete Trustee plus hardware matrix and writes the report used by
+`cvmctl admin approve`; follow the
+[exact-manifest approval procedure](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval)
+before using a new generic image here.
+
+Then run:
 
 ```bash
 nvflare provision -p project.yml -w ./workspace

@@ -415,12 +415,50 @@ sudo ./cvmctl vault acceptance-vault.yml --candidate \
 
 `acceptance-vault.yml` uses the normal vault schema and an application image that
 runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
-The checked-in `test_hardware.py` requires `CVM_HARDWARE_TESTS=1`, `CVM_BUNDLE`,
-`CVM_VAULT`, `CVM_HARDWARE_OUTPUT`, and `CVM_ACCEPTANCE_RESULT_KEY`; each passing
-test writes a versioned, Ed25519-signed `result.json` containing the exact
-`manifest_sha256`, platform, explicit successful outcomes, and hashes of its
-retained logs. Use a dedicated site evidence key, separate from the offline
-approval key. Site-specific tests use the same signed result schema:
+The checked-in `acceptance_runner.py` is the official evidence generator. It runs
+the isolated Trustee administration tests and the hardware tests, signs every
+passing result with a dedicated site evidence key, verifies that every check
+required by the exact manifest is present, and writes the report consumed by
+`admin approve`. The evidence key is separate from the offline approval key.
+
+Prepare and start the isolated lab Trustee as described under **Reproducing
+tests** in [VALIDATION.md](VALIDATION.md). Provision one additional disposable
+vault key under this bundle and set `CVM_OTHER_RESOURCE` to its
+`keys/BUILD_ID/BINDING` path; the runner uses it for the live cross-vault denial.
+Then run:
+
+```sh
+sudo env \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
+  CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
+  CVM_LAB_DIRECTORY=/path/to/isolated-lab \
+  CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
+  CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
+  ../../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner \
+  target/cvm_PROFILE/PLATFORM /srv/cvm/acceptance-report.json
+```
+
+The wrapper uses `CVM_BUILDER_PYTHON`, the builder's `.venv/bin/python`, or
+`python3`, in the same order as `cvmctl`. When using a dedicated environment
+outside the builder directory, pass its absolute interpreter path as
+`CVM_BUILDER_PYTHON` in the `sudo env` command above.
+
+The output directory must not already exist. The runner enables the network,
+interruption, revocation, and GPU fault cases required by the selected manifest;
+there is no reduced production mode that silently skips a required check. It
+requires the isolated Trustee to run on the acceptance host so its bounded NRAS
+fault injection cannot affect another deployment. A passing GPU boot establishes
+`gpu_positive_key_release` and `gpu_policy_selection` at the actual security
+boundary: Trustee accepts the composite CPU/GPU EAR, returns the vault key, and
+the measured guest opens the vault and starts the workload. No application-created
+GPU result file is trusted. The negative GPU case accepts the stable security
+outcomes—no allow decision, no workload start, and confirmed VM poweroff—without
+depending on a final error string racing the systemd watchdog.
+
+Each passing test writes a versioned, Ed25519-signed `result.json` containing the
+exact `manifest_sha256`, platform, explicit successful outcomes, and hashes of
+its retained logs. A separately reviewed site-specific test can use the same
+signed result schema:
 
 ```json
 {
@@ -451,7 +489,9 @@ Every CPU profile requires: `attestation_quarantine_recovery`,
 `cross_class_denial`, `gpu_negative_key_denial`, `gpu_policy_selection`,
 `gpu_positive_key_release`, and `periodic_gpu_denial`.
 
-Aggregate only results for this exact finalized manifest, then approve it:
+The official runner already writes the aggregate report. To re-aggregate retained
+evidence or combine it with an additional site-specific result, use
+`acceptance-report`, then approve the exact bundle:
 
 ```sh
 sudo ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
