@@ -952,6 +952,37 @@ class SupervisorTests(unittest.TestCase):
         close.assert_called_once_with()
         self.assertEqual(signal_mask.call_args_list[-1].args, (signal.SIG_SETMASK, set()))
 
+    def test_terminal_quarantine_recovery_failure_attempts_revocation_before_poweroff(self):
+        for recovery_failure in ("quarantine", "deadline"):
+            with (
+                self.subTest(recovery_failure=recovery_failure),
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(supervisor.signal, "pthread_sigmask", return_value=set()),
+                patch.object(supervisor.signal, "sigtimedwait", return_value=object()),
+                patch.object(supervisor, "notify"),
+                patch.object(supervisor, "emit"),
+                patch.object(supervisor, "run"),
+                patch.object(supervisor, "periodic_tick", side_effect=BuildError("attestation denied")),
+                patch.object(
+                    supervisor,
+                    "quarantine",
+                    side_effect=OSError("recovery tail failed") if recovery_failure == "quarantine" else None,
+                ),
+                patch.object(
+                    supervisor,
+                    "next_periodic_deadline",
+                    side_effect=[100, OSError("recovery tail failed")] if recovery_failure == "deadline" else None,
+                    return_value=100,
+                ),
+                patch.object(supervisor, "watchdog"),
+                patch.object(supervisor, "readiness") as readiness,
+                patch.object(supervisor, "close_vault") as close,
+                self.assertRaisesRegex(OSError, "recovery tail failed"),
+            ):
+                supervisor.supervise({"gpu": "nvidia_cc"}, ["cvm_app.service"], Path(directory))
+            readiness.assert_called_once_with({"gpu": "nvidia_cc"}, False)
+            close.assert_called_once_with()
+
     def test_quarantine_drops_the_key_retries_within_the_window_and_restarts_units(self):
         commands = []
         clock = [1000.0]

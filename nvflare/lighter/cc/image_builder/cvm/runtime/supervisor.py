@@ -223,8 +223,17 @@ def supervise(config, units, state):
                 periodic_tick(config, state, sequence)
                 deadline = next_periodic_deadline(config, state, fallback)
             except BuildError:
-                quarantine(config, units, state)
-                deadline = next_periodic_deadline(config, state)
+                try:
+                    quarantine(config, units, state)
+                    deadline = next_periodic_deadline(config, state)
+                except Exception:
+                    # A successful reopen makes the vault and GPU available
+                    # before quarantine removes its flag, emits the decision,
+                    # and restarts the units. Any terminal failure in that
+                    # recovery tail must revoke access again before PID 1's
+                    # forced-poweroff path takes over.
+                    best_effort_revoke(config)
+                    raise
             except Exception:
                 # Internal failures do not enter the recovery loop. Revoke what
                 # we can before this service failure makes PID 1 power off.
