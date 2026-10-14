@@ -161,13 +161,35 @@ def test_connection_is_removed_when_writer_close_wait_fails():
         writer.wait_closed = AsyncMock(side_effect=OSError("socket close failed"))
 
         with patch("nvflare.fuel.f3.drivers.aio_tcp_driver.AioConnection", return_value=conn):
-            with pytest.raises(OSError, match="socket close failed"):
-                await driver._create_connection(None, writer)
+            await driver._create_connection(None, writer)
 
         conn.close.assert_called_once()
         writer.wait_closed.assert_awaited_once()
         assert not driver.connections
         assert states == [ConnState.CONNECTED, ConnState.CLOSED]
+
+    asyncio.run(connect())
+
+
+def test_writer_close_error_does_not_replace_read_error():
+    async def connect():
+        with patch.object(AioContext, "get_global_context", return_value=MagicMock()):
+            driver = AioTcpDriver()
+        driver.connector = ConnectorInfo("test", driver, {}, Mode.PASSIVE, 0, 0, False, threading.Event())
+        driver.register_conn_monitor(MagicMock())
+        conn = MagicMock(name="connection")
+        conn.name = "broken_connection"
+        conn.connector = driver.connector
+        conn.read_loop = AsyncMock(side_effect=RuntimeError("read failed"))
+        writer = MagicMock()
+        writer.wait_closed = AsyncMock(side_effect=OSError("socket close failed"))
+
+        with patch("nvflare.fuel.f3.drivers.aio_tcp_driver.AioConnection", return_value=conn):
+            with pytest.raises(RuntimeError, match="read failed"):
+                await driver._create_connection(None, writer)
+
+        writer.wait_closed.assert_awaited_once()
+        assert not driver.connections
 
     asyncio.run(connect())
 

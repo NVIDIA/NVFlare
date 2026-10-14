@@ -14,6 +14,7 @@
 import asyncio
 import logging
 from concurrent.futures import CancelledError
+from contextlib import suppress
 from typing import Any, Dict, List
 
 from nvflare.fuel.f3.comm_error import CommError
@@ -156,4 +157,7 @@ class AioTcpDriver(AioBaseDriver):
                     # The read side has ended. A peer that stops reading can
                     # otherwise keep queued writes and wait_closed() pending.
                     writer.transport.abort()
-            await writer.wait_closed()
+            # A peer reset can make wait_closed() re-raise its socket error.
+            # Cleanup is complete; do not turn that reset into a connector failure.
+            with suppress(OSError):
+                await writer.wait_closed()
