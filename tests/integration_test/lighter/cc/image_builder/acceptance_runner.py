@@ -21,6 +21,7 @@ and the site evidence signing key are supplied through the environment described
 in BUILD_GUIDE.md; the offline bundle approval key is never passed to this runner.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -117,19 +118,18 @@ def _shutdown_vaults(output):
 
 
 def _stop_suite(process, output):
-    """Give unittest catchbreak a bounded window to run suite cleanups."""
-    if process.poll() is None:
-        try:
-            os.killpg(process.pid, signal.SIGINT)
-        except ProcessLookupError:
-            pass
+    """Stop the suite before scanning for resources it could otherwise recreate."""
     try:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
         if process.poll() is None:
             try:
                 process.wait(timeout=SUITE_SHUTDOWN_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
-        _shutdown_vaults(output)
     finally:
         if process.poll() is None:
             try:
@@ -137,6 +137,18 @@ def _stop_suite(process, output):
             except ProcessLookupError:
                 pass
             process.wait()
+    _shutdown_vaults(output)
+
+
+def _cleanup_suite_firewall(pid):
+    """Remove only this hardware suite's table, tolerating an already absent table."""
+    table = f"cvm_acceptance_{pid}"
+    result = subprocess.run(["nft", "-j", "list", "tables"], capture_output=True, check=True, timeout=10)
+    for entry in json.loads(result.stdout)["nftables"]:
+        existing = entry.get("table", {})
+        if existing.get("family") == "inet" and existing.get("name") == table:
+            subprocess.run(["nft", "delete", "table", "inet", table], capture_output=True, check=True, timeout=10)
+            break
 
 
 def required_environment():
@@ -180,20 +192,35 @@ def run_suite(pattern, environment, output):
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        failure = None
+        cleanup_errors = []
         try:
             for signum in (signal.SIGINT, signal.SIGTERM):
                 previous_handlers[signum] = signal.signal(signum, interrupted)
             returncode = process.wait()
+            require(returncode == 0, f"{pattern} failed with exit status {returncode}; inspect {log_path}")
         except BaseException as error:
-            _stop_suite(process, output)
-            if isinstance(error, _SuiteSignal):
-                name = signal.Signals(error.signum).name
-                raise BuildError(f"{pattern} interrupted by {name}; cleanup was given a bounded grace period") from None
-            raise
+            failure = error
+            try:
+                _stop_suite(process, output)
+            except Exception as cleanup_error:
+                cleanup_errors.append(f"suite resources: {cleanup_error}")
         finally:
             for signum, handler in previous_handlers.items():
                 signal.signal(signum, handler)
-    require(returncode == 0, f"{pattern} failed; inspect its retained runner log")
+            if pattern == "test_hardware.py":
+                try:
+                    _cleanup_suite_firewall(process.pid)
+                except Exception as cleanup_error:
+                    cleanup_errors.append(f"host firewall: {cleanup_error}")
+    if isinstance(failure, _SuiteSignal):
+        name = signal.Signals(failure.signum).name
+        failure = BuildError(f"{pattern} interrupted by {name}; cleanup was given a bounded grace period")
+    if cleanup_errors:
+        detail = str(failure) if failure is not None else f"{pattern} completed"
+        raise BuildError(f"{detail}; cleanup failed: {'; '.join(cleanup_errors)}; inspect {log_path}") from failure
+    if failure is not None:
+        raise failure
 
 
 def main(argv=None):

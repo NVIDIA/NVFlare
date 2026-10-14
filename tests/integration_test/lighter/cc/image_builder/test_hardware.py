@@ -360,11 +360,12 @@ class HardwareTests(unittest.TestCase):
         embedded_endpoint = []
         inspected = 0
         for path in extracted.rglob("*"):
-            if not path.is_file() or path.is_symlink():
+            relative = path.relative_to(extracted)
+            if path.name in forbidden_names or "/etc/cvm/" in f"/{relative}/":
+                forbidden_paths.append(str(relative))
+            if path.is_symlink() or not path.is_file():
                 continue
             inspected += 1
-            if path.name in forbidden_names or "/etc/cvm/" in ("/" + str(path.relative_to(extracted))):
-                forbidden_paths.append(str(path.relative_to(extracted)))
             with path.open("rb") as stream:
                 overlap = b""
                 for block in iter(lambda: stream.read(1024 * 1024), b""):

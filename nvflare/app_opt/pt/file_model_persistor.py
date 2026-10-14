@@ -177,7 +177,9 @@ class PTFileModelPersistor(ModelPersistor):
                 candidate = os.path.normpath(os.path.join(resolved_log_dir, file_name))
                 if os.path.commonpath([resolved_log_dir, candidate]) != resolved_log_dir:
                     raise ValueError(f"{path_name} {file_name} must stay inside {resolved_log_dir}.")
-                return resolve_path_under_root(app_root, os.path.relpath(candidate, app_root), path_name)
+                # Preserve symlinks and following ".." components for real path resolution.
+                relative_log_dir = os.path.relpath(resolved_log_dir, app_root)
+                return resolve_path_under_root(app_root, os.path.join(relative_log_dir, file_name), path_name)
 
             ckpt_save_path = checkpoint_path(self.global_model_file_name, "global model file name")
             best_ckpt_save_path = checkpoint_path(self.best_global_model_file_name, "best global model file name")

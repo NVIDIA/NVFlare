@@ -194,6 +194,70 @@ class TestPTFileModelPersistorInit:
         assert persistor.get_model_inventory(fl_ctx)[alias.name].location == str(alias)
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize(
+        ("file_name_arg", "save_path_attr"),
+        [
+            ("global_model_file_name", "_ckpt_save_path"),
+            ("best_global_model_file_name", "_best_ckpt_save_path"),
+        ],
+    )
+    def test_checkpoint_symlink_then_parent_saves_to_inventory_path(self, tmp_path, file_name_arg, save_path_attr):
+        import torch
+
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        models = app_root / "models"
+        checkpoints = app_root / "checkpoints"
+        models.mkdir(parents=True)
+        (checkpoints / "cache").mkdir(parents=True)
+        (models / "latest").symlink_to("../checkpoints/cache", target_is_directory=True)
+        file_name = "latest/../current.pt"
+        target = checkpoints / "current.pt"
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+        persistor = PTFileModelPersistor(**{file_name_arg: file_name})
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        persistor.system_panic.assert_not_called()
+        assert getattr(persistor, save_path_attr) == str(target)
+        persistor.persistence_manager = _PersistenceManager({"model": {"weight": torch.tensor([1.0])}})
+        persistor.persistence_manager.get_persist_model_format = Mock(return_value="PT")
+        persistor.save_model_file(getattr(persistor, save_path_attr))
+        assert target.is_file()
+        assert not (models / "current.pt").exists()
+        inventory_path = persistor.get_model_inventory(fl_ctx)["current.pt"].location
+        assert os.path.samefile(inventory_path, target)
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("file_name_arg", ["global_model_file_name", "best_global_model_file_name"])
+    def test_checkpoint_symlink_then_parent_rejects_escape(self, tmp_path, file_name_arg):
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        app_root = tmp_path / "app"
+        models = app_root / "models"
+        models.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        (outside / "cache").mkdir(parents=True)
+        (models / "latest").symlink_to("../../outside/cache", target_is_directory=True)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, str(app_root), private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.LOG_DIR, "models", private=True, sticky=False)
+        persistor = PTFileModelPersistor(**{file_name_arg: "latest/../current.pt"})
+        persistor.system_panic = Mock()
+
+        persistor._initialize(fl_ctx)
+
+        persistor.system_panic.assert_called_once()
+        assert file_name_arg.replace("_", " ") in persistor.system_panic.call_args.kwargs["reason"]
+        assert not hasattr(persistor, "_ckpt_save_path")
+        assert not hasattr(persistor, "_best_ckpt_save_path")
+        assert not (outside / "current.pt").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
     @pytest.mark.parametrize("file_name_arg", ["global_model_file_name", "best_global_model_file_name"])
     def test_initialize_rejects_checkpoint_link_outside_app_root(self, tmp_path, file_name_arg):
         from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
