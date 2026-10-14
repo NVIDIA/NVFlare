@@ -185,6 +185,14 @@ class ModelUpdateAssessor(Assessor):
     def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
 
+        # keep the device manager's view of the current model version in sync so its eligibility
+        # checks (fill_selection / has_enough_devices_and_clients) use the correct version. This is
+        # required for the issue #5347 Option B fix in BuffDeviceManager, which excludes devices that
+        # already contributed to the current model version. Only set it when the device manager
+        # actually consumes this attribute, so unrelated device managers are left untouched.
+        if hasattr(self.device_manager, "current_model_version"):
+            self.device_manager.current_model_version = self.model_manager.current_model_version
+
         # Update available devices
         if report.available_devices:
             self.device_manager.update_available_devices(report.available_devices, fl_ctx)

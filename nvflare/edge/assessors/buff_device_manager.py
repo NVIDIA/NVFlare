@@ -65,6 +65,17 @@ class BuffDeviceManager(DeviceManager):
         self.used_devices = {}
         # keep a map of device_id -> client_name
         self.device_client_map = {}
+        # track the last model version each device has *contributed* to (i.e. reported an update for).
+        # this is the core of the issue #5347 Option B fix: a device that already contributed to the
+        # current model version must not be re-selected for that same version, otherwise the server
+        # keeps assigning it the same selection id (== model version) and BaseState.is_device_selected
+        # rejects it forever ("RETRY: Device not selected") -> indefinite stall. A single per-device
+        # version is enough because model versions are monotonic and each device has at most one
+        # in-flight assignment.
+        self.device_last_contributed_version = {}
+        # cache of the current model version, kept in sync by the assessor (via fill_selection and
+        # model_update.py) so that eligibility checks can use the correct version.
+        self.current_model_version = 0
 
     def _balanced_device_sampling(self, usable_devices: Set[str], num_holes: int) -> Set[str]:
         """Sample devices while balancing across clients.
@@ -172,13 +183,37 @@ class BuffDeviceManager(DeviceManager):
             if client_name:
                 self.device_client_map[device_id] = client_name
 
+    def _compute_usable_devices(self) -> Set[str]:
+        """Compute devices eligible to be (re)selected for the current model version.
+
+        A device is eligible only if it is:
+          - available, and
+          - not currently in-flight for the current model version (tracked in ``used_devices``), and
+          - has not already contributed to the current model version (tracked in
+            ``device_last_contributed_version``).
+
+        Excluding devices that already contributed to the current model version is the fix for the
+        indefinite RETRY stall from issue #5347 (Option B): otherwise a device that reported back for
+        model version V would be immediately re-selected for the same V, and since the server stores
+        the selection id as the model version, ``BaseState.is_device_selected`` would keep rejecting it
+        (``sid == selection_id``) forever.
+        """
+        used = set(self.used_devices.keys())
+        already_contributed = {
+            device_id
+            for device_id, version in self.device_last_contributed_version.items()
+            if version == self.current_model_version
+        }
+        return set(self.available_devices.keys()) - used - already_contributed
+
     def fill_selection(self, current_model_version: int, fl_ctx) -> None:
+        self.current_model_version = current_model_version
         num_holes = self.device_selection_size - len(self.current_selection)
         self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
         if num_holes > 0:
             self.current_selection_version += 1
-            # remove all used devices from available devices
-            usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+            # eligible devices = available - in-flight (used) - already contributed to this model version
+            usable_devices = self._compute_usable_devices()
 
             if usable_devices:
                 if self.device_sampling_strategy == "balanced":
@@ -217,6 +252,11 @@ class BuffDeviceManager(DeviceManager):
 
     def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
+            assigned_version = self.current_selection.get(device_id)
+            if assigned_version is not None:
+                # record that this device has now contributed to the model version it was selected for.
+                # this prevents it from being re-selected for the same model version (issue #5347, Option B).
+                self.device_last_contributed_version[device_id] = assigned_version
             self.current_selection.pop(device_id, None)
 
     def remove_devices_from_used(self, devices: Set[str], fl_ctx) -> None:
@@ -225,7 +265,7 @@ class BuffDeviceManager(DeviceManager):
 
     def has_enough_devices_and_clients(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
-        usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+        usable_devices = self._compute_usable_devices()
         num_usable_devices = len(usable_devices)
         if num_usable_devices < num_holes:
             return False
