@@ -2,6 +2,11 @@
 
 Replace this heading with the full title of the research contribution.
 
+Use this template for an implementation hosted under `research/`. To contribute
+only a link to an external NVFlare example, follow the
+[research contribution guide](../CONTRIBUTING.md); no local project directory or
+copy of this template is required.
+
 ## Abstract
 
 Provide a short abstract or summary of the work. This should explain the
@@ -14,8 +19,10 @@ result or expected use case.
 - Preprint: [arXiv link](https://arxiv.org)
 - Project page or upstream code: [Repository or project link](https://example.com)
 
-If the work has not been published, state that clearly and link to any available
-technical report, benchmark description, or project page.
+A paper or preprint is encouraged but not required. If the work has not been
+published, state that clearly and link to any available technical report,
+benchmark description, or project page. A substantive README describing the
+method, implementation, and validation qualifies as public documentation.
 
 ## Objective
 
@@ -90,6 +97,27 @@ python job.py --num_clients 2 --num_rounds 5
 
 Also document where logs, workspaces, checkpoints, metrics, and generated
 figures are written.
+
+## Validation performed
+
+Describe a successful run you performed that exercises the relevant NVFlare
+workflow and produces an identifiable result. A short representative run is
+sufficient for functional validation; installation or process startup alone is
+not. Record:
+
+- **Revision:** tested project commit or release.
+- **Environment:** NVFlare version, relevant dependencies and hardware, and the
+  NVFlare commit when testing unreleased features.
+- **Command:** the command and configuration used, including the data or
+  synthetic/mock-data input.
+- **Result:** the observed output, such as a metric, checkpoint, or completed
+  workflow result, with a concise summary or link to a representative log or
+  artifact.
+- **Limitations:** what this run validates and what remains untested.
+
+Distinguish evidence that the integration works from evidence supporting any
+performance, privacy, or robustness claims, as described in the
+[research contribution guide](../CONTRIBUTING.md#quality-and-validation).
 
 ## Expected Results
 

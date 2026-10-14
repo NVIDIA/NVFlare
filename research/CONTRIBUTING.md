@@ -1,8 +1,75 @@
 # Research Directory
 
-The `research` directory hosts community research work that uses NVIDIA FLARE.
-Research projects are reviewed through the pull request process, but the code is
-not maintained by the NVIDIA FLARE team after it is contributed.
+The `research/` directory showcases published or publicly documented methods and
+examples that use NVIDIA FLARE. A paper or preprint is encouraged but not required.
+A substantive project README describing the method, implementation, and validation
+qualifies as public documentation.
+
+Contributions should provide a meaningful, working NVFlare example with evidence
+that the contributor has exercised the relevant workflow successfully.
+Contributors are responsible for understanding, reviewing, and validating their
+code, documentation, and claims, including material produced with AI tools.
+Untested code, placeholder projects, and unsupported claims are not ready for
+inclusion.
+
+Research contributions are reviewed through the pull request process.
+Contributors retain responsibility for their research projects, whether linked
+externally or hosted here, and should be able to explain the implementation,
+answer review questions, and address issues. Research code contributed to this
+repository is not maintained by the NVIDIA FLARE team after contribution;
+external projects likewise remain maintained by their authors.
+
+## Quality and Validation
+
+Both external listings and hosted implementations should provide:
+
+- A clear explanation of the problem, approach, and NVFlare functionality
+  demonstrated.
+- Setup instructions, dependencies, data requirements, and a concrete command
+  for running the relevant NVFlare workflow.
+- Evidence of a successful representative run performed by the contributor.
+  A short run that exercises the integration and produces an identifiable result
+  is sufficient to demonstrate functionality. Installation success or a
+  process-startup log alone is not sufficient.
+- The tested project commit or release, relevant environment, NVFlare version,
+  run command, and observed result. Include the NVFlare commit when testing
+  unreleased features. A concise result summary, representative log, or output
+  artifact can document the result.
+- Known limitations and a distinction between demonstrated behavior and proposed
+  capabilities.
+
+Functional validation establishes that an integration works. Claims about
+performance, privacy, or robustness require evidence appropriate to those claims;
+not every contribution needs a benchmark campaign. A publication does not replace
+validation of the implementation.
+
+Reviewers may request additional evidence when warranted. Independent
+reproduction by an NVFlare maintainer is not a prerequisite for every listing.
+
+## Contribution Paths
+
+### External Project Listings
+
+If your project already has its own author-maintained repository, we encourage
+you to maintain the implementation and evaluation there and contribute a link
+to the [research README](./README.md). This keeps development with the project's
+authors and helps NVFlare users discover the work.
+
+Open a small documentation PR adding an entry to the README's project table with
+the project name, a direct link to its NVFlare example or integration, and a short
+description identifying it as externally maintained. Keep the supporting
+documentation and validation evidence in the upstream project or link to them
+from the PR.
+
+A link-only contribution does not require a local project subdirectory, copied
+code, or a local copy of the sample research template.
+
+### Implementations Hosted in NVFlare
+
+Full implementations contributed under `research/` are also welcome. Follow the
+sections below and the repository's [contribution guidelines](../CONTRIBUTING.md),
+including the applicable code-review and testing requirements. The local
+directory and template requirements below apply to hosted implementations.
 
 ## License
 
@@ -13,7 +80,7 @@ license terms.
 
 ## Project Directory
 
-Each research project should create a subdirectory under `research/`.
+Each hosted research implementation should create a subdirectory under `research/`.
 
 - Prefer a lowercase, ASCII, kebab-case directory name no longer than 35
   characters for new projects.
@@ -24,7 +91,7 @@ Each research project should create a subdirectory under `research/`.
 
 ## README Expectations
 
-Every project should include a `README.md`. Start from the
+Each hosted implementation should include a `README.md`. Start from the
 [sample research template](./sample-research/README.md) and adapt it to the
 project. A good research README includes:
 
@@ -36,6 +103,8 @@ project. A good research README includes:
 - Setup instructions.
 - Data download, generation, or preparation instructions.
 - Steps to run the code.
+- Validation performed, including the tested revisions, environment, command,
+  observed result, and validation limitations.
 - Expected results, metrics, figures, or checkpoints.
 - License notes.
 - Requirements and the NVFlare version used.

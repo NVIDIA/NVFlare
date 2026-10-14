@@ -235,6 +235,41 @@ class TestSimulatorRunner:
         assert result is conn
         client.assert_called_once_with(("localhost", 1234))
 
+    def test_do_one_task_keeps_paths_with_spaces_intact(self, tmp_path):
+        workspace = str(tmp_path / "work space")
+        log_config = str(tmp_path / "log dir" / "log_config.json")
+        executable = str(tmp_path / "py env" / "bin" / "python")
+        for folder in ("startup", "local"):  # Workspace() requires both
+            (tmp_path / "work space" / "site-1" / folder).mkdir(parents=True)
+        args = Namespace(workspace=workspace, log_config=log_config)
+        args.set = []
+        runner = SimulatorClientRunner(
+            str(tmp_path / "server custom"), args, [], None, Namespace(workspace=workspace), {}
+        )
+        client = Mock()
+        client.client_name = "site-1"
+        client.token = "token"
+        client.cell.get_root_url_for_child.return_value = "tcp://root"
+        client.cell.get_internal_listener_url.return_value = "tcp://parent"
+        process = Mock()
+        process.poll.return_value = None
+        conn = Mock()
+        conn.recv.side_effect = [True, None]  # stop_run, then end_run_client
+
+        with patch("nvflare.private.fed.app.simulator.simulator_runner.sys.executable", executable):
+            with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
+                with patch.object(runner, "_create_connection", return_value=conn):
+                    with patch(
+                        "nvflare.private.fed.app.simulator.simulator_runner.popen_in_new_session", return_value=process
+                    ) as popen:
+                        runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
+
+        launched = popen.call_args.args[0]
+        assert launched[0] == executable
+        assert launched[launched.index("-o") + 1] == os.path.join(workspace, "site-1")
+        assert launched[launched.index("--logging_config") + 1] == log_config
+        assert launched[launched.index("--simulator_root") + 1] == workspace
+
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()
         listener = Mock()
