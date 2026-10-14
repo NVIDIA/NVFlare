@@ -17,7 +17,7 @@ To build the NVFlare Docker image, run the following command in your terminal:
 ```
 
 Important notes:
-- Code directory: The local ``code`` folder is copied into the Docker image under ``/local/custom``
-- Job configuration: In the [job configuration](../jobs/hello-pt_cifar10_fedavg/app_site-1/config/config_fed_client.json) we configure the task script to be ``/local/custom/client.py``
+- Code directory: The local ``code`` folder is copied into the Docker image under ``/local/custom`` and placed on `PYTHONPATH`.
+- Job configuration: The [job configuration](../jobs/hello-pt_cifar10_fedavg/app_site-1/config/config_fed_client.json) selects `CVMClientAPIExecutor`. That measured-image class fixes in-process execution and `/local/custom/client.py`; a submitted job cannot select an external command or another script path.
 
 Make sure to adjust the paths and filenames in your configurations accordingly.

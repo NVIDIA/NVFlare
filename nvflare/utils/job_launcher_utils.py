@@ -483,6 +483,47 @@ def get_job_launcher_spec(job_meta, site_name, mode):
     return get_launcher_resource_spec(job_meta, site_name, mode)
 
 
+def _launcher_spec_has_byoc(mode: str, spec: dict) -> bool:
+    if not isinstance(spec, dict):
+        return False
+    byoc_keys = DOCKER_JOB_BYOC_KEYS if mode == "docker" else {"image", "python_path"}
+    if any(key in spec for key in byoc_keys - {"image"}):
+        return True
+    if spec.get("image"):
+        return True
+    return mode == "slurm" and spec.get("additional_node_command") is not None
+
+
+def has_byoc_launcher_spec(job_meta: dict, site_name: str = None) -> bool:
+    """Return whether job-controlled launcher content makes this a BYOC job.
+
+    When ``site_name`` is provided, launcher defaults and site overrides are
+    resolved exactly as they are during deployment. Without a site name, all
+    submitted launcher blocks are inspected so server-side validation cannot
+    miss BYOC content intended for any participant.
+    """
+    modes = ("docker", "k8s", "slurm")
+    if site_name is not None:
+        return any(_launcher_spec_has_byoc(mode, get_job_launcher_spec(job_meta, site_name, mode)) for mode in modes)
+
+    launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
+    if isinstance(launcher_spec, dict):
+        for site_spec in launcher_spec.values():
+            if isinstance(site_spec, dict):
+                for mode in modes:
+                    if _launcher_spec_has_byoc(mode, site_spec.get(mode, {})):
+                        return True
+
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    if isinstance(resource_spec, dict):
+        for site_spec in resource_spec.values():
+            if isinstance(site_spec, dict):
+                for mode in modes:
+                    if _launcher_spec_has_byoc(mode, get_site_launcher_spec(site_spec, mode)):
+                        return True
+    return False
+
+
 def add_custom_dir_to_path(app_custom_folder, new_env):
     """Util method to add app_custom_folder into the sys.path and carry into the child process."""
     sys_path = copy.copy(sys.path)

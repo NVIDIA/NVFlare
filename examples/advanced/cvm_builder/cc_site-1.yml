@@ -4,10 +4,10 @@ cpu_tee: amd_sev_snp
 gpu_tee: nvidia_cc
 attestation:
   service: trustee
-# The bundled non-BYOC job uses this executor to launch client.py from the
-# measured application image. Keep this as an exact, reviewed per-site grant.
+# This measured-image executor fixes in-process mode and the measured script
+# path. Keep this as an exact, reviewed per-site grant.
 class_allow_list:
-  - nvflare.app_common.executors.client_api_executor.ClientAPIExecutor
+  - cvm_client_api_executor.CVMClientAPIExecutor
 workload:
   source:
     type: docker_archive

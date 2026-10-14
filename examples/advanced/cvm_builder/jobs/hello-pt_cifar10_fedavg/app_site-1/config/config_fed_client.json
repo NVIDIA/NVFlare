@@ -6,12 +6,10 @@
                 "*"
             ],
             "executor": {
-                "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+                "path": "cvm_client_api_executor.CVMClientAPIExecutor",
                 "args": {
-                    "execution_mode": "in_process",
                     "params_exchange_format": "pytorch",
-                    "server_expected_format": "numpy",
-                    "task_script_path": "/local/custom/client.py"
+                    "server_expected_format": "numpy"
                 }
             }
         }
