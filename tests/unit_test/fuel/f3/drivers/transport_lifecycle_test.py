@@ -15,6 +15,7 @@
 """Regression coverage for transport lifecycle fixes, independent of certificate renewal."""
 
 import asyncio
+import errno
 import os
 import socket
 import ssl
@@ -989,6 +990,73 @@ def test_async_tcp_tls_listener_accepts_connection(high_fd, listener_context, mo
         manager.stop()
         for fd in reserved_fds:
             os.close(fd)
+
+
+@pytest.mark.parametrize("error_name", ["ECONNABORTED", "EMFILE"])
+def test_async_tcp_tls_listener_recovers_without_dropping_clients(error_name, listener_context, monkeypatch, tmp_path):
+    def wait_until(condition):
+        deadline = time.monotonic() + 5
+        while not condition() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return condition()
+
+    driver = AioTcpDriver()
+    manager = ConnManager(Endpoint(f"recovering_tls_{error_name.lower()}"))
+    tls = _server_tls_context(tmp_path)
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", lambda *args, **kwargs: tls)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
+    manager.add_connector(driver, params, Mode.PASSIVE)
+
+    loop = listener_context.get_event_loop()
+    original_accept = loop.sock_accept
+    first_accepted = False
+    allow_error = asyncio.Event()
+    injected = threading.Event()
+
+    async def fail_after_first_client(listener):
+        nonlocal first_accepted
+        if first_accepted and not injected.is_set():
+            await allow_error.wait()
+            injected.set()
+            raise OSError(getattr(errno, error_name), error_name)
+        accepted = await original_accept(listener)
+        first_accepted = True
+        return accepted
+
+    monkeypatch.setattr(loop, "sock_accept", fail_after_first_client)
+    client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_tls.check_hostname = False
+    client_tls.verify_mode = ssl.CERT_NONE
+    peers = []
+    try:
+        manager.start()
+        assert wait_until(lambda: driver.server is not None)
+        first_raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+        peers.append(first_raw)
+        first_peer = client_tls.wrap_socket(first_raw, server_hostname="localhost")
+        peers.append(first_peer)
+        assert wait_until(lambda: len(driver.connections) == 1)
+        first_conn = next(iter(driver.connections.values()))
+
+        loop.call_soon_threadsafe(allow_error.set)
+        assert injected.wait(5)
+        second_raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+        peers.append(second_raw)
+        second_peer = client_tls.wrap_socket(second_raw, server_hostname="localhost")
+        peers.append(second_peer)
+        assert wait_until(lambda: len(driver.connections) == 2)
+        assert first_conn.name in driver.connections
+        first_peer.settimeout(0.2)
+        with pytest.raises(socket.timeout):
+            first_peer.recv(1)
+    finally:
+        loop.call_soon_threadsafe(allow_error.set)
+        for peer in peers:
+            peer.close()
+        manager.stop()
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

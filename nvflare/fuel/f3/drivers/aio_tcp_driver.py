@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import errno
 import logging
 import socket
 from concurrent.futures import CancelledError
@@ -27,6 +28,30 @@ from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 log = logging.getLogger(__name__)
+
+_RETRY_ACCEPT_ERRORS = frozenset(
+    getattr(errno, name)
+    for name in (
+        "EAGAIN",
+        "EWOULDBLOCK",
+        "EINTR",
+        "ECONNABORTED",
+        # Linux can report an already-failed connection's network error from accept().
+        "ENETDOWN",
+        "EPROTO",
+        "ENOPROTOOPT",
+        "EHOSTDOWN",
+        "ENONET",
+        "EHOSTUNREACH",
+        "EOPNOTSUPP",
+        "ENETUNREACH",
+    )
+    if hasattr(errno, name)
+)
+_PAUSE_ACCEPT_ERRORS = frozenset(
+    getattr(errno, name) for name in ("EMFILE", "ENFILE", "ENOBUFS", "ENOMEM") if hasattr(errno, name)
+)
+_ACCEPT_RETRY_DELAY = 1
 
 
 class _TlsListener:
@@ -44,7 +69,22 @@ class _TlsListener:
             while not self._stopped:
                 try:
                     conn, _ = await loop.sock_accept(listener)
-                except (OSError, ValueError) as ex:
+                except OSError as ex:
+                    if self._stopped:
+                        return
+                    if isinstance(ex, ConnectionAbortedError) or ex.errno in _RETRY_ACCEPT_ERRORS:
+                        log.debug("TLS listener retrying after accept error: %s", ex)
+                        await asyncio.sleep(0)
+                        continue
+                    if ex.errno in _PAUSE_ACCEPT_ERRORS:
+                        log.warning("TLS listener accept unavailable; retrying in one second: %s", ex)
+                        await asyncio.sleep(_ACCEPT_RETRY_DELAY)
+                        continue
+                    self._failure = ex
+                    log.exception("TLS listener stopped accepting connections")
+                    self.close()
+                    return
+                except ValueError as ex:
                     if not self._stopped:
                         self._failure = ex
                         log.exception("TLS listener stopped accepting connections")
@@ -150,10 +190,8 @@ class AioTcpDriver(AioBaseDriver):
             await self._cancel_connect_tasks()
             if isinstance(server, _TlsListener):
                 # No accept callback can publish a socket after the accept
-                # loops have finished. Close raw sockets before task cancellation.
+                # loops have finished. Their tasks own any pending raw sockets.
                 await server.wait_closed()
-                for conn in list(self._pending_sockets):
-                    conn.close()
             await self._cancel_accept_tasks()
             if server and not isinstance(server, _TlsListener):
                 await server.wait_closed()

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import errno
 import socket
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,8 +23,146 @@ import pytest
 from nvflare.fuel.f3.connection import ConnState
 from nvflare.fuel.f3.drivers.aio_conn import AioConnection
 from nvflare.fuel.f3.drivers.aio_context import AioContext
-from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
+from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver, _TlsListener
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
+
+
+@pytest.mark.parametrize(
+    "error_name",
+    [
+        "ECONNABORTED",
+        "ENETDOWN",
+        "EPROTO",
+        "ENOPROTOOPT",
+        "EHOSTDOWN",
+        "ENONET",
+        "EHOSTUNREACH",
+        "EOPNOTSUPP",
+        "ENETUNREACH",
+        "EMFILE",
+        "ENFILE",
+        "ENOBUFS",
+        "ENOMEM",
+    ],
+)
+def test_tls_listener_retries_recoverable_accept_error(error_name):
+    error_code = getattr(errno, error_name, None)
+    if error_code is None:
+        pytest.skip(f"{error_name} is not defined on this platform")
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        listener_socket = socket.socket()
+        listener_socket.bind(("127.0.0.1", 0))
+        listener_socket.listen()
+        listener_socket.setblocking(False)
+        address = listener_socket.getsockname()
+        original_accept = loop.sock_accept
+        injected = asyncio.Event()
+        accepted = asyncio.Event()
+        injected_at = None
+
+        async def fail_once(sock):
+            nonlocal injected_at
+            if not injected.is_set():
+                injected_at = loop.time()
+                injected.set()
+                raise OSError(error_code, error_name)
+            return await original_accept(sock)
+
+        def on_accept(conn):
+            conn.close()
+            accepted.set()
+
+        with patch.object(loop, "sock_accept", fail_once):
+            server = _TlsListener(loop, [listener_socket], on_accept)
+            peer = socket.socket()
+            peer.setblocking(False)
+            try:
+                await asyncio.wait_for(injected.wait(), 2)
+                assert not server._stopped, f"{error_name} stopped the TLS listener"
+                await loop.sock_connect(peer, address)
+                await asyncio.wait_for(accepted.wait(), 3)
+                assert not server._stopped
+                if error_name in ("EMFILE", "ENFILE", "ENOBUFS", "ENOMEM"):
+                    assert loop.time() - injected_at >= 0.9
+            finally:
+                peer.close()
+                server.close()
+                await server.wait_closed()
+
+    asyncio.run(run())
+
+
+def test_tls_listener_shutdown_interrupts_resource_retry():
+    async def run():
+        loop = asyncio.get_running_loop()
+        accepting = asyncio.Event()
+
+        async def exhausted(_sock):
+            accepting.set()
+            raise OSError(errno.EMFILE, "too many open files")
+
+        with patch.object(loop, "sock_accept", exhausted):
+            server = _TlsListener(loop, [MagicMock()], MagicMock())
+            await asyncio.wait_for(accepting.wait(), 2)
+            await asyncio.sleep(0)
+            server.close()
+            await asyncio.wait_for(server.wait_closed(), 0.5)
+
+    asyncio.run(run())
+
+
+def test_tls_listener_propagates_unrecoverable_accept_error():
+    async def run():
+        loop = asyncio.get_running_loop()
+
+        async def bad_listener(_sock):
+            raise OSError(errno.EBADF, "bad listener")
+
+        with patch.object(loop, "sock_accept", bad_listener):
+            server = _TlsListener(loop, [MagicMock()], MagicMock())
+            with pytest.raises(OSError, match="bad listener"):
+                await asyncio.wait_for(server.serve_forever(), 2)
+            assert server._stopped
+
+    asyncio.run(run())
+
+
+def test_shutdown_cancels_tls_accept_before_closing_pending_socket():
+    async def run():
+        loop = asyncio.get_running_loop()
+        with patch.object(AioContext, "get_global_context", return_value=MagicMock()):
+            driver = AioTcpDriver()
+        connector = ConnectorInfo("test", driver, {}, Mode.PASSIVE, 0, 0, False, threading.Event())
+        driver.connector = connector
+        driver.ssl_context = MagicMock()
+        driver.server = _TlsListener(loop, [], driver._start_tls_socket)
+        entered = asyncio.Event()
+        events = []
+
+        async def stalled_tls_accept(_factory, _conn, **_kwargs):
+            entered.set()
+            try:
+                await asyncio.Future()
+            finally:
+                events.append("accept cancelled")
+
+        conn = MagicMock()
+        conn.close.side_effect = lambda: events.append("socket closed")
+        with patch.object(loop, "connect_accepted_socket", stalled_tls_accept):
+            driver._start_tls_socket(conn)
+            await asyncio.wait_for(entered.wait(), 2)
+            driver.stop_connection_admission()
+            connector.stopped.set()
+            await asyncio.wait_for(driver._async_shutdown(), 2)
+
+        assert events[0] == "accept cancelled"
+        conn.close.assert_called()
+        assert not driver._accept_tasks
+        assert not driver._pending_sockets
+
+    asyncio.run(run())
 
 
 def test_shutdown_runs_on_aio_loop_and_is_idempotent(monkeypatch):

@@ -590,6 +590,7 @@ class ConnManager(ConnMonitor):
     def _deliver_endpoint_notifications(self):
         # The queue preserves mutation order. No manager or driver lock is held
         # when invoking callbacks, which may remove connectors or stop the cell.
+        # Callbacks run serially, so a slow callback delays later endpoints.
         while True:
             with self._notification_condition:
                 while not self._endpoint_notifications and not self._notification_stopping:
