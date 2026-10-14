@@ -260,6 +260,7 @@ class LabStateTests(unittest.TestCase):
             ):
                 runner.run_suite("test_http.py", {}, output)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertIn("--catch", popen.call_args.args[0])
         self.assertIs(popen.call_args.kwargs["stderr"], runner.subprocess.STDOUT)
         self.assertNotEqual(popen.call_args.kwargs["stdout"], runner.subprocess.PIPE)
         killpg.assert_called_once_with(1234, runner.signal.SIGINT)

@@ -117,7 +117,7 @@ def _shutdown_vaults(output):
 
 
 def _stop_suite(process, output):
-    """Give the suite a bounded interrupt window so unittest cleanups can run."""
+    """Give unittest catchbreak a bounded window to run suite cleanups."""
     if process.poll() is None:
         try:
             os.killpg(process.pid, signal.SIGINT)
@@ -158,6 +158,7 @@ def run_suite(pattern, environment, output):
         "-m",
         "unittest",
         "discover",
+        "--catch",
         "-s",
         str(Path(__file__).parent),
         "-p",
