@@ -1,0 +1,19 @@
+name: breastgfcl
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.23
+  - pandas>=1.5
+  - matplotlib>=3.7
+  - seaborn>=0.12
+  - requests>=2.28
+  - pytorch>=2.0
+  - pip:
+      - nvflare==2.9.0
+      - easydict>=1.10
+      - openpyxl==3.1.5
+      - xlrd==2.0.2
