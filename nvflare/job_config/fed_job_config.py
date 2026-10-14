@@ -16,7 +16,6 @@ import builtins
 import inspect
 import json
 import os
-import shlex
 import shutil
 import sys
 import uuid
@@ -267,27 +266,29 @@ class FedJobConfig:
             warn_on_potential_secrets_in_job_dir(job_root, job_name=self.job_name)
 
             try:
-                command = (
-                    f"{sys.executable} -m nvflare.private.fed.app.simulator.simulator "
-                    + os.path.join(job_root, self.job_name)
-                    + " -w "
-                    + workspace
-                )
+                args = [
+                    sys.executable,
+                    "-m",
+                    "nvflare.private.fed.app.simulator.simulator",
+                    os.path.join(job_root, self.job_name),
+                    "-w",
+                    workspace,
+                ]
                 if clients:
                     clients = self._trim_whitespace(clients)
-                    command += " -c " + str(clients)
+                    args += ["-c", str(clients)]
                 if n_clients:
-                    command += " -n " + str(n_clients)
+                    args += ["-n", str(n_clients)]
                 if threads:
-                    command += " -t " + str(threads)
+                    args += ["-t", str(threads)]
                 if gpu:
                     gpu = self._trim_whitespace(gpu)
-                    command += " -gpu " + str(gpu)
+                    args += ["-gpu", str(gpu)]
                 if log_config:
-                    command += " -l" + str(log_config)
+                    args.append("-l" + str(log_config))
 
                 new_env = os.environ.copy()
-                process = popen_in_new_session(shlex.split(command, True), shell=False, env=new_env)
+                process = popen_in_new_session(args, shell=False, env=new_env)
 
                 return_code = process.wait()
                 return return_code

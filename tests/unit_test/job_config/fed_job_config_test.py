@@ -676,3 +676,20 @@ class TestFedJobConfig:
                 result = job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)
 
         assert result == 2
+
+    def test_simulator_run_keeps_paths_with_spaces_intact(self, tmp_path):
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        process = Mock()
+        process.wait.return_value = 0
+        workspace = str(tmp_path / "work space")
+        executable = str(tmp_path / "py env" / "bin" / "python")
+
+        with patch.object(job_config, "generate_job_config"):
+            with patch("nvflare.job_config.fed_job_config.sys.executable", executable):
+                with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process) as popen:
+                    job_config.simulator_run(workspace, clients="site-1, site-2", threads=2)
+
+        args = popen.call_args.args[0]
+        assert args[0] == executable
+        assert args[args.index("-w") + 1] == workspace
+        assert args[args.index("-c") + 1] == "site-1,site-2"
