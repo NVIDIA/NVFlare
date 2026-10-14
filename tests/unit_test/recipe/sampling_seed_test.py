@@ -34,7 +34,11 @@ class SimpleTestModel(nn.Module):
 
 @pytest.fixture
 def mock_file_system():
-    with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.path.exists", return_value=True),
+    ):
         yield
 
 
@@ -59,4 +63,27 @@ class TestSamplingSeedRecipeOption:
             name="t", model=SimpleTestModel(), min_clients=2, num_rounds=1, train_script="client.py", sampling_seed=7
         )
         assert recipe.sampling_seed == 7
+        assert get_controller(recipe)._sampling_seed == 7
+
+    def test_seed_reaches_the_controller_through_fedprox(self, mock_file_system):
+        from nvflare.app_opt.pt.recipes.fedprox import FedProxRecipe
+
+        recipe = FedProxRecipe(
+            name="t", model=SimpleTestModel(), min_clients=2, num_rounds=1, train_script="client.py", sampling_seed=7
+        )
+        assert get_controller(recipe)._sampling_seed == 7
+
+    def test_seed_reaches_the_controller_through_fedce(self, mock_file_system):
+        from nvflare.app_opt.pt.recipes.fedce import FedCERecipe
+
+        recipe = FedCERecipe(
+            name="t", model=SimpleTestModel(), min_clients=2, num_rounds=1, train_script="client.py", sampling_seed=7
+        )
+        assert get_controller(recipe)._sampling_seed == 7
+
+    def test_seed_reaches_the_controller_through_tensorflow(self, mock_file_system):
+        pytest.importorskip("tensorflow", reason="TensorFlow not available")
+        from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe as TFFedAvgRecipe
+
+        recipe = TFFedAvgRecipe(name="t", min_clients=2, num_rounds=1, train_script="train.py", sampling_seed=7)
         assert get_controller(recipe)._sampling_seed == 7

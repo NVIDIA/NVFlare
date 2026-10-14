@@ -51,11 +51,15 @@ class TestSampleClients:
         assert schedule(make_controller(NAMES, seed=7), 3, 20) != schedule(make_controller(NAMES, seed=8), 3, 20)
 
     def test_seeded_sampling_does_not_touch_global_random_state(self):
-        random.seed(1234)
-        expected = [random.random() for _ in range(3)]
-        random.seed(1234)
-        schedule(make_controller(NAMES, seed=7), 3, 5)
-        assert [random.random() for _ in range(3)] == expected
+        original_state = random.getstate()
+        try:
+            random.seed(1234)
+            expected = [random.random() for _ in range(3)]
+            random.seed(1234)
+            schedule(make_controller(NAMES, seed=7), 3, 5)
+            assert [random.random() for _ in range(3)] == expected
+        finally:
+            random.setstate(original_state)
 
     def test_seeded_full_participation_keeps_engine_order(self):
         controller = make_controller(NAMES, seed=7)
