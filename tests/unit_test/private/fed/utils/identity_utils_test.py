@@ -70,10 +70,14 @@ def _make_root_and_client_certs(extra_extensions=None, uri_names=None):
 def test_expected_token_mismatch_is_quiet_without_suppressing_authentication_errors(caplog):
     _root_cert, _root_key, cert, _key = _make_root_and_client_certs()
     verifier = TokenVerifier(cert)
+    # Background transport threads may log during this test; inspect only the verifier.
     assert not verifier.verify("client", "token", b"invalid-signature", log_error=False)
-    assert not caplog.records
+    assert not any(record.name == verifier.logger.name for record in caplog.records)
     assert not verifier.verify("client", "token", b"invalid-signature")
-    assert "exception verifying token" in caplog.text
+    assert any(
+        record.name == verifier.logger.name and "exception verifying token" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_identity_verifier_accepts_direct_root_signed_cert(tmp_path):
