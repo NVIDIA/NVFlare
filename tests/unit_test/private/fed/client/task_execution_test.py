@@ -672,7 +672,7 @@ def test_receipts_ignore_other_identity_and_retain_filtered_failure():
 
 def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch):
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-    from nvflare.private.fed.client.task_worker_binding import bind_client_task_context
+    from nvflare.private.fed.client.client_api_task_runner import bind_client_task_context
     from nvflare.private.fed.task_worker import (
         FileTaskArtifactStore,
         TaskAttemptIdentity,
@@ -716,7 +716,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
 def test_task_runner_keeps_initialization_error_when_cleanup_also_fails(native_task, monkeypatch):
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.client.in_process.api import InProcessClientAPI
-    from nvflare.private.fed.client import task_worker_binding
+    from nvflare.private.fed.client import client_api_task_runner
 
     _root, _custom, context, _policy = native_task
     executor = ClientAPIExecutor(
@@ -725,7 +725,9 @@ def test_task_runner_keeps_initialization_error_when_cleanup_also_fails(native_t
         params_exchange_format="numpy",
         server_expected_format="numpy",
     )
-    monkeypatch.setattr(task_worker_binding, "TaskScriptRunner", Mock(side_effect=ValueError("primary setup failure")))
+    monkeypatch.setattr(
+        client_api_task_runner, "TaskScriptRunner", Mock(side_effect=ValueError("primary setup failure"))
+    )
     close = InProcessClientAPI.close
 
     def close_then_fail(api):
@@ -733,7 +735,7 @@ def test_task_runner_keeps_initialization_error_when_cleanup_also_fails(native_t
         raise OSError("secondary cleanup failure")
 
     monkeypatch.setattr(InProcessClientAPI, "close", close_then_fail)
-    runner = task_worker_binding._ClientAPITaskRunner(executor)
+    runner = client_api_task_runner._ClientAPITaskRunner(executor)
     with pytest.raises(ValueError, match="primary setup failure"):
         runner.initialize(context)
     assert runner._api is None
@@ -741,7 +743,7 @@ def test_task_runner_keeps_initialization_error_when_cleanup_also_fails(native_t
 
 def test_task_runner_finalizes_api_even_if_script_cleanup_fails():
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-    from nvflare.private.fed.client.task_worker_binding import _ClientAPITaskRunner
+    from nvflare.private.fed.client.client_api_task_runner import _ClientAPITaskRunner
 
     executor = ClientAPIExecutor(execution_mode="in_process", task_script_path="train.py")
     runner = _ClientAPITaskRunner(executor)

@@ -34,8 +34,8 @@ from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
+from .client_api_task_runner import result_wait_deadline
 from .task_execution_policy import TaskExecutionPolicy
-from .task_worker_binding import result_wait_deadline
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 

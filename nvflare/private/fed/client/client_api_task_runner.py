@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Trusted worker wiring for the shared Client API, progress and analytics."""
+"""Run one Client API task with progress reporting and analytics capture."""
 
 import copy
 import json
