@@ -38,7 +38,7 @@ from cvm.common.contracts import DISK_ROLES, resource_path, validate_resource
 from cvm.common.errors import BuildError, require
 from cvm.common.io import read_json
 from cvm.common.linux import memory_file, protect_process, run
-from cvm.runtime.attestation import validate_token
+from cvm.runtime.attestation import _fresh_credentials
 from cvm.runtime.storage import disk_device
 
 CONFIG = None
@@ -139,24 +139,23 @@ def state():
 
 
 def cross_vault(path):
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
     validate_resource(path)
-    digest = bytes.fromhex(read_json("/run/cvm/binding.json")["digest"])
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    pem = key.private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()
+    require(
+        isinstance(CONFIG.get("attestation_policy_selector"), str) and CONFIG["attestation_policy_selector"],
+        "runtime.json lacks attestation_policy_selector",
     )
-    command = [CONFIG["kbs_client"], "--url", CONFIG["kbs_url"], "--cert-file", CONFIG["kbs_cert"]]
+    digest = bytes.fromhex(read_json("/run/cvm/binding.json")["digest"])
+    deadline = time.monotonic() + (240 if CONFIG["gpu"] == "nvidia_cc" else 60)
+
+    def remaining():
+        value = deadline - time.monotonic()
+        require(value > 0, "Cross-vault attestation exceeded its time budget")
+        return value
+
+    credentials, _ = _fresh_credentials(CONFIG, digest, remaining)
+    pem = credentials["tee_keypair"].encode("ascii")
+    token = credentials["token"].encode("ascii")
     with memory_file(pem) as private:
-        token = run(
-            command + ["attest", "--tee-key-file", f"/proc/self/fd/{private}"],
-            pass_fds=(private,),
-            timeout=240 if CONFIG["gpu"] == "nvidia_cc" else 60,
-            env=dict(os.environ, RUST_LOG="off"),
-        ).strip()
-        validate_token(token, CONFIG, digest)
         context = ssl.create_default_context(cafile=CONFIG["kbs_cert"])
         opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context)
@@ -310,10 +309,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({"requested_poweroff": True})
             run(["systemctl", "poweroff", "--no-block"])
         elif url.path == "/cross-vault":
-            try:
-                self.respond(cross_vault(urllib.parse.parse_qs(url.query)["resource"][0]))
-            except Exception:
-                self.respond({"test_failed": True})
+            self.respond(cross_vault(urllib.parse.parse_qs(url.query)["resource"][0]))
         else:
             self.send_error(404)
 

@@ -133,6 +133,64 @@ class LabProfileTests(unittest.TestCase):
 
 
 class LabStateTests(unittest.TestCase):
+    def test_cross_vault_attestation_uses_profile_policy_selector(self):
+        agent = load_helper("lab_guest_agent")
+        agent.CONFIG = {
+            "kbs_client": "/usr/bin/kbs-client",
+            "kbs_url": "https://kbs.example.org",
+            "kbs_cert": "/etc/cvm/kbs.pem",
+            "gpu": "none",
+            "attestation_policy_selector": "cvm-cpu-profile",
+        }
+        with (
+            patch.object(agent, "validate_resource"),
+            patch.object(agent, "read_json", return_value={"digest": "ab" * 32}),
+            patch.object(agent, "_fresh_credentials", side_effect=BuildError("stop after attestation")) as fresh,
+            self.assertRaisesRegex(BuildError, "stop after attestation"),
+        ):
+            agent.cross_vault("keys/other/resource")
+
+        self.assertIs(fresh.call_args.args[0], agent.CONFIG)
+        self.assertEqual(fresh.call_args.args[1], bytes.fromhex("ab" * 32))
+        self.assertGreater(fresh.call_args.args[2](), 0)
+
+    def test_cross_vault_reports_missing_policy_selector(self):
+        agent = load_helper("lab_guest_agent")
+        agent.CONFIG = {"gpu": "none"}
+        with (
+            patch.object(agent, "validate_resource"),
+            patch.object(agent, "read_json", side_effect=AssertionError("binding must not be read")),
+            self.assertRaisesRegex(BuildError, "runtime.json lacks attestation_policy_selector"),
+        ):
+            agent.cross_vault("keys/other/resource")
+
+    def test_cross_vault_handler_reports_only_safe_diagnostics(self):
+        agent = load_helper("lab_guest_agent")
+        server = agent.http.server.HTTPServer(("127.0.0.1", 0), agent.Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        try:
+            for error, diagnostic in (
+                (BuildError("Wrong appraisal policy"), "Wrong appraisal policy"),
+                (OSError("SECRET_SENTINEL"), "Test fixture exception"),
+            ):
+                with self.subTest(error=type(error).__name__), patch.object(agent, "cross_vault", side_effect=error):
+                    connection = http.client.HTTPConnection(*server.server_address, timeout=3)
+                    try:
+                        connection.request("POST", "/cross-vault?resource=keys/other/resource")
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 200)
+                        detail = json.loads(response.read())
+                        self.assertEqual(detail["fault_error"], type(error).__name__)
+                        self.assertEqual(detail["diagnostic"], diagnostic)
+                        self.assertNotIn("SECRET_SENTINEL", json.dumps(detail))
+                    finally:
+                        connection.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+            server.server_close()
+
     def test_bootstrap_publishes_only_successfully_verified_firewall_status(self):
         for failure in (None, "apply", "verify"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
