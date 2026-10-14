@@ -35,10 +35,12 @@ DecomposerRegister remains in the CJ and is also staged in the worker so both
 processes register payload codecs before decoding. This serialization setup is
 independent of trainer lifetime.
 
-`FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`, and
-`recipe.set_execution_lifetime(...)` expose these controls. The unified and PyTorch
-FedAvg and PyTorch FedProx recipes also accept `execution_lifetime="task"`. Export
-validates the receiving sites' GPU resource/launcher settings; unrelated job-lifetime
+`FedJob(execution_lifetime="task")` and `job.set_execution_lifetime(...)` expose
+these controls at the Job API level. The unified and PyTorch FedAvg and PyTorch
+FedProx recipes accept `execution_lifetime="task"` in their constructors. Existing
+recipes can use `recipe.add_client_config({"execution_lifetime": "task"}, clients=...)`
+to configure existing client apps. Export validates the receiving sites' GPU
+resource/launcher settings; unrelated job-lifetime
 GPU apps in the same deployment remain valid. Resource defaults and receiving-site
 overrides use the normal launcher resource resolvers. The resource manager and all
 four launcher modes (Process, Docker, Kubernetes and Slurm) are checked; nonzero

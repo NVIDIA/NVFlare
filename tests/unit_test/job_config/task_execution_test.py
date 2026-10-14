@@ -111,10 +111,9 @@ def test_recipe_exports_native_task_profile_with_resident_federation_widget(tmp_
         framework=FrameworkType.NUMPY,
         model=np.zeros(2),
         train_script=str(script),
-        execution_lifetime="task",
     )
-    recipe._ensure_client_apps_prepared()
-    recipe._job.export_job(str(tmp_path / "export"))
+    recipe.add_client_config({"execution_lifetime": "task"})
+    recipe.export(str(tmp_path / "export"))
     config = json.loads((tmp_path / "export" / recipe.name / "app" / "config" / "config_fed_client.json").read_text())
     assert config["execution_lifetime"] == "task"
     assert "event_to_fed" in {c["id"] for c in prepare_task_execution(config).job_components}
@@ -244,7 +243,7 @@ def test_scaffold_recipe_requires_persistent_client_state(tmp_path):
     script = tmp_path / "train.py"
     script.write_text("pass\n")
     recipe = ScaffoldRecipe(min_clients=1, train_script=str(script))
-    recipe.set_execution_lifetime("task")
+    recipe.add_client_config({"execution_lifetime": "task"})
     with pytest.raises(ValueError, match="Scaffold.*job lifetime"):
         recipe.export(str(tmp_path / "export"))
 
@@ -257,10 +256,10 @@ def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, 
     script.write_text("pass\n")
     recipe = FedAvgRecipe(min_clients=1, framework=FrameworkType.NUMPY, model=np.zeros(2), train_script=str(script))
     if task_first:
-        recipe.set_execution_lifetime("task")
+        recipe.add_client_config({"execution_lifetime": "task"})
     add_cross_site_evaluation(recipe)
     if not task_first:
-        recipe.set_execution_lifetime("task")
+        recipe.add_client_config({"execution_lifetime": "task"})
     with pytest.raises(ValueError, match="local model submission.*job lifetime"):
         recipe.export(str(tmp_path / "export"))
 
