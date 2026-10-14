@@ -1071,35 +1071,30 @@ The exact accepted EAR trust vectors for this policy are:
 
 .. list-table:: Policy contract, not a universal confidence scale
    :header-rows: 1
-   :widths: 24 18 18 18 22
+   :widths: 28 24 24 24
 
    * - Appraisal
      - ``executables``
      - ``hardware``
      - ``configuration``
-     - Other five fields
    * - SNP CPU
      - 3
      - 2
-     - 3
-     - All 0
+     - 2
    * - TDX CPU
      - 3
      - 2
      - 2
-     - All 0
    * - NVIDIA GPU
      - 3
      - 2
-     - 3
-     - All 0
+     - 2
 
-The other fields are ``file-system``, ``instance-identity``, ``runtime-opaque``,
-``storage-opaque``, and ``sourced-data``. Zero values are not evidence that all
-possible storage/runtime properties were appraised. The checks require exact
-vectors, not "at least" a numeric score. In Rego, ``configuration := 3 if { ... }``
-assigns that claim when its conditions hold; it neither counts conditions nor
-authorizes a resource by itself.
+These vectors contain exactly the three listed keys. Unappraised AR4SI
+categories are omitted rather than asserted with a zero value. The checks
+require exact vectors, not "at least" a numeric score. In Rego,
+``configuration := 2 if { ... }`` assigns that claim when its conditions hold;
+it neither counts conditions nor authorizes a resource by itself.
 
 .. _coco_security_pod_launch:
 

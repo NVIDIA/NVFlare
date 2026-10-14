@@ -4,6 +4,10 @@ cpu_tee: amd_sev_snp
 gpu_tee: nvidia_cc
 attestation:
   service: trustee
+# This measured-image executor fixes in-process mode and the measured script
+# path. Keep this as an exact, reviewed per-site grant.
+class_allow_list:
+  - cvm_client_api_executor.CVMClientAPIExecutor
 workload:
   source:
     type: docker_archive
