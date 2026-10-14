@@ -20,7 +20,7 @@ callbacks that mutate shared state must synchronize access to that state.
 
 import threading
 
-from collab.async_aggregation.np_utils import parse_array_def
+from collab.response_callbacks.np_utils import parse_array_def
 
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
