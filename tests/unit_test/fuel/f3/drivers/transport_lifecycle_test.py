@@ -165,7 +165,7 @@ def test_closed_connection_cannot_publish_late_ready():
         manager.stop()
 
 
-def test_ready_callback_can_change_connectors_and_close_connection():
+def test_endpoint_callbacks_can_change_connectors_and_preserve_order():
     manager = ConnManager(Endpoint("callback_local"))
     conn = MagicMock()
     conn.name = "callback_conn"
@@ -188,6 +188,10 @@ def test_ready_callback_can_change_connectors_and_close_connection():
         observed.append(endpoint.state)
 
     def disconnected(agent):
+        assert manager.lock.acquire(blocking=False), "DISCONNECTED callback ran under the manager lock"
+        manager.lock.release()
+        handle = manager.add_connector(TcpDriver(), {"scheme": "tcp", "url": "tcp://localhost:1234"}, Mode.PASSIVE)
+        manager.remove_connector(handle)
         observed.append(EndpointState.DISCONNECTED)
         notified.set()
 
