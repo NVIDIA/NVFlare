@@ -289,8 +289,8 @@ and replay. Its other overrides are `p = 0.1` and `shuffle = false`, with
 `no_bn = true`, `weight_decay = 0.0`, and `sensitivity = epsilon = 1.0`.
 These experiment settings do not change the runtime defaults.
 
-The original [recorded NVFlare experiment](../README.md#recorded-nvflare-experiment)
-used NVFlare 2.9.0 Collab with the patient/sample separation and
+The historical [recorded NVFlare experiment](../README.md#recorded-nvflare-experiment)
+used the inherited first-diagnosis clinical TSV and NVFlare 2.9.0 Collab with the patient/sample separation and
 training-fitted normalization described above. It froze the original
 seed-42 partition of 894 training records and 225 outer-evaluation records.
 A patient-level split with seed 2026 divided the 894 records into 674 inner
@@ -337,6 +337,18 @@ and the multiprocess CPU smoke described below; see [validation results](../READ
 validation on 2026-10-12 passed the expanded **203-test** regression suite,
 including offline TCIA workbook/download and CLI failure coverage.
 The 2026-10-13 alias update passed all **206 regression tests**.
+
+The later **2026-10-13 clinical metadata correction** selects the primary
+breast diagnosis from the bundled JSON and regenerates the TSV. It passed
+**224 regression tests** and reran the locked configuration with fresh
+training seeds 42/43/44 on one new seed-42 preparation: **966 training and
+240 evaluation records**, with **25 unknown-stage tumors excluded**.
+All 90 rounds and the CPU restoration checks for all 36 client/task
+accuracy cells passed. Pooled accuracy was 97.50%/97.92%/97.50%, and mean
+AUROC was 0.9661 (sample SD 0.0050). The historical parameter search was not
+repeated. The cohort changed, so the new and historical scores do not measure
+a performance improvement on identical data. See the
+[corrected cohort and full results](../README.md#clinical-metadata-correction-and-rerun-2026-10-13).
 
 The standard launcher uses `--seed` for both data preparation and training.
 Changing it on each CLI run also changes the patient/task/client partition,

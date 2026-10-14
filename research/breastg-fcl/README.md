@@ -112,7 +112,7 @@ below create an isolated Conda environment. CPU execution is supported for
 the synthetic smoke test and real-data workflow. CUDA training needs
 a compatible NVIDIA driver and PyTorch build.
 
-The 2026-10-10 validation used the `breastgfcl` Miniconda environment with
+The 2026-10-10 and 2026-10-13 real-data validations used the `breastgfcl` Miniconda environment with
 Python 3.10.22 and PyTorch 2.5.1 (CUDA 12.4). Each real-data run used one
 NVIDIA GeForce RTX 3090 (24 GB), shared by the server and four clients.
 The earlier parameter search used an older environment; both are listed
@@ -151,6 +151,25 @@ This project includes a GDC clinical metadata snapshot. The downloader
 refreshes the expression manifest and downloads STAR-Counts files; it does
 not refresh clinical metadata. Expression files are downloaded separately
 and are not included in this repository.
+
+The clinical TSV is derived from the bundled GDC JSON snapshot. Rebuild or
+verify it without querying GDC:
+
+```bash
+python TCGA-BRCA/scripts/build_clinical_metadata.py
+python TCGA-BRCA/scripts/build_clinical_metadata.py --check
+```
+
+The exporter selects a diagnosis classified exactly as `primary` with a
+breast tissue of origin before reading its stage. It does not use diagnosis
+array order, the first nonempty stage, or the highest stage. A missing or
+unknown stage on that primary diagnosis stays unknown. If no explicit primary
+breast diagnosis exists, the only fallback is a unique breast diagnosis at
+`days_to_diagnosis == 0` with missing or `not reported` classification.
+Distinct competing candidates raise an error. Prior, synchronous, subsequent,
+recurrent, metastatic, and other-organ diagnoses are not fallback candidates.
+The output retains one row per case, sorted by patient ID, with diagnosis
+fields taken together from the selected record.
 
 Download the expression files with:
 
@@ -458,6 +477,12 @@ CLI alias validation on 2026-10-13 passed all **206 regression tests** and
 the whole-example pinned style check, including effective alias values,
 last-value precedence, invalid class widths, and prepared model dimensions.
 
+Clinical metadata validation on 2026-10-13 passed all **224 regression tests**,
+including 18 tests for primary-breast diagnosis selection, ambiguous candidates,
+unknown-stage preservation, case identity validation, order independence, and
+exact TSV regeneration. Whole-example pinned style and license checks and
+`pip check` passed. The corrected real-data rerun is reported below.
+
 The NVFlare 2.9.0 Collab CPU smoke completed all six rounds across four
 client processes and three tasks, with replay and client-side latent
 perturbation enabled. It exited successfully with no errors or warnings.
@@ -478,12 +503,16 @@ fixture; it does not establish TCGA accuracy.
 
 ### Recorded NVFlare experiment
 
-The final evaluation below was rerun on **2026-10-10** after the review
-fixes, including stable prediction log probabilities, graph normalization,
-and persistence of the actual noisy training graphs. The three final
-training seeds used the previously selected configuration. The earlier
-parameter search and its validation results remain historical; that search
-was not repeated for this rerun.
+The **2026-10-10 historical evaluation** below used the inherited clinical
+TSV, whose diagnosis fields came from the first diagnosis in each case's
+JSON. Its cohort and results are retained to document the earlier parameter
+search and code validation. The [clinical metadata correction and rerun](#clinical-metadata-correction-and-rerun-2026-10-13)
+reports results from the corrected cohort.
+
+The historical rerun included stable prediction log probabilities, graph
+normalization, and persistence of the actual noisy training graphs. Its
+three final training seeds used the previously selected configuration;
+the parameter search was not repeated.
 
 These measurements use the NVFlare 2.9.0 Collab implementation with
 patient-separated partitions, training-fitted expression/TCIA normalization,
@@ -492,7 +521,7 @@ completed four clients, three tasks, ten rounds per task, and three local
 epochs per round with replay enabled. Evaluation uses the final
 Task 3 / Round 10 checkpoint.
 
-#### Parameter selection and fixed data
+#### Historical parameter selection and fixed data
 
 After excluding 112 unknown-stage tumors from the 1,231 expression records,
 the original seed-42 partition contains 894 training records from 792 patients
@@ -534,7 +563,7 @@ tie-breaker. All three selected validation runs achieved pooled accuracy
 99.09%, balanced accuracy 95.45%, Normal recall 90.91%, Tumor recall 100.00%,
 and macro F1 97.37%.
 
-#### Final evaluation results
+#### Historical final evaluation results
 
 For the 2026-10-10 rerun, all 1,231 expression files were downloaded against
 the repository's frozen manifest and verified by size and MD5; all five
@@ -606,6 +635,64 @@ exact replay of the fixed-partition search and multiple-seed table requires
 those additional artifacts. The extra pooled metrics were computed by the
 local evaluator, not by the standard accuracy CSV output.
 
+#### Clinical metadata correction and rerun (2026-10-13)
+
+The clinical exporter now selects the primary breast diagnosis from the
+unchanged 1,098-case JSON snapshot using the rules in [data preparation](#tcga-brca-expression-and-clinical-data).
+This changes 106 TSV rows, including 101 stage values. For example,
+`TCGA-A2-A04P` retains its primary breast Stage IIIC; `TCGA-B6-A0I8` retains
+its primary Stage X and is excluded instead of using a prior tumor's Stage II.
+
+Of the same 1,231 expression records, 1,206 are eligible and 25 unknown-stage
+tumors are excluded. The cohort contains 113 Normal records and 184/631/278
+Tumor records in the early/intermediate/advanced tasks. Relative to the
+historical TSV, 88 records are recovered, 10 retained records change task,
+and one record becomes ineligible. These are expression-record counts;
+the three changes involve 84, 8, and 1 distinct patients, respectively.
+
+Preparing the corrected data with seed 42 gives **966 training records from
+857 patients** and **240 evaluation records from 214 patients**. The evaluation
+side contains 23 Normal and 217 Tumor records. Previously eligible records
+that remain eligible stay on their original train/evaluation side; patient
+and sample identities are disjoint. Expression normalization is fitted on
+the 966 training records, and spatial/temporal normalization each uses 68
+unique matched training TCIA rows. Statistics, normalized tensors, and
+training-only graph summaries were recomputed and independently checked.
+
+All expression size/MD5 checks and the five TCIA source SHA-256 checks passed.
+Fresh preparation used a separate cache and froze the corrected tensors,
+assignments, and summaries. Three fresh refits used the previously locked
+configuration and training seeds 42, 43, and 44 on GPUs 0, 2, and 4,
+respectively. The parameter search was not repeated, and no parameters or
+checkpoints were selected using these evaluation results.
+
+| Training seed | Accuracy (%) | Balanced accuracy (%) | Normal recall (%) | Tumor recall (%) | Macro F1 (%) | AUROC |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 42 | 97.50 | 88.90 | 78.26 | 99.54 | 92.17 | 0.9611 |
+| 43 | 97.92 | 91.07 | 82.61 | 99.54 | 93.61 | 0.9661 |
+| 44 | 97.50 | 88.90 | 78.26 | 99.54 | 92.17 | 0.9711 |
+| Mean ± sample standard deviation | 97.64 ± 0.24 | 89.62 ± 1.26 | 79.71 ± 2.51 | 99.54 ± 0.00 | 92.65 ± 0.83 | 0.9661 ± 0.0050 |
+
+The confusion matrices are `[[18, 5], [1, 216]]` for seeds 42 and 44, and
+`[[19, 4], [1, 216]]` for seed 43, using the same class order and pooled
+record-level metric definitions as above. The unweighted client/task mean
+accuracy is 97.05%, 97.74%, and 97.05%, respectively.
+
+All **90 rounds** completed. CPU restoration of the final encoders,
+predictors, and saved noisy graphs reproduced all **36 client/task accuracy
+cells**. Prepared data and partition hashes match across seeds; fresh
+initialization and final trained weights differ. Checkpoint states and
+logged losses are finite, and simulator/site logs contain no errors or
+warnings. Each run contains 18 graph artifacts and 30 rows in each metric CSV.
+
+These measurements use the corrected cohort, so differences from the
+historical table do not establish a performance improvement. The outer split
+was previously inspected, only 23 evaluation records are Normal, and seed
+variation is not patient-level uncertainty. The historical search and paper
+protocol limitations still apply. Source snapshots, frozen inputs, drivers,
+per-record predictions, and full run artifacts are retained locally; this
+rerun does not alter the historical experiment artifacts.
+
 ## License
 
 This contribution is released under [Apache-2.0](LICENSE), consistent with
@@ -634,7 +721,7 @@ the Collab API and `CollabRecipe`/`SimEnv` integration.
 
 The completed validations used these installed versions:
 
-| Dependency | Historical search | 2026-10-10 validation and final rerun |
+| Dependency | Historical search | 2026-10-10 and 2026-10-13 validation and final reruns |
 | --- | --- | --- |
 | Python | 3.10.12 | 3.10.22 |
 | NVFlare | 2.9.0 | 2.9.0 |

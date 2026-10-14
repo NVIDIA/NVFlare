@@ -13,7 +13,7 @@
   "implementation_scope": {
     "unchanged": [
       "TCGA-BRCA expression features and prediction target",
-      "TCGA-BRCA cohort and clinical-stage task definitions",
+      "TCGA-BRCA clinical-stage task definitions",
       "evaluation metrics"
     ],
     "changed": [
@@ -30,7 +30,8 @@
       "global patient-disjoint train/test split before task and client assignment",
       "patient/sample identity audits and rejection of duplicate record assignments or empty client/task splits",
       "expression and TCIA normalization fitted only on final eligible training data, with saved fitting statistics and identities",
-      "client-side Laplace perturbation of all uploaded real and synthetic encodings before Collab transmission"
+      "client-side Laplace perturbation of all uploaded real and synthetic encodings before Collab transmission",
+      "primary-breast diagnosis selection from the unchanged clinical JSON, correcting eligible cohort membership and task assignments"
     ]
   },
   "learning_protocol": {
@@ -66,6 +67,8 @@
     "checkpoint_compatibility": "Old label-conditioned E and graph-embedding G checkpoints cannot be loaded directly into the new E/G architectures."
   },
   "source_reproducible_data_protocol": {
+    "clinical_metadata": "scripts/build_clinical_metadata.py deterministically derives the case-level TSV from the bundled GDC JSON; select a unique exact primary breast diagnosis before reading its stage, retaining missing/unknown primary stages; if no explicit primary exists, allow only a unique breast diagnosis at days_to_diagnosis=0 with missing/not reported classification; reject distinct competing candidates and never borrow stage from a prior, synchronous, subsequent, recurrent, metastatic, or other-organ diagnosis",
+    "clinical_metadata_verification": "python TCGA-BRCA/scripts/build_clinical_metadata.py --check verifies exact TSV bytes without modifying the source JSON; rows are sorted by patient ID and diagnosis fields come from one selected record",
     "main_prediction_input": "TCGA-BRCA expression features with log1p values standardized using only final eligible training records",
     "prediction_target": "inherited unchanged from the TCGA-BRCA GFedCL workflow",
     "train_test_split": "group by case_submitter_id globally; --train-split controls the training patient fraction (default 0.8), with remaining patients used for evaluation and no separate --test-split option; proportions are approximate after stratification by Normal-only, Tumor-only, or mixed labels; clinical_stage and random use the same patient-disjoint protocol before assigning tasks and clients",
@@ -150,7 +153,7 @@
   ],
   "implementation_validation": {
     "date": "2026-10-11",
-    "scope": "Author-reported regression validation after review fixes; final refits were performed on 2026-10-10; the original search protocol and paper metrics above remain unchanged.",
+    "scope": "Historical author-reported regression validation after review fixes; final refits on 2026-10-10 used the inherited first-diagnosis clinical TSV. These original cohort/results and the paper metrics remain historical; the corrected clinical cohort is recorded separately below.",
     "environment": {
       "name": "breastgfcl Miniconda",
       "python": "3.10.22",
@@ -218,5 +221,41 @@
     "regression_tests_passed": 206,
     "whole_example_style_check": "passed with repository-pinned tools",
     "scope": "Effective --nc/--ni aliases, precedence, invalid class widths and prepared model dimensions; no real-data experiment or CUDA rerun."
+  },
+  "clinical_metadata_validation": {
+    "date": "2026-10-13",
+    "regression_tests_passed": 224,
+    "new_clinical_metadata_tests": 18,
+    "whole_example_style_and_license_checks": "passed with repository-pinned tools",
+    "dependency_check": "pip check passed; NVFlare 2.9.0",
+    "clinical_cases": 1098,
+    "changed_tsv_rows": 106,
+    "changed_stage_values": 101,
+    "diagnosis_selection": {"primary": 1096, "baseline_breast_fallback": 1, "no_eligible_diagnosis": 1},
+    "expression_records": 1231,
+    "eligible_records": 1206,
+    "excluded_unknown_stage_records": 25,
+    "restored_records": 88,
+    "retained_records_with_changed_task": 10,
+    "newly_excluded_records": 1,
+    "training_records": 966,
+    "training_patients": 857,
+    "evaluation_records": 240,
+    "evaluation_patients": 214,
+    "evaluation_labels": {"Normal": 23, "Tumor": 217},
+    "training_tcia_rows_per_table": 68,
+    "partition_and_preprocessing_seed": 42,
+    "training_seeds": [42, 43, 44],
+    "environment": {"python": "3.10.22", "pytorch": "2.5.1", "cuda": "12.4", "numpy": "2.2.6", "nvflare": "2.9.0"},
+    "completed_rounds_total": 90,
+    "restored_client_task_accuracy_cells": 36,
+    "source_checks": "All 1231 raw expression size/MD5 checks and five TCIA artifact SHA-256 checks passed",
+    "partition_checks": "Patient/sample-disjoint train/evaluation; retained records keep their prior train/evaluation side; recomputed training-only normalization and graph summaries match; identical prepared inputs and partition hashes across seeds",
+    "checkpoint_checks": "Distinct fresh initialization and trained weights across seeds; finite checkpoint states and logged losses; no simulator/site errors or warnings; 18 graph artifacts and 30 rows per metric CSV per run",
+    "selection": "Three fresh final refits of the previously locked configuration on the corrected cohort; historical parameter search was not repeated and no outer-evaluation retuning or checkpoint selection was performed",
+    "pooled_accuracy_percent": [97.5, 97.91666666666667, 97.5],
+    "pooled_auroc": [0.9611300340613104, 0.9661390502905229, 0.9711480665197355],
+    "limitations": "The corrected cohort differs from the historical table; metric differences do not establish a performance improvement on identical data. Previously inspected outer split, only 23 Normal evaluation records, and seed variation is not a patient-level confidence interval. Paper reproduction limitations remain unchanged.",
+    "results_documentation": "../../README.md#clinical-metadata-correction-and-rerun-2026-10-13"
   }
 }
