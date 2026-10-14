@@ -8,8 +8,8 @@ new community contributions.
 
 Research projects in this directory do not all use the same layout. Some provide
 NVFlare jobs under `jobs/`, some use a `job.py` recipe, and others include
-scripts, notebooks, or links to external reference code. Start with the local
-README in each subfolder for setup, data, and run instructions.
+scripts, notebooks, or links to external reference code. Start with the project's
+local or upstream README for setup, data, and run instructions.
 
 ## Published and Reference Implementations
 
@@ -53,6 +53,13 @@ README in each subfolder for setup, data, and run instructions.
 
 ## Contributing
 
-To provide your own research implementation, start with the
-[sample research template](./sample-research/README.md) and follow the
-[research contribution guide](./CONTRIBUTING.md).
+You can contribute a link to an external NVFlare research example or a full
+implementation under `research/`. If your project already has an author-maintained
+repository, we encourage linking to it. Both paths call for a meaningful, working
+NVFlare example, clear public documentation, and evidence of a successful run.
+A paper or preprint is encouraged but not required.
+
+Follow the [research contribution guide](./CONTRIBUTING.md) for submission and
+validation expectations. For implementations hosted here, start with the
+[sample research template](./sample-research/README.md); link-only submissions do
+not require a local project directory or copy of the template.
