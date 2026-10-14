@@ -177,7 +177,7 @@ Bare-metal CVM
    bare_metal_cvm:
      cvm_image: oci://registry.example.org/cvm/tdx@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
      storage:
-       vault_size_gib: 16
+       vault_size_gib: 32  # Example only; calculate for the image and workload.
        applog_size_gib: 1
        user_config_size_gib: 1
        user_data_size_gib: 1
@@ -192,6 +192,15 @@ Its approved contract must match ``cpu_tee`` and ``gpu_tee``. The application
 image identity is read from the Docker archive. Federation, admin, relay, and
 listener ports are derived from the signed kit and merged with the requested
 network additions.
+
+The vault retains the Docker archive and stores its expanded layers plus
+application data. Size it as ``archive bytes + imported image bytes + application
+files + expected runtime writes + safety margin``. Use at least the larger of 2
+GiB or 20 percent of the static content for the safety margin, round the result up
+to GiB, and increase it for write-heavy workloads. CVM Builder rejects a value
+below its startup estimate, but operators must supply the headroom for runtime
+writes. See the :github_nvflare_link:`CVM Builder build guide
+<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` for commands and details.
 
 The application container receives the measured ``kbs-client`` read-only and
 uses it to generate Trustee-backed, identity-bound NVFlare peer proofs. Vault

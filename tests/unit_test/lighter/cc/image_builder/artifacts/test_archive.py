@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from cvm.artifacts.oci import (
@@ -35,6 +36,7 @@ from cvm.artifacts.oci import (
     publish,
 )
 from cvm.artifacts.packaging import package_bundle, package_deliveries
+from cvm.build import vault
 from cvm.build.vault import delivery, validate_archive, validated_image
 from cvm.common.errors import BuildError, ConfigurationError
 from cvm.common.io import canonical, digest_file, read_json, write_json
@@ -254,19 +256,60 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaises(BuildError):
                 materialize("registry.example.org/cvm/example:latest", root / "mutable")
 
-    def archive(self, directory, *, tamper=False, ambiguous=False, user=""):
+    def archive(
+        self,
+        directory,
+        *,
+        tamper=False,
+        ambiguous=False,
+        user="",
+        shared_layer=False,
+        repeated_layer=False,
+        linked_layer=False,
+        unsafe_link=False,
+        unsupported_layer=False,
+    ):
         config = canonical({"architecture": "amd64", "os": "linux", "config": {"Cmd": ["serve"], "User": user}})
         config_id = "sha256:" + hashlib.sha256(config).hexdigest()
+        layer_data = io.BytesIO()
+        with tarfile.open(fileobj=layer_data, mode="w:gz") as layer:
+            payload = b"application layer" * 512
+            item = tarfile.TarInfo("opt/application/payload")
+            item.size = len(payload)
+            layer.addfile(item, io.BytesIO(payload))
+        layer_blob = b"unsupported layer compression" if unsupported_layer else layer_data.getvalue()
+        layer_name = "blobs/sha256/" + hashlib.sha256(layer_blob).hexdigest()
+        layers = [layer_name]
+        extra = {}
+        if repeated_layer:
+            second_blob = layer_blob + b"second"
+            second_name = "blobs/sha256/" + hashlib.sha256(second_blob).hexdigest()
+            extra[second_name] = second_blob
+            layers = [layer_name, second_name, layer_name]
+        link = None
+        if linked_layer:
+            link = "legacy/layer.tar"
+            layers = [link]
+        entries = [{"Config": "blobs/sha256/" + config_id[7:], "Layers": layers}]
+        if shared_layer:
+            shared_config = canonical(
+                {"architecture": "amd64", "os": "linux", "config": {"Cmd": ["other"], "User": user}}
+            )
+            shared_config_id = "sha256:" + hashlib.sha256(shared_config).hexdigest()
+            entries.append({"Config": "blobs/sha256/" + shared_config_id[7:], "Layers": [layer_name]})
+            extra["blobs/sha256/" + shared_config_id[7:]] = shared_config
         manifest = canonical({"config": {"digest": config_id}})
         manifest_id = "sha256:" + hashlib.sha256(manifest).hexdigest()
         descriptor = {"digest": manifest_id, "platform": {"architecture": "amd64", "os": "linux"}}
         index = canonical({"manifests": [descriptor] * (2 if ambiguous else 1)})
         index_id = "sha256:" + hashlib.sha256(index).hexdigest()
         members = {
-            "manifest.json": canonical([{"Config": "blobs/sha256/" + config_id[7:]}]),
+            "manifest.json": canonical(entries),
             "blobs/sha256/" + config_id[7:]: config,
+            layer_name: layer_blob,
             "blobs/sha256/" + manifest_id[7:]: manifest + (b"x" if tamper else b""),
             "blobs/sha256/" + index_id[7:]: index,
+            **extra,
         }
         path = Path(directory) / "save.tar"
         with tarfile.open(path, "w") as archive:
@@ -274,6 +317,11 @@ class ArchiveTests(unittest.TestCase):
                 member = tarfile.TarInfo(name)
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
+            if link:
+                member = tarfile.TarInfo(link)
+                member.type = tarfile.SYMTYPE
+                member.linkname = "../../outside" if unsafe_link else "../" + layer_name
+                archive.addfile(member)
         return path, config_id, index_id
 
     def test_classic_and_oci_ids_resolve_to_same_guest_image(self):
@@ -302,6 +350,103 @@ class ArchiveTests(unittest.TestCase):
                 path, config_id, _ = self.archive(directory, user=user)
                 with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive"):
                     validated_image(path, config_id)
+
+    def test_vault_capacity_accounts_for_archive_imported_layers_and_headroom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory)
+            _, _, layers = vault._validated_image(path, config_id)
+            app = {"docker_archive": path, "vault_drive_size": 3}
+            with patch.object(vault, "_estimated_layer_bytes", return_value=(0, True)):
+                vault.validate_vault_capacity(app, layers)
+            with (
+                patch.object(vault, "_estimated_layer_bytes", return_value=(vault.GIB, True)),
+                self.assertRaisesRegex(ConfigurationError, "vault_drive_size is 3 GiB.*at least 4 GiB"),
+            ):
+                vault.validate_vault_capacity(app, layers)
+
+    def test_vault_capacity_accounts_for_temporary_archive_extraction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory)
+            _, _, layers = vault._validated_image(path, config_id)
+            app = {"docker_archive": path, "vault_drive_size": 4}
+            with (
+                patch.object(vault, "_estimated_archive_extraction_bytes", return_value=2 * vault.GIB),
+                patch.object(vault, "_estimated_layer_bytes", return_value=(0, True)),
+                self.assertRaisesRegex(ConfigurationError, "temporary extraction.*at least 5 GiB"),
+            ):
+                vault.validate_vault_capacity(app, layers)
+
+    def test_compressed_archive_extraction_uses_uncompressed_member_sizes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "save.tar.gz"
+            data = b"x" * (8 * 1024**2)
+            with tarfile.open(path, "w:gz") as archive:
+                member = tarfile.TarInfo("large-member")
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+            estimate = vault._estimated_archive_extraction_bytes(path, vault.GIB)
+            self.assertEqual(estimate, len(data))
+            self.assertLess(path.stat().st_size * 100, estimate)
+
+    def test_vault_capacity_counts_shared_layers_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, shared_layer=True)
+            _, _, layers = vault._validated_image(path, config_id)
+            self.assertEqual(len(layers), 1)
+            expected, complete = vault._estimated_layer_bytes(path, layers, vault.GIB)
+            self.assertTrue(complete)
+            self.assertGreater(expected, 0)
+
+    def test_repeated_layer_paths_count_each_distinct_import_chain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, repeated_layer=True)
+            _, _, layers = vault._validated_image(path, config_id)
+            self.assertEqual(len(layers), 3)
+            expected, complete = vault._estimated_layer_bytes(path, layers, vault.GIB)
+            self.assertTrue(complete)
+            self.assertGreater(expected, 0)
+
+    def test_safe_legacy_layer_symlink_is_accepted_and_escape_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, linked_layer=True)
+            self.assertEqual(validate_archive(path, config_id), config_id)
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, linked_layer=True, unsafe_link=True)
+            with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive"):
+                validate_archive(path, config_id)
+
+    def test_vault_capacity_warns_for_unsupported_layer_compression(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_id, _ = self.archive(directory, unsupported_layer=True)
+            _, _, layers = vault._validated_image(path, config_id)
+            app = {"docker_archive": path, "vault_drive_size": 3}
+            with patch("sys.stdout", new_callable=io.StringIO) as output:
+                vault.validate_vault_capacity(app, layers)
+            self.assertIn("unsupported compression format", output.getvalue())
+
+    def test_vault_capacity_uses_allocated_size_for_sparse_application_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sparse = root / "sparse"
+            with sparse.open("wb") as stream:
+                stream.seek(100 * vault.GIB)
+                stream.write(b"x")
+            self.assertLess(vault._application_file_bytes(root), vault.GIB)
+
+    def test_vault_capacity_does_not_trust_compressed_source_allocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "compressed"
+            source.write_bytes(b"x" * 8192)
+            actual = source.stat()
+            compressed = SimpleNamespace(
+                st_dev=actual.st_dev,
+                st_ino=actual.st_ino,
+                st_size=actual.st_size,
+                st_blocks=1,
+            )
+            self.assertEqual(vault._stored_file_bytes(source, compressed), 8192)
+            with patch.object(vault.os, "lseek", side_effect=OSError("extent discovery unavailable")):
+                self.assertEqual(vault._stored_file_bytes(source, compressed), 8192)
 
     def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
         secret = "secret-archive-metadata"

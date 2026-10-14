@@ -605,6 +605,47 @@ docker image inspect --format '{{.Id}}' "$image"
 docker save "$image" -o inputs/application.tar
 ```
 
+Size the vault before building it. The vault keeps `application.tar`, Docker
+temporarily extracts the complete archive below `/vault/docker/data` during
+`docker load`, and the imported image remains there afterward. All three can
+coexist during first boot, so the archive size by itself is not sufficient. Use
+the image's `Size` value before removing it from the build host. For an ordinary
+uncompressed `docker save`, the extracted archive is approximately the archive's
+logical member size; compressed outer archives can have a much larger extracted
+footprint.
+
+```sh
+image_bytes=$(docker image inspect --format '{{.Size}}' "$image")
+archive_bytes=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' inputs/application.tar)
+printf 'image_bytes=%s archive_bytes=%s\n' "$image_bytes" "$archive_bytes"
+```
+
+Choose `vault_drive_size` in GiB using this baseline:
+
+```text
+peak_content = archive_bytes + extracted_archive_bytes + image_bytes + application_files_bytes
+safety_margin = max(2 GiB, 20% of peak_content)
+usable_vault_bytes >= peak_content + safety_margin + expected_runtime_writes
+```
+
+Vault Build estimates `extracted_archive_bytes` from the logical size of every
+archive member. It conservatively treats 90 percent of the configured raw drive
+after the LUKS header as usable for this comparison, reserving the rest for
+LUKS2, dm-integrity, ext4 metadata, and filesystem-reserved space. Round the raw
+`vault_drive_size` up until that usable capacity satisfies the inequality.
+
+`expected_runtime_writes` includes container logs, caches, downloaded models and
+anything written below `/vault/application/runtime` or
+`/vault/application/data`. Increase the margin for images with high layer
+expansion or workloads whose write volume is uncertain. Vault Build scans every
+saved-image layer chain that `docker load` will import and rejects a configured
+vault below its startup estimate; repeated blobs under different parent chains
+are counted separately. The check reserves the safety margin but cannot predict
+application runtime writes. If the local Python cannot inspect a layer's
+compression format, the builder prints a warning and uses its stored size as a
+lower bound. Validate the chosen capacity under the workload's expected peak
+write volume.
+
 Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
@@ -618,7 +659,8 @@ requires_gpu: false
 # Optional with container.attestation_credentials. This is the verifier's
 # maximum accepted EAR age, not the signed EAR lifetime.
 # max_token_age_seconds: 300
-vault_drive_size: 8
+# Example only; calculate this value for the saved image and workload.
+vault_drive_size: 32
 applog_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1

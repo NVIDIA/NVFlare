@@ -20,6 +20,12 @@ quote-generation service for an `intel_tdx` delivery. Install Python 3 and QEMU.
 The host needs KVM access, enough memory for the profile, and guest network access
 to the configured KBS.
 
+The delivery's vault capacity is selected and sealed at build time. It must hold
+both the retained Docker archive and the expanded Docker layers, plus application
+files and runtime writes. If more capacity is needed, rebuild the vault using the
+sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build); do not resize a
+sealed delivery in place.
+
 Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
