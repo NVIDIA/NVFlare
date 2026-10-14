@@ -54,6 +54,13 @@ _EXAMPLES = [
     ),
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,
+        "collab.simple_async.job",
+        None,
+        ("torch", "torchvision"),
+        id="simple_async",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
         "collab.swarm.swarm",
         SimpleNamespace(num_clients=3, num_rounds=5),
         (),

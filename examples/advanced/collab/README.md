@@ -21,6 +21,7 @@ python -m collab.swarm.swarm --num-clients 3
 | Example | Demonstrates |
 |---|---|
 | `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
+| [`simple_async`](simple_async/README.md) | Simple asynchronous MNIST training with `collab.clients(blocking=False).train(...)` and immediate client refill |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_cifar10/fedavg`](pt_cifar10/README.md#algorithm-variants) | Synchronous PyTorch FedAvg with direct client calls |
