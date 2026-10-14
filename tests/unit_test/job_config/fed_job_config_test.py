@@ -681,15 +681,28 @@ class TestFedJobConfig:
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         process = Mock()
         process.wait.return_value = 0
+        job_root = tmp_path / "job root"
+        job_root.mkdir()
         workspace = str(tmp_path / "work space")
         executable = str(tmp_path / "py env" / "bin" / "python")
+        log_config = str(tmp_path / "log dir" / "log_config.json")
+
+        class _JobRoot:
+            def __enter__(self):
+                return str(job_root)
+
+            def __exit__(self, *exc):
+                return False
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.sys.executable", executable):
-                with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process) as popen:
-                    job_config.simulator_run(workspace, clients="site-1, site-2", threads=2)
+            with patch("nvflare.job_config.fed_job_config.TemporaryDirectory", return_value=_JobRoot()):
+                with patch("nvflare.job_config.fed_job_config.sys.executable", executable):
+                    with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process) as popen:
+                        job_config.simulator_run(workspace, clients="site-1, site-2", threads=2, log_config=log_config)
 
         args = popen.call_args.args[0]
         assert args[0] == executable
+        assert args[args.index("-m") + 2] == os.path.join(str(job_root), "job_name")
         assert args[args.index("-w") + 1] == workspace
         assert args[args.index("-c") + 1] == "site-1,site-2"
+        assert args[-1] == "-l" + log_config
