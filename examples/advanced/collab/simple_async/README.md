@@ -160,7 +160,7 @@ model.eval()
 
 ## Next steps
 
-- [In-time aggregation](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/async_aggregation/avg_intime.py) uses a response
+- [Response callbacks](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/response_callbacks/avg_intime.py) uses a response
   callback within **blocking, round-based** group calls.
 - [CIFAR-10 FedBuff](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/collab/pt_async_cifar10/README.md) adds buffered aggregation,
   scheduling controls, evaluation, and checkpointing.
