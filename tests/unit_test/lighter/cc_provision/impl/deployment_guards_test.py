@@ -108,6 +108,7 @@ def test_profile_resource_quantities_match_kubernetes(quantity):
 @pytest.mark.parametrize("runtime_mismatch", (False, True))
 def test_launch_handoff_checks_selected_runtime_before_apply(tmp_path, coco_bash, runtime_class, runtime_mismatch):
     """Exercise the actual handoff with the helper copied into a standalone CoCo kit."""
+    pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
     fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
     pod = fixture["final_workload_pod"](runtime_class)
     pod["spec"]["containers"][0]["image"] = "registry.example.invalid/app@sha256:" + "a" * 64
@@ -136,7 +137,10 @@ def test_launch_handoff_checks_selected_runtime_before_apply(tmp_path, coco_bash
     if runtime_mismatch and runtime_class == "kata-qemu-snp":
         selected_runtime = "kata-qemu-tdx"
     env = dict(os.environ, TEST_RUNTIME=selected_runtime, SOURCE_POD_JSON=str(pod_file), CALLS=str(calls))
-    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     result = subprocess.run(
         [coco_bash, str(kit / "50-launch-handoff.sh"), str(pod_file), pod_sha256],
         capture_output=True,
