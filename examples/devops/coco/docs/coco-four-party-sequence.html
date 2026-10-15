@@ -210,8 +210,8 @@ TDX also requires the reviewed and pinned host QGS/DCAP stack.`],
 Startup-kit provisioning/signing uses the NVFlare CLI, not a shell stage.
 CoCo image-build hook: admin/build_coco_image.sh
 Plaintext build stage: admin/10-build-plaintext.sh
-Set cc_cpu_mechanism: amd_sev_snp or intel_tdx and explicit
-cc_gpu: none or nvidia; match the approved v4 launch contract.
+Set cpu_tee: amd_sev_snp or intel_tdx and explicit
+gpu_tee: none or nvidia_cc; match the approved v4 launch contract.
 Both protected clients and servers are supported.`],
   ["Generate image key and encrypt layers", `admin/20-encrypt-sign-publish.sh
 Generates the per-release key and encrypts OCI layers.

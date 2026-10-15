@@ -68,7 +68,11 @@ kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
 token_issuer: CoCo-Attestation-Service
-attestation_policy_id: default
+# Trustee maps this selector to the policy ID through
+# [attestation_service.policy_id_map]. CoCo guests omit the selector and keep
+# using the service's default policy in the same Trustee instance.
+attestation_policy_selector: cvm-cpu-2026-09-r5
+attestation_policy_id: cvm-cpu-2026-09-r5
 attestation_policy: attestation_policy.rego
 # Supplied by the trusted operator; absent TCB approvals fail closed.
 reference_values: ../inputs/approved-tcb-references.json
@@ -79,8 +83,8 @@ platforms:
     attester: snp
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
     kbs_client: ../inputs/kbs-client
-    # Produced by `cvmctl provenance` beside the clean Trustee checkout that built
-    # kbs-client. Production builds require it; the digest alone names no source.
+    # Produced by `cvmctl provenance` after applying the reviewed standalone
+    # client patch. Production builds require it; the digest alone names no source.
     kbs_client_provenance: ../inputs/kbs_client_build.json
     cpu_model: EPYC-v4
   intel_tdx:

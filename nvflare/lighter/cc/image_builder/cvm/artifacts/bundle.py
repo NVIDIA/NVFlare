@@ -25,6 +25,7 @@ from ..common.errors import require
 from ..common.io import canonical, digest_file, read_json, write_json
 from ..common.measurements import validate_measurements
 from ..common.policy import compose
+from ..common.references import reference_record_name
 
 APPROVAL_SIGNATURE_ALGORITHM = "ed25519"
 
@@ -73,6 +74,10 @@ def verify_bundle(directory):
     require(
         manifest.get("production_ready") == manifest["contract"].get("production_ready"),
         "Production eligibility differs from the shared profile contract",
+    )
+    require(
+        manifest.get("reference_value_id") == reference_record_name(manifest["profile_version"], manifest["contract"]),
+        "Profile reference identity mismatch",
     )
     return manifest
 

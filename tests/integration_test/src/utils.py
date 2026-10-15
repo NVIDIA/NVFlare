@@ -29,6 +29,7 @@ from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.flare_api.api_spec import SessionClosed
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.utils.process_utils import popen_in_new_session
 
 from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, RESOURCE_CONFIG
 from .example import Example
@@ -68,11 +69,10 @@ def run_command_in_subprocess(command, stdin_data=None):
     python_bin_dir = os.path.dirname(sys.executable)
     new_env["PATH"] = os.pathsep.join([python_bin_dir, new_env.get("PATH", "")])
     tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
-    process = subprocess.Popen(
+    process = popen_in_new_session(
         tokens,
         shell=False,
         stdin=subprocess.PIPE if stdin_data else None,
-        preexec_fn=os.setsid,
         env=new_env,
     )
     if stdin_data:

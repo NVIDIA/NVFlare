@@ -1,0 +1,35 @@
+schema_version: 1
+attestation_services:
+  trustee:
+    type: trustee
+    kbs_endpoint: https://secure-services.example.com:8443
+    ca_cert_file: ../../admin/public/trustee.crt
+    admin_token_file: ../../admin/secrets/kbs-resource-token.jwt
+    attestation_token_endpoint: http://127.0.0.1:8006/aa/token
+    attestation_signing_public_key_file: ./trustee-as-public.pem
+    token_expiration_seconds: 300
+    check_frequency_seconds: 120
+    registration_token_timeout_seconds: 300
+    refresh_token_timeout_seconds: 30
+    get_token_request_timeout_seconds: 45
+    workload_constraints:
+      site-1:
+        cpu_tee: tdx
+      site-2:
+        cpu_tee: snp
+    retry:
+      max_attempts: 10
+      initial_delay_seconds: 1.0
+      max_delay_seconds: 15.0
+      backoff_multiplier: 2.0
+      jitter_ratio: 0.5
+container_registries:
+  coco_workloads:
+    endpoint: secure-services.example.com:5000
+    ca_cert_file: ../../admin/public/registry-ca.crt
+    publisher_username_file: ../../admin/secrets/registry/username
+    publisher_password_file: ../../admin/secrets/registry/password
+build_tools:
+  coco:
+    build_command: ../../admin/build_coco_image.sh
+    build_timeout_seconds: 3600

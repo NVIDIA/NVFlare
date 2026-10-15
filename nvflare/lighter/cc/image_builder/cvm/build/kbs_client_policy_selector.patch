@@ -1,0 +1,338 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 86d89b5..3e5da73 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -590,18 +590,18 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+ [[package]]
+ name = "attestation-agent"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "anyhow",
+  "async-trait",
+  "attester",
+- "base64 0.22.1",
++ "base64 0.23.1",
+  "byteorder",
+  "config",
+  "const_format",
+  "crypto",
+  "hex",
+- "kbs-types 0.15.0",
++ "kbs-types",
+  "serde",
+  "serde_json",
+  "sha2 0.11.0",
+@@ -630,7 +630,7 @@ dependencies = [
+  "ear",
+  "hex",
+  "jsonwebtoken",
+- "kbs-types 0.18.0",
++ "kbs-types",
+  "key-value-storage",
+  "mobc",
+  "openssl",
+@@ -668,14 +668,15 @@ dependencies = [
+ [[package]]
+ name = "attester"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "anyhow",
+  "async-trait",
+  "az-snp-vtpm",
+  "az-tdx-vtpm",
+  "azure-guest-attestation-sdk",
+- "base64 0.22.1",
++ "azure-tpm",
++ "base64 0.23.1",
+  "cfg-if",
+  "codicon",
+  "crypto",
+@@ -683,11 +684,12 @@ dependencies = [
+  "hex",
+  "hyper 0.14.32",
+  "hyper-tls 0.5.0",
+- "iocuddle 0.2.0",
+- "kbs-types 0.15.0",
++ "iocuddle 0.3.0",
++ "kbs-types",
+  "num-traits",
+  "nv-attestation-sdk",
+  "occlum_dcap",
++ "p384",
+  "pem-rfc7468 1.0.0",
+  "picky-asn1",
+  "picky-asn1-der",
+@@ -1237,14 +1239,15 @@ dependencies = [
+ [[package]]
+ name = "azure-guest-attestation-sdk"
+ version = "0.1.0"
+-source = "git+https://github.com/Azure/azure-guest-attestation-sdk?rev=e606728446cb66d681913983cbe5563c919dd94b#e606728446cb66d681913983cbe5563c919dd94b"
++source = "git+https://github.com/Azure/azure-guest-attestation-sdk?rev=9c8344cbeeb2c7ab46c1311e983f254a69ab5eec#9c8344cbeeb2c7ab46c1311e983f254a69ab5eec"
+ dependencies = [
+  "aes-gcm 0.10.3",
++ "azure-tpm",
+  "base64 0.22.1",
+  "bitfield-struct",
+  "digest 0.10.7",
+  "hex",
+- "rand 0.8.6",
++ "rand 0.9.4",
+  "reqwest 0.12.28",
+  "serde",
+  "serde_json",
+@@ -1252,7 +1255,24 @@ dependencies = [
+  "sha2 0.10.9",
+  "tracing",
+  "tracing-subscriber",
+- "windows-sys 0.52.0",
++ "windows-sys 0.61.2",
++]
++
++[[package]]
++name = "azure-tpm"
++version = "0.1.0"
++source = "git+https://github.com/Azure/azure-guest-attestation-sdk?rev=9c8344cbeeb2c7ab46c1311e983f254a69ab5eec#9c8344cbeeb2c7ab46c1311e983f254a69ab5eec"
++dependencies = [
++ "bitfield-struct",
++ "digest 0.10.7",
++ "hex",
++ "rand 0.9.4",
++ "serde",
++ "serde_json",
++ "sha1 0.10.6",
++ "sha2 0.10.9",
++ "tracing",
++ "windows-sys 0.61.2",
+ ]
+ 
+ [[package]]
+@@ -2115,15 +2135,15 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+ [[package]]
+ name = "crypto"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "aes-gcm 0.11.1",
+  "aes-kw",
+  "anyhow",
+- "base64 0.22.1",
++ "base64 0.23.1",
+  "concat-kdf",
+  "ctr 0.10.1",
+- "kbs-types 0.15.0",
++ "kbs-types",
+  "openssl",
+  "p256",
+  "p521",
+@@ -4040,9 +4060,12 @@ checksum = "d8972d5be69940353d5347a1344cb375d9b457d6809b428b05bb1ca2fb9ce007"
+ 
+ [[package]]
+ name = "iocuddle"
+-version = "0.2.0"
++version = "0.3.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "e6a239b45d1a4561e861ae04c14539ae7b5608290b173a7bfbd666c915aeb662"
++checksum = "a5fab23069aa80df2de983e9d2e989f838af07041e99d85245ea4b1dac7a5933"
++dependencies = [
++ "zerocopy",
++]
+ 
+ [[package]]
+ name = "ipnet"
+@@ -4335,7 +4358,7 @@ dependencies = [
+  "hex",
+  "josekit",
+  "jsonwebtoken",
+- "kbs-types 0.18.0",
++ "kbs-types",
+  "key-value-storage",
+  "kms",
+  "ml-kem",
+@@ -4396,22 +4419,6 @@ dependencies = [
+  "tracing-subscriber",
+ ]
+ 
+-[[package]]
+-name = "kbs-types"
+-version = "0.15.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "010924a5f65328c9609598c895ea506c723e3c72e528aeaba0a9645d8330b718"
+-dependencies = [
+- "base64 0.22.1",
+- "ear",
+- "serde",
+- "serde_json",
+- "sha2 0.10.9",
+- "sm3 0.4.2",
+- "strum 0.27.2",
+- "thiserror 2.0.20",
+-]
+-
+ [[package]]
+ name = "kbs-types"
+ version = "0.18.0"
+@@ -4431,15 +4438,15 @@ dependencies = [
+ [[package]]
+ name = "kbs_protocol"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "anyhow",
+  "async-trait",
+  "attester",
+- "base64 0.22.1",
++ "base64 0.23.1",
+  "crypto",
+  "jwt-simple",
+- "kbs-types 0.15.0",
++ "kbs-types",
+  "reqwest 0.13.4",
+  "resource_uri",
+  "serde",
+@@ -4507,12 +4514,12 @@ dependencies = [
+ [[package]]
+ name = "kms"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "anyhow",
+  "async-trait",
+  "attestation-agent",
+- "base64 0.22.1",
++ "base64 0.23.1",
+  "chrono",
+  "const_format",
+  "hex",
+@@ -5026,16 +5033,16 @@ dependencies = [
+ 
+ [[package]]
+ name = "nv-attestation-sdk"
+-version = "1.2.0"
+-source = "git+https://github.com/NVIDIA/attestation-sdk?tag=2026.03.02#0c1be386a8fbb8f2766a6a556d10df86f5fed9d3"
++version = "1.2.2"
++source = "git+https://github.com/NVIDIA/attestation-sdk?tag=2026.06.09#9d12801cea8a198ea0f29640dfaf8a4017c841c5"
+ dependencies = [
+  "nv-attestation-sdk-sys",
+ ]
+ 
+ [[package]]
+ name = "nv-attestation-sdk-sys"
+-version = "1.2.0"
+-source = "git+https://github.com/NVIDIA/attestation-sdk?tag=2026.03.02#0c1be386a8fbb8f2766a6a556d10df86f5fed9d3"
++version = "1.2.2"
++source = "git+https://github.com/NVIDIA/attestation-sdk?tag=2026.06.09#9d12801cea8a198ea0f29640dfaf8a4017c841c5"
+ dependencies = [
+  "bindgen 0.72.1",
+ ]
+@@ -5794,7 +5801,7 @@ dependencies = [
+ [[package]]
+ name = "protos"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "prost",
+  "tonic",
+@@ -6353,7 +6360,7 @@ dependencies = [
+ [[package]]
+ name = "resource_uri"
+ version = "0.1.0"
+-source = "git+https://github.com/confidential-containers/guest-components.git?rev=da8d93f2797088a5f0636c8c1eeb31da73784fe8#da8d93f2797088a5f0636c8c1eeb31da73784fe8"
++source = "git+https://github.com/confidential-containers/guest-components.git?rev=706cd996d2f3ef746c3ec378741d6d953b08740f#706cd996d2f3ef746c3ec378741d6d953b08740f"
+ dependencies = [
+  "anyhow",
+  "serde",
+@@ -8541,7 +8548,7 @@ dependencies = [
+  "intel-tee-quote-verification-rs",
+  "jsonwebkey 0.4.0",
+  "jsonwebtoken",
+- "kbs-types 0.18.0",
++ "kbs-types",
+  "key-value-storage",
+  "openssl",
+  "p384",
+diff --git a/Cargo.toml b/Cargo.toml
+index 0e336e0..d49f5fc 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -35,9 +35,9 @@ const_format = "0.2.36"
+ educe = "0.7"
+ ear = "0.5.0"
+ hex = "0.4.3"
+-kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "da8d93f2797088a5f0636c8c1eeb31da73784fe8", default-features = false }
++kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "706cd996d2f3ef746c3ec378741d6d953b08740f", default-features = false }
+ kbs-types = "0.18.0"
+-kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "da8d93f2797088a5f0636c8c1eeb31da73784fe8", default-features = false }
++kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "706cd996d2f3ef746c3ec378741d6d953b08740f", default-features = false }
+ jsonwebtoken = { version = "10", default-features = false, features = [
+     "aws_lc_rs",
+     "use_pem",
+diff --git a/tools/kbs-client/src/lib.rs b/tools/kbs-client/src/lib.rs
+index 08d608a..3dc6aa9 100644
+--- a/tools/kbs-client/src/lib.rs
++++ b/tools/kbs-client/src/lib.rs
+@@ -29,6 +29,7 @@ pub async fn attestation(
+     tee_key_pem: Option<String>,
+     kbs_root_certs_pem: Vec<String>,
+     init_data: Option<String>,
++    attestation_policy_selector: Option<String>,
+ ) -> Result<String> {
+     let evidence_provider = Box::new(NativeEvidenceProvider::new()?);
+     let mut client_builder = KbsClientBuilder::with_evidence_provider(evidence_provider, url);
+@@ -45,6 +46,10 @@ pub async fn attestation(
+         client_builder = client_builder.add_initdata(init_data);
+     }
+ 
++    if let Some(selector) = attestation_policy_selector {
++        client_builder = client_builder.set_attestation_policy_selector(&selector);
++    }
++
+     let mut client = client_builder.build()?;
+ 
+     let (token, _) = client.get_token().await?;
+diff --git a/tools/kbs-client/src/main.rs b/tools/kbs-client/src/main.rs
+index 6a62614..677b915 100644
+--- a/tools/kbs-client/src/main.rs
++++ b/tools/kbs-client/src/main.rs
+@@ -84,6 +84,10 @@ enum Commands {
+         /// InitData plaintext. See GetResource
+         #[clap(long)]
+         init_data: Option<String>,
++
++        /// Select an administrator-configured Attestation Service policy set.
++        #[clap(long)]
++        attestation_policy_selector: Option<String>,
+     },
+ }
+ 
+@@ -247,6 +251,7 @@ async fn main() -> Result<()> {
+         Commands::Attest {
+             tee_key_file,
+             init_data,
++            attestation_policy_selector,
+         } => {
+             let tee_key = match tee_key_file {
+                 Some(ref f) => Some(
+@@ -256,7 +261,14 @@ async fn main() -> Result<()> {
+                 None => None,
+             };
+             let token =
+-                kbs_client::attestation(&cli.url, tee_key, kbs_cert.clone(), init_data).await?;
++                kbs_client::attestation(
++                    &cli.url,
++                    tee_key,
++                    kbs_cert.clone(),
++                    init_data,
++                    attestation_policy_selector,
++                )
++                .await?;
+             println!("{token}");
+         }
+         Commands::GetResource {

@@ -225,7 +225,8 @@ def prepare(directory, *, http_only=False, platforms=None, package_profile=None,
         "root_overlay_max_mib": 4096,
         "root_drive_size": 8,
         "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
-        "attestation_policy_id": "default",
+        "attestation_policy_selector": "cvm-test-cpu-2026-09",
+        "attestation_policy_id": "cvm-test-cpu-2026-09",
         "vault_header_bytes": HEADER_BYTES,
         "vault_storage_profile": STORAGE_PROFILE,
         "kernel_version": kernel_version(pins),
@@ -243,7 +244,7 @@ def prepare(directory, *, http_only=False, platforms=None, package_profile=None,
                 "cpu_model": "host",
                 "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
                 "kbs_client": str(inputs / "kbs-client"),
-                # Record with: cvmctl provenance <clean trustee checkout> inputs/kbs-client inputs/kbs_client_build.json
+                # Record after applying cvm/build/kbs_client_policy_selector.patch.
                 "kbs_client_provenance": str(inputs / "kbs_client_build.json"),
             },
             "amd_sev_snp": {

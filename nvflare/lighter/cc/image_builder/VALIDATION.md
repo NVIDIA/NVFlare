@@ -470,7 +470,7 @@ access and client registration succeeded.
   Trustee HTTPS cases** (12 per backend), and **4 real storage tests** passed.
   The macOS Linux-only wrapper was skipped; its underlying suite ran on Linux.
 - Release packaging now includes the complete builder source and assets,
-  including the NVAT compatibility patch. The distribution regression test
+  including the `kbs-client` policy-selector patch. The distribution regression test
   builds an sdist and a wheel from it, compares all builder files byte-for-byte,
   checks executable metadata, and runs the CLI and GPU input tests from the
   extracted wheel. This test and scoped repository style checks passed.
@@ -510,13 +510,10 @@ CVMs and isolated backends were stopped afterward, and the GPU was released.
   This uses archived public evidence; it is not a fresh hardware challenge or a
   live SNP vault-unlock test. See the [fixture provenance and regeneration steps](../../../../tests/unit_test/lighter/cc/image_builder/fixtures/README.md).
 - The actual Intel lab host's headerless `/etc/qgs.conf` passed preflight parsing.
-- NVAT commit `0c1be386a8fbb8f2766a6a556d10df86f5fed9d3` built successfully on
-  Ubuntu 26.04 using only the recorded const-correctness patch. The resulting
-  library version is 1.2.0, soname `libnvat.so.1`, using `libxml2.so.16`.
-  The documented source/provenance checks passed. This build's library SHA-256
-  was `7477e3d947910d3d2b1bfb628962c2c2bdc59b123c900c0933356ddd17379bb3`;
-  record the hash produced by the selected build environment rather than treating
-  this test result as a published binary artifact.
+- This historical run used the former NVAT 2026.03.02 pin and its local
+  const-correctness patch. The current build contract supersedes that input with
+  the clean 2026.06.09 source documented in `GPU_BUILD.md`; the earlier binary
+  and digest are not accepted by the current provenance check.
 - **GPU Stage 1 construction from the clean Ubuntu cloud image passed**, including
   authenticated repository setup, pinned 580.178.04 driver packages, Container
   Toolkit 1.20.0-1, NVAT installation, hardening, verity root construction and OCI
@@ -657,20 +654,24 @@ sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
 sudo env PYTHONPATH="$PYTHONPATH" CVM_NETWORK_TESTS=1 \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
 
-env CVM_HTTP_TESTS=1 CVM_LAB_DIRECTORY=/path/to/isolated-lab \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_http.py -v
-
-sudo env PYTHONPATH="$PYTHONPATH" CVM_HARDWARE_TESTS=1 CVM_EXTENDED_AGENT=1 \
-  CVM_NETWORK_FAULTS=1 \
-  CVM_BUNDLE=/path/to/test-bundle CVM_VAULT=/path/to/test-delivery \
+sudo env PYTHONPATH="$PYTHONPATH" \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
-  CVM_HARDWARE_OUTPUT=/path/to/new-evidence-directory \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_hardware.py -v
+  CVM_LAB_DIRECTORY=/path/to/isolated-lab \
+  CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
+  tests/integration_test/lighter/cc/image_builder/acceptance_runner \
+  /path/to/test-bundle /path/to/acceptance-report.json
 ```
 
-Add `CVM_GPU_HARDWARE_TESTS=1` only on a configured NVIDIA CC GPU host; it
-enables the mandatory NRAS failure/poweroff acceptance case for GPU profiles.
+The runner selects CPU or GPU requirements from the exact manifest, runs the
+live Trustee protocol/control-plane suite and hardware suite, and fails during
+aggregation if any mandatory result is absent. For GPU profiles it automatically
+enables the NRAS denial/poweroff cases and therefore must run with the isolated
+Trustee backend on the same dedicated NVIDIA CC GPU host. To debug one suite in
+isolation, invoke `test_http.py` with `CVM_HTTP_TESTS=1` or `test_hardware.py`
+with `CVM_HARDWARE_TESTS=1`; those lower-level commands do not establish that the
+complete required set was generated.
 
 For the hardware fault tests, explicitly include `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py` as
 executable application payload and `tests/integration_test/lighter/cc/image_builder/app_acceptance.service` as a service,
@@ -683,7 +684,12 @@ fixture accepts the deliberately stopped container's termination status while
 preparing its fault; integrity supervision stays active and reboot restores the
 normal measured application exit policy.
 
-The fault agent writes its sentinels under `/vault/application/runtime`, within
+The exact-manifest Trustee tests generate signed evidence for negative appraisal,
+policy selection/readback, role denial, durable upload retry, key revocation,
+retirement retry, and GPU cross-class denial. The hardware tests generate the
+remaining signed evidence, including an extracted-initramfs inspection that
+rejects CVM KBS files and the configured endpoint. The fault agent writes its
+sentinels under `/vault/application/runtime`, within
 the production application's writable paths. Before its corruption scan it uses
 `POSIX_FADV_DONTNEED` to evict cached plaintext, then runs the production buffered
 scanner without changing protected kernel tunables.

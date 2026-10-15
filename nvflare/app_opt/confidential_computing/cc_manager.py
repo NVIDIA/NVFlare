@@ -296,7 +296,11 @@ class CCManager(FLComponent):
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
         cc_infos = self._generate_fresh_tokens_for_validation(timeout=self.registration_token_timeout)
-        fl_ctx.set_prop(key=CC_INFO, value={fl_ctx.get_identity_name(): cc_infos}, sticky=False, private=False)
+        # A registration event's context can carry the peer identity.  Bind the
+        # envelope to the local identity captured during SYSTEM_BOOTSTRAP so a
+        # server reply cannot accidentally be labelled as the registering
+        # client.
+        fl_ctx.set_prop(key=CC_INFO, value={self.site_name: cc_infos}, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
     def _registration_verdict(self, site, envelope):

@@ -225,7 +225,7 @@ def parser():
     references.add_argument("--state", type=Path, required=True)
     references.add_argument("--expires", required=True, help="approved UTC expiry, e.g. 2026-12-01T00:00:00Z")
     references.set_defaults(handler=lambda a: import_references(a.bundle, a.store, a.state, a.expires))
-    record = commands.add_parser("provenance", help="record a clean upstream Trustee revision and a built binary")
+    record = commands.add_parser("provenance", help="record an upstream Trustee service or reviewed kbs-client build")
     record.add_argument("source", type=Path)
     record.add_argument("binary", type=Path, help="kbs or kbs-client executable built from that checkout")
     record.add_argument("output", type=Path)

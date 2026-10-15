@@ -116,7 +116,7 @@ def verify_membership(session):
 
 def verify_observer_config(local, topology):
     components = {}
-    for name in ("cc_manager", "coco_authorizer"):
+    for name in ("cc_manager", "trustee_authorizer"):
         config = json.loads((Path(local) / f"{name}__p_resources.json").read_text())
         for component in config["components"]:
             if component["id"] in components:
@@ -128,13 +128,13 @@ def verify_observer_config(local, topology):
     if (
         manager["path"] != "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
         or args.get("cc_issuers_conf") != []
-        or args.get("cc_verifier_ids") != ["coco_authorizer"]
+        or args.get("cc_verifier_ids") != ["trustee_authorizer"]
         or sorted(args.get("cc_enabled_sites", [])) != sorted(required)
-        or args.get("required_site_verifier_ids") != {n: ["coco_authorizer"] for n in required}
+        or args.get("required_site_verifier_ids") != {n: ["trustee_authorizer"] for n in required}
         or args.get("require_site_binding") is not True
         or args.get("verify_frequency") != 120
-        or components["coco_authorizer"]["path"]
-        != "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer"
+        or components["trustee_authorizer"]["path"]
+        != "nvflare.app_opt.confidential_computing.trustee_authorizer.TrusteeAuthorizer"
     ):
         raise AcceptanceError("Observer must be verifier-only with complete bound CC coverage")
 

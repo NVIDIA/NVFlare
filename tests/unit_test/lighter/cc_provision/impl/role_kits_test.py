@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[5]
 SOURCE = ROOT / "examples/devops/coco"
 
 
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_assembled_roles_vendor_importable_helpers_without_nvflare(tmp_path):
     pytest.importorskip("tomllib", reason="role-kit assembly requires Python 3.11+")
     kits = runpy.run_path(str(SOURCE / "role_kits.py"))
@@ -76,6 +77,7 @@ def test_assembled_roles_vendor_importable_helpers_without_nvflare(tmp_path):
         "assert api['normalize_resources']({'limits': {'nvidia.com/pgpu': 1}})['requests']['nvidia.com/pgpu']=='1'; "
         "claims=runpy.run_path(str(root/'lib/trustee_claims.py')); "
         "assert claims['TRUST_VECTOR']['hardware']==2; "
+        "assert claims['CPU_TRUST_VECTORS']['snp']['configuration']==2; "
         "assert claims['CPU_TRUST_VECTORS']['tdx']['configuration']==2; "
         "runtime=runpy.run_path(str(root/'lib/kata-runtime-profile.py')); "
         "assert runtime['runtime_target']('kata-qemu-tdx')['gpu_count']==0; "

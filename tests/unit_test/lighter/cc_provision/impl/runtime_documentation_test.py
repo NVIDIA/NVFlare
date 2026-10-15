@@ -30,8 +30,9 @@ def test_runtime_table_documents_every_supported_target():
         target = runtime_target(name)
         row = next(line for line in guide.splitlines() if line.startswith("|") and f"`{name}`" in line)
         cpu = "intel_tdx" if target["cpu_tee"] == "tdx" else "amd_sev_snp"
+        gpu = "nvidia_cc" if target["gpu"] == "nvidia" else "none"
         assert f"`{cpu}`" in row
-        assert f"`{target['gpu']}`" in row
+        assert f"`{gpu}`" in row
         assert ("nvidia.com/pgpu" in row) == bool(target["gpu_count"])
 
 

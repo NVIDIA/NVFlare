@@ -1,0 +1,17 @@
+schema_version: 1
+cc_deployment_mode: bare_metal_cvm
+cpu_tee: intel_tdx
+gpu_tee: none
+attestation:
+  service: trustee
+workload:
+  source:
+    type: docker_archive
+    path: /srv/nvflare/images/application.tar
+bare_metal_cvm:
+  cvm_image: /srv/cvm/images/tdx-cpu
+  storage:
+    # Example only; size for the archive, expanded image, and runtime writes.
+    vault_size_gib: 32
+  network:
+    allowed_out_ports: [8443]

@@ -151,18 +151,21 @@ an independently authenticated administrator process before retrying. The
 builder's recorded input digest provides traceability; it does not authenticate
 the publisher or replace this verification step.
 
-Build `kbs-client` from the unmodified CoCo Trustee v0.22.0 checkout, using
-upstream's Linux build prerequisites and Rust toolchain:
+Build `kbs-client` from the pinned Trustee checkout plus the reviewed CLI patch.
+The patch updates to guest-components' upstream attestation-policy-selector API and exposes
+it through the standalone client; it does not modify the Trustee service:
 
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
+git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
+  -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
 
-Record which clean checkout produced the client. Production builds require this
-record for the selected platform (`kbs_client_provenance`), because a measured
-digest alone does not say what source it came from:
+Record the exact reviewed client build. Production builds require this record
+for the selected platform (`kbs_client_provenance`), because a measured digest
+alone does not say what source produced it:
 
 ```sh
 ./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
@@ -311,6 +314,11 @@ sudo ./cvmctl inspect-tcb \
 
 Compare its TCB fields with the approved input and complete signed-quote/CCEL
 and deployment acceptance for that exact bundle before production approval.
+Finalization fails if the measured TD's `mr_seam`, `tcb_svn`, or `xfam` is not
+already present in the approved reference input. Run `inspect-tcb`, complete the
+administrator review, update the reference input, increment `profile_version`,
+and rebuild; the builder never approves a value merely because the local host
+reported it.
 Transfer the discovery records securely and stop the temporary TD afterward.
 Changing approved references, firmware or other contract inputs requires a new
 `profile_version`, fresh construction/finalization and approval, and the isolated
@@ -367,6 +375,8 @@ kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 attestation_policy: attestation_policy.rego
+attestation_policy_selector: cvm-cpu-2026-09-r5
+attestation_policy_id: cvm-cpu-2026-09-r5
 reference_values: ../inputs/approved-tcb-references.json
 platforms:
   amd_sev_snp:
@@ -405,12 +415,50 @@ sudo ./cvmctl vault acceptance-vault.yml --candidate \
 
 `acceptance-vault.yml` uses the normal vault schema and an application image that
 runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
-The checked-in `test_hardware.py` requires `CVM_HARDWARE_TESTS=1`, `CVM_BUNDLE`,
-`CVM_VAULT`, `CVM_HARDWARE_OUTPUT`, and `CVM_ACCEPTANCE_RESULT_KEY`; each passing
-test writes a versioned, Ed25519-signed `result.json` containing the exact
-`manifest_sha256`, platform, explicit successful outcomes, and hashes of its
-retained logs. Use a dedicated site evidence key, separate from the offline
-approval key. Site-specific tests use the same signed result schema:
+The checked-in `acceptance_runner.py` is the official evidence generator. It runs
+the isolated Trustee administration tests and the hardware tests, signs every
+passing result with a dedicated site evidence key, verifies that every check
+required by the exact manifest is present, and writes the report consumed by
+`admin approve`. The evidence key is separate from the offline approval key.
+
+Prepare and start the isolated lab Trustee as described under **Reproducing
+tests** in [VALIDATION.md](VALIDATION.md). Provision one additional disposable
+vault key under this bundle and set `CVM_OTHER_RESOURCE` to its
+`keys/BUILD_ID/BINDING` path; the runner uses it for the live cross-vault denial.
+Then run:
+
+```sh
+sudo env \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
+  CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
+  CVM_LAB_DIRECTORY=/path/to/isolated-lab \
+  CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
+  CVM_ACCEPTANCE_OUTPUT=/path/to/new-evidence-directory \
+  ../../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner \
+  target/cvm_PROFILE/PLATFORM /srv/cvm/acceptance-report.json
+```
+
+The wrapper uses `CVM_BUILDER_PYTHON`, the builder's `.venv/bin/python`, or
+`python3`, in the same order as `cvmctl`. When using a dedicated environment
+outside the builder directory, pass its absolute interpreter path as
+`CVM_BUILDER_PYTHON` in the `sudo env` command above.
+
+The output directory must not already exist. The runner enables the network,
+interruption, revocation, and GPU fault cases required by the selected manifest;
+there is no reduced production mode that silently skips a required check. It
+requires the isolated Trustee to run on the acceptance host so its bounded NRAS
+fault injection cannot affect another deployment. A passing GPU boot establishes
+`gpu_positive_key_release` and `gpu_policy_selection` at the actual security
+boundary: Trustee accepts the composite CPU/GPU EAR, returns the vault key, and
+the measured guest opens the vault and starts the workload. No application-created
+GPU result file is trusted. The negative GPU case accepts the stable security
+outcomes—no allow decision, no workload start, and confirmed VM poweroff—without
+depending on a final error string racing the systemd watchdog.
+
+Each passing test writes a versioned, Ed25519-signed `result.json` containing the
+exact `manifest_sha256`, platform, explicit successful outcomes, and hashes of
+its retained logs. A separately reviewed site-specific test can use the same
+signed result schema:
 
 ```json
 {
@@ -441,7 +489,9 @@ Every CPU profile requires: `attestation_quarantine_recovery`,
 `cross_class_denial`, `gpu_negative_key_denial`, `gpu_policy_selection`,
 `gpu_positive_key_release`, and `periodic_gpu_denial`.
 
-Aggregate only results for this exact finalized manifest, then approve it:
+The official runner already writes the aggregate report. To re-aggregate retained
+evidence or combine it with an additional site-specific result, use
+`acceptance-report`, then approve the exact bundle:
 
 ```sh
 sudo ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
@@ -595,6 +645,47 @@ docker image inspect --format '{{.Id}}' "$image"
 docker save "$image" -o inputs/application.tar
 ```
 
+Size the vault before building it. The vault keeps `application.tar`, Docker
+temporarily extracts the complete archive below `/vault/docker/data` during
+`docker load`, and the imported image remains there afterward. All three can
+coexist during first boot, so the archive size by itself is not sufficient. Use
+the image's `Size` value before removing it from the build host. For an ordinary
+uncompressed `docker save`, the extracted archive is approximately the archive's
+logical member size; compressed outer archives can have a much larger extracted
+footprint.
+
+```sh
+image_bytes=$(docker image inspect --format '{{.Size}}' "$image")
+archive_bytes=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' inputs/application.tar)
+printf 'image_bytes=%s archive_bytes=%s\n' "$image_bytes" "$archive_bytes"
+```
+
+Choose `vault_drive_size` in GiB using this baseline:
+
+```text
+peak_content = archive_bytes + extracted_archive_bytes + image_bytes + application_files_bytes
+safety_margin = max(2 GiB, 20% of peak_content)
+usable_vault_bytes >= peak_content + safety_margin + expected_runtime_writes
+```
+
+Vault Build estimates `extracted_archive_bytes` from the logical size of every
+archive member. It conservatively treats 90 percent of the configured raw drive
+after the LUKS header as usable for this comparison, reserving the rest for
+LUKS2, dm-integrity, ext4 metadata, and filesystem-reserved space. Round the raw
+`vault_drive_size` up until that usable capacity satisfies the inequality.
+
+`expected_runtime_writes` includes container logs, caches, downloaded models and
+anything written below `/vault/application/runtime` or
+`/vault/application/data`. Increase the margin for images with high layer
+expansion or workloads whose write volume is uncertain. Vault Build scans every
+saved-image layer chain that `docker load` will import and rejects a configured
+vault below its startup estimate; repeated blobs under different parent chains
+are counted separately. The check reserves the safety margin but cannot predict
+application runtime writes. If the local Python cannot inspect a layer's
+compression format, the builder prints a warning and uses its stored size as a
+lower bound. Validate the chosen capacity under the workload's expected peak
+write volume.
+
 Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
@@ -605,7 +696,11 @@ image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde
 # Optional: omit to use every platform available in cvm_image.
 # platforms: [intel_tdx]
 requires_gpu: false
-vault_drive_size: 8
+# Optional with container.attestation_credentials. This is the verifier's
+# maximum accepted EAR age, not the signed EAR lifetime.
+# max_token_age_seconds: 300
+# Example only; calculate this value for the saved image and workload.
+vault_drive_size: 32
 applog_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1
@@ -619,6 +714,7 @@ container:
   ports: [{host: 8080, container: 8080}]
   env: {}
   volumes: []
+  attestation_credentials: false
   tee_device: false
 services: []
 hosts_entries: {}
@@ -631,7 +727,7 @@ systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
 application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
 protections and a reduced capability bounding set).
 
-Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in.
+Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` explicitly selects a non-root numeric UID:GID. When it is omitted, the privileged builder derives the root or numeric `UID[:GID]` from the authenticated Docker image configuration and applies that ownership to `/vault/application` after copying it into the encrypted vault. Named image users are rejected because the builder cannot establish their numeric ownership without running the image. Build-host staging remains owned by the invoking user. `host_bin` remains an explicit opt-in. `attestation_credentials` asks the measured guest supervisor to atomically publish a fresh Trustee EAR and its ephemeral proof key at `/vault/application/runtime/trustee_token.json`; unified CC provisioning enables this without exposing the guest attester binary or TEE device to the container. When `max_token_age_seconds` is set, it requires `attestation_credentials` and must include the complete bounded renewal window plus 15 seconds for issuance, retrieval, and publication: at least 90 seconds for CPU-only profiles or 270 seconds for GPU profiles. The supervisor renews from the earlier of the signed EAR expiration and `iat + max_token_age_seconds`.
 
 `container.env` is serialized into a sealed memory-backed environment file. Its values are never merged into the privileged Docker client's environment or command-line arguments. Names such as `DOCKER_HOST`, `PATH` and `LD_PRELOAD` configure only the container. Values cannot contain NUL, CR or LF. The CLI uses an absolute executable and the local Unix socket.
 
@@ -709,10 +805,10 @@ false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
 The default expects `inputs/libnvat.so.1` plus `inputs/nvat_build.json`.
-Trustee v0.22.0's Cargo.lock pins the NVAT 2026.03.02 source, which builds library
-version 1.2.0 with soname 1. Stage 1 checks the source revision, reviewed libxml2
-compatibility patch, build environment and binary digest in the provenance
-record. Evidence collection and verification use CoCo's code.
+The selector-capable client patch pins the NVAT 2026.06.09 source, which builds
+library version 1.2.2 with soname 1. Stage 1 checks the clean source revision,
+build environment and binary digest in the provenance record. Evidence
+collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
 `linux-modules-nvidia-*-<kernel>` package plus its matching

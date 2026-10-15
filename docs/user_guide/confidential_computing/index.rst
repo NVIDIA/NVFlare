@@ -124,8 +124,8 @@ FLARE Confidential Federated AI Overview
 ========================================
 
 NVIDIA FLARE provides Confidential Federated AI capabilities through hardware-backed security. Deployment paths include
-CVM Builder, Confidential Containers (CoCo) on Kubernetes, and Azure Confidential Computing. They share some NVFlare
-attestation components but have different boot, packaging, and key-release mechanisms; do not mix their runbooks.
+CVM Builder, Confidential Containers (CoCo) on Kubernetes, and Azure Confidential Computing. All three use the unified
+:ref:`cc_deployment` provisioning interface while retaining their distinct boot, packaging, and key-release mechanisms.
 
 Confidential Containers on Kubernetes
 -------------------------------------
@@ -185,6 +185,7 @@ Choosing the Right Deployment
 .. toctree::
    :maxdepth: 2
 
+   deployment
    coco_security_architecture
    on_premises/index
    azure/index

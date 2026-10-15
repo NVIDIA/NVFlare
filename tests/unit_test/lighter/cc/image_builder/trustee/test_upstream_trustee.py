@@ -22,11 +22,45 @@ from unittest.mock import patch
 
 from cvm.common.errors import BuildError
 from cvm.common.io import digest_file
-from cvm.trustee.admin import read_resource_policy
+from cvm.common.versions import (
+    COCO_ACTIX_HTTP_CRATE_SHA256,
+    COCO_ACTIX_HTTP_SOURCE_SHA256,
+    COCO_ACTIX_HTTP_VERSION,
+    COCO_SERVICE_BUILD_PROFILE,
+    COCO_SERVICE_PATCH_SHA256,
+)
+from cvm.trustee.admin import read_resource_policy, verify_server_provenance
 from cvm.trustee.provenance import provenance
 
 
 class UpstreamTrusteeTests(unittest.TestCase):
+    def test_shared_coco_service_provenance_is_exact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "kbs"
+            binary.write_bytes(b"fixture binary")
+            recipe = {
+                "source_clean": False,
+                "build_profile": COCO_SERVICE_BUILD_PROFILE,
+                "source_patch_sha256": COCO_SERVICE_PATCH_SHA256,
+                "actix_http_version": COCO_ACTIX_HTTP_VERSION,
+                "actix_http_crate_sha256": COCO_ACTIX_HTTP_CRATE_SHA256,
+                "actix_http_source_sha256": COCO_ACTIX_HTTP_SOURCE_SHA256,
+                "kbs_image_id": "sha256:" + "a" * 64,
+            }
+            build = dict(recipe, binary_sha256=digest_file(binary))
+            config = {
+                "trustee_binary": str(binary),
+                "trustee_image_id": build["kbs_image_id"],
+            }
+            verify_server_provenance(config, build, recipe)
+            for name, value in (
+                ("source_patch_sha256", "b" * 64),
+                ("actix_http_version", "other"),
+                ("kbs_image_id", "sha256:" + "b" * 64),
+            ):
+                with self.subTest(name=name), self.assertRaises(BuildError):
+                    verify_server_provenance(config, dict(build, **{name: value}), recipe)
+
     def test_provenance_rejects_modified_or_wrong_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

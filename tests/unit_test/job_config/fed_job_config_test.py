@@ -661,7 +661,7 @@ class TestFedJobConfig:
         process.wait.return_value = 0
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process):
                 result = job_config.simulator_run(str(tmp_path), n_clients=1)
 
         assert result == 0
@@ -672,7 +672,7 @@ class TestFedJobConfig:
         process.wait.return_value = 2
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process):
                 result = job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)
 
         assert result == 2

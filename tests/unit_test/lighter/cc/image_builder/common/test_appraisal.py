@@ -25,6 +25,7 @@ import unittest
 from pathlib import Path
 
 from cvm.build.config import SOURCE
+from cvm.common.references import render_reference_policy
 
 ENGINE = Path(
     os.environ.get("CVM_POLICY_EVAL", str(Path(__file__).parents[1] / "policy_engine/target/release/cvm-policy-eval"))
@@ -48,15 +49,25 @@ class AppraisalTests(unittest.TestCase):
     def evaluate(self, claims, refs, dimension):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            (root / "policy.rego").write_text(render_reference_policy(POLICY.read_text(), "cvm_profile_test"))
             (root / "input.json").write_text(json.dumps(claims))
             (root / "data.json").write_text(
-                json.dumps({"reference": dict(refs, cvm_reference_expiry={name: time.time() + 300 for name in refs})})
+                json.dumps(
+                    {
+                        "reference": {
+                            "cvm_profile_test": {
+                                "values": refs,
+                                "expirations": {name: time.time() + 300 for name in refs},
+                            }
+                        }
+                    }
+                )
             )
             expected = 3 if dimension == "executables" else 2
             result = subprocess.run(
                 [
                     str(ENGINE),
-                    str(POLICY),
+                    str(root / "policy.rego"),
                     str(root / "input.json"),
                     str(root / "data.json"),
                     f"data.policy.{dimension} == {expected}",

@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cvm.build.config import SOURCE
 from cvm.common.io import read_json, write_json
+from cvm.common.references import render_reference_policy
 from cvm.runtime.attestation import validate_token
 from cvm.trustee.provenance import provenance
 
@@ -62,13 +63,22 @@ def capture(source, output):
         storage = root / "storage"
         policies = storage / "attestation_service_policy"
         policies.mkdir(parents=True)
-        (policies / "default_cpu.rego").write_bytes((SOURCE / "config/attestation_policy.rego").read_bytes())
-        references["cvm_reference_expiry"] = {name: time.time() + 600 for name in references}
-        for name, value in references.items():
-            write_json(
-                storage / "reference_value" / name,
-                {"version": "0.1.0", "name": name, "value": value, "expiration": "2099-01-01T00:00:00Z"},
-            )
+        reference_id = "cvm_profile_public_snp_fixture"
+        source_policy = (SOURCE / "config/attestation_policy.rego").read_text()
+        rendered_policy = render_reference_policy(source_policy, reference_id)
+        (policies / "default_cpu.rego").write_text(rendered_policy)
+        write_json(
+            storage / "reference_value" / reference_id,
+            {
+                "version": "0.1.0",
+                "name": reference_id,
+                "value": {
+                    "values": references,
+                    "expirations": {name: time.time() + 600 for name in references},
+                },
+                "expiration": "2099-01-01T00:00:00Z",
+            },
+        )
         key = ec.generate_private_key(ec.SECP256R1())
         (root / "as.key").write_bytes(
             key.private_bytes(
@@ -136,10 +146,8 @@ def capture(source, output):
                     **upstream,
                     "evidence_source": f"https://github.com/confidential-containers/trustee/blob/{upstream['trustee_commit']}/{evidence_path}",
                     "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
-                    "as_policy_sha256": hashlib.sha256(
-                        (SOURCE / "config/attestation_policy.rego").read_bytes()
-                    ).hexdigest(),
-                    "references": {name: value for name, value in references.items() if name != "cvm_reference_expiry"},
+                    "as_policy_sha256": hashlib.sha256(rendered_policy.encode()).hexdigest(),
+                    "references": references,
                     "token": token.decode(),
                     "as_public_key": public.decode(),
                     "issued_at": claims["iat"],

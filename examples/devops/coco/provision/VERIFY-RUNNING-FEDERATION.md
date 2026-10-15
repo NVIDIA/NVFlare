@@ -14,8 +14,9 @@ trusted NVFlare environment when using an installed package.
 ## 1. Review the required attestation configuration
 
 Before releasing the signed images/kits, review each participant's generated
-`local/cc_manager__p_resources.json` and `local/coco_authorizer__p_resources.json`
-in the **private provisioning workspace**. Never
+`local/cc_manager__p_resources.json` and `local/trustee_authorizer__p_resources.json`
+under `state/cc-private/<prod>/<participant>/startup-kit` in the **private
+provisioning workspace**. Never
 edit a kit after signing or use configuration returned by CoCo IT as approval.
 For an ordinary trusted server, also confirm that its deployed kit is the
 reviewed kit and that no local override disables its CC components.
@@ -34,7 +35,7 @@ from pathlib import Path
 required = set(os.environ["REQUIRED_CC_SITES"].split(","))
 local = Path(os.environ["REVIEWED_LOCAL"])
 components = {}
-for name in ("cc_manager", "coco_authorizer"):
+for name in ("cc_manager", "trustee_authorizer"):
     config = json.loads((local / (name + "__p_resources.json")).read_text())
     for item in config["components"]:
         if item["id"] in components:
@@ -44,19 +45,19 @@ manager = components["cc_manager"]
 if manager["path"] != "nvflare.app_opt.confidential_computing.cc_manager.CCManager":
     raise SystemExit("Unexpected CCManager implementation")
 args = manager["args"]
-expected_map = {site: ["coco_authorizer"] for site in required}
+expected_map = {site: ["trustee_authorizer"] for site in required}
 if (
     not required
     or "" in required
     or set(args["cc_enabled_sites"]) != required
     or args["required_site_verifier_ids"] != expected_map
-    or args["cc_verifier_ids"] != ["coco_authorizer"]
+    or args["cc_verifier_ids"] != ["trustee_authorizer"]
     or args["require_site_binding"] is not True
 ):
     raise SystemExit("Required attestation coverage does not match the approved project")
-authorizer = components["coco_authorizer"]
-if authorizer["path"] != "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer":
-    raise SystemExit("Unexpected CoCoAuthorizer implementation")
+authorizer = components["trustee_authorizer"]
+if authorizer["path"] != "nvflare.app_opt.confidential_computing.trustee_authorizer.TrusteeAuthorizer":
+    raise SystemExit("Unexpected TrusteeAuthorizer implementation")
 print("Required CC participants:", ", ".join(sorted(required)))
 print("Configured periodic interval:", args["verify_frequency"], "seconds")
 PY

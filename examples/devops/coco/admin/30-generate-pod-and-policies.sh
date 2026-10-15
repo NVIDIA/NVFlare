@@ -192,8 +192,8 @@ policy = {
 Path(sys.argv[1]).write_text(json.dumps(policy, indent=2) + "\n")
 PY
 
-TRUSTEE_CERT="$(<"${PUBLIC_DIR}/trustee.crt")"
-REGISTRY_CA="$(<"${PUBLIC_DIR}/registry-ca.crt")"
+TRUSTEE_CERT="$(<"${KBS_CA_FILE}")"
+REGISTRY_CA="$(<"${REGISTRY_CA_FILE}")"
 cat > "${POLICY_WORK_DIR}/base-initdata.toml" <<EOF
 algorithm = "sha256"
 version = "0.1.0"
@@ -300,7 +300,7 @@ del pod["spec"]["containers"][0]["securityContext"]["runAsNonRoot"]
 path.write_text(yaml.safe_dump(pod, sort_keys=False))
 PY
 # Scope the registry CA to this image-inspection process, never the host trust store.
-python3 - "${PUBLIC_DIR}/registry-ca.crt" "${POLICY_WORK_DIR}/registry-trust.pem" <<'PY'
+python3 - "${REGISTRY_CA_FILE}" "${POLICY_WORK_DIR}/registry-trust.pem" <<'PY'
 from pathlib import Path
 import ssl
 import sys

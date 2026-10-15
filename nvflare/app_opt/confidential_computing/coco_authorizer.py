@@ -42,6 +42,7 @@ from .trustee_claims import CPU_TRUST_VECTORS, TRUST_VECTOR, cpu_evidence_type, 
 COCO_NAMESPACE = "x-trustee-coco"
 EAT_PROFILE = "tag:github.com,2024:confidential-containers/Trustee"
 MAX_TOKEN_BYTES = 2 * 1024 * 1024
+MAX_GPU_APPRAISALS = 8
 
 
 class _TemporaryTokenError(CCTokenGenerateError):
@@ -238,8 +239,14 @@ class CoCoAuthorizer(CCAuthorizer):
         submods = claims.get("submods", {})
         # Select only from authenticated claims, never from the unverified JWT.
         # A present GPU appraisal must pass; it cannot fall back to CPU-only.
-        if not isinstance(submods, dict) or set(submods) not in ({"cpu0"}, {"cpu0", "gpu0"}):
-            raise ValueError("Expected a CPU appraisal and optionally one GPU appraisal")
+        # CVM profiles support up to eight GPUs. Require a contiguous set so an
+        # omitted or renamed signed appraisal cannot be silently ignored.
+        if not isinstance(submods, dict):
+            raise ValueError("Expected one CPU appraisal and zero to eight GPU appraisals")
+        gpu_count = len(submods) - 1
+        expected_submods = {"cpu0", *(f"gpu{i}" for i in range(gpu_count))}
+        if not 0 <= gpu_count <= MAX_GPU_APPRAISALS or set(submods) != expected_submods:
+            raise ValueError("Expected one CPU appraisal and zero to eight contiguous GPU appraisals")
         cpu = submods["cpu0"]
         if not isinstance(cpu, dict):
             raise ValueError("Malformed CPU appraisal")

@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Optional, Union
 
 import torch
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.fuel.utils import fobs
@@ -106,6 +108,12 @@ class PTFedAvg(FedAvg):
         fobs.register(TensorDecomposer)
         super().run()
 
+    def _metadata_path(self, filepath: str) -> str:
+        run_dir = os.path.realpath(self.get_run_dir())
+        sidecar = f"{os.path.abspath(filepath)}.metadata"
+        relative_sidecar = os.path.relpath(sidecar, run_dir)
+        return resolve_path_under_root(run_dir, relative_sidecar, "model metadata path", preserve_leaf=True)
+
     def save_model_file(self, model: FLModel, filepath: str) -> None:
         """Save model using PyTorch's torch.save.
 
@@ -115,6 +123,8 @@ class PTFedAvg(FedAvg):
             model (FLModel): model to save
             filepath (str): path to save the model
         """
+        metadata_path = self._metadata_path(filepath)
+
         # Save parameters with torch.save
         torch.save(model.params, filepath)
 
@@ -122,7 +132,7 @@ class PTFedAvg(FedAvg):
         params = model.params
         try:
             model.params = {}  # Temporarily remove params to save only metadata
-            fobs.dumpf(model, f"{filepath}.metadata")
+            fobs.dumpf(model, metadata_path)
         finally:
             model.params = params  # Restore params
 
@@ -137,13 +147,11 @@ class PTFedAvg(FedAvg):
         Returns:
             FLModel: loaded model with params and metadata
         """
-        import os
-
         # Load parameters with torch.load
         params = torch.load(filepath, weights_only=True)
 
         # Load FLModel metadata if exists
-        metadata_path = f"{filepath}.metadata"
+        metadata_path = self._metadata_path(filepath)
         if os.path.exists(metadata_path):
             model: FLModel = fobs.loadf(metadata_path)
             model.params = params

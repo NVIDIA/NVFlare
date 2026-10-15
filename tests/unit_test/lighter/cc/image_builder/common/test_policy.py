@@ -25,7 +25,8 @@ import unittest
 from pathlib import Path
 
 from cvm.common.contracts import resource_path
-from cvm.common.policy import compose
+from cvm.common.errors import BuildError
+from cvm.common.policy import MANAGED_BEGIN, MANAGED_END, compose, merge
 
 ENGINE = Path(
     os.environ.get("CVM_POLICY_EVAL", str(Path(__file__).parents[1] / "policy_engine/target/release/cvm-policy-eval"))
@@ -228,6 +229,61 @@ class ResourcePolicyTests(unittest.TestCase):
             else:
                 ev["tdx"]["quote"]["body"]["rtmr_2"] = "f" * 96
             self.assertFalse(self.evaluate(manifest, claims, path))
+
+
+class SharedPolicyCompositionTests(unittest.TestCase):
+    def manifest(self, build_id, policy_id):
+        return {
+            "build_id": build_id,
+            "platform": "intel_tdx",
+            "attestation_policy_id": policy_id,
+            "measurements": {"mr_td": "1" * 96, "rtmr_0": "0" * 96, "rtmr_1": "2" * 96, "rtmr_2": "3" * 96},
+        }
+
+    def test_cvm_updates_preserve_coco_rules_and_multiple_profiles(self):
+        coco = """package policy
+import rego.v1
+default allow := false
+coco_release if { data["resource-path"] == ["coco", "release", "key"] }
+allow if { coco_release }
+"""
+        cpu = self.manifest("cvm-cpu", "cvm-cpu-r1")
+        gpu = self.manifest("cvm-gpu", "cvm-gpu-r1")
+        first = merge(coco, [cpu])
+        second = merge(first, [cpu, gpu], [cpu])
+        retired = merge(second, [gpu], [cpu, gpu])
+        self.assertTrue(first.startswith(coco))
+        first_outside = first[: first.index(MANAGED_BEGIN)] + first[first.index(MANAGED_END) + len(MANAGED_END) :]
+        second_outside = second[: second.index(MANAGED_BEGIN)] + second[second.index(MANAGED_END) + len(MANAGED_END) :]
+        self.assertEqual(second_outside, first_outside)
+        for policy in (first, second, retired):
+            self.assertIn("coco_release", policy)
+            self.assertEqual(policy.count(MANAGED_BEGIN), 1)
+        self.assertIn('cvm_approved_cpu("cvm-cpu-r1")', second)
+        self.assertIn('cvm_approved_cpu("cvm-gpu-r1")', second)
+        self.assertNotIn('cvm_approved_cpu("cvm-cpu-r1")', retired)
+        self.assertIn('cvm_approved_cpu("cvm-gpu-r1")', retired)
+
+    def test_shared_policy_rejects_malformed_markers_and_reserved_names(self):
+        base = "package policy\nimport rego.v1\ndefault allow := false\n"
+        manifest = self.manifest("cvm-cpu", "cvm-cpu-r1")
+        for policy in (
+            base + "# END NVFLARE CVM MANAGED POLICY v1\n# BEGIN NVFLARE CVM MANAGED POLICY v1\n",
+            base + "cvm_cpu := {}\n",
+        ):
+            with self.subTest(policy=policy), self.assertRaises(BuildError):
+                merge(policy, [manifest])
+
+    def test_legacy_cvm_only_policy_is_upgraded_without_duplicate_rules(self):
+        old = self.manifest("cvm-old", "cvm-old-r1")
+        new = self.manifest("cvm-new", "cvm-new-r1")
+        policy = merge(compose([old]), [old, new], [old])
+        self.assertEqual(policy.count("package policy"), 1)
+        self.assertEqual(policy.count('cvm_approved_cpu("cvm-old-r1")'), 1)
+
+    def test_shared_policy_must_remain_default_deny(self):
+        with self.assertRaisesRegex(Exception, "default-deny"):
+            merge("package policy\nimport rego.v1\nallow := true\n", [])
 
 
 if __name__ == "__main__":

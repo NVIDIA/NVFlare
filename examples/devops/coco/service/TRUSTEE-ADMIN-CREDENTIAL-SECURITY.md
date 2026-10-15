@@ -6,7 +6,7 @@ delivered to the CoCo cluster owner or included in a public handoff.
 
 ## Fresh installation
 
-The [pinned upstream setup script](https://github.com/confidential-containers/trustee/blob/338610fbfed57b66c61a8a3a60e0e4386bdce793/kbs/config/docker-compose/setup.sh)
+The [pinned upstream setup script](https://github.com/confidential-containers/trustee/blob/512fed65642015b849f38fb13bfdec7806639987/kbs/config/docker-compose/setup.sh)
 enables shell tracing while creating a ten-year administrator JWT and explicitly
 makes its token file mode `0644`. The trace contains all three JWT segments, which
 can be reassembled into a usable bearer token. Turning off tracing in the outer

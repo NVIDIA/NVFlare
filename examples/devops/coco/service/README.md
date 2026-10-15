@@ -24,12 +24,16 @@ The resulting secure services are:
 - RVPS with persistent LocalFs references; and
 - a private OCI registry behind Nginx TLS on **5000**.
 
-All backend listeners are loopback-only. This kit uses the pinned post-v0.21
-Trustee source and 128 KiB HTTP request-head patch, not Trustee v0.21.0.
+All backend listeners are loopback-only. This kit uses the pinned Trustee v0.22
+source and 128 KiB HTTP request-head patch. The same KBS/AS/RVPS deployment can
+serve CoCo guests through its default appraisal policy and bare-metal CVMs
+through explicitly mapped profile policies.
 
 ## Installation order
 
 Script prefixes now match the fresh-install execution order: **01 through 11**.
+GPU deployments add the separate [approved GPU reference procedure](GPU-REFERENCE-VALUES.md)
+after stage 09 and before any GPU workload release. CPU-only setups omit it.
 Run as `service_operator` from `/home/service_operator/coco-service-admin`, stopping on any
 failure. Before step 02, receive and approve the SNP five-field or TDX v2 JSON file and set:
 

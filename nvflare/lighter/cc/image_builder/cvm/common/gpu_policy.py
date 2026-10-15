@@ -18,7 +18,7 @@ import json
 
 from .errors import require
 from .gpu_claims import NRAS_CLAIMS, VECTOR
-from .references import REFERENCE_REGO
+from .references import reference_rego
 
 
 def resource_conditions(count, policy):
@@ -41,7 +41,7 @@ def resource_conditions(count, policy):
     return lines
 
 
-def render(policy):
+def render(policy, reference_record):
     """Only a completely matching, backend-verified NVIDIA claim set affirms."""
 
     lines = [
@@ -49,7 +49,7 @@ def render(policy):
         "package policy",
         "import rego.v1",
         "",
-        REFERENCE_REGO,
+        reference_rego(reference_record),
         "default approved := false",
         "default executables := 33",
         "default hardware := 97",

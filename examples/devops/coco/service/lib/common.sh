@@ -17,6 +17,8 @@ validate_private_root "$PUBLISHER_DIR"
 
 TRUSTEE_COMPOSE="${TRUSTEE_ROOT}/docker-compose.yml"
 KBS_CLIENT="${TRUSTEE_ROOT}/kbs-client-snp-tdx-${TRUSTEE_LABEL}"
+KBS_SERVER="${TRUSTEE_ROOT}/kbs-server-${TRUSTEE_LABEL}"
+TRUSTEE_BUILD_PROVENANCE="${TRUSTEE_ROOT}/trustee-build.json"
 ADMIN_TOKEN="${TRUSTEE_ROOT}/kbs/config/docker-compose/admin-token"
 KBS_STORAGE_DIR="${TRUSTEE_ROOT}/kbs/data/kbs-storage"
 KBS_POLICY_DIR="${TRUSTEE_ROOT}/kbs/data/kbs-policy"
@@ -76,7 +78,7 @@ kbs_admin() {
 # Shared by initial policy installation and subsequent reference updates.
 lock_platform_reference_update() {
     need_cmd flock
-    exec {PLATFORM_REFERENCE_LOCK_FD}>"${SCRIPT_ROOT}/.platform-reference-update.lock"
+    exec {PLATFORM_REFERENCE_LOCK_FD}>"${KBS_POLICY_DIR}/.resource-policy.lock"
     flock -n "$PLATFORM_REFERENCE_LOCK_FD" || die 'Another platform-reference update is in progress'
 }
 
@@ -99,4 +101,16 @@ install_measurement_allowlist() {
 install_platform_references() {
     sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-references \
         "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
+}
+
+verify_gpu_readiness() {
+    [[ -n ${GPU_REFERENCE_VALUES_FILE:-} ]] \
+        || die 'GPU release requires an independently approved GPU reference snapshot'
+    need_file "$GPU_REFERENCE_VALUES_FILE"
+    need_file "$SCRIPT_ROOT/policies/default_gpu.rego"
+    need_file "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego"
+    cmp --silent "$SCRIPT_ROOT/policies/default_gpu.rego" \
+        "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego" \
+        || die 'Active GPU appraisal policy differs from the reviewed policy'
+    bash "$SCRIPT_ROOT/10g-verify-gpu-reference-values.sh" "$GPU_REFERENCE_VALUES_FILE"
 }

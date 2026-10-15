@@ -3,19 +3,33 @@
 set -Eeuo pipefail
 umask 077
 
+[[ $# -eq 3 ]] || {
+    printf 'Usage: %s REGISTRY_ENDPOINT REGISTRY_CA_FILE KBS_URL\n' "$0" >&2
+    exit 2
+}
+REGISTRY_ENDPOINT="$1"
+REGISTRY_CA_FILE="$(realpath -e -- "$2")"
+KBS_URL="$3"
+REGISTRY_HOST="${REGISTRY_ENDPOINT%:*}"
+REGISTRY_PORT="${REGISTRY_ENDPOINT##*:}"
+[[ -n "${REGISTRY_HOST}" && "${REGISTRY_PORT}" =~ ^[0-9]+$ ]] || {
+    printf 'REGISTRY_ENDPOINT must be host:port.\n' >&2
+    exit 2
+}
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/platform.sh
 source "${SCRIPT_DIR}/lib/platform.sh"
 
 need_file "${PUBLIC_DIR}/trustee.crt"
-need_file "${PUBLIC_DIR}/registry-ca.crt"
+need_file "${REGISTRY_CA_FILE}"
 
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates curl docker.io golang-go jq openssl python3-yaml skopeo zstd
 
 sudo install -d -m 0755 "/etc/docker/certs.d/${REGISTRY_HOST}:${REGISTRY_PORT}"
-sudo install -m 0644 "${PUBLIC_DIR}/registry-ca.crt" \
+sudo install -m 0644 "${REGISTRY_CA_FILE}" \
     "/etc/docker/certs.d/${REGISTRY_HOST}:${REGISTRY_PORT}/ca.crt"
 sudo systemctl enable --now docker
 
@@ -64,7 +78,7 @@ curl --silent --show-error --cacert "${PUBLIC_DIR}/trustee.crt" \
 REGISTRY_HEADERS="$(mktemp)"
 trap 'rm -f "${REGISTRY_HEADERS}"' EXIT
 REGISTRY_STATUS="$(curl --silent --show-error \
-    --cacert "${PUBLIC_DIR}/registry-ca.crt" \
+    --cacert "${REGISTRY_CA_FILE}" \
     --dump-header "${REGISTRY_HEADERS}" --output /dev/null \
     --write-out '%{http_code}' \
     "https://${REGISTRY_HOST}:${REGISTRY_PORT}/v2/")"

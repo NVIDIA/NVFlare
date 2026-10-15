@@ -72,7 +72,9 @@ their fingerprints through an independent trusted channel before first use:
 cd /path/to/admin
 openssl x509 -in public/trustee.crt -noout -subject -issuer -dates -fingerprint -sha256
 openssl x509 -in public/registry-ca.crt -noout -subject -issuer -dates -fingerprint -sha256
-./00-install-tools.sh
+REGISTRY_ENDPOINT=secure-services.example.com:5000  # cc_project.yml registry.endpoint
+KBS_URL=https://secure-services.example.com:8443   # cc_project.yml Trustee kbs_endpoint
+./00-install-tools.sh "$REGISTRY_ENDPOINT" "$PWD/public/registry-ca.crt" "$KBS_URL"
 ```
 
 After registry certificate rotation, refresh the registry-specific CA
@@ -90,14 +92,17 @@ Install the publisher credential without placing its password on a command line
 or in shell history:
 
 ```bash
-./05-install-publisher-credential.sh /path/to/authenticated/received-credential
+./05-install-publisher-credential.sh /path/to/authenticated/received-credential \
+  "$PWD/secrets/registry"
 ```
 
 The received directory must contain exactly `username` and `password`. The
 installer does not display the password and refuses to overwrite an existing
-credential. It loads the reviewed `platform.env` and installs both files under
-`${WORK_ROOT}/secrets/registry/`, the same location used by stage 20. Set
-`WORK_ROOT` before installation; the default is `$HOME/coco-workload-owner`.
+credential. Supply the destination explicitly; it must contain the credential
+files named by `publisher_username_file` and `publisher_password_file` in the
+unified `cc_project.yml` and by the generated workload request. The command
+above installs them in the current admin kit at the location referenced by the
+supplied example configuration.
 Securely remove the received copy after installation.
 
 The persistent Cosign signing key is created on first publication under

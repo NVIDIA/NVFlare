@@ -4,12 +4,14 @@
 package policy
 import rego.v1
 
-# v0.22 RVPS does not filter expired records; enforce operator deadlines here.
+# The builder replaces this identifier with a profile-scoped RVPS record.
+profile_references := query_reference_value("__CVM_PROFILE_REFERENCE_RECORD__")
+
 reference(name) := value if {
-    expiry := query_reference_value("cvm_reference_expiry")[name]
+    expiry := profile_references["expirations"][name]
     is_number(expiry)
     time.now_ns() < expiry * 1000000000
-    value := query_reference_value(name)
+    value := profile_references["values"][name]
 }
 
 default executables := 33

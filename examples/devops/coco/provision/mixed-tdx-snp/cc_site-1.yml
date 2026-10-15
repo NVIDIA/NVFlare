@@ -1,40 +1,21 @@
-# Authenticate the AS public key and both platform profiles before provisioning.
-# Keep this complete verifier mapping identical in both client configs.
-# Add approved measurement pins if required; never embed final InitData here.
-compute_env: confidential_containers
-cc_cpu_mechanism: intel_tdx
-cc_gpu: none
-role: client
-cc_issuers:
-- id: coco_authorizer
-  path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
-  token_expiration: 300
-  args:
-    trustee_public_key_file: ./trustee-as-public.pem
-    token_url: http://127.0.0.1:8006/aa/token
-    retry_max_attempts: 10
-    retry_initial_delay: 1.0
-    retry_max_delay: 15.0
-    retry_backoff_multiplier: 2.0
-    retry_jitter_ratio: 0.5
-    workload_constraints:
-      site-1:
-        cpu_tee: tdx
-        gpu_required: false
-      site-2:
-        cpu_tee: snp
-        gpu_required: true
-cc_attestation:
-  check_frequency: 120
-  registration_token_timeout: 300
-  refresh_token_timeout: 30
-  get_token_request_timeout: 45
-image_build:
-  context: ./site-1
-  dockerfile: Dockerfile
-release_name: site-1-v1
-registry_repository: workloads/site-1
-platform_config: ../../admin-tdx-cpu/platform.env
+# GPU appraisal is derived from gpu_tee; do not duplicate gpu_required in the
+# shared Trustee workload constraints.
+schema_version: 1
+cc_deployment_mode: coco
+cpu_tee: intel_tdx
+gpu_tee: none
+attestation:
+  service: trustee
 class_allow_list:
-- tdx_acceptance.AcceptanceController
-- tdx_acceptance.AcceptanceExecutor
+  - tdx_acceptance.AcceptanceController
+  - tdx_acceptance.AcceptanceExecutor
+workload:
+  source:
+    type: docker_build
+    context: ./site-1
+    dockerfile: Dockerfile
+coco:
+  release_name: site-1-v1
+  registry: coco_workloads
+  registry_repository: workloads/site-1
+  platform_config_file: ../../admin-tdx-cpu/platform.env

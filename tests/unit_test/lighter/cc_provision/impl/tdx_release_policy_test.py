@@ -61,7 +61,7 @@ def test_target_authentication_contract(runtime):
     assert auth["gpu"] == gpu
     assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "tdx" else "")
     assert auth["required_ear_submods"] == (["cpu0", "gpu0"] if gpu == "nvidia" else ["cpu0"])
-    assert auth["required_ear_trust_vectors"]["cpu0"]["configuration"] == (2 if cpu == "tdx" else 3)
+    assert auth["required_ear_trust_vectors"]["cpu0"]["configuration"] == 2
     assert release.validate_authorization(auth) == auth
 
 
@@ -267,9 +267,8 @@ def test_expected_target_mismatch_is_checked_before_any_image_build():
     assert "${COCO_GPU_COUNT:-$EXPECTED_GPU_COUNT}" in checks
 
 
-def test_target_rewrite_cannot_preserve_unapproved_vectors():
+def test_unapproved_trust_vector_is_rejected():
     auth = copy.deepcopy(authorization("kata-qemu-nvidia-gpu-tdx"))
-    auth["cpu_tee"] = "snp"
-    auth["init_data_claim"] = auth["init_data_sha256"]
+    auth["required_ear_trust_vectors"]["cpu0"]["configuration"] = 3
     with pytest.raises(ValueError, match="trust vectors"):
         release.validate_authorization(auth)

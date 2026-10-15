@@ -44,12 +44,14 @@ def read_json(path):
         return json.load(stream)
 
 
-def write_json(path, value, mode=0o600):
+def write_json(path, value, mode=0o600, owner=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".cvm-", dir=path.parent)
     try:
         os.fchmod(fd, mode)
+        if owner is not None:
+            os.fchown(fd, *owner)
         with os.fdopen(fd, "wb") as stream:
             stream.write(canonical(value) + b"\n")
             stream.flush()

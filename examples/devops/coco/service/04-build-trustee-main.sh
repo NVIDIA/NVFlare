@@ -19,6 +19,8 @@ fi
 git -C "${TRUSTEE_ROOT}" fetch origin "${TRUSTEE_COMMIT}"
 git -C "${TRUSTEE_ROOT}" checkout --detach "${TRUSTEE_COMMIT}"
 [[ "$(git -C "${TRUSTEE_ROOT}" rev-parse HEAD)" == "${TRUSTEE_COMMIT}" ]]
+[[ -z "$(git -C "${TRUSTEE_ROOT}" status --porcelain --ignored --untracked-files=all)" ]] || \
+    die 'Trustee build checkout is not fresh; preserve required outputs and use a new TRUSTEE_ROOT'
 
 CRATE="$(mktemp)"
 trap 'rm -f "${CRATE}"' EXIT
@@ -116,6 +118,13 @@ grep -Fxq 'const HW: usize = 128 * 1024;' \
     "${TRUSTEE_ROOT}/vendor/actix-http-${ACTIX_HTTP_VERSION}/src/h1/mod.rs"
 [[ "$(git -C "${TRUSTEE_ROOT}" diff --name-only | sort | tr '\n' ' ')" == \
    'Cargo.lock Cargo.toml attestation-service/docker/as-grpc/Dockerfile rvps/docker/Dockerfile ' ]]
+SOURCE_PATCH_SHA256="$(git -C "${TRUSTEE_ROOT}" diff --binary --no-ext-diff --no-color HEAD | sha256sum | cut -d ' ' -f 1)"
+[[ "${SOURCE_PATCH_SHA256}" == "1c62128cc044499a4c70172f2820f0083ccf205fed06562f7caed616b3230414" ]] || \
+    die 'CoCo Trustee source patch differs from the reviewed v1 build recipe'
+ACTIX_SOURCE_SHA256="$(sha256sum \
+    "${TRUSTEE_ROOT}/vendor/actix-http-${ACTIX_HTTP_VERSION}/src/h1/mod.rs" | cut -d ' ' -f 1)"
+[[ "${ACTIX_SOURCE_SHA256}" == "ea345db9b3fe2346f74f99cdf0d6ae0e07b84f906464af766e9b5931002ad767" ]] || \
+    die 'Patched Actix request parser differs from the reviewed source'
 
 sudo docker build --pull=false --build-arg ARCH=x86_64 \
     --build-arg VAULT=false --build-arg EXTERNAL_PLUGIN=false \
@@ -128,6 +137,12 @@ sudo docker build --pull=false --build-arg ARCH=x86_64 \
     --file "${TRUSTEE_ROOT}/rvps/docker/Dockerfile" \
     --tag "${RVPS_IMAGE}" "${TRUSTEE_ROOT}"
 
+# Export the exact server binary from the KBS image. CVM administration hashes
+# this copy and binds it to the image ID recorded below; it does not infer
+# provenance from a separately compiled host binary.
+sudo docker run --rm --entrypoint /bin/cat "${KBS_IMAGE}" /usr/local/bin/kbs > "${KBS_SERVER}"
+chmod 0755 "${KBS_SERVER}"
+
 sudo docker run --rm --volume "${TRUSTEE_ROOT}:/src" --workdir /src \
     "${RUST_BUILDER}" cargo build --locked --release --package kbs-client \
     --features snp-attester,tdx-attester
@@ -139,4 +154,28 @@ for image in "${KBS_IMAGE}" "${AS_IMAGE}" "${RVPS_IMAGE}"; do
     printf '%s %s\n' "$(sudo docker image inspect --format '{{.Id}}' "${image}")" \
         "${image}"
 done | tee "${MANIFEST}"
-printf 'Built pinned post-v0.21 Trustee images and KBS client.\n'
+KBS_IMAGE_ID="$(sudo docker image inspect --format '{{.Id}}' "${KBS_IMAGE}")"
+python3 - "${TRUSTEE_BUILD_PROVENANCE}" "${TRUSTEE_COMMIT}" \
+    "${KBS_SERVER}" "${KBS_IMAGE_ID}" "${SOURCE_PATCH_SHA256}" \
+    "${ACTIX_HTTP_VERSION}" "${ACTIX_HTTP_SHA256}" "${ACTIX_SOURCE_SHA256}" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+output, commit, binary, image_id, patch, actix_version, actix_crate, actix_source = sys.argv[1:]
+record = {
+    "trustee_commit": commit,
+    "source_clean": False,
+    "build_profile": "nvflare-coco-service-v1",
+    "source_patch_sha256": patch,
+    "actix_http_version": actix_version,
+    "actix_http_crate_sha256": actix_crate,
+    "actix_http_source_sha256": actix_source,
+    "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+    "kbs_image_id": image_id,
+}
+Path(output).write_text(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+PY
+chmod 0600 "${TRUSTEE_BUILD_PROVENANCE}"
+printf 'Built pinned Trustee v0.22 images, server provenance and KBS administration client.\n'

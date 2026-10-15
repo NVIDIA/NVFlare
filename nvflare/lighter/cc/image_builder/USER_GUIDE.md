@@ -20,6 +20,12 @@ quote-generation service for an `intel_tdx` delivery. Install Python 3 and QEMU.
 The host needs KVM access, enough memory for the profile, and guest network access
 to the configured KBS.
 
+The delivery's vault capacity is selected and sealed at build time. It must hold
+both the retained Docker archive and the expanded Docker layers, plus application
+files and runtime writes. If more capacity is needed, rebuild the vault using the
+sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build); do not resize a
+sealed delivery in place.
+
 Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
@@ -156,8 +162,9 @@ Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault buil
 confine the allowed ports to address ranges when configured.
 
 The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
-the measured root's `/usr/bin` appears at `/host/bin` only when the vault was
-built with `container.host_bin: true`. The container starts with a reduced
+the measured root's `/usr/bin` and system runtime libraries appear read-only at
+`/host/bin` and `/host/lib` only when the vault was built with
+`container.host_bin: true`. The container starts with a reduced
 capability set, `no-new-privileges` and a process limit; see
 [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
 Only `/vault` is encrypted and authenticated at rest. `/applog` is

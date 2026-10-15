@@ -4,103 +4,59 @@
 FLARE Confidential Federated AI Deployment Guide
 ################################################
 
-NVFlare uses CVM Builder to deploy a server and clients inside confidential VMs
-on Intel TDX or AMD SEV-SNP hosts. GPU clients additionally require a supported
-NVIDIA confidential-computing GPU and a GPU-enabled CVM profile.
+Use the unified :ref:`cc_deployment` workflow for bare-metal CVMs, CoCo, and
+Azure CC. For an on-premises CVM deployment, select ``bare_metal_cvm`` for each
+protected server or client. The common guide defines the project and
+participant files, shared Trustee service, builder order, and result manifest.
 
-CVM Builder is included in the NVFlare source tree at
-``nvflare/lighter/cc/image_builder``. The deployment has two stages:
+The on-premises workflow has two stages:
 
-1. Build, validate and approve a reusable generic CVM for each platform and profile.
-2. Provision NVFlare participants and seal each participant's signed startup kit
-   and Docker application into a fresh encrypted vault using those approved CVMs.
-
-Each participant receives a complete OCI delivery containing the generic CVM,
-application vault, sidecars and launch scripts. Application updates reuse the
-approved generic image and create a new vault.
+1. Build, validate, and approve a reusable generic CVM for each CPU/GPU TEE
+   profile.
+2. Provision NVFlare participants and seal each signed startup kit and Docker
+   application into a fresh encrypted vault.
 
 Prepare the hosts and key service
 =================================
 
-Configure a trusted Linux build worker with the builder's host tools and Python
-requirements. Hardware finalization and launch require a host supporting the
-selected TEE. The tested builder environment is Ubuntu 26.04; package, firmware,
-QEMU, driver and attester pins belong to each reviewed profile.
-
-Use these guides in ``nvflare/lighter/cc/image_builder``:
-
-- :github_nvflare_link:`BUILD_GUIDE.md
-  <nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>`: build-worker prerequisites, generic CVM construction,
-  hardware finalization, approval and application-vault construction.
-- :github_nvflare_link:`TRUSTEE_GUIDE.md
-  <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>`: the pinned Trustee deployment, immutable appraisal
-  policies, mutual TLS, administrator access and vault-key lifecycle.
-- :github_nvflare_link:`USER_GUIDE.md
-  <nvflare/lighter/cc/image_builder/USER_GUIDE.md>`: delivery verification, host preparation, launch and shutdown.
-- :github_nvflare_link:`VALIDATION.md
-  <nvflare/lighter/cc/image_builder/VALIDATION.md>`: recorded test results and remaining production acceptance.
-
-Build and approve the generic images before provisioning participants. CPU-only
-and GPU-enabled images have distinct profile contracts; select the image whose
-capabilities match the participant. Each approved platform bundle has its own
-measurements and key-resource namespace.
+Configure a trusted Linux build worker with the tools and Python requirements
+from ``nvflare/lighter/cc/image_builder``. Hardware finalization and launch need
+a host supporting the selected TEE. Follow its ``BUILD_GUIDE.md``,
+``TRUSTEE_GUIDE.md``, ``USER_GUIDE.md``, and the relevant TDX or SEV-SNP host
+guide. Build and approve generic images before provisioning participants.
 
 Prepare the application and project
 ===================================
 
-Build a Linux amd64 Docker image containing NVFlare, Bash and the application's
-code and dependencies. Save it with ``docker save``. NVFlare derives the image ID
-from the archive; the archive must contain exactly one distinct image.
-
-Use the example in ``examples/advanced/cvm_builder``. It configures
-an Intel TDX server and an AMD SEV-SNP GPU client. Update:
-
-- ``project.yml``: participant names, the builder directory, each participant's
-  approved ``cvm_image``, Docker archive, GPU requirements and network ports.
-- ``cvm_project.yml``: the shared key-service endpoint and existing builder
-  credentials. Relative credential paths resolve against this file.
-
-``cvm_image`` accepts a pulled generic-image folder or an immutable OCI registry
-reference. The selected platforms default to those in the image. See
-:ref:`cvm_builder` for the complete configuration and validation rules.
+Save one Linux amd64 application image with ``docker save``. Use
+``examples/advanced/cvm_builder`` as the complete configuration example. Point
+each participant at its own Docker archive and an approved CVM image whose
+contract matches ``cpu_tee`` and ``gpu_tee``. Put Trustee/KBS and approval-key
+settings once in ``cc_project.yml``.
 
 Provision and distribute
 ========================
 
-Run provisioning on the prepared Linux worker:
+Run provisioning on the prepared worker:
 
 .. code-block:: bash
 
-   cd examples/advanced/cvm_builder
-   nvflare provision -p project.yml -w ./workspace
+   nvflare provision -p project.yml -w /srv/nvflare/provisioning
 
-The ``cvm_vault`` adapter invokes ``cvmctl vault`` after startup-kit generation
-and signing finish. Deliveries default to
-``workspace/cvm_project/prod_NN/<participant>/``. The administrator's ordinary
-startup kit remains in the same production directory. Private build inputs,
-logs and recovery records are retained separately.
-
-Read the returned OCI archive paths and digests. Transfer the complete archives
-offline or publish them using the included ``cvmctl publish``. Recipients
-use ``cvmctl pull`` to verify and materialize a delivery from its archive or
-immutable registry reference. Follow the :github_nvflare_link:`CVM Builder user
-guide <nvflare/lighter/cc/image_builder/USER_GUIDE.md>` for the exact commands.
+Read the generated ``cc_manifests`` entries for archive paths and digests.
+Transfer each complete OCI artifact through an authenticated channel or publish
+it with ``cvmctl publish``. Keep private state, build logs, credentials, and
+plaintext startup kits on the trusted worker.
 
 Launch and run a job
 ====================
 
-On each configured TEE host, enter the materialized participant directory and
-run ``sudo ./launch_cvm.sh``. The launcher discovers the included CVM bundle.
-The verified guest attests, unlocks the vault and starts the NVFlare participant;
-GPU profiles also require successful GPU appraisal before workload execution.
+Materialize each delivery on the matching TEE host and run
+``sudo ./launch_cvm.sh``. Start the ordinary NVFlare administrator console,
+verify that the expected server and clients are connected and attested, and
+submit a job whose code and dependencies are already in the application image.
+Stop each delivery with ``sudo ./shutdown_cvm.sh``.
 
-Start the ordinary NVFlare administrator console from its generated kit, verify
-that the server and clients are connected, and submit a job whose code and
-dependencies are present in the application image. Inspect the job results and
-participant logs. ``/applog`` is clear writable output; ``user_config`` and
-``user_data`` are clear, read-only inputs. Put confidential data in the vault.
-
-Stop each delivery with ``sudo ./shutdown_cvm.sh``. For failed builds, retain the
-logs and recovery records and resolve uncertain key uploads before deliberately
-starting another build. Production approval requires the exact bundle's complete
-acceptance evidence; a successful candidate-mode test is not an approval.
+Successful candidate testing is not production approval. Production approval
+must cover the exact generic CVM bundle, application archive, Trustee policy,
+TEE profile, and resulting delivery.

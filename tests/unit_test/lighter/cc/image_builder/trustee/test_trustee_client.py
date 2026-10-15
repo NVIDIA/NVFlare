@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.common.contracts import resource_path
 from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
-from cvm.common.policy import compose
+from cvm.common.policy import compose, merge
 from cvm.trustee.admin import install, retire
 from cvm.trustee.client import (
     MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
@@ -261,17 +261,34 @@ class TrusteeClientTests(unittest.TestCase):
         other = dict(manifest, build_id="bundle-2")
         for item in (manifest, other):
             write_json(bundles / (item["build_id"] + ".json"), item)
-        config = {"state": str(self.root)}
+        config = {"state": str(self.root), "policy_lock": str(self.root / "shared-policy.lock")}
         with patch("cvm.trustee.admin.api", side_effect=BuildError("offline")), self.assertRaises(BuildError):
             retire(config, "bundle-1")
         self.assertTrue((self.root / "retired/bundle-1").is_file())
-        policy = compose([other]).encode()
+        current = compose([manifest, other]).encode()
+        policy = merge(current.decode(), [other], [manifest, other]).encode()
         with (
             patch("cvm.trustee.admin.api") as request,
-            patch("cvm.trustee.admin.read_resource_policy", return_value=policy),
+            patch("cvm.trustee.admin.read_resource_policy", side_effect=[current, policy]),
         ):
             retire(config, "bundle-1")
         request.assert_called_once_with(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
+
+    def test_policy_publication_requires_explicit_shared_lock(self):
+        state = self.root / "publisher"
+        for config in (
+            {"state": str(state)},
+            {"state": str(state), "policy_lock": "relative.lock"},
+            {"state": str(state), "policy_lock": str(state / "publisher.lock")},
+        ):
+            with (
+                self.subTest(config=config),
+                patch("cvm.trustee.admin.api") as request,
+                self.assertRaisesRegex(BuildError, "policy_lock"),
+            ):
+                retire(config, "bundle-1")
+            request.assert_not_called()
+            self.assertFalse((state / "retired").exists())
 
     def test_legacy_retirement_state_requires_migration_before_any_side_effects(self):
         state = self.root / "publisher"

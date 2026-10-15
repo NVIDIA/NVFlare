@@ -1,6 +1,7 @@
 api_version: 3
 name: azure_cc_project
 description: Azure confidential ACI server and confidential VM client
+cc_project_config: cc_project.yml
 
 participants:
   - name: server.azure.example.com
@@ -23,3 +24,6 @@ builders:
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+
+packager:
+  path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager

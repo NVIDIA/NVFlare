@@ -37,6 +37,12 @@ the KBS TLS certificate is a separate trust anchor. Supply an approved MRTD and 
 prepared CPU-only platform.env/launch contract. Do not create a baseline from an
 untrusted cluster's current evidence.
 
+Also prepare a unified `cc_project.yml` containing exactly one Trustee service,
+one authenticated registry, and the trusted CoCo build command. Its credential
+and certificate paths resolve from that file. The harness copies the common
+settings into each private topology, pins the authenticated AS key supplied
+below, and adds the topology's complete CPU/MRTD constraints.
+
 Run on trusted provisioning infrastructure, with NVFlare installed from the pinned
 checkout. Replace the shell variables with the actual reviewed inputs:
 
@@ -46,16 +52,16 @@ python examples/devops/coco/acceptance/prepare.py \
   --base-image "$REVIEWED_BASE_AT_SHA256" \
   --as-key "$AUTHENTICATED_AS_PUBLIC_KEY" --as-key-sha256 "$AS_KEY_FILE_SHA256" \
   --mrtd "$APPROVED_MRTD" --platform "$APPROVED_PLATFORM_ENV" \
-  --server "$SERVER_DNS"
+  --server "$SERVER_DNS" --cc-project "$REVIEWED_CC_PROJECT_YAML"
 ```
 
 The output directory is private and must be new. Separate project audiences,
 releases and repositories are generated for A/B and every protected participant.
-Every protected participant gets `intel_tdx`, explicit `cc_gpu: none`, common
+Every protected participant gets `cpu_tee: intel_tdx`, explicit `gpu_tee: none`, common
 signed CPU/MRTD constraints, 120-second checks, 300-second proof lifetime and
 registration budget, 30-second refresh budget and 45-second peer request timeout.
 There is no circular InitData pin in the image; enforce final InitData in the
-release-specific KBS policy. The existing packager selects `kata-qemu-tdx`.
+release-specific KBS policy. The common packager selects `kata-qemu-tdx`.
 
 Provision each project on the trusted machine. Include the acceptance directory
 on Python's import path so the observer builder runs **before SignatureBuilder**:
@@ -76,9 +82,10 @@ Publish only approved Pod YAML through the handoff mechanism. Inspect
 each image for its own participant credentials and no other kit. The application
 module is baked at `/local/custom/tdx_acceptance.py`. Install the same reviewed
 module on topology A's ordinary server's trusted custom-code path. Do not change
-signed kits after provisioning. The observer builder copies only public verifier
-settings, clears issuers, and preserves the complete protected-site mapping and
-peer binding; the observer obtains no guest tokens.
+signed kits after provisioning. The common CC builder installs verifier-only
+settings, complete protected-site mapping, and peer binding on the ordinary
+observer; the observer obtains no guest tokens. The observer builder only grants
+the reviewed baked application classes on the ordinary server.
 The startup patch gives well-formed discovery of missing required participants
 a single 600-second registration window before periodic validation shuts down
 the federation. The runner still enforces its 600-second deadline from the first

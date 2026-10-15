@@ -3,8 +3,8 @@
 set -Eeuo pipefail
 umask 077
 
-[[ $# -eq 1 ]] || {
-    printf 'Usage: %s RECEIVED_CREDENTIAL_DIRECTORY\n' "$0" >&2
+[[ $# -eq 2 ]] || {
+    printf 'Usage: %s RECEIVED_CREDENTIAL_DIRECTORY DESTINATION_DIRECTORY\n' "$0" >&2
     exit 2
 }
 
@@ -27,16 +27,12 @@ for name in username password; do
     }
 done
 
-[[ "$(tr -d '\r\n' < "${SOURCE_DIR}/username")" == coco-publisher ]] || {
-    printf 'Unexpected registry publisher username.\n' >&2
+[[ -n "$(tr -d '\r\n' < "${SOURCE_DIR}/username")" ]] || {
+    printf 'Registry publisher username is empty.\n' >&2
     exit 1
 }
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# Use the same reviewed configuration and credential paths as stage 20.
-# shellcheck source=lib/platform.sh
-source "${SCRIPT_DIR}/lib/platform.sh"
-DESTINATION="${REGISTRY_SECRET_DIR}"
+DESTINATION="$(realpath -m -- "$2")"
 [[ ! -e "${DESTINATION}/username" && ! -L "${DESTINATION}/username" && \
    ! -e "${DESTINATION}/password" && ! -L "${DESTINATION}/password" ]] || {
     printf 'Publisher credential is already installed; refusing to overwrite it.\n' >&2

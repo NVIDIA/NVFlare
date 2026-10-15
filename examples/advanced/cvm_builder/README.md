@@ -1,62 +1,43 @@
-# Provision with CVM Builder
+# Provision bare-metal CVMs
 
-This example configures a TDX server and an AMD SEV-SNP client with an NVIDIA
-confidential-computing GPU. Configure a trusted Linux worker with CVM Builder,
-approved generic images, and the existing CoCo Trustee before provisioning.
+This example uses the unified confidential-computing provisioning interface to
+build a TDX server and an AMD SEV-SNP client with an NVIDIA confidential GPU.
 
-CVM Builder is included at
-[`nvflare/lighter/cc/image_builder`](../../../nvflare/lighter/cc/image_builder).
-Follow its [build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md)
-and [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md)
-to prepare the worker. The example's `cvm_builder_dir` points to that source tree;
-update it if you copy `project.yml` elsewhere.
+The project-wide [`cc_project.yml`](cc_project.yml) contains the Trustee,
+approval, and trusted CVM Builder settings. Each protected participant selects
+`cc_deployment_mode: bare_metal_cvm` through its own `cc_config` file:
 
-The [Docker example](docker/README.md) builds the application archive referenced
-by `project.yml`. A matching [sample job](jobs/hello-pt_cifar10_fedavg) is also
-included for deployment validation.
+- [`cc_server.yml`](cc_server.yml) selects a TDX CPU-only CVM.
+- [`cc_site-1.yml`](cc_site-1.yml) selects an SNP plus NVIDIA CC CVM.
 
-1. Edit `project.yml`: set the reachable server name,
-   `cvm_image` folders, Docker archive, and bootstrap egress ports.
-   `cvm_builder_dir` is optional; it defaults to the builder shipped inside the
-   installed NVFlare package.
-2. Edit `cvm_project.yml` with the project's Trustee endpoint, scoped resource
-   token and the acceptance authority's public key that signed the approved CVM
-   bundles. Relative credential paths resolve against this file.
-3. Run `nvflare provision -p project.yml -w ./workspace`.
+Build the Docker-save archive described in [docker/README.md](docker/README.md),
+replace the placeholder image and credential paths, and supply approved generic
+CVM artifacts at the two `cvm_image` paths. Production approval is a separate,
+one-time operation for each exact generic CPU/GPU bundle. The builder's official
+[`acceptance_runner.py`](../../../tests/integration_test/lighter/cc/image_builder/acceptance_runner.py)
+runs the complete Trustee plus hardware matrix and writes the report used by
+`cvmctl admin approve`; follow the
+[exact-manifest approval procedure](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval)
+before using a new generic image here.
 
-The kits keep `/host/bin` mounted because NVFlare's confidential-computing
-authorizers look for tools there; set `host_bin: false` per participant to drop
-it. `allowed_in_cidrs` and `allowed_out_cidrs` pass through to the vault build.
+Then run:
 
-The Docker archive must be a `docker save` archive containing one Linux amd64
-image with NVFlare, Bash, and your workload dependencies. NVFlare derives its
-image ID; no `image_id` or `release_id` setting is required. The adapter preserves
-the image's `USER`. During privileged vault population, the builder derives its
-numeric identity from the authenticated image configuration and applies that
-ownership only inside the encrypted vault; unprivileged staging remains owned by
-the provisioner. Use a numeric `USER UID[:GID]` for a non-root image; the
-empty/default and `root` forms resolve to `0:0`. Optional `workspace_uid` and
-`workspace_gid` assertions must be supplied together and match that image
-identity. `platforms` defaults to all platforms supplied by each `cvm_image`.
-
-To use a registry image, replace its folder with the immutable reference printed
-by `cvmctl publish`, for example:
-
-```yaml
-cvm_image: registry.example.org/cvm/tdx-cpu@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```bash
+nvflare provision -p project.yml -w ./workspace
 ```
 
-`output_root` is optional. Deliveries default to
-`workspace/cvm_project/prod_NN/<participant>/`. Signed startup kits and build
-inputs are retained privately under `workspace/cvm_project/.cvm-vault-builds/`.
-An explicit `output_root` must be outside the provisioning workspace and uses
-fresh per-build subdirectories.
+The common packager verifies and removes the plaintext startup kits before it
+invokes CVM Builder. OCI artifacts are delivered under the normal production
+directory unless `build_tools.bare_metal_cvm.output_root` selects an external
+private build location. Common delivery records are written to
+`cc_manifests/<participant>.json`.
 
-Shared `cvm_project.yml` is discovered beside `project.yml` or in its ancestors.
-Set `cvm_vault.project_config` to select another file. Per-participant
-`trustee` settings are not accepted.
+The bundled client job uses `ClientAPIExecutor` to launch
+`/local/custom/client.py` from the measured application image. Because the job
+does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
+the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
+replace it with a package prefix or add it to the global default allowlist.
 
-Builds create application vaults from existing approved CVMs. Provisioning does
-not boot or publish them. Use the returned OCI archive paths or JSON result
-metadata to distribute deliveries. On failure, retain logs and recovery records
-and resolve uncertain key activation before deliberately rebuilding.
+See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
+the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),
+and the [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md).

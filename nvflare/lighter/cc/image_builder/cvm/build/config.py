@@ -25,13 +25,13 @@ from urllib.parse import urlparse
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
+from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, minimum_proof_lifetime
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
 from ..common.services import validate_service
 from ..common.validation import DEFAULT_CAPABILITIES, DEFAULT_PIDS_LIMIT, capabilities, cidrs, ports, validate_nfs_mount
-from ..common.versions import NVAT_COMMIT, TRUSTEE_COMMIT
+from ..common.versions import GUEST_COMPONENTS_SELECTOR_COMMIT, NVAT_COMMIT, TRUSTEE_COMMIT
 from .provisioning import DEFAULT_TIME_SERVERS, validate_apt_repositories, validate_time_servers
 
 PRIVATE_KEY_MARKERS = (
@@ -154,8 +154,10 @@ PROFILE_DEFAULTS = {
     "as_public_key": str(INPUTS / "as-public.pem"),
     "token_algorithm": "ES256",
     "token_issuer": "CoCo-Attestation-Service",
-    # The upstream kbs-client CLI uses the default AS policy selector.
-    "attestation_policy_id": "default",
+    # CoCo guests omit a selector and continue to use Trustee's default policy.
+    # Bare-metal CVMs select a profile-specific policy in the same instance.
+    "attestation_policy_selector": "cvm-default",
+    "attestation_policy_id": "cvm-default",
     "attestation_policy": str(SOURCE / "config/attestation_policy.rego"),
     "reference_values": str(INPUTS / "approved-tcb-references.json"),
     "bootstrap_egress": [443, 8443],
@@ -186,6 +188,7 @@ CONTAINER_OPTIONS = {
     "env",
     "volumes",
     "ports",
+    "attestation_credentials",
     "tee_device",
     "capabilities",
     "pids_limit",
@@ -334,13 +337,10 @@ def gpu_inputs(path, value):
     provenance = read_json(value["gpu_attestation_provenance"])
     require(isinstance(provenance, dict), "Invalid NVAT provenance")
     require(
-        provenance.get("source_repository") == "https://github.com/NVIDIA/attestation-sdk.git"
+        provenance.get("source_clean") is True
+        and provenance.get("source_repository") == "https://github.com/NVIDIA/attestation-sdk.git"
         and provenance.get("source_commit") == NVAT_COMMIT,
-        "NVAT provenance must match Trustee v0.22.0's pinned SDK source",
-    )
-    require(
-        provenance.get("patch_sha256") == digest_file(SOURCE / "cvm/build/nvat_libxml2_const.patch"),
-        "NVAT provenance must record the reviewed libxml2 compatibility patch",
+        "NVAT provenance must match the selector client's pinned clean SDK source",
     )
     require(
         provenance.get("library_sha256") == digest_file(value["gpu_attestation_library"]),
@@ -350,15 +350,26 @@ def gpu_inputs(path, value):
 
 
 def validate_kbs_client_provenance(record, kbs_client, trustee_commit):
-    """Bind the attester binary to a clean upstream Trustee checkout.
+    """Bind the attester binary to upstream code plus the reviewed CLI patch.
 
     The record is produced by `cvmctl provenance` on the machine that built the
     client. A measured digest alone does not say which source produced it.
     """
     value = read_json(record)
     require(isinstance(value, dict), "Invalid kbs-client provenance")
-    require(value.get("source_clean") is True, "kbs-client must be built from an unmodified upstream checkout")
+    require(
+        value.get("source_clean") is False,
+        "kbs-client must expose the reviewed CoCo attestation-policy-selector API",
+    )
     require(value.get("trustee_commit") == trustee_commit, "kbs-client provenance names another Trustee revision")
+    require(
+        value.get("guest_components_commit") == GUEST_COMPONENTS_SELECTOR_COMMIT,
+        "kbs-client provenance names another guest-components revision",
+    )
+    require(
+        value.get("kbs_client_patch_sha256") == digest_file(SOURCE / "cvm/build/kbs_client_policy_selector.patch"),
+        "kbs-client provenance names another selector patch",
+    )
     require(value.get("binary_sha256") == digest_file(kbs_client), "kbs-client digest differs from its provenance")
     return value
 
@@ -407,7 +418,12 @@ def profile(path):
         raise BuildError(str(error)) from None
     require(value.get("guest_release") == "26.04", "This implementation targets an Ubuntu 26.04 guest")
     require(re.fullmatch(r"[a-f0-9]{40}", value.get("trustee_commit", "")), "Pin trustee_commit to a full revision")
-    require(value["attestation_policy_id"] == "default", "The upstream kbs-client uses the default AS policy")
+    for key in ("attestation_policy_selector", "attestation_policy_id"):
+        require(re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", value.get(key, "")), f"Invalid {key}")
+    require(
+        value["attestation_policy_id"] != "default",
+        "Bare-metal CVMs must not replace the default CoCo attestation policy",
+    )
     require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
     require(isinstance(value.get("token_issuer"), str) and value["token_issuer"], "Pin the AS token issuer")
@@ -596,6 +612,7 @@ def application(path):
         "allowed_in_cidrs",
         "allowed_out_cidrs",
         "requires_gpu",
+        "max_token_age_seconds",
         "services",
         "nfs_mount",
     }
@@ -633,6 +650,11 @@ def application(path):
         require_config(type(value.get(key)) is int and value[key] > 0, f"{key} must be a positive integer GiB size")
     require_config(type(value.get("requires_gpu", False)) is bool, "requires_gpu must be boolean")
     value.setdefault("requires_gpu", False)
+    if "max_token_age_seconds" in value:
+        require_config(
+            type(value["max_token_age_seconds"]) is int and 0 < value["max_token_age_seconds"] <= 300,
+            "max_token_age_seconds must be an integer from 1 through 300",
+        )
     for key in ("allowed_ports", "allowed_out_ports"):
         ports(value.setdefault(key, []))
     for key in ("allowed_in_cidrs", "allowed_out_cidrs"):
@@ -648,8 +670,17 @@ def application(path):
                 and all(isinstance(x, str) and "\x00" not in x for x in container[key]),
                 f"container.{key} must be an argument array",
             )
-    for key in ("tee_device", "read_only_rootfs", "host_bin"):
+    for key in ("attestation_credentials", "tee_device", "read_only_rootfs", "host_bin"):
         require_config(type(container.setdefault(key, key == "read_only_rootfs")) is bool, f"{key} must be boolean")
+    require_config(
+        "max_token_age_seconds" not in value or container["attestation_credentials"],
+        "max_token_age_seconds requires container.attestation_credentials",
+    )
+    require_config(
+        "max_token_age_seconds" not in value
+        or value["max_token_age_seconds"] >= minimum_proof_lifetime(value["requires_gpu"]),
+        "max_token_age_seconds must include the bounded proof renewal window and delivery margin",
+    )
     if "user" in container:
         user = container["user"]
         require_config(
@@ -703,7 +734,7 @@ def application(path):
                 "Only application runtime/data may be writable",
             )
         require_config(
-            str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin"),
+            str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin", "/host/lib"),
             "Cannot replace mandatory mounts",
         )
     for port in container["ports"]:

@@ -56,6 +56,14 @@
   "session_storage_type": "memory",
   "attestation_service": {
     "type": "coco_as_builtin",
+    "policy_id_map": {
+      "cvm-cpu-2026-09-r5": [
+        "cvm-cpu-2026-09-r5"
+      ],
+      "cvm-gpu-2026-09-r5": [
+        "cvm-gpu-2026-09-r5"
+      ]
+    },
     "verifier_config": {
       "dcap_verifier": {
         "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",

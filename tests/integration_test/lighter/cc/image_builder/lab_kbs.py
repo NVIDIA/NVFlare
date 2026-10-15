@@ -24,29 +24,57 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
+from cvm.build import config as build_config
 from cvm.build.config import SOURCE
-from cvm.common.io import canonical, read_json, write_json
+from cvm.build.cvm import contract
+from cvm.common.errors import require
+from cvm.common.gpu_policy import render as render_gpu_policy
+from cvm.common.io import canonical, digest_file, read_json, write_json
+from cvm.common.references import reference_record_name, render_reference_policy
 from cvm.trustee.client import encode
 from cvm.trustee.provenance import provenance
+
+
+def verifier_config(profiles):
+    """Return the lab verifier configuration required by the selected profiles."""
+    result = read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"]
+    gpu_urls = set()
+    for profile in profiles:
+        if profile["gpu"] != "nvidia_cc":
+            continue
+        endpoint = urllib.parse.urlsplit(profile["gpu_attestation_url"])
+        path = endpoint.path.rstrip("/")
+        require(
+            path.endswith("/gpu") and not endpoint.query and not endpoint.fragment,
+            "Lab NVIDIA verifier URL must end in /gpu and must not contain a query or fragment",
+        )
+        gpu_urls.add(urllib.parse.urlunsplit((endpoint.scheme, endpoint.netloc, path.removesuffix("/gpu"), "", "")))
+    require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
+    if gpu_urls:
+        result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}
+    return result
 
 
 def main(directory):
     directory = Path(directory).resolve()
     pki = Path(read_json(directory / "lab-state.json")["pki"])
     kbs_port = int(os.environ.get("CVM_LAB_KBS_PORT", "19199"))
+    kbs_host = os.environ.get("CVM_LAB_KBS_HOST", "127.0.0.1")
     state = directory / "lab-kbs"
     state.mkdir(mode=0o700, exist_ok=True)
     storage = state / "storage"
     policies = storage / "attestation_service_policy"
     policies.mkdir(parents=True, exist_ok=True)
-    strict = (directory / "config/attestation_policy.rego").read_bytes()
-    (policies / "default_cpu.rego").write_bytes(strict)
-    from cvm.common.gpu_policy import render
-
-    (policies / "default_gpu.rego").write_text(render(read_json(directory / "config/gpu_policy.json")))
+    strict = (directory / "config/attestation_policy.rego").read_text()
+    default_reference = "cvm_profile_lab_default_deny"
+    (policies / "default_cpu.rego").write_text(render_reference_policy(strict, default_reference))
+    (policies / "default_gpu.rego").write_text(
+        render_gpu_policy(read_json(directory / "config/gpu_policy.json"), default_reference)
+    )
     for device in ("switch", "ppcie"):
         (policies / ("default_" + device + ".rego")).write_text(
             'package policy\nimport rego.v1\ntrust_claims := {"hardware": 97}\n'
@@ -60,9 +88,37 @@ def main(directory):
         (pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes()
     )
     (storage / "repository").mkdir(mode=0o700, exist_ok=True)
+    policy_id_map = {}
+    immutable_as_policies = {}
+    profiles = []
+    lab_state = read_json(directory / "lab-state.json")
+    profile_paths = lab_state.get("profiles")
+    if profile_paths is None:
+        profile_paths = [lab_state["profile"]] if "profile" in lab_state else []
+    require(isinstance(profile_paths, list), "Lab profiles must be a list")
+    policy_ids = set()
+    for profile_path in profile_paths:
+        profile = build_config.profile(profile_path)
+        profiles.append(profile)
+        profile_contract = contract(profile)
+        reference_id = reference_record_name(profile["profile_version"], profile_contract)
+        selector = profile["attestation_policy_selector"]
+        policy_id = profile["attestation_policy_id"]
+        require(selector not in policy_id_map, "Duplicate lab attestation policy selector")
+        require(policy_id not in policy_ids, "Duplicate lab attestation policy ID")
+        policy_id_map[selector] = [policy_id]
+        policy_ids.add(policy_id)
+        cpu_policy = policies / (policy_id + "_cpu.rego")
+        cpu_policy.write_text(render_reference_policy(Path(profile["attestation_policy"]).read_text(), reference_id))
+        immutable_as_policies[policy_id + "_cpu"] = digest_file(cpu_policy)
+        if profile["gpu"] == "nvidia_cc":
+            gpu_policy = policies / (policy_id + "_gpu.rego")
+            gpu_policy.write_text(render_gpu_policy(read_json(profile["gpu_policy"]), reference_id))
+            immutable_as_policies[policy_id + "_gpu"] = digest_file(gpu_policy)
+
     config = {
         "http_server": {
-            "sockets": [f"127.0.0.1:{kbs_port}"],
+            "sockets": [f"{kbs_host}:{kbs_port}"],
             "insecure_http": False,
             "private_key": str(pki / "server.key"),
             "certificate": str(pki / "server.pem"),
@@ -106,7 +162,8 @@ def main(directory):
         "session_storage_type": "memory",
         "attestation_service": {
             "type": "coco_as_builtin",
-            "verifier_config": read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"],
+            "policy_id_map": policy_id_map,
+            "verifier_config": verifier_config(profiles),
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",
@@ -134,16 +191,21 @@ def main(directory):
     write_json(
         state / "resources.json",
         {
-            "url": f"https://127.0.0.1:{kbs_port}",
+            "url": f"https://{kbs_host}:{kbs_port}",
             "ca": str(directory / "inputs/test-ca.pem"),
             "admin_token_file": str(token_path),
         },
     )
     config_admin = {
-        "url": f"https://127.0.0.1:{kbs_port}",
+        "url": f"https://{kbs_host}:{kbs_port}",
         "ca": str(directory / "inputs/test-ca.pem"),
         "admin_private_key": str(pki / "kbs-admin.key"),
         "storage_directory": str(storage),
+        "resource_policy_file": str(resource_policy),
+        # Upstream Trustee treats every file below storage/kbs as a policy.
+        # Keep the publisher lock outside that directory so the lock file is
+        # never parsed as a Rego policy.
+        "policy_lock": str(state / "resource-policy.lock"),
         "state": str(state / "admin"),
         "deployment_receipt": str(state / "deployment-receipt.json"),
         "trustee_binary": str(directory / "trustee-source/target/release/kbs"),
@@ -153,6 +215,17 @@ def main(directory):
     write_json(
         state / "trustee_build.json",
         provenance(directory / "trustee-source", directory / "trustee-source/target/release/kbs"),
+    )
+    write_json(
+        state / "deployment-receipt.json",
+        {
+            "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
+            "source_clean": True,
+            "policy_selection_tested": True,
+            "unauthorized_administration_denied": True,
+            "policy_id_map": policy_id_map,
+            "immutable_as_policies": immutable_as_policies,
+        },
     )
     processes = []
     stopping = False

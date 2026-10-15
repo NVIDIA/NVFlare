@@ -40,6 +40,7 @@ import yaml
 from nvflare.lighter.provision import provision
 from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
 from nvflare.tool.package.package_commands import handle_package
+from nvflare.utils.process_utils import popen_in_new_session
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 
@@ -394,12 +395,7 @@ class TestDistributedProvisioningE2E:
         env["PYTHONPATH"] = python_path
 
         def _launch(cmd):
-            return subprocess.Popen(
-                cmd,
-                shell=False,
-                env=env,
-                preexec_fn=os.setsid,
-            )
+            return popen_in_new_session(cmd, shell=False, env=env)
 
         processes = []
 

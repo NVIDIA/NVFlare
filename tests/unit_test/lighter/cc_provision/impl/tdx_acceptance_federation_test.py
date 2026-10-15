@@ -343,9 +343,9 @@ def observer_config(root, topology):
     required = federation.CLIENTS | ({"server"} if topology == "B" else set())
     args = {
         "cc_issuers_conf": [],
-        "cc_verifier_ids": ["coco_authorizer"],
+        "cc_verifier_ids": ["trustee_authorizer"],
         "cc_enabled_sites": sorted(required),
-        "required_site_verifier_ids": {n: ["coco_authorizer"] for n in required},
+        "required_site_verifier_ids": {n: ["trustee_authorizer"] for n in required},
         "require_site_binding": True,
         "verify_frequency": 120,
     }
@@ -362,13 +362,13 @@ def observer_config(root, topology):
             }
         )
     )
-    (root / "coco_authorizer__p_resources.json").write_text(
+    (root / "trustee_authorizer__p_resources.json").write_text(
         json.dumps(
             {
                 "components": [
                     {
-                        "id": "coco_authorizer",
-                        "path": "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer",
+                        "id": "trustee_authorizer",
+                        "path": "nvflare.app_opt.confidential_computing.trustee_authorizer.TrusteeAuthorizer",
                         "args": {},
                     }
                 ]
@@ -387,10 +387,10 @@ def test_observer_complete_bound_configuration(tmp_path, topology):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("cc_issuers_conf", [{"issuer_id": "coco_authorizer"}]),
+        ("cc_issuers_conf", [{"issuer_id": "trustee_authorizer"}]),
         ("require_site_binding", False),
         ("cc_enabled_sites", ["site-1", "site-2"]),
-        ("required_site_verifier_ids", {"site-1": ["coco_authorizer"]}),
+        ("required_site_verifier_ids", {"site-1": ["trustee_authorizer"]}),
     ],
 )
 def test_observer_rejects_incomplete_or_issuing_config(tmp_path, field, value):

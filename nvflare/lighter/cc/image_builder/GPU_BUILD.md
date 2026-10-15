@@ -65,19 +65,16 @@ Update failures stop construction. No `trusted=yes` or global `apt-key` trust is
 used. For retained releases, an authenticated immutable apt mirror can replace
 the URL without changing the input schema.
 
-## NVAT source, compatibility patch and provenance
+## NVAT source and provenance
 
-Trustee v0.22.0's unchanged
-[Cargo.lock](https://github.com/confidential-containers/trustee/blob/512fed65642015b849f38fb13bfdec7806639987/Cargo.lock)
-selects NVIDIA attestation-sdk tag `2026.03.02`, commit
-`0c1be386a8fbb8f2766a6a556d10df86f5fed9d3`. Its CMake library version is **1.2.0**
-and its ABI soname is `libnvat.so.1`. The prior `libnvat.so.1.2.2` filename did not
-establish this source identity; the profile now requires a provenance record.
-
-The reviewed [compatibility patch](cvm/build/nvat_libxml2_const.patch) changes
-only the type receiving `xmlGetLastError()` to `const xmlError *`, as required by
-Ubuntu's `libxml2.so.16`. It does not change verification logic. Trustee, its
-Cargo.lock, and guest-components remain unmodified.
+The reviewed [`kbs-client` selector patch](cvm/build/kbs_client_policy_selector.patch)
+updates the client lockfile to the upstream guest-components selector API. That
+lockfile selects NVIDIA attestation-sdk tag `2026.06.09`, commit
+`9d12801cea8a198ea0f29640dfaf8a4017c841c5`. Its CMake library version is
+**1.2.2** and its ABI soname is `libnvat.so.1`. This revision already contains
+the `const xmlError *` fix required by Ubuntu's `libxml2.so.16`, so no local
+NVAT source patch is applied. The profile requires a clean-source provenance
+record for the exact runtime library linked by the selector-capable client.
 
 From the CVM Builder directory, build in fresh directories:
 
@@ -89,14 +86,12 @@ From the CVM Builder directory, build in fresh directories:
     perl cargo rustc libclang-dev libxml2-dev libxmlsec1-dev zlib1g-dev
   mkdir -p inputs
   git clone --no-checkout https://github.com/NVIDIA/attestation-sdk.git inputs/nvat_source
-  git -C inputs/nvat_source checkout --detach 0c1be386a8fbb8f2766a6a556d10df86f5fed9d3
+  git -C inputs/nvat_source checkout --detach 9d12801cea8a198ea0f29640dfaf8a4017c841c5
   test -z "$(git -C inputs/nvat_source status --porcelain --untracked-files=all)"
-  git -C inputs/nvat_source apply --check "$PWD/cvm/build/nvat_libxml2_const.patch"
-  git -C inputs/nvat_source apply "$PWD/cvm/build/nvat_libxml2_const.patch"
   CMAKE_BUILD_PARALLEL_LEVEL=8 cmake -S inputs/nvat_source/nv-attestation-sdk-cpp \
     -B inputs/nvat_build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF
   CMAKE_BUILD_PARALLEL_LEVEL=8 cmake --build inputs/nvat_build --target nvat -j8
-  install -m 644 inputs/nvat_build/libnvat.so.1.2.0 inputs/libnvat.so.1
+  install -m 644 inputs/nvat_build/libnvat.so.1.2.2 inputs/libnvat.so.1
   python3 - <<'PY'
 import hashlib
 import json
@@ -111,13 +106,8 @@ def git(*args):
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 revision = git("rev-parse", "HEAD").decode().strip()
-assert revision == "0c1be386a8fbb8f2766a6a556d10df86f5fed9d3"
-changed = "nv-attestation-sdk-cpp/src/rim.cpp"
-assert git("diff", "--name-only", "HEAD").decode().splitlines() == [changed]
-original = git("show", "HEAD:" + changed)
-old = b"xmlErrorPtr xml_error = xmlGetLastError();"
-new = b"const xmlError *xml_error = xmlGetLastError();"
-assert original.count(old) == 1 and (source / changed).read_bytes() == original.replace(old, new)
+assert revision == "9d12801cea8a198ea0f29640dfaf8a4017c841c5"
+assert not git("status", "--porcelain", "--untracked-files=all")
 assert not git("ls-files", "--others", "--exclude-standard")
 release = platform.freedesktop_os_release()
 assert release["ID"] == "ubuntu" and release["VERSION_ID"] == "26.04"
@@ -125,9 +115,9 @@ assert platform.machine() == "x86_64"
 packages = subprocess.check_output(["dpkg-query", "-W"], text=True)
 (root / "nvat_build_packages.txt").write_text(packages)
 record = {
+    "source_clean": True,
     "source_repository": "https://github.com/NVIDIA/attestation-sdk.git",
     "source_commit": revision,
-    "patch_sha256": digest(pathlib.Path("cvm/build/nvat_libxml2_const.patch")),
     "library_sha256": digest(root / "libnvat.so.1"),
     "build_environment": "ubuntu-26.04-x86_64",
     "build_packages_sha256": digest(root / "nvat_build_packages.txt"),
@@ -142,10 +132,10 @@ PY
 Retain the source, dependency downloads, build directory, package inventory and
 JSON together. Toolchain/dependency differences can change the binary hash; this
 recipe records the resulting artifact rather than promising bit-identical
-outputs across environments. Stage 1 checks the record's source revision,
-reviewed patch hash, build environment and library hash, and includes the entire
-record in the contract. This is an operator-reviewed build record, not a signed
-remote-build attestation.
+outputs across environments. Stage 1 checks the record's clean source revision,
+build environment and library hash, and includes the entire record in the
+contract. This is an operator-reviewed build record, not a signed remote-build
+attestation.
 
 To build the upstream GPU-enabled `kbs-client` in this disposable environment,
 install the matching header and library where its unmodified build script expects

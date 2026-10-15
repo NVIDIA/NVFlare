@@ -20,16 +20,25 @@ import subprocess
 import sys
 import time
 
+from ..common.contracts import (
+    CPU_ATTESTATION_TIMEOUT_SECONDS,
+    GPU_ATTESTATION_TIMEOUT_SECONDS,
+    PROOF_EXPIRY_MARGIN_SECONDS,
+)
 from ..common.errors import BuildError, require
-from ..common.io import write_json
+from ..common.io import read_json, write_json
 from ..common.linux import run
 from .audit import emit
 from .gpu import readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
 
-PERIODIC_INTERVAL_SECONDS = 300
-PERIODIC_TIMEOUT_SECONDS = 300
+# Participants that do not expose an application proof keep the original
+# periodic integrity cadence. Proof-producing participants schedule from the
+# authenticated token expiration recorded in protected /run/cvm state.
+PERIODIC_INTERVAL_SECONDS = 240
+CPU_PERIODIC_TIMEOUT_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
+GPU_PERIODIC_TIMEOUT_SECONDS = GPU_ATTESTATION_TIMEOUT_SECONDS
 
 
 # A failed periodic check no longer powers the guest off at once. The workload
@@ -40,6 +49,22 @@ QUARANTINE_RETRY_SECONDS = 60
 REOPEN_TIMEOUT_SECONDS = 900
 WATCHDOG_SECONDS = 360
 REVOCATION_TIMEOUT_SECONDS = 180
+
+
+def periodic_timeout(config):
+    return GPU_PERIODIC_TIMEOUT_SECONDS if config.get("gpu") == "nvidia_cc" else CPU_PERIODIC_TIMEOUT_SECONDS
+
+
+def next_periodic_deadline(config, state, fallback=None):
+    """Return a monotonic deadline that leaves time to renew before proof expiry."""
+    proof = state / "application-proof.json"
+    if not proof.is_file():
+        return time.monotonic() + PERIODIC_INTERVAL_SECONDS if fallback is None else fallback
+    expires_at = read_json(proof).get("expires_at")
+    require(type(expires_at) in (int, float), "Invalid application proof expiration state")
+    delay = expires_at - time.time() - periodic_timeout(config) - PROOF_EXPIRY_MARGIN_SECONDS
+    require(delay > 0, "Application proof cannot be renewed before expiration")
+    return time.monotonic() + delay
 
 
 def run_reopen(timeout, environment):
@@ -77,6 +102,18 @@ def revoke_vault(config):
         close_vault()
 
 
+def best_effort_revoke(config):
+    """Try to remove readiness and the key without masking a terminal failure."""
+    try:
+        watchdog(REVOCATION_TIMEOUT_SECONDS)
+    except Exception:
+        pass
+    try:
+        revoke_vault(config)
+    except Exception:
+        pass
+
+
 def periodic_tick(config, state, sequence):
     started = time.monotonic()
     record = {"sequence": sequence, "result": "running", "started_at": time.time()}
@@ -87,7 +124,7 @@ def periodic_tick(config, state, sequence):
         environment.pop("NOTIFY_SOCKET", None)
         output = run(
             [sys.executable, "-m", "cvm.runtime.bootstrap", "periodic"],
-            timeout=PERIODIC_TIMEOUT_SECONDS,
+            timeout=periodic_timeout(config),
             env=environment,
         )
         # The measured child prints only the sanitized audit record; command
@@ -97,10 +134,11 @@ def periodic_tick(config, state, sequence):
     except Exception:
         watchdog(REVOCATION_TIMEOUT_SECONDS)
         record.update(result="failed", finished_at=time.time(), duration_seconds=time.monotonic() - started)
-        try:
-            readiness(config, False)
-        finally:
-            write_json(state / "periodic.json", record)
+        # Quarantine stops the application units before clearing GPU Ready
+        # state. Revoking readiness while a CUDA workload is still running can
+        # make cvm_app.service fail and trigger its forced-poweroff policy
+        # before the guest has entered quarantine.
+        write_json(state / "periodic.json", record)
         raise
     record.update(result="success", finished_at=time.time(), duration_seconds=time.monotonic() - started)
     write_json(state / "periodic.json", record)
@@ -116,10 +154,16 @@ def quarantine(config, units, state):
     """
     # PID 1 terminates this guest if stop/unmount or a Python operation stalls.
     # Logging has a separate bounded queue and cannot defer revocation.
-    watchdog(REVOCATION_TIMEOUT_SECONDS)
-    write_json(state / "quarantine.json", {"started_at": time.time(), "units": list(units)})
-    run(["systemctl", "stop", *units], timeout=120)
-    run(["systemctl", "stop", "docker.service", "containerd.service"], timeout=120)
+    try:
+        watchdog(REVOCATION_TIMEOUT_SECONDS)
+        write_json(state / "quarantine.json", {"started_at": time.time(), "units": list(units)})
+        run(["systemctl", "stop", *units], timeout=120)
+        run(["systemctl", "stop", "docker.service", "containerd.service"], timeout=120)
+    except Exception:
+        # PID 1 still forces poweroff. Try to remove GPU Ready and the vault key
+        # first, while preserving the stop/configuration error as the cause.
+        best_effort_revoke(config)
+        raise
     revoke_vault(config)
     emit("quarantine")
     environment = dict(os.environ)
@@ -159,7 +203,7 @@ def supervise(config, units, state):
     try:
         write_json(state / "periodic.json", {"sequence": 0, "result": "idle"})
         emit("allow")
-        deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+        deadline = next_periodic_deadline(config, state)
         notify("READY=1\nSTATUS=Vault authenticated; starting application services")
         watchdog(WATCHDOG_SECONDS)
         # READY completes our own start job before units depending on us start.
@@ -169,16 +213,31 @@ def supervise(config, units, state):
         while True:
             watchdog(WATCHDOG_SECONDS)
             signal.sigtimedwait(signals, max(0, deadline - time.monotonic()))
-            # Include the child's runtime in the interval. An explicit request
-            # starts a fresh interval; slow startup/ticks never add another full
-            # sleep, and the synchronous loop never overlaps children.
-            deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+            # For workloads without an application proof, retain the original
+            # start-to-start cadence. A signal starts a fresh interval and an
+            # overrun triggers the next check immediately.
+            fallback = time.monotonic() + PERIODIC_INTERVAL_SECONDS
             sequence += 1
             watchdog(WATCHDOG_SECONDS)
             try:
                 periodic_tick(config, state, sequence)
+                deadline = next_periodic_deadline(config, state, fallback)
             except BuildError:
-                quarantine(config, units, state)
-                deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
+                try:
+                    quarantine(config, units, state)
+                    deadline = next_periodic_deadline(config, state)
+                except Exception:
+                    # A successful reopen makes the vault and GPU available
+                    # before quarantine removes its flag, emits the decision,
+                    # and restarts the units. Any terminal failure in that
+                    # recovery tail must revoke access again before PID 1's
+                    # forced-poweroff path takes over.
+                    best_effort_revoke(config)
+                    raise
+            except Exception:
+                # Internal failures do not enter the recovery loop. Revoke what
+                # we can before this service failure makes PID 1 power off.
+                best_effort_revoke(config)
+                raise
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)

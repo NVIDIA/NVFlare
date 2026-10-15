@@ -15,5 +15,8 @@ revoke keys already released to running guests.
 
 Platform handoff: SNP five-field or TDX v2 complete-profile JSON through the
 provisioning node. See [TDX references](TDX-REFERENCE-VALUES.md) for the latter.
+GPU deployments also require a separate, independently reviewed
+[driver/VBIOS reference handoff](GPU-REFERENCE-VALUES.md), exact readback and
+the reviewed active GPU policy before installing a GPU workload release.
 Workload handoff: separate confidential resources and exact release policy.
 CoCo runtime handoff: public chart and digest pins, no signed runtime bundle.

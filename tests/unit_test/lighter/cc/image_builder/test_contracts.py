@@ -15,6 +15,7 @@
 """Security and application-neutral contracts, runnable without a guest."""
 
 import base64
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -55,9 +56,9 @@ from cvm.common.contracts import (
     validate_resource,
 )
 from cvm.common.errors import BuildError
-from cvm.common.evidence import serial_evidence, serial_frames
+from cvm.common.evidence import require_approved_tdx_tcb, serial_evidence, serial_frames, tdx_tcb
 from cvm.common.firewall import firewall_rules
-from cvm.common.io import canonical
+from cvm.common.io import canonical, read_json
 from cvm.common.linux import memory_file, validate_core_policy
 from cvm.common.luks import validate_luks_metadata, validate_mapping
 from cvm.common.measurements import measurements, validate_measurements
@@ -75,6 +76,32 @@ from cvm.trustee.admin import verify_readback
 
 
 class BindingTests(unittest.TestCase):
+    @staticmethod
+    def tdx_evidence():
+        nonce = b"n" * 64
+        report = bytearray(1024)
+        report[0] = 0x81
+        report[128:192] = nonce
+        report[264:280] = bytes.fromhex("01" * 16)
+        report[280:328] = bytes.fromhex("02" * 48)
+        report[520:528] = bytes.fromhex("03" * 8)
+        return {
+            "platform": "intel_tdx",
+            "report": base64.b64encode(report).decode(),
+            "nonce": base64.b64encode(nonce).decode(),
+            "ccel": base64.b64encode(b"fixture-ccel").decode(),
+            "measurements": measurements("intel_tdx", report),
+        }
+
+    def test_tdx_reference_boot_requires_approved_tcb(self):
+        evidence = self.tdx_evidence()
+        candidate = tdx_tcb(evidence)
+        references = {name: [value] for name, value in candidate.items()}
+        require_approved_tdx_tcb(evidence, references)
+        for name in candidate:
+            with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
+                require_approved_tdx_tcb(evidence, dict(references, **{name: ["0" * len(candidate[name])]}))
+
     def test_piped_core_collectors_are_rejected_for_secret_children(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "core_pattern"
@@ -433,6 +460,11 @@ class GuestProvisioningTests(unittest.TestCase):
         self.assertEqual((self.root / "etc/cvm_build_id").read_text(), self.config["build_id"] + "\n")
         self.assertEqual((self.root / "etc/modules-load.d/cvm.conf").read_text().splitlines()[0], "tdx_guest")
         self.assertTrue((self.root / "usr/lib/cvm/bin/kbs-client").stat().st_mode & stat.S_IXUSR)
+        self.assertEqual(
+            (self.root / "usr/bin/kbs-client").read_bytes(),
+            (self.root / "usr/lib/cvm/bin/kbs-client").read_bytes(),
+        )
+        self.assertTrue((self.root / "usr/bin/kbs-client").stat().st_mode & stat.S_IXUSR)
         fstab = (self.root / "etc/fstab").read_text()
         self.assertNotIn("/vault ", fstab)
         self.assertNotIn(" swap ", fstab)
@@ -688,6 +720,7 @@ class ApplicationTests(unittest.TestCase):
         container = app["container"]
         self.assertEqual(container["capabilities"], list(runtime.DEFAULT_CAPABILITIES))
         self.assertEqual(container["pids_limit"], runtime.DEFAULT_PIDS_LIMIT)
+        self.assertFalse(container["attestation_credentials"])
         self.assertFalse(container["host_bin"])
         self.assertTrue(container["read_only_rootfs"])
         self.assertNotIn("allowed_out_cidrs", runtime_config(app))
@@ -698,12 +731,20 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(projected["allowed_out_cidrs"], ["10.0.0.0/8"])
         self.assertEqual(projected["allowed_in_cidrs"], ["192.0.2.0/24"])
         self.assertEqual(projected["container"]["capabilities"], ["NET_BIND_SERVICE"])
+        self.value["max_token_age_seconds"] = 100
+        with self.assertRaises(BuildError):
+            self.load()
+        self.value["container"]["attestation_credentials"] = True
+        self.assertEqual(runtime_config(self.load())["max_token_age_seconds"], 100)
+        self.value["container"]["attestation_credentials"] = False
+        del self.value["max_token_age_seconds"]
         for key, invalid in (
             ("capabilities", ["SYS_ADMIN"]),
             ("capabilities", ["CHOWN", "CHOWN"]),
             ("capabilities", "CHOWN"),
             ("pids_limit", 0),
             ("pids_limit", "many"),
+            ("attestation_credentials", "yes"),
             ("host_bin", "yes"),
             ("read_only_rootfs", 1),
         ):
@@ -712,6 +753,20 @@ class ApplicationTests(unittest.TestCase):
             with self.subTest(key=key, invalid=invalid), self.assertRaises(BuildError):
                 self.load()
             self.value["container"][key] = original
+
+    def test_maximum_token_age_reserves_proof_delivery_headroom(self):
+        self.value["container"]["attestation_credentials"] = True
+        for requires_gpu, rejected, accepted in ((False, 76, 90), (True, 256, 270)):
+            self.value["requires_gpu"] = requires_gpu
+            self.value["max_token_age_seconds"] = rejected
+            with (
+                self.subTest(requires_gpu=requires_gpu, value=rejected),
+                self.assertRaisesRegex(BuildError, "delivery margin"),
+            ):
+                self.load()
+            self.value["max_token_age_seconds"] = accepted
+            with self.subTest(requires_gpu=requires_gpu, value=accepted):
+                self.assertEqual(runtime_config(self.load())["max_token_age_seconds"], accepted)
         for invalid in (["10.0.0.1/8"], "10.0.0.0/8", ["10.0.0.0/8", "10.0.0.0/8"]):
             self.value["allowed_out_cidrs"] = invalid
             with self.subTest(cidrs=invalid), self.assertRaises(BuildError):
@@ -751,7 +806,9 @@ class ApplicationTests(unittest.TestCase):
         app = self.load()
         with self.assertRaises(BuildError):
             runtime.docker_argv(app)
-        self.assertIn("/dev/tdx_guest", runtime.docker_argv(app, device="/dev/tdx_guest"))
+        tdx_command = runtime.docker_argv(app, device="/dev/tdx_guest")
+        self.assertIn("/dev/tdx_guest", tdx_command)
+        self.assertNotIn("/sys/kernel/config", " ".join(tdx_command))
 
     def test_gpu_application_passes_all_gpus_to_container(self):
         self.value["requires_gpu"] = True
@@ -766,6 +823,11 @@ class ApplicationTests(unittest.TestCase):
             self.load()
         self.value["container"]["ports"] = []
         self.value["container"]["volumes"] = [{"source": "/user_data/input", "target": "/input", "read_only": False}]
+        with self.assertRaises(BuildError):
+            self.load()
+        self.value["container"]["volumes"] = [
+            {"source": "/vault/application/data", "target": "/host/lib", "read_only": True}
+        ]
         with self.assertRaises(BuildError):
             self.load()
 
@@ -1081,12 +1143,14 @@ class RuntimeContractTests(unittest.TestCase):
             "kbs_client": "/test/kbs-client",
             "kbs_url": "https://kbs.test",
             "kbs_cert": "/test/ca.pem",
+            "attestation_policy_selector": "cvm-test",
             "build_id": "bundle-1",
             "platform": "intel_tdx",
         }
         with (
             patch("cvm.runtime.attestation.run", side_effect=[b"token", base64.b64encode(bytes(64))]) as execute,
             patch("cvm.runtime.attestation.validate_token"),
+            patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
             patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 140]),
         ):
             with authorized_key(config, bytes(32), budget=ATTESTATION_BUDGET_SECONDS):
@@ -1096,6 +1160,156 @@ class RuntimeContractTests(unittest.TestCase):
             [call.kwargs["operation"] for call in execute.call_args_list],
             ["KBS quote/appraisal", "KBS resource retrieval/decryption"],
         )
+
+    def test_application_proof_publishes_protected_expiration_state(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        credentials = {"token": "token", "tee_keypair": "key"}
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    return_value=(credentials, {"exp": 1300}),
+                ),
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                ):
+                    pass
+            self.assertEqual(read_json(credentials_path), credentials)
+            self.assertEqual(read_json(state_path), {"expires_at": 1300})
+
+    def test_application_proof_refreshes_after_slow_gpu_key_retrieval(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+            "gpu": "nvidia_cc",
+        }
+        stale = {"token": "authorized-token", "tee_keypair": "authorized-key"}
+        fresh = {"token": "fresh-proof-token", "tee_keypair": "fresh-proof-key"}
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    side_effect=[(stale, {"exp": 1250}), (fresh, {"exp": 1300})],
+                ) as refresh,
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 120]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=240,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=255,
+                ):
+                    pass
+            self.assertEqual(refresh.call_count, 2)
+            self.assertEqual(read_json(credentials_path), fresh)
+            self.assertEqual(read_json(state_path), {"expires_at": 1300})
+
+    def test_application_proof_uses_configured_maximum_age(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        stale = {"token": "authorized-token", "tee_keypair": "authorized-key"}
+        fresh = {"token": "fresh-proof-token", "tee_keypair": "fresh-proof-key"}
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    side_effect=[(stale, {"iat": 900, "exp": 1300}), (fresh, {"iat": 1000, "exp": 1300})],
+                ) as refresh,
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 120]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                    maximum_credentials_age=100,
+                ):
+                    pass
+            self.assertEqual(refresh.call_count, 2)
+            self.assertEqual(read_json(credentials_path), fresh)
+            self.assertEqual(read_json(state_path), {"expires_at": 1100})
+
+    def test_application_proof_rejects_a_token_without_the_publication_margin(self):
+        config = {
+            "kbs_client": "/test/kbs-client",
+            "kbs_url": "https://kbs.test",
+            "kbs_cert": "/test/ca.pem",
+            "build_id": "bundle-1",
+            "platform": "intel_tdx",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            credentials_path = Path(directory) / "application/trustee_token.json"
+            credentials_path.parent.mkdir()
+            state_path = Path(directory) / "state/application-proof.json"
+            state_path.parent.mkdir()
+            with (
+                patch(
+                    "cvm.runtime.attestation._fresh_credentials",
+                    return_value=({"token": "token", "tee_keypair": "key"}, {"exp": 1015}),
+                ),
+                patch("cvm.runtime.attestation.run", return_value=base64.b64encode(bytes(64))),
+                patch("cvm.runtime.attestation.memory_file", side_effect=lambda *a, **k: contextlib.nullcontext(17)),
+                patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110]),
+                patch("cvm.runtime.attestation.time.time", return_value=1000),
+                self.assertRaisesRegex(BuildError, "another bounded renewal"),
+            ):
+                with authorized_key(
+                    config,
+                    bytes(32),
+                    budget=60,
+                    credentials_path=credentials_path,
+                    credentials_state_path=state_path,
+                    minimum_credentials_validity=75,
+                ):
+                    pass
+            self.assertFalse(credentials_path.exists())
+            self.assertFalse(state_path.exists())
 
     def test_clock_gate_uses_bounded_chrony_correction(self):
         with patch("cvm.runtime.bootstrap.run") as execute:
@@ -1117,8 +1331,14 @@ class RuntimeContractTests(unittest.TestCase):
         )
         self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 2, 92])
 
-    def test_cold_clock_rejects_unsynchronized_or_excessive_skew(self):
-        for failure_at in (1, 3):
+    def test_cold_clock_tolerates_preliminary_wait_failure(self):
+        failure = [None, BuildError("clock not ready"), None, None]
+        with patch("cvm.runtime.bootstrap.run", side_effect=failure) as execute:
+            runtime.time_sync(max_tries=90, initialize=True)
+        self.assertEqual(execute.call_count, 4)
+
+    def test_cold_clock_rejects_setup_burst_or_final_gate_failure(self):
+        for failure_at in (0, 2, 3):
             with patch("cvm.runtime.bootstrap.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
                 with self.assertRaises(BuildError):
                     runtime.time_sync(max_tries=90, initialize=True)

@@ -27,7 +27,7 @@ class SignatureBuilder(Builder):
     signature.json file.
 
     signature.json is generated for:
-    - Azure Confidential Computing kits: the full workspace is signed for startup integrity.
+    - Confidential-computing kits: the full workspace is signed before the common packager runs.
     - HE (Homomorphic Encryption) kits: startup + local dirs are signed to protect the shared
       TenSEAL context.
 
@@ -40,8 +40,7 @@ class SignatureBuilder(Builder):
     immediately after WorkspaceBuilder: late enough to follow every other builder's ``finalize()``,
     early enough to precede the workspace relocation WorkspaceBuilder performs.
 
-    CVM vault workspaces are signed separately by :class:`VaultSignatureBuilder`, which already ran
-    after finalization. Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust
+    Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust
     anchor for those deployments.
     """
 
@@ -63,22 +62,6 @@ class SignatureBuilder(Builder):
                     # load_tenseal_context_from_workspace requires LoadResult.OK in secure mode.
                     sign_folders(kit_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
                     sign_folders(ctx.get_local_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-
-
-class VaultSignatureBuilder(Builder):
-    """Sign selected vault workspaces after config finalization, before relocation.
-
-    Insert immediately after WorkspaceBuilder: reverse finalization then signs
-    files such as comm_config.json that other builders create in finalize().
-    """
-
-    def finalize(self, project: Project, ctx: ProvisionContext):
-        root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
-        if not root_pri_key:
-            raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
-        for participant in project.get_all_participants():
-            if participant.get_prop(PropKey.CVM_VAULT):
-                sign_folders(ctx.get_ws_dir(participant), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
 
 
 def order_builders_for_signing(builders):

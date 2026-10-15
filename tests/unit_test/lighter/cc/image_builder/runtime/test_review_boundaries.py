@@ -28,10 +28,33 @@ from unittest.mock import Mock, patch
 
 from cvm.common.errors import BuildError
 from cvm.common.firewall import firewall_rules
-from cvm.runtime import bootstrap
+from cvm.runtime import attestation, bootstrap
 
 
 class ReviewBoundaryTests(unittest.TestCase):
+    def test_bare_metal_client_sends_coco_policy_selector(self):
+        @contextlib.contextmanager
+        def memory(_data):
+            yield 17
+
+        config = {
+            "kbs_client": "/usr/bin/kbs-client",
+            "kbs_url": "https://trustee.test",
+            "kbs_cert": "/etc/cvm/kbs-ca.pem",
+            "attestation_policy_selector": "cvm-gpu-r1",
+        }
+        with (
+            patch.object(attestation, "memory_file", side_effect=memory),
+            patch.object(attestation, "run", return_value=b"token") as run,
+            patch.object(attestation, "validate_token", return_value={}),
+        ):
+            attestation._fresh_credentials(config, bytes(32), lambda: 30)
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--attestation-policy-selector") + 1],
+            "cvm-gpu-r1",
+        )
+
     def test_stalled_audit_cannot_delay_quarantine_or_denial(self):
         # Isolate the intentionally stalled daemon writer from the test runner.
         program = textwrap.dedent(

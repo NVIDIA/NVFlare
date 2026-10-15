@@ -1,6 +1,7 @@
 api_version: 3
 name: coco_project
 description: NVFlare with AMD SEV-SNP and NVIDIA CoCo clients and an optional CoCo server
+cc_project_config: cc_project.yml
 
 participants:
   - name: server.example.com
@@ -28,6 +29,4 @@ builders:
   - path: nvflare.lighter.impl.signature.SignatureBuilder
 
 packager:
-  path: nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager
-  args:
-    build_image_cmd: ../admin/build_coco_image.sh
+  path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager

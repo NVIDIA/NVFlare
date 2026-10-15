@@ -38,6 +38,28 @@ def verify_reference(platform, evidence):
     validate_measurements(platform, evidence["measurements"])
 
 
+def tdx_tcb(evidence):
+    """Return the TDX TCB identity from structurally verified local evidence."""
+    verify_reference("intel_tdx", evidence)
+    report = base64.b64decode(evidence["report"], validate=True)
+    return {
+        "mr_seam": report[280:328].hex(),
+        "tcb_svn": report[264:280].hex(),
+        "xfam": report[520:528].hex(),
+    }
+
+
+def require_approved_tdx_tcb(evidence, references):
+    """Reject a reference boot whose platform TCB is absent from approved inputs."""
+    for name, value in tdx_tcb(evidence).items():
+        approved = references.get(name)
+        require(
+            isinstance(approved, list) and value in approved,
+            f"Reference boot TDX {name} is not approved; run cvmctl inspect-tcb, review and update the approved "
+            "TCB references, increment profile_version, and rebuild",
+        )
+
+
 def serial_frames(evidence):
     data = base64.b64encode(zlib.compress(canonical(evidence))).decode()
     chunks = [data[i : i + 1024] for i in range(0, len(data), 1024)]
