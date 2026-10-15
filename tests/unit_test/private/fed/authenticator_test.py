@@ -13,14 +13,30 @@
 # limitations under the License.
 
 import logging
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.private.defs import CellMessageHeaderKeys
-from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, Authenticator, validate_auth_headers
+
+
+def test_unreachable_server_authentication_obeys_recovery_timeout(monkeypatch):
+    clock = iter([0, 6])
+    monkeypatch.setattr("nvflare.private.fed.authenticator.time", SimpleNamespace(time=lambda: next(clock)))
+    monkeypatch.setattr("nvflare.private.fed.authenticator._get_client_ip", lambda: "127.0.0.1")
+    auth = Authenticator(Mock(), "project", "site-1", "regular", "server", True, None, None, None, 5, 2, timeout=5)
+    auth.challenge_server = Mock(return_value=(None, None))
+
+    with pytest.raises(FLCommunicationError, match="cannot connect to server for 5 seconds"):
+        auth.authenticate(FLContext(), Signal())
 
 
 class _TokenVerifier:

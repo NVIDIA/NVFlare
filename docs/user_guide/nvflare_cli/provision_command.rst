@@ -43,7 +43,7 @@ instructions.
 Root CA validity
 ================
 
-Centralized provisioning creates a self-signed project root CA that is valid
+By default, centralized provisioning creates a self-signed project root CA that is valid
 for 360 days by default. To select a different initial validity, set the
 positive integer ``root_valid_days`` for ``CertBuilder`` in ``project.yml``:
 
@@ -63,10 +63,21 @@ normal 360-day validity unless the root expires sooner.
 Changing an established root requires a separate multi-root rollover;
 ``root_valid_days`` never extends or replaces it.
 
+Using an enterprise public root
+================================
+
+To distribute an enterprise root certificate without its private key, configure
+``public_root_cert`` in the ``CertBuilder`` arguments in ``project.yml``.
+Every server, client and relay must use external credentials, the server must use
+an external job CA, and every admin must use a certificate provider. Provisioning
+fails if any required credential still needs local issuance. The command is unchanged:
+``nvflare provision -p project.yml -w workspace``.
+See :ref:`public_root_only_provisioning` for the configuration and deployment steps.
+
 Job CA
 ======
 
-Provisioning also creates a job-signing intermediate CA, ``job_ca.crt`` /
+By default, provisioning also creates a job-signing intermediate CA, ``job_ca.crt`` /
 ``job_ca.key``, in the **server** startup kit only. The server uses it to issue
 a short-lived certificate to every job process (see
 :ref:`per_job_certificates`); in secure mode jobs cannot run without it. It is
@@ -84,6 +95,10 @@ Like the participant certificates, the job CA is kept in the workspace's
 regenerated. Running ``nvflare provision`` again on a workspace created before
 this feature adds the job CA to the server kit without changing any other
 certificate.
+
+With ``external_job_ca: true``, deployment tooling supplies this pair instead;
+provisioning does not create or renew it. Public-root-only provisioning requires
+this setting. See :ref:`external_job_ca` for its certificate profile.
 
 Certificate Identity Overrides
 ==============================

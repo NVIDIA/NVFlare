@@ -473,6 +473,8 @@ Edit the project.yml configuration file to meet your project requirements:
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
     - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin membership. See :ref:`multi_study_guide` for the full schema and examples.
 
+.. _admin_certificate_provider_configuration:
+
 Admin certificate provider configuration
 ========================================
 
@@ -594,6 +596,181 @@ identity/role mapping rather than replacing it with this example's fixed role.
 
 .. literalinclude:: ../resources/step_ca_admin.tpl
    :language: text
+
+.. _external_workload_certificates:
+
+Externally issued workload certificates
+========================================
+
+Use ``external_cert: true`` for externally enrolled server/client/relay endpoints and
+``external_job_ca: true`` for an externally supplied server job-signing CA.
+The options are independent and leave other credentials unchanged. Both apply
+only to centralized ``nvflare provision``; distributed provisioning rejects them.
+Deployment tooling supplies the selected credentials. Provisioning continues to
+issue any remaining credentials using its configured CA key. When all credentials
+are externally managed, :ref:`public_root_only_provisioning` distributes the
+enterprise root certificate and startup configuration.
+
+.. code-block:: yaml
+
+  participants:
+    - name: server1
+      type: server
+      org: example_org
+      external_cert: true
+      external_job_ca: true  # optional; server only
+
+    - name: site-1
+      type: client
+      org: example_org
+      external_cert: true
+
+With ``external_cert``, kits retain configuration and ``rootCA.pem`` but omit
+the endpoint pair. Install ``startup/server.crt`` and ``startup/server.key``
+on servers, or ``startup/client.crt`` and ``startup/client.key`` on clients and
+relays, before running ``start.sh``. On servers and clients, configure ``ssl_cert``
+and ``ssl_private_key`` to use alternative endpoint paths, including absolute
+paths. Relay endpoint files and all listener files are located beside the root
+certificate.
+
+Use a matching RSA-2048 key (required by endpoint message encryption) and a PEM
+chain ordered leaf first, then intermediates, trusted by ``rootCA.pem``.
+The leaf CN must match the configured participant identity; put server hostnames
+in SANs. Every relay, and each client with ``listening_host``, also needs a
+``server.crt``/``server.key`` pair for its listener, with the participant's identity
+as CN and listener hostnames in SANs. Mount credentials read-only into FLARE,
+writable only by enrollment tooling.
+
+Certificate and key replacement require an endpoint restart. Stop the affected
+server or client, install a matching key and certificate chain, then restart it
+before its certificate expires. The key may be reused or replaced. Keep the
+participant identity and trusted root unchanged; peers accept the new credentials
+through their normal authentication checks and exchange certificates again after
+reconnecting. On a rejected or timed-out heartbeat, a client freshly authenticates the server
+and re-registers if the server's key no longer verifies its session token. This
+does not depend on a direct server connection. Recovery attempts are bounded;
+failed attempts leave existing credentials intact and retry on later heartbeats.
+Recovery can wait for the existing heartbeat timeout before checking the server.
+Plan for job interruption during the restart; job survival is not guaranteed. FLARE does not watch files,
+schedule renewal, or reload credentials into running processes. Certificate
+replacement does not revoke the old certificate or terminate other established
+sessions, which can continue beyond certificate expiry. For a compromised key,
+block access and terminate affected sessions before installing a new key.
+
+Use end-to-end mTLS. For ``listening_host``, explicitly set
+``connection_security: mtls`` in the project YAML; a secure scheme alone does not
+change the default. gRPC requires both role-specific credential paths when an
+endpoint listens and connects: ``server_cert``/``server_key`` for listeners and
+``client_cert``/``client_key`` for outgoing connections.
+
+This option supports standard mTLS startup kits. Provisioning rejects
+``external_cert`` for signed Confidential Computing and HE kits: their integrity
+manifest covers the original certificate bytes. Such kits must be reprovisioned
+and signed when credentials change.
+
+.. _external_job_ca:
+
+Externally supplied server job CA
+----------------------------------------
+
+With ``external_job_ca``, deployment tooling must generate the key locally at the
+server, obtain an approved CA certificate, and install ``startup/job_ca.crt`` and
+``startup/job_ca.key`` before deploying secure jobs. Provisioning omits this pair,
+does not import the external key into its state, and leaves installed material intact.
+
+**Deployment prerequisite:** FLARE requires an approved job-signing CA whose
+certificate chain permits issuance of job certificates. It need not be issued
+by the CA used for endpoint enrollment. Both paths must reach the configured
+``rootCA.pem``. Ordinary endpoint enrollment permission does not authorize CA
+issuance. Do not loosen existing IT path-length constraints; obtain approval for
+the hierarchy and for the server holding the signing key before deployment.
+
+The certificate file contains the job CA first, followed by its issuing
+intermediates. The job CA requires a matching RSA or EC key,
+``CA:TRUE/pathlen:0``, ``keyCertSign``, and the issuer-signed URI SAN
+``https://nvidia.com/nvflare/v1/ca/job``. Any EKU restriction in the chain must
+permit both client and server authentication. Ancestors must permit the extra
+CA level: an issuing CA with ``pathlen:0`` cannot issue this job CA.
+
+FLARE validates the chain and requires more than one hour of remaining validity
+before job issuance. Missing or invalid material blocks secure job deployment;
+there is no endpoint-key fallback. Jobs use locally issued credentials even when
+the external issuer is unavailable, and cannot outlive the chain. The job CA
+stays fixed: this option adds no renewal, rotation, or live replacement.
+
+Keep enrollment tokens and issuer configuration in a parent-only secret mount,
+not job-visible startup, local, custom, or workspace directories. Startup files
+other than ``*.key`` may be forwarded into jobs. Processes sharing an OS identity
+are not a filesystem security boundary.
+Kubernetes startup Secrets exclude HE context files.
+Content-integrity checks remain required; the job CA is not a CC/HE content-signing key.
+
+.. _public_root_only_provisioning:
+
+Public-root-only provisioning
+========================================
+
+Public-root-only provisioning receives the root CA certificate, which contains
+its public key. The root CA private key stays with your enterprise PKI. Internal
+enterprise CAs are supported, regardless of browser or public-internet trust.
+
+Provisioning distributes this certificate and startup configuration while
+deployment tooling supplies the credentials. Add the following argument to
+``CertBuilder`` in ``project.yml``:
+
+.. code-block:: yaml
+
+   builders:
+     - path: nvflare.lighter.impl.cert.CertBuilder
+       args:
+         public_root_cert: rootCA.pem
+
+Set ``public_root_cert`` to your enterprise root certificate file. Configure the
+credential source for each participant:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Participant
+     - Required configuration
+   * - Server
+     - ``external_cert: true`` and ``external_job_ca: true``
+   * - Client or relay
+     - ``external_cert: true`` (also covers listener credentials)
+   * - Admin
+     - ``admin_cert_provider``; see :ref:`admin_certificate_provider_configuration`
+
+Provisioning checks these settings and reports the participant name and required
+setting for any incomplete configuration. The admin provider obtains credentials
+on the admin machine when needed. Certificates from any external CA can be used
+when they satisfy FLARE's identity, key, and chain requirements.
+
+The root path is relative to ``project.yml`` (the current directory for Python
+API callers). It must contain exactly one currently valid, self-signed PEM CA
+certificate with critical CA BasicConstraints and ``keyCertSign`` usage. Its
+``path_length`` must permit at least the subordinate job CA: use a value of one
+or greater, or leave the constraint unrestricted. Supply a certificate-only PEM
+file. Provisioning writes it as ``startup/rootCA.pem`` in every kit. Reprovisioning creates new kits; deployment tooling must install the
+external credentials in each deployed kit.
+
+Use the complete example below with your own root and admin provider settings:
+
+.. literalinclude:: ../../examples/advanced/external_provisioning/project.yml
+   :language: yaml
+
+Run ``nvflare provision -p project.yml -w workspace`` and deliver the kits through
+your authenticated deployment process. Install endpoint and listener files as
+described in :ref:`external_workload_certificates`, and the server's job CA as
+described in :ref:`external_job_ca`. The server continues to sign job certificates
+locally. At runtime, FLARE verifies certificate chains and participant identities
+using the installed certificate verifier and its supported certificate profiles.
+
+Use centralized provisioning with exactly one ``CertBuilder``. For CC/HE content
+signing, hierarchical edge provisioning, or the Python API's supplied-root-plus-key
+workflow, use the legacy provisioning mode. The enterprise CA controls the root
+certificate's validity. Configure an external job CA for every server, including
+when ``enable_job_ca`` is ``false``.
 
 .. _project_yml:
 

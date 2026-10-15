@@ -172,6 +172,14 @@ Submitting pull requests
 
 All code changes to the ``main`` branch must be done via `pull
 requests <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests>`__.
+
+Every pull request must reference an existing GitHub issue in NVIDIA/NVFlare
+that describes the problem or proposed improvement, explains why the change
+is needed, and provides supporting evidence where applicable.
+The issue must exist before the pull request is submitted, and the proposed
+changes must directly address it.
+Pull requests without a qualifying issue will not be accepted.
+
 1. Create a new ticket or take a known ticket from `the issue
 list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. Check if there is
 already a branch dedicated to the task. 3. If the task has not been
@@ -197,6 +205,11 @@ resolved for PR to pass. 12. Wait for the pull request to be merged.
 
 Reviewing pull requests
 -----------------------
+
+Before reviewing the code, verify that the linked GitHub issue exists,
+predates the pull request, and is directly addressed by the proposed changes.
+Maintainers must confirm that the issue identifies a valid problem or an
+improvement appropriate for the project before approving the pull request.
 
 All code review comments should be specific, constructive, and
 actionable. 1. Check `the CI/CD status of the pull
