@@ -116,24 +116,27 @@ def test_study_environment(launcher_class, study, tmp_path, monkeypatch, caplog)
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_no_runtime_preserves_inheritance(tmp_path, monkeypatch, legacy):
+@pytest.mark.parametrize("runtime", [False, True])
+def test_runtime_is_optional_and_legacy_is_ignored(tmp_path, monkeypatch, legacy, runtime):
     monkeypatch.setenv("STUDY_PASSWORD", "inherited-secret")
     if legacy:
         (tmp_path / "local").mkdir()
         (tmp_path / "local" / "study_data.yaml").write_text("unused legacy config")
+    expected_env = os.environ.copy()
+    if runtime:
+        _write_runtime(tmp_path, {"default": {"env": {"DB_HOST": "study-host"}}})
+        expected_env["DB_HOST"] = "study-host"
     with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
         DummyLauncher().launch_job({JobConstants.JOB_ID: "job"}, _build_fl_ctx(DummyWorkspace(tmp_path)))
-    assert spawn.call_args.args[1] == os.environ
+    assert spawn.call_args.args[1] == expected_env
 
 
-@pytest.mark.parametrize("failure", ["missing-secret", "legacy", "malformed", "unsupported", "read-error"])
+@pytest.mark.parametrize("failure", ["missing-secret", "malformed", "unsupported", "read-error"])
 def test_runtime_errors_prevent_spawn(tmp_path, monkeypatch, failure, caplog):
     monkeypatch.delenv("MISSING_STUDY_SOURCE", raising=False)
     monkeypatch.setenv("DB_PASSWORD", "inherited-destination-must-not-mask-error")
     path = _write_runtime(tmp_path, {"default": {"secret_env": {"DB_PASSWORD": {"source": "MISSING_STUDY_SOURCE"}}}})
-    if failure == "legacy":
-        (path.parent / "study_data.yaml").write_text("{}")
-    elif failure == "malformed":
+    if failure == "malformed":
         path.write_text("studies: [")
     elif failure == "unsupported":
         _write_runtime(tmp_path, {"other-study": {"datasets": {}}})

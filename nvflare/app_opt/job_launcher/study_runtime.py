@@ -14,8 +14,8 @@
 """Site-owned per-study runtime configuration (v2): local/study_runtime.yaml.
 
 Filename selects the format: this strict v2 parser never reads the frozen v1
-local/study_data.yaml (see study_data.py). Both files present is a launcher
-error, enforced by the launchers, not here.
+local/study_data.yaml (see study_data.py). Docker, Kubernetes, and Slurm reject
+coexistence of both files; process mode ignores the legacy file.
 """
 
 from __future__ import annotations

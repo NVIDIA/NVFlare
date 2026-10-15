@@ -242,29 +242,24 @@ Set ``LUNG_DB_PASSWORD`` in the parent service's environment before starting it.
 The optional ``key`` field is accepted for compatibility with Docker configuration and is ignored.
 A missing source variable fails launch. An empty source value is allowed.
 
-Study values override inherited values in the child only. ``env`` accepts scalar values, including
-an empty string; booleans become ``true`` or ``false`` and numbers become strings. Values are
-literal, with no shell expansion. Destination names and secret source names must be valid POSIX
-environment variable names. Launcher-owned names, such as ``PYTHONPATH`` and job bootstrap
-credential names, cannot be configured or used as secret sources. A destination cannot appear in
-both ``env`` and ``secret_env``.
+Study values override inherited values in the child only. ``env`` accepts literal scalar values,
+including empty strings, with no shell expansion. Names must be valid POSIX environment variable
+names; launcher-owned names such as ``PYTHONPATH`` cannot be configured or used as secret sources.
+A destination cannot appear in both ``env`` and ``secret_env``.
 
-The application must read path variables such as ``TRAINING_DATA`` and ``DB_CA_FILE`` to use them.
-Unlike Docker, process mode creates no mounts and does not translate hard-coded container paths.
-Files must already exist on the host with appropriate OS permissions. Process mode rejects
-``datasets``, ``secret_mounts``, ``container``, ``pod_template``, ``docker_kwargs``, and ``slurm``.
+Applications must read path variables such as ``TRAINING_DATA`` and ``DB_CA_FILE`` to use them.
+Files must already exist on the host. Process mode supports only ``env`` and ``secret_env``;
+container and mount settings are rejected, and hard-coded container paths are not translated.
 
 Process mode inherits the complete parent environment, including secret source variables and
 variables for other studies. This feature provides configuration convenience, not isolation between
 studies. Use a suitably configured Docker deployment when jobs require isolation.
 
-If the file or the selected study entry is absent, the job receives the inherited environment with
-the launcher's usual Python path and credentials. Jobs without a study use ``default``. Malformed
-configuration, including invalid entries for other studies, fails launch. A legacy ``study_data.yaml``
-alone remains unused in process mode; it cannot coexist with ``study_runtime.yaml``.
+If the file or selected study entry is absent, the job uses its usual environment. Jobs without a
+study use ``default``. Invalid configuration anywhere in the file fails launch. Process mode always
+ignores the legacy ``study_data.yaml``, including when both files exist.
 
-Replace the file atomically to change settings for subsequent launches. Running jobs retain their
-environment. Updating an external shell's environment does not change a running parent's environment;
+Replace the file atomically to update subsequent launches. Running jobs retain their environment;
 changing secret source values normally requires restarting the parent service.
 
 .. note::
