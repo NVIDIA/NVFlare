@@ -505,10 +505,14 @@ def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path
         if sys.platform == "linux":
             # Darwin removes a zombie's PGID before its parent reaps it.
             assert os.getpgid(sibling_pid) == leader_pid
-        assert all(call.args[1] == 0 for call in probe.call_args_list)
+        # A scan can be inconclusive while unrelated processes churn. Cancel
+        # may signal terminal members before settlement, but once settled the
+        # handle must not probe or signal the released process-group ID again.
+        calls_at_settlement = probe.call_count
         assert handle.poll() == status
         assert handle.wait_for_settlement(timeout=0) == status
         assert handle.cancel() == status
+        assert probe.call_count == calls_at_settlement
         with pytest.raises(ChildProcessError):
             os.waitpid(leader_pid, os.WNOHANG)
     finally:
