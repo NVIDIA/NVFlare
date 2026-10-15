@@ -245,10 +245,19 @@ class BuffDeviceManager(DeviceManager):
             f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
         )
         if len(self.current_selection) < self.device_selection_size:
-            self.log_warning(
-                fl_ctx,
-                f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
-            )
+            if self.current_selection_version == 1:
+                # initial dispatch could not fill the full selection
+                self.log_warning(
+                    fl_ctx,
+                    f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
+                )
+            else:
+                # partial refill: the eligible device pool is smaller than the number of holes.
+                # this is expected - the remaining holes are filled by future reports.
+                self.log_info(
+                    fl_ctx,
+                    f"current selection has {len(self.current_selection)} of {self.device_selection_size} devices: eligible device pool exhausted, remaining holes will be filled by future reports",
+                )
 
     def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
@@ -264,15 +273,40 @@ class BuffDeviceManager(DeviceManager):
             self.used_devices.pop(device_id, None)
 
     def has_enough_devices_and_clients(self, fl_ctx) -> bool:
+        """Determine whether the device selection can be filled now.
+
+        Startup (no selection has been dispatched yet) requires enough eligible devices to fill
+        the *entire* selection, so the initial model dispatch starts with the full set of
+        concurrent devices.
+
+        After startup, a refill only requires at least one eligible device: the sampler fills
+        up to ``min(num_holes, num_usable_devices)`` and the remaining holes simply wait for
+        future reports. Requiring every hole to be fillable would stall the job whenever the
+        eligible pool is temporarily smaller than the number of holes - e.g. when one report
+        carries several buffered updates at once and the other eligible devices already
+        contributed to the current model version (follow-up to issue #5347).
+
+        Args:
+            fl_ctx: FL context
+
+        Returns:
+            bool: True if the selection can be (re)filled, False otherwise
+        """
         num_holes = self.device_selection_size - len(self.current_selection)
         usable_devices = self._compute_usable_devices()
         num_usable_devices = len(usable_devices)
-        if num_usable_devices < num_holes:
-            return False
 
         # Further check if we have enough clients
         unique_clients = set(self.device_client_map.values())
-        return len(unique_clients) >= self.initial_min_client_num
+        if len(unique_clients) < self.initial_min_client_num:
+            return False
+
+        if self.current_selection_version == 0:
+            # startup: the initial dispatch must be able to fill the whole selection
+            return num_usable_devices >= num_holes
+
+        # refill: partial fill is allowed - fill as many holes as the eligible pool allows
+        return num_usable_devices >= 1
 
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)

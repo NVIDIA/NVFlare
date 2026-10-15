@@ -190,6 +190,8 @@ class ModelUpdateAssessor(Assessor):
         # required for the issue #5347 Option B fix in BuffDeviceManager, which excludes devices that
         # already contributed to the current model version. Only set it when the device manager
         # actually consumes this attribute, so unrelated device managers are left untouched.
+        # Note: it is synchronized again after process_updates below, because aggregation may
+        # advance the model version in the middle of this update.
         if hasattr(self.device_manager, "current_model_version"):
             self.device_manager.current_model_version = self.model_manager.current_model_version
 
@@ -239,6 +241,14 @@ class ModelUpdateAssessor(Assessor):
 
         else:
             self.log_debug(fl_ctx, "no model updates")
+
+        # process_updates above may have advanced the model version (enough buffered updates were
+        # aggregated). Re-synchronize the device manager's view of the current model version so
+        # the eligibility checks below use the new version - otherwise devices that contributed
+        # to the *previous* version would be wrongly excluded and the selection could not be
+        # refilled, leaving it empty.
+        if hasattr(self.device_manager, "current_model_version"):
+            self.device_manager.current_model_version = self.model_manager.current_model_version
 
         # Handle device selection
         if self.device_manager.should_fill_selection(fl_ctx):

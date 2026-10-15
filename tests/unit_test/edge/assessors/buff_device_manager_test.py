@@ -172,3 +172,45 @@ def test_fedbuff_no_indefinite_stall_with_reuse():
     # both devices eligible again for the new model version
     assert set(mgr.current_selection) == {"d1", "d2"}
     assert all(v == 2 for v in mgr.current_selection.values())
+
+
+def test_has_enough_devices_requires_full_selection_at_startup():
+    # At startup (no selection dispatched yet), the initial dispatch must be able to fill the
+    # whole selection - a partial initial selection is not allowed.
+    mgr = _manager(device_selection_size=2, min_hole_to_fill=1, device_reuse=True)
+    fl_ctx = FLContext()
+    mgr.available_devices = _devices(["d1"])
+    mgr.update_available_devices(mgr.available_devices, fl_ctx)
+    assert mgr.current_selection_version == 0
+    assert mgr.has_enough_devices_and_clients(fl_ctx) is False
+
+
+def test_has_enough_devices_allows_partial_refill_after_startup():
+    # Follow-up to issue #5347: after startup, a refill must succeed with fewer eligible
+    # devices than holes. Otherwise, when one report carries several buffered updates at once
+    # and the remaining devices already contributed to the current model version, the only
+    # eligible device is never dispatched and the job stalls forever.
+    mgr = _manager(device_selection_size=2, min_hole_to_fill=1, device_reuse=True)
+    fl_ctx = FLContext()
+    mgr.available_devices = _devices(["d1", "d2", "d3"])
+    mgr.update_available_devices(mgr.available_devices, fl_ctx)
+
+    # startup: full selection for model version 1
+    mgr.fill_selection(current_model_version=1, fl_ctx=fl_ctx)
+    assert len(mgr.current_selection) == 2
+    assert mgr.current_selection_version == 1
+    inflight = set(mgr.current_selection)
+    third_device = ({"d1", "d2", "d3"} - inflight).pop()
+
+    # both in-flight devices report in one batch: model stays at v1 (updates still needed),
+    # both slots become empty and only the third device is eligible for v1
+    _report_contribution(mgr, inflight, fl_ctx)
+    assert mgr.current_selection == {}
+    num_holes = mgr.device_selection_size
+    assert len(mgr._compute_usable_devices()) == 1
+
+    # 1 eligible device for 2 holes is enough for a partial refill
+    assert mgr.has_enough_devices_and_clients(fl_ctx) is True
+    mgr.fill_selection(current_model_version=1, fl_ctx=fl_ctx)
+    assert set(mgr.current_selection) == {third_device}
+    assert all(v == 1 for v in mgr.current_selection.values())
