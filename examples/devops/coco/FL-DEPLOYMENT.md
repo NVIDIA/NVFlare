@@ -171,6 +171,20 @@ require reviewed rehearsal and new references/contracts. Local hashes or a
 RuntimeClass name do not remotely prove the hostile host's installation or
 complete guest rootfs integrity.
 
+### Executor limitation and workaround
+
+External-process jobs using `ClientAPIExecutor` with
+`execution_mode="external_process"` have been observed to fail in sealed CoCo
+deployments. The job can surface a generic infrastructure error or deployment
+policy violation. Use a reviewed in-process executor for these deployments:
+perform training inside the NVFlare job process, with the executor and its
+dependencies installed in the application image and its fully qualified class
+included in `class_allow_list`.
+
+Follow the [in-process executor setup](provision/README.md#in-process-executor-workaround)
+before provisioning and building the release. The job references the baked
+executor class; it does not supply executable code or launch an external trainer.
+
 ## Prepare and package the two clients
 
 Start from a clean, reviewed source revision and assemble the
