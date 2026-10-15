@@ -14,9 +14,14 @@
 
 """Offline tests of callable deployment helpers; no external operations."""
 
+import hashlib
+import json
+import os
+import runpy
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -94,6 +99,75 @@ def test_shell_prerequisite_probe_is_bounded(monkeypatch):
 def test_profile_resource_quantities_match_kubernetes(quantity):
     resources = {"limits": {"nvidia.com/pgpu": quantity}}
     assert normalize_resources(resources) == {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
+
+
+@pytest.mark.parametrize(
+    "runtime_class",
+    ("kata-qemu-nvidia-gpu-snp", "kata-qemu-snp", "kata-qemu-nvidia-gpu-tdx", "kata-qemu-tdx"),
+)
+@pytest.mark.parametrize("runtime_mismatch", (False, True))
+def test_launch_handoff_checks_selected_runtime_before_apply(tmp_path, coco_bash, runtime_class, runtime_mismatch):
+    """Exercise the actual handoff with the helper copied into a standalone CoCo kit."""
+    pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
+    fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
+    pod = fixture["final_workload_pod"](runtime_class)
+    pod["spec"]["containers"][0]["image"] = "registry.example.invalid/app@sha256:" + "a" * 64
+    pod_file = tmp_path / "pod.json"
+    pod_file.write_text(json.dumps(pod))
+    pod_sha256 = hashlib.sha256(pod_file.read_bytes()).hexdigest()
+    kit = tmp_path / "coco"
+    (kit / "lib").mkdir(parents=True)
+    (kit / "50-launch-handoff.sh").write_bytes((ROOT / LAUNCH).read_bytes())
+    kits = runpy.run_path(str(ROOT / "role_kits.py"))
+    helper_source = kits["PACKAGE_SOURCES"][kits["GENERATED"]["coco/lib/workload-security-context.py"]]
+    (kit / "lib/workload-security-context.py").write_bytes((ROOT.parents[2] / helper_source).read_bytes())
+    (kit / "lib/common.sh").write_text(
+        'RUNTIME_CLASS="$TEST_RUNTIME"\n'
+        'REGISTRY_HOST="registry.example.invalid"\n'
+        'die() { echo "$*" >&2; exit 1; }\n'
+        'need_file() { [[ -f "$1" ]]; }\n'
+        'need_cmd() { [[ "$1" == kubectl ]] || command -v "$1" >/dev/null; }\n'
+        'kctl() { printf "%s\\n" "$*" >> "$CALLS"; '
+        'if [[ "$1" == create ]]; then cat "$SOURCE_POD_JSON"; fi; }\n'
+        "check_registry_trust() { :; }\n"
+        'confirm_action() { [[ "$1" == APPLY ]]; }\n'
+    )
+    calls = tmp_path / "calls"
+    selected_runtime = "kata-qemu-snp" if runtime_mismatch and runtime_class != "kata-qemu-snp" else runtime_class
+    if runtime_mismatch and runtime_class == "kata-qemu-snp":
+        selected_runtime = "kata-qemu-tdx"
+    env = dict(os.environ, TEST_RUNTIME=selected_runtime, SOURCE_POD_JSON=str(pod_file), CALLS=str(calls))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    result = subprocess.run(
+        [coco_bash, str(kit / "50-launch-handoff.sh"), str(pod_file), pod_sha256],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=15,
+    )
+    assert calls.exists(), result.stderr
+    operations = calls.read_text().splitlines()
+    resolved_pod = pod_file.resolve()
+    expected_operations = [f"create --dry-run=client --validate=false -f {resolved_pod} -o json"] + (
+        []
+        if runtime_mismatch
+        else [
+            f"apply --dry-run=server -f {resolved_pod}",
+            f"apply -f {resolved_pod}",
+            "wait --for=condition=Ready pod/review -n default --timeout=10m",
+            "get pod review -n default -o wide",
+        ]
+    )
+    assert operations == expected_operations, (operations, result.stdout, result.stderr)
+    if runtime_mismatch:
+        assert result.returncode != 0
+        assert "unexpected confidential runtime class" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "Static handoff invariants passed" in result.stdout
 
 
 @pytest.mark.parametrize("cached,pull_status", [(True, 0), (False, 0), (False, 1)])
