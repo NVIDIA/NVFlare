@@ -228,8 +228,10 @@ class CertBuilder(Builder):
             raise ValueError("do not combine public-root-only provisioning with legacy project root/key arguments")
         for p in project.get_all_participants():
             if p.type == ParticipantType.ADMIN:
-                if not get_admin_cert_provider_config(p):
-                    raise ValueError(f"{p.name}: public-root-only provisioning requires admin_cert_provider")
+                if not get_admin_cert_provider_config(p) and p.get_prop(PropKey.EXTERNAL_CERT) is not True:
+                    raise ValueError(
+                        f"{p.name}: public-root-only provisioning requires admin_cert_provider or external_cert: true"
+                    )
             elif p.type in (ParticipantType.SERVER, ParticipantType.CLIENT, ParticipantType.RELAY):
                 if p.get_prop(PropKey.EXTERNAL_CERT) is not True:
                     raise ValueError(f"{p.name}: public-root-only provisioning requires external_cert: true")
