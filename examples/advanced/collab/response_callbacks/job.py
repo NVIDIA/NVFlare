@@ -19,13 +19,13 @@ the complete group call to finish.
 
 Run from the ``examples/advanced`` directory:
 
-    python -m collab.async_aggregation.async_aggregation
+    python -m collab.response_callbacks.job
 """
 
 import argparse
 
-from collab.async_aggregation.avg_intime import NPFedAvgInTime
-from collab.async_aggregation.trainer import NPTrainer
+from collab.response_callbacks.avg_intime import NPFedAvgInTime
+from collab.response_callbacks.trainer import NPTrainer
 
 from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
