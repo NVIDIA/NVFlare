@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
+from nvflare.edge.assessors.device_manager import DeviceManager
 from nvflare.edge.mud import Device
 
 
@@ -217,3 +218,41 @@ def test_has_enough_devices_allows_partial_refill_after_startup():
     mgr.fill_selection(current_model_version=1, fl_ctx=fl_ctx)
     assert set(mgr.current_selection) == {third_device}
     assert all(v == 1 for v in mgr.current_selection.values())
+
+
+class _MinimalDeviceManager(DeviceManager):
+    """A custom device manager that does NOT override get_inflight_devices, exercising the
+    default implementation inherited from DeviceManager."""
+
+    def update_available_devices(self, devices, fl_ctx):
+        pass
+
+    def fill_selection(self, fl_ctx):
+        pass
+
+    def remove_devices_from_selection(self, devices, fl_ctx):
+        pass
+
+    def remove_devices_from_used(self, devices, fl_ctx):
+        pass
+
+    def should_fill_selection(self, fl_ctx):
+        return True
+
+    def has_enough_devices_and_clients(self, fl_ctx):
+        return True
+
+    def get_active_model_versions(self, fl_ctx):
+        return set(self.current_selection.values())
+
+
+def test_base_get_inflight_devices_default_for_custom_manager():
+    # Regression for Greptile follow-up P1: a custom device manager that does not implement
+    # get_inflight_devices must still work via the base default (derived from current_selection),
+    # otherwise the wait-timeout logic raises AttributeError on a too-few-devices report.
+    mgr = _MinimalDeviceManager()
+    mgr.current_selection = {"d1": 1, "d2": 1}
+    fl_ctx = FLContext()
+    assert mgr.get_inflight_devices(fl_ctx) == {"d1", "d2"}
+    mgr.current_selection = {}
+    assert mgr.get_inflight_devices(fl_ctx) == set()

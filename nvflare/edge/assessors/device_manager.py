@@ -137,6 +137,19 @@ class DeviceManager(FLComponent, ABC):
         """
         return self.current_selection
 
+    def get_inflight_devices(self, fl_ctx: FLContext) -> Set[str]:
+        """Get the devices currently selected (dispatched) but not yet reported back.
+
+        These are the devices still in flight / training. The wait-timeout logic uses this to
+        distinguish "a device is still training" from "no devices are available to join". The
+        default implementation derives it from ``current_selection``, which every DeviceManager
+        maintains; subclasses (e.g. custom device managers) inherit this without overriding.
+        """
+        selection = self.current_selection
+        if isinstance(selection, dict):
+            return set(selection.keys())
+        return set(selection)
+
     def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Get the available devices.
 
