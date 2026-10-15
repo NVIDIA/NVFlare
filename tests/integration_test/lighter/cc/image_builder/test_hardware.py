@@ -349,10 +349,11 @@ class HardwareTests(unittest.TestCase):
         extracted = self.directory / "initramfs"
         self.disposables.append(extracted)
         run(["unmkinitramfs", self.bundle / "initrd.img", extracted])
-        main_init = extracted / "main/init"
+        # Support flat extraction and older split-archive output.
+        init_paths = (extracted / "init", extracted / "main/init")
         self.assertTrue(
-            main_init.is_file() and not main_init.is_symlink(),
-            "unmkinitramfs did not extract the main initramfs init",
+            any(path.is_file() and not path.is_symlink() and not path.parent.is_symlink() for path in init_paths),
+            "unmkinitramfs did not extract a regular init at init or main/init",
         )
         forbidden_names = {"kbs-client", "kbs-ca.pem", "as-public.pem", "runtime.json"}
         forbidden_paths = []

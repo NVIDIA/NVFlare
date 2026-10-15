@@ -102,3 +102,15 @@ install_platform_references() {
     sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-references \
         "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
 }
+
+verify_gpu_readiness() {
+    [[ -n ${GPU_REFERENCE_VALUES_FILE:-} ]] \
+        || die 'GPU release requires an independently approved GPU reference snapshot'
+    need_file "$GPU_REFERENCE_VALUES_FILE"
+    need_file "$SCRIPT_ROOT/policies/default_gpu.rego"
+    need_file "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego"
+    cmp --silent "$SCRIPT_ROOT/policies/default_gpu.rego" \
+        "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego" \
+        || die 'Active GPU appraisal policy differs from the reviewed policy'
+    bash "$SCRIPT_ROOT/10g-verify-gpu-reference-values.sh" "$GPU_REFERENCE_VALUES_FILE"
+}
