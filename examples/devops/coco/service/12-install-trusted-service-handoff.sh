@@ -154,16 +154,17 @@ if fragment.strip() != expected_received.strip():
 # GPU identity, and submodule membership. Never install received executable code.
 Path(sys.argv[4]).write_text(rendered)
 
-values = [release, key_path, signing_path, policy_path, prefix]
+values = [release, key_path, signing_path, policy_path, prefix, authorization["gpu"]]
 sys.stdout.write("\0".join(values) + "\0")
 PY
 )
-[[ "${#RELEASE_META[@]}" -eq 5 ]] || die "failed to obtain validated release metadata"
+[[ "${#RELEASE_META[@]}" -eq 6 ]] || die "failed to obtain validated release metadata"
 RELEASE_NAME="${RELEASE_META[0]}"
 KEY_PATH="${RELEASE_META[1]}"
 SIGNING_PATH="${RELEASE_META[2]}"
 IMAGE_POLICY_PATH="${RELEASE_META[3]}"
 POLICY_PREFIX="${RELEASE_META[4]}"
+RELEASE_GPU="${RELEASE_META[5]}"
 
 TOKEN_MODE="$(stat -c '%a' "${ADMIN_TOKEN}")"
 TOKEN_OWNER="$(stat -c '%U:%G' "${ADMIN_TOKEN}")"
@@ -181,6 +182,9 @@ curl --fail --silent --show-error --cacert "${KBS_CERT}" \
 # platform-policy update) can both read the same starting policy, merge
 # independently, and overwrite each other on write.
 lock_platform_reference_update
+if [[ "$RELEASE_GPU" == nvidia ]]; then
+    verify_gpu_readiness
+fi
 
 if grep -Fq "${POLICY_PREFIX}_expected_initdata" "${ACTIVE_POLICY}"; then
     die "release ${RELEASE_NAME} already exists in the active policy; releases are immutable"

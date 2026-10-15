@@ -281,13 +281,24 @@ Stage 09 installs the reviewed CPU policy, then registers the selected reference
 For SNP it temporarily clears measurement approval, installs the four approved
 scalar TCB floors, then activates the complete measurement allowlist. For TDX
 it replaces the whole approved tuple set under `coco_tdx_profiles_v2` in one write.
-The pinned default GPU policy remains active. No workload key is authorized;
+Stage 09 replaces only the pinned upstream default GPU policy with the reviewed
+three-claim variant; it refuses to overwrite an unknown active GPU policy.
+The NRAS checks and GPU driver/VBIOS approval requirements remain in force.
+No workload key is authorized;
 KBS remains default deny until a separate workload handoff is installed.
 
 Stage 10 reads every reference back through the authenticated KBS admin API
 and compares it against the JSON. Require five SNP `PASS` lines or the exact
 complete TDX profile-set match. Stage 11 checks
 the CPU policy, expected values, TLS, key permissions and backend bindings.
+
+For a GPU deployment, the service owner must additionally approve exact driver
+and VBIOS versions from authenticated NVIDIA attestation evidence. Follow
+[GPU reference approval](GPU-REFERENCE-VALUES.md) to configure, install and
+read back both lists before installing any GPU workload handoff. CPU-only
+deployments do not need GPU reference values. Stage 11 checks the GPU values
+when configured, and stage 12 refuses a GPU release unless both live lists and
+the installed GPU policy match the reviewed artifacts.
 
 Verify persistence on **secure services**:
 

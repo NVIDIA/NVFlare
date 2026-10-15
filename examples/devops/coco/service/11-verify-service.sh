@@ -24,8 +24,16 @@ printf '%s\n' "$PLATFORM_VALUES_JSON" > "$VALUES_FILE"
 cmp --silent "${SCRIPT_DIR}/policies/default_cpu.rego" \
     "${AS_STORAGE_DIR}/attestation_service_policy/default_cpu.rego" \
     || die "active CPU policy differs from the reviewed TCB-floor policy"
+cmp --silent "${SCRIPT_DIR}/policies/default_gpu.rego" \
+    "${AS_STORAGE_DIR}/attestation_service_policy/default_gpu.rego" \
+    || die "active GPU policy differs from the reviewed exact-vector policy"
 
 bash "$SCRIPT_DIR/10-verify-platform-reference-values.sh" "$VALUES_FILE"
+if [[ -n ${GPU_REFERENCE_VALUES_FILE:-} ]]; then
+    verify_gpu_readiness
+else
+    printf 'GPU approval is not configured; GPU release installation will fail closed.\n'
+fi
 
 curl --fail --silent --show-error --cacert "${TRUSTEE_PUBLIC_CERT}" \
     --output /dev/null "${KBS_URL}/healthz"

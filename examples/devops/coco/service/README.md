@@ -32,6 +32,8 @@ through explicitly mapped profile policies.
 ## Installation order
 
 Script prefixes now match the fresh-install execution order: **01 through 11**.
+GPU deployments add the separate [approved GPU reference procedure](GPU-REFERENCE-VALUES.md)
+after stage 09 and before any GPU workload release. CPU-only setups omit it.
 Run as `service_operator` from `/home/service_operator/coco-service-admin`, stopping on any
 failure. Before step 02, receive and approve the SNP five-field or TDX v2 JSON file and set:
 
