@@ -1,4 +1,7 @@
-# Per-study runtime configuration used by Docker and Kubernetes job launchers.
+# Per-study runtime configuration used by process, Docker, Kubernetes, and Slurm job launchers.
+# Process mode supports only env and secret_env, overlaid on the inherited parent
+# environment. Use env for existing host paths; datasets and secret_mounts are unsupported.
+# For process mode, secret_env.source names a parent env var; key is optional and ignored.
 # Everything a study gets at this site lives in this file: data mounts, env
 # vars, secret-backed env vars and file mounts, and (K8s only) a pod template.
 # Example:
