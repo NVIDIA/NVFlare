@@ -104,6 +104,7 @@ def test_abort_wins_prevents_launch(admission, window):
     a.runner.run(a.ctx)
     if window == "control":
         assert a.statuses["job-1"] == RunStatus.RUNNING
+        a.ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", sticky=False)
         a.runner._start_run.assert_called_once()
     else:
         assert responses[0]["meta"]["status"] == "ok"
