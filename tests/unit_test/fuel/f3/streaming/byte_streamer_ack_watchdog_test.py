@@ -27,6 +27,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamTargetUnreachable
+from tests.timing_utils import isolate_time
 
 
 class DummyStream(Stream):
@@ -1029,3 +1030,11 @@ class TestReliableByteStreamer:
         err = task.stream_future.exception(timeout=0.1)
         assert err is not None
         assert "retry failed" in str(err)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.fuel.f3.streaming.byte_streamer",
+    )

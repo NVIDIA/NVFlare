@@ -25,4 +25,4 @@ tests:
     setup:
       - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
     teardown:
-      - rm ~/.keras/datasets/mnist.npz
+      - rm -f ~/.keras/datasets/mnist.npz

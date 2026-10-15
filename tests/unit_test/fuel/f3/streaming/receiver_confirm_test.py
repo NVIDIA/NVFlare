@@ -690,7 +690,7 @@ class TestProducerSide:
         terminal1 = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         terminal2 = _pull_to_terminal(service, rid, "r2", confirm_capable=True)
         waiter = service.get_transfer_waiter(tx_id)
-        barrier = threading.Barrier(3)
+        barrier = threading.Barrier(3, timeout=10)
         replies = []
         errors = []
 

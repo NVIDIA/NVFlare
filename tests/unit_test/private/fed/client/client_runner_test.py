@@ -37,6 +37,7 @@ from nvflare.private.fed.client.client_runner import (
 )
 from nvflare.private.json_configer import ConfigError
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+from tests.timing_utils import isolate_time
 
 
 def _runner():
@@ -558,3 +559,11 @@ def test_handle_event_reports_running_tasks_and_aborts_on_fatal_error():
     fl_ctx.set_prop(FLContextKey.EVENT_DATA, "fatal", private=True, sticky=False)
     runner.handle_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
     assert runner.run_abort_signal.triggered
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.private.fed.client.client_runner",
+    )
