@@ -296,6 +296,8 @@ class AioGrpcDriver(AioBaseDriver):
                 self.options = my_params.get("options")
         self.logger.debug(f"GRPC Config: options={self.options}")
         self.closing = False
+        self._shutdown_completion_lock = threading.Lock()
+        self._shutdown_completion = None
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -399,9 +401,12 @@ class AioGrpcDriver(AioBaseDriver):
 
     def shutdown(self):
         self.stop_connection_admission()
-        self.closing = True
-        aio_ctx = AioContext.get_global_context()
-        return aio_ctx.run_coro(self._async_shutdown())
+        with self._shutdown_completion_lock:
+            if self._shutdown_completion is None:
+                self.closing = True
+                aio_ctx = AioContext.get_global_context()
+                self._shutdown_completion = aio_ctx.run_coro(self._async_shutdown())
+            return self._shutdown_completion
 
     async def _async_shutdown(self):
         async with self._shutdown_lock:

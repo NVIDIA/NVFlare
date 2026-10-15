@@ -15,6 +15,7 @@ import logging
 import threading
 from abc import ABC
 from typing import Dict, Optional
+from weakref import WeakKeyDictionary
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, ConnState
@@ -33,10 +34,19 @@ class BaseDriver(Driver, ABC):
         self.connections: Dict[str, Connection] = {}
         self.connector: Optional[ConnectorInfo] = None
         self.conn_lock = threading.Lock()
-        # Serialize connection state notifications with removal. The registry
-        # lock cannot cover callbacks because callbacks may re-enter the driver.
-        self._connection_lifecycle_lock = threading.RLock()
+        # Keep CONNECTED before CLOSED for each connection without serializing
+        # monitor callbacks for unrelated connections.
+        self._connection_lifecycle_lock = threading.Lock()
+        self._connection_locks = WeakKeyDictionary()
         self._connection_admission_closed = False
+
+    def _get_connection_lock(self, conn: Connection):
+        with self._connection_lifecycle_lock:
+            lock = self._connection_locks.get(conn)
+            if lock is None:
+                lock = threading.RLock()
+                self._connection_locks[conn] = lock
+            return lock
 
     def stop_connection_admission(self):
         """Close admission before cancelling resources or taking a connection snapshot."""
@@ -48,7 +58,7 @@ class BaseDriver(Driver, ABC):
             return self._connection_admission_closed
 
     def add_connection(self, conn: Connection):
-        with self._connection_lifecycle_lock:
+        with self._get_connection_lock(conn):
             with self.conn_lock:
                 admitted = not self._connection_admission_closed and not conn.connector.stopped.is_set()
                 if admitted:
@@ -67,7 +77,7 @@ class BaseDriver(Driver, ABC):
     def close_connection(self, conn: Connection):
         log.debug(f"Connection removed: {self.get_name()}:{conn}")
 
-        with self._connection_lifecycle_lock:
+        with self._get_connection_lock(conn):
             with self.conn_lock:
                 if not self.connections.pop(conn.name, None):
                     log.debug(f"{conn.name} is already removed from driver")

@@ -134,6 +134,36 @@ def test_grpc_server_shutdown_is_repeatable(asynchronous):
         assert native_server.stop.call_count == 2
 
 
+def test_async_grpc_driver_shutdown_reuses_completion(listener_context):
+    driver = aio_grpc_driver.AioGrpcDriver()
+    driver.server = MagicMock()
+
+    async def delayed_shutdown():
+        await asyncio.sleep(0.05)
+
+    driver.server.shutdown = AsyncMock(side_effect=delayed_shutdown)
+    barrier = threading.Barrier(3)
+    completions = []
+
+    def request_shutdown():
+        barrier.wait()
+        completions.append(driver.shutdown())
+
+    callers = [threading.Thread(target=request_shutdown) for _ in range(2)]
+    for caller in callers:
+        caller.start()
+    barrier.wait()
+    for caller in callers:
+        caller.join(5)
+
+    assert all(not caller.is_alive() for caller in callers)
+    assert len(completions) == 2
+    assert completions[0] is completions[1]
+    completions[0].result(5)
+    assert driver.shutdown() is completions[0]
+    driver.server.shutdown.assert_awaited_once()
+
+
 def test_http_server_shutdown_is_repeatable():
     async def shutdown():
         context = MagicMock()
@@ -485,6 +515,52 @@ def test_connection_close_notification_is_idempotent():
     driver.close_connection(conn)
     driver.close_connection(conn)
     assert states == [ConnState.CONNECTED, ConnState.CLOSED]
+
+
+def test_slow_connection_callback_does_not_block_other_connections():
+    driver = TcpDriver()
+    entered = threading.Event()
+    release = threading.Event()
+    other_done = threading.Event()
+    states = []
+    slow, other = MagicMock(), MagicMock()
+    for conn, name in ((slow, "slow"), (other, "other")):
+        conn.name = name
+        conn.connector.stopped = threading.Event()
+
+    def notify(conn):
+        states.append((conn.name, conn.state))
+        if conn is slow and conn.state == ConnState.CONNECTED:
+            entered.set()
+            release.wait(5)
+
+    monitor = MagicMock()
+    monitor.state_change.side_effect = notify
+    driver.register_conn_monitor(monitor)
+
+    slow_adder = threading.Thread(target=driver.add_connection, args=(slow,))
+
+    def add_and_close_other():
+        driver.add_connection(other)
+        driver.close_connection(other)
+        other_done.set()
+
+    other_worker = threading.Thread(target=add_and_close_other)
+    try:
+        slow_adder.start()
+        assert entered.wait(2)
+        other_worker.start()
+        assert other_done.wait(2)
+    finally:
+        release.set()
+        slow_adder.join(5)
+        if other_worker.ident is not None:
+            other_worker.join(5)
+        driver.close_connection(slow)
+
+    assert not slow_adder.is_alive()
+    assert not other_worker.is_alive()
+    assert states.index(("other", ConnState.CONNECTED)) < states.index(("other", ConnState.CLOSED))
 
 
 def test_connection_admitted_before_shutdown_closes_after_connected_notification():

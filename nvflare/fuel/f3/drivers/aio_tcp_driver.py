@@ -121,6 +121,8 @@ class AioTcpDriver(AioBaseDriver):
             task.add_done_callback(self._accept_tasks.discard)
             if self.is_stopping() or self.connector.stopped.is_set():
                 task.cancel()
+        else:
+            log.debug("TLS protocol factory has no accept task; shutdown relies on the handshake timeout")
         return asyncio.StreamReaderProtocol(asyncio.StreamReader(), self._create_connection)
 
     async def _tcp_connect(self, host, port):
@@ -131,8 +133,13 @@ class AioTcpDriver(AioBaseDriver):
     async def _tcp_listen(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
         if self.ssl_context:
+            connect_timeout = self.connector.params.get(DriverParams.CONNECT_TIMEOUT.value, 60.0)
             self.server = await asyncio.get_running_loop().create_server(
-                self._tls_protocol_factory, host, port, ssl=self.ssl_context
+                self._tls_protocol_factory,
+                host,
+                port,
+                ssl=self.ssl_context,
+                ssl_handshake_timeout=min(60.0, float(connect_timeout)),
             )
         else:
             self.server = await asyncio.start_server(self._create_connection, host, port)

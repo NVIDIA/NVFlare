@@ -380,3 +380,39 @@ def test_listener_created_during_shutdown_is_closed():
                     await server.wait_closed()
 
     asyncio.run(shutdown())
+
+
+def test_tls_listener_caps_handshake_by_connect_timeout():
+    async def listen():
+        with patch.object(AioContext, "get_global_context", return_value=MagicMock()):
+            driver = AioTcpDriver()
+        driver.connector = ConnectorInfo(
+            "test", driver, {"scheme": "satcp", "connect_timeout": 5}, Mode.PASSIVE, 0, 0, False, threading.Event()
+        )
+        server = MagicMock()
+        server.serve_forever = AsyncMock()
+        loop = MagicMock()
+        loop.create_server = AsyncMock(return_value=server)
+        with (
+            patch("nvflare.fuel.f3.drivers.aio_tcp_driver.get_ssl_context", return_value=object()),
+            patch("nvflare.fuel.f3.drivers.aio_tcp_driver.asyncio.get_running_loop", return_value=loop),
+        ):
+            await driver._tcp_listen("127.0.0.1", 0)
+        assert loop.create_server.await_args.kwargs["ssl_handshake_timeout"] == 5
+
+    asyncio.run(listen())
+
+
+def test_tls_protocol_factory_reports_missing_accept_task():
+    async def create():
+        with patch.object(AioContext, "get_global_context", return_value=MagicMock()):
+            driver = AioTcpDriver()
+        with (
+            patch("nvflare.fuel.f3.drivers.aio_tcp_driver.asyncio.current_task", return_value=None),
+            patch("nvflare.fuel.f3.drivers.aio_tcp_driver.log.debug") as debug,
+        ):
+            driver._tls_protocol_factory()
+        assert not driver._accept_tasks
+        debug.assert_called_once()
+
+    asyncio.run(create())
