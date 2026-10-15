@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -142,9 +143,9 @@ def test_job_not_stopped_while_device_still_training(device_sampling_strategy):
     assessor, model_manager, device_manager, fl_ctx = _setup(
         num_updates_for_model=2, device_sampling_strategy=device_sampling_strategy
     )
-    # negative timeout forces the timeout path immediately; the test asserts the in-flight guard
-    # prevents it from firing while a device is training
-    assessor.device_wait_timeout = -1
+    # a generous timeout lets the timer arm while the second device trains; the test asserts the
+    # in-flight guard (bounded by the assignment-expiry window) prevents premature firing
+    assessor.device_wait_timeout = 1000
 
     accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
     assert accepted is True
@@ -158,9 +159,9 @@ def test_job_not_stopped_while_device_still_training(device_sampling_strategy):
     )
     assert accepted is True
 
-    # the wait timer must NOT be armed while d2 is still in flight, and assess() must keep the
-    # job running rather than stopping it before d2 reports its update
-    assert assessor.device_wait_start_time is None
+    # the wait timer is armed, but the in-flight guard (bounded by the assignment-expiry window)
+    # keeps the job running while d2 is still training, rather than stopping it before d2 reports
+    assert assessor.device_wait_start_time is not None
     assert assessor.assess(fl_ctx) != Assessment.WORKFLOW_DONE
 
     # d2 reports: the 2nd buffered update advances the model to V2, selection refills for V2
@@ -196,7 +197,9 @@ def test_device_wait_timeout_stops_job_when_pool_exhausted_with_reuse_disabled()
     reported and none can be re-dispatched, the configured wait timeout must stop the job.
     """
     assessor, model_manager, device_manager, fl_ctx = _setup(num_updates_for_model=2, device_reuse=False)
-    assessor.device_wait_timeout = -1
+    # a positive timeout: with -1 the armed timer would fire on the very next report before the
+    # in-flight device's update is processed, which is not what this scenario exercises
+    assessor.device_wait_timeout = 10
 
     # both devices join and are selected for V1
     accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
@@ -204,12 +207,13 @@ def test_device_wait_timeout_stops_job_when_pool_exhausted_with_reuse_disabled()
     reply = StateUpdateReply.from_shareable(reply_shareable)
     assert set(reply.device_selection) == {"d1", "d2"}
 
-    # d1 reports while d2 is still in flight: timer must NOT be armed (d2 is still in current selection)
+    # d1 reports while d2 is still in flight: the timer is armed, but the in-flight guard
+    # (bounded by the assignment-expiry window) keeps the job running until d2 reports
     accepted, reply_shareable = assessor.process_child_update(
         _report(1, model_updates={1: _model_update(1, ["d1"])}), fl_ctx
     )
     assert accepted is True
-    assert assessor.device_wait_start_time is None
+    assert assessor.device_wait_start_time is not None
 
     # d2 reports -> pool exhausted (reuse disabled, neither device can be re-dispatched)
     accepted, reply_shareable = assessor.process_child_update(
@@ -218,6 +222,39 @@ def test_device_wait_timeout_stops_job_when_pool_exhausted_with_reuse_disabled()
     assert accepted is True
 
     # all devices finished and none can be re-dispatched; the current selection is empty, so the
-    # wait timeout must stop the job instead of hanging forever
+    # wait timeout must stop the job instead of hanging forever. Simulate the wait having run past
+    # its timeout (no sleeping in tests).
     assert assessor.device_manager.get_inflight_devices(fl_ctx) == set()
+    assessor.device_wait_start_time = time.time() - 100
+    assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE
+
+
+def test_device_wait_timeout_stops_job_when_selected_device_never_reports():
+    """Regression for Copilot follow-up: a selected device that never reports must not disable the
+    wait timeout forever.
+
+    With device_reuse=False, A reports and B disconnects permanently. B stays in the current
+    selection until it reports, so an unbounded in-flight exemption would keep the timer from ever
+    firing. The exemption is bounded by the assignment expiry: once B's assignment is older than the
+    wait timeout, the timeout is allowed to fire and the job stops.
+    """
+    assessor, model_manager, device_manager, fl_ctx = _setup(num_updates_for_model=2, device_reuse=False)
+    assessor.device_wait_timeout = 10
+
+    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
+    assert accepted is True
+
+    # A reports; B is still selected but will never report (disconnected)
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d1"])}), fl_ctx
+    )
+    assert accepted is True
+    assert "d2" in device_manager.current_selection
+
+    # B's assignment has long expired and the wait timer has run past its timeout
+    now = time.time()
+    device_manager.selection_assignment_time["d2"] = now - 100
+    assessor.device_wait_start_time = now - 100
+
+    # B is in flight but its assignment expired, so the timeout is allowed to fire
     assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE

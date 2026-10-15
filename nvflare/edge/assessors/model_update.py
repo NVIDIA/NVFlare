@@ -76,19 +76,21 @@ class ModelUpdateAssessor(Assessor):
         if self.device_wait_start_time is None or self.device_wait_timeout is None:
             return False
 
-        # Devices may still be training (in flight). We are making progress and must not stop
-        # the job on a wait timeout in this state - doing so would end the job before the
-        # in-flight device reports its update (Greptile P1: job stops during training). Only
-        # count down when there are no in-flight devices.
-        if self.device_manager.get_inflight_devices(fl_ctx):
+        # A device may still be training (in flight). We must not stop the job on a wait timeout
+        # while that device is reasonably expected to report (Greptile P1: job stops during training).
+        # But a device selected and never reporting (e.g. disconnected) must not disable the timeout
+        # forever - once its assignment exceeds the wait timeout, allow the timeout to fire
+        # (Copilot follow-up). So we suppress firing only while an in-flight device was assigned
+        # within the wait-timeout window.
+        if self.device_manager.get_inflight_devices(fl_ctx) and self.device_manager.is_any_inflight_device_recent(
+            fl_ctx, self.device_wait_timeout
+        ):
             return False
 
         try:
             elapsed = time.time() - self.device_wait_start_time
             if elapsed > self.device_wait_timeout:
-                usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                    self.device_manager.get_used_devices(fl_ctx).keys()
-                )
+                usable_devices = self.device_manager.get_usable_devices(fl_ctx)
                 self.log_error(
                     fl_ctx,
                     f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
@@ -115,9 +117,7 @@ class ModelUpdateAssessor(Assessor):
         elapsed = current_time - self._last_device_status_log_time
 
         if elapsed >= self.device_status_log_interval:
-            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                self.device_manager.get_used_devices(fl_ctx).keys()
-            )
+            usable_devices = self.device_manager.get_usable_devices(fl_ctx)
 
             # Add timeout info if we're actually waiting with a timeout
             timeout_msg = ""
@@ -213,9 +213,7 @@ class ModelUpdateAssessor(Assessor):
         # Check for device wait timeout if we are waiting for devices
         if self.device_wait_start_time is not None and self._is_device_wait_timeout_exceeded(fl_ctx):
             # Timeout exceeded, prepare an empty reply and stop the job
-            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                self.device_manager.get_used_devices(fl_ctx).keys()
-            )
+            usable_devices = self.device_manager.get_usable_devices(fl_ctx)
             self.log_error(
                 fl_ctx,
                 f"Total devices: {len(self.device_manager.available_devices)}, usable: {len(usable_devices)}, expected: {self.device_manager.device_selection_size}. "
@@ -271,13 +269,12 @@ class ModelUpdateAssessor(Assessor):
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:
-                # While a device is still training (in flight) we are making progress and must not
-                # treat that as "waiting for devices to join" - otherwise the wait timeout could
-                # stop the job before the in-flight device reports (Greptile P1: job stops during
-                # training). Only arm/keep the timer when there are no in-flight devices.
-                if self.device_manager.get_inflight_devices(fl_ctx):
-                    self.device_wait_start_time = None
-                elif self.device_wait_start_time is None:
+                # The selection cannot be filled right now. Arm the wait timer if it is not already
+                # running. A device still in flight does NOT cancel the timer - the guard in
+                # _is_device_wait_timeout_exceeded() only suppresses firing while an in-flight device
+                # was assigned within the wait-timeout window, so a selected device that never reports
+                # (disconnected) will still let the timeout fire (Copilot follow-up).
+                if self.device_wait_start_time is None:
                     self.device_wait_start_time = time.time()
                     self.log_info(fl_ctx, f"Starting device wait timer (timeout: {self.device_wait_timeout}s)")
 

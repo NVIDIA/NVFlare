@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import random
+import time
 from collections import Counter, defaultdict
 from typing import Dict, Set
 
@@ -222,6 +223,7 @@ class BuffDeviceManager(DeviceManager):
                     for device_id in selected_devices:
                         # current_selection keeps track of devices selected for a particular model version
                         self.current_selection[device_id] = current_model_version
+                        self.selection_assignment_time[device_id] = time.time()
                         self.used_devices[device_id] = {
                             "model_version": current_model_version,
                             "selection_version": self.current_selection_version,
@@ -232,6 +234,7 @@ class BuffDeviceManager(DeviceManager):
                         usable_devices.remove(device_id)
                         # current_selection keeps track of devices selected for a particular model version
                         self.current_selection[device_id] = current_model_version
+                        self.selection_assignment_time[device_id] = time.time()
                         self.used_devices[device_id] = {
                             "model_version": current_model_version,
                             "selection_version": self.current_selection_version,
@@ -267,6 +270,7 @@ class BuffDeviceManager(DeviceManager):
                 # this prevents it from being re-selected for the same model version (issue #5347, Option B).
                 self.device_last_contributed_version[device_id] = assigned_version
             self.current_selection.pop(device_id, None)
+            self.selection_assignment_time.pop(device_id, None)
 
     def remove_devices_from_used(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
@@ -324,3 +328,9 @@ class BuffDeviceManager(DeviceManager):
         the wait timeout would let an exhausted pool hang forever (Greptile follow-up P1).
         """
         return set(self.current_selection.keys())
+
+    def get_usable_devices(self, fl_ctx) -> Set[str]:
+        # eligible devices = available - in-flight (used) - already contributed to current model version.
+        # Overrides the base default so status logging / timeout diagnostics agree with scheduling
+        # (Option B requirement that status logging matches eligibility).
+        return self._compute_usable_devices()

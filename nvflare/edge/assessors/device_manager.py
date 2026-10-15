@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Set
 
@@ -37,6 +39,7 @@ class DeviceManager(FLComponent, ABC):
         self.current_selection = {}
         self.available_devices = {}
         self.used_devices = {}
+        self.selection_assignment_time = {}
 
     @abstractmethod
     def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
@@ -149,6 +152,25 @@ class DeviceManager(FLComponent, ABC):
         if isinstance(selection, dict):
             return set(selection.keys())
         return set(selection)
+
+    def get_usable_devices(self, fl_ctx: FLContext) -> Set[str]:
+        """Devices eligible to be selected right now (default: available minus used).
+
+        Subclasses with richer eligibility rules (e.g. contribution-based exclusion) should override
+        this so that status logging and timeout diagnostics agree with scheduling.
+        """
+        return set(self.available_devices.keys()) - set(self.used_devices.keys())
+
+    def is_any_inflight_device_recent(self, fl_ctx: FLContext, deadline: float) -> bool:
+        """True if any currently-selected (in-flight) device was assigned within ``deadline`` seconds.
+
+        The wait-timeout logic uses this to suppress the timeout only while an in-flight device is
+        reasonably expected to report. A device that was selected but never reports (e.g.
+        disconnected) eventually exceeds ``deadline`` and no longer suppresses the timeout, so the
+        job can still be stopped instead of hanging forever (Copilot follow-up on the in-flight guard).
+        """
+        now = time.time()
+        return any(now - t <= deadline for t in self.selection_assignment_time.values())
 
     def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Get the available devices.
