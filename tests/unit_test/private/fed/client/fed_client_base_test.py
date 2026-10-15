@@ -224,8 +224,8 @@ def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, schem
                 assert stopped.wait(2)
                 context = get_ssl_context({**server_credentials, "scheme": "stcp"}, ssl_server=True)
                 connection.settimeout(3)
-                # The driver now owns the pending socket. A late TLS response
-                # must fail because shutdown has already closed that socket.
+                # Shutdown wakes the pending handshake, then the connecting
+                # thread closes its socket before the probe returns.
                 with pytest.raises((ssl.SSLError, ConnectionResetError, BrokenPipeError)):
                     with context.wrap_socket(connection, server_side=True):
                         pass

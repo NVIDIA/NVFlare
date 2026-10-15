@@ -143,10 +143,13 @@ class TcpDriver(BaseDriver):
             pending = list(self._pending_sockets)
         for sock in pending:
             try:
-                sock.shutdown(socket.SHUT_RDWR)
+                # Wake the owner thread without clearing SSLSocket's state or
+                # closing its descriptor while a handshake is still using it.
+                socket.socket.shutdown(sock, socket.SHUT_RDWR)
             except OSError:
+                # The socket may not have connected yet, or its owner may
+                # already have closed it. The owner closes it in either case.
                 pass
-            sock.close()
         if server:
             server.shutdown()
         self.close_all()

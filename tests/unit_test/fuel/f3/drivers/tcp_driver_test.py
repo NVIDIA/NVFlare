@@ -161,9 +161,39 @@ def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
             shutdown.join(2)
             assert not shutdown.is_alive(), "an idle TLS handshake blocked shutdown"
             assert driver.server.socket.fileno() == -1
-            # The driver owns and closes the pending handshake, even though no
-            # completed connection has entered its connection registry yet.
+            # The driver wakes the pending handshake; socketserver closes
+            # the request socket after the handler returns.
             assert peer.recv(1) == b""
+
+
+def test_shutdown_wakes_pending_tls_socket_without_closing_it(monkeypatch):
+    driver = TcpDriver()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    raw, peer = socket.socketpair()
+    with raw, peer, context.wrap_socket(raw, do_handshake_on_connect=False) as owned:
+        assert driver.register_pending_socket(owned)
+        monkeypatch.setattr(ssl.SSLSocket, "shutdown", MagicMock(side_effect=AssertionError("SSL shutdown called")))
+
+        driver.shutdown()
+
+        assert owned.fileno() >= 0
+        assert owned._sslobj is not None
+        peer.settimeout(1)
+        assert peer.recv(1) == b""
+        driver.release_pending_socket(owned)
+
+
+def test_shutdown_leaves_unconnected_pending_socket_for_owner_to_close():
+    driver = TcpDriver()
+    with socket.socket() as owned:
+        assert driver.register_pending_socket(owned)
+
+        driver.shutdown()  # shutdown(SHUT_RDWR) can raise ENOTCONN here.
+
+        assert owned.fileno() >= 0
+        driver.release_pending_socket(owned)
 
 
 def test_tls_handshake_honors_longer_url_connection_timeout(tls_listener):
