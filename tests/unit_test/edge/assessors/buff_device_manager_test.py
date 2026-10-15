@@ -119,15 +119,18 @@ def test_fill_selection_excludes_inflight_devices():
     selected_before = set(mgr.current_selection)
     assert len(selected_before) == 2
 
-    # d1 reports; the other selected device is still in-flight and must not be re-added
-    _report_contribution(mgr, ["d1"], fl_ctx)
+    # report a device that was actually selected, so a real hole is created and refilled.
+    # the sampler may have chosen any two of d1/d2/d3, so pick from the actual selection
+    # (otherwise reporting an unselected device would skip the refill path entirely).
+    reported = next(iter(selected_before))
+    inflight = selected_before - {reported}
+    _report_contribution(mgr, [reported], fl_ctx)
     mgr.fill_selection(current_model_version=1, fl_ctx=fl_ctx)
 
-    # the in-flight device (selected before, other than d1) is preserved
-    inflight = selected_before - {"d1"}
+    # the in-flight device (the selected one other than the reported one) is preserved
     assert inflight <= set(mgr.current_selection)
-    # d1 is never re-selected, and exactly one new device fills the hole
-    assert "d1" not in mgr.current_selection
+    # the reported device is never re-selected, and exactly one new device fills the hole
+    assert reported not in mgr.current_selection
     assert len(mgr.current_selection) == 2
 
 

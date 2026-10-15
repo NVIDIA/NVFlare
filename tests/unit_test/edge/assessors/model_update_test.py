@@ -18,6 +18,7 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
+from nvflare.edge.assessor import Assessment
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
 from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
@@ -121,3 +122,62 @@ def test_batched_reports_allow_partial_refill_and_do_not_stall(device_sampling_s
     assert device_manager.current_model_version == 2
     assert len(reply.device_selection) == 2
     assert all(v == 2 for v in reply.device_selection.values())
+
+
+@pytest.mark.parametrize("device_sampling_strategy", ["balanced", "random"])
+def test_job_not_stopped_while_device_still_training(device_sampling_strategy):
+    """Regression for Greptile P1: the job must not be stopped while a device is still training.
+
+    device_selection_size=2, num_updates_for_model=2, device_reuse=True, two devices.
+    After startup both devices are selected for V1. The first device reports its update, which
+    makes has_enough_devices_and_clients False because the reporter is now excluded and the second
+    device is still in flight. The wait timer must NOT be armed (and assess() must not stop the
+    job) while the second device is still training; only after it reports does the model advance
+    and the selection refill for V2.
+    """
+    assessor, model_manager, device_manager, fl_ctx = _setup(
+        num_updates_for_model=2, device_sampling_strategy=device_sampling_strategy
+    )
+    # negative timeout forces the timeout path immediately; the test asserts the in-flight guard
+    # prevents it from firing while a device is training
+    assessor.device_wait_timeout = -1
+
+    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
+    assert accepted is True
+    reply = StateUpdateReply.from_shareable(reply_shareable)
+    assert reply.model_version == 1
+    assert set(reply.device_selection) == {"d1", "d2"}
+
+    # d1 reports its V1 update; d2 is still in flight (training)
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d1"])}), fl_ctx
+    )
+    assert accepted is True
+
+    # the wait timer must NOT be armed while d2 is still in flight, and assess() must keep the
+    # job running rather than stopping it before d2 reports its update
+    assert assessor.device_wait_start_time is None
+    assert assessor.assess(fl_ctx) != Assessment.WORKFLOW_DONE
+
+    # d2 reports: the 2nd buffered update advances the model to V2, selection refills for V2
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d2"])}), fl_ctx
+    )
+    assert accepted is True
+    reply = StateUpdateReply.from_shareable(reply_shareable)
+    assert reply.model_version == 2
+    assert set(reply.device_selection) == {"d1", "d2"}
+    assert all(v == 2 for v in reply.device_selection.values())
+
+
+def test_device_wait_timeout_still_stops_job_when_no_device_in_flight():
+    """The legitimate device wait timeout must still stop the job when no device is in flight."""
+    assessor, model_manager, device_manager, fl_ctx = _setup(num_updates_for_model=2)
+    assessor.device_wait_timeout = -1
+
+    # only one device joins and startup cannot fill the selection; no device is in flight, so the
+    # wait timer is armed and assess() stops the job
+    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1"])), fl_ctx)
+    assert accepted is True
+    assert assessor.device_wait_start_time is not None
+    assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE
