@@ -30,8 +30,9 @@ import json, os, sys
 from pathlib import Path
 
 stage = sys.argv[1]
+approved_file = Path(sys.argv[2])
 root = Path(os.environ["TEST_ROOT"])
-values = json.loads((root / "approved.json").read_text())
+values = json.loads(approved_file.read_text())
 state = root / "state"
 calls = root / "calls"
 history = calls.read_text().splitlines() if calls.exists() else []
@@ -42,11 +43,17 @@ if stage == "clear":
     if mode == "failed_compensation" and history.count("clear") > 1:
         raise SystemExit(17)
     (state / "allowed_driver_versions.json").write_text("[]")
+    if history.count("clear") == 1:
+        if mode == "source_changed":
+            changed = {**values, "allowed_driver_versions": ["wrong-driver"]}
+            (root / "approved.json").write_text(json.dumps(changed))
+        elif mode in ("source_deleted", "source_deleted_failed_final"):
+            (root / "approved.json").unlink()
 elif stage == "vbios":
     (state / "allowed_vbios_versions.json").write_text(json.dumps(values["allowed_vbios_versions"]))
 elif stage == "drivers":
     (state / "allowed_driver_versions.json").write_text(json.dumps(sorted(values["allowed_driver_versions"])))
-    if mode in ("ambiguous_final_write", "failed_compensation"):
+    if mode in ("ambiguous_final_write", "failed_compensation", "source_deleted_failed_final"):
         raise SystemExit(18)
     if mode == "interrupt":
         import signal
@@ -63,20 +70,21 @@ AS_STORAGE_DIR="$TEST_ROOT/as"
 TRUSTEE_PROJECT="test"
 TRUSTEE_COMPOSE="$TEST_ROOT/compose.yml"
 KBS_URL="https://service.test:8443"
-lock_platform_reference_update() { :; }
+lock_platform_reference_update() { echo LOCK >> "$TEST_ROOT/events"; }
 require_sudo() { :; }
 sleep() { :; }
 need_file() { [[ -f "$1" ]]; }
 die() { echo "$*" >&2; exit 1; }
 python3() {
     if [[ "${2:-}" == post-stage ]]; then
-        "$REAL_PYTHON" "$TEST_ROOT/fake-post.py" "$4"
+        "$REAL_PYTHON" "$TEST_ROOT/fake-post.py" "$4" "$3"
     else
         "$REAL_PYTHON" "$@"
     fi
 }
 sudo() {
     if [[ "$1" == docker ]]; then
+        echo RESTART >> "$TEST_ROOT/events"
         echo RESTART >> "$TEST_ROOT/calls"
         if [[ ${TEST_MODE:-} == lost_on_restart ]]; then
             rm -f "$TEST_ROOT/state/allowed_driver_versions.json"
@@ -87,6 +95,7 @@ sudo() {
 }
 kbs_admin() {
     [[ "$1" == get-reference-value && "$2" == --id ]] || return 2
+    echo "GET:$3" >> "$TEST_ROOT/events"
     cat "$TEST_ROOT/state/$3.json"
 }
 """
@@ -183,7 +192,21 @@ def test_staged_install_preserves_cpu_and_policies(kit):
     assert all((root / name).read_bytes() == original for name, original in before.items())
 
 
-@pytest.mark.parametrize("mode", ["ambiguous_final_write", "failed_compensation", "interrupt"])
+@pytest.mark.parametrize("mode", ["source_changed", "source_deleted"])
+def test_install_uses_saved_snapshot_after_incoming_file_changes(kit, mode):
+    root, _ = kit
+    result = run_stage(kit, mode)
+    assert result.returncode == 0, result.stderr
+    assert (root / "calls").read_text().splitlines() == ["clear", "vbios", "drivers"]
+    assert json.loads((root / "state/allowed_driver_versions.json").read_text()) == ["550.54.15"]
+    assert json.loads((root / "approved-gpu-reference-values.json").read_text())["allowed_driver_versions"] == [
+        "550.54.15"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mode", ["ambiguous_final_write", "failed_compensation", "interrupt", "source_deleted_failed_final"]
+)
 def test_ambiguous_or_interrupted_final_write_compensates_or_reports_unknown(kit, mode):
     root, _ = kit
     result = run_stage(kit, mode)
@@ -196,6 +219,41 @@ def test_ambiguous_or_interrupted_final_write_compensates_or_reports_unknown(kit
     else:
         assert drivers == []
         assert "cleared after failure" in result.stderr
+
+
+def test_restart_lock_precedes_first_readback_and_restart(kit):
+    root, environment = kit
+    assert run_stage(kit).returncode == 0
+    (root / "events").unlink()
+    result = subprocess.run(
+        ["bash", str(root / "10g-verify-gpu-reference-values.sh"), str(root / "approved.json"), "--restart-rvps"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (root / "events").read_text().splitlines()[:4] == [
+        "LOCK",
+        "GET:allowed_vbios_versions",
+        "GET:allowed_driver_versions",
+        "RESTART",
+    ]
+
+
+def test_readback_only_does_not_acquire_a_second_admin_lock(kit):
+    root, environment = kit
+    assert run_stage(kit).returncode == 0
+    (root / "events").unlink()
+    result = subprocess.run(
+        ["bash", str(root / "10g-verify-gpu-reference-values.sh"), str(root / "approved.json")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (root / "events").read_text().splitlines() == ["GET:allowed_vbios_versions", "GET:allowed_driver_versions"]
 
 
 @pytest.mark.parametrize("mode", ["normal", "lost_on_restart"])

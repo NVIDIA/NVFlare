@@ -8,6 +8,9 @@ VALUES=$(realpath -e -- "$1")
 PARSER="$SCRIPT_DIR/lib/gpu-reference-values.py"
 python3 "$PARSER" validate "$VALUES"
 source "$SCRIPT_DIR/lib/common.sh"
+if [[ ${2:-} == --restart-rvps ]]; then
+    lock_platform_reference_update
+fi
 require_sudo
 for file in "$KBS_CLIENT" "$ADMIN_TOKEN" "$TRUSTEE_PUBLIC_CERT"; do need_file "$file"; done
 

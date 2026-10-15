@@ -42,6 +42,9 @@ if [[ ${3:-} == --configure-only ]]; then
 fi
 
 source "$SCRIPT_DIR/lib/common.sh"
+[[ -n ${GPU_REFERENCE_VALUES_FILE:-} ]] || die 'Approved GPU reference snapshot was not configured'
+VALUES=$(realpath -e -- "$GPU_REFERENCE_VALUES_FILE")
+python3 "$PARSER" validate "$VALUES"
 verify_stage() {
     local stage=$1 reference_id raw
     reference_id=$(python3 "$PARSER" reference-id "$VALUES" "$stage")

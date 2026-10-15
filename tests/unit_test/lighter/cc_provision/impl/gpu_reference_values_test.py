@@ -107,6 +107,31 @@ def test_gpu_snapshot_is_private_and_cpu_selector_is_preserved(tmp_path):
         GPU.update_env(values(), env)
 
 
+def test_maximal_valid_compact_input_remains_readable_after_snapshot(tmp_path):
+    approved = {
+        "schema": GPU.SCHEMA,
+        "allowed_driver_versions": [f"D{i:02d}" + "a" * 119 for i in range(64)],
+        "allowed_vbios_versions": [f"V{i:02d}" + "b" * 119 for i in range(64)],
+    }
+    assert len(json.dumps(approved, separators=(",", ":")).encode()) < GPU.MAX_BYTES
+    assert len(json.dumps(approved, indent=2).encode()) > GPU.MAX_BYTES
+    env = tmp_path / "platform.env"
+    env.write_text('GPU_REFERENCE_VALUES_FILE=""\n')
+    GPU.update_env(approved, env)
+    snapshot = tmp_path / "approved-gpu-reference-values.json"
+    assert snapshot.stat().st_size <= GPU.MAX_BYTES
+    assert GPU.load_values(snapshot) == approved
+
+    # An exactly maximal compact input is valid; snapshotting must not add a byte.
+    approved["allowed_driver_versions"] = [
+        version + ("x" * 6 if index < 48 else "") for index, version in enumerate(approved["allowed_driver_versions"])
+    ]
+    assert len(json.dumps(approved, separators=(",", ":")).encode()) == GPU.MAX_BYTES
+    GPU.update_env(approved, env)
+    assert snapshot.stat().st_size == GPU.MAX_BYTES
+    assert GPU.load_values(snapshot) == approved
+
+
 def test_gpu_post_stage_touches_only_selected_reference(monkeypatch):
     sent = []
     monkeypatch.setattr(GPU._transport, "post_reference", lambda message, *_: sent.append(message))

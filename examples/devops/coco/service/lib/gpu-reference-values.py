@@ -117,7 +117,10 @@ def update_env(values, filename):
         raise ValueError("Expected at most one GPU_REFERENCE_VALUES_FILE assignment")
     if count == 0:
         text += ("" if text.endswith("\n") or not text else "\n") + assignment + "\n"
-    atomic_write(snapshot, json.dumps(values, indent=2) + "\n")
+    serialized = json.dumps(values, separators=(",", ":"))
+    if len(serialized.encode()) > MAX_BYTES:
+        raise ValueError("GPU reference snapshot exceeds 16384 bytes")
+    atomic_write(snapshot, serialized)
     atomic_write(path, text)
 
 
