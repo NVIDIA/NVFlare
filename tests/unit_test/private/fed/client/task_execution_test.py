@@ -860,7 +860,8 @@ def test_statistics_requires_explicit_configured_generator(generator_id):
         prepare_task_execution(config)
 
 
-def test_statistics_generator_has_fresh_direct_lifecycle_for_each_assignment(native_task):
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_statistics_generator_has_fresh_direct_lifecycle_for_each_assignment(native_task, wrapped):
     from nvflare.app_common.abstract.statistics_spec import StatisticConfig
     from nvflare.app_common.app_constant import StatisticsConstants as StC
     from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
@@ -899,6 +900,10 @@ class ProbeStatistics(Statistics):
     )
     config = _statistics_config()
     config["components"][0]["args"] = {"marker": str(marker)}
+    if wrapped:
+        config["components"][0]["args"] = {"class_attributes": config["components"][0]["args"]}
+        executor = config["executors"][0]["executor"]
+        executor["args"] = {"class_attributes": executor["args"]}
     plan = prepare_task_execution(config).executors[0]
     adapter = TaskWorkerExecutor(plan.executor, plan.components, policy)
     adapter.handle_event(EventType.START_RUN, context)
@@ -930,3 +935,19 @@ class ProbeStatistics(Statistics):
     assert events[2][1] == events[3][1]
     assert events[0][1] != events[2][1]
     assert all(entry[1] != os.getpid() for entry in events)
+
+
+def test_wrapped_client_api_settings_preserve_mode_and_deadline(tmp_path):
+    config = _config(result_wait_timeout=12)
+    executor = config["executors"][0]["executor"]
+    executor["args"] = {"class_attributes": executor["args"]}
+    configurator = _configure(tmp_path, config)
+    assert configurator.executors[0].executor.result_wait_timeout == 12
+
+
+@pytest.mark.parametrize("attributes", [None, [], "invalid"])
+def test_wrapped_constructor_attributes_require_a_dict(attributes):
+    config = _config()
+    config["executors"][0]["executor"]["args"] = {"class_attributes": attributes}
+    with pytest.raises(ValueError, match="class_attributes.*dict"):
+        prepare_task_execution(config)

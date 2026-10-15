@@ -33,7 +33,9 @@ CJ and is constructed in the worker before input decoding when custom payload
 codecs are configured. This serialization setup is independent of compute lifetime.
 Task workers do not build nested components or place dependency graphs.
 `component_dependencies` and `execution_scope` are rejected on worker specifications.
-Ordinary constructor dictionaries marked `config_type: "dict"` remain data.
+The existing `args.class_attributes` constructor wrapper is supported without
+nested component construction. Ordinary constructor dictionaries marked
+`config_type: "dict"` remain data.
 Jobs cannot configure the framework's internal adapter, launcher, environment
 policy or declared task state.
 
@@ -133,7 +135,9 @@ loader; no separate worker component builder is needed.
 The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and `finalize(fl_ctx)`
 calls on its executor or Client API runner. Finalization also runs after partial
 initialization and execution failure. The first failure is retained in failure.json;
-a later cleanup error cannot replace it. Decomposer registration is constructor
+a later cleanup error cannot replace it. StatisticsExecutor propagates generator
+finalization failures to its caller so they cannot produce a successful task
+completion. Decomposer registration is constructor
 setup, with no lifecycle calls. Lifecycle events, registered event handlers and
 before/after-task event hooks are not dispatched in the worker.
 
@@ -224,3 +228,6 @@ shutdown, recheck cancellation before sending, retain the saved result through
 receipt retries, and release successful disk payloads after terminal receipt.
 Sim/POC/Prod E2E tests must exercise these boundaries, including process
 termination and filesystem failure after completion publication.
+
+Released attempts leave the supervisor cleanup set and drop their owned handles.
+Lightweight launch identities remain for the job lifetime to prevent relaunch.

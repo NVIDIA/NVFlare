@@ -34,9 +34,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskLaunchRequest
+from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
+from nvflare.fuel.utils import fobs
 from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
@@ -58,6 +62,7 @@ import os
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.statistics_spec import Statistics
 
 
 class ProbeExecutor(Executor):
@@ -95,6 +100,17 @@ class ProbeExecutor(Executor):
 class RaiseExecutor(ProbeExecutor):
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         raise ValueError("deliberate worker failure")
+
+
+class FailingFinalizeStatistics(Statistics):
+    def features(self):
+        return {}
+
+    def count(self, dataset_name, feature_name):
+        return 8
+
+    def finalize(self, fl_ctx):
+        raise ValueError("statistics cleanup failed")
 
 
 class ReferenceExecutor(Executor):
@@ -375,11 +391,14 @@ def test_bootstrap_cannot_override_authoritative_runtime_properties(tmp_path, pr
     assert not import_marker.exists()
 
 
-def test_unmodified_np_trainer_keeps_workspace_model_state_across_fresh_workers(tmp_path):
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_unmodified_np_trainer_keeps_workspace_model_state_across_fresh_workers(tmp_path, wrapped):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer", "args": {"delta": 2}}
+    if wrapped:
+        executor["args"] = {"class_attributes": executor["args"]}
     train_identity = _identity("attempt-train", task_id="task-train", task_name=AppConstants.TASK_TRAIN)
     train_data = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: np.asarray([1.0, 2.0])}).to_shareable()
     _stage(store, train_identity, workspace_root, executor, train_data)
@@ -1292,3 +1311,34 @@ def test_direct_exception_cannot_replace_an_earlier_panic_or_abort(tmp_path, mon
     assert calls.count("finalize") == 1
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_completion(identity)
+
+
+def test_statistics_finalize_failure_prevents_worker_completion(tmp_path):
+    root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("stats-finalize-failure", task_name=StC.FED_STATS_TASK)
+    fobs_registration()
+    bootstrap_path = _stage(
+        store,
+        identity,
+        root,
+        executor={
+            "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+            "args": {"generator_id": "statistics"},
+        },
+        components=({"id": "statistics", "path": "worker_components.FailingFinalizeStatistics"},),
+        data=Shareable(
+            {
+                StC.STATISTICS_TASK_KEY: StC.STATS_1st_STATISTICS,
+                StC.STATS_TARGET_STATISTICS: fobs.dumps([StatisticConfig("count", {})]),
+            }
+        ),
+    )
+    process = _run_process(bootstrap_path)
+    assert process.returncode != 0, process.stderr
+    failure = store.read_failure(identity)
+    assert failure["error_type"] == "ValueError"
+    assert "statistics cleanup failed" in failure["message"]
+    assert not Path(store.attempt_dir(identity), "completion.json").exists()
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_result(identity)

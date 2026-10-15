@@ -18,6 +18,7 @@ import signal
 import sys
 import threading
 import time
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -767,3 +768,18 @@ main()
     supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
     supervisor.end_run()
     assert _payload(attempt).exists() is (fault != "none")
+
+
+def test_released_attempts_drop_owned_handles_but_cannot_be_relaunched(tmp_path):
+    supervisor = TaskSupervisor()
+    released = []
+    for index in range(12):
+        attempt, _handle = _attempt(tmp_path, attempt_id=f"attempt-{index}")
+        outcome = supervisor.run(**attempt)
+        released.append(weakref.ref(supervisor._attempts[outcome.identity]))
+        assert supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+        assert not _payload(attempt).exists()
+        assert all(reference() is None for reference in released)
+        with pytest.raises(RuntimeError, match="already owned"):
+            supervisor.run(**attempt)
+    assert len(supervisor._launch_identities) == 12

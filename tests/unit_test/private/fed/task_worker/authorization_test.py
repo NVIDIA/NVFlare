@@ -136,15 +136,35 @@ def test_warn_policy_is_preserved(authorize):
     check({"path": "unlisted.Executor"})
 
 
-def test_statistics_generator_is_authorized_before_import(authorize):
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_statistics_generator_is_authorized_before_import(authorize, wrapped):
     check, _ctx, resources = authorize
     resources.write_text(json.dumps({"class_allow_list": ["allowed.", "nvflare."]}))
     executor = {
         "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
         "args": {"generator_id": "generator"},
     }
+    if wrapped:
+        executor["args"] = {"class_attributes": executor["args"]}
     check(executor, components=({"id": "generator", "path": "allowed.Statistics"},))
     with pytest.raises(ComponentNotAuthorized, match="forbidden.Statistics.*components.#1"):
         check(executor, components=({"id": "generator", "path": "forbidden.Statistics"},))
     with pytest.raises(ValueError, match="generator_id"):
         check(executor)
+
+
+def test_wrapped_constructor_arguments_cannot_hide_nested_components(authorize):
+    check, _ctx, _resources = authorize
+    with pytest.raises(ValueError, match="nested components are not supported"):
+        check(
+            {
+                "path": "allowed.Executor",
+                "args": {
+                    "class_attributes": {
+                        "path": "ordinary-value",
+                        "name": "ordinary-name",
+                        "helper": {"path": "forbidden.Helper"},
+                    }
+                },
+            }
+        )

@@ -406,7 +406,8 @@ class TaskSupervisor:
         for attempt in attempts:
             with self._state_lock:
                 if (
-                    not attempt.settled
+                    self._settlement_unconfirmed
+                    or not attempt.settled
                     or not attempt.validated
                     or attempt.failed
                     or attempt.receipt is None
@@ -426,3 +427,9 @@ class TaskSupervisor:
                 with self._state_lock:
                     attempt.released = True
                 self._diagnostic(attempt, "released")
+                with self._state_lock:
+                    if not attempt.failed:
+                        # Replay prevention needs only _launch_identities;
+                        # released attempts must not retain handles or join
+                        # every later cleanup scan.
+                        self._attempts.pop(attempt.identity, None)

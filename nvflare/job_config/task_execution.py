@@ -89,6 +89,12 @@ def task_constructor_args(config):
     args = config.get("args", {})
     if not isinstance(args, dict):
         raise ValueError("component args must be a dict")
+    # Match ComponentBuilder's existing constructor-argument wrapper without
+    # restoring nested component construction in task workers.
+    if "class_attributes" in args:
+        args = args["class_attributes"]
+        if not isinstance(args, dict):
+            raise ValueError("component class_attributes must be a dict")
     scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
 
     def check(value):

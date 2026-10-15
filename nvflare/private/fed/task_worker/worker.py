@@ -118,7 +118,9 @@ def _authorize_bootstrap(bootstrap, workspace, fl_ctx):
     config = bootstrap.to_dict()
     executor = config["executor"]
     generator_id = (
-        executor.get("args", {}).get("generator_id") if _class_path(executor) == STATISTICS_EXECUTOR_PATH else None
+        task_constructor_args(executor).get("generator_id")
+        if _class_path(executor) == STATISTICS_EXECUTOR_PATH
+        else None
     )
     if _class_path(executor) == STATISTICS_EXECUTOR_PATH and (
         not isinstance(generator_id, str) or generator_id not in {spec["id"] for spec in config["components"]}
