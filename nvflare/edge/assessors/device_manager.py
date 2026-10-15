@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import time
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Set
 
@@ -168,9 +167,22 @@ class DeviceManager(FLComponent, ABC):
         reasonably expected to report. A device that was selected but never reports (e.g.
         disconnected) eventually exceeds ``deadline`` and no longer suppresses the timeout, so the
         job can still be stopped instead of hanging forever (Copilot follow-up on the in-flight guard).
+
+        Device managers that do not record assignment times (e.g. an existing custom ``DeviceManager``
+        subclass) keep the previous behavior: their in-flight devices are always treated as still
+        training, so the timeout cannot stop the job mid-training (Greptile follow-up: custom jobs
+        stop during training).
         """
+        inflight = self.get_inflight_devices(fl_ctx)
+        if not inflight:
+            return False
+        tracked = [self.selection_assignment_time[d] for d in inflight if d in self.selection_assignment_time]
+        if not tracked:
+            # no assignment timestamps recorded for the in-flight devices - preserve the previous
+            # behavior instead of assuming those devices are stuck.
+            return True
         now = time.time()
-        return any(now - t <= deadline for t in self.selection_assignment_time.values())
+        return any(now - t <= deadline for t in tracked)
 
     def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Get the available devices.

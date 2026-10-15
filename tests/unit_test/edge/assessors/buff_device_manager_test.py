@@ -256,3 +256,18 @@ def test_base_get_inflight_devices_default_for_custom_manager():
     assert mgr.get_inflight_devices(fl_ctx) == {"d1", "d2"}
     mgr.current_selection = {}
     assert mgr.get_inflight_devices(fl_ctx) == set()
+
+
+def test_is_any_inflight_device_recent_preserves_behavior_without_timestamps():
+    # Regression for Greptile follow-up P1: a custom DeviceManager that does not record assignment
+    # times must keep the previous behavior - its in-flight devices are treated as still training,
+    # so the wait timeout cannot stop the job while a device is selected. Only managers that do
+    # record timestamps get the assignment-expiry bound.
+    mgr = _MinimalDeviceManager()
+    mgr.current_selection = {"d1": 1}
+    fl_ctx = FLContext()
+    # no timestamps recorded -> previous behavior preserved (in-flight == still training)
+    assert mgr.is_any_inflight_device_recent(fl_ctx, 10) is True
+    # no in-flight devices -> nothing to protect
+    mgr.current_selection = {}
+    assert mgr.is_any_inflight_device_recent(fl_ctx, 10) is False
