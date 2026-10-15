@@ -32,6 +32,46 @@ digest, and returns a measured Pod. The public production directory contains
 only the Pod handoff and `cc_manifests/<participant>.json`; source, credentials,
 receipts, and plaintext kits remain below private state.
 
+## In-process executor workaround
+
+For the [external-process executor limitation](../FL-DEPLOYMENT.md#executor-limitation-and-workaround),
+use a reviewed executor that performs training in the NVFlare job process:
+
+1. Install the executor as an importable Python package, together with its
+   reviewed training code and dependencies, in the participant's application
+   image. The executor must perform the work in process rather than launch an
+   external training command.
+2. Add its exact fully qualified class name to the top-level `class_allow_list`
+   in that participant's `cc_site-*.yml`, preserving any other required entries:
+
+   ```yaml
+   class_allow_list:
+     - my_training.executor.InProcessExecutor
+   ```
+
+3. Reference that same class in the job's client configuration:
+
+   ```json
+   {
+     "executors": [
+       {
+         "tasks": ["*"],
+         "executor": {
+           "path": "my_training.executor.InProcessExecutor",
+           "args": {}
+         }
+       }
+     ]
+   }
+   ```
+
+   `my_training.executor.InProcessExecutor` is a placeholder for your reviewed,
+   image-installed `Executor` implementation, not a class shipped with NVFlare.
+4. Reprovision and build, sign and encrypt a new application release with a new
+   per-release key, then obtain renewed release approval and deploy it. Submit
+   job configuration and data without job-supplied Python code. Further changes
+   to the baked executor or its dependencies require another reviewed release.
+
 See `docs/user_guide/confidential_computing/deployment.rst` in the NVFlare source
 tree for the complete schema, CPU/GPU mapping, shared Trustee configuration,
 result format, and migration rules.
