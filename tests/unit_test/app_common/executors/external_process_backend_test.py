@@ -1904,9 +1904,10 @@ class TestHeartbeatAndOperationalLiveness:
             import signal
             import subprocess
             import sys
+            import threading
             import time
             from types import SimpleNamespace
-            from unittest.mock import patch
+            from unittest.mock import Mock, patch
 
             from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
@@ -1959,7 +1960,14 @@ class TestHeartbeatAndOperationalLiveness:
                     read_fd = None
                     worker_pid = int(launcher.stdout.readline())
                     assert launcher.wait(timeout=5) == 0
-                    trainer = SimpleNamespace(process=launcher, pgid=launcher.pid)
+                    trainer = SimpleNamespace(
+                        process=launcher,
+                        pgid=launcher.pid,
+                        _zombie_group_warning_lock=threading.Lock(),
+                        _zombie_group_warning_logged=False,
+                    )
+                    warning = Mock()
+                    backend.logger.warning = warning
                     if main_thread_exits:
                         deadline = time.monotonic() + 5
                         while time.monotonic() < deadline:
@@ -1969,6 +1977,7 @@ class TestHeartbeatAndOperationalLiveness:
                             time.sleep(0.02)
                         assert leader == "Z" and any(state != "Z" for state in threads)
                     assert backend._process_group_alive(trainer), "live orphaned worker was missed"
+                    warning.assert_not_called()
                     os.write(write_fd, b"x")
                     os.close(write_fd)
                     write_fd = None
@@ -1989,6 +1998,7 @@ class TestHeartbeatAndOperationalLiveness:
 
                     with patch.object(os, "scandir", deny_task_status):
                         assert backend._process_group_alive(trainer), "unknown thread state must stay conservative"
+                    warning.assert_not_called()
 
                     real_open = open
 
@@ -2000,6 +2010,7 @@ class TestHeartbeatAndOperationalLiveness:
 
                         with patch("builtins.open", deny_stat):
                             assert not backend._process_group_alive(trainer), "unrelated stat hid zombie group"
+                    warning.assert_called_once()
 
                     def deny_group_stat(path, *args, **kwargs):
                         if path == f"/proc/{worker_pid}/stat":
@@ -2011,6 +2022,9 @@ class TestHeartbeatAndOperationalLiveness:
 
                     assert not backend._process_group_alive(trainer)
                     assert backend._await_group_exit(trainer, 0.1)
+                    warning.assert_called_once()
+                    message = warning.call_args.args[0]
+                    assert "unreaped zombies" in message and "--init or tini" in message
                 finally:
                     if read_fd is not None:
                         os.close(read_fd)

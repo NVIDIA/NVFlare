@@ -150,6 +150,8 @@ class _TrainerSession(CellSession):
         # POSIX process-group id, retained independently of the Popen leader handle so the
         # group can be probed/terminated even after the launcher itself exited
         self.pgid: Optional[int] = None
+        self._zombie_group_warning_lock = threading.Lock()
+        self._zombie_group_warning_logged = False
         self.log_thread: Optional[threading.Thread] = None
         # Conservative CJ-side latch: an accepted result may still be inside the
         # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
@@ -845,6 +847,15 @@ class ExternalProcessBackend(CellBackendBase):
             if live is False:
                 # A worker may fork while the first /proc snapshot is read.
                 live = self._linux_group_has_live_members(trainer.pgid)
+                if live is False:
+                    with trainer._zombie_group_warning_lock:
+                        if not trainer._zombie_group_warning_logged:
+                            trainer._zombie_group_warning_logged = True
+                            self.logger.warning(
+                                f"trainer process group {trainer.pgid} contains only unreaped zombies; "
+                                "treating it as exited. Ensure child processes are reaped "
+                                "(in containers, use --init or tini); zombies occupy PIDs until reaped."
+                            )
             if live is not None:
                 return live
         return True
