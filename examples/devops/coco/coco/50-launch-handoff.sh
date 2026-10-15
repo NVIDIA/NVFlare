@@ -47,7 +47,7 @@ if pod["spec"].get("runtimeClassName") != runtime:
     raise SystemExit("unexpected confidential runtime class")
 if not isinstance(c.get("command"), list) or not c["command"]:
     raise SystemExit("an explicit command vector is required")
-helpers["validate_workload_pod"](pod, context, c["command"])
+helpers["validate_workload_pod"](pod, context, c["command"], runtime_class=runtime)
 print("Static handoff invariants passed")
 print("Pod:", pod["metadata"]["name"])
 print("Image:", image)
