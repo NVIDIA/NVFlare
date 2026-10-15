@@ -32,6 +32,7 @@ local or upstream README for setup, data, and run instructions.
 | [Auto-FedRL](./auto-fed-rl/README.md) | Federated hyperparameter optimization for medical image segmentation ([ECCV 2022](https://arxiv.org/abs/2203.06338)). |
 | [FedBN: Federated Learning on Non-IID Features via Local Batch Normalization](./fed-bn/README.md) | Local batch normalization for feature-shifted federated learning ([ICLR 2021](https://arxiv.org/abs/2102.07623)). |
 | [Privacy-preserving Federated Brain Tumour Segmentation](./brats18/README.md) | Federated brain tumor segmentation with privacy-preserving training ([MLMI 2019](https://arxiv.org/abs/1910.00962)). |
+| [telltale: cross-round client drift monitoring](https://github.com/rybrennan/telltale/tree/main/examples/nvflare) | Externally maintained experimental example of cross-round client drift monitoring, with measured detection delay and false-alarm rates ([results](https://github.com/rybrennan/telltale/blob/main/examples/nvflare/README.md#results)). |
 
 ## Agent-Assisted Research Workflow
 
