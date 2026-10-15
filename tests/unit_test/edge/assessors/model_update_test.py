@@ -25,7 +25,11 @@ from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.mud import Device, ModelUpdate, StateUpdateReply, StateUpdateReport
 
 
-def _setup(num_updates_for_model: int = 3, device_sampling_strategy: str = "balanced"):
+def _setup(
+    num_updates_for_model: int = 3,
+    device_sampling_strategy: str = "balanced",
+    device_reuse: bool = True,
+):
     """Build a ModelUpdateAssessor wired with a BuffModelManager and a BuffDeviceManager."""
     assessor = ModelUpdateAssessor(
         persistor_id="persistor",
@@ -38,7 +42,7 @@ def _setup(num_updates_for_model: int = 3, device_sampling_strategy: str = "bala
         device_selection_size=2,
         initial_min_client_num=1,
         min_hole_to_fill=1,
-        device_reuse=True,
+        device_reuse=device_reuse,
         device_sampling_strategy=device_sampling_strategy,
     )
     assessor.model_manager = model_manager
@@ -180,4 +184,40 @@ def test_device_wait_timeout_still_stops_job_when_no_device_in_flight():
     accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1"])), fl_ctx)
     assert accepted is True
     assert assessor.device_wait_start_time is not None
+    assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE
+
+
+def test_device_wait_timeout_stops_job_when_pool_exhausted_with_reuse_disabled():
+    """Regression for Greptile follow-up P1: an exhausted pool must still stop the job.
+
+    With device_reuse=False, get_used_devices keeps already-finished devices, so a naive in-flight
+    check based on used_devices would never let the wait timeout fire and the job would hang forever.
+    The in-flight signal must be the current selection (unfinished work); once every device has
+    reported and none can be re-dispatched, the configured wait timeout must stop the job.
+    """
+    assessor, model_manager, device_manager, fl_ctx = _setup(num_updates_for_model=2, device_reuse=False)
+    assessor.device_wait_timeout = -1
+
+    # both devices join and are selected for V1
+    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
+    assert accepted is True
+    reply = StateUpdateReply.from_shareable(reply_shareable)
+    assert set(reply.device_selection) == {"d1", "d2"}
+
+    # d1 reports while d2 is still in flight: timer must NOT be armed (d2 is still in current selection)
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d1"])}), fl_ctx
+    )
+    assert accepted is True
+    assert assessor.device_wait_start_time is None
+
+    # d2 reports -> pool exhausted (reuse disabled, neither device can be re-dispatched)
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d2"])}), fl_ctx
+    )
+    assert accepted is True
+
+    # all devices finished and none can be re-dispatched; the current selection is empty, so the
+    # wait timeout must stop the job instead of hanging forever
+    assert assessor.device_manager.get_inflight_devices(fl_ctx) == set()
     assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE

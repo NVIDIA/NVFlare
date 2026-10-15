@@ -80,7 +80,7 @@ class ModelUpdateAssessor(Assessor):
         # the job on a wait timeout in this state - doing so would end the job before the
         # in-flight device reports its update (Greptile P1: job stops during training). Only
         # count down when there are no in-flight devices.
-        if self.device_manager.get_used_devices(fl_ctx):
+        if self.device_manager.get_inflight_devices(fl_ctx):
             return False
 
         try:
@@ -275,7 +275,7 @@ class ModelUpdateAssessor(Assessor):
                 # treat that as "waiting for devices to join" - otherwise the wait timeout could
                 # stop the job before the in-flight device reports (Greptile P1: job stops during
                 # training). Only arm/keep the timer when there are no in-flight devices.
-                if self.device_manager.get_used_devices(fl_ctx):
+                if self.device_manager.get_inflight_devices(fl_ctx):
                     self.device_wait_start_time = None
                 elif self.device_wait_start_time is None:
                     self.device_wait_start_time = time.time()

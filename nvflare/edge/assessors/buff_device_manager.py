@@ -314,3 +314,13 @@ class BuffDeviceManager(DeviceManager):
 
     def get_active_model_versions(self, fl_ctx) -> Set[int]:
         return set(self.current_selection.values())
+
+    def get_inflight_devices(self, fl_ctx) -> Set[str]:
+        """Devices currently selected (dispatched) but not yet reported back.
+
+        These are the devices still in flight / training. This is the correct signal for whether
+        the assessor is making progress, unlike ``get_used_devices`` which (with
+        ``device_reuse=False``) also retains devices that have already finished - using it to gate
+        the wait timeout would let an exhausted pool hang forever (Greptile follow-up P1).
+        """
+        return set(self.current_selection.keys())
