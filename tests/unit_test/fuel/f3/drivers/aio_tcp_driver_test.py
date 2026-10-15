@@ -382,12 +382,16 @@ def test_listener_created_during_shutdown_is_closed():
     asyncio.run(shutdown())
 
 
-def test_tls_listener_caps_handshake_by_connect_timeout():
+@pytest.mark.parametrize(
+    "timeout_params, expected_timeout",
+    [({}, 60), ({"connect_timeout": None}, 60), ({"connect_timeout": 5}, 5), ({"connect_timeout": 120}, 60)],
+)
+def test_tls_listener_caps_handshake_by_connect_timeout(timeout_params, expected_timeout):
     async def listen():
         with patch.object(AioContext, "get_global_context", return_value=MagicMock()):
             driver = AioTcpDriver()
         driver.connector = ConnectorInfo(
-            "test", driver, {"scheme": "satcp", "connect_timeout": 5}, Mode.PASSIVE, 0, 0, False, threading.Event()
+            "test", driver, {"scheme": "satcp", **timeout_params}, Mode.PASSIVE, 0, 0, False, threading.Event()
         )
         server = MagicMock()
         server.serve_forever = AsyncMock()
@@ -398,7 +402,7 @@ def test_tls_listener_caps_handshake_by_connect_timeout():
             patch("nvflare.fuel.f3.drivers.aio_tcp_driver.asyncio.get_running_loop", return_value=loop),
         ):
             await driver._tcp_listen("127.0.0.1", 0)
-        assert loop.create_server.await_args.kwargs["ssl_handshake_timeout"] == 5
+        assert loop.create_server.await_args.kwargs["ssl_handshake_timeout"] == expected_timeout
 
     asyncio.run(listen())
 

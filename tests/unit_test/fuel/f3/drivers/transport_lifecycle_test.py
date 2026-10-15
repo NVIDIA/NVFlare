@@ -851,7 +851,8 @@ def test_async_tcp_shutdown_interrupts_pending_server_tls_handshake(operation, l
             manager.stop()
 
 
-def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch, tmp_path):
+@pytest.mark.parametrize("timeout_params", [{}, {"connect_timeout": None}], ids=["default", "none"])
+def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch, tmp_path, timeout_params):
     driver = AioTcpDriver()
     manager = ConnManager(Endpoint("accepted_server_tls"))
     tls = _server_tls_context(tmp_path)
@@ -860,6 +861,7 @@ def test_async_tcp_tls_listener_accepts_connection(listener_context, monkeypatch
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
     params = {"scheme": "satcp", "host": "127.0.0.1", "port": port, "url": f"satcp://127.0.0.1:{port}"}
+    params.update(timeout_params)
     manager.add_connector(driver, params, Mode.PASSIVE)
     manager.start()
     deadline = time.monotonic() + 5

@@ -134,12 +134,13 @@ class AioTcpDriver(AioBaseDriver):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
         if self.ssl_context:
             connect_timeout = self.connector.params.get(DriverParams.CONNECT_TIMEOUT.value, 60.0)
+            handshake_timeout = 60.0 if connect_timeout is None else min(60.0, float(connect_timeout))
             self.server = await asyncio.get_running_loop().create_server(
                 self._tls_protocol_factory,
                 host,
                 port,
                 ssl=self.ssl_context,
-                ssl_handshake_timeout=min(60.0, float(connect_timeout)),
+                ssl_handshake_timeout=handshake_timeout,
             )
         else:
             self.server = await asyncio.start_server(self._create_connection, host, port)
