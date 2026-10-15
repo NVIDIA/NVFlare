@@ -152,6 +152,16 @@ class DeviceManager(FLComponent, ABC):
             return set(selection.keys())
         return set(selection)
 
+    def tracks_assignment_time(self, fl_ctx: FLContext) -> bool:
+        """Whether this manager records assignment timestamps for selected devices.
+
+        Only managers returning True get the assignment-expiry bound on the wait-timeout exemption
+        (so a device that never reports can still trip the timeout). Managers that return False keep
+        the previous behavior: an in-flight device is always treated as still training, and the wait
+        timer is not counting down while a device is in flight.
+        """
+        return False
+
     def get_usable_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Devices eligible to be selected right now (default: available minus used).
 

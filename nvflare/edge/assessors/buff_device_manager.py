@@ -334,3 +334,8 @@ class BuffDeviceManager(DeviceManager):
         # Overrides the base default so status logging / timeout diagnostics agree with scheduling
         # (Option B requirement that status logging matches eligibility).
         return self._compute_usable_devices()
+
+    def tracks_assignment_time(self, fl_ctx) -> bool:
+        # this manager records selection_assignment_time, so the wait-timeout exemption can be
+        # bounded by an assignment expiry (a device that never reports still trips the timeout).
+        return True

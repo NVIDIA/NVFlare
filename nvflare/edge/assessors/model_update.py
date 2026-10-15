@@ -269,12 +269,18 @@ class ModelUpdateAssessor(Assessor):
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:
-                # The selection cannot be filled right now. Arm the wait timer if it is not already
-                # running. A device still in flight does NOT cancel the timer - the guard in
-                # _is_device_wait_timeout_exceeded() only suppresses firing while an in-flight device
-                # was assigned within the wait-timeout window, so a selected device that never reports
-                # (disconnected) will still let the timeout fire (Copilot follow-up).
-                if self.device_wait_start_time is None:
+                # The selection cannot be filled right now. Managers that record assignment times get
+                # the bounded exemption: the timer keeps running and only fires once the in-flight
+                # device's assignment is older than the wait timeout, so a selected device that never
+                # reports (disconnected) still trips it (Copilot follow-up). Managers without
+                # timestamps keep the previous behavior: a device still in flight means we are making
+                # progress, so the timer is not counting down at all (Greptile follow-up: custom jobs
+                # must not stop during training).
+                if not self.device_manager.tracks_assignment_time(fl_ctx) and self.device_manager.get_inflight_devices(
+                    fl_ctx
+                ):
+                    self.device_wait_start_time = None
+                elif self.device_wait_start_time is None:
                     self.device_wait_start_time = time.time()
                     self.log_info(fl_ctx, f"Starting device wait timer (timeout: {self.device_wait_timeout}s)")
 

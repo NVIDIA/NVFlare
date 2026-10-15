@@ -271,3 +271,13 @@ def test_is_any_inflight_device_recent_preserves_behavior_without_timestamps():
     # no in-flight devices -> nothing to protect
     mgr.current_selection = {}
     assert mgr.is_any_inflight_device_recent(fl_ctx, 10) is False
+
+
+def test_tracks_assignment_time_default_and_override():
+    fl_ctx = FLContext()
+    # a custom DeviceManager does not record assignment times -> it keeps the previous behavior:
+    # the wait timer is not counting down while a device is in flight
+    assert _MinimalDeviceManager().tracks_assignment_time(fl_ctx) is False
+    # BuffDeviceManager records them -> it gets the assignment-expiry bound instead
+    buff_mgr = _manager(device_selection_size=2, min_hole_to_fill=1, device_reuse=True)
+    assert buff_mgr.tracks_assignment_time(fl_ctx) is True
