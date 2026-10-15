@@ -17,6 +17,8 @@
 import os
 import signal
 import subprocess
+import sys
+import textwrap
 import threading
 import time
 from types import SimpleNamespace
@@ -1972,6 +1974,159 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             process.extra_group_members = False
             backend.finalize(FLContext())
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux procfs and subreaper semantics")
+    def test_zombie_only_worker_group_is_not_alive(self):
+        # A container PID 1 may leave orphaned trainer workers unreaped. Isolate
+        # subreaper state and zombies in a child process so pytest owns neither.
+        script = textwrap.dedent(
+            """
+            import ctypes
+            import os
+            import signal
+            import subprocess
+            import sys
+            import threading
+            import time
+            from types import SimpleNamespace
+            from unittest.mock import Mock, patch
+
+            from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+
+            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+            assert ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+            assert ctypes.CDLL(None).prctl(15, b"\\xff") == 0  # PR_SET_NAME with invalid UTF-8
+            with open(f"/proc/{os.getpid()}/stat", "rb") as stat_file:
+                assert b"\\xff" in stat_file.read()
+            backend = ExternalProcessBackend()
+
+            def states(pid):
+                with open(f"/proc/{pid}/stat") as stat_file:
+                    leader = stat_file.read().rsplit(")", 1)[1].split()[0]
+                threads = []
+                for tid in os.listdir(f"/proc/{pid}/task"):
+                    try:
+                        with open(f"/proc/{pid}/task/{tid}/stat") as stat_file:
+                            threads.append(stat_file.read().rsplit(")", 1)[1].split()[0])
+                    except FileNotFoundError:
+                        continue
+                return leader, threads
+
+            def exercise(main_thread_exits):
+                read_fd, write_fd = os.pipe()
+                launcher = None
+                worker_pid = None
+                try:
+                    if main_thread_exits:
+                        worker_code = (
+                            "import ctypes,os,sys,threading; "
+                            "threading.Thread(target=lambda: os.read(int(sys.argv[1]), 1)).start(); "
+                            "ctypes.CDLL(None).pthread_exit(None)"
+                        )
+                    else:
+                        worker_code = "import os,sys; os.read(int(sys.argv[1]), 1)"
+                    launcher_code = (
+                        "import subprocess,sys; "
+                        f"p=subprocess.Popen([sys.executable, '-c', {worker_code!r}, {str(read_fd)!r}], "
+                        f"pass_fds=({read_fd},)); "
+                        "print(p.pid, flush=True)"
+                    )
+                    launcher = subprocess.Popen(
+                        [sys.executable, "-c", launcher_code],
+                        start_new_session=True,
+                        stdout=subprocess.PIPE,
+                        text=True,
+                        pass_fds=(read_fd,),
+                    )
+                    os.close(read_fd)
+                    read_fd = None
+                    worker_pid = int(launcher.stdout.readline())
+                    assert launcher.wait(timeout=5) == 0
+                    trainer = SimpleNamespace(
+                        process=launcher,
+                        pgid=launcher.pid,
+                        _zombie_group_warning_lock=threading.Lock(),
+                        _zombie_group_warning_logged=False,
+                    )
+                    warning = Mock()
+                    backend.logger.warning = warning
+                    if main_thread_exits:
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            leader, threads = states(worker_pid)
+                            if leader == "Z" and any(state != "Z" for state in threads):
+                                break
+                            time.sleep(0.02)
+                        assert leader == "Z" and any(state != "Z" for state in threads)
+                    assert backend._process_group_alive(trainer), "live orphaned worker was missed"
+                    warning.assert_not_called()
+                    os.write(write_fd, b"x")
+                    os.close(write_fd)
+                    write_fd = None
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        leader, threads = states(worker_pid)
+                        if leader == "Z" and threads and all(state == "Z" for state in threads):
+                            break
+                        time.sleep(0.02)
+                    assert leader == "Z" and threads and all(state == "Z" for state in threads)
+                    os.killpg(trainer.pgid, 0)  # the original liveness probe still succeeds
+                    real_scandir = os.scandir
+
+                    def deny_task_status(path):
+                        if path.endswith("/task"):
+                            raise PermissionError("task status unavailable")
+                        return real_scandir(path)
+
+                    with patch.object(os, "scandir", deny_task_status):
+                        assert backend._process_group_alive(trainer), "unknown thread state must stay conservative"
+                    warning.assert_not_called()
+
+                    real_open = open
+
+                    for error in (PermissionError, ProcessLookupError):
+                        def deny_stat(path, *args, **kwargs):
+                            if path == f"/proc/{os.getpid()}/stat":
+                                raise error("unrelated stat unavailable")
+                            return real_open(path, *args, **kwargs)
+
+                        with patch("builtins.open", deny_stat):
+                            assert not backend._process_group_alive(trainer), "unrelated stat hid zombie group"
+                    warning.assert_called_once()
+
+                    def deny_group_stat(path, *args, **kwargs):
+                        if path == f"/proc/{worker_pid}/stat":
+                            raise PermissionError("trainer stat unavailable")
+                        return real_open(path, *args, **kwargs)
+
+                    with patch("builtins.open", deny_group_stat):
+                        assert backend._process_group_alive(trainer), "unknown trainer state must stay conservative"
+
+                    assert not backend._process_group_alive(trainer)
+                    assert backend._await_group_exit(trainer, 0.1)
+                    warning.assert_called_once()
+                    message = warning.call_args.args[0]
+                    assert "unreaped zombies" in message and "--init or tini" in message
+                finally:
+                    if read_fd is not None:
+                        os.close(read_fd)
+                    if write_fd is not None:
+                        os.close(write_fd)
+                    if launcher is not None:
+                        try:
+                            os.killpg(launcher.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        launcher.wait(timeout=5)
+                    if worker_pid is not None:
+                        os.waitpid(worker_pid, 0)
+
+            exercise(main_thread_exits=False)
+            exercise(main_thread_exits=True)
+            """
+        )
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 class TestClosedGate:
