@@ -33,7 +33,7 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
     - Org Admin and users must protect their Startup Kits and only use them for intended purposes.
 
 In public-root-only mode, endpoint and job-CA private keys are installed by
-deployment tooling, and each admin obtains credentials through an admin
+deployment tooling. Admins use IT-installed files (``external_cert: true``) or an admin
 certificate provider. Provisioning never receives the enterprise root key or
 issues these credentials. All certificate chains must reach the distributed
 ``rootCA.pem``; normal identity and authorization checks remain in effect.
