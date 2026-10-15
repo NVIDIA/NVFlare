@@ -117,14 +117,16 @@ def test_no_tenseal_files_no_signature_json(tmp_path):
         mock_sign.assert_not_called()
 
 
-def test_missing_root_pri_key_raises(tmp_path):
-    """Missing ROOT_PRI_KEY raises RuntimeError."""
-    ctx = MagicMock()
-    ctx.get.return_value = None
-    proj = _make_project([_make_participant()])
+@pytest.mark.parametrize("content_mode", ["cc", "he"])
+def test_missing_root_pri_key_raises_for_content_signing(tmp_path, content_mode):
+    """Public trust alone cannot satisfy CC/HE artifact signing."""
+    ctx = _make_ctx(str(tmp_path), root_pri_key=None)
+    if content_mode == "he":
+        (tmp_path / ProvFileName.SERVER_CONTEXT_TENSEAL).touch()
+    proj = _make_project([_make_participant(cc_enabled=content_mode == "cc")])
     builder = SignatureBuilder()
 
-    with pytest.raises(RuntimeError, match="missing"):
+    with pytest.raises(RuntimeError, match="content signing requires"):
         builder.build(proj, ctx)
 
 
