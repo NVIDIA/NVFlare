@@ -25,6 +25,7 @@ import os
 import secrets
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -149,6 +150,8 @@ class _TrainerSession(CellSession):
         # POSIX process-group id, retained independently of the Popen leader handle so the
         # group can be probed/terminated even after the launcher itself exited
         self.pgid: Optional[int] = None
+        self._zombie_group_warning_lock = threading.Lock()
+        self._zombie_group_warning_logged = False
         self.log_thread: Optional[threading.Thread] = None
         # Conservative CJ-side latch: an accepted result may still be inside the
         # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
@@ -829,13 +832,110 @@ class ExternalProcessBackend(CellBackendBase):
             process.poll()
         try:
             os.killpg(trainer.pgid, 0)
-            return True
         except ProcessLookupError:
             return False
         except Exception as e:
             # Probe failure must not let teardown abandon an owned group.
             self.logger.debug(f"cannot probe trainer process group {trainer.pgid}: {e}")
             return True
+        if sys.platform == "linux" and process is not None and process.returncode is not None:
+            # Linux retains a process group containing only unreaped zombies.
+            # Such a group passes killpg(0), but cannot serve tasks/results and
+            # cannot be removed by TERM/KILL. On unavailable/incomplete procfs,
+            # keep the conservative killpg result.
+            live = self._linux_group_has_live_members(trainer.pgid)
+            if live is False:
+                # A worker may fork while the first /proc snapshot is read.
+                live = self._linux_group_has_live_members(trainer.pgid)
+                if live is False:
+                    with trainer._zombie_group_warning_lock:
+                        if not trainer._zombie_group_warning_logged:
+                            trainer._zombie_group_warning_logged = True
+                            self.logger.warning(
+                                f"trainer process group {trainer.pgid} contains only unreaped zombies; "
+                                "treating it as exited. Ensure child processes are reaped "
+                                "(in containers, use --init or tini); zombies occupy PIDs until reaped."
+                            )
+            if live is not None:
+                return live
+        return True
+
+    def _linux_group_has_live_members(self, pgid: int) -> Optional[bool]:
+        """Return None when procfs cannot establish the group's state."""
+        found_zombie = False
+        try:
+            with os.scandir("/proc") as entries:
+                for entry in entries:
+                    if not entry.name.isdecimal():
+                        continue
+                    try:
+                        fields = self._read_linux_proc_stat_fields(f"/proc/{entry.name}/stat")
+                        if len(fields) < 4:
+                            raise ValueError("incomplete procfs stat")
+                        state, _, group, session = fields[:4]
+                        group, session = int(group), int(session)
+                    except (OSError, ValueError):
+                        # An unrelated process may disappear or have an unreadable
+                        # stat file. Preserve the conservative result if it might
+                        # belong to the trainer group.
+                        try:
+                            if os.getpgid(int(entry.name)) == pgid:
+                                return None
+                        except ProcessLookupError:
+                            pass
+                        except OSError:
+                            return None
+                        continue
+                    if group != pgid or session != pgid:
+                        continue
+                    if state not in (b"Z", b"X", b"x"):
+                        return True
+                    # A process leader can be a zombie after pthread_exit()
+                    # while other threads in that process keep running.
+                    threads_live = self._linux_process_has_live_threads(entry.name)
+                    if threads_live is None:
+                        return None
+                    if threads_live:
+                        return True
+                    found_zombie = True
+        except (OSError, ValueError) as e:
+            self.logger.debug(f"cannot inspect trainer process group {pgid} in procfs: {e}")
+            return None
+        return False if found_zombie else None
+
+    @staticmethod
+    def _read_linux_proc_stat_fields(path: str) -> list[bytes]:
+        with open(path, "rb") as stat_file:
+            stat = stat_file.read()
+        # comm can contain arbitrary bytes and ')'; only the suffix has fields.
+        end_of_comm = stat.rfind(b")")
+        if end_of_comm < 0:
+            raise ValueError("missing comm delimiter in procfs stat")
+        return stat[end_of_comm + 1 :].split()
+
+    @staticmethod
+    def _linux_process_has_live_threads(pid: str) -> Optional[bool]:
+        """Return None unless procfs exposes at least one thread state."""
+        found_dead = False
+        try:
+            with os.scandir(f"/proc/{pid}/task") as threads:
+                for thread in threads:
+                    if not thread.name.isdecimal():
+                        continue
+                    try:
+                        fields = ExternalProcessBackend._read_linux_proc_stat_fields(
+                            f"/proc/{pid}/task/{thread.name}/stat"
+                        )
+                    except FileNotFoundError:
+                        continue
+                    if not fields:
+                        return None
+                    if fields[0] not in (b"Z", b"X", b"x"):
+                        return True
+                    found_dead = True
+        except (OSError, ValueError):
+            return None
+        return False if found_dead else None
 
     def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""
