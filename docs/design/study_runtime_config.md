@@ -39,7 +39,7 @@ The unreleased `study_job_spec_file_path` pod-template mechanism (PR #4804) is r
 
 ## v2 Schema: `local/study_runtime.yaml`
 
-- Auto-discovered at a fixed workspace-relative path by the Docker, Kubernetes, and Slurm launchers. No launcher
+- Auto-discovered at a fixed workspace-relative path by the process, Docker, Kubernetes, and Slurm launchers. No launcher
   argument or deploy-config key selects the file.
 - Filename = format: `study_runtime.yaml` is v2 strict, `study_data.yaml` is v1 frozen. No content sniffing.
 - Job side unchanged: the job still submits only `{"study": "..."}`.
@@ -142,6 +142,16 @@ Every dataset type surfaces at `/data/<study>/<dataset>`; trainer code is identi
 discriminator is the single `type` field; provider-specific fields are validated per type.
 
 ## Runtime Interpretation
+
+Process:
+
+- `env` overlays the inherited parent environment for the selected study, including empty values.
+- `secret_env.*.source` names a parent environment variable; `key` is optional and ignored. Missing sources
+  fail launch. Values are resolved before applying study overrides, and the parent environment is unchanged.
+- Only `env` and `secret_env` are supported. Container, dataset, secret-mount, and other launcher-specific
+  settings are rejected. Applications can read existing host paths supplied through `env`.
+- The full parent environment remains inherited, including secrets for other studies. This is configuration
+  convenience, not process isolation. See [Process Mode Study Runtime Configuration](process_study_runtime.md).
 
 Kubernetes:
 

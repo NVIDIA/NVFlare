@@ -13,20 +13,32 @@
 # limitations under the License.
 
 import os
+import shlex
 import signal
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
+
+import pytest
+import yaml
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, ProcessJobLauncher
+from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
 
 
 class DummyWorkspace:
-    def __init__(self, custom_path: str = ""):
+    def __init__(self, root_dir, custom_path: str = ""):
+        self.root_dir = str(root_dir)
         self.custom_path = custom_path
         self.calls = []
+
+    def get_root_dir(self):
+        return self.root_dir
 
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
@@ -48,10 +60,159 @@ def _build_fl_ctx(workspace):
     return fl_ctx
 
 
-def test_launch_job_uses_posix_spawn_when_supported(monkeypatch):
+def _write_runtime(tmp_path, studies):
+    local = tmp_path / "local"
+    local.mkdir(exist_ok=True)
+    path = local / "study_runtime.yaml"
+    path.write_text(yaml.safe_dump({"format_version": 2, "studies": studies}))
+    return path
+
+
+@pytest.mark.parametrize("launcher_class", [ClientProcessJobLauncher, ServerProcessJobLauncher])
+@pytest.mark.parametrize("study", [None, "study-a", "study-b", "unconfigured"])
+def test_study_environment(launcher_class, study, tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("DB_HOST", "inherited-host")
+    monkeypatch.setenv("STUDY_PASSWORD", "synthetic-secret\nwith spaces")
+    monkeypatch.setenv("EMPTY_SOURCE", "")
+    parent_env = os.environ.copy()
+    _write_runtime(
+        tmp_path,
+        {
+            name: {
+                "env": {"DB_HOST": name, "STUDY_PASSWORD": "overridden-source"},
+                "secret_env": {"DB_PASSWORD": {"source": "STUDY_PASSWORD"}, "EMPTY": {"source": "EMPTY_SOURCE"}},
+            }
+            for name in ("default", "study-a", "study-b")
+        },
+    )
+    custom_path = str(tmp_path / "custom")
+    ctx = _build_fl_ctx(DummyWorkspace(tmp_path, custom_path))
+    ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, {JobProcessArgs.AUTH_TOKEN: ("--token", "bootstrap-token")})
+    meta = {JobConstants.JOB_ID: "job-test"}
+    if study is not None:
+        meta["study"] = study
+    launcher = launcher_class()
+    with (
+        mock.patch.object(launcher, "get_command", return_value="python worker.py"),
+        mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn,
+    ):
+        launcher.launch_job(meta, ctx)
+
+    argv, child_env = spawn.call_args.args
+    assert argv == ["python", "worker.py"]
+    assert child_env[JobProcessEnv.AUTH_TOKEN] == "bootstrap-token"
+    assert custom_path in child_env["PYTHONPATH"].split(os.pathsep)
+    if study == "unconfigured":
+        assert child_env["DB_HOST"] == "inherited-host"
+        assert child_env["STUDY_PASSWORD"] == parent_env["STUDY_PASSWORD"]
+        assert "no entry for study 'unconfigured'" in caplog.text
+    else:
+        assert child_env["DB_HOST"] == (study or "default")
+        assert child_env["STUDY_PASSWORD"] == "overridden-source"
+        assert child_env["DB_PASSWORD"] == parent_env["STUDY_PASSWORD"]
+        assert child_env["EMPTY"] == ""
+    assert os.environ == parent_env
+    assert parent_env["STUDY_PASSWORD"] not in caplog.text
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_no_runtime_preserves_inheritance(tmp_path, monkeypatch, legacy):
+    monkeypatch.setenv("STUDY_PASSWORD", "inherited-secret")
+    if legacy:
+        (tmp_path / "local").mkdir()
+        (tmp_path / "local" / "study_data.yaml").write_text("unused legacy config")
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
+        DummyLauncher().launch_job({JobConstants.JOB_ID: "job"}, _build_fl_ctx(DummyWorkspace(tmp_path)))
+    assert spawn.call_args.args[1] == os.environ
+
+
+@pytest.mark.parametrize("failure", ["missing-secret", "legacy", "malformed", "unsupported", "read-error"])
+def test_runtime_errors_prevent_spawn(tmp_path, monkeypatch, failure, caplog):
+    monkeypatch.delenv("MISSING_STUDY_SOURCE", raising=False)
+    monkeypatch.setenv("DB_PASSWORD", "inherited-destination-must-not-mask-error")
+    path = _write_runtime(tmp_path, {"default": {"secret_env": {"DB_PASSWORD": {"source": "MISSING_STUDY_SOURCE"}}}})
+    if failure == "legacy":
+        (path.parent / "study_data.yaml").write_text("{}")
+    elif failure == "malformed":
+        path.write_text("studies: [")
+    elif failure == "unsupported":
+        _write_runtime(tmp_path, {"other-study": {"datasets": {}}})
+    elif failure == "read-error":
+        path.unlink()
+        path.mkdir()
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
+        with pytest.raises(ValueError) as error:
+            DummyLauncher().launch_job({JobConstants.JOB_ID: "job"}, _build_fl_ctx(DummyWorkspace(tmp_path)))
+    spawn.assert_not_called()
+    if failure == "missing-secret":
+        assert "MISSING_STUDY_SOURCE" in str(error.value)
+    assert os.environ["DB_PASSWORD"] not in str(error.value) + caplog.text
+
+
+def test_independent_launches_and_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("STUDY_PASSWORD", "shared-parent-secret")
+    parent_env = os.environ.copy()
+    studies = {
+        "study-a": {"env": {"STUDY_SETTING": "a"}},
+        "study-b": {"env": {"STUDY_SETTING": "b"}},
+        "unused": {"secret_env": {"PASSWORD": {"source": "MISSING_STUDY_SOURCE"}}},
+    }
+    _write_runtime(tmp_path, studies)
     launcher = DummyLauncher()
 
-    workspace = DummyWorkspace()
+    def launch(study):
+        launcher.launch_job({JobConstants.JOB_ID: study, "study": study}, _build_fl_ctx(DummyWorkspace(tmp_path)))
+
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            list(executor.map(launch, ["study-a", "study-b"]))
+        envs = [call.args[1] for call in spawn.call_args_list]
+        assert {env["STUDY_SETTING"] for env in envs} == {"a", "b"}
+        assert all(env["STUDY_PASSWORD"] == "shared-parent-secret" for env in envs)
+        studies["study-a"]["env"]["STUDY_SETTING"] = "updated"
+        _write_runtime(tmp_path, studies)
+        launch("study-a")
+        assert spawn.call_args.args[1]["STUDY_SETTING"] == "updated"
+        assert {env["STUDY_SETTING"] for env in envs} == {"a", "b"}
+    assert os.environ == parent_env
+
+
+@pytest.mark.parametrize("use_posix_spawn", [False, True])
+def test_study_environment_reaches_real_child(tmp_path, monkeypatch, use_posix_spawn):
+    if use_posix_spawn and not hasattr(os, "posix_spawn"):
+        pytest.skip("posix_spawn is unavailable")
+    monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", use_posix_spawn)
+    monkeypatch.setenv("STUDY_PASSWORD", "synthetic secret\nwith spaces")
+    _write_runtime(
+        tmp_path,
+        {
+            "default": {
+                "env": {"STUDY_SETTING": "configured", "EMPTY": ""},
+                "secret_env": {"PASSWORD": {"source": "STUDY_PASSWORD"}},
+            }
+        },
+    )
+    script = tmp_path / "check_env.py"
+    script.write_text(
+        "import os, sys\n"
+        "valid = (os.environ['STUDY_SETTING'] == 'configured' and os.environ['EMPTY'] == ''\n"
+        "         and os.environ['PASSWORD'] == os.environ['STUDY_PASSWORD'])\n"
+        "sys.exit(0 if valid else 1)\n"
+    )
+    launcher = DummyLauncher(shlex.join([sys.executable, str(script)]))
+    handle = launcher.launch_job({JobConstants.JOB_ID: "job"}, _build_fl_ctx(DummyWorkspace(tmp_path)))
+    try:
+        handle.wait()
+        assert handle.poll() == JobReturnCode.SUCCESS
+    finally:
+        if handle.poll() == JobReturnCode.UNKNOWN:
+            handle.terminate()
+
+
+def test_launch_job_uses_posix_spawn_when_supported(monkeypatch, tmp_path):
+    launcher = DummyLauncher()
+
+    workspace = DummyWorkspace(tmp_path)
     fl_ctx = _build_fl_ctx(workspace)
     job_meta = {JobConstants.JOB_ID: "job-posix"}
 
@@ -98,10 +259,10 @@ def test_launch_job_uses_posix_spawn_when_supported(monkeypatch):
     popen_mock.assert_not_called()
 
 
-def test_launch_job_falls_back_when_spawn_fails(monkeypatch):
+def test_launch_job_falls_back_when_spawn_fails(monkeypatch, tmp_path):
     launcher = DummyLauncher()
 
-    workspace = DummyWorkspace()
+    workspace = DummyWorkspace(tmp_path)
     fl_ctx = _build_fl_ctx(workspace)
     job_meta = {JobConstants.JOB_ID: "job-fallback"}
 

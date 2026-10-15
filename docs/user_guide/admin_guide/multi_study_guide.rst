@@ -213,3 +213,62 @@ runtime mutation has been persisted, the workspace-root copy is authoritative, s
 and survives server restarts. Because writes never target ``local/``, runtime study management also
 works in deployments where ``local/`` is mounted read-only, such as Kubernetes deployments that
 stage ``local/`` as a ConfigMap.
+
+Study Environment in Process Mode
+=================================
+
+Client and server process launchers read ``local/study_runtime.yaml`` from their own workspace
+before each job launch. Use ``env`` for literal settings and ``secret_env`` to map variables from
+the parent service's environment into the job's environment, following the same pattern as Docker:
+
+.. code-block:: yaml
+
+   format_version: 2
+   studies:
+     lung-cancer:
+       env:
+         DB_HOST: db.internal
+         TRAINING_DATA: /srv/studies/lung-cancer/training
+         DB_CA_FILE: /srv/studies/lung-cancer/secrets/ca.crt
+       secret_env:
+         DB_PASSWORD:
+           source: LUNG_DB_PASSWORD
+     default:
+       env:
+         TRAINING_DATA: /srv/studies/default/training
+
+Set ``LUNG_DB_PASSWORD`` in the parent service's environment before starting it. A job in
+``lung-cancer`` receives its value as ``DB_PASSWORD``; the value itself stays out of the YAML file.
+The optional ``key`` field is accepted for compatibility with Docker configuration and is ignored.
+A missing source variable fails launch. An empty source value is allowed.
+
+Study values override inherited values in the child only. ``env`` accepts scalar values, including
+an empty string; booleans become ``true`` or ``false`` and numbers become strings. Values are
+literal, with no shell expansion. Destination names and secret source names must be valid POSIX
+environment variable names. Launcher-owned names, such as ``PYTHONPATH`` and job bootstrap
+credential names, cannot be configured or used as secret sources. A destination cannot appear in
+both ``env`` and ``secret_env``.
+
+The application must read path variables such as ``TRAINING_DATA`` and ``DB_CA_FILE`` to use them.
+Unlike Docker, process mode creates no mounts and does not translate hard-coded container paths.
+Files must already exist on the host with appropriate OS permissions. Process mode rejects
+``datasets``, ``secret_mounts``, ``container``, ``pod_template``, ``docker_kwargs``, and ``slurm``.
+
+Process mode inherits the complete parent environment, including secret source variables and
+variables for other studies. This feature provides configuration convenience, not isolation between
+studies. Use a suitably configured Docker deployment when jobs require isolation.
+
+If the file or the selected study entry is absent, the job receives the inherited environment with
+the launcher's usual Python path and credentials. Jobs without a study use ``default``. Malformed
+configuration, including invalid entries for other studies, fails launch. A legacy ``study_data.yaml``
+alone remains unused in process mode; it cannot coexist with ``study_runtime.yaml``.
+
+Replace the file atomically to change settings for subsequent launches. Running jobs retain their
+environment. Updating an external shell's environment does not change a running parent's environment;
+changing secret source values normally requires restarting the parent service.
+
+.. note::
+
+   On upgrading to process-mode study environment support, an existing ``study_runtime.yaml``
+   becomes active. Review it first: environment settings will start applying, and unsupported
+   container or mount settings will fail launch.

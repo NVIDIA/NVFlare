@@ -21,8 +21,14 @@ from typing import Optional
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.study_runtime import (
+    load_study_runtime_file,
+    resolve_study_runtime,
+    study_runtime_file_path,
+)
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
@@ -67,6 +73,29 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
+        if os.path.exists(runtime_file):
+            legacy_file = os.path.join(workspace_obj.get_root_dir(), "local", "study_data.yaml")
+            if os.path.exists(legacy_file):
+                raise ValueError(
+                    f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'; "
+                    "migrate to study_runtime.yaml and remove the legacy file."
+                )
+            runtime_map = load_study_runtime_file(runtime_file, launcher_mode="process", logger=self.logger)
+            study = get_job_meta_study(job_meta)
+            runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+            secret_env = {}
+            for ref in runtime.secret_env:
+                value = new_env.get(ref.source)
+                if value is None:
+                    raise ValueError(
+                        f"secret_env '{ref.name}' for study '{study}' requires env var "
+                        f"'{ref.source}' in the launcher environment, but it is not set"
+                    )
+                secret_env[ref.name] = value
+            new_env.update(runtime.env)
+            new_env.update(secret_env)
+
         job_id = job_meta.get(JobConstants.JOB_ID)
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
