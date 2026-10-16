@@ -78,8 +78,8 @@ paragraph:
 Unit testing
 ^^^^^^^^^^^^
 
-NVIDIA FLARE tests are located under test/. The unit test file names
-follow the ``test_[module_name].py`` pattern.
+NVIDIA FLARE tests are located under tests/. The unit test file names
+follow the ``[module_name]_test.py`` pattern.
 
 The bash script ``runtest.sh`` will run unit tests also.
 
