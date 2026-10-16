@@ -152,10 +152,14 @@ class Servicer(StreamerServicer):
         except Exception as ex:
             self.logger.error(f"Connection closed due to error: {secure_format_exception(ex)}")
         finally:
-            if t is not None:
-                t.join()
             if connection:
                 connection.close()
+            if t is not None:
+                # A server-initiated close ends the RPC only after this method
+                # returns. Do not wait indefinitely for its request iterator
+                # here, or the peer cannot observe the close and unwind it.
+                t.join(timeout=0.1)
+            if connection:
                 self.logger.debug(f"SERVER: closing connection {connection.name}")
                 self.server.driver.close_connection(connection)
             self.logger.debug(f"SERVER: finished Stream CB in thread {ct.name}")
