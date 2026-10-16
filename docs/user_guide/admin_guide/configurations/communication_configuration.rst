@@ -321,6 +321,12 @@ This section describes all parameters that you can configure.
                                                                    
 The messaging parameters can be specified in <site_workspace>/local/comm_config.json file as first-level elements, or by using environment variables as described in the beginning of this document.
 
+F3 closes an established, heartbeat-capable connection when it has not
+received any frame within ``sfm_receive_idle_timeout`` seconds. The default is
+three times ``heartbeat_interval`` (180 seconds with the default heartbeat
+interval). Set the value to ``0`` to disable this check. Keep it longer than
+the heartbeat interval to allow a delayed heartbeat response to arrive.
+
 This is an example of comm_config.json with the fixed default values. Parameters
 whose defaults are derived from other settings, such as ``streaming_max_out_seq_chunks``,
 are intentionally omitted.
