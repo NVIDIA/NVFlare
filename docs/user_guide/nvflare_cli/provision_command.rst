@@ -69,7 +69,8 @@ Using an enterprise public root
 To distribute an enterprise root certificate without its private key, configure
 ``public_root_cert`` in the ``CertBuilder`` arguments in ``project.yml``.
 Every server, client and relay must use external credentials, the server must use
-an external job CA, and every admin must use a certificate provider. Provisioning
+an external job CA, and every admin must select either a certificate provider or
+``external_cert: true`` for files installed by IT. Provisioning
 fails if any required credential still needs local issuance. The command is unchanged:
 ``nvflare provision -p project.yml -w workspace``.
 See :ref:`public_root_only_provisioning` for the configuration and deployment steps.

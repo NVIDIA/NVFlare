@@ -109,7 +109,11 @@ class Driver(ABC):
 
     @abstractmethod
     def shutdown(self):
-        """Stop driver and disconnect all the connections created by it
+        """Close admission and cancel owned connection attempts and connections.
+
+        Drivers may finish synchronously or return a concurrent.futures.Future
+        or threading.Event for native cleanup completion. The connection manager
+        waits for that completion before joining connector executors.
 
         Raises:
             CommError: If any errors
