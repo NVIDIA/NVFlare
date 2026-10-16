@@ -220,6 +220,11 @@ Use reviewed, immutable copies of every input in production. The builder hashes
 the base image, firmware, trust files, policy, runtime source, and final artifacts
 into the CVM contract and manifest.
 
+Choose the reference workflow for your enabled platform:
+[TDX discovery](#discover-and-approve-tdx-tcb-references) or
+[SNP reference inputs and finalization](#snp-reference-inputs-and-finalization).
+`cvmctl inspect-tcb` supports TDX evidence only; do not use it for SNP reports.
+
 ### Discover and approve TDX TCB references
 
 The first build already requires `approved-tcb-references.json`. Discover its
@@ -323,6 +328,77 @@ Transfer the discovery records securely and stop the temporary TD afterward.
 Changing approved references, firmware or other contract inputs requires a new
 `profile_version`, fresh construction/finalization and approval, and the isolated
 policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-install-references-and-policies).
+
+### SNP reference inputs and finalization
+
+SNP uses the deferred build, transfer and finalization workflow in
+[Advanced CVM Build](#3-advanced-cvm-build). Finalization measures the exact CVM
+and adds its launch measurement to the reference file. It does not discover or
+approve the platform's TCB versions or guest-policy settings.
+
+Before construction, the platform administrator must approve the SNP TCB and
+configuration values using fresh, verified SNP attestation from the intended
+platform: check the report signature and endorsements, challenge binding,
+collateral validity, TCB status and guest policy. A decoded report alone is not
+approval. Put these ten fields in `inputs/approved-tcb-references.json`:
+
+| Reference fields | Required types |
+|---|---|
+| `snp_bootloader`, `snp_microcode`, `snp_snp_svn`, `snp_tee_svn` | Nonempty lists of approved integers from 0 through 255 |
+| `snp_smt_enabled`, `snp_tsme_enabled`, `snp_single_socket`, `snp_smt_allowed` | Booleans |
+| `snp_guest_abi_major`, `snp_guest_abi_minor` | Integers from 0 through 255 |
+
+The TCB lists correspond to verified Trustee `snp.reported_tcb_bootloader`,
+`reported_tcb_microcode`, `reported_tcb_snp` and `reported_tcb_tee` claims.
+Configuration values correspond to `platform_smt_enabled`,
+`platform_tsme_enabled`, `policy_single_socket`, `policy_smt_allowed`,
+`policy_abi_major` and `policy_abi_minor`. Keep debug and migration disabled.
+`snp_single_socket` must match the build profile; keep both values `false` unless
+a separately qualified profile requires otherwise. The exact reference schema is
+[`cvm/common/references.py`](cvm/common/references.py).
+
+`--defer-measurements` still validates these approved inputs. An empty object,
+placeholder TCB values or the test fixtures are not a bootstrap procedure. Do not
+put `snp_launch_measurement` in the initial input; finalization generates it.
+Disable `intel_tdx` for an SNP-only profile; enabled TDX or GPU profiles require
+their own approved references too. Keep KBS resource policy deny-all during
+reference collection; no application vault or key release is needed.
+
+For example, set a new `profile_version: snp-2026.10-r1` in the reviewed build
+profile and construct the pending bundle on the trusted build host:
+
+```sh
+sudo ./cvmctl build config/cvm_profile.yml \
+  -p amd_sev_snp --defer-measurements
+```
+
+Copy the resulting `target/cvm_snp-2026.10-r1/cvm_snp-2026.10-r1_amd_sev_snp.oci.tar`
+to the trusted SNP target host. Obtain its archive SHA-256 from the build host's
+`oci_artifacts.json` through an authenticated channel. On the target host, run:
+
+```sh
+sudo ./cvmctl pull cvm_snp-2026.10-r1_amd_sev_snp.oci.tar \
+  --archive-sha256 ARCHIVE_SHA256_FROM_THE_BUILD_HOST \
+  --output /srv/cvm/cvm_snp-2026.10-r1
+sudo ./cvmctl finalize /srv/cvm/cvm_snp-2026.10-r1/amd_sev_snp
+```
+
+Finalization boots that exact bundle and writes
+`amd_sev_snp/reference_values.json`, preserving the approved input fields and
+adding `snp_launch_measurement` as a list containing its measured launch hash.
+It also writes the final manifest and `profile_set.json`, then regenerates the
+OCI archive. Its private `reference-evidence.json` is mode 0600 and is excluded
+from OCI delivery; retain it and the boot log in restricted acceptance records.
+Do not substitute another guest's report with `--reference-evidence`, and do not
+run `inspect-tcb` on this SNP evidence.
+
+A finalized bundle is still unapproved. Continue with
+[exact-manifest acceptance and approval](#21-exact-manifest-acceptance-and-approval)
+and [Trustee reference installation](TRUSTEE_GUIDE.md#6-install-references-and-policies).
+Acceptance verifies the real attestation against the approved TCB and policy;
+finalization alone does not establish trust or create `approval.json`. Candidate
+acceptance keeps vault encryption and attestation checks enabled. Changing
+approved inputs requires a new profile version, construction and approval.
 
 ## 2. Simple CVM Build
 
@@ -577,9 +653,11 @@ sudo ./cvmctl admin install \
 ```
 
 Finalization and approval regenerate the OCI artifact so it includes the final
-manifest, profile set, evidence, resource policy and approval receipt. Repeat
-construction and finalization once for each platform in the profile. Every
-platform bundle must have the same generic contract. Use
+manifest, profile set, resource policy and, after approval, the approval receipt.
+Raw reference evidence stays in private build/acceptance records and is excluded
+from the OCI artifact. Repeat construction and finalization once for each
+platform in the profile. Every platform bundle must have the same generic
+contract. Use
 `./cvmctl admin retire ADMIN_JSON BUILD_ID` to retire a bundle.
 
 When the finalized platform artifacts return to the central Vault Build site,
