@@ -16,6 +16,7 @@
 
 import base64
 import contextlib
+import copy
 import fcntl
 import hashlib
 import json
@@ -62,6 +63,7 @@ from cvm.common.io import canonical, read_json
 from cvm.common.linux import memory_file, validate_core_policy
 from cvm.common.luks import validate_luks_metadata, validate_mapping
 from cvm.common.measurements import measurements, validate_measurements
+from cvm.common.references import SNP_BOOLS, SNP_INTS, SNP_LISTS, TDX_HEX
 from cvm.common.services import validate_service
 from cvm.common.validation import runtime_config
 from cvm.host import platforms
@@ -280,6 +282,177 @@ class PlatformTests(unittest.TestCase):
 
 
 class ProfileTests(unittest.TestCase):
+    def profile_fixture(self, enabled=platforms.PLATFORMS):
+        root = Path(self.temp_directory()).resolve()
+        value = {}
+        for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy"):
+            (root / key).write_bytes(b"fixture")
+            value[key] = key
+        value["platforms"] = {}
+        for name, defaults in config.PROFILE_DEFAULTS["platforms"].items():
+            settings = copy.deepcopy(defaults)
+            settings["enabled"] = name in enabled
+            for key in ("firmware", "kbs_client"):
+                settings[key] = name + "." + key
+                (root / settings[key]).write_bytes(b"fixture " + name.encode())
+            settings["kbs_client_provenance"] = name + ".provenance.json"
+            (root / settings["kbs_client_provenance"]).write_text(
+                json.dumps(
+                    {
+                        "source_clean": False,
+                        "trustee_commit": config.PROFILE_DEFAULTS["trustee_commit"],
+                        "guest_components_commit": config.GUEST_COMPONENTS_SELECTOR_COMMIT,
+                        "kbs_client_patch_sha256": config.digest_file(
+                            config.SOURCE / "cvm/build/kbs_client_policy_selector.patch"
+                        ),
+                        "binary_sha256": config.digest_file(root / settings["kbs_client"]),
+                    }
+                )
+            )
+            value["platforms"][name] = settings
+        references = {}
+        if "amd_sev_snp" in enabled:
+            references.update({key: [1] for key in SNP_LISTS})
+            references.update({key: False for key in SNP_BOOLS})
+            references.update({key: 0 for key in SNP_INTS})
+        if "intel_tdx" in enabled:
+            references.update({key: ["0" * size] for key, size in TDX_HEX.items()})
+            references["allowed_advisory_ids"] = []
+        value["reference_values"] = "references.json"
+        (root / value["reference_values"]).write_text(json.dumps(references))
+        path = root / "profile.yml"
+        path.write_text(yaml.safe_dump(value))
+        return path, value
+
+    def test_disabled_platforms_need_no_artifacts_or_references(self):
+        for enabled in platforms.PLATFORMS:
+            with self.subTest(enabled=enabled):
+                path, value = self.profile_fixture([enabled])
+                disabled = next(name for name in platforms.PLATFORMS if name != enabled)
+                settings = value["platforms"][disabled]
+                for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                    (path.parent / settings[key]).unlink()
+                settings["shim"] = "missing-shim.efi"
+                path.write_text(yaml.safe_dump(value))
+                profile = config.profile(path)
+                self.assertEqual(profile["platforms"][disabled], settings)
+                self.assertEqual(
+                    profile["platforms"][enabled]["firmware"],
+                    str(path.parent / value["platforms"][enabled]["firmware"]),
+                )
+                self.assertEqual(platforms.select_platform(profile, capabilities=set(platforms.PLATFORMS)), enabled)
+                with self.assertRaisesRegex(BuildError, "supported, enabled"):
+                    platforms.select_platform(profile, disabled)
+
+    def test_disabled_platform_provenance_is_never_read_or_hashed(self):
+        path, value = self.profile_fixture(["amd_sev_snp"])
+        disabled = value["platforms"]["intel_tdx"]
+        (path.parent / disabled["kbs_client_provenance"]).write_text("not JSON")
+        with (
+            patch.object(config, "local_path", wraps=config.local_path) as resolve,
+            patch.object(config, "read_json", wraps=config.read_json) as read,
+            patch.object(config, "digest_file", wraps=config.digest_file) as digest,
+        ):
+            config.profile(path)
+        for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+            self.assertNotIn(disabled[key], [call.args[1] for call in resolve.call_args_list])
+        self.assertNotIn(
+            str(path.parent / disabled["kbs_client_provenance"]), [call.args[0] for call in read.call_args_list]
+        )
+        self.assertNotIn(str(path.parent / disabled["kbs_client"]), [call.args[0] for call in digest.call_args_list])
+
+    def test_enabled_platforms_still_validate_artifacts_and_provenance(self):
+        for name in platforms.PLATFORMS:
+            for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                with self.subTest(platform=name, missing=key):
+                    path, value = self.profile_fixture()
+                    (path.parent / value["platforms"][name][key]).unlink()
+                    with self.assertRaisesRegex(BuildError, "Input does not exist"):
+                        config.profile(path)
+            with self.subTest(platform=name, provenance="wrong digest"):
+                path, value = self.profile_fixture()
+                (path.parent / value["platforms"][name]["kbs_client"]).write_bytes(b"changed binary")
+                with self.assertRaisesRegex(BuildError, "digest differs"):
+                    config.profile(path)
+
+    def test_enabled_platform_provenance_rejects_invalid_json(self):
+        for name in platforms.PLATFORMS:
+            with self.subTest(platform=name):
+                path, value = self.profile_fixture()
+                (path.parent / value["platforms"][name]["kbs_client_provenance"]).write_text("not JSON")
+                with self.assertRaises(json.JSONDecodeError):
+                    config.profile(path)
+
+    def test_disabled_platform_structure_remains_validated(self):
+        for invalid, message in (
+            ({"intel_tdx": []}, "mapping"),
+            ({"unknown": {"enabled": False}}, "Unsupported platform"),
+            ({"intel_tdx": {"enabled": "false"}}, "enabled must be boolean"),
+            ({"intel_tdx": {"enabled": 0}}, "enabled must be boolean"),
+            ({"intel_tdx": {"enabled": False, "attester": "snp"}}, "Attester mismatch"),
+            ({"intel_tdx": {"enabled": False, "cpu_model": "invalid model"}}, "Pin CPU model"),
+        ):
+            path, value = self.profile_fixture(["amd_sev_snp"])
+            value["platforms"].update(invalid)
+            path.write_text(yaml.safe_dump(value))
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(BuildError, message):
+                config.profile(path)
+
+    def test_all_disabled_fails_before_artifact_access(self):
+        path, _ = self.profile_fixture([])
+        with (
+            patch.object(config, "local_path", side_effect=AssertionError("No artifact access")),
+            self.assertRaisesRegex(BuildError, "At least one platform must be enabled"),
+        ):
+            config.profile(path)
+
+    def test_enabled_platform_references_remain_required(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        (path.parent / value["reference_values"]).write_text("{}")
+        with self.assertRaisesRegex(BuildError, "Missing approved TCB reference keys"):
+            config.profile(path)
+
+    def test_supplied_disabled_platform_references_remain_strict(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        references = read_json(path.parent / value["reference_values"])
+        references["snp_microcode"] = ["invalid"]
+        (path.parent / value["reference_values"]).write_text(json.dumps(references))
+        with self.assertRaisesRegex(BuildError, "Invalid approved TCB reference: snp_microcode"):
+            config.profile(path)
+
+    def test_omitting_platforms_keeps_both_default_platforms(self):
+        path, value = self.profile_fixture()
+        defaults = value.pop("platforms")
+        for settings in defaults.values():
+            for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                settings[key] = str(path.parent / settings[key])
+        path.write_text(yaml.safe_dump(value))
+        with patch.dict(config.PROFILE_DEFAULTS["platforms"], defaults, clear=True):
+            profile = config.profile(path)
+        self.assertEqual(set(profile["platforms"]), set(platforms.PLATFORMS))
+        self.assertTrue(all(settings["enabled"] for settings in profile["platforms"].values()))
+
+    def test_omitting_enabled_keeps_platform_enabled(self):
+        path, value = self.profile_fixture()
+        for settings in value["platforms"].values():
+            del settings["enabled"]
+        path.write_text(yaml.safe_dump(value))
+        profile = config.profile(path)
+        self.assertTrue(all(settings["enabled"] for settings in profile["platforms"].values()))
+
+    def test_enabled_tdx_still_requires_reviewed_shim_for_secure_boot(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        settings = value["platforms"]["intel_tdx"]
+        settings["firmware"] = "tdx.ms.fd"
+        (path.parent / settings["firmware"]).write_bytes(b"fixture")
+        path.write_text(yaml.safe_dump(value))
+        with self.assertRaisesRegex(BuildError, "Secure Boot firmware requires"):
+            config.profile(path)
+        settings["shim"] = "missing-shim.efi"
+        path.write_text(yaml.safe_dump(value))
+        with self.assertRaisesRegex(BuildError, "Input does not exist.*missing-shim"):
+            config.profile(path)
+
     def test_profile_rejects_typos_and_removed_options(self):
         path = Path(self.temp_directory()) / "profile.yml"
         for name in ("gpu_cont", "trustee_patch_digest", "gpu_attestation_binary"):
