@@ -106,6 +106,7 @@ class ReviewBoundaryTests(unittest.TestCase):
                         notify.assert_called_once_with('WATCHDOG=trigger')
                     for _ in range(100):
                         audit.emit('deny')
+                        audit.emit_diagnostic('gpu_readiness_revoke_failed')
                     assert audit._writer is writer and audit._records.qsize() <= 8
                     assert time.monotonic() - started < 2
                 finally:

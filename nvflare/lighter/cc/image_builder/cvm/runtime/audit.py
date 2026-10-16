@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Emit guest authorization decisions without disclosing secrets."""
+"""Emit authorization decisions and separate sanitized operational diagnostics."""
 
 import datetime
 import os
@@ -20,6 +20,7 @@ import queue
 import stat
 import threading
 from pathlib import Path
+from typing import NamedTuple
 
 from ..common.io import canonical, read_json
 
@@ -28,6 +29,11 @@ from ..common.io import canonical, read_json
 # Advisory records may be dropped on congestion or process exit.
 _records = queue.Queue(maxsize=8)
 _writer = None
+_DIAGNOSTIC_CODES = frozenset({"gpu_readiness_revoke_failed"})
+
+
+class _Diagnostic(NamedTuple):
+    code: str
 
 
 def record(config, identity, decision):
@@ -60,13 +66,19 @@ def append(path, line):
         os.close(fd)
 
 
-def _write(decision):
+def _write(item):
     try:
-        config = read_json("/etc/cvm/runtime.json")
         if Path("/etc/cvm/dev_mode").exists():
             return
+        if isinstance(item, _Diagnostic):
+            # Operational diagnostics have no authorization meaning and must
+            # never enter the six-field attestation stream or its sidecar.
+            value = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "code": item.code}
+            print("CVM_DIAGNOSTIC=" + canonical(value).decode(), flush=True)
+            return
+        config = read_json("/etc/cvm/runtime.json")
         identity = Path("/run/cvm/binding.json")
-        value = record(config, read_json(identity) if identity.exists() else {}, decision)
+        value = record(config, read_json(identity) if identity.exists() else {}, item)
         line = canonical(value) + b"\n"
         print("CVM_ATTESTATION=" + line.decode().strip(), flush=True)
         append("/applog/attestation.log", line)
@@ -81,13 +93,24 @@ def _drain():
         _write(_records.get())
 
 
-def emit(decision):
+def _enqueue(item):
     """Queue an advisory record without waiting for any host-controlled I/O."""
     global _writer
     try:
         if _writer is None:
             _writer = threading.Thread(target=_drain, name="cvm-audit", daemon=True)
             _writer.start()
-        _records.put_nowait(decision)
+        _records.put_nowait(item)
     except (RuntimeError, queue.Full):
         pass
+
+
+def emit(decision):
+    """Queue an authorization decision without waiting for audit I/O."""
+    _enqueue(decision)
+
+
+def emit_diagnostic(code):
+    """Queue a static operational code without accepting exception details."""
+    if isinstance(code, str) and code in _DIAGNOSTIC_CODES:
+        _enqueue(_Diagnostic(code))

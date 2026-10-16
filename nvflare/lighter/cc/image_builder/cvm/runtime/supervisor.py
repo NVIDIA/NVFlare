@@ -28,8 +28,8 @@ from ..common.contracts import (
 from ..common.errors import BuildError, require
 from ..common.io import read_json, write_json
 from ..common.linux import run
-from .audit import emit
-from .gpu import readiness
+from .audit import emit, emit_diagnostic
+from .gpu import confirm_not_ready, readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
 
@@ -94,12 +94,20 @@ def run_reopen(timeout, environment):
         raise BuildError(f"Vault reopen could not complete ({type(exc).__name__})") from None
 
 
-def revoke_vault(config):
-    """Revoke readiness and discard any mapping left by a failed reopen."""
+def revoke_vault(config, *, tolerate_readiness_failure=False):
+    """Close the vault; a failed GPU reset requires explicit Not Ready readback."""
+    confirmed_after_error = False
     try:
-        readiness(config, False)
+        try:
+            readiness(config, False)
+        except BuildError:
+            if not tolerate_readiness_failure:
+                raise
+            confirm_not_ready(config)
+            confirmed_after_error = True
     finally:
         close_vault()
+    return confirmed_after_error
 
 
 def best_effort_revoke(config):
@@ -148,10 +156,18 @@ def periodic_tick(config, state, sequence):
 def quarantine(config, units, state):
     """Stop the workload, close the vault, then retry authorization for a bounded window.
 
-    No secret remains reachable while quarantined: the container and daemons are
-    stopped, the vault is unmounted and its mapping closed. A successful reopen
-    child re-attests, re-fetches the key and re-mounts before the units restart.
+    The container and daemons are stopped, GPU readiness is revoked, and the
+    vault is unmounted with its mapping closed. A successful reopen child
+    re-attests, re-fetches the key and re-mounts before the units restart.
     """
+    diagnostic_emitted = False
+
+    def revoke():
+        nonlocal diagnostic_emitted
+        if revoke_vault(config, tolerate_readiness_failure=True) and not diagnostic_emitted:
+            diagnostic_emitted = True
+            emit_diagnostic("gpu_readiness_revoke_failed")
+
     # PID 1 terminates this guest if stop/unmount or a Python operation stalls.
     # Logging has a separate bounded queue and cannot defer revocation.
     try:
@@ -164,7 +180,7 @@ def quarantine(config, units, state):
         # first, while preserving the stop/configuration error as the cause.
         best_effort_revoke(config)
         raise
-    revoke_vault(config)
+    revoke()
     emit("quarantine")
     environment = dict(os.environ)
     environment.pop("NOTIFY_SOCKET", None)
@@ -178,9 +194,11 @@ def quarantine(config, units, state):
             require(time.monotonic() < deadline, "Vault quarantine deadline expired")
             break
         except BuildError:
-            # Cleanup is deliberately outside the retried operation: failure
-            # here propagates to PID 1's fail-closed power-off path.
-            revoke_vault(config)
+            # Give cleanup its own bounded phase, including after a reopen
+            # consumed the entire retry window. Vault closure and an explicit
+            # GPU Not Ready state are required before authorization can retry.
+            watchdog(REVOCATION_TIMEOUT_SECONDS)
+            revoke()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise

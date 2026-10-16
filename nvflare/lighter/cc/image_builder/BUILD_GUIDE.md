@@ -937,6 +937,31 @@ docker run --gpus all APPLICATION_IMAGE
 The application image must contain CUDA/application user-space components that
 are compatible with the pinned guest driver. For explicit placement, repeat `launch_cvm.sh --gpu PCI_ADDRESS` once for every GPU required by `gpu_count`.
 
+GPU quarantine stops the application and container daemons, revokes GPU
+readiness, closes the vault, and retries authorization for at most 900 seconds.
+If the readiness-reset command fails, bounded readback must confirm the expected
+number of distinct GPUs and explicitly report Not Ready before quarantine can
+continue. Ready, unknown or malformed output, a query error, or failed vault
+closure forces poweroff after vault cleanup is attempted. Not Ready prevents new
+CUDA work; it does not establish that GPU memory has been erased. Workloads
+restart only after a fresh successful appraisal and GPU readiness restoration.
+The recovery deadline is not extended by cleanup: retry cleanup and terminal
+cleanup each have a separate 180-second bound and can delay final poweroff past
+the 900-second recovery window.
+
+At most one static `CVM_DIAGNOSTIC` record with code
+`gpu_readiness_revoke_failed` is queued per quarantine episode. This advisory
+appears only on the console, separately from authorization decisions; it is not
+written to `attestation.log` and may be dropped if logging is congested.
+Physical validation of readiness readback with the pinned NVIDIA 580 driver,
+GPU quarantine recovery, and poweroff timing remains required; synthetic parser
+fixtures do not establish driver or hardware behavior.
+
+This supervisor is part of the measured guest image: deploy the change by incrementing `profile_version`,
+rebuilding the CVM, regenerating its references, and repeating acceptance and
+approval for the resulting bundle. Existing deployed images do not pick up a
+host-side source update.
+
 ## 5. Deliverables
 
 Vault Build prints its generated deployment ID and staging folder. For example,

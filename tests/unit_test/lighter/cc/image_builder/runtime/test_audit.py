@@ -14,12 +14,15 @@
 
 """Audit metadata remains narrow even when inputs contain sensitive fields."""
 
+import json
 import os
+import queue
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from cvm.runtime import audit
 from cvm.runtime.audit import append, record
 
 
@@ -60,3 +63,99 @@ class AuditTests(unittest.TestCase):
             append(link, b"first\n")
             append(link, b"second\n")
             self.assertEqual(link.read_bytes(), b"first\nsecond\n")
+
+    def test_diagnostic_has_separate_console_stream_and_no_identity_or_sidecar(self):
+        with (
+            patch.object(audit.Path, "exists", return_value=False),
+            patch.object(audit, "read_json") as read,
+            patch.object(audit, "append") as append_log,
+            patch("builtins.print") as output,
+        ):
+            audit._write(audit._Diagnostic("gpu_readiness_revoke_failed"))
+        output.assert_called_once()
+        line = output.call_args.args[0]
+        self.assertTrue(line.startswith("CVM_DIAGNOSTIC="))
+        value = json.loads(line.removeprefix("CVM_DIAGNOSTIC="))
+        self.assertEqual(set(value), {"ts", "code"})
+        self.assertEqual(value["code"], "gpu_readiness_revoke_failed")
+        read.assert_not_called()
+        append_log.assert_not_called()
+
+    def test_authorization_writer_retains_six_fields_and_sidecar(self):
+        with (
+            patch.object(audit.Path, "exists", return_value=False),
+            patch.object(audit, "read_json", return_value={"build_id": "build", "attestation_policy_id": "policy"}),
+            patch.object(audit, "append") as append_log,
+            patch("builtins.print") as output,
+        ):
+            audit._write("allow")
+        line = output.call_args.args[0]
+        self.assertTrue(line.startswith("CVM_ATTESTATION="))
+        value = json.loads(line.removeprefix("CVM_ATTESTATION="))
+        self.assertEqual(set(value), {"ts", "cvm_build_id", "vault_id", "measurement", "policy_id", "decision"})
+        self.assertEqual(value["decision"], "allow")
+        append_log.assert_called_once_with("/applog/attestation.log", audit.canonical(value) + b"\n")
+
+    def test_development_mode_suppresses_both_record_types(self):
+        with (
+            patch.object(audit.Path, "exists", return_value=True),
+            patch.object(audit, "read_json") as read,
+            patch.object(audit, "append") as append_log,
+            patch("builtins.print") as output,
+        ):
+            audit._write("allow")
+            audit._write(audit._Diagnostic("gpu_readiness_revoke_failed"))
+        read.assert_not_called()
+        append_log.assert_not_called()
+        output.assert_not_called()
+
+    def test_unknown_diagnostic_values_are_not_queued_or_serialized(self):
+        with patch.object(audit, "_enqueue") as enqueue:
+            for code in ("private driver stderr", "", None, {"secret": "never-log"}, RuntimeError("never-log")):
+                audit.emit_diagnostic(code)
+            enqueue.assert_not_called()
+            audit.emit_diagnostic("gpu_readiness_revoke_failed")
+        enqueue.assert_called_once_with(audit._Diagnostic("gpu_readiness_revoke_failed"))
+
+    def test_both_record_types_share_bounded_nonblocking_queue(self):
+        records = queue.Queue(maxsize=8)
+        with patch.object(audit, "_writer", object()), patch.object(audit, "_records", records):
+            audit.emit("quarantine")
+            for _ in range(100):
+                audit.emit_diagnostic("gpu_readiness_revoke_failed")
+            audit.emit("allow")
+        self.assertEqual(records.qsize(), 8)
+        self.assertEqual(records.get_nowait(), "quarantine")
+        while not records.empty():
+            self.assertEqual(records.get_nowait(), audit._Diagnostic("gpu_readiness_revoke_failed"))
+
+    def test_worker_start_failure_does_not_escape_diagnostic_emitter(self):
+        for constructor_fails in (True, False):
+            worker = Mock()
+            if not constructor_fails:
+                worker.start.side_effect = RuntimeError("cannot create worker")
+            with (
+                self.subTest(constructor_fails=constructor_fails),
+                patch.object(audit, "_writer", None),
+                patch.object(
+                    audit.threading,
+                    "Thread",
+                    **(
+                        {"side_effect": RuntimeError("cannot create worker")}
+                        if constructor_fails
+                        else {"return_value": worker}
+                    ),
+                ),
+                patch.object(audit, "_records") as records,
+            ):
+                audit.emit_diagnostic("gpu_readiness_revoke_failed")
+                records.put_nowait.assert_not_called()
+
+    def test_diagnostic_output_error_is_advisory(self):
+        with (
+            patch.object(audit.Path, "exists", return_value=False),
+            patch("builtins.print", side_effect=OSError("blocked console")),
+            patch.object(audit, "append") as append_log,
+        ):
+            audit._write(audit._Diagnostic("gpu_readiness_revoke_failed"))
+        append_log.assert_not_called()
