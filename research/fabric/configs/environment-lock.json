@@ -1,0 +1,14 @@
+{
+  "python": "3.10",
+  "packages": {
+    "nvflare": "2.7.2",
+    "torch": "2.11.0+cu128",
+    "numpy": "1.26.4",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2",
+    "h5py": "3.16.0",
+    "nvidia-cudnn-cu12": "9.19.0.56"
+  },
+  "cuda": "12.8",
+  "cudnn": "9.19.0.56"
+}
