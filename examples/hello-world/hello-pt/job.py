@@ -45,7 +45,12 @@ def define_parser() -> argparse.ArgumentParser:
 
     add_dataset_arguments(parser)
     parser.add_argument("--seed", type=int, default=MODEL_SEED)
-    parser.add_argument("--torch_threads", type=int, default=None, help="PyTorch CPU threads per client (default: 1).")
+    parser.add_argument(
+        "--torch_threads",
+        type=int,
+        default=None,
+        help="Set PyTorch CPU threads per client (default: leave PyTorch settings unchanged).",
+    )
     parser.add_argument(
         "--resume_training",
         action=argparse.BooleanOptionalAction,
@@ -84,7 +89,7 @@ def create_recipe(args):
         model=create_model(seed=seed),
         # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
-        train_script="client_task.py" if getattr(args, "execution_lifetime", "job") == "task" else "client.py",
+        train_script="client.py",
         # Pass argv directly so a client-local path containing spaces, quotes,
         # or apostrophes keeps its exact argument boundary without shell parsing.
         train_args=train_args,

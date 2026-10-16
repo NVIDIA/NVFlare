@@ -325,7 +325,7 @@ def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch)
     assert executor_args["task_script_path"] == "client.py"
 
 
-def test_task_export_selects_resuming_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
+def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
         args = job_module.parse_args(["--execution_lifetime", "task", "--seed", "731", "--no-resume_training"])
         recipe = job_module.create_recipe(args)
@@ -333,10 +333,10 @@ def test_task_export_selects_resuming_entry_point_and_keeps_training_seed(tmp_pa
         recipe.export(job_dir=str(tmp_path), env=job_module.create_environment(args))
     job_dir = tmp_path / "hello-pt"
     custom = job_dir / "app" / "custom"
-    assert all((custom / name).is_file() for name in ("client_task.py", "client.py", "model.py", "prepare_data.py"))
+    assert all((custom / name).is_file() for name in ("client.py", "model.py", "prepare_data.py"))
     config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
     executor_args = config["executors"][0]["executor"]["args"]
-    assert executor_args["task_script_path"] == "client_task.py"
+    assert executor_args["task_script_path"] == "client.py"
     assert executor_args["task_script_args"] == ["--dataset", "synthetic", "--seed", "731", "--no-resume_training"]
 
 

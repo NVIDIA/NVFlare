@@ -199,9 +199,9 @@ def test_cifar_preflight_rejects_present_but_empty_files(tmp_path):
 def task_client(tmp_path, monkeypatch):
     import torch
 
-    with load_hello_pt_module("client_task.py") as module:
+    with load_hello_pt_module("client.py") as module:
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(sys, "argv", ["client_task.py"])
+        monkeypatch.setattr(sys, "argv", ["client.py"])
         monkeypatch.setattr(module.flare, "init", lambda: None)
         monkeypatch.setattr(module.flare, "get_site_name", lambda: "site-1")
         monkeypatch.setattr(module.flare, "get_job_id", lambda: "job-1")
@@ -209,12 +209,17 @@ def task_client(tmp_path, monkeypatch):
             module.flare,
             "system_info",
             lambda: {
+                "site_name": "site-1",
+                "job_id": "job-1",
                 "task_checkpoint": {
                     "input": str(tmp_path / "training_state.pt") if (tmp_path / "training_state.pt").exists() else None,
                     "output": str(tmp_path / "checkpoint.pending"),
-                }
+                },
             },
         )
+        running = iter((True, False))
+        monkeypatch.setattr(module.flare, "is_running", lambda: next(running, False))
+        monkeypatch.setattr(module.flare, "is_submit_model", lambda: False)
         monkeypatch.setattr(module.flare, "is_train", lambda: True)
         monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
         model = torch.nn.Linear(1, 2)
@@ -233,16 +238,13 @@ def task_client(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "checkpoint,error",
     [
-        (None, "Missing training checkpoint"),
         ({"job_id": "other", "site_name": "site-1", "round": 0}, "different job or site"),
         ({"job_id": "job-1", "site_name": "other", "round": 0}, "different job or site"),
-        ({"job_id": "job-1", "site_name": "site-1", "round": -1}, "immediately preceding round"),
-        ({"job_id": "job-1", "site_name": "site-1", "round": 1}, "immediately preceding round"),
+        ({"job_id": "job-1", "site_name": "site-1", "round": -1}, "earlier successful round"),
+        ({"job_id": "job-1", "site_name": "site-1", "round": 1}, "earlier successful round"),
     ],
 )
-def test_task_training_rejects_missing_stale_or_foreign_checkpoint(
-    task_client, tmp_path, monkeypatch, checkpoint, error
-):
+def test_task_training_rejects_invalid_or_foreign_checkpoint(task_client, tmp_path, monkeypatch, checkpoint, error):
     import torch
 
     if checkpoint is not None:
@@ -259,7 +261,7 @@ def test_task_evaluation_and_fresh_training_leave_checkpoint_untouched(
     checkpoint = tmp_path / "training_state.pt"
     checkpoint.write_bytes(b"not a PyTorch checkpoint")
     if fresh_training:
-        monkeypatch.setattr(sys, "argv", ["client_task.py", "--no-resume_training"])
+        monkeypatch.setattr(sys, "argv", ["client.py", "--no-resume_training"])
     else:
         monkeypatch.setattr(task_client.flare, "is_train", lambda: False)
         monkeypatch.setattr(task_client.flare, "is_evaluate", lambda: True)
@@ -324,3 +326,58 @@ def test_task_training_writes_pending_state_without_replacing_committed_input(ta
     candidate = torch.load(tmp_path / "checkpoint.pending", weights_only=True)
     assert candidate["round"] == 1
     assert candidate["job_id"] == "job-1"
+
+
+@pytest.mark.parametrize("saved_round", [None, 0])
+def test_task_training_accepts_a_later_round_after_missed_assignments(task_client, tmp_path, monkeypatch, saved_round):
+    import torch
+
+    model = task_client.create_model()
+    if saved_round is not None:
+        torch.save(
+            {
+                "job_id": "job-1",
+                "site_name": "site-1",
+                "round": saved_round,
+                "optimizer": task_client.SGD(model.parameters(), lr=0.1, momentum=0.9).state_dict(),
+                "train_rng": torch.Generator().get_state(),
+                "torch_rng": torch.get_rng_state(),
+            },
+            tmp_path / "training_state.pt",
+        )
+    monkeypatch.setattr(
+        task_client.flare, "receive", lambda: task_client.flare.FLModel(params=model.state_dict(), current_round=3)
+    )
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 1
+    assert torch.load(tmp_path / "checkpoint.pending", weights_only=True)["round"] == 3
+
+
+def test_job_training_keeps_state_in_memory_without_checkpoint_io(task_client, monkeypatch):
+    optimizer_ids = []
+    learning_rates = []
+    running = iter((True, True, False))
+    monkeypatch.setattr(task_client.flare, "is_running", lambda: next(running, False))
+    monkeypatch.setattr(task_client.flare, "system_info", lambda: {"site_name": "site-1", "job_id": "job-1"})
+    monkeypatch.setattr(
+        task_client.torch, "load", lambda *args, **kwargs: pytest.fail("job mode must retain native state")
+    )
+    monkeypatch.setattr(
+        task_client.torch, "set_num_threads", lambda *args: pytest.fail("default thread settings must stay unchanged")
+    )
+
+    def train(model, optimizer, *args):
+        optimizer_ids.append(id(optimizer))
+        learning_rates.append(optimizer.param_groups[0]["lr"])
+        optimizer.param_groups[0]["lr"] *= 0.5
+        return 1
+
+    monkeypatch.setattr(task_client, "train_one_round", train)
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 2
+    assert optimizer_ids[0] == optimizer_ids[1]
+    assert learning_rates == [0.1, 0.05]

@@ -115,6 +115,36 @@ def train_one_round(model, optimizer, train_loader, device, epochs, current_roun
     return epochs * num_train_batches
 
 
+def restore_training_state(checkpoint, optimizer, train_loader, *, job_id, site_name, current_round):
+    """Restore native PyTorch state from the last successful local assignment."""
+    if checkpoint["input"] is None:
+        return
+    state = torch.load(checkpoint["input"], map_location="cpu", weights_only=True)
+    if state["job_id"] != job_id or state["site_name"] != site_name:
+        raise RuntimeError("Training checkpoint belongs to a different job or site")
+    previous_round = state["round"]
+    if type(previous_round) is not int or not 0 <= previous_round < current_round:
+        raise RuntimeError("Training checkpoint must come from an earlier successful round")
+    optimizer.load_state_dict(state["optimizer"])
+    train_loader.generator.set_state(state["train_rng"])
+    torch.set_rng_state(state["torch_rng"])
+
+
+def save_training_state(checkpoint, optimizer, train_loader, *, job_id, site_name, current_round):
+    """Write a candidate; the runtime promotes it with successful task completion."""
+    torch.save(
+        {
+            "job_id": job_id,
+            "site_name": site_name,
+            "round": current_round,
+            "optimizer": optimizer.state_dict(),
+            "train_rng": train_loader.generator.get_state(),
+            "torch_rng": torch.get_rng_state(),
+        },
+        checkpoint["output"],
+    )
+
+
 def create_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
@@ -122,7 +152,8 @@ def create_parser():
     parser.add_argument("--batch_size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--num_workers", type=int, default=DEFAULT_NUM_WORKERS)
     parser.add_argument("--seed", type=int, default=MODEL_SEED)
-    parser.add_argument("--torch_threads", type=int, default=1)
+    parser.add_argument("--torch_threads", type=int, default=None)
+    parser.add_argument("--resume_training", action=argparse.BooleanOptionalAction, default=True)
     add_dataset_arguments(parser)
     parser.add_argument("--train_size", type=int, default=DEFAULT_TRAIN_SIZE)
     parser.add_argument("--test_size", type=int, default=DEFAULT_TEST_SIZE)
@@ -131,7 +162,8 @@ def create_parser():
 
 def main():
     args = create_parser().parse_args()
-    torch.set_num_threads(args.torch_threads)
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
     learning_rate = args.learning_rate
     if learning_rate is None:
         learning_rate = DEFAULT_SYNTHETIC_LEARNING_RATE if args.dataset == "synthetic" else DEFAULT_CIFAR_LEARNING_RATE
@@ -140,11 +172,16 @@ def main():
     flare.init()
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
+    checkpoint = sys_info.get("task_checkpoint")
     torch.manual_seed(stable_seed(client_name, "training", args.seed))
 
     # Keep the zero-argument quickstart on CPU for repeatable behavior across
     # developer machines. The opt-in CIFAR-10 run can use a GPU when available.
-    device = torch.device("cpu" if args.dataset == "synthetic" else "cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cpu"
+        if checkpoint is not None or args.dataset == "synthetic"
+        else "cuda:0" if torch.cuda.is_available() else "cpu"
+    )
     model = create_model(seed=args.seed).to(device)
     optimizer = SGD(model.parameters(), lr=learning_rate, momentum=0.9)
     train_loader, test_loader = create_data_loaders(
@@ -180,6 +217,18 @@ def main():
             flare.send(flare.FLModel(params=last_params))
             continue
 
+        # Resident job compute retains these objects. Fresh workers restore
+        # only local optimizer/RNG state; the server still supplies the weights.
+        if flare.is_train() and checkpoint is not None and args.resume_training:
+            restore_training_state(
+                checkpoint,
+                optimizer,
+                train_loader,
+                job_id=sys_info["job_id"],
+                site_name=client_name,
+                current_round=input_model.current_round,
+            )
+
         # (5) loads model from NVFlare
         model.load_state_dict(input_model.params)
         # (6) evaluate the received global model before local training
@@ -214,6 +263,15 @@ def main():
             },
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
+        if checkpoint is not None and args.resume_training:
+            save_training_state(
+                checkpoint,
+                optimizer,
+                train_loader,
+                job_id=sys_info["job_id"],
+                site_name=client_name,
+                current_round=input_model.current_round,
+            )
         print(f"site: {client_name}, sending model to server.")
         # (8) send model back to NVFlare
         flare.send(output_model)

@@ -22,12 +22,13 @@ import time
 from functools import partial
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.app_common.app_constant import AlgorithmConstants
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.adapters import TaskInProcessAdapter
 from nvflare.client.in_process.api import InProcessClientAPI
 from nvflare.fuel.data_event.data_bus import DataBus
@@ -93,7 +94,8 @@ class _ClientAPITaskRunner:
             raise ValueError("task Client API requires a .py script")
         try:
             self._task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
-            register_framework_decomposers(context.params_exchange_format, context.server_expected_format)
+            if self._task_name == context.submit_model_task_name:
+                raise ValueError("task lifetime does not support local-model submission; use job lifetime")
             metadata = context.build_task_metadata(fl_ctx.get_identity_name(), fl_ctx.get_job_id(), self._task_name)
 
             def log_handler(message):
@@ -127,7 +129,16 @@ class _ClientAPITaskRunner:
         self._executed = True
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
+        dxo = from_shareable(shareable)
+        if AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL in dxo.meta or (
+            dxo.data_kind == DataKind.COLLECTION and AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL in dxo.data
+        ):
+            raise ValueError("task lifetime does not restore SCAFFOLD client control variates; use job lifetime")
+        del dxo
         self._adapter.stage_input(shareable)
+        # The API owns the decoded model now. Worker stack frames retain this
+        # Shareable until the script exits, so release its payload references.
+        shareable.clear()
         DataBus().put_data(CLIENT_API_KEY, self._api)
         if self._on_started is not None:
             self._on_started()

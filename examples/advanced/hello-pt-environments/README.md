@@ -47,10 +47,10 @@ construction, and job export, but do not connect to a live production federation
 
 The default `--execution_lifetime job` retains each client's script and optimizer
 for the job. `--execution_lifetime task` starts a fresh CPU Process worker for each
-training or final global evaluation task. Job mode uses `client.py`; task mode
-uses `client_task.py`, which shares the local training loop and explicitly
-restores optimizer momentum, the training DataLoader generator and PyTorch RNG
-state with `torch.load` / `torch.save`:
+training or final global evaluation task. Both modes use the same `client.py`.
+Job mode retains its optimizer and loaders; task mode explicitly restores optimizer
+momentum, the training DataLoader generator and PyTorch RNG state with
+`torch.load` / `torch.save`:
 
 ```bash
 python job.py --execution_lifetime task
@@ -60,8 +60,8 @@ python job.py --env prod --startup-kit /path/to/admin/startup-kit --execution_li
 
 Use the same `--seed` in both modes to select the initial model and training
 shuffle seeds. For a controlled comparison, run both on CPU with the same thread
-count, batch size, epoch count and dataset. Both scripts default to one PyTorch
-CPU thread; set `--torch_threads` explicitly to change it. For example:
+count, batch size, epoch count and dataset. PyTorch thread settings remain unchanged
+unless `--torch_threads` is explicitly supplied. For example:
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --seed 731
@@ -77,8 +77,9 @@ worker finalization, settlement and validation. Failed attempts cannot overwrite
 committed state, and result-submission retries reuse the completed result without
 training again. Checkpoints stay client-local and are not aggregated. The incoming
 server model supplies each round's weights; evaluation does not update the checkpoint.
-The script rejects stale or missing state for later training rounds. These paired
-runs qualify this explicitly checkpoint-aware example under matching CPU settings;
+After missed rounds, the script restores the last earlier successful checkpoint,
+or starts fresh if the site has no checkpoint yet. Same/future-round and foreign
+job/site checkpoints are rejected. These paired runs qualify this explicitly checkpoint-aware example under matching CPU settings;
 lifetime alone cannot preserve arbitrary state in unchanged training scripts.
 Automatic worker retries and recovery after Client Job death are outside this scope.
 

@@ -59,7 +59,9 @@ def test_native_hello_pt_training_and_final_evaluation(tmp_path, monkeypatch, li
     poc_module = importlib.import_module("nvflare.recipe.poc_env")
     monkeypatch.setattr(poc_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as example:
-        args = example.parse_args(["--env", environment, "--execution_lifetime", lifetime, "--num_rounds", "2"])
+        args = example.parse_args(
+            ["--env", environment, "--execution_lifetime", lifetime, "--num_rounds", "2", "--torch_threads", "1"]
+        )
         recipe = example.create_recipe(args)
         env = (
             SimEnv(num_clients=2, workspace_root=str(tmp_path / "simulation"))
@@ -106,6 +108,57 @@ def test_native_hello_pt_training_and_final_evaluation(tmp_path, monkeypatch, li
         assert len({item["worker_pid"] for item in completions}) == expected
 
 
+@pytest.mark.timeout(300)
+def test_task_pytorch_exchange_streams_large_tensors(tmp_path, monkeypatch):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    monkeypatch.delenv("NVFLARE_HOME", raising=False)
+    script = tmp_path / "tensor_client.py"
+    script.write_text(
+        """import torch
+import nvflare.client as flare
+from nvflare.client import FLModel
+
+torch.set_num_threads(1)
+flare.init()
+while flare.is_running():
+    model = flare.receive()
+    # Exceeds TensorDecomposer's 2 MiB threshold: CJ must handle TENSOR_DOWNLOAD,
+    # rather than relying on inline tensor reconstruction to register the codec.
+    assert all(isinstance(t, torch.Tensor) for t in model.params.values())
+    assert any(t.numel() * t.element_size() > 2 * 1024 * 1024 for t in model.params.values())
+    assert all(torch.equal(t, torch.full_like(t, model.current_round)) for t in model.params.values())
+    flare.send(FLModel(params={k: t + 1 for k, t in model.params.items()},
+                       metrics={"accuracy": 1.0}, meta={"NUM_STEPS_CURRENT_ROUND": 1}))
+"""
+    )
+    initial_ckpt = tmp_path / "initial.pt"
+    torch.save({"model": {"weight": torch.zeros(1024, 1024)}}, initial_ckpt)
+    recipe = FedAvgRecipe(
+        name="task_pytorch_wire",
+        model={"path": "torch.nn.Linear", "args": {"in_features": 1024, "out_features": 1024, "bias": False}},
+        initial_ckpt=str(initial_ckpt),
+        min_clients=2,
+        num_rounds=2,
+        train_script=str(script),
+        execution_lifetime="task",
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / "simulation"))
+    run = recipe.execute(env)
+    result = run.get_result(timeout=240, clean_up=False)
+    assert result is not None and not env.last_run_failed
+    root = Path(result)
+    saved = torch.load(next(root.rglob("FL_global_model.pt")), map_location="cpu", weights_only=True)
+    assert torch.equal(saved["model"]["weight"], torch.full((1024, 1024), 2.0))
+    completions = [json.loads(path.read_text()) for path in root.rglob("completion.json")]
+    assert len(completions) == len({item["worker_pid"] for item in completions}) == 4
+
+
 @pytest.mark.timeout(600)
 def test_seeded_task_and_job_training_match_every_round(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
@@ -140,7 +193,7 @@ class RoundRecorder(PTFileModelPersistor):
     # Observe the real entry points at their API boundary. The training and
     # checkpoint code is copied unchanged into both jobs.
     client_recorders = {}
-    for lifetime, module_name in (("job", "client"), ("task", "client_task")):
+    for lifetime in ("job", "task"):
         path = tmp_path / f"capture_{lifetime}_client.py"
         path.write_text(
             """from pathlib import Path
@@ -178,7 +231,7 @@ if __name__ == "__main__":
     flare.send = send
     trainer.main()
 """.replace(
-                "TRAINER_MODULE", module_name
+                "TRAINER_MODULE", "client"
             )
         )
         client_recorders[lifetime] = path
@@ -188,7 +241,9 @@ if __name__ == "__main__":
     try:
         for lifetime in ("job", "task"):
             with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as example:
-                args = example.parse_args(["--execution_lifetime", lifetime, "--num_rounds", "3", "--seed", "731"])
+                args = example.parse_args(
+                    ["--execution_lifetime", lifetime, "--num_rounds", "3", "--seed", "731", "--torch_threads", "1"]
+                )
                 factory = example.FedAvgRecipe
 
                 def create_recorded_recipe(**kwargs):
@@ -206,7 +261,7 @@ if __name__ == "__main__":
                     create_recorded_recipe,
                 )
                 recipe = example.create_recipe(args)
-                for name in ("client.py", "client_task.py", "model.py", "prepare_data.py"):
+                for name in ("client.py", "model.py", "prepare_data.py"):
                     recipe.add_client_file(str(example.HELLO_PT_DIR / name))
                 env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / lifetime / "simulation"))
                 run = recipe.execute(env)

@@ -18,11 +18,13 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConnPropKey, SystemConfigs, SystemVarName
 from nvflare.apis.workspace import Workspace
+from nvflare.client.config import ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
-from nvflare.job_config.task_execution import prepare_task_execution
+from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, task_constructor_args
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
@@ -131,6 +133,14 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             node.paths = path.split(".")
             self._authorize_component_config_tree(component, config_ctx, node, force_current=True)
         self._worker_config_paths = tuple(path for path, _ in worker_paths)
+        # CJ decodes federation tasks and worker results before/after worker execution.
+        for plan in self.task_execution.executors:
+            if self.get_class_path(plan.executor) == CLIENT_API_EXECUTOR_PATH:
+                args = task_constructor_args(plan.executor)
+                register_framework_decomposers(
+                    args.get("params_exchange_format", ExchangeFormat.RAW),
+                    args.get("server_expected_format", ExchangeFormat.NUMPY),
+                )
         if self.task_execution.compute_component_ids:
             # The resident statistics privacy filters decode these payloads too.
             from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration

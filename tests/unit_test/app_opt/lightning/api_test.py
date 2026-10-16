@@ -237,6 +237,7 @@ def test_patch_is_idempotent():
         patch("nvflare.app_opt.lightning.api.fobs.register"),
         patch("nvflare.app_opt.lightning.api.init"),
         patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.system_info", return_value={}),
     ):
         lightning_patch(trainer)
         lightning_patch(trainer)
@@ -1528,3 +1529,21 @@ def test_real_lightning_fit_only_ignores_sanity_and_mid_fit_validation_metrics()
     assert any(not torch.equal(second_output.params[key], global_params[key]) for key in global_params)
     assert set(second_output.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]) == set(dict(module.named_parameters()))
     assert callback._training_round_started is False
+
+
+@pytest.mark.parametrize("restore_state", [False, True])
+def test_patch_rejects_implicit_memory_restoration_in_task_workers(restore_state):
+    trainer = SimpleNamespace(callbacks=[], global_rank=0)
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.system_info", return_value={"task_checkpoint": {"input": None}}),
+    ):
+        if restore_state:
+            with pytest.raises(ValueError, match="restore_state=True.*only in memory"):
+                lightning_patch(trainer)
+            assert trainer.callbacks == []
+        else:
+            lightning_patch(trainer, restore_state=False)
+            assert any(isinstance(cb, FLCallback) for cb in trainer.callbacks)
+            assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)

@@ -30,12 +30,19 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.statistics_spec import Statistics
 from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.client.config import ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import configure_logging
-from nvflare.job_config.task_execution import DECOMPOSER_REGISTER_PATH, STATISTICS_EXECUTOR_PATH, task_constructor_args
+from nvflare.job_config.task_execution import (
+    CLIENT_API_EXECUTOR_PATH,
+    DECOMPOSER_REGISTER_PATH,
+    STATISTICS_EXECUTOR_PATH,
+    task_constructor_args,
+)
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
@@ -262,6 +269,12 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             logging.basicConfig(level=logging.INFO)
         refresh_custom_dir_import_path(workspace.get_app_custom_dir(identity.job_id))
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
+        if _class_path(bootstrap.executor) == CLIENT_API_EXECUTOR_PATH:
+            args = task_constructor_args(_thaw_json(bootstrap.executor))
+            register_framework_decomposers(
+                args.get("params_exchange_format", ExchangeFormat.RAW),
+                args.get("server_expected_format", ExchangeFormat.NUMPY),
+            )
         # The same serialization registrations are needed on both sides of
         # the payload handoff, before decoding input or building the trainer.
         for original in bootstrap.components:

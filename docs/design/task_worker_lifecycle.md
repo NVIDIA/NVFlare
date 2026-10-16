@@ -30,7 +30,10 @@ Receivers, widgets, privacy filters and their cleansers remain resident in CJ.
 The statistics payload codecs are registered in CJ for its privacy filters and in
 the worker by the existing statistics handler. DecomposerRegister also remains in
 CJ and is constructed in the worker before input decoding when custom payload
-codecs are configured. This serialization setup is independent of compute lifetime.
+codecs are configured. Client API framework codecs are registered from the declared
+exchange formats in CJ before receiving federation payloads, and in the worker
+after authorization but before reading its input file. This serialization setup is
+independent of compute lifetime.
 Task workers do not build nested components or place dependency graphs.
 `component_dependencies` and `execution_scope` are rejected on worker specifications.
 The existing `args.class_attributes` constructor wrapper is supported without
@@ -115,9 +118,12 @@ or aggregation admission. Successful terminal receipts release the attempt's
 checkpoint copies along with its other payloads; one committed checkpoint remains
 per client executor/task slot for the job.
 
-The hello-pt task example explicitly restores optimizer momentum, the advancing
-DataLoader generator and CPU PyTorch RNG state, then writes a new candidate after
-training. Its paired numerical regression compares per-site incoming models,
+The same hello-pt `client.py` runs in both lifetimes. It retains state in resident
+job mode and explicitly restores optimizer momentum, the advancing DataLoader
+generator and CPU PyTorch RNG state in fresh task workers, then writes a candidate
+after training. It accepts earlier successful checkpoints after missed rounds and
+starts fresh when a site has no checkpoint yet. CPU thread limits are opt-in. Its
+paired numerical regression compares per-site incoming models,
 returned updates and metrics in every round, plus global checkpoints. This qualifies
 the checkpoint-aware example under matching CPU settings; changing only lifetime
 does not make arbitrary unchanged stateful training code equivalent. Applications
@@ -138,6 +144,11 @@ The initial profile supports CPU Process workers on Linux and on macOS with Pyth
 remote task launchers, and moving task orchestration to the Client Process are not
 part of this profile. No server capability negotiation is added.
 The Collab API's resident RPC service continues to use job lifetime.
+Client API task workers also reject local-model submission and both SCAFFOLD wire
+layouts at execution time, covering manually authored configs that bypass export.
+Lightning `patch(..., restore_state=True)` rejects task lifetime because its
+optimizer/scheduler cache is in-memory; use job lifetime or disable that callback
+and restore native framework checkpoints explicitly.
 
 ## Site policy
 

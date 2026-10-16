@@ -23,7 +23,17 @@ from torch import Tensor
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.utils import inspect_model_params
-from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_model, is_train, receive, send
+from nvflare.client.api import (
+    clear,
+    get_config,
+    init,
+    is_evaluate,
+    is_submit_model,
+    is_train,
+    receive,
+    send,
+    system_info,
+)
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils import fobs
 
@@ -41,7 +51,8 @@ def patch(
     Args:
         trainer: the PyTorch Lightning trainer.
         restore_state: whether to restore optimizer and learning rate scheduler states.
-            Defaults to `True`.
+            Defaults to `True`. Task lifetime requires `False` and explicit native checkpoint
+            restoration because the in-memory callback state cannot survive fresh workers.
         load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
             used to load the received model. Defaults to `True`.
             See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
@@ -102,7 +113,9 @@ def patch(
     callbacks = trainer.callbacks
     if isinstance(callbacks, Callback):
         callbacks = [callbacks]
-    elif not isinstance(callbacks, list):
+    elif isinstance(callbacks, list):
+        callbacks = list(callbacks)
+    else:
         callbacks = []
 
     if not any(isinstance(cb, FLCallback) for cb in callbacks):
@@ -110,6 +123,13 @@ def patch(
             rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict, update_fit_loop=update_fit_loop
         )
         callbacks.append(fl_callback)
+
+    if restore_state and "task_checkpoint" in system_info():
+        raise ValueError(
+            "Lightning restore_state=True keeps optimizer and scheduler state only in memory and cannot "
+            "restore it across task workers. Use job lifetime, or set restore_state=False and handle "
+            "native checkpoint restoration explicitly."
+        )
 
     if restore_state and not any(isinstance(cb, RestoreState) for cb in callbacks):
         callbacks.append(RestoreState())

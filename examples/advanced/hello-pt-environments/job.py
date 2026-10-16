@@ -73,7 +73,12 @@ def define_parser() -> argparse.ArgumentParser:
 
     add_dataset_arguments(parser)
     parser.add_argument("--seed", type=int, default=MODEL_SEED)
-    parser.add_argument("--torch_threads", type=int, default=None, help="PyTorch CPU threads per client (default: 1).")
+    parser.add_argument(
+        "--torch_threads",
+        type=int,
+        default=None,
+        help="Set PyTorch CPU threads per client (default: leave PyTorch settings unchanged).",
+    )
     parser.add_argument(
         "--resume_training",
         action=argparse.BooleanOptionalAction,
@@ -169,7 +174,7 @@ def create_recipe(args):
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         model=create_model(seed=seed),
-        train_script=str(HELLO_PT_DIR / ("client_task.py" if args.execution_lifetime == "task" else "client.py")),
+        train_script=str(HELLO_PT_DIR / "client.py"),
         # Preserve each client argument exactly across all execution environments.
         train_args=train_args,
         launch_external_process=args.launch_external_process,

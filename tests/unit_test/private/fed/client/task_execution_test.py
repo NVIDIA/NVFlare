@@ -1155,3 +1155,79 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "ne
         assert len(list(root.rglob("*.checkpoint"))) == 1
     finally:
         adapter.handle_event(EventType.END_RUN, context)
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("alias", [False, True])
+def test_task_client_registers_framework_codecs_before_receiving_tensors(tmp_path, isolated_fobs, wrapped, alias):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs import dots
+
+    assert fobs.get_dot_handler(dots.TENSOR_DOWNLOAD) is None
+    config = _config(params_exchange_format="pytorch", server_expected_format="pytorch")
+    spec = config["executors"][0]["executor"]
+    if wrapped:
+        spec["args"] = {"class_attributes": spec["args"]}
+    if alias:
+        spec["name"] = "ClientAPIExecutor"
+        del spec["path"]
+    _configure(tmp_path, config)
+    assert isinstance(fobs.get_dot_handler(dots.TENSOR_DOWNLOAD), TensorDecomposer)
+
+
+@pytest.mark.parametrize("wire_layout", ["model_meta", "collection"])
+def test_hand_authored_scaffold_task_is_rejected_before_script_runs(native_task, wire_layout):
+    from nvflare.app_common.app_constant import AlgorithmConstants
+
+    _, custom, context, policy = native_task
+    adapter, _ = _adapter(custom, context, policy, script="raise AssertionError('must not train')")
+    controls = {"w": np.array([0.0])}
+    if wire_layout == "model_meta":
+        data = DXO(
+            DataKind.WEIGHTS, {"w": np.array([1.0])}, meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: controls}
+        ).to_shareable()
+    else:
+        data = DXO(
+            DataKind.COLLECTION,
+            {
+                AppConstants.MODEL_WEIGHTS: DXO(DataKind.WEIGHTS, {"w": np.array([1.0])}),
+                AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: DXO(DataKind.WEIGHT_DIFF, controls),
+            },
+        ).to_shareable()
+    try:
+        with pytest.raises(RuntimeError, match="SCAFFOLD client control variates"):
+            adapter.execute("train", data, context, Signal())
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_hand_authored_local_model_submission_is_rejected_before_script_runs(native_task):
+    _, custom, context, policy = native_task
+    adapter, data = _adapter(custom, context, policy, script="raise AssertionError('must not run')")
+    try:
+        with pytest.raises(RuntimeError, match="local-model submission"):
+            adapter.execute("submit_model", data, context, Signal())
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_worker_releases_decoded_input_after_sending_result(native_task):
+    _, custom, context, policy = native_task
+    script = """
+import gc
+import weakref
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+reference = weakref.ref(model.params["w"])
+flare.send(flare.FLModel(params={"w": model.params["w"] + 1}))
+gc.collect()
+assert reference() is None, "worker retains decoded input after send"
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    try:
+        assert from_shareable(adapter.execute("train", data, context, Signal())).data["w"][0] == 2.0
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
