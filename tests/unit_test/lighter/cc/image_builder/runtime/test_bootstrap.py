@@ -1052,7 +1052,7 @@ class SupervisorTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             patch.object(supervisor, "run") as run,
             patch.object(supervisor, "run_reopen", side_effect=BuildError("denied")) as reopen,
-            patch.object(supervisor, "revoke_vault"),
+            patch.object(supervisor, "revoke_vault", return_value=False),
             patch.object(supervisor, "emit"),
             patch.object(
                 supervisor.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)
@@ -1086,7 +1086,7 @@ class SupervisorTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
                 patch.object(supervisor, "run") as run,
                 patch.object(supervisor, "run_reopen", side_effect=reopen),
-                patch.object(supervisor, "revoke_vault") as revoke,
+                patch.object(supervisor, "revoke_vault", return_value=False) as revoke,
                 patch.object(supervisor, "emit"),
                 patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
                 patch.object(
@@ -1115,7 +1115,7 @@ class SupervisorTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             patch.object(supervisor, "run") as run,
             patch.object(supervisor, "run_reopen", side_effect=reopen) as attempt,
-            patch.object(supervisor, "revoke_vault"),
+            patch.object(supervisor, "revoke_vault", return_value=False),
             patch.object(supervisor, "emit"),
             patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
             patch.object(
@@ -1159,12 +1159,18 @@ class SupervisorTests(unittest.TestCase):
 class QuarantineRevocationTests(unittest.TestCase):
     """Recovery safety does not require Linux signals or physical GPU devices."""
 
+    def setUp(self):
+        self.readback = self.enterContext(patch.object(supervisor, "confirm_not_ready"))
+        self.diagnostic = self.enterContext(patch.object(supervisor, "emit_diagnostic"))
+
     def test_quarantine_tolerates_gpu_reset_errors_after_stopping_and_closing(self):
         for failures in ({0}, {1}, {0, 1}):
             events = []
             clock = [0.0]
             attempts = []
             resets = []
+            self.readback.reset_mock()
+            self.diagnostic.reset_mock()
 
             def reset(config, ready):
                 self.assertFalse(ready)
@@ -1199,10 +1205,10 @@ class QuarantineRevocationTests(unittest.TestCase):
             self.assertEqual(events[4:], ["reopen", "reset", "close", "reopen", ["systemctl", "start"]])
             self.assertEqual(attempts, [900, 840])
             self.assertEqual([c.args[0] for c in watchdog.call_args_list], [180, 910, 180, 70, 850, 360])
-            self.assertEqual(
-                [c.args[0] for c in audit.call_args_list].count("gpu_readiness_revoke_failed"), len(failures)
-            )
-            self.assertNotIn("private GPU diagnostic", str(audit.call_args_list))
+            self.assertEqual(self.readback.call_count, len(failures))
+            self.diagnostic.assert_called_once_with("gpu_readiness_revoke_failed")
+            self.assertEqual([c.args[0] for c in audit.call_args_list], ["quarantine", "allow"])
+            self.assertNotIn("private GPU diagnostic", str(self.diagnostic.call_args_list))
 
     def test_repeated_gpu_reset_failures_do_not_extend_the_quarantine_window(self):
         clock = [0.0]
@@ -1264,6 +1270,8 @@ class QuarantineRevocationTests(unittest.TestCase):
             supervisor.revoke_vault({"gpu": "nvidia_cc"}, tolerate_readiness_failure=True)
         close.assert_called_once_with()
         audit.assert_not_called()
+        self.readback.assert_not_called()
+        self.diagnostic.assert_not_called()
 
     def test_default_revocation_preserves_strict_gpu_failure_handling(self):
         with (
@@ -1273,6 +1281,8 @@ class QuarantineRevocationTests(unittest.TestCase):
         ):
             supervisor.revoke_vault({"gpu": "nvidia_cc"})
         close.assert_called_once_with()
+        self.readback.assert_not_called()
+        self.diagnostic.assert_not_called()
 
     def test_cleanup_consuming_the_remaining_window_never_retries_or_restarts(self):
         clock = [0.0]
@@ -1344,3 +1354,120 @@ class QuarantineRevocationTests(unittest.TestCase):
         self.assertEqual(events[-4:], [180, "close", 180, "close"])
         # Only the original startup occurs; expiry never restarts the workload.
         self.assertEqual(sum(c.args[0][:2] == ["systemctl", "start"] for c in run.call_args_list), 1)
+
+    def test_revocation_returns_fallback_only_after_successful_vault_closure(self):
+        events = []
+        with (
+            patch.object(supervisor, "readiness", side_effect=BuildError("setter failed")),
+            patch.object(supervisor, "confirm_not_ready", side_effect=lambda config: events.append("not-ready")),
+            patch.object(supervisor, "close_vault", side_effect=lambda: events.append("closed")),
+        ):
+            self.assertTrue(supervisor.revoke_vault({"gpu": "nvidia_cc"}, tolerate_readiness_failure=True))
+        self.assertEqual(events, ["not-ready", "closed"])
+        self.diagnostic.assert_not_called()
+        with patch.object(supervisor, "readiness"), patch.object(supervisor, "close_vault"):
+            self.assertFalse(supervisor.revoke_vault({"gpu": "nvidia_cc"}, tolerate_readiness_failure=True))
+        self.readback.assert_not_called()
+
+    def test_unconfirmed_readback_aborts_entry_or_retry_and_still_closes_vault(self):
+        for initial in (True, False):
+            for failure in ("GPU remains Ready", "readback unknown", "query timed out"):
+                with (
+                    self.subTest(initial=initial, failure=failure),
+                    tempfile.TemporaryDirectory() as directory,
+                    patch.object(supervisor, "run") as run,
+                    patch.object(supervisor, "readiness", side_effect=BuildError("setter failed")),
+                    patch.object(
+                        supervisor,
+                        "confirm_not_ready",
+                        side_effect=[BuildError(failure)] if initial else [None, BuildError(failure)],
+                    ),
+                    patch.object(supervisor, "close_vault") as close,
+                    patch.object(supervisor, "run_reopen", side_effect=BuildError("partial reopen denied")) as reopen,
+                    patch.object(supervisor, "watchdog"),
+                    patch.object(supervisor, "emit"),
+                    patch.object(supervisor.time, "sleep") as sleep,
+                ):
+                    self.diagnostic.reset_mock()
+                    state = Path(directory)
+                    with self.assertRaisesRegex(BuildError, failure):
+                        supervisor.quarantine({"gpu": "nvidia_cc"}, ["cvm_app.service"], state)
+                    self.assertTrue((state / "quarantine.json").exists())
+                self.assertEqual(close.call_count, 1 if initial else 2)
+                self.assertEqual(reopen.call_count, 0 if initial else 1)
+                self.assertEqual(self.diagnostic.call_count, 0 if initial else 1)
+                sleep.assert_not_called()
+                self.assertFalse(any(c.args[0][:2] == ["systemctl", "start"] for c in run.call_args_list))
+
+    def test_failed_vault_close_never_reports_confirmed_fallback(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(supervisor, "run") as run,
+            patch.object(supervisor, "readiness", side_effect=BuildError("setter failed")),
+            patch.object(supervisor, "close_vault", side_effect=BuildError("vault still mounted")),
+            patch.object(supervisor, "run_reopen") as reopen,
+            patch.object(supervisor, "watchdog"),
+            patch.object(supervisor, "emit") as emit,
+            patch.object(supervisor.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(BuildError, "vault still mounted"):
+                supervisor.quarantine({"gpu": "nvidia_cc"}, ["cvm_app.service"], Path(directory))
+        self.readback.assert_called_once()
+        self.diagnostic.assert_not_called()
+        emit.assert_not_called()
+        reopen.assert_not_called()
+        sleep.assert_not_called()
+        self.assertFalse(any(c.args[0][:2] == ["systemctl", "start"] for c in run.call_args_list))
+
+    def test_diagnostic_is_coalesced_per_episode_and_resets_on_later_quarantine(self):
+        for _ in range(2):
+            clock = [0.0]
+            with (
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(supervisor, "run"),
+                patch.object(supervisor, "readiness", side_effect=BuildError("private setter diagnostic")),
+                patch.object(supervisor, "close_vault"),
+                patch.object(supervisor, "run_reopen", side_effect=[BuildError("denied"), BuildError("denied"), b""]),
+                patch.object(supervisor, "watchdog"),
+                patch.object(supervisor, "emit") as emit,
+                patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
+                patch.object(
+                    supervisor.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+                ),
+            ):
+                supervisor.quarantine({"gpu": "nvidia_cc"}, ["cvm_app.service"], Path(directory))
+                self.assertEqual([c.args[0] for c in emit.call_args_list], ["quarantine", "allow"])
+        self.assertEqual(self.readback.call_count, 6)
+        self.assertEqual(self.diagnostic.call_count, 2)
+        self.assertTrue(all(c.args == ("gpu_readiness_revoke_failed",) for c in self.diagnostic.call_args_list))
+
+    def test_late_reopen_ready_or_unknown_readback_cannot_resume_workload(self):
+        for failure in ("GPU remains Ready", "GPU state unknown"):
+            clock = [0.0]
+
+            def reopen(timeout, environment):
+                # A reopen may set Ready before its result misses the deadline.
+                clock[0] = supervisor.QUARANTINE_WINDOW_SECONDS + 1
+                return b"late successful reopen"
+
+            with (
+                self.subTest(failure=failure),
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(supervisor, "run") as run,
+                patch.object(supervisor, "readiness", side_effect=[None, BuildError("setter failed")]),
+                patch.object(supervisor, "confirm_not_ready", side_effect=BuildError(failure)),
+                patch.object(supervisor, "close_vault") as close,
+                patch.object(supervisor, "run_reopen", side_effect=reopen) as attempt,
+                patch.object(supervisor, "watchdog"),
+                patch.object(supervisor, "emit"),
+                patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
+                patch.object(supervisor.time, "sleep") as sleep,
+            ):
+                self.diagnostic.reset_mock()
+                with self.assertRaisesRegex(BuildError, failure):
+                    supervisor.quarantine({"gpu": "nvidia_cc"}, ["cvm_app.service"], Path(directory))
+            self.assertEqual(close.call_count, 2)
+            attempt.assert_called_once()
+            sleep.assert_not_called()
+            self.diagnostic.assert_not_called()
+            self.assertFalse(any(c.args[0][:2] == ["systemctl", "start"] for c in run.call_args_list))

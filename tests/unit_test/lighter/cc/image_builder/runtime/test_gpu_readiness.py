@@ -37,6 +37,73 @@ class GpuReadinessTests(unittest.TestCase):
             gpu.readiness(cfg, False)
             command.assert_called_once_with(["nvidia-smi", "conf-compute", "-srs", "0"], timeout=10)
 
+    def test_not_ready_readback_requires_complete_expected_inventory(self):
+        for devices in (b"0000:01:00.0\n", b"00000000:01:00.0\n", b"0000:0A:00.0\n00000000:0b:00.0\n"):
+            with (
+                self.subTest(devices=devices),
+                patch.object(
+                    gpu, "run", side_effect=[devices, b"Confidential Compute GPUs Ready state: not-ready\n"]
+                ) as command,
+            ):
+                gpu.confirm_not_ready({"gpu_count": len(devices.splitlines())})
+                self.assertEqual(command.call_count, 2)
+                self.assertEqual(
+                    command.call_args_list[0].args[0], ["nvidia-smi", "--query-gpu=pci.bus_id", "--format=csv,noheader"]
+                )
+                self.assertEqual(command.call_args_list[1].args[0], ["nvidia-smi", "conf-compute", "-grs"])
+                self.assertTrue(all(call.kwargs == {"timeout": 10} for call in command.call_args_list))
+
+    def test_not_ready_readback_rejects_invalid_counts_without_querying(self):
+        for count in (None, 0, -1, True, 1.0, "1"):
+            with self.subTest(count=count), patch.object(gpu, "run") as command:
+                with self.assertRaisesRegex(BuildError, "Invalid expected GPU count"):
+                    gpu.confirm_not_ready({"gpu_count": count})
+                command.assert_not_called()
+
+    def test_not_ready_readback_rejects_missing_malformed_and_duplicate_inventory(self):
+        for count, devices in (
+            (1, None),
+            (1, "0000:01:00.0\n"),
+            (1, b""),
+            (2, b"0000:01:00.0\n"),
+            (1, b"GPU-0\n"),
+            (1, b"0000:01:20.0\n"),
+            (1, b"0000:01:00.8\n"),
+            (1, b" 0000:01:00.0\n"),
+            (2, b"0000:01:00.0\n\n"),
+            (2, b"0000:01:00.0\n0000:01:00.0\n"),
+            (2, b"0000:0A:00.0\n00000000:0a:00.0\n"),
+        ):
+            with self.subTest(count=count, devices=devices), patch.object(gpu, "run", return_value=devices) as command:
+                with self.assertRaises(BuildError):
+                    gpu.confirm_not_ready({"gpu_count": count})
+                self.assertEqual(command.call_count, 1)
+
+    def test_not_ready_readback_rejects_every_other_complete_output(self):
+        not_ready = b"Confidential Compute GPUs Ready state: not-ready"
+        for state in (
+            None,
+            "Confidential Compute GPUs Ready state: not-ready",
+            b"",
+            b"not-ready",
+            b"Confidential Compute GPUs Ready state: ready",
+            b"Confidential Compute GPUs Ready state: unknown",
+            not_ready[:-1],
+            not_ready + b"\n" + not_ready,
+            not_ready + b"\nunexpected GPU error",
+            b"GPU 0: not-ready\nGPU 1: ready",
+        ):
+            with self.subTest(state=state), patch.object(gpu, "run", side_effect=[b"0000:01:00.0\n", state]):
+                with self.assertRaisesRegex(BuildError, "GPU Not Ready state is unconfirmed"):
+                    gpu.confirm_not_ready({"gpu_count": 1})
+
+    def test_not_ready_readback_propagates_inventory_and_state_command_failures(self):
+        for responses in ([BuildError("command timed out")], [b"0000:01:00.0\n", BuildError("query failed")]):
+            with self.subTest(responses=responses), patch.object(gpu, "run", side_effect=responses) as command:
+                with self.assertRaises(BuildError):
+                    gpu.confirm_not_ready({"gpu_count": 1})
+                self.assertTrue(all(call.kwargs == {"timeout": 10} for call in command.call_args_list))
+
     def test_periodic_readiness_follows_authorized_composite_transaction(self):
         events = []
         cfg = {"gpu": "nvidia_cc", "gpu_count": 1, "platform": "intel_tdx"}
