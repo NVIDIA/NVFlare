@@ -844,6 +844,16 @@ docker run --gpus all APPLICATION_IMAGE
 The application image must contain CUDA/application user-space components that
 are compatible with the pinned guest driver. For explicit placement, repeat `launch_cvm.sh --gpu PCI_ADDRESS` once for every GPU required by `gpu_count`.
 
+GPU quarantine stops the application and container daemons, closes the vault,
+and retries authorization for at most 900 seconds. A GPU readiness-reset command
+failure does not end that recovery window when vault closure is confirmed;
+failed vault closure still forces poweroff. Workloads restart only after a fresh
+successful appraisal and GPU readiness restoration. This supervisor is part of
+the measured guest image: deploy the change by incrementing `profile_version`,
+rebuilding the CVM, regenerating its references, and repeating acceptance and
+approval for the resulting bundle. Existing deployed images do not pick up a
+host-side source update.
+
 ## 5. Deliverables
 
 Vault Build prints its generated deployment ID and staging folder. For example,

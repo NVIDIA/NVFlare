@@ -94,10 +94,17 @@ def run_reopen(timeout, environment):
         raise BuildError(f"Vault reopen could not complete ({type(exc).__name__})") from None
 
 
-def revoke_vault(config):
-    """Revoke readiness and discard any mapping left by a failed reopen."""
+def revoke_vault(config, *, tolerate_readiness_failure=False):
+    """Discard the vault mapping; only stopped workloads may tolerate GPU errors."""
     try:
-        readiness(config, False)
+        try:
+            readiness(config, False)
+        except BuildError:
+            if not tolerate_readiness_failure:
+                raise
+            # The workload and container daemons have stopped. The vault still
+            # must close successfully before another authorization attempt.
+            emit("gpu_readiness_revoke_failed")
     finally:
         close_vault()
 
@@ -164,7 +171,7 @@ def quarantine(config, units, state):
         # first, while preserving the stop/configuration error as the cause.
         best_effort_revoke(config)
         raise
-    revoke_vault(config)
+    revoke_vault(config, tolerate_readiness_failure=True)
     emit("quarantine")
     environment = dict(os.environ)
     environment.pop("NOTIFY_SOCKET", None)
@@ -178,9 +185,11 @@ def quarantine(config, units, state):
             require(time.monotonic() < deadline, "Vault quarantine deadline expired")
             break
         except BuildError:
-            # Cleanup is deliberately outside the retried operation: failure
-            # here propagates to PID 1's fail-closed power-off path.
-            revoke_vault(config)
+            # Give cleanup its own bounded phase, including after a reopen
+            # consumed the entire retry window. Vault closure remains fatal;
+            # a GPU control error alone cannot end a safely stopped quarantine.
+            watchdog(REVOCATION_TIMEOUT_SECONDS)
+            revoke_vault(config, tolerate_readiness_failure=True)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise

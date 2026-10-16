@@ -42,6 +42,7 @@ from cvm.common.errors import require
 from cvm.common.io import digest_file, read_json, write_json
 from cvm.common.linux import run
 from cvm.common.luks import snapshot_header
+from cvm.runtime.supervisor import QUARANTINE_WINDOW_SECONDS, REVOCATION_TIMEOUT_SECONDS, periodic_timeout
 
 ACCEPTANCE_CHECKS = {
     "test_generic_app_binding_and_exclusive_attachment": [
@@ -420,7 +421,8 @@ class HardwareTests(unittest.TestCase):
         started = time.monotonic()
         with self.drop_egress(kbs.port or 443):
             self.request("/periodic", "POST")
-            deadline = time.monotonic() + 330
+            entry_timeout = periodic_timeout(self.manifest["contract"]) + REVOCATION_TIMEOUT_SECONDS + 45
+            deadline = time.monotonic() + entry_timeout
             while time.monotonic() < deadline:
                 self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
                 log = self.logs[-1].read_text(errors="replace")
@@ -428,7 +430,7 @@ class HardwareTests(unittest.TestCase):
                     break
                 time.sleep(1)
             else:
-                self.fail("Attestation failure did not close the vault and enter quarantine within 330 seconds")
+                self.fail("Attestation failure did not close the vault and enter quarantine within its bounded budget")
             quarantined = time.monotonic()
             with self.assertRaises((OSError, urllib.error.URLError)):
                 self.request()
@@ -487,13 +489,40 @@ class HardwareTests(unittest.TestCase):
         endpoint = urlparse(self.manifest["contract"]["gpu_attestation_url"])
         addresses = sorted({item[4][0] for item in socket.getaddrinfo(endpoint.hostname, endpoint.port or 443)})
         started = time.monotonic()
+        config = self.manifest["contract"]
+        entry_timeout = periodic_timeout(config) + REVOCATION_TIMEOUT_SECONDS + 45
+        # Periodic check, initial stop/cleanup, recovery window, final cleanup,
+        # terminal best-effort cleanup, and a bounded scheduling allowance.
+        poweroff_timeout = periodic_timeout(config) + QUARANTINE_WINDOW_SECONDS + 3 * REVOCATION_TIMEOUT_SECONDS + 45
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
-            self.process.wait(timeout=350)
+            deadline = started + entry_timeout
+            while time.monotonic() < deadline:
+                self.assertIsNone(self.process.poll(), "Guest powered off before entering quarantine")
+                text = self.logs[-1].read_text(errors="replace")
+                if '"decision":"quarantine"' in text.replace(" ", ""):
+                    break
+                time.sleep(1)
+            else:
+                self.fail("GPU attestation failure did not enter quarantine within its bounded budget")
+            with self.assertRaises((OSError, urllib.error.URLError)):
+                self.request()
+            # Observe the guest through a retry interval: it must remain alive
+            # with its workload unavailable while the backend is still denied.
+            time.sleep(65)
+            self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
+            with self.assertRaises((OSError, urllib.error.URLError)):
+                self.request()
+            self.process.wait(timeout=max(1, started + poweroff_timeout - time.monotonic()))
         elapsed = time.monotonic() - started
-        self.assertLessEqual(elapsed, 345)
-        self.assertIn("Power down", self.logs[-1].read_text(errors="replace"))
-        self.result(periodic_gpu_denial=True, backend_nras_drop=True, fail_closed_seconds=round(elapsed, 3))
+        self.assertLessEqual(elapsed, poweroff_timeout)
+        self.assert_powered_off()
+        self.result(
+            periodic_gpu_denial=True,
+            backend_nras_drop=True,
+            workload_denied_while_isolated=True,
+            fail_closed_seconds=round(elapsed, 3),
+        )
 
     @unittest.skipUnless(
         os.environ.get("CVM_GPU_HARDWARE_TESTS") == "1" and os.environ.get("CVM_BACKEND_LOCAL") == "1",
