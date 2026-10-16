@@ -504,6 +504,100 @@ def test_default_post_send_bound_stops_a_script_even_without_result_wait_timeout
     assert not adapter.supervisor.settlement_unconfirmed
 
 
+def test_slow_result_and_checkpoint_staging_do_not_consume_application_deadlines(native_task):
+    _, custom, context, policy = native_task
+    policy = replace(policy, finalization_timeout=0.2)
+    script = (
+        """
+import time
+from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+original_result = FileTaskArtifactStore.stage_result
+original_checkpoint = FileTaskArtifactStore.stage_checkpoint
+def slow_result(self, *args, **kwargs):
+    time.sleep(0.6)
+    return original_result(self, *args, **kwargs)
+def slow_checkpoint(self, *args, **kwargs):
+    time.sleep(0.6)
+    return original_checkpoint(self, *args, **kwargs)
+FileTaskArtifactStore.stage_result = slow_result
+FileTaskArtifactStore.stage_checkpoint = slow_checkpoint
+"""
+        + SCRIPT
+    )
+    adapter, data = _adapter(custom, context, policy, script=script, result_wait_timeout=0.3)
+    try:
+        result = adapter.execute("train", data, context, Signal())
+        np.testing.assert_array_equal(from_shareable(result).data["w"], [2, 3])
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_result_deadline_pauses_only_during_framework_staging(tmp_path, monkeypatch):
+    from nvflare.private.fed.client import client_api_task_runner as runner
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    store.create_attempt(identity)
+    clock = [100.0]
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
+    runner._mark_progress(store, identity, "result_wait_started.json")
+    clock[0] = 102
+    runner._mark_progress(store, identity, "result_staging_started.json")
+    clock[0] = 200
+    assert runner.result_wait_deadline(store, identity, 10, 30) is None
+    runner._mark_progress(store, identity, "script_result_sent.json")
+    assert runner.result_wait_deadline(store, identity, 10, 30) == 208
+    clock[0] = 209
+    assert runner.result_wait_deadline(store, identity, 10, 30) < clock[0]
+    runner._mark_progress(store, identity, "script_finalized.json")
+    assert runner.result_wait_deadline(store, identity, 10, 30) is None
+
+
+def test_server_resends_saved_results_without_relaunch_replay_or_checkpoint_rollback(native_task):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    script = """
+import os
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pid": os.getpid()}))
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    replay = adapter._replay_analytics = Mock(wraps=adapter._replay_analytics)
+    launch = policy.launcher.launch_task = Mock(wraps=policy.launcher.launch_task)
+
+    def execute(number):
+        context.set_prop(FLContextKey.TASK_ID, f"task-{number}", private=True, sticky=True)
+        context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{number}", private=True, sticky=True)
+        return FLModelUtils.from_shareable(adapter.execute("train", data, context, Signal()))
+
+    try:
+        first = execute(1)
+        checkpoint = next(root.rglob("*.checkpoint"))
+        before = checkpoint.read_bytes()
+        assert execute(1).metrics == first.metrics
+        assert checkpoint.read_bytes() == before
+        assert (launch.call_count, replay.call_count) == (1, 1)
+        second = execute(2)
+        assert second.metrics["previous"] == 1
+        before = checkpoint.read_bytes()
+        assert execute(1).metrics == first.metrics
+        assert checkpoint.read_bytes() == before
+        assert execute(2).metrics == second.metrics
+        assert (launch.call_count, replay.call_count) == (2, 2)
+        assert execute(3).metrics["previous"] == 2
+        assert (launch.call_count, replay.call_count) == (3, 3)
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
 @pytest.mark.parametrize("event", [EventType.END_RUN, EventType.ABORT_TASK])
 def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_false_panic(
     native_task, monkeypatch, event
@@ -708,7 +802,8 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     staged = []
 
     def stage_once(artifact_store, attempt, data):
-        assert Path(artifact_store.attempt_dir(attempt), "script_result_sent.json").is_file()
+        assert Path(artifact_store.attempt_dir(attempt), "result_staging_started.json").is_file()
+        assert not Path(artifact_store.attempt_dir(attempt), "script_result_sent.json").exists()
         reference = stage_result(artifact_store, attempt, data)
         staged.append(reference)
         return reference
@@ -723,6 +818,8 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_input_only)
     worker.run_worker(path, context_binding=bind_client_task_context)
     assert len(staged) == 1
+    assert Path(store.attempt_dir(identity), "script_result_sent.json").is_file()
+    assert Path(store.attempt_dir(identity), "script_finalized.json").is_file()
     monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_payload)
     result, completion = store.read_result(identity)
     np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])

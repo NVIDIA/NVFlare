@@ -110,35 +110,71 @@ def _read_json(path: str) -> dict:
 @contextmanager
 def _verified_checkpoint(path, max_payload_bytes):
     """Read a committed opaque checkpoint and the result it belongs to."""
-    with _open_protocol_file(path) as stream:
-        header = stream.read(_RECORD_SIZE.size)
-        if len(header) != _RECORD_SIZE.size:
-            raise ValueError("incomplete checkpoint header")
-        size = _RECORD_SIZE.unpack(header)[0]
-        if not 0 < size <= _MAX_RECORD_BYTES:
-            raise ValueError("invalid checkpoint header size")
-        encoded = stream.read(size)
-        if len(encoded) != size:
-            raise ValueError("incomplete checkpoint record")
-        record = _load_json(encoded)
-        if (
-            not isinstance(record, dict)
-            or set(record) != {"schema_version", "identity", "checkpoint", "result"}
-            or type(record["schema_version"]) is not int
-            or record["schema_version"] != SCHEMA_VERSION
-        ):
-            raise ValueError("invalid checkpoint record")
-        identity = TaskAttemptIdentity.from_dict(record["identity"])
-        reference = ArtifactReference.from_dict(record["checkpoint"])
-        result = ArtifactReference.from_dict(record["result"])
-        if reference.kind != _CHECKPOINT_KIND or result.kind != _RESULT_KIND:
-            raise ValueError("invalid checkpoint/result reference")
-        offset = stream.tell()
+    record = _read_json(path)
+    if (
+        set(record) != {"schema_version", "identity", "checkpoint", "result"}
+        or type(record["schema_version"]) is not int
+        or record["schema_version"] != SCHEMA_VERSION
+    ):
+        raise ValueError("invalid checkpoint record")
+    identity = TaskAttemptIdentity.from_dict(record["identity"])
+    reference = ArtifactReference.from_dict(record["checkpoint"])
+    result = ArtifactReference.from_dict(record["result"])
+    if reference.kind != _CHECKPOINT_KIND or result.kind != _RESULT_KIND:
+        raise ValueError("invalid checkpoint/result reference")
+    with _open_protocol_file(_checkpoint_payload_path(path, reference)) as stream:
         actual_size, digest = _fingerprint(stream, max_payload_bytes)
         if actual_size != reference.size or digest != reference.sha256:
             raise ValueError("checkpoint size or checksum mismatch")
-        stream.seek(offset)
+        stream.seek(0)
         yield record, identity, reference, stream
+
+
+def _checkpoint_payload_path(path, reference):
+    return f"{path}.{reference.sha256}.bin"
+
+
+def _link_regular(source, destination, stream):
+    """Install a hard link to the verified inode without following path replacements."""
+    source_fd = _open_directory(os.path.dirname(source))
+    try:
+        target_fd = _open_directory(os.path.dirname(destination), create=True)
+        try:
+            os.link(
+                os.path.basename(source),
+                os.path.basename(destination),
+                src_dir_fd=source_fd,
+                dst_dir_fd=target_fd,
+                follow_symlinks=False,
+            )
+            try:
+                actual = os.stat(os.path.basename(destination), dir_fd=target_fd, follow_symlinks=False)
+                expected = os.fstat(stream.fileno())
+                if not stat.S_ISREG(actual.st_mode) or (actual.st_dev, actual.st_ino) != (
+                    expected.st_dev,
+                    expected.st_ino,
+                ):
+                    raise ValueError("checkpoint payload changed during publication")
+                os.fsync(target_fd)
+            except BaseException:
+                os.unlink(os.path.basename(destination), dir_fd=target_fd)
+                raise
+        finally:
+            os.close(target_fd)
+    finally:
+        os.close(source_fd)
+
+
+def _remove_checkpoint_payload(path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        try:
+            _LOGGER.warning("Could not remove superseded checkpoint payload %s", path, exc_info=True)
+        except Exception:
+            pass
 
 
 def _replace_checkpoint(path, writer, publication_guard):
@@ -526,13 +562,17 @@ class FileTaskArtifactStore:
 
     def stage_checkpoint(self, identity):
         """Seal an optional application-written file after executor finalization."""
+        self._check_identity(identity)
         path = os.path.join(self.attempt_dir(identity), "checkpoint.pending")
         if not os.path.lexists(path):
             return None
         with _open_protocol_file(path) as stream:
-            return self._write_payload_stream(
-                identity, _CHECKPOINT_KIND, lambda output: shutil.copyfileobj(stream, output, _CHUNK_SIZE)
-            )
+            size, digest = _fingerprint(stream, self.max_payload_bytes)
+            os.fsync(stream.fileno())
+            reference = ArtifactReference(_CHECKPOINT_KIND, "checkpoint.bin", size, digest)
+            _link_regular(path, os.path.join(self.attempt_dir(identity), reference.file_name), stream)
+        os.unlink(path)
+        return reference
 
     def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext):
         """CJ promotes state only from the verified, physically settled result."""
@@ -544,8 +584,10 @@ class FileTaskArtifactStore:
             raise ValueError("completion has an invalid checkpoint reference")
         # Idempotence covers re-observing completion; transport retries keep
         # using the saved result and never execute the script again.
+        previous_payload = None
         if os.path.lexists(checkpoint_file):
-            with _verified_checkpoint(checkpoint_file, self.max_payload_bytes) as (record, previous, _, _):
+            with _verified_checkpoint(checkpoint_file, self.max_payload_bytes) as (record, previous, previous_ref, _):
+                previous_payload = _checkpoint_payload_path(checkpoint_file, previous_ref)
                 if previous == completion.identity:
                     if record["checkpoint"] != reference.to_dict() or record["result"] != completion.result.to_dict():
                         raise ValueError("checkpoint completion was changed")
@@ -560,13 +602,28 @@ class FileTaskArtifactStore:
         if len(encoded) > _MAX_RECORD_BYTES:
             raise ValueError("checkpoint record is too large")
 
-        def write(output):
+        payload_path = _checkpoint_payload_path(checkpoint_file, reference)
+        created = False
+        try:
             with self._verified_payload(completion.identity, reference) as source:
-                output.write(_RECORD_SIZE.pack(len(encoded)))
-                output.write(encoded)
-                shutil.copyfileobj(source, output, _CHUNK_SIZE)
-
-        _replace_checkpoint(checkpoint_file, write, publication_guard)
+                try:
+                    _link_regular(
+                        os.path.join(self.attempt_dir(completion.identity), reference.file_name), payload_path, source
+                    )
+                    created = True
+                except FileExistsError:
+                    with _open_protocol_file(payload_path) as existing:
+                        if _fingerprint(existing, self.max_payload_bytes) != (reference.size, reference.sha256):
+                            raise ValueError("existing checkpoint payload size or checksum mismatch")
+            # Only the small manifest is replaced. Its immutable payload is
+            # already durable, so this remains a single atomic commit point.
+            _replace_checkpoint(checkpoint_file, lambda output: output.write(encoded), publication_guard)
+        except BaseException:
+            if created:
+                _remove_checkpoint_payload(payload_path)
+            raise
+        if previous_payload is not None and previous_payload != payload_path:
+            _remove_checkpoint_payload(previous_payload)
 
     def write_analytics_record(self, stream, record: dict):
         """Snapshot one log call into a disk spool without retaining its values."""

@@ -86,6 +86,7 @@ class _Attempt:
     handle: Optional[TaskHandleSpec] = None
     settled: bool = False
     validated: bool = False
+    completion: Optional[TaskCompletion] = None
     failed: bool = False
     receipt: Optional[str] = None
     releasing: bool = False
@@ -309,6 +310,7 @@ class TaskSupervisor:
                     attempt.failed = True
                     return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
                 attempt.validated = True
+                attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
             self._diagnostic(attempt, "validated", worker_pid=completion.worker_pid, worker_ppid=completion.worker_ppid)
             return TaskSupervisorOutcome(identity, result, completion, analytics, execution_status=status)
@@ -387,6 +389,25 @@ class TaskSupervisor:
         self._diagnostic(attempt, "receipt", receipt=receipt)
         self.cleanup_job_payloads()
         return True
+
+    def read_saved_result(self, identity: TaskAttemptIdentity) -> Shareable:
+        """Re-read a settled result without launching or replaying worker side effects."""
+        with self._state_lock:
+            attempt = self._attempts.get(identity)
+            if (
+                self._stopping
+                or self._settlement_unconfirmed
+                or attempt is None
+                or not attempt.settled
+                or not attempt.validated
+                or attempt.releasing
+                or attempt.released
+            ):
+                raise RuntimeError("task attempt has no retained, settled result to resubmit")
+        result, completion = attempt.store.read_result(identity)
+        if completion != attempt.completion:
+            raise ValueError("saved task completion changed after validation")
+        return result
 
     def retain_attempt(self, identity: TaskAttemptIdentity):
         """Keep evidence when caller-owned result processing fails after compute."""

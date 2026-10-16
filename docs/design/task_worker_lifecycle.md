@@ -100,7 +100,7 @@ torch.save({"optimizer": optimizer.state_dict()}, checkpoint["output"])
 flare.send(output_model)
 ```
 
-The worker seals the optional file after executor finalization. One immutable
+The worker seals the optional file in place after executor finalization. One immutable
 completion record binds its checksum to the result. After physical settlement and
 result validation, CJ atomically promotes the checkpoint together with its owning
 completion identity and result reference. Atomic replacement is the local commit
@@ -115,8 +115,18 @@ result in CJ and never rerun training or promote state again. There is no automa
 physical retry or cross-CJ crash recovery; a new physical attempt requires a new
 server-issued attempt ID. Promotion records local completion, not server acceptance
 or aggregation admission. Successful terminal receipts release the attempt's
-checkpoint copies along with its other payloads; one committed checkpoint remains
-per client executor/task slot for the job.
+checkpoint files along with its other payloads. The committed checkpoint uses a
+small atomic manifest and an immutable payload linked from the settled attempt,
+so sealing and promotion do not copy the full file. The next worker receives one
+isolated input copy. Superseded committed payload links are removed; one committed
+checkpoint remains per client executor/task slot for the job. Retained attempts
+share storage with their committed payload instead of duplicating it.
+
+When the server resends the same assignment and attempt ID, CJ re-reads the
+checksum-verified saved result. It does not rerun training, replay analytics or
+promote that attempt's checkpoint again, including after a newer task completed.
+Only attempts that finished CJ result processing are eligible. Missing, corrupt,
+unsettled or already released results are rejected rather than re-executed.
 
 The same hello-pt `client.py` runs in both lifetimes. It retains state in resident
 job mode and explicitly restores optimizer momentum, the advancing DataLoader
@@ -173,10 +183,14 @@ and successful payloads are released after terminal receipt. An optional site co
 `artifact_cleanup: "retain"` keeps every attempt. `max_payload_bytes` optionally
 limits input and output payloads with the same policy. The job's executor definition
 can shorten `worker_timeout`, and ClientAPIExecutor's `result_wait_timeout` bounds
-the complete wait for the worker's result, including script exit and finalizers.
-After a local send, the site also imposes a finite `finalization_timeout` (30 seconds
-by default), including when result_wait_timeout is unset. Sending does not waive
-either deadline or the physical settlement requirement.
+application execution through script exit and finalizers. Framework result
+serialization pauses this application deadline. After the result has been staged,
+the site also imposes a finite `finalization_timeout` (30 seconds by default),
+including when result_wait_timeout is unset. Once application finalization finishes,
+checkpoint sealing, analytics sealing and completion publication run outside these
+application deadlines. The absolute `worker_timeout`, when configured, still bounds
+the entire worker lifetime, including artifact I/O. Sending does not waive physical
+settlement.
 
 Workers receive only the framework's standard runtime environment allow-list plus
 site-approved variable names. Federation credentials, Client API bootstrap and GPU

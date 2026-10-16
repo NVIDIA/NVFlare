@@ -61,12 +61,18 @@ def _read_progress(store, identity, name):
 
 
 def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0):
-    """Bound the complete result wait, including script exit and finalizers."""
+    """Bound application execution, excluding framework-owned artifact I/O."""
+    if _read_progress(store, identity, "script_finalized.json") is not None:
+        return None
     started = _read_progress(store, identity, "result_wait_started.json")
     sent = _read_progress(store, identity, "script_result_sent.json")
+    staging = _read_progress(store, identity, "result_staging_started.json")
+    if staging is not None and sent is None:
+        return None
+    staging_seconds = sent - staging if staging is not None and sent is not None else 0
     deadlines = []
     if started is not None and timeout is not None:
-        deadlines.append(started + timeout)
+        deadlines.append(started + timeout + staging_seconds)
     if sent is not None:
         deadlines.append(sent + finalization_timeout)
     return min(deadlines) if deadlines else None
@@ -75,10 +81,13 @@ def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0):
 class _ClientAPITaskRunner:
     """Run one Client API assignment directly on the worker's main thread."""
 
-    def __init__(self, executor, *, on_started=None, on_result=None, on_log=None, checkpoint_paths=None):
+    def __init__(
+        self, executor, *, on_started=None, on_result=None, on_log=None, on_finished=None, checkpoint_paths=None
+    ):
         self._context = executor._build_backend_context()
         self._on_started, self._on_result, self._on_log = on_started, on_result, on_log
         self._checkpoint_paths = checkpoint_paths
+        self._on_finished = on_finished
         self._api = None
         self._runner = None
         self._executed = False
@@ -172,6 +181,9 @@ class _ClientAPITaskRunner:
                 bus.put_data(CLIENT_API_KEY, None)
         if first_error is not None:
             raise first_error
+        on_finished, self._on_finished = self._on_finished, None
+        if on_finished is not None:
+            on_finished()
 
 
 def bind_client_task_context(fl_ctx, identity, store, analytics):
@@ -187,9 +199,10 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
 
     def save_result(shareable):
         with fl_ctx.get_engine().operation():
-            # Include serialization in the existing post-send deadline.
+            _mark_progress(store, identity, "result_staging_started.json")
+            reference = store.stage_result(identity, shareable)
             _mark_progress(store, identity, "script_result_sent.json")
-            return store.stage_result(identity, shareable)
+            return reference
 
     def adapt_executor(executor):
         if type(executor) is not ClientAPIExecutor:
@@ -199,6 +212,7 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
             on_started=partial(_mark_progress, store, identity, "result_wait_started.json"),
             on_result=save_result,
             on_log=capture_analytics,
+            on_finished=partial(_mark_progress, store, identity, "script_finalized.json"),
             checkpoint_paths=store.checkpoint_paths(identity),
         )
 

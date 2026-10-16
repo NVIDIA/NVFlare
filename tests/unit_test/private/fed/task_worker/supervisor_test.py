@@ -131,6 +131,31 @@ def test_result_and_analytics_reads_follow_confirmed_settlement(tmp_path):
     assert supervisor._active is None
 
 
+@pytest.mark.parametrize("fault", ["none", "payload", "completion", "released", "unknown"])
+def test_saved_result_requires_the_original_retained_validated_completion(tmp_path, fault):
+    supervisor = TaskSupervisor()
+    attempt, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**attempt)
+    identity = outcome.identity
+    if fault == "payload":
+        _payload(attempt).write_bytes(b"corrupt")
+    elif fault == "completion":
+        path = _payload(attempt).parent / "completion.json"
+        record = json.loads(path.read_text())
+        record["worker_pid"] += 1
+        path.write_text(json.dumps(record))
+    elif fault == "released":
+        supervisor.record_receipt(identity, TaskResultReceipt.RECEIVED)
+    elif fault == "unknown":
+        identity = replace(identity, task_name="other")
+    if fault == "none":
+        assert supervisor.read_saved_result(identity)["value"] == 2
+    else:
+        with pytest.raises((RuntimeError, ValueError)):
+            supervisor.read_saved_result(identity)
+    assert attempt["launcher"].launch_task.call_count == 1
+
+
 def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)

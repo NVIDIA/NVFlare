@@ -26,6 +26,7 @@ from nvflare.app_opt.pt.utils import inspect_model_params
 from nvflare.client.api import (
     clear,
     get_config,
+    get_context,
     init,
     is_evaluate,
     is_submit_model,
@@ -124,7 +125,13 @@ def patch(
         )
         callbacks.append(fl_callback)
 
-    if restore_state and "task_checkpoint" in system_info():
+    # A caller can supply an existing callback without an active API context.
+    # Patching remains valid before initialization; inspect only a live context.
+    try:
+        context = get_context()
+    except RuntimeError:
+        context = None
+    if restore_state and context is not None and "task_checkpoint" in system_info(ctx=context):
         raise ValueError(
             "Lightning restore_state=True keeps optimizer and scheduler state only in memory and cannot "
             "restore it across task workers. Use job lifetime, or set restore_state=False and handle "

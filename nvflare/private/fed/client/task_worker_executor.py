@@ -68,6 +68,7 @@ class TaskWorkerExecutor(Executor):
         self._started = False
         self._ending = False
         self._panic_reported = False
+        self._completed_attempts = set()
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -128,6 +129,11 @@ class TaskWorkerExecutor(Executor):
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             identity = self._identity(task_name, fl_ctx)
+            if identity in self._completed_attempts:
+                result = self.supervisor.read_saved_result(identity)
+                with self._checkpoint_commit_guard(abort_signal):
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
+                    return result
             validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = os.path.join(workspace.get_run_dir(identity.job_id), ".nvflare", "task-execution")
@@ -196,6 +202,7 @@ class TaskWorkerExecutor(Executor):
                     checkpoint_file,
                     publication_guard=partial(self._checkpoint_commit_guard, abort_signal),
                 )
+            self._completed_attempts.add(identity)
             return outcome.result
         finally:
             try:

@@ -758,7 +758,9 @@ def test_cancelled_checkpoint_promotion_preserves_the_previous_file(tmp_path):
     with pytest.raises(RuntimeError, match="cancel before promotion"):
         store.commit_checkpoint(second, path, publication_guard=cancelled)
     assert Path(path).read_bytes() == before
-    assert list((tmp_path / "state").iterdir()) == [Path(path)]
+    with artifacts._verified_checkpoint(path, None) as (_, _, reference, _):
+        payload = Path(artifacts._checkpoint_payload_path(path, reference))
+    assert set((tmp_path / "state").iterdir()) == {Path(path), payload}
 
 
 @pytest.mark.parametrize("fault", ["corrupt", "symlink", "oversized"])
@@ -789,7 +791,80 @@ def test_checkpoint_input_rejects_tampering_and_foreign_scope(tmp_path):
     store.create_attempt(next_identity)
     with pytest.raises(ValueError, match="different job, site or task"):
         store.prepare_checkpoint(next_identity, str(path))
-    contents = path.read_bytes()
-    path.write_bytes(contents[:-1] + bytes([contents[-1] ^ 1]))
+    with artifacts._verified_checkpoint(str(path), None) as (_, _, reference, _):
+        payload = Path(artifacts._checkpoint_payload_path(str(path), reference))
+    contents = payload.read_bytes()
+    payload.write_bytes(contents[:-1] + bytes([contents[-1] ^ 1]))
     with pytest.raises(ValueError, match="checksum"):
         store.prepare_checkpoint(next_identity, str(path))
+
+
+def test_checkpoint_sealing_and_commit_share_storage_but_worker_input_is_isolated(tmp_path, monkeypatch):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    identity = _identity()
+    store.create_attempt(identity)
+    pending = Path(store.checkpoint_paths(identity)["output"])
+    pending.write_bytes(b"state" * 200000)
+    original_inode = pending.stat().st_ino
+    copy = artifacts.shutil.copyfileobj
+    copies = []
+
+    def record_copy(source, target, *args):
+        copies.append(source.name)
+        return copy(source, target, *args)
+
+    monkeypatch.setattr(artifacts.shutil, "copyfileobj", record_copy)
+    reference = store.stage_checkpoint(identity)
+    sealed = Path(store.attempt_dir(identity)) / reference.file_name
+    assert not pending.exists()
+    assert sealed.stat().st_ino == original_inode
+    completion = store.commit_result(identity, Shareable({"ok": True}), diagnostics={"checkpoint": reference.to_dict()})
+    committed = str(tmp_path / "state" / "train.checkpoint")
+    store.commit_checkpoint(completion, committed)
+    assert copies == []
+    payload = Path(artifacts._checkpoint_payload_path(committed, reference))
+    assert payload.stat().st_ino == original_inode
+    second = _identity("attempt-2")
+    store.create_attempt(second)
+    store.prepare_checkpoint(second, committed)
+    assert len(copies) == 1
+    isolated = Path(store.checkpoint_paths(second)["input"])
+    assert isolated.stat().st_ino != original_inode
+    isolated.write_bytes(b"changed by application")
+    assert payload.read_bytes() == b"state" * 200000
+    next_completion = _checkpoint_completion(store, _identity("attempt-3"), b"next state")
+    store.commit_checkpoint(next_completion, committed)
+    assert not payload.exists()
+    assert len(list((tmp_path / "state").glob("*.bin"))) == 1
+
+
+def test_identical_checkpoint_bytes_share_the_committed_payload_across_attempts(tmp_path):
+    from contextlib import contextmanager
+
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = str(tmp_path / "state" / "train.checkpoint")
+    first = _checkpoint_completion(store, _identity(), b"identical state")
+    store.commit_checkpoint(first, path)
+    payload = Path(
+        artifacts._checkpoint_payload_path(path, ArtifactReference.from_dict(first.diagnostics["checkpoint"]))
+    )
+    inode = payload.stat().st_ino
+    second = _checkpoint_completion(store, _identity("attempt-2"), b"identical state")
+    store.commit_checkpoint(second, path)
+    assert payload.stat().st_ino == inode
+    with artifacts._verified_checkpoint(path, None) as (_, owner, _, stream):
+        assert owner == second.identity
+        assert stream.read() == b"identical state"
+    third = _checkpoint_completion(store, _identity("attempt-3"), b"identical state")
+
+    @contextmanager
+    def cancelled():
+        raise RuntimeError("cancel shared payload")
+        yield
+
+    with pytest.raises(RuntimeError, match="cancel shared payload"):
+        store.commit_checkpoint(third, path, publication_guard=cancelled)
+    with artifacts._verified_checkpoint(path, None) as (_, owner, _, stream):
+        assert owner == second.identity
+        assert stream.read() == b"identical state"
+    assert payload.stat().st_ino == inode
