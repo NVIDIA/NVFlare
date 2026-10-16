@@ -27,8 +27,12 @@ from .model_controller import ModelController
 
 
 class CrossSiteEval(ModelController):
-    def requires_persistent_client_state(self) -> bool:
-        return True
+    def validate_task_lifetime(self):
+        """Reject task mode until local-model submission is supported."""
+        raise ValueError(
+            f"{type(self).__name__} does not support task lifetime: "
+            "local-model submission is not implemented for fresh workers; use job lifetime"
+        )
 
     def __init__(
         self,

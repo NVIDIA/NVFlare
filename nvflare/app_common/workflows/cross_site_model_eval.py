@@ -40,8 +40,13 @@ _logger = get_module_logger(__name__)
 
 
 class CrossSiteModelEval(Controller):
-    def requires_persistent_client_state(self) -> bool:
-        return bool(self._submit_model_task_name)
+    def validate_task_lifetime(self):
+        """Allow server-model evaluation; local-model submission needs an integration."""
+        if self._submit_model_task_name:
+            raise ValueError(
+                f"{type(self).__name__} does not support task lifetime: "
+                "local-model submission is not implemented for fresh workers; use job lifetime"
+            )
 
     def __init__(
         self,

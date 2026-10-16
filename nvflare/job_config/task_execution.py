@@ -46,11 +46,11 @@ def validate_task_resources(meta, site_name):
 
 
 def validate_task_workflows(workflows):
-    """Reject workflows that require client compute state across assignments."""
+    """Run optional workflow-specific checks for task-lifetime export."""
     for workflow in workflows:
-        controller = workflow.controller
-        if controller.requires_persistent_client_state():
-            raise ValueError(f"{type(controller).__name__} requires persistent client state; use job lifetime")
+        validate = getattr(workflow.controller, "validate_task_lifetime", None)
+        if validate is not None:
+            validate()
 
 
 @dataclass(frozen=True)

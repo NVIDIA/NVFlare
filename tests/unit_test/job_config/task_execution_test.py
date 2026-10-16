@@ -237,7 +237,7 @@ def test_temporary_params_do_not_create_undeclared_apps(tmp_path, target):
     assert len(configs) == (0 if target == "clients" else 1)
 
 
-def test_scaffold_recipe_requires_persistent_client_state(tmp_path):
+def test_scaffold_recipe_rejects_unsupported_task_lifetime(tmp_path):
     from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
     script = tmp_path / "train.py"
@@ -260,7 +260,7 @@ def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, 
     add_cross_site_evaluation(recipe)
     if not task_first:
         recipe.add_client_config({"execution_lifetime": "task"})
-    with pytest.raises(ValueError, match="CrossSiteModelEval.*persistent client state.*job lifetime"):
+    with pytest.raises(ValueError, match="CrossSiteModelEval.*local-model submission.*job lifetime"):
         recipe.export(str(tmp_path / "export"))
 
 
@@ -269,9 +269,7 @@ def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, 
 @pytest.mark.parametrize(
     "workflow_name", ["CrossSiteEval", "CrossSiteModelEval", "Scaffold", "ScatterAndGatherScaffold"]
 )
-def test_workflow_client_state_requirement_is_inherited_and_checked_at_export(
-    tmp_path, workflow_name, lifetime, inherited
-):
+def test_workflow_task_validation_is_inherited_and_checked_at_export(tmp_path, workflow_name, lifetime, inherited):
     from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.app_common.workflows.scaffold import Scaffold
@@ -282,12 +280,11 @@ def test_workflow_client_state_requirement_is_inherited_and_checked_at_export(
     if inherited:
         cls = type("InheritedWorkflow", (cls,), {})
     controller = cls()
-    assert controller.requires_persistent_client_state()
     job = _job(lifetime)
     job.to_server(controller)
     job.to_clients(_executor())
     context = (
-        pytest.raises(ValueError, match="requires persistent client state.*job lifetime")
+        pytest.raises(ValueError, match="does not support task lifetime.*job lifetime")
         if lifetime == "task"
         else nullcontext()
     )
@@ -295,25 +292,42 @@ def test_workflow_client_state_requirement_is_inherited_and_checked_at_export(
         job.export_job(str(tmp_path))
 
 
-def test_custom_workflow_can_declare_its_client_state_requirement(tmp_path):
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_custom_workflow_can_validate_task_lifetime(tmp_path, lifetime):
     from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
-    class CustomStatefulWorkflow(ScatterAndGather):
-        def requires_persistent_client_state(self):
-            return True
+    class CustomWorkflow(ScatterAndGather):
+        def validate_task_lifetime(self):
+            raise ValueError("CustomWorkflow needs an unavailable client service; use job lifetime")
 
-    job = _job("task")
-    job.to_server(CustomStatefulWorkflow())
+    job = _job(lifetime)
+    job.to_server(CustomWorkflow())
     job.to_clients(_executor())
-    with pytest.raises(ValueError, match="CustomStatefulWorkflow.*persistent client state.*job lifetime"):
+    context = (
+        pytest.raises(ValueError, match="CustomWorkflow.*unavailable client service.*job lifetime")
+        if lifetime == "task"
+        else nullcontext()
+    )
+    with context:
         job.export_job(str(tmp_path))
 
 
-def test_global_model_evaluation_allows_task_lifetime(tmp_path):
-    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+def test_workflow_without_optional_task_validation_exports(tmp_path):
+    from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
     job = _job("task")
-    job.to_server(CrossSiteModelEval(submit_model_task_name=""))
+    job.to_server(ScatterAndGather())
+    job.to_clients(_executor())
+    job.export_job(str(tmp_path))
+
+
+@pytest.mark.parametrize("inherited", [False, True])
+def test_global_model_evaluation_allows_task_lifetime(tmp_path, inherited):
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+    cls = type("InheritedEvaluation", (CrossSiteModelEval,), {}) if inherited else CrossSiteModelEval
+    job = _job("task")
+    job.to_server(cls(submit_model_task_name=""))
     job.to_clients(_executor())
     job.export_job(str(tmp_path))
 

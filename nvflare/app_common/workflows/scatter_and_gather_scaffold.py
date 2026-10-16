@@ -29,8 +29,12 @@ from nvflare.security.logging import secure_format_exception
 
 
 class ScatterAndGatherScaffold(ScatterAndGather):
-    def requires_persistent_client_state(self) -> bool:
-        return True
+    def validate_task_lifetime(self):
+        """Reject task mode until clients restore SCAFFOLD control variates."""
+        raise ValueError(
+            f"{type(self).__name__} does not support task lifetime: "
+            "client SCAFFOLD control variates are not restored between workers; use job lifetime"
+        )
 
     def __init__(
         self,

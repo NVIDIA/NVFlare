@@ -124,12 +124,14 @@ does not make arbitrary unchanged stateful training code equivalent. Application
 must select and restore their own relevant state. Final global evaluation does not
 write a checkpoint. Cross-site local-model submission remains a job-lifetime option.
 
-Controllers declare `requires_persistent_client_state()` when their workflow needs
-state across assignments. Export rejects both Scaffold implementations and both
-cross-site evaluation implementations when local models are requested, including
-subclasses and custom controllers declaring this requirement. Global-only
-CrossSiteModelEval remains supported. A controller returning False does not certify
-that its training script is stateless or checkpoint-aware.
+Export runs a workflow's optional `validate_task_lifetime()` check. Both SCAFFOLD
+implementations reject task mode because their current clients do not restore control
+variates between workers. Both cross-site evaluation implementations reject local-model
+submission because the current task integration does not restore those models.
+These checks are inherited by subclasses, and custom workflows can provide their own
+validation. Global-only CrossSiteModelEval remains supported. `ControllerSpec` has no
+client-state requirement marker. Persistent state alone does not require job lifetime;
+applications can explicitly checkpoint the state they need.
 
 The initial profile supports CPU Process workers on Linux and on macOS with Python
 3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,
