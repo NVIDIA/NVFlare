@@ -49,6 +49,7 @@ hello-huggingface
 |-- model.py              # Qwen LoRA server-side model
 |-- prepare_data.py       # helper that writes synthetic per-site JSONL data
 |-- job.py                # job recipe that defines client and server configurations
+|-- hf_persistor.py       # optional server-side upload of the final LoRA adapter
 |-- requirements.txt      # dependencies
 |-- README.md
 ```
@@ -205,4 +206,56 @@ The simulation creates a workspace under:
 
 ```
 /tmp/nvflare/simulation
+```
+
+## Upload the Final Adapter to Hugging Face
+
+Pass `--hf_repo_id` to upload the final aggregated LoRA adapter from the server
+job (SJ). For a local simulation, authenticate with a token that can write to
+that repo:
+
+```bash
+hf auth login
+python job.py --hf_repo_id your-user-or-org/federated-qwen-adapter
+```
+
+[job.py](job.py) registers [HuggingFacePersistor](hf_persistor.py) through the
+recipe's `model_persistor` option. It saves each round locally and uploads a
+standard PEFT adapter and tokenizer on the final configured round. Without
+`--hf_repo_id`, the example uses the standard file persistor. No FLARE library
+changes are needed.
+
+To export the same job for deployment:
+
+```bash
+python job.py --hf_repo_id your-user-or-org/federated-qwen-adapter \
+    --export --export-dir ./fl_job
+```
+
+SJ needs the example dependencies, Hub access, and credentials. For Studies,
+configure `HF_TOKEN` in `secret_env` in the server site's
+`local/study_runtime.yaml`:
+
+- **Docker and Slurm:** `source` names an environment variable supplied to the
+  parent launcher by the site's secret management.
+- **Kubernetes:** `source` names a Kubernetes Secret; `key` selects its token entry.
+
+Studies injects the token into SJ, and Hugging Face reads `HF_TOKEN` automatically.
+Keep token values out of code and job configuration. See
+[Study Runtime Configuration](../../../docs/design/study_runtime_config.md)
+for the schema and examples.
+
+New repos are private; existing repos keep their visibility. The local checkpoint
+and `huggingface-adapter` folder remain available if uploading fails. Upload runs
+only on the final configured round; ending the job early does not upload.
+
+The adapter requires access to the original base model. Load it with:
+
+```python
+from peft import AutoPeftModelForCausalLM
+from transformers import AutoTokenizer
+
+repo_id = "your-user-or-org/federated-qwen-adapter"
+model = AutoPeftModelForCausalLM.from_pretrained(repo_id)
+tokenizer = AutoTokenizer.from_pretrained(repo_id)
 ```

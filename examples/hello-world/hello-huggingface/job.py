@@ -16,6 +16,7 @@ import argparse
 import shlex
 from pathlib import Path
 
+from hf_persistor import HuggingFacePersistor
 from model import DEFAULT_MODEL_NAME
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -29,6 +30,7 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--model_name_or_path", type=str, default=DEFAULT_MODEL_NAME)
     parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hello-huggingface/data")
+    parser.add_argument("--hf_repo_id", help="Upload the final adapter to this Hugging Face model repo (user/name)")
     return parser.parse_args()
 
 
@@ -48,6 +50,13 @@ def main():
     model_name_arg = shlex.quote(args.model_name_or_path)
     data_root_arg = shlex.quote(str(data_root))
 
+    persistor = None
+    if args.hf_repo_id:
+        persistor = HuggingFacePersistor(
+            model_name_or_path=args.model_name_or_path,
+            repo_id=args.hf_repo_id,
+        )
+
     recipe = FedAvgRecipe(
         name="hello-huggingface",
         model={
@@ -56,6 +65,7 @@ def main():
         },
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
+        model_persistor=persistor,
         train_script="client.py",
         train_args=f"--model_name_or_path {model_name_arg} --data_root {data_root_arg}",
         launch_external_process=True,
@@ -64,6 +74,8 @@ def main():
         enable_tensor_disk_offload=True,  # Stage large tensor payloads on disk to reduce process memory.
     )
     recipe.add_client_file("model.py")
+    if persistor:
+        recipe.add_server_file("model.py")
 
     env = SimEnv(num_clients=args.n_clients)
     run = recipe.execute(env)
