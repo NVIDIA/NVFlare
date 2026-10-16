@@ -513,9 +513,28 @@ class HardwareTests(unittest.TestCase):
             self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
             with self.assertRaises((OSError, urllib.error.URLError)):
                 self.request()
-            self.process.wait(timeout=max(1, started + poweroff_timeout - time.monotonic()))
-        elapsed = time.monotonic() - started
-        self.assertLessEqual(elapsed, poweroff_timeout)
+            # Fault start gives a conservative minimum lifetime: quarantine
+            # starts later. Its exact 900-second deadline is covered by runtime
+            # unit tests; asynchronous audit receipt must not reset this clock.
+            minimum_remaining = started + QUARANTINE_WINDOW_SECONDS - time.monotonic()
+            if minimum_remaining > 0:
+                try:
+                    self.process.wait(timeout=minimum_remaining)
+                except subprocess.TimeoutExpired:
+                    pass  # The guest must remain alive through the minimum.
+                else:
+                    self.assertGreaterEqual(
+                        time.monotonic() - started,
+                        QUARANTINE_WINDOW_SECONDS,
+                        "Guest powered off before its quarantine recovery window",
+                    )
+            else:
+                self.assertIsNone(self.process.poll(), "Guest exited before the minimum-lifetime observation")
+            self.process.wait(timeout=max(0, started + poweroff_timeout - time.monotonic()))
+            # Measure before firewall cleanup, which can take additional time.
+            elapsed = time.monotonic() - started
+            self.assertGreaterEqual(elapsed, QUARANTINE_WINDOW_SECONDS)
+            self.assertLessEqual(elapsed, poweroff_timeout)
         self.assert_powered_off()
         self.result(
             periodic_gpu_denial=True,
