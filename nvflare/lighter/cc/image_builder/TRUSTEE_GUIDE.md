@@ -348,13 +348,16 @@ a new POST can replace it.
 
 ## 6. Install references and policies
 
-Before the first build, follow
-[Discover and approve TDX TCB references](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references).
-It captures candidate values in a temporary TD without requiring existing CVM
-approvals, explains signed-quote/advisory review, and separates the initial TCB
-input from the real bundle's later boot measurements. Unknown reference keys,
-including JSON `_comment_*` fields, are rejected before construction; keep
-approval notes separately.
+Before the first build, follow the workflow for the enabled platform:
+[TDX discovery and approval](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references)
+or [SNP reference inputs and finalization](BUILD_GUIDE.md#snp-reference-inputs-and-finalization).
+TDX uses a temporary TD and the TDX-only `inspect-tcb` command. SNP requires
+administrator-approved TCB/configuration inputs before construction; deferred
+finalization adds the real CVM's launch measurement without approving those
+inputs. Both workflows separate initial TCB approval from the exact bundle's
+later boot measurements and acceptance. Unknown reference keys, including JSON
+`_comment_*` fields, are rejected before construction; keep approval notes
+separately.
 
 Stop the relevant KBS instance while changing its approved AS policies or RVPS
 references. Import a finalized bundle's reviewed values with an operator-chosen
