@@ -1160,8 +1160,10 @@ class QuarantineRevocationTests(unittest.TestCase):
     """Recovery safety does not require Linux signals or physical GPU devices."""
 
     def setUp(self):
-        self.readback = self.enterContext(patch.object(supervisor, "confirm_not_ready"))
-        self.diagnostic = self.enterContext(patch.object(supervisor, "emit_diagnostic"))
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        self.readback = stack.enter_context(patch.object(supervisor, "confirm_not_ready"))
+        self.diagnostic = stack.enter_context(patch.object(supervisor, "emit_diagnostic"))
 
     def test_quarantine_tolerates_gpu_reset_errors_after_stopping_and_closing(self):
         for failures in ({0}, {1}, {0, 1}):
