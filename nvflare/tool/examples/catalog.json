@@ -137,6 +137,10 @@
     "source_path": "examples/advanced/distributed_provision",
     "category": "advanced"
   },
+  "distributed-sql": {
+    "source_path": "examples/advanced/distributed-sql",
+    "category": "advanced"
+  },
   "advanced-docker": {
     "source_path": "examples/advanced/docker",
     "category": "advanced"
