@@ -91,7 +91,7 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False, append_list=
         if isinstance(fv, dict):
             if not isinstance(tv, dict):
                 return f"type conflict in element '{k}': dict in from_dict but {type(tv)} in to_dict"
-            err = augment(tv, fv)
+            err = augment(tv, fv, from_override_to=from_override_to, append_list=append_list)
             if err:
                 return err
             continue
@@ -118,7 +118,7 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False, append_list=
                 if not isinstance(tvi, dict):
                     return f"invalid list item {i} in element '{k}' in to_dict: must be dict but got {type(tvi)}"
 
-                err = augment(tv[i], fv[i])
+                err = augment(tv[i], fv[i], from_override_to=from_override_to, append_list=append_list)
                 if err:
                     return err
             continue
