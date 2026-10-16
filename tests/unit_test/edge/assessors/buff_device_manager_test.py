@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
-from nvflare.edge.assessors.device_manager import DeviceManager
 from nvflare.edge.mud import Device
 
 
@@ -220,64 +219,17 @@ def test_has_enough_devices_allows_partial_refill_after_startup():
     assert all(v == 1 for v in mgr.current_selection.values())
 
 
-class _MinimalDeviceManager(DeviceManager):
-    """A custom device manager that does NOT override get_inflight_devices, exercising the
-    default implementation inherited from DeviceManager."""
-
-    def update_available_devices(self, devices, fl_ctx):
-        pass
-
-    def fill_selection(self, fl_ctx):
-        pass
-
-    def remove_devices_from_selection(self, devices, fl_ctx):
-        pass
-
-    def remove_devices_from_used(self, devices, fl_ctx):
-        pass
-
-    def should_fill_selection(self, fl_ctx):
-        return True
-
-    def has_enough_devices_and_clients(self, fl_ctx):
-        return True
-
-    def get_active_model_versions(self, fl_ctx):
-        return set(self.current_selection.values())
-
-
-def test_base_get_inflight_devices_default_for_custom_manager():
-    # Regression for Greptile follow-up P1: a custom device manager that does not implement
-    # get_inflight_devices must still work via the base default (derived from current_selection),
-    # otherwise the wait-timeout logic raises AttributeError on a too-few-devices report.
-    mgr = _MinimalDeviceManager()
-    mgr.current_selection = {"d1": 1, "d2": 1}
+def test_get_usable_devices_matches_scheduling_eligibility():
+    # the diagnostics query must agree with scheduling: devices already contributed to the current
+    # model version are excluded from the usable count, exactly as in fill_selection.
+    mgr = _manager(device_selection_size=2, min_hole_to_fill=1, device_reuse=True)
     fl_ctx = FLContext()
-    assert mgr.get_inflight_devices(fl_ctx) == {"d1", "d2"}
-    mgr.current_selection = {}
-    assert mgr.get_inflight_devices(fl_ctx) == set()
+    mgr.available_devices = _devices(["d1", "d2"])
+    mgr.update_available_devices(mgr.available_devices, fl_ctx)
+    mgr.fill_selection(current_model_version=1, fl_ctx=fl_ctx)
+    assert set(mgr.current_selection) == {"d1", "d2"}
 
-
-def test_is_any_inflight_device_recent_preserves_behavior_without_timestamps():
-    # Regression for Greptile follow-up P1: a custom DeviceManager that does not record assignment
-    # times must keep the previous behavior - its in-flight devices are treated as still training,
-    # so the wait timeout cannot stop the job while a device is selected. Only managers that do
-    # record timestamps get the assignment-expiry bound.
-    mgr = _MinimalDeviceManager()
-    mgr.current_selection = {"d1": 1}
-    fl_ctx = FLContext()
-    # no timestamps recorded -> previous behavior preserved (in-flight == still training)
-    assert mgr.is_any_inflight_device_recent(fl_ctx, 10) is True
-    # no in-flight devices -> nothing to protect
-    mgr.current_selection = {}
-    assert mgr.is_any_inflight_device_recent(fl_ctx, 10) is False
-
-
-def test_tracks_assignment_time_default_and_override():
-    fl_ctx = FLContext()
-    # a custom DeviceManager does not record assignment times -> it keeps the previous behavior:
-    # the wait timer is not counting down while a device is in flight
-    assert _MinimalDeviceManager().tracks_assignment_time(fl_ctx) is False
-    # BuffDeviceManager records them -> it gets the assignment-expiry bound instead
-    buff_mgr = _manager(device_selection_size=2, min_hole_to_fill=1, device_reuse=True)
-    assert buff_mgr.tracks_assignment_time(fl_ctx) is True
+    _report_contribution(mgr, ["d1"], fl_ctx)
+    usable = mgr.get_usable_devices(fl_ctx)
+    # d1 already contributed to V1 and d2 is still in flight, so nothing is usable for V1
+    assert usable == set()

@@ -76,17 +76,6 @@ class ModelUpdateAssessor(Assessor):
         if self.device_wait_start_time is None or self.device_wait_timeout is None:
             return False
 
-        # A device may still be training (in flight). We must not stop the job on a wait timeout
-        # while that device is reasonably expected to report (Greptile P1: job stops during training).
-        # But a device selected and never reporting (e.g. disconnected) must not disable the timeout
-        # forever - once its assignment exceeds the wait timeout, allow the timeout to fire
-        # (Copilot follow-up). So we suppress firing only while an in-flight device was assigned
-        # within the wait-timeout window.
-        if self.device_manager.get_inflight_devices(fl_ctx) and self.device_manager.is_any_inflight_device_recent(
-            fl_ctx, self.device_wait_timeout
-        ):
-            return False
-
         try:
             elapsed = time.time() - self.device_wait_start_time
             if elapsed > self.device_wait_timeout:
@@ -269,18 +258,8 @@ class ModelUpdateAssessor(Assessor):
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:
-                # The selection cannot be filled right now. Managers that record assignment times get
-                # the bounded exemption: the timer keeps running and only fires once the in-flight
-                # device's assignment is older than the wait timeout, so a selected device that never
-                # reports (disconnected) still trips it (Copilot follow-up). Managers without
-                # timestamps keep the previous behavior: a device still in flight means we are making
-                # progress, so the timer is not counting down at all (Greptile follow-up: custom jobs
-                # must not stop during training).
-                if not self.device_manager.tracks_assignment_time(fl_ctx) and self.device_manager.get_inflight_devices(
-                    fl_ctx
-                ):
-                    self.device_wait_start_time = None
-                elif self.device_wait_start_time is None:
+                # Start wait timer if not already started
+                if self.device_wait_start_time is None:
                     self.device_wait_start_time = time.time()
                     self.log_info(fl_ctx, f"Starting device wait timer (timeout: {self.device_wait_timeout}s)")
 
@@ -298,14 +277,17 @@ class ModelUpdateAssessor(Assessor):
         return accepted, reply.to_shareable()
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
-        # Check if we're waiting for devices and timeout exceeded
-        self._log_device_status(fl_ctx)
-        if self._is_device_wait_timeout_exceeded(fl_ctx):
-            self.log_error(fl_ctx, "Job stopped due to insufficient devices joining within timeout period")
-            return Assessment.WORKFLOW_DONE
-        elif self.model_manager.current_model_version >= self.max_model_version:
-            model_version = self.model_manager.current_model_version
-            self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
-            return Assessment.WORKFLOW_DONE
-        else:
-            return Assessment.CONTINUE
+        # These reads touch the same shared state that process_child_update mutates, so they must be
+        # serialized with it to avoid racing against a concurrent child update.
+        with self.update_lock:
+            # Check if we're waiting for devices and timeout exceeded
+            self._log_device_status(fl_ctx)
+            if self._is_device_wait_timeout_exceeded(fl_ctx):
+                self.log_error(fl_ctx, "Job stopped due to insufficient devices joining within timeout period")
+                return Assessment.WORKFLOW_DONE
+            elif self.model_manager.current_model_version >= self.max_model_version:
+                model_version = self.model_manager.current_model_version
+                self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
+                return Assessment.WORKFLOW_DONE
+            else:
+                return Assessment.CONTINUE

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Set
 
@@ -38,7 +37,6 @@ class DeviceManager(FLComponent, ABC):
         self.current_selection = {}
         self.available_devices = {}
         self.used_devices = {}
-        self.selection_assignment_time = {}
 
     @abstractmethod
     def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
@@ -139,29 +137,6 @@ class DeviceManager(FLComponent, ABC):
         """
         return self.current_selection
 
-    def get_inflight_devices(self, fl_ctx: FLContext) -> Set[str]:
-        """Get the devices currently selected (dispatched) but not yet reported back.
-
-        These are the devices still in flight / training. The wait-timeout logic uses this to
-        distinguish "a device is still training" from "no devices are available to join". The
-        default implementation derives it from ``current_selection``, which every DeviceManager
-        maintains; subclasses (e.g. custom device managers) inherit this without overriding.
-        """
-        selection = self.current_selection
-        if isinstance(selection, dict):
-            return set(selection.keys())
-        return set(selection)
-
-    def tracks_assignment_time(self, fl_ctx: FLContext) -> bool:
-        """Whether this manager records assignment timestamps for selected devices.
-
-        Only managers returning True get the assignment-expiry bound on the wait-timeout exemption
-        (so a device that never reports can still trip the timeout). Managers that return False keep
-        the previous behavior: an in-flight device is always treated as still training, and the wait
-        timer is not counting down while a device is in flight.
-        """
-        return False
-
     def get_usable_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Devices eligible to be selected right now (default: available minus used).
 
@@ -169,30 +144,6 @@ class DeviceManager(FLComponent, ABC):
         this so that status logging and timeout diagnostics agree with scheduling.
         """
         return set(self.available_devices.keys()) - set(self.used_devices.keys())
-
-    def is_any_inflight_device_recent(self, fl_ctx: FLContext, deadline: float) -> bool:
-        """True if any currently-selected (in-flight) device was assigned within ``deadline`` seconds.
-
-        The wait-timeout logic uses this to suppress the timeout only while an in-flight device is
-        reasonably expected to report. A device that was selected but never reports (e.g.
-        disconnected) eventually exceeds ``deadline`` and no longer suppresses the timeout, so the
-        job can still be stopped instead of hanging forever (Copilot follow-up on the in-flight guard).
-
-        Device managers that do not record assignment times (e.g. an existing custom ``DeviceManager``
-        subclass) keep the previous behavior: their in-flight devices are always treated as still
-        training, so the timeout cannot stop the job mid-training (Greptile follow-up: custom jobs
-        stop during training).
-        """
-        inflight = self.get_inflight_devices(fl_ctx)
-        if not inflight:
-            return False
-        tracked = [self.selection_assignment_time[d] for d in inflight if d in self.selection_assignment_time]
-        if not tracked:
-            # no assignment timestamps recorded for the in-flight devices - preserve the previous
-            # behavior instead of assuming those devices are stuck.
-            return True
-        now = time.time()
-        return any(now - t <= deadline for t in tracked)
 
     def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Get the available devices.
