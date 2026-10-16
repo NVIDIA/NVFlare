@@ -77,6 +77,7 @@ class _FedAvgValidator(BaseModel):
     # Memory management
     server_memory_gc_rounds: int = 0
     enable_tensor_disk_offload: bool = False
+    sampling_seed: Optional[int] = None
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
 
@@ -199,6 +200,9 @@ class FedAvgRecipe(Recipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
+        sampling_seed: Seed for client sampling when min_clients is below the number of connected clients.
+            With a seed, the sequence of sampled client subsets is the same on every run with the same
+            available clients. Defaults to None (unseeded sampling).
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
             When True, server receives tensor payloads via temp files and materializes lazily.
 
@@ -248,6 +252,7 @@ class FedAvgRecipe(Recipe):
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
         enable_tensor_disk_offload: bool = False,
+        sampling_seed: Optional[int] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
@@ -298,6 +303,7 @@ class FedAvgRecipe(Recipe):
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
             enable_tensor_disk_offload=enable_tensor_disk_offload,
+            sampling_seed=sampling_seed,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
         )
@@ -345,6 +351,7 @@ class FedAvgRecipe(Recipe):
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        self.sampling_seed = v.sampling_seed
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
@@ -474,6 +481,7 @@ class FedAvgRecipe(Recipe):
             aggregation_weights=self.aggregation_weights,
             memory_gc_rounds=self.server_memory_gc_rounds,
             enable_tensor_disk_offload=self.enable_tensor_disk_offload,
+            sampling_seed=self.sampling_seed,
             **self._get_controller_kwargs(),
         )
 
