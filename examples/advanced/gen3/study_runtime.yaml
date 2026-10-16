@@ -1,0 +1,10 @@
+format_version: 2
+studies:
+  gen3-demo:
+    env:
+      GEN3_ENDPOINT: https://gen3-test.example.org
+      GEN3_CLIENT_ID: replace-with-this-sites-application-client-id
+    secret_env:
+      GEN3_CLIENT_SECRET:
+        source: gen3-demo-credentials
+        key: client_secret
