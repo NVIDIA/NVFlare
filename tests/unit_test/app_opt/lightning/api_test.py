@@ -1500,6 +1500,44 @@ def test_real_lightning_fedavg_reports_per_round_steps_across_two_fits():
     assert [call.args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for call in send.call_args_list] == [4, 4]
 
 
+def test_real_lightning_max_steps_bounds_every_round_to_the_same_step_count():
+    steps_per_round = 3
+    num_rounds = 4
+    module = TinyLightningNet()
+    input_models = [
+        FLModel(params=_clone_state_dict(module), current_round=round_idx, meta={}) for round_idx in range(num_rounds)
+    ]
+    loader = DataLoader(TensorDataset(torch.randn(8, 2), torch.tensor([0, 1] * 4)), batch_size=1, shuffle=False)
+
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.receive", side_effect=input_models),
+        patch("nvflare.app_opt.lightning.api.is_train", return_value=True),
+        patch("nvflare.app_opt.lightning.api.is_evaluate", return_value=False),
+        patch("nvflare.app_opt.lightning.api.is_submit_model", return_value=False),
+        patch("nvflare.app_opt.lightning.api.send") as send,
+        patch("nvflare.app_opt.lightning.api.clear"),
+    ):
+        callback = FLCallback(rank=0)
+        trainer = pl.Trainer(
+            max_steps=steps_per_round,
+            callbacks=[callback],
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            num_sanity_val_steps=0,
+        )
+        for _ in range(num_rounds):
+            trainer.fit(module, train_dataloaders=loader)
+
+    assert [call.args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for call in send.call_args_list] == [
+        steps_per_round
+    ] * num_rounds
+    assert trainer.global_step == steps_per_round * num_rounds
+
+
 def test_real_lightning_fit_only_ignores_sanity_and_mid_fit_validation_metrics():
     module = TinyLightningNet()
     global_params = {key: torch.zeros_like(value) for key, value in module.state_dict().items()}

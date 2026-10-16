@@ -531,7 +531,7 @@ class JobRunner(FLComponent):
                                 f"for job ({job_id}): {unresolved}. Finalizing from the server outcome."
                             )
                         with engine.new_context() as completion_ctx:
-                            completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+                            completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
                             finished_state = self._finished_job_states.get(job.job_id)
                             if finished_state is None:
                                 if job.run_aborted:
@@ -719,7 +719,7 @@ class JobRunner(FLComponent):
                         job_id = None
                         try:
                             self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
-                            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
+                            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id, sticky=False)
                             job_id, failed_clients = self._deploy_job(ready_job, sites, fl_ctx)
                             # Claim start atomically with pre-run abort. Once claimed, abort
                             # returns busy until startup finishes; deployment and launch stay unlocked.
@@ -884,7 +884,7 @@ class JobRunner(FLComponent):
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")
-            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
             job.run_aborted = True
             return ""
         else:
@@ -926,7 +926,7 @@ class JobRunner(FLComponent):
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Fail the job run: {job_id}")
-            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
             return ""
         else:
             self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
