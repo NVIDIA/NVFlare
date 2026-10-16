@@ -231,22 +231,36 @@ class _CustomDeviceManager(DeviceManager):
         return set(self.current_selection.values())
 
 
-def test_custom_device_manager_retains_finite_timeout_behavior():
-    """Regression requested by the maintainer: a custom DeviceManager keeps main's finite-timeout behavior.
-
-    Abandoned-assignment detection is explicitly out of scope for this PR, so the wait timeout keeps
-    its original semantics: it is armed when a refill is attempted with too few eligible devices and
-    it stops the job once it expires - for a custom device manager exactly as for BuffDeviceManager.
-    """
+def test_custom_device_manager_retains_finite_timeout_behavior(monkeypatch):
+    """A finite refill wait expires even when a custom manager still has a selected device."""
+    mock_time = MagicMock(return_value=0.0)
+    monkeypatch.setattr("nvflare.edge.assessors.model_update.time.time", mock_time)
     assessor, model_manager, device_manager, fl_ctx = _setup(num_updates_for_model=2)
-    assessor.device_manager = _CustomDeviceManager(device_selection_size=2)
-    assessor.device_wait_timeout = 10
+    device_manager = _CustomDeviceManager(device_selection_size=2, device_reuse=False)
+    assessor.device_manager = device_manager
+    assessor.device_wait_timeout = 60
 
-    # only one device joins: the refill cannot be filled, so the wait timer is armed
-    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1"])), fl_ctx)
+    # Startup fills both slots without arming the wait timer.
+    accepted, reply_shareable = assessor.process_child_update(_report(0, devices=_devices(["d1", "d2"])), fl_ctx)
     assert accepted is True
-    assert assessor.device_wait_start_time is not None
+    reply = StateUpdateReply.from_shareable(reply_shareable)
+    assert reply.model_version == 1
+    assert reply.device_selection == {"d1": 1, "d2": 1}
+    assert assessor.device_wait_start_time is None
 
-    # once the wait timeout has elapsed the job is stopped - the custom manager is not exempted
-    assessor.device_wait_start_time = time.time() - 100
+    # One device reports, leaving an unfillable slot while the other device remains selected.
+    mock_time.return_value = 30.0
+    accepted, reply_shareable = assessor.process_child_update(
+        _report(1, model_updates={1: _model_update(1, ["d1"])}), fl_ctx
+    )
+    assert accepted is True
+    assert device_manager.current_selection == {"d2": 1}
+    assert assessor.device_wait_start_time == 30.0
+    assert model_manager.num_updates_counter == 1
+
+    # Expiry is measured from the failed refill, and a selected device cannot suppress it.
+    mock_time.return_value = 89.0
+    assert assessor.assess(fl_ctx) == Assessment.CONTINUE
+    mock_time.return_value = 95.0
     assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE
+    assert device_manager.current_selection == {"d2": 1}
