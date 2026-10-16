@@ -1104,3 +1104,54 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "ne
         assert len(list(root.rglob("*.checkpoint"))) == 1
     finally:
         adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_checkpoint_directory_sync_failure_returns_matching_result_and_next_worker_resumes(native_task, monkeypatch):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+    from nvflare.private.fed.task_worker import artifacts
+
+    root, custom, context, policy = native_task
+    script = """
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "next": previous + 1}))
+"""
+    adapter, _ = _adapter(custom, context, policy, script=script)
+
+    def execute(attempt):
+        context.set_prop(FLContextKey.TASK_ID, f"task-{attempt}", private=True, sticky=True)
+        context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{attempt}", private=True, sticky=True)
+        data = DXO(DataKind.WEIGHTS, {"w": np.array([1.0])}).to_shareable()
+        return FLModelUtils.from_shareable(adapter.execute("train", data, context, Signal()))
+
+    replace_file, sync = os.replace, os.fsync
+    published = failed = False
+
+    def publish(*args, **kwargs):
+        nonlocal published
+        replace_file(*args, **kwargs)
+        published = True
+
+    def fail_directory_sync(fd):
+        nonlocal failed
+        if published:
+            failed = True
+            raise OSError("checkpoint directory sync failed after replacement")
+        return sync(fd)
+
+    try:
+        assert execute(1).metrics == {"previous": 0, "next": 1}
+        with monkeypatch.context() as patch:
+            patch.setattr(artifacts.os, "replace", publish)
+            patch.setattr(artifacts.os, "fsync", fail_directory_sync)
+            assert execute(2).metrics == {"previous": 1, "next": 2}
+        assert failed
+        assert execute(3).metrics == {"previous": 2, "next": 3}
+        assert len(list(root.rglob("*.checkpoint"))) == 1
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)

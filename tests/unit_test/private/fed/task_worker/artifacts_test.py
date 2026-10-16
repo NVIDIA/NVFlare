@@ -637,6 +637,109 @@ def test_checkpoint_commit_is_atomic_idempotent_and_survives_payload_release(tmp
         assert stream.read() == b"round-one state"
 
 
+@pytest.mark.parametrize("previous", [False, True])
+@pytest.mark.parametrize("fault", ["sync", "cleanup", "close", "warning"])
+def test_published_checkpoint_keeps_matching_result_on_late_io_error(tmp_path, monkeypatch, caplog, previous, fault):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    target = tmp_path / "state" / "train.checkpoint"
+    if previous:
+        first = _checkpoint_completion(store, _identity(), b"previous")
+        store.commit_checkpoint(first, str(target))
+    completion = _checkpoint_completion(store, _identity("attempt-2"), b"published")
+    replace_file, sync, unlink, close = os.replace, os.fsync, os.unlink, os.close
+    published = failed = False
+
+    def publish(*args, **kwargs):
+        nonlocal published
+        replace_file(*args, **kwargs)
+        published = True
+
+    def fail_after_publication(operation, original):
+        def run(*args, **kwargs):
+            nonlocal failed
+            if published and operation == ("sync" if fault == "warning" else fault):
+                failed = True
+                if operation == "close":
+                    original(*args, **kwargs)
+                raise OSError("injected post-publication I/O failure")
+            return original(*args, **kwargs)
+
+        return run
+
+    with monkeypatch.context() as patch:
+        patch.setattr(artifacts.os, "replace", publish)
+        patch.setattr(artifacts.os, "fsync", fail_after_publication("sync", sync))
+        patch.setattr(artifacts.os, "unlink", fail_after_publication("cleanup", unlink))
+        patch.setattr(artifacts.os, "close", fail_after_publication("close", close))
+        if fault == "warning":
+
+            def fail_warning(*args, **kwargs):
+                raise RuntimeError("logging also failed after publication")
+
+            patch.setattr(artifacts._LOGGER, "warning", fail_warning)
+        store.commit_checkpoint(completion, str(target))
+    assert published and failed
+    if fault != "warning":
+        assert "published checkpoint" in caplog.text
+    with artifacts._verified_checkpoint(str(target), None) as (record, identity, _, payload):
+        assert identity == completion.identity
+        assert record["result"] == completion.result.to_dict()
+        assert payload.read() == b"published"
+    assert store.read_result(completion.identity)[0]["output"] == b"published"
+    # Re-observing this completion must not publish or advance the state again.
+    before = target.stat()
+    store.commit_checkpoint(completion, str(target))
+    assert target.stat().st_ino == before.st_ino
+    next_identity = _identity("attempt-3")
+    store.create_attempt(next_identity)
+    store.prepare_checkpoint(next_identity, str(target))
+    assert Path(store.checkpoint_paths(next_identity)["input"]).read_bytes() == b"published"
+
+
+@pytest.mark.parametrize("previous", [False, True])
+@pytest.mark.parametrize("fault", ["file_sync", "directory_sync", "replace", "candidate_close"])
+def test_checkpoint_io_error_before_publication_preserves_previous_state(tmp_path, monkeypatch, previous, fault):
+    import stat
+
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    target = tmp_path / "state" / "train.checkpoint"
+    if previous:
+        first = _checkpoint_completion(store, _identity(), b"previous")
+        store.commit_checkpoint(first, str(target))
+    before = target.read_bytes() if previous else None
+    completion = _checkpoint_completion(store, _identity("attempt-2"), b"candidate")
+    sync = os.fsync
+
+    def fail_sync(fd):
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+        if (fault == "file_sync" and regular) or (fault == "directory_sync" and not regular):
+            raise OSError("injected pre-publication I/O failure")
+        return sync(fd)
+
+    def fail_replace(*args, **kwargs):
+        raise OSError("injected pre-publication I/O failure")
+
+    from contextlib import contextmanager
+
+    verify_payload = store._verified_payload
+
+    @contextmanager
+    def fail_candidate_close(*args, **kwargs):
+        with verify_payload(*args, **kwargs) as stream:
+            yield stream
+        raise OSError("injected pre-publication I/O failure")
+
+    with monkeypatch.context() as patch:
+        if fault == "candidate_close":
+            patch.setattr(store, "_verified_payload", fail_candidate_close)
+        patch.setattr(artifacts.os, "fsync", fail_sync)
+        if fault == "replace":
+            patch.setattr(artifacts.os, "replace", fail_replace)
+        with pytest.raises(OSError, match="injected pre-publication"):
+            store.commit_checkpoint(completion, str(target))
+    assert (target.read_bytes() if target.exists() else None) == before
+
+
 def test_cancelled_checkpoint_promotion_preserves_the_previous_file(tmp_path):
     from contextlib import contextmanager
 

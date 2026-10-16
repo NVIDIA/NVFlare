@@ -16,6 +16,7 @@
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -45,6 +46,7 @@ _ANALYTICS_KIND = "analytics"
 _CHECKPOINT_KIND = "checkpoint"
 _CHECKPOINT_INPUT_KIND = "checkpoint_input"
 _RECORD_SIZE = struct.Struct("!Q")
+_LOGGER = logging.getLogger(__name__)
 
 
 class IncompleteTaskArtifactError(RuntimeError):
@@ -143,18 +145,36 @@ def _replace_checkpoint(path, writer, publication_guard):
     directory = os.path.dirname(path)
     directory_fd = _open_directory(directory, create=True)
     temporary = f".checkpoint.{uuid.uuid4().hex}"
+    published = False
     try:
-        _publish_exclusive(directory, temporary, writer)
-        with publication_guard():
-            os.replace(temporary, os.path.basename(path), src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-            os.fsync(directory_fd)
-    finally:
         try:
-            os.unlink(temporary, dir_fd=directory_fd)
-        except FileNotFoundError:
-            pass
+            _publish_exclusive(directory, temporary, writer)
+            with publication_guard():
+                os.replace(temporary, os.path.basename(path), src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+                # Replacement is the local commit point. A later sync/cleanup
+                # error cannot turn its matching successful result into failure.
+                published = True
+                os.fsync(directory_fd)
         finally:
-            os.close(directory_fd)
+            try:
+                os.unlink(temporary, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+            finally:
+                os.close(directory_fd)
+    except OSError:
+        if not published:
+            raise
+        try:
+            _LOGGER.warning(
+                "I/O error after published checkpoint %s; retaining it and its matching result. "
+                "Crash durability could not be confirmed",
+                path,
+                exc_info=True,
+            )
+        except Exception:
+            # A diagnostic handler must not split the committed state/result.
+            pass
 
 
 def require_eager_shareable(data: Shareable):
@@ -539,14 +559,14 @@ class FileTaskArtifactStore:
         encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         if len(encoded) > _MAX_RECORD_BYTES:
             raise ValueError("checkpoint record is too large")
-        with self._verified_payload(completion.identity, reference) as source:
 
-            def write(output):
+        def write(output):
+            with self._verified_payload(completion.identity, reference) as source:
                 output.write(_RECORD_SIZE.pack(len(encoded)))
                 output.write(encoded)
                 shutil.copyfileobj(source, output, _CHUNK_SIZE)
 
-            _replace_checkpoint(checkpoint_file, write, publication_guard)
+        _replace_checkpoint(checkpoint_file, write, publication_guard)
 
     def write_analytics_record(self, stream, record: dict):
         """Snapshot one log call into a disk spool without retaining its values."""

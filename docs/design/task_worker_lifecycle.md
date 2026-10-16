@@ -100,10 +100,13 @@ flare.send(output_model)
 The worker seals the optional file after executor finalization. One immutable
 completion record binds its checksum to the result. After physical settlement and
 result validation, CJ atomically promotes the checkpoint together with its owning
-completion identity and result reference. A missing checkpoint leaves the previous
-state unchanged. Failures, cancelled promotion and malformed candidates cannot
-replace committed state. Workers receive only an attempt-local input copy, so
-accidentally overwriting it cannot change the committed checkpoint. Promotion is
+completion identity and result reference. Atomic replacement is the local commit
+point: if a later directory sync or temporary-file cleanup fails, CJ retains the
+published checkpoint and returns its matching successful result, reporting a
+warning that crash durability could not be confirmed. Failures before replacement,
+cancelled promotion and malformed candidates leave the previous state unchanged.
+A missing checkpoint also leaves it unchanged. Workers receive only an attempt-local
+input copy, so accidentally overwriting it cannot change the committed checkpoint. Promotion is
 idempotent for the same completion. Result-submission retries reuse the saved
 result in CJ and never rerun training or promote state again. There is no automatic
 physical retry or cross-CJ crash recovery; a new physical attempt requires a new
