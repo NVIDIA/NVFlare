@@ -24,7 +24,7 @@ if not all((HELLO_PT_DIR / name).is_file() for name in ("client.py", "model.py",
     raise SystemExit("This example requires examples/hello-world/hello-pt. Run it from a full NVFlare checkout.")
 sys.path.insert(0, str(HELLO_PT_DIR))
 
-from model import create_model  # noqa: E402
+from model import MODEL_SEED, create_model  # noqa: E402
 from prepare_data import add_dataset_arguments  # noqa: E402
 
 from nvflare.apis.job_def import RunStatus
@@ -72,6 +72,14 @@ def define_parser() -> argparse.ArgumentParser:
     )
 
     add_dataset_arguments(parser)
+    parser.add_argument("--seed", type=int, default=MODEL_SEED)
+    parser.add_argument("--torch_threads", type=int, default=None, help="PyTorch CPU threads per client (default: 1).")
+    parser.add_argument(
+        "--resume_training",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Restore the PyTorch checkpoint between task workers (task mode defaults to enabled).",
+    )
 
     # Defaults for these optional overrides remain owned by the shared client.
     parser.add_argument("--batch_size", type=int, default=None, help="Local training batch size (client default: 32).")
@@ -141,10 +149,17 @@ def parse_args(argv=None):
 
 
 def create_recipe(args):
+    seed = getattr(args, "seed", MODEL_SEED)
     train_args = ["--dataset", args.dataset]
+    if seed != MODEL_SEED:
+        train_args.extend(("--seed", str(seed)))
+    if getattr(args, "resume_training", None) is not None:
+        if args.execution_lifetime != "task":
+            raise ValueError("--resume_training requires --execution_lifetime task; job mode keeps state in memory")
+        train_args.append("--resume_training" if args.resume_training else "--no-resume_training")
     if args.dataset == "cifar10":
         train_args.extend(("--data_root", args.data_root))
-    for name in ("batch_size", "epochs", "learning_rate", "num_workers"):
+    for name in ("batch_size", "epochs", "learning_rate", "num_workers", "torch_threads"):
         value = getattr(args, name)
         if value is not None:
             train_args.extend((f"--{name}", str(value)))
@@ -153,8 +168,8 @@ def create_recipe(args):
         name="hello-pt",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        model=create_model(),
-        train_script=str(HELLO_PT_DIR / "client.py"),
+        model=create_model(seed=seed),
+        train_script=str(HELLO_PT_DIR / ("client_task.py" if args.execution_lifetime == "task" else "client.py")),
         # Preserve each client argument exactly across all execution environments.
         train_args=train_args,
         launch_external_process=args.launch_external_process,

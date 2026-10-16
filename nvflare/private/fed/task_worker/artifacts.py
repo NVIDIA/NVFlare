@@ -21,7 +21,10 @@ import os
 import re
 import shutil
 import stat
+import struct
+import threading
 import time
+import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
@@ -39,6 +42,9 @@ _MAX_RECORD_BYTES = 1024 * 1024
 _INPUT_KIND = "input"
 _RESULT_KIND = "result"
 _ANALYTICS_KIND = "analytics"
+_CHECKPOINT_KIND = "checkpoint"
+_CHECKPOINT_INPUT_KIND = "checkpoint_input"
+_RECORD_SIZE = struct.Struct("!Q")
 
 
 class IncompleteTaskArtifactError(RuntimeError):
@@ -99,6 +105,58 @@ def _read_json(path: str) -> dict:
     return value
 
 
+@contextmanager
+def _verified_checkpoint(path, max_payload_bytes):
+    """Read a committed opaque checkpoint and the result it belongs to."""
+    with _open_protocol_file(path) as stream:
+        header = stream.read(_RECORD_SIZE.size)
+        if len(header) != _RECORD_SIZE.size:
+            raise ValueError("incomplete checkpoint header")
+        size = _RECORD_SIZE.unpack(header)[0]
+        if not 0 < size <= _MAX_RECORD_BYTES:
+            raise ValueError("invalid checkpoint header size")
+        encoded = stream.read(size)
+        if len(encoded) != size:
+            raise ValueError("incomplete checkpoint record")
+        record = _load_json(encoded)
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"schema_version", "identity", "checkpoint", "result"}
+            or type(record["schema_version"]) is not int
+            or record["schema_version"] != SCHEMA_VERSION
+        ):
+            raise ValueError("invalid checkpoint record")
+        identity = TaskAttemptIdentity.from_dict(record["identity"])
+        reference = ArtifactReference.from_dict(record["checkpoint"])
+        result = ArtifactReference.from_dict(record["result"])
+        if reference.kind != _CHECKPOINT_KIND or result.kind != _RESULT_KIND:
+            raise ValueError("invalid checkpoint/result reference")
+        offset = stream.tell()
+        actual_size, digest = _fingerprint(stream, max_payload_bytes)
+        if actual_size != reference.size or digest != reference.sha256:
+            raise ValueError("checkpoint size or checksum mismatch")
+        stream.seek(offset)
+        yield record, identity, reference, stream
+
+
+def _replace_checkpoint(path, writer, publication_guard):
+    directory = os.path.dirname(path)
+    directory_fd = _open_directory(directory, create=True)
+    temporary = f".checkpoint.{uuid.uuid4().hex}"
+    try:
+        _publish_exclusive(directory, temporary, writer)
+        with publication_guard():
+            os.replace(temporary, os.path.basename(path), src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+            os.fsync(directory_fd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        finally:
+            os.close(directory_fd)
+
+
 def require_eager_shareable(data: Shareable):
     """Reject data whose contents depend on a live federation download owner."""
 
@@ -118,9 +176,10 @@ class ArtifactReference:
     sha256: str
 
     def __post_init__(self):
-        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _ANALYTICS_KIND):
-            raise ValueError("artifact kind must be input, result or analytics")
-        if self.file_name != f"{self.kind}.fobs":
+        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _ANALYTICS_KIND, _CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND):
+            raise ValueError("invalid artifact kind")
+        suffix = "bin" if self.kind in (_CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND) else "fobs"
+        if self.file_name != f"{self.kind}.{suffix}":
             raise ValueError("artifact payload name does not match its kind")
         if type(self.size) is not int or self.size < 0:
             raise ValueError("artifact size must be a nonnegative integer")
@@ -221,6 +280,7 @@ class FileTaskArtifactStore:
         _require_payload_limit(max_payload_bytes)
         self.root_dir = os.path.realpath(root_dir)
         self.max_payload_bytes = max_payload_bytes
+        self._analytics_lock = threading.Lock()
 
     def attempt_dir(self, identity: TaskAttemptIdentity) -> str:
         if not isinstance(identity, TaskAttemptIdentity):
@@ -267,16 +327,24 @@ class FileTaskArtifactStore:
 
     def _write_payload(self, identity: TaskAttemptIdentity, kind: str, data: Shareable) -> ArtifactReference:
         require_eager_shareable(data)
+        return self._write_payload_stream(
+            identity,
+            kind,
+            lambda stream: fobs.dump_to_stream(data, stream, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True}),
+        )
+
+    def _write_payload_stream(self, identity, kind, write):
         directory = self.attempt_dir(identity)
         if not os.path.isdir(directory) or os.path.islink(directory):
             raise ValueError("attempt directory is missing or invalid")
         self._check_identity(identity)
-        file_name = f"{kind}.fobs"
+        suffix = "bin" if kind in (_CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND) else "fobs"
+        file_name = f"{kind}.{suffix}"
         details = {}
 
         def writer(stream):
             payload_writer = _PayloadWriter(stream, self.max_payload_bytes)
-            fobs.dump_to_stream(data, payload_writer, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True})
+            write(payload_writer)
             details["size"] = payload_writer.size
             details["sha256"] = payload_writer.digest.hexdigest()
 
@@ -398,8 +466,112 @@ class FileTaskArtifactStore:
             raise ValueError(f"completion diagnostics must contain only JSON-compatible values: {e}") from e
         return completion
 
-    def write_analytics(self, identity: TaskAttemptIdentity, records: list) -> ArtifactReference:
-        return self._write_payload(identity, _ANALYTICS_KIND, Shareable({"records": records}))
+    def checkpoint_paths(self, identity):
+        """Expose only this attempt's input copy and pending output file."""
+        self._check_identity(identity)
+        directory = self.attempt_dir(identity)
+        manifest_path = os.path.join(directory, "checkpoint_input.json")
+        input_path = None
+        if os.path.lexists(manifest_path):
+            manifest = _read_json(manifest_path)
+            if set(manifest) != {"identity", "artifact"}:
+                raise ValueError("invalid checkpoint input manifest")
+            self._identity_from_record(manifest, identity)
+            reference = ArtifactReference.from_dict(manifest["artifact"])
+            if reference.kind != _CHECKPOINT_INPUT_KIND:
+                raise ValueError("invalid checkpoint input reference")
+            with self._verified_payload(identity, reference):
+                input_path = os.path.join(directory, reference.file_name)
+        return {"input": input_path, "output": os.path.join(directory, "checkpoint.pending")}
+
+    def prepare_checkpoint(self, identity, checkpoint_file):
+        """CJ snapshots the previously committed state before launching a worker."""
+        if not os.path.lexists(checkpoint_file):
+            return
+        with _verified_checkpoint(checkpoint_file, self.max_payload_bytes) as (_, previous, _, stream):
+            if (previous.job_id, previous.site_name, previous.task_name) != (
+                identity.job_id,
+                identity.site_name,
+                identity.task_name,
+            ):
+                raise ValueError("checkpoint belongs to a different job, site or task")
+            reference = self._write_payload_stream(
+                identity, _CHECKPOINT_INPUT_KIND, lambda output: shutil.copyfileobj(stream, output, _CHUNK_SIZE)
+            )
+        _write_json_exclusive(
+            self.attempt_dir(identity),
+            "checkpoint_input.json",
+            {"identity": identity.to_dict(), "artifact": reference.to_dict()},
+        )
+
+    def stage_checkpoint(self, identity):
+        """Seal an optional application-written file after executor finalization."""
+        path = os.path.join(self.attempt_dir(identity), "checkpoint.pending")
+        if not os.path.lexists(path):
+            return None
+        with _open_protocol_file(path) as stream:
+            return self._write_payload_stream(
+                identity, _CHECKPOINT_KIND, lambda output: shutil.copyfileobj(stream, output, _CHUNK_SIZE)
+            )
+
+    def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext):
+        """CJ promotes state only from the verified, physically settled result."""
+        config = completion.diagnostics.get("checkpoint")
+        if config is None:
+            return
+        reference = ArtifactReference.from_dict(config)
+        if reference.kind != _CHECKPOINT_KIND:
+            raise ValueError("completion has an invalid checkpoint reference")
+        # Idempotence covers re-observing completion; transport retries keep
+        # using the saved result and never execute the script again.
+        if os.path.lexists(checkpoint_file):
+            with _verified_checkpoint(checkpoint_file, self.max_payload_bytes) as (record, previous, _, _):
+                if previous == completion.identity:
+                    if record["checkpoint"] != reference.to_dict() or record["result"] != completion.result.to_dict():
+                        raise ValueError("checkpoint completion was changed")
+                    return
+        record = {
+            "schema_version": SCHEMA_VERSION,
+            "identity": completion.identity.to_dict(),
+            "checkpoint": reference.to_dict(),
+            "result": completion.result.to_dict(),
+        }
+        encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        if len(encoded) > _MAX_RECORD_BYTES:
+            raise ValueError("checkpoint record is too large")
+        with self._verified_payload(completion.identity, reference) as source:
+
+            def write(output):
+                output.write(_RECORD_SIZE.pack(len(encoded)))
+                output.write(encoded)
+                shutil.copyfileobj(source, output, _CHUNK_SIZE)
+
+            _replace_checkpoint(checkpoint_file, write, publication_guard)
+
+    def write_analytics_record(self, stream, record: dict):
+        """Snapshot one log call into a disk spool without retaining its values."""
+        require_eager_shareable(Shareable(record))
+        with self._analytics_lock:
+            encoded = fobs.dumps(record, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True})
+            size = _RECORD_SIZE.pack(len(encoded))
+            if self.max_payload_bytes is not None and stream.tell() + len(size) + len(encoded) > self.max_payload_bytes:
+                raise ValueError("artifact payload is too large")
+            stream.write(size)
+            stream.write(encoded)
+            stream.flush()
+
+    def write_analytics(self, identity: TaskAttemptIdentity, stream) -> ArtifactReference | None:
+        """Seal the disk spool without decoding records in the worker."""
+        with self._analytics_lock:
+            try:
+                if stream.tell() == 0:
+                    return None
+                stream.seek(0)
+                return self._write_payload_stream(
+                    identity, _ANALYTICS_KIND, lambda output: shutil.copyfileobj(stream, output, _CHUNK_SIZE)
+                )
+            finally:
+                stream.close()
 
     def read_analytics(self, identity: TaskAttemptIdentity, completion: TaskCompletion) -> list:
         if completion.identity != identity:
@@ -410,9 +582,20 @@ class FileTaskArtifactStore:
         reference = ArtifactReference.from_dict(config)
         if reference.kind != _ANALYTICS_KIND:
             raise ValueError("analytics reference has the wrong artifact kind")
-        records = self._read_payload(identity, reference).get("records")
-        if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
-            raise ValueError("analytics artifact must contain a list of records")
+        records = []
+        with self._verified_payload(identity, reference) as stream:
+            while stream.tell() < reference.size:
+                header = stream.read(_RECORD_SIZE.size)
+                if len(header) != _RECORD_SIZE.size:
+                    raise ValueError("analytics artifact has an incomplete record size")
+                size = _RECORD_SIZE.unpack(header)[0]
+                if size == 0 or size > reference.size - stream.tell():
+                    raise ValueError("analytics artifact has an invalid record size")
+                record = fobs.loads(stream.read(size), fobs_ctx={"native": True})
+                if not isinstance(record, dict):
+                    raise ValueError("analytics artifact must contain records")
+                require_eager_shareable(Shareable(record))
+                records.append(record)
         return records
 
     def read_completion(self, identity: TaskAttemptIdentity) -> TaskCompletion:
@@ -482,7 +665,17 @@ class FileTaskArtifactStore:
         self._check_identity(identity)
         directory_fd = _open_directory(directory)
         try:
-            payload_names = ("bootstrap.json", "input.json", "input.fobs", "result.fobs", "analytics.fobs")
+            payload_names = (
+                "bootstrap.json",
+                "input.json",
+                "input.fobs",
+                "result.fobs",
+                "analytics.fobs",
+                "checkpoint_input.json",
+                "checkpoint_input.bin",
+                "checkpoint.pending",
+                "checkpoint.bin",
+            )
             temporary_prefixes = tuple(f".{name}." for name in payload_names)
             names = set(payload_names)
             names.update(name for name in os.listdir(directory_fd) if name.startswith(temporary_prefixes))

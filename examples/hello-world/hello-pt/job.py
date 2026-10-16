@@ -15,7 +15,7 @@
 
 import argparse
 
-from model import create_model
+from model import MODEL_SEED, create_model
 from prepare_data import add_dataset_arguments
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -44,6 +44,14 @@ def define_parser() -> argparse.ArgumentParser:
     )
 
     add_dataset_arguments(parser)
+    parser.add_argument("--seed", type=int, default=MODEL_SEED)
+    parser.add_argument("--torch_threads", type=int, default=None, help="PyTorch CPU threads per client (default: 1).")
+    parser.add_argument(
+        "--resume_training",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Restore the PyTorch checkpoint between task workers (task mode defaults to enabled).",
+    )
     parser.add_argument(
         "--execution_lifetime",
         choices=("job", "task"),
@@ -55,7 +63,16 @@ def define_parser() -> argparse.ArgumentParser:
 
 
 def create_recipe(args):
+    seed = getattr(args, "seed", MODEL_SEED)
     train_args = ["--dataset", args.dataset]
+    if seed != MODEL_SEED:
+        train_args.extend(("--seed", str(seed)))
+    if getattr(args, "resume_training", None) is not None:
+        if getattr(args, "execution_lifetime", "job") != "task":
+            raise ValueError("--resume_training requires --execution_lifetime task; job mode keeps state in memory")
+        train_args.append("--resume_training" if args.resume_training else "--no-resume_training")
+    if getattr(args, "torch_threads", None) is not None:
+        train_args.extend(("--torch_threads", str(args.torch_threads)))
     if args.dataset == "cifar10":
         train_args.extend(("--data_root", args.data_root))
 
@@ -64,10 +81,10 @@ def create_recipe(args):
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         # Model can be specified as class instance or dict config:
-        model=create_model(),
+        model=create_model(seed=seed),
         # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
-        train_script="client.py",
+        train_script="client_task.py" if getattr(args, "execution_lifetime", "job") == "task" else "client.py",
         # Pass argv directly so a client-local path containing spaces, quotes,
         # or apostrophes keeps its exact argument boundary without shell parsing.
         train_args=train_args,

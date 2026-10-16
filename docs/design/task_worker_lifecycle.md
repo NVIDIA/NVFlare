@@ -63,8 +63,10 @@ runs on the worker's main thread, receives one assigned model, and hands off one
 eager result through the existing Client API model, format, FULL/DIFF, metadata and
 rank semantics. The same receive/send loop exits after that send. Script arguments
 retain their boundaries, and supported secret placeholders resolve in the worker.
-Sending only hands off a local snapshot: script failure or finalizer failure still
-prevents completion. Analytics are captured synchronously and replayed by the Client
+Sending serializes the result durably to disk before returning and retains only
+its artifact reference in the worker. Script failure or finalizer failure still
+prevents completion. Analytics are serialized to a disk spool as each log call
+arrives, then sealed and replayed by the Client
 Job after settlement. The worker captures these records directly through the
 Client API adapter; it has no local analytics event handlers.
 Worker log lines are replayed through CJ logging after settlement, making them
@@ -76,12 +78,55 @@ error type, message and diagnostic path in the CJ exception.
 Script process memory, optimizer state and executor instances do not survive the
 assignment. Applications needing previous local model state must use a job-lifetime
 script or manage their own explicit persistence; this profile supplies no state
-declaration, promotion or aggregation admission mechanism. The hello-pt task example
-supports training and final global evaluation. Its cross-site local-model submission
-uses job-lifetime memory and therefore remains a job-lifetime option. Export rejects
-Scaffold, which retains client control state between rounds, and cross-site
-evaluation that requests local model submission. Global-only evaluation remains
-supported.
+declaration or aggregation admission mechanism. An opt-in opaque checkpoint file
+can preserve application-selected state without preserving process memory.
+
+For Client API scripts, `flare.system_info()["task_checkpoint"]` supplies `input`
+and `output` paths. `input` is `None` on the first assignment, otherwise an isolated,
+checksum-verified copy of the last committed checkpoint for this client job,
+executor configuration and task name. `output` is a pending file unique to this
+physical attempt. The script restores and saves it using its own framework:
+
+```python
+checkpoint = flare.system_info()["task_checkpoint"]
+if checkpoint["input"] is not None:
+    state = torch.load(checkpoint["input"], weights_only=True)
+    optimizer.load_state_dict(state["optimizer"])
+# Train, then save any application-selected state.
+torch.save({"optimizer": optimizer.state_dict()}, checkpoint["output"])
+flare.send(output_model)
+```
+
+The worker seals the optional file after executor finalization. One immutable
+completion record binds its checksum to the result. After physical settlement and
+result validation, CJ atomically promotes the checkpoint together with its owning
+completion identity and result reference. A missing checkpoint leaves the previous
+state unchanged. Failures, cancelled promotion and malformed candidates cannot
+replace committed state. Workers receive only an attempt-local input copy, so
+accidentally overwriting it cannot change the committed checkpoint. Promotion is
+idempotent for the same completion. Result-submission retries reuse the saved
+result in CJ and never rerun training or promote state again. There is no automatic
+physical retry or cross-CJ crash recovery; a new physical attempt requires a new
+server-issued attempt ID. Promotion records local completion, not server acceptance
+or aggregation admission. Successful terminal receipts release the attempt's
+checkpoint copies along with its other payloads; one committed checkpoint remains
+per client executor/task slot for the job.
+
+The hello-pt task example explicitly restores optimizer momentum, the advancing
+DataLoader generator and CPU PyTorch RNG state, then writes a new candidate after
+training. Its paired numerical regression compares per-site incoming models,
+returned updates and metrics in every round, plus global checkpoints. This qualifies
+the checkpoint-aware example under matching CPU settings; changing only lifetime
+does not make arbitrary unchanged stateful training code equivalent. Applications
+must select and restore their own relevant state. Final global evaluation does not
+write a checkpoint. Cross-site local-model submission remains a job-lifetime option.
+
+Controllers declare `requires_persistent_client_state()` when their workflow needs
+state across assignments. Export rejects both Scaffold implementations and both
+cross-site evaluation implementations when local models are requested, including
+subclasses and custom controllers declaring this requirement. Global-only
+CrossSiteModelEval remains supported. A controller returning False does not certify
+that its training script is stateless or checkpoint-aware.
 
 The initial profile supports CPU Process workers on Linux and on macOS with Python
 3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,

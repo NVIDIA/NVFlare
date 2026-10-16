@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import hashlib
 import json
 import os
+import struct
+import tempfile
+import weakref
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.private.fed.task_worker import (
     FileTaskArtifactStore,
@@ -269,20 +274,77 @@ def test_missing_attempt_and_invalid_staged_results_are_rejected(tmp_path):
     assert not (tmp_path / identity.attempt_id / "completion.json").exists()
 
 
-@pytest.mark.parametrize("records", [[{"key": "loss", "value": 0.5}], "not-a-list", [None]])
+@pytest.mark.parametrize("records", [[{"key": "loss", "value": 0.5}], [None]])
 def test_analytics_records_are_validated_on_read(tmp_path, records):
     store = FileTaskArtifactStore(str(tmp_path))
     identity = _identity()
     store.create_attempt(identity)
-    reference = store.write_analytics(identity, records)
+    with tempfile.TemporaryFile(dir=tmp_path) as stream:
+        for record in records:
+            encoded = fobs.dumps(record)
+            stream.write(struct.pack("!Q", len(encoded)))
+            stream.write(encoded)
+        reference = store.write_analytics(identity, stream)
     completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
     if isinstance(records, list) and all(isinstance(record, dict) for record in records):
         assert store.read_analytics(identity, completion) == records
     else:
-        with pytest.raises(ValueError, match="list of records"):
+        with pytest.raises(ValueError, match="must contain records"):
             store.read_analytics(identity, completion)
     with pytest.raises(ValueError, match="wrong artifact kind"):
         store.read_analytics(identity, replace(completion, diagnostics={"analytics": completion.result.to_dict()}))
+
+
+def test_analytics_snapshots_each_log_without_retaining_mutable_values(tmp_path):
+    class Values(dict):
+        def __deepcopy__(self, memo):
+            raise AssertionError("analytics must serialize instead of copying")
+
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    values = Values(loss=0.5)
+    reference_to_values = weakref.ref(values)
+    with tempfile.TemporaryFile(dir=tmp_path) as stream:
+        store.write_analytics_record(stream, {"value": values})
+        assert os.fstat(stream.fileno()).st_size > 0
+        values["loss"] = 99
+        store.write_analytics_record(stream, {"value": values})
+        del values
+        gc.collect()
+        assert reference_to_values() is None
+        reference = store.write_analytics(identity, stream)
+    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
+    assert store.read_analytics(identity, completion) == [{"value": {"loss": 0.5}}, {"value": {"loss": 99}}]
+
+
+def test_analytics_spool_enforces_the_total_payload_limit_and_seals_empty_streams(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path), max_payload_bytes=300)
+    identity = _identity()
+    store.create_attempt(identity)
+    with tempfile.TemporaryFile(dir=tmp_path) as stream:
+        store.write_analytics_record(stream, {"value": "x" * 150})
+        size = stream.tell()
+        with pytest.raises(ValueError, match="too large"):
+            store.write_analytics_record(stream, {"value": "x" * 150})
+        assert stream.tell() == size
+    with tempfile.TemporaryFile(dir=tmp_path) as stream:
+        assert store.write_analytics(identity, stream) is None
+        assert stream.closed
+    assert not (tmp_path / identity.attempt_id / "analytics.fobs").exists()
+
+
+@pytest.mark.parametrize("encoded", [b"short", struct.pack("!Q", 0), struct.pack("!Q", 999) + b"short"])
+def test_analytics_rejects_incomplete_or_invalid_record_framing(tmp_path, encoded):
+    store = FileTaskArtifactStore(str(tmp_path))
+    identity = _identity()
+    store.create_attempt(identity)
+    with tempfile.TemporaryFile(dir=tmp_path) as stream:
+        stream.write(encoded)
+        reference = store.write_analytics(identity, stream)
+    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
+    with pytest.raises(ValueError, match="record size"):
+        store.read_analytics(identity, completion)
 
 
 @pytest.mark.parametrize("kind", ["directory", "symlink"])
@@ -542,3 +604,89 @@ def test_remove_still_refuses_invalid_existing_identity(tmp_path, fault):
         store.remove_attempt(identity)
     assert directory.is_dir()
     assert identity_path.exists()
+
+
+def _checkpoint_completion(store, identity, value):
+    store.create_attempt(identity)
+    Path(store.checkpoint_paths(identity)["output"]).write_bytes(value)
+    reference = store.stage_checkpoint(identity)
+    return store.commit_result(identity, Shareable({"output": value}), diagnostics={"checkpoint": reference.to_dict()})
+
+
+def test_checkpoint_commit_is_atomic_idempotent_and_survives_payload_release(tmp_path):
+    from nvflare.private.fed.task_worker.artifacts import _verified_checkpoint
+
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = str(tmp_path / "state" / "train.checkpoint")
+    first = _checkpoint_completion(store, _identity(), b"round-one state")
+    store.commit_checkpoint(first, path)
+    before = Path(path).stat()
+    store.commit_checkpoint(first, path)
+    assert Path(path).stat().st_ino == before.st_ino
+    assert Path(path).stat().st_mtime_ns == before.st_mtime_ns
+    store.release_payloads(first.identity)
+    second = _identity("attempt-2")
+    store.create_attempt(second)
+    store.prepare_checkpoint(second, path)
+    paths = store.checkpoint_paths(second)
+    assert Path(paths["input"]).read_bytes() == b"round-one state"
+    # Modifying the isolated input cannot overwrite committed state.
+    Path(paths["input"]).write_bytes(b"application mutation")
+    with _verified_checkpoint(path, None) as (_, owner, _, stream):
+        assert owner == first.identity
+        assert stream.read() == b"round-one state"
+
+
+def test_cancelled_checkpoint_promotion_preserves_the_previous_file(tmp_path):
+    from contextlib import contextmanager
+
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = str(tmp_path / "state" / "train.checkpoint")
+    first = _checkpoint_completion(store, _identity(), b"committed")
+    store.commit_checkpoint(first, path)
+    before = Path(path).read_bytes()
+    second = _checkpoint_completion(store, _identity("attempt-2"), b"pending")
+
+    @contextmanager
+    def cancelled():
+        raise RuntimeError("cancel before promotion")
+        yield
+
+    with pytest.raises(RuntimeError, match="cancel before promotion"):
+        store.commit_checkpoint(second, path, publication_guard=cancelled)
+    assert Path(path).read_bytes() == before
+    assert list((tmp_path / "state").iterdir()) == [Path(path)]
+
+
+@pytest.mark.parametrize("fault", ["corrupt", "symlink", "oversized"])
+def test_checkpoint_promotion_rejects_invalid_candidate(tmp_path, fault):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    identity = _identity()
+    completion = _checkpoint_completion(store, identity, b"checkpoint")
+    payload = Path(store.attempt_dir(identity)) / "checkpoint.bin"
+    if fault == "corrupt":
+        payload.write_bytes(b"bad")
+    elif fault == "symlink":
+        payload.unlink()
+        payload.symlink_to(tmp_path / "outside")
+    else:
+        store.max_payload_bytes = 1
+    target = tmp_path / "state" / "train.checkpoint"
+    with pytest.raises((ValueError, OSError)):
+        store.commit_checkpoint(completion, str(target))
+    assert not target.exists()
+
+
+def test_checkpoint_input_rejects_tampering_and_foreign_scope(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = tmp_path / "state" / "train.checkpoint"
+    completion = _checkpoint_completion(store, _identity(), b"checkpoint")
+    store.commit_checkpoint(completion, str(path))
+    next_identity = replace(_identity("attempt-2"), site_name="site-2")
+    store.create_attempt(next_identity)
+    with pytest.raises(ValueError, match="different job, site or task"):
+        store.prepare_checkpoint(next_identity, str(path))
+    contents = path.read_bytes()
+    path.write_bytes(contents[:-1] + bytes([contents[-1] ^ 1]))
+    with pytest.raises(ValueError, match="checksum"):
+        store.prepare_checkpoint(next_identity, str(path))

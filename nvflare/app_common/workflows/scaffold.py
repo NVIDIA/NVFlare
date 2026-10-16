@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,6 +78,9 @@ class Scaffold(BaseFedAvg):
             instead of holding them in memory, reducing server memory pressure for large models.
             Only applies to streamed PyTorch tensor payloads. Defaults to False.
     """
+
+    def requires_persistent_client_state(self) -> bool:
+        return True
 
     def __init__(self, *args, enable_tensor_disk_offload: bool = False, **kwargs):
         super().__init__(*args, **kwargs)

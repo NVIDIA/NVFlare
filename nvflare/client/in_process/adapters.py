@@ -14,8 +14,6 @@
 
 """Internal adapters for job and task lifetime of the shared in-process API."""
 
-import copy
-
 from nvflare.app_common.app_constant import AppConstants
 
 TOPIC_LOG_DATA = "LOG_DATA"
@@ -63,18 +61,19 @@ class TaskInProcessAdapter:
     def publish_result(self, shareable):
         if self._result is not None:
             raise RuntimeError("a task worker may send exactly one result")
-        snapshot = copy.deepcopy(shareable)
         if self._current_round is not None:
-            snapshot.set_header(AppConstants.CURRENT_ROUND, self._current_round)
-        if self._on_result is not None:
-            self._on_result(snapshot)
-        self._result = snapshot
+            shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+        if self._on_result is None:
+            raise RuntimeError("task result writer is not configured")
+        # The writer freezes the values before send() returns. Retain only its
+        # storage reference, never another copy of the script's model.
+        self._result = self._on_result(shareable)
         self.api.stop = True
         self.api.stop_reason = TASK_RESULT_STOP_REASON
 
     def publish_log(self, message):
         if self._log_handler is not None:
-            self._log_handler(copy.deepcopy(message))
+            self._log_handler(message)
 
     def get_result(self):
         if self._result is None:

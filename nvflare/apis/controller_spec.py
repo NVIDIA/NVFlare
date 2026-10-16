@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -256,6 +256,15 @@ def task_done_cb_signature(task: Task, fl_ctx: FLContext):
 
 
 class ControllerSpec(ABC):
+    def requires_persistent_client_state(self) -> bool:
+        """Whether this workflow needs client compute state across assignments.
+
+        Override when the workflow requires state from an earlier client task.
+        A False result describes the workflow protocol; it does not certify
+        that an arbitrary training script is stateless or checkpoint-aware.
+        """
+        return False
+
     @abstractmethod
     def start_controller(self, fl_ctx: FLContext):
         """Starts the controller.

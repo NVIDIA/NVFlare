@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,6 +40,9 @@ _logger = get_module_logger(__name__)
 
 
 class CrossSiteModelEval(Controller):
+    def requires_persistent_client_state(self) -> bool:
+        return bool(self._submit_model_task_name)
+
     def __init__(
         self,
         task_check_period=0.5,

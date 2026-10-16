@@ -233,6 +233,35 @@ the preparation command in its error log. This happens after the simulator start
 to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
+To compare compute lifetimes with the same initial weights and training order:
+
+```bash
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task
+```
+
+Both scripts default to one PyTorch CPU thread per client; `--torch_threads`
+changes it explicitly. Job mode runs `client.py` and keeps its optimizer and
+DataLoader alive. Task mode
+runs `client_task.py`, which uses the same training loop and explicitly restores
+optimizer momentum, the DataLoader generator and PyTorch RNG state with
+`torch.load` / `torch.save`. `flare.system_info()["task_checkpoint"]` provides an
+isolated input path (or `None` initially) and a pending output path. The checkpoint
+stays client-local and is not sent to the server. The incoming global model
+always supplies the next round's weights. Use `--no-resume_training` in task mode
+to choose fresh optimizer and RNG state for every assignment.
+
+The script chooses the checkpoint contents and writes the pending file after
+training. The runtime binds it to the completed result and promotes it only after
+worker finalization, physical settlement and result validation. A failed attempt
+cannot overwrite committed state. Result-submission retries reuse the saved result
+without training again. Missing or stale state is rejected when resuming later
+rounds. This preserves the explicit checkpoint-aware example's successful-round
+training semantics; switching lifetime alone cannot preserve arbitrary state in
+unchanged scripts. Automatic worker retries and recovery after Client Job death
+are outside this example's contract. Other frameworks can use their native tools
+to write one opaque checkpoint file containing their relevant state.
+
 All simulated clients then read the same logical CIFAR-10 training and test
 datasets from that shared cache. This option is useful for experimentation but
 does not demonstrate a federated data partition. The default synthetic path

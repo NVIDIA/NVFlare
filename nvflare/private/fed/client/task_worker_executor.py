@@ -15,9 +15,12 @@
 """CJ-owned adapter: filters and publication stay in the resident Client Job."""
 
 import copy
+import hashlib
+import json
 import os
 import sys
 import threading
+from contextlib import contextmanager
 from functools import partial
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
@@ -117,7 +120,7 @@ class TaskWorkerExecutor(Executor):
         if not self._gate.acquire(blocking=False):
             raise RuntimeError("task worker executor already has an active attempt")
         self._done.clear()
-        identity = workspace = None
+        identity = workspace = outcome = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
@@ -131,6 +134,10 @@ class TaskWorkerExecutor(Executor):
             store = FileTaskArtifactStore(
                 os.path.join(runtime_root, "attempts"), max_payload_bytes=self.policy.max_payload_bytes
             )
+            checkpoint_key = hashlib.sha256(
+                json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
             bootstrap = WorkerBootstrap(
                 identity,
                 store.root_dir,
@@ -141,6 +148,7 @@ class TaskWorkerExecutor(Executor):
             )
 
             def request_factory(attempt, path):
+                store.prepare_checkpoint(attempt, checkpoint_file)
                 return TaskLaunchRequest(
                     attempt.job_id,
                     attempt.site_name,
@@ -172,16 +180,28 @@ class TaskWorkerExecutor(Executor):
                     result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
                 ),
             )
+            # Finish fallible CJ replay/reporting before promoting application
+            # state. The success path's finally block only releases ownership.
+            self._report_issues(fl_ctx)
+            if not self.supervisor.owns_execution and not self.supervisor.settlement_unconfirmed:
+                self._replay_worker_log(workspace, identity, fl_ctx)
             if outcome.aborted or abort_signal.triggered:
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
             fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
             self._replay_analytics(outcome.analytics, fl_ctx)
+            if outcome.result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK:
+                store.commit_checkpoint(
+                    outcome.completion,
+                    checkpoint_file,
+                    publication_guard=partial(self._checkpoint_commit_guard, abort_signal),
+                )
             return outcome.result
         finally:
             try:
                 if (
-                    workspace is not None
+                    outcome is None
+                    and workspace is not None
                     and not self.supervisor.owns_execution
                     and not self.supervisor.settlement_unconfirmed
                 ):
@@ -189,7 +209,15 @@ class TaskWorkerExecutor(Executor):
             finally:
                 self._done.set()
                 self._gate.release()
-                self._report_issues(fl_ctx)
+                if outcome is None:
+                    self._report_issues(fl_ctx)
+
+    @contextmanager
+    def _checkpoint_commit_guard(self, abort_signal):
+        with self._state_lock:
+            if self._ending or abort_signal.triggered or self.supervisor.settlement_unconfirmed:
+                raise RuntimeError("task checkpoint commit was cancelled")
+            yield
 
     def _replay_worker_log(self, workspace, identity, fl_ctx):
         """Replay bounded diagnostics from a regular file to the CJ log streamer."""

@@ -18,6 +18,7 @@ import logging
 import os
 import resource
 import sys
+import tempfile
 import time
 
 from nvflare.apis.executor import Executor
@@ -39,7 +40,7 @@ from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_fr
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
-from .artifacts import FileTaskArtifactStore, TaskCompletion
+from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
 from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
@@ -207,7 +208,7 @@ def _execute(
         with runtime.operation():
             result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
         runtime.raise_if_failed()
-        if not isinstance(result, Shareable):
+        if not isinstance(result, (Shareable, ArtifactReference)):
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     except BaseException as error:
@@ -222,8 +223,8 @@ def _execute(
             runtime.fail(error)
     runtime.raise_if_failed()
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-    if not isinstance(result, Shareable):
-        raise TypeError("executor finalization must leave a Shareable result")
+    if not isinstance(result, (Shareable, ArtifactReference)):
+        raise TypeError("executor finalization must leave a Shareable or staged result reference")
     runtime.raise_if_failed()
     return result, runtime
 
@@ -246,6 +247,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
     owns_auditor = False
+    analytics = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -267,10 +269,10 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
                 instantiate_class(_class_path(spec), task_constructor_args(spec))
         data = store.read_input(identity)
-        analytics = []
         if context_binding is None:
             result, runtime = _execute(bootstrap, data, workspace, store)
         else:
+            analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity))
             result, runtime = _execute(
                 bootstrap,
                 data,
@@ -280,7 +282,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
                 protected_context_keys=protected_context_keys,
                 analytics=analytics,
             )
-        reference = store.stage_result(identity, result)
+        reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
@@ -293,8 +295,13 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             "max_rss_native_units": usage.ru_maxrss,
             "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
         }
-        if analytics:
-            diagnostics["analytics"] = store.write_analytics(identity, analytics).to_dict()
+        checkpoint = store.stage_checkpoint(identity)
+        if checkpoint is not None:
+            diagnostics["checkpoint"] = checkpoint.to_dict()
+        if analytics is not None:
+            analytics_reference = store.write_analytics(identity, analytics)
+            if analytics_reference is not None:
+                diagnostics["analytics"] = analytics_reference.to_dict()
         return store.commit_staged_result(
             identity,
             reference,
@@ -320,6 +327,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
+        if analytics is not None:
+            analytics.close()
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()

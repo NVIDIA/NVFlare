@@ -260,8 +260,53 @@ def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, 
     add_cross_site_evaluation(recipe)
     if not task_first:
         recipe.add_client_config({"execution_lifetime": "task"})
-    with pytest.raises(ValueError, match="local model submission.*job lifetime"):
+    with pytest.raises(ValueError, match="CrossSiteModelEval.*persistent client state.*job lifetime"):
         recipe.export(str(tmp_path / "export"))
+
+
+@pytest.mark.parametrize("inherited", [False, True])
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize(
+    "workflow_name", ["CrossSiteEval", "CrossSiteModelEval", "Scaffold", "ScatterAndGatherScaffold"]
+)
+def test_workflow_client_state_requirement_is_inherited_and_checked_at_export(
+    tmp_path, workflow_name, lifetime, inherited
+):
+    from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_common.workflows.scaffold import Scaffold
+    from nvflare.app_common.workflows.scatter_and_gather_scaffold import ScatterAndGatherScaffold
+
+    controllers = {cls.__name__: cls for cls in (CrossSiteEval, CrossSiteModelEval, Scaffold, ScatterAndGatherScaffold)}
+    cls = controllers[workflow_name]
+    if inherited:
+        cls = type("InheritedWorkflow", (cls,), {})
+    controller = cls()
+    assert controller.requires_persistent_client_state()
+    job = _job(lifetime)
+    job.to_server(controller)
+    job.to_clients(_executor())
+    context = (
+        pytest.raises(ValueError, match="requires persistent client state.*job lifetime")
+        if lifetime == "task"
+        else nullcontext()
+    )
+    with context:
+        job.export_job(str(tmp_path))
+
+
+def test_custom_workflow_can_declare_its_client_state_requirement(tmp_path):
+    from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+    class CustomStatefulWorkflow(ScatterAndGather):
+        def requires_persistent_client_state(self):
+            return True
+
+    job = _job("task")
+    job.to_server(CustomStatefulWorkflow())
+    job.to_clients(_executor())
+    with pytest.raises(ValueError, match="CustomStatefulWorkflow.*persistent client state.*job lifetime"):
+        job.export_job(str(tmp_path))
 
 
 def test_global_model_evaluation_allows_task_lifetime(tmp_path):

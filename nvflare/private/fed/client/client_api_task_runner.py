@@ -14,7 +14,6 @@
 
 """Run one Client API task with progress reporting and analytics capture."""
 
-import copy
 import json
 import logging
 import math
@@ -32,7 +31,6 @@ from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.adapters import TaskInProcessAdapter
 from nvflare.client.in_process.api import InProcessClientAPI
 from nvflare.fuel.data_event.data_bus import DataBus
-from nvflare.private.fed.task_worker.artifacts import require_eager_shareable
 from nvflare.private.fed.task_worker.protocol import _atomic_publish, _open_regular
 
 CLIENT_TASK_CONTEXT_KEYS = {FLContextKey.CLIENT_NAME, FLContextKey.PROCESS_TYPE}
@@ -73,17 +71,13 @@ def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0):
     return min(deadlines) if deadlines else None
 
 
-def _mark_result(store, identity, shareable):
-    require_eager_shareable(shareable)
-    _mark_progress(store, identity, "script_result_sent.json")
-
-
 class _ClientAPITaskRunner:
     """Run one Client API assignment directly on the worker's main thread."""
 
-    def __init__(self, executor, *, on_started=None, on_result=None, on_log=None):
+    def __init__(self, executor, *, on_started=None, on_result=None, on_log=None, checkpoint_paths=None):
         self._context = executor._build_backend_context()
         self._on_started, self._on_result, self._on_log = on_started, on_result, on_log
+        self._checkpoint_paths = checkpoint_paths
         self._api = None
         self._runner = None
         self._executed = False
@@ -110,6 +104,8 @@ class _ClientAPITaskRunner:
             self._adapter = TaskInProcessAdapter(self._on_result, log_handler)
             self._api = InProcessClientAPI(metadata, adapter=self._adapter)
             self._api.init()
+            if self._checkpoint_paths is not None:
+                self._api.system_info()["task_checkpoint"] = dict(self._checkpoint_paths)
             self._api.configure_memory_management(context.memory_gc_rounds, context.cuda_empty_cache)
             self._runner = TaskScriptRunner(
                 custom_dir=fl_ctx.get_workspace().get_app_custom_dir(fl_ctx.get_job_id()),
@@ -173,9 +169,16 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
 
     def capture_analytics(dxo):
         with fl_ctx.get_engine().operation():
-            analytics.append(
-                {"event_type": ANALYTIC_EVENT_TYPE, "data": copy.deepcopy(dxo.to_shareable()), "federated": False}
+            store.write_analytics_record(
+                analytics,
+                {"event_type": ANALYTIC_EVENT_TYPE, "data": dxo.to_shareable(), "federated": False},
             )
+
+    def save_result(shareable):
+        with fl_ctx.get_engine().operation():
+            # Include serialization in the existing post-send deadline.
+            _mark_progress(store, identity, "script_result_sent.json")
+            return store.stage_result(identity, shareable)
 
     def adapt_executor(executor):
         if type(executor) is not ClientAPIExecutor:
@@ -183,8 +186,9 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
         return _ClientAPITaskRunner(
             executor,
             on_started=partial(_mark_progress, store, identity, "result_wait_started.json"),
-            on_result=partial(_mark_result, store, identity),
+            on_result=save_result,
             on_log=capture_analytics,
+            checkpoint_paths=store.checkpoint_paths(identity),
         )
 
     return adapt_executor

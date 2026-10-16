@@ -49,14 +49,8 @@ def validate_task_workflows(workflows):
     """Reject workflows that require client compute state across assignments."""
     for workflow in workflows:
         controller = workflow.controller
-        classes = {f"{cls.__module__}.{cls.__name__}" for cls in type(controller).__mro__}
-        if "nvflare.app_common.workflows.scaffold.Scaffold" in classes:
-            raise ValueError("Scaffold requires persistent client control state; use job lifetime")
-        if (
-            "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" in classes
-            and controller._submit_model_task_name
-        ):
-            raise ValueError("cross-site local model submission requires earlier client state; use job lifetime")
+        if controller.requires_persistent_client_state():
+            raise ValueError(f"{type(controller).__name__} requires persistent client state; use job lifetime")
 
 
 @dataclass(frozen=True)

@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import argparse
+import gc
 import importlib
 import json
 import os
 import sys
+import textwrap
 import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -39,6 +42,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.client.decomposers import register_framework_decomposers
+from nvflare.client.in_process.adapters import TaskInProcessAdapter
 from nvflare.job_config.task_execution import (
     CLIENT_API_EXECUTOR_PATH,
     STATISTICS_EXECUTOR_PATH,
@@ -48,7 +52,7 @@ from nvflare.job_config.task_execution import (
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
-from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+from nvflare.private.fed.task_worker.artifacts import ArtifactReference, FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
@@ -394,6 +398,62 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert identity.attempt_id == "attempt-1"
 
 
+def test_task_send_writes_to_disk_without_copying_or_retaining_the_model(native_task):
+    from nvflare.private.fed.task_worker import TaskAttemptIdentity
+
+    root, _custom, _context, _policy = native_task
+    store = FileTaskArtifactStore(str(root / "artifacts"))
+    identity = TaskAttemptIdentity("job-1", "site-1", "task-1", "train", "disk-send")
+    directory = Path(store.create_attempt(identity))
+    adapter = TaskInProcessAdapter(on_result=lambda data: store.stage_result(identity, data))
+    adapter.bind(SimpleNamespace(_set_received_shareable=Mock()), None, None)
+    incoming = Shareable()
+    incoming.set_header(AppConstants.CURRENT_ROUND, 3)
+    adapter.stage_input(incoming)
+    weights = np.ones(1024 * 1024, dtype=np.float32)
+    data = DXO(DataKind.WEIGHTS, {"w": weights}).to_shareable()
+    data.__deepcopy__ = Mock(side_effect=AssertionError("send must serialize instead of copying"))
+    weak_weights = weakref.ref(weights)
+    adapter.publish_result(data)
+    reference = adapter.get_result()
+    assert isinstance(reference, ArtifactReference)
+    assert (directory / "result.fobs").is_file()
+    assert not (directory / "completion.json").exists()
+    weights[0] = 99
+    with pytest.raises(RuntimeError, match="exactly one result"):
+        adapter.publish_result(data)
+    del weights, data
+    gc.collect()
+    assert weak_weights() is None
+    store.commit_staged_result(identity, reference)
+    restored, _completion = store.read_result(identity)
+    assert from_shareable(restored).data["w"][0] == 1
+    assert restored.get_header(AppConstants.CURRENT_ROUND) == 3
+
+
+def test_script_can_observe_durable_send_before_exit_and_cannot_mutate_it(native_task):
+    root, custom, context, policy = native_task
+    directory = root / "job-1" / ".nvflare" / "task-execution" / "attempts" / "attempt-1"
+    script = f"""
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+result = flare.FLModel(params=model.params)
+flare.send(result, clear_cache=False)
+directory = Path({str(directory)!r})
+assert (directory / "result.fobs").is_file(), "send did not persist the result"
+assert not (directory / "completion.json").exists(), "send completed the attempt prematurely"
+result.params["w"][0] = 99
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    try:
+        result = adapter.execute("train", data, context, Signal())
+        np.testing.assert_array_equal(from_shareable(result).data["w"], [1, 2])
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
 @pytest.mark.parametrize(
     "script",
     [
@@ -409,6 +469,7 @@ def test_script_failure_cannot_publish_completion(native_task, script):
     adapter.handle_event(EventType.END_RUN, context)
     assert not list((root / "job-1" / ".nvflare").rglob("completion.json"))
     assert list((root / "job-1" / ".nvflare").rglob("failure.json"))
+    assert bool(list((root / "job-1" / ".nvflare").rglob("result.fobs"))) == ("failure after send" in script)
 
 
 def test_result_wait_timeout_cancels_the_real_worker(native_task):
@@ -593,7 +654,9 @@ def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     adapter.supervisor.record_receipt.assert_called_once_with(identity, TaskResultReceipt.RECEIVED)
 
 
-def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch):
+@pytest.mark.parametrize("write_failure", [None, "result", "analytics"])
+def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, write_failure):
+    import nvflare.client.api as client_api
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.private.fed.client.client_api_task_runner import bind_client_task_context
     from nvflare.private.fed.task_worker import (
@@ -605,7 +668,11 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     )
 
     root, custom, context, _policy = native_task
-    (custom / "train.py").write_text(SCRIPT)
+    monkeypatch.setattr(client_api, "context_dict", {})
+    monkeypatch.setattr(client_api, "default_context", None)
+    # A script may catch an I/O error, but it cannot make failed persistence
+    # look like a successfully completed assignment.
+    (custom / "train.py").write_text("try:\n" + textwrap.indent(SCRIPT, "    ") + "\nexcept OSError:\n    pass\n")
     executor = ClientAPIExecutor(
         execution_mode="in_process",
         task_script_path="train.py",
@@ -628,10 +695,41 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     store.write_input(identity, data)
     path = store.bootstrap_path(identity)
     write_bootstrap(path, WorkerBootstrap(identity, store.root_dir, str(root), _config()["executors"][0]["executor"]))
+    if write_failure is not None:
+        method = "stage_result" if write_failure == "result" else "write_analytics_record"
+        monkeypatch.setattr(FileTaskArtifactStore, method, Mock(side_effect=OSError("cannot persist task output")))
+        with pytest.raises(OSError, match="cannot persist task output"):
+            worker.run_worker(path, context_binding=bind_client_task_context)
+        assert not Path(store.attempt_dir(identity), "completion.json").exists()
+        assert store.read_failure(identity)["error_type"] == "OSError"
+        return
+
+    stage_result = FileTaskArtifactStore.stage_result
+    staged = []
+
+    def stage_once(artifact_store, attempt, data):
+        assert Path(artifact_store.attempt_dir(attempt), "script_result_sent.json").is_file()
+        reference = stage_result(artifact_store, attempt, data)
+        staged.append(reference)
+        return reference
+
+    read_payload = FileTaskArtifactStore._read_payload
+
+    def read_input_only(artifact_store, attempt, reference):
+        assert reference.kind == "input", "the worker must not reload its saved result or analytics"
+        return read_payload(artifact_store, attempt, reference)
+
+    monkeypatch.setattr(FileTaskArtifactStore, "stage_result", stage_once)
+    monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_input_only)
     worker.run_worker(path, context_binding=bind_client_task_context)
+    assert len(staged) == 1
+    monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_payload)
     result, completion = store.read_result(identity)
     np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])
     assert "analytics" in completion.diagnostics
+    records = store.read_analytics(identity, completion)
+    assert len(records) == 1
+    assert from_shareable(records[0]["data"]).data["track_value"] == 0.75
     handler.assert_not_called()
 
 
@@ -951,3 +1049,58 @@ def test_wrapped_constructor_attributes_require_a_dict(attributes):
     config["executors"][0]["executor"]["args"] = {"class_attributes": attributes}
     with pytest.raises(ValueError, match="class_attributes.*dict"):
         prepare_task_execution(config)
+
+
+@pytest.mark.parametrize("failure", ["script", "finalizer", "replay"])
+def test_failed_worker_checkpoint_is_not_promoted_and_retry_uses_previous_state(native_task, failure):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    script = """
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+if model.meta.get("fail") == "script":
+    raise RuntimeError("checkpoint script failure")
+if model.meta.get("fail") == "finalizer":
+    from nvflare.private.fed.client.client_api_task_runner import _ClientAPITaskRunner
+    original = _ClientAPITaskRunner.finalize
+    def fail_finalize(self, fl_ctx):
+        original(self, fl_ctx)
+        raise RuntimeError("checkpoint finalizer failure")
+    _ClientAPITaskRunner.finalize = fail_finalize
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "next": previous + 1}))
+"""
+    adapter, _ = _adapter(custom, context, policy, script=script)
+
+    def execute(attempt, failed=False):
+        context.set_prop(FLContextKey.TASK_ID, f"task-{attempt}", private=True, sticky=True)
+        context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{attempt}", private=True, sticky=True)
+        data = DXO(DataKind.WEIGHTS, {"w": np.array([1.0])}, meta={"fail": failure} if failed else {}).to_shareable()
+        replay = adapter._replay_worker_log
+        if failed and failure == "replay":
+            adapter._replay_worker_log = Mock(side_effect=RuntimeError("checkpoint replay failure"))
+        try:
+            return FLModelUtils.from_shareable(adapter.execute("train", data, context, Signal()))
+        finally:
+            adapter._replay_worker_log = replay
+
+    try:
+        assert execute(1).metrics == {"previous": 0, "next": 1}
+        checkpoint = next(root.rglob("*.checkpoint"))
+        previous = checkpoint.read_bytes()
+        with pytest.raises(RuntimeError, match=f"checkpoint {failure} failure"):
+            execute(2, failed=True)
+        assert checkpoint.read_bytes() == previous
+        completion_exists = (
+            root / "job-1" / ".nvflare" / "task-execution" / "attempts" / "attempt-2" / "completion.json"
+        ).exists()
+        assert completion_exists == (failure == "replay")
+        assert execute(3).metrics == {"previous": 1, "next": 2}
+        assert len(list(root.rglob("*.checkpoint"))) == 1
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)

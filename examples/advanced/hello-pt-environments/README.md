@@ -47,13 +47,40 @@ construction, and job export, but do not connect to a live production federation
 
 The default `--execution_lifetime job` retains each client's script and optimizer
 for the job. `--execution_lifetime task` starts a fresh CPU Process worker for each
-training or final global evaluation task, using the same client script:
+training or final global evaluation task. Job mode uses `client.py`; task mode
+uses `client_task.py`, which shares the local training loop and explicitly
+restores optimizer momentum, the training DataLoader generator and PyTorch RNG
+state with `torch.load` / `torch.save`:
 
 ```bash
 python job.py --execution_lifetime task
 python job.py --env poc --execution_lifetime task
 python job.py --env prod --startup-kit /path/to/admin/startup-kit --execution_lifetime task
 ```
+
+Use the same `--seed` in both modes to select the initial model and training
+shuffle seeds. For a controlled comparison, run both on CPU with the same thread
+count, batch size, epoch count and dataset. Both scripts default to one PyTorch
+CPU thread; set `--torch_threads` explicitly to change it. For example:
+
+```bash
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --seed 731
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --seed 731 --execution_lifetime task
+```
+
+Pass `--no-resume_training` with task lifetime to start each assignment with a fresh
+optimizer and shuffle generator. A seed alone does not preserve their advancing
+state across rounds. `flare.system_info()["task_checkpoint"]` supplies an isolated
+previous checkpoint path and a pending output path. The script selects the contents
+with PyTorch; the runtime binds the candidate to the result and promotes it after
+worker finalization, settlement and validation. Failed attempts cannot overwrite
+committed state, and result-submission retries reuse the completed result without
+training again. Checkpoints stay client-local and are not aggregated. The incoming
+server model supplies each round's weights; evaluation does not update the checkpoint.
+The script rejects stale or missing state for later training rounds. These paired
+runs qualify this explicitly checkpoint-aware example under matching CPU settings;
+lifetime alone cannot preserve arbitrary state in unchanged training scripts.
+Automatic worker retries and recovery after Client Job death are outside this scope.
 
 Task lifetime requires the in-process script backend, so omit
 `--launch_external_process`. This script's cross-site local-model submission needs
