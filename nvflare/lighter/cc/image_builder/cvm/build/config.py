@@ -458,6 +458,11 @@ def profile(path):
         require(name in PLATFORMS and isinstance(settings, dict), "Unsupported platform")
         require(settings.get("attester") == ("snp" if name == PLATFORMS[0] else "tdx"), "Attester mismatch")
         require(type(settings.get("enabled", True)) is bool, "enabled must be boolean")
+        require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
+    enabled_platforms = [p for p, v in value["platforms"].items() if v.get("enabled", True)]
+    require(enabled_platforms, "At least one platform must be enabled")
+    for name in enabled_platforms:
+        settings = value["platforms"][name]
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
         if settings.get("kbs_client_provenance") is not None:
@@ -472,13 +477,11 @@ def profile(path):
         if settings.get("shim"):
             require(name == "intel_tdx", "Shim direct boot currently requires the TDX/QEMU 10 profile")
             settings["shim"] = local_path(path, settings["shim"])
-        require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key] = local_path(path, value.get(key))
     if value.get("approval_signing_key") is not None:
         value["approval_signing_key"] = local_path(path, value["approval_signing_key"])
 
-    enabled_platforms = [p for p, v in value["platforms"].items() if v.get("enabled", True)]
     references = read_json(value["reference_values"])
     validate_references(references, enabled_platforms, gpu=value["gpu"] == "nvidia_cc")
     if "amd_sev_snp" in enabled_platforms:
