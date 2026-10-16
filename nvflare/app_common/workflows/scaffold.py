@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,13 +78,6 @@ class Scaffold(BaseFedAvg):
             instead of holding them in memory, reducing server memory pressure for large models.
             Only applies to streamed PyTorch tensor payloads. Defaults to False.
     """
-
-    def validate_task_lifetime(self):
-        """Reject task mode until clients restore SCAFFOLD control variates."""
-        raise ValueError(
-            f"{type(self).__name__} does not support task lifetime: "
-            "client SCAFFOLD control variates are not restored between workers; use job lifetime"
-        )
 
     def __init__(self, *args, enable_tensor_disk_offload: bool = False, **kwargs):
         super().__init__(*args, **kwargs)

@@ -46,11 +46,24 @@ def validate_task_resources(meta, site_name):
 
 
 def validate_task_workflows(workflows):
-    """Run optional workflow-specific checks for task-lifetime export."""
+    """Reject the workflow configurations not yet integrated with CPU task workers."""
+    # These export-only checks are P4 compatibility policy, not controller APIs.
+    from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_common.workflows.scaffold import Scaffold
+    from nvflare.app_common.workflows.scatter_and_gather_scaffold import ScatterAndGatherScaffold
+
     for workflow in workflows:
-        validate = getattr(workflow.controller, "validate_task_lifetime", None)
-        if validate is not None:
-            validate()
+        controller = workflow.controller
+        reason = None
+        if isinstance(controller, (Scaffold, ScatterAndGatherScaffold)):
+            reason = "client SCAFFOLD control variates are not restored between workers"
+        elif isinstance(controller, CrossSiteEval) or (
+            isinstance(controller, CrossSiteModelEval) and controller._submit_model_task_name
+        ):
+            reason = "local-model submission is not implemented for fresh workers"
+        if reason:
+            raise ValueError(f"{type(controller).__name__} does not support task lifetime: {reason}; use job lifetime")
 
 
 @dataclass(frozen=True)

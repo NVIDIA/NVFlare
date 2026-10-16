@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,13 +29,6 @@ from nvflare.security.logging import secure_format_exception
 
 
 class ScatterAndGatherScaffold(ScatterAndGather):
-    def validate_task_lifetime(self):
-        """Reject task mode until clients restore SCAFFOLD control variates."""
-        raise ValueError(
-            f"{type(self).__name__} does not support task lifetime: "
-            "client SCAFFOLD control variates are not restored between workers; use job lifetime"
-        )
-
     def __init__(
         self,
         min_clients: int = 1000,

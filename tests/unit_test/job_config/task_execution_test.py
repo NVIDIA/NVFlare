@@ -269,7 +269,9 @@ def test_recipe_cse_with_local_model_submission_requires_job_lifetime(tmp_path, 
 @pytest.mark.parametrize(
     "workflow_name", ["CrossSiteEval", "CrossSiteModelEval", "Scaffold", "ScatterAndGatherScaffold"]
 )
-def test_workflow_task_validation_is_inherited_and_checked_at_export(tmp_path, workflow_name, lifetime, inherited):
+def test_known_unsupported_workflow_types_and_subclasses_are_checked_at_export(
+    tmp_path, workflow_name, lifetime, inherited
+):
     from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.app_common.workflows.scaffold import Scaffold
@@ -292,31 +294,13 @@ def test_workflow_task_validation_is_inherited_and_checked_at_export(tmp_path, w
         job.export_job(str(tmp_path))
 
 
-@pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_custom_workflow_can_validate_task_lifetime(tmp_path, lifetime):
+@pytest.mark.parametrize("inherited", [False, True])
+def test_other_workflow_types_allow_task_lifetime(tmp_path, inherited):
     from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
-    class CustomWorkflow(ScatterAndGather):
-        def validate_task_lifetime(self):
-            raise ValueError("CustomWorkflow needs an unavailable client service; use job lifetime")
-
-    job = _job(lifetime)
-    job.to_server(CustomWorkflow())
-    job.to_clients(_executor())
-    context = (
-        pytest.raises(ValueError, match="CustomWorkflow.*unavailable client service.*job lifetime")
-        if lifetime == "task"
-        else nullcontext()
-    )
-    with context:
-        job.export_job(str(tmp_path))
-
-
-def test_workflow_without_optional_task_validation_exports(tmp_path):
-    from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-
+    cls = type("CustomWorkflow", (ScatterAndGather,), {}) if inherited else ScatterAndGather
     job = _job("task")
-    job.to_server(ScatterAndGather())
+    job.to_server(cls())
     job.to_clients(_executor())
     job.export_job(str(tmp_path))
 

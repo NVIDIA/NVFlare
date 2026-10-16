@@ -124,13 +124,13 @@ does not make arbitrary unchanged stateful training code equivalent. Application
 must select and restore their own relevant state. Final global evaluation does not
 write a checkpoint. Cross-site local-model submission remains a job-lifetime option.
 
-Export runs a workflow's optional `validate_task_lifetime()` check. Both SCAFFOLD
-implementations reject task mode because their current clients do not restore control
-variates between workers. Both cross-site evaluation implementations reject local-model
-submission because the current task integration does not restore those models.
-These checks are inherited by subclasses, and custom workflows can provide their own
-validation. Global-only CrossSiteModelEval remains supported. `ControllerSpec` has no
-client-state requirement marker. Persistent state alone does not require job lifetime;
+The export validator checks P4's known unsupported workflow configurations using
+actual workflow types, including subclasses. Both SCAFFOLD implementations are
+rejected because their current clients do not restore control variates between
+workers. Both cross-site evaluation implementations are rejected when they request
+local-model submission, which the current task integration does not implement.
+Global-only CrossSiteModelEval remains supported. Controllers have no task-lifetime
+markers or validation hooks. Persistent state alone does not require job lifetime;
 applications can explicitly checkpoint the state they need.
 
 The initial profile supports CPU Process workers on Linux and on macOS with Python
