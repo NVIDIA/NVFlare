@@ -29,11 +29,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.utils.argv_utils import CommandArg
 
 if TYPE_CHECKING:
@@ -97,6 +98,23 @@ class ClientAPIBackendContext:
     # memory management (all modes)
     memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+
+    def build_task_metadata(self, site_name, job_id, task_name) -> dict:
+        """Build Client API metadata from this validated configuration."""
+        return {
+            FLMetaKey.SITE_NAME: site_name,
+            FLMetaKey.JOB_ID: job_id,
+            ConfigKey.TASK_NAME: task_name,
+            ConfigKey.TASK_EXCHANGE: {
+                ConfigKey.TRAIN_WITH_EVAL: self.train_with_evaluation,
+                ConfigKey.EXCHANGE_FORMAT: self.params_exchange_format,
+                ConfigKey.SERVER_EXPECTED_FORMAT: self.server_expected_format,
+                ConfigKey.TRANSFER_TYPE: self.params_transfer_type,
+                ConfigKey.TRAIN_TASK_NAME: self.train_task_name,
+                ConfigKey.EVAL_TASK_NAME: self.evaluate_task_name,
+                ConfigKey.SUBMIT_MODEL_TASK_NAME: self.submit_model_task_name,
+            },
+        }
 
 
 class ClientAPIBackendSpec(ABC):
