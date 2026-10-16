@@ -297,8 +297,23 @@ After approval, write only `mr_seam`, `tcb_svn`, `xfam` and
 `allowed_advisory_ids` as top-level keys in `inputs/approved-tcb-references.json`
 for a CPU-only TDX profile. Omit the inspector's wrapper and `review_required`
 text. Add the schema's SNP/GPU references only when those profiles are enabled.
-The checked-in profile enables both CPU platforms by default; disable SNP for
-a TDX-only profile. Unknown keys, including `_comment_*`, fail before building;
+The checked-in profile enables both CPU platforms by default. For a TDX-only
+profile, keep the platform blocks and set:
+
+```yaml
+platforms:
+  amd_sev_snp:
+    enabled: false
+  intel_tdx:
+    enabled: true
+```
+
+Disabled platforms need no firmware, KBS client, provenance, shim, or approved
+TCB references. Shared profile inputs and every enabled platform's inputs remain
+required, even when `build -p` selects just one platform. Omitting `enabled`
+defaults to `true`; at least one platform must be enabled.
+
+Unknown keys, including `_comment_*`, fail before building;
 keep approval notes in a separate document. The exact schema is
 [`cvm/common/references.py`](cvm/common/references.py).
 
