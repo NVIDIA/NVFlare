@@ -15,7 +15,7 @@ import logging
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 import msgpack
@@ -138,7 +138,11 @@ class ConnManager(ConnMonitor):
             connector = self.connectors.pop(handle, None)
         if connector:
             connector.stopped.set()
-            connector.driver.shutdown()
+            completion = connector.driver.shutdown()
+            if isinstance(completion, Future):
+                completion.result()
+            elif isinstance(completion, threading.Event):
+                completion.wait()
             log.debug(f"Connector {connector} is removed")
         else:
             log.error(f"Unknown connector handle: {handle}")
@@ -161,12 +165,39 @@ class ConnManager(ConnMonitor):
         with self.lock:
             self.stopped = True
             connectors = list(self.connectors.values())
+        completions = []
+        first_error = None
         for connector in connectors:
             connector.stopped.set()
-            connector.driver.shutdown()
+            try:
+                completion = connector.driver.shutdown()
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
+                continue
+            if isinstance(completion, (Future, threading.Event)):
+                completions.append(completion)
 
-        self.conn_mgr_executor.shutdown(True)
-        self.frame_mgr_executor.shutdown(True)
+        # Request cancellation from every driver before waiting for any one.
+        for completion in completions:
+            try:
+                if isinstance(completion, Future):
+                    completion.result()
+                else:
+                    completion.wait()
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
+
+        for executor in (self.conn_mgr_executor, self.frame_mgr_executor):
+            try:
+                executor.shutdown(True)
+            except Exception as ex:
+                if first_error is None:
+                    first_error = ex
+
+        if first_error is not None:
+            raise first_error
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 

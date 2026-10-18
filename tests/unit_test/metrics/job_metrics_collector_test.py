@@ -24,6 +24,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 from nvflare.metrics.metrics_collector import MetricsCollector
 from nvflare.metrics.metrics_keys import MetricKeys
+from tests.timing_utils import isolate_time
 
 
 class _ReorderedPairMetricsCollector(MetricsCollector):
@@ -79,6 +80,11 @@ def _duration_values(published_metrics, metric_name: str):
         for name, metrics in published_metrics
         if name == metric_name and MetricKeys.time_taken in metrics
     ]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.metrics.metrics_collector")
 
 
 def test_repeated_task_execution_begin_refreshes_start_time(monkeypatch):

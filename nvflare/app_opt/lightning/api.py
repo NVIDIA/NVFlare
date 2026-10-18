@@ -164,11 +164,10 @@ class FLCallback(Callback):
         """
         # set states for next round
         if self.current_round is not None:
-            if self.max_epochs_per_round is None:
-                if trainer.max_epochs and trainer.max_epochs > 0:
-                    self.max_epochs_per_round = trainer.max_epochs
-                if trainer.max_steps and trainer.max_steps > 0:
-                    self.max_steps_per_round = trainer.max_steps
+            if self.max_epochs_per_round is None and trainer.max_epochs and trainer.max_epochs > 0:
+                self.max_epochs_per_round = trainer.max_epochs
+            if self.max_steps_per_round is None and trainer.max_steps and trainer.max_steps > 0:
+                self.max_steps_per_round = trainer.max_steps
 
             # record total local epochs/steps
             self.total_local_epochs = trainer.current_epoch

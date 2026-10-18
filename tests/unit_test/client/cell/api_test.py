@@ -35,6 +35,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.cell import api as cell_api
+from nvflare.client.cell import attach_rendezvous as attach_rendezvous_module
 from nvflare.client.cell import attach_session as attach_session_module
 from nvflare.client.cell.api import CellClientAPI, TrainerSessionError
 from nvflare.client.cell.attach_rendezvous import AttachEndpointPublisher
@@ -56,6 +57,10 @@ from nvflare.fuel.f3.streaming import shutdown as streaming_shutdown
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from tests.timing_utils import ManualClock, isolate_time, join_thread, wait_for
+
+# Keep a broken policy wait bounded independently of its controlled clock.
+pytestmark = pytest.mark.timeout(60)
 
 CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
@@ -436,7 +441,9 @@ class TestAttachMode:
         finally:
             publisher.close()
 
-    def test_shutdown_interrupts_unbounded_shared_file_rendezvous_wait(self, attach_bootstrap_path, attach_env):
+    def test_shutdown_interrupts_unbounded_shared_file_rendezvous_wait(
+        self, attach_bootstrap_path, attach_env, monkeypatch
+    ):
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
@@ -445,13 +452,23 @@ class TestAttachMode:
         config[BootstrapKey.JOB_WAIT_TIMEOUT] = None
         write_bootstrap_config(attach_bootstrap_path, config)
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        waiting = threading.Event()
+        read_endpoint = attach_rendezvous_module._read_valid_endpoint
+
+        def observe_lookup(*args):
+            result = read_endpoint(*args)
+            waiting.set()
+            return result
+
+        monkeypatch.setattr(attach_rendezvous_module, "_read_valid_endpoint", observe_lookup)
         errors = []
         initializer = threading.Thread(target=lambda: _init_and_capture_error(api, errors))
         initializer.start()
-        time.sleep(0.05)
-
-        api.shutdown()
-        initializer.join(timeout=1.0)
+        try:
+            assert waiting.wait(10), "initializer did not enter rendezvous lookup"
+        finally:
+            api.shutdown()
+            join_thread(initializer)
 
         assert not initializer.is_alive()
         assert len(errors) == 1
@@ -969,7 +986,15 @@ class TestAttachMode:
         )
         canonical_waiter = MagicMock()
         canonical_waiter.transaction_id = "tx-1"
-        canonical_waiter.done.side_effect = canonical_complete.is_set
+        waiting_for_confirmation = threading.Event()
+
+        def confirmation_done():
+            if len(attempts) >= 2:
+                waiting_for_confirmation.set()
+                canonical_complete.wait()
+            return canonical_complete.is_set()
+
+        canonical_waiter.done.side_effect = confirmation_done
         canonical_waiter.wait.side_effect = lambda timeout=None: (
             completed_outcome if canonical_complete.is_set() else None
         )
@@ -1008,13 +1033,15 @@ class TestAttachMode:
             )
         )
         sender.start()
-        assert _wait_until(lambda: len(attempts) == 2)
-        time.sleep(0.03)
-        assert sender.is_alive()
-        delete_transaction.assert_not_called()
-
-        canonical_complete.set()
-        sender.join(timeout=1.0)
+        try:
+            assert waiting_for_confirmation.wait(10), "sender did not wait for receiver confirmation"
+            assert len(attempts) == 2
+            assert sender.is_alive()
+            delete_transaction.assert_not_called()
+        finally:
+            canonical_complete.set()
+            join_thread(sender)
+            api.shutdown()
 
         assert not sender.is_alive()
         assert errors == []
@@ -1783,13 +1810,16 @@ class TestReceiveSend:
         _set_launch_once(bootstrap_path, False)
         accepted = threading.Event()
         transfer_completed = threading.Event()
+        waiting_for_transfer = threading.Event()
         waiter = MagicMock()
         waiter.done.side_effect = transfer_completed.is_set
-        waiter.wait.side_effect = lambda timeout=None: (
-            SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
-            if transfer_completed.wait(timeout)
-            else None
-        )
+
+        def wait_for_transfer(timeout=None):
+            waiting_for_transfer.set()
+            transfer_completed.wait()
+            return SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
+
+        waiter.wait.side_effect = wait_for_transfer
         monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
 
         def on_request(topic, target, request):
@@ -1828,8 +1858,8 @@ class TestReceiveSend:
 
             sender = threading.Thread(target=send_result)
             sender.start()
-            assert accepted.wait(0.5)
-            time.sleep(0.05)
+            assert accepted.wait(10)
+            assert waiting_for_transfer.wait(10), "sender did not wait for downstream transfer"
             assert sender.is_alive()
             assert env.stopped is False
             assert sent_model.params == {"w": [2.0]}
@@ -1839,7 +1869,7 @@ class TestReceiveSend:
             assert api._fl_model is received_model
 
             transfer_completed.set()
-            sender.join(timeout=0.5)
+            join_thread(sender)
             assert not sender.is_alive()
             assert errors == []
             assert env.stopped is True
@@ -1854,17 +1884,22 @@ class TestReceiveSend:
         finally:
             transfer_completed.set()
             api.shutdown()
+            if "sender" in locals():
+                join_thread(sender)
 
     def test_launch_once_shutdown_waits_for_live_result_then_closes_cell(self, bootstrap_path, env, monkeypatch):
         accepted = threading.Event()
         transfer_completed = threading.Event()
+        waiting_for_transfer = threading.Event()
         waiter = MagicMock()
         waiter.done.side_effect = transfer_completed.is_set
-        waiter.wait.side_effect = lambda timeout=None: (
-            SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
-            if transfer_completed.wait(timeout)
-            else None
-        )
+
+        def wait_for_transfer(timeout=None):
+            waiting_for_transfer.set()
+            transfer_completed.wait()
+            return SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
+
+        waiter.wait.side_effect = wait_for_transfer
         monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
 
         def on_request(topic, target, request):
@@ -1895,19 +1930,21 @@ class TestReceiveSend:
 
             sender = threading.Thread(target=send_result)
             sender.start()
-            assert accepted.wait(0.5)
-            time.sleep(0.05)
+            assert accepted.wait(10)
+            assert waiting_for_transfer.wait(10), "sender did not wait for downstream transfer"
             assert sender.is_alive()
             assert env.stopped is False
 
             transfer_completed.set()
-            sender.join(timeout=0.5)
+            join_thread(sender)
             assert not sender.is_alive()
             assert errors == []
             assert env.stopped is True
         finally:
             transfer_completed.set()
             api.shutdown()
+            if "sender" in locals():
+                join_thread(sender)
 
     def test_explicit_shutdown_defers_owned_f3_teardown_until_live_result_settles(
         self, bootstrap_path, env, monkeypatch
@@ -2403,6 +2440,8 @@ class TestHeartbeat:
         assert not thread.is_alive()
 
     def test_hard_cj_loss_aborts_blocked_receive(self, bootstrap_path, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(cell_api, "time", clock)
         terminated = threading.Event()
         monkeypatch.setattr(cell_api, "_CJ_TIMEOUT_ABORT_GRACE", 0.01)
 
@@ -2417,6 +2456,7 @@ class TestHeartbeat:
         api = _init_api(bootstrap_path, env)
         api._terminate_orphaned_process_group = terminated.set
         try:
+            clock.advance(0.1)
             assert _wait_until(lambda: api._abort)
             assert terminated.wait(1.0)
             assert "CJ heartbeat timed out" in api._abort_reason
@@ -2445,7 +2485,9 @@ class TestHeartbeat:
 
         terminated.assert_not_called()
 
-    def test_pending_inline_result_request_does_not_suppress_owner_loss(self, bootstrap_path, env):
+    def test_pending_inline_result_request_does_not_suppress_owner_loss(self, bootstrap_path, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(cell_api, "time", clock)
         request_pending = threading.Event()
 
         def wedged_result_request(topic, target, request):
@@ -2457,8 +2499,7 @@ class TestHeartbeat:
                 index = env.request_messages.index(request)
                 cancel = env.request_kwargs[index]["abort_signal"]
                 request_pending.set()
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                wait_for(lambda: cancel.triggered, message="pending RESULT_READY request was not cancelled")
                 return None
             return make_cell_reply(CellReturnCode.OK)
 
@@ -2477,9 +2518,10 @@ class TestHeartbeat:
 
             sender = threading.Thread(target=send_result)
             sender.start()
-            assert request_pending.wait(0.5)
+            assert request_pending.wait(10)
+            clock.advance(0.1)
             assert _wait_until(lambda: api._abort)
-            sender.join(timeout=0.5)
+            join_thread(sender)
 
             assert not sender.is_alive()
             assert send_errors
@@ -2488,6 +2530,8 @@ class TestHeartbeat:
             api.shutdown()
 
     def test_live_result_transaction_suppresses_heartbeat_expiry(self, bootstrap_path, env, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(cell_api, "time", clock)
         transaction_created = threading.Event()
         transfer_completed = threading.Event()
         release_request = threading.Event()
@@ -2511,7 +2555,7 @@ class TestHeartbeat:
                 tx_created = env.request_kwargs[index]["fobs_ctx_props"][cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="live-result-tx"))
                 transaction_created.set()
-                release_request.wait(0.5)
+                release_request.wait()
                 return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
@@ -2530,19 +2574,22 @@ class TestHeartbeat:
 
             sender = threading.Thread(target=send_result)
             sender.start()
-            assert transaction_created.wait(0.5)
-            time.sleep(0.1)  # longer than the CJ heartbeat timeout
+            assert transaction_created.wait(10)
+            clock.advance(0.1)  # expire heartbeat policy while the transfer is still live
+            assert api._abort_if_cj_timed_out() is False
             assert api._abort is False
 
             transfer_completed.set()
             release_request.set()
-            sender.join(timeout=0.5)
+            join_thread(sender)
             assert not sender.is_alive()
             assert send_errors == []
             get_transfer_waiter.assert_called_once_with("live-result-tx")
         finally:
             release_request.set()
             api.shutdown()
+            if "sender" in locals():
+                join_thread(sender)
 
 
 class TestControlValidation:
@@ -2672,3 +2719,11 @@ class TestControlValidation:
             assert info[FLMetaKey.JOB_ID] == "job-1" and info[FLMetaKey.SITE_NAME] == "site-1"
         finally:
             api.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.client.cell.api",
+    )
