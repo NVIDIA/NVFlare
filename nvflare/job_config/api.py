@@ -14,6 +14,7 @@
 import os.path
 import re
 import uuid
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.executor import Executor
@@ -26,7 +27,7 @@ from nvflare.fuel.utils.validation_utils import check_job_name, check_object_typ
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
-from .defs import FilterType, JobTargetType
+from .defs import ExecutionLifetime, FilterType, JobTargetType
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
@@ -189,6 +190,7 @@ class FedJob:
         mandatory_clients: Optional[List[str]] = None,
         meta_props: Optional[Dict[str, Any]] = None,
         fail_fast: bool = False,
+        execution_lifetime: str = ExecutionLifetime.JOB,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -198,6 +200,7 @@ class FedJob:
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
             meta_props: additional meta properties for the job (optional)
+            execution_lifetime: client compute lifetime, 'job' (default) or 'task'.
             fail_fast: if True, sets dead_client_grace_period to 0 so that a client already
                 reported dead is declared disconnected on the next monitor tick (~0.2 s) rather
                 than after the default 60-second grace period. The job then aborts only when the
@@ -229,6 +232,70 @@ class FedJob:
         self._deploy_map = {}
         self._deployed = False
         self._components = {}
+        self.execution_lifetime = ExecutionLifetime.validate(execution_lifetime)
+
+    def set_execution_lifetime(self, lifetime: str, target: Optional[str] = None):
+        """Set client compute lifetime; omit target to include future client apps."""
+        lifetime = ExecutionLifetime.validate(lifetime)
+        if target is None:
+            self.execution_lifetime = lifetime
+            for app in self._deploy_map.values():
+                if isinstance(app, ClientApp):
+                    app.add_params({"execution_lifetime": lifetime})
+        else:
+            if JobTargetType.get_target_type(target) != JobTargetType.CLIENT:
+                raise ValueError("execution lifetime applies to client apps")
+            if ALL_SITES in self._deploy_map and target != ALL_SITES:
+                raise ValueError("site-specific execution lifetime cannot be combined with an @ALL client app")
+            self.to({"execution_lifetime": lifetime}, target)
+
+    @contextmanager
+    def temporary_exec_params(
+        self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ):
+        """Temporarily apply execution parameters without changing the declared job.
+
+        None preserves existing parameters. A nonempty dictionary merges overrides.
+        An empty dictionary clears parameters, retaining each client's declared
+        execution lifetime. Only declared apps can be overridden. Restore all
+        original parameters even when use fails.
+        """
+        if server_exec_params is None and client_exec_params is None:
+            yield
+            return
+
+        snapshot = {target: dict(app.app_config.additional_params) for target, app in self._deploy_map.items()}
+        client_targets = [
+            target for target, app in self._deploy_map.items() if isinstance(app.app_config, ClientAppConfig)
+        ]
+        if client_exec_params and not client_targets:
+            raise ValueError("client execution overrides require a declared client app")
+        if server_exec_params and SERVER_SITE_NAME not in self._deploy_map:
+            raise ValueError("server execution overrides require a declared server app")
+        overrides = {SERVER_SITE_NAME: server_exec_params}
+        overrides.update(dict.fromkeys(client_targets, client_exec_params))
+
+        try:
+            for target, extra in overrides.items():
+                if extra is None:
+                    continue
+                if extra:
+                    self._deploy_map[target].add_params(extra)
+                elif target in self._deploy_map:
+                    params = self._deploy_map[target].app_config.additional_params
+                    retained = (
+                        {"execution_lifetime": params["execution_lifetime"]}
+                        if target != SERVER_SITE_NAME and "execution_lifetime" in params
+                        else {}
+                    )
+                    params.clear()
+                    params.update(retained)
+            yield
+        finally:
+            for target, app in self._deploy_map.items():
+                params = app.app_config.additional_params
+                params.clear()
+                params.update(snapshot.get(target, {}))
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -258,6 +325,8 @@ class FedJob:
 
     def _add_client_app(self, obj: ClientApp, target: str):
         self._deploy_map[target] = obj
+        if self.execution_lifetime != ExecutionLifetime.JOB:
+            obj.add_params({"execution_lifetime": self.execution_lifetime})
         if target not in self.clients:
             self.clients.append(target)
 
@@ -633,6 +702,11 @@ class FedJob:
         self.job.set_site_app(target, app_name)
 
     def _set_all_apps(self):
+        if ALL_SITES in self._deploy_map and any(
+            target not in (ALL_SITES, SERVER_SITE_NAME) and "execution_lifetime" in app.app_config.additional_params
+            for target, app in self._deploy_map.items()
+        ):
+            raise ValueError("site-specific execution lifetime cannot be combined with an @ALL client app")
         if not self._deployed:
             if ALL_SITES in self._deploy_map:
                 if SERVER_SITE_NAME not in self._deploy_map:

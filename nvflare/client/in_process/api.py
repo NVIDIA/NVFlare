@@ -28,20 +28,19 @@ from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.converter_utils import convert_params
+from nvflare.client.in_process.adapters import TASK_RESULT_STOP_REASON, TOPIC_ABORT, TOPIC_GLOBAL_RESULT
+from nvflare.client.in_process.adapters import TOPIC_LOCAL_RESULT as TOPIC_LOCAL_RESULT  # noqa: F401 - public export
+from nvflare.client.in_process.adapters import TOPIC_LOG_DATA as TOPIC_LOG_DATA  # noqa: F401 - public export
+from nvflare.client.in_process.adapters import TOPIC_STOP, JobInProcessAdapter
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
 
-TOPIC_LOG_DATA = "LOG_DATA"
-TOPIC_STOP = "STOP"
-TOPIC_ABORT = "ABORT"
-TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
-TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
 _END_RUN_STOP_REASON = "END_RUN received"
 _API_SHUTDOWN_STOP_REASON = "API shutdown called."
-_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON}
+_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON, TASK_RESULT_STOP_REASON}
 
 
 def _stop_log_level(reason):
@@ -53,6 +52,8 @@ class InProcessClientAPI(APISpec):
         self,
         task_metadata: dict,
         result_check_interval: float = 2.0,
+        *,
+        adapter=None,
     ):
         """Initializes the InProcessClientAPI.
 
@@ -63,8 +64,7 @@ class InProcessClientAPI(APISpec):
         super().__init__()  # Initialize memory management from base class
 
         self.data_bus = DataBus()
-        self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
-        self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
+        self._adapter = adapter if adapter is not None else JobInProcessAdapter()
 
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
@@ -83,6 +83,7 @@ class InProcessClientAPI(APISpec):
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
         self._receive_error: Optional[Exception] = None
+        self._adapter.bind(self, self.__receive_callback, self.__ask_to_abort)
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -208,7 +209,7 @@ class InProcessClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
+        self._adapter.publish_result(shareable)
 
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -275,7 +276,7 @@ class InProcessClientAPI(APISpec):
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
-        self.event_manager.fire_event(TOPIC_LOG_DATA, msg)
+        self._adapter.publish_log(msg)
 
     def clear(self):
         self.fl_model = None
@@ -311,21 +312,23 @@ class InProcessClientAPI(APISpec):
         try:
             if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
                 raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-            fl_model = FLModelUtils.from_shareable(data)
-            exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
-            fl_model.params = convert_params(
-                fl_model.params,
-                self.client_config.get_server_expected_format(),
-                exchange,
-                self._params_conversion_state,
-                self.logger,
-            )
-            self.fl_model = fl_model
+            self._set_received_shareable(data)
         except Exception as e:
             # DataBus callbacks run in a worker and publish() does not propagate their
             # exceptions. Surface conversion failures from flare.receive() instead.
             self._receive_error = e
+
+    def _set_received_shareable(self, data):
+        fl_model = FLModelUtils.from_shareable(data)
+        exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+        fl_model.params = convert_params(
+            fl_model.params,
+            self.client_config.get_server_expected_format(),
+            exchange,
+            self._params_conversion_state,
+            self.logger,
+        )
+        self.fl_model = fl_model
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:
@@ -362,6 +365,4 @@ class InProcessClientAPI(APISpec):
         """
         self.closed = True
         self._receive_error = None
-        self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
-        self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
-        self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)
+        self._adapter.close()
