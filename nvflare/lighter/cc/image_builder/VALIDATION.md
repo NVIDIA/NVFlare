@@ -15,9 +15,9 @@ without calling `reopen`. CPU-only profiles retain the bounded recovery loop.
 The hardware acceptance contract now requires recovery only for CPU profiles
 and requires bounded terminal poweroff for GPU profiles.
 
-Focused runtime, audit, acceptance-contract, and lab-helper tests passed: **79
+Focused runtime, audit, acceptance-contract, and lab-helper tests passed: **80
 passed, 22 skipped, 70 subtests passed**. The complete standalone builder unit
-suite ran **372 tests** on macOS: 331 passed, 36 skipped, and the five existing
+suite ran **373 tests** on macOS: 332 passed, 36 skipped, and the five existing
 Linux-platform assumptions remained non-passing (three `memfd_create` errors
 and two `/private/var` canonical-path differences). Project Black, isort, flake8,
 and agent-skill style checks passed. No physical GPU test was run; readiness

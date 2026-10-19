@@ -496,14 +496,22 @@ class HardwareTests(unittest.TestCase):
         # Periodic check, quarantine containment, and a bounded scheduling
         # allowance. GPU Ready-state revocation is terminal for this guest.
         poweroff_timeout = periodic_timeout(config) + 2 * REVOCATION_TIMEOUT_SECONDS + 45
+        poweroff_confirmed = False
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
             deadline = started + entry_timeout
             while time.monotonic() < deadline:
-                self.assertIsNone(self.process.poll(), "Guest powered off before entering quarantine")
+                exited = self.process.poll() is not None
                 text = self.logs[-1].read_text(errors="replace")
+                if exited:
+                    # QEMU may exit between polls after writing the terminal
+                    # quarantine record. Inspect the final log and confirm a
+                    # clean poweroff before deciding containment was too early.
+                    self.assert_powered_off()
+                    poweroff_confirmed = True
                 if '"decision":"quarantine"' in text.replace(" ", ""):
                     break
+                self.assertFalse(exited, "Guest powered off before entering quarantine")
                 time.sleep(1)
             else:
                 self.fail("GPU attestation failure did not enter quarantine within its bounded budget")
@@ -513,7 +521,8 @@ class HardwareTests(unittest.TestCase):
             # Measure before firewall cleanup, which can take additional time.
             elapsed = time.monotonic() - started
             self.assertLessEqual(elapsed, poweroff_timeout)
-        self.assert_powered_off()
+        if not poweroff_confirmed:
+            self.assert_powered_off()
         self.result(
             periodic_gpu_denial=True,
             backend_nras_drop=True,
