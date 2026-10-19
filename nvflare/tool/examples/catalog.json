@@ -228,6 +228,10 @@
     "source_path": "examples/advanced/monitoring",
     "category": "advanced"
   },
+  "multi-gpu-fsdp2": {
+    "source_path": "examples/advanced/multi-gpu/fsdp2",
+    "category": "advanced"
+  },
   "multi-gpu-lightning": {
     "source_path": "examples/advanced/multi-gpu/lightning",
     "category": "advanced"
