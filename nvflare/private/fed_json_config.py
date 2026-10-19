@@ -197,8 +197,9 @@ class FedJsonConfigurator(JsonConfigurator):
         if not isinstance(self.format_version, int):
             raise ConfigError('"format_version" must be int, but got {}'.format(type(self.format_version)))
 
-        if self.format_version != 2:
-            raise ConfigError('wrong "format_version" {}: must be 2'.format(self.format_version))
+        expected = 3 if not self.is_server and self.config_data.get("execution_lifetime") == "task" else 2
+        if self.format_version != expected:
+            raise ConfigError(f'wrong "format_version" {self.format_version}: must be {expected}')
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:

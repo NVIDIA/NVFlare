@@ -407,6 +407,9 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     ctx = FLContext()
     saved = tmp_path / "result"
     saved.write_bytes(b"finished task output")
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.write_bytes(b"matching committed state")
+    committed_at = checkpoint.stat().st_mtime_ns
     result = Shareable({"result_file": str(saved)})
     result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt")
     observed = []
@@ -414,6 +417,8 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     def send(current, fl_ctx, **kwargs):
         observed.append(current)
         assert saved.read_bytes() == b"finished task output"
+        assert checkpoint.read_bytes() == b"matching committed state"
+        assert checkpoint.stat().st_mtime_ns == committed_at
         receipt = TaskResultReceipt.RETRY if len(observed) == 1 else TaskResultReceipt.RECEIVED
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
         return True
