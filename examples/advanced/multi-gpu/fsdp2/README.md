@@ -1,10 +1,16 @@
 # Multi-GPU Federated Learning with PyTorch FSDP2
 
+PyTorch Fully Sharded Data Parallel (FSDP2) shards model parameters, gradients, and optimizer state
+across GPUs, enabling training when their combined memory requirements exceed one GPU's capacity.
+
 This example fine-tunes all parameters of [Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B)
 on [WikiText-2](https://huggingface.co/datasets/Salesforce/wikitext) with NVFlare FedAvg.
-Two clients each use two GPUs. PyTorch Fully Sharded Data Parallel (FSDP2) shards parameters,
-gradients, and AdamW state within each client; the server exchanges and averages full model states.
+Two federated clients each use two GPUs. FSDP2 shards the training state within each client;
+the server exchanges and averages full model states.
 Each GPU runs one process, called a rank. The training loop uses native PyTorch and the NVFlare Client API.
+
+FSDP2 can also shard training across machines. This example uses one machine per client;
+federated clients do not pool GPU memory.
 
 ## Quick Start
 
@@ -82,7 +88,7 @@ Each deployed client needs two visible GPUs; `--gpu_config` applies only to simu
 `job.py` uses the standard PyTorch `FedAvgRecipe` and tensor exchange. The server loads pretrained
 FP32 weights when the job starts. Clients construct the same architecture, move it to their GPU,
 and shard each decoder block and the root with `fully_shard()`, keeping tied embeddings together.
-This initialization briefly holds a complete model on each GPU before sharding.
+The full FP32 model weights must fit on each GPU during initialization, before sharding.
 
 FSDP2 retains FP32 parameter shards and uses BF16 computation with FP32 gradient reduction.
 Activation checkpointing reduces activation memory. AdamW is created after sharding and reset each
