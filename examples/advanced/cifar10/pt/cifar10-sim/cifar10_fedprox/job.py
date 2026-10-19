@@ -35,6 +35,7 @@ def define_parser():
     parser.add_argument(
         "--num_workers", type=int, default=2, help="Number of worker processes for data loading (0 = main process only)"
     )
+    parser.add_argument("--execution_lifetime", choices=("job", "task"), default="job")
     parser.add_argument("--lr", type=float, default=5e-2, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=64, help="Training batch size for each client")
     parser.add_argument(
@@ -92,6 +93,8 @@ def main():
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
         fedprox_mu=fedprox_mu,
     )
+    recipe.add_client_config({"execution_lifetime": args.execution_lifetime})
+    recipe.add_client_file(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients)

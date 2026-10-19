@@ -20,6 +20,7 @@ import torch.nn as nn
 import torch.optim as optim
 from data.cifar10_data_utils import create_data_loaders, create_datasets
 from model import ModerateCNN
+from task_checkpoint import restore_training_state, save_training_state
 from train_utils import compute_model_diff, evaluate, get_lr_values
 
 # Import nvflare client API
@@ -55,7 +56,7 @@ def main(args):
     print(f"Create datasets for site {site_name}")
     train_dataset, valid_dataset = create_datasets(site_name, train_idx_root=args.train_idx_root)
     train_loader, valid_loader = create_data_loaders(
-        train_dataset, valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers
+        train_dataset, valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers, checkpointable=True
     )
 
     summary_writer = SummaryWriter()
@@ -63,6 +64,14 @@ def main(args):
         # Receive FLModel from NVFlare
         input_model = flare.receive()
         print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
+
+        if flare.is_evaluate():
+            model.load_state_dict(input_model.params, strict=True)
+            model.to(DEVICE)
+            flare.send(flare.FLModel(metrics={"accuracy": evaluate(model, valid_loader)}))
+            continue
+        if not flare.is_train():
+            raise RuntimeError(f"Unsupported task: {flare.get_task_name()}")
 
         # Initialize cosine annealing scheduler on first round
         if scheduler is None and not args.no_lr_scheduler:
@@ -73,6 +82,10 @@ def main(args):
             print(
                 f"{site_name}: Using CosineAnnealingLR scheduler: initial_lr={args.lr}, eta_min={eta_min}, T_max={T_max}"
             )
+
+        restore_training_state(
+            optimizer, scheduler, input_model.current_round, data_loaders=(train_loader, valid_loader)
+        )
 
         # Load model from NVFlare
         model.load_state_dict(input_model.params, strict=True)  # make sure all parameters are loaded with strict mode
@@ -156,6 +169,8 @@ def main(args):
             metrics={"accuracy": val_acc_global_model},
             meta=meta,
         )
+
+        save_training_state(optimizer, scheduler, input_model.current_round, data_loaders=(train_loader, valid_loader))
 
         # Send model back to NVFlare
         flare.send(output_model)
