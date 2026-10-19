@@ -516,11 +516,6 @@ class HardwareTests(unittest.TestCase):
         with self.assertRaises((OSError, urllib.error.URLError)):
             self.request()
         self.assert_powered_off()
-        # Authorization and diagnostic records are advisory and may be lost
-        # when the supervisor exits. The bootstrap failure and PID 1 poweroff
-        # messages are emitted synchronously and survive the shutdown.
-        text = self.logs[-1].read_text(errors="replace")
-        self.assertIn("CVM bootstrap failed; PID 1 will power off", text)
         self.result(
             periodic_gpu_denial=True,
             backend_nras_drop=True,

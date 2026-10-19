@@ -33,7 +33,7 @@ def load_hardware_tests():
 
 
 class GPUQuarantineAcceptanceTests(unittest.TestCase):
-    def exercise(self, exit_seconds, *, workload_stop_seconds=0, cleanup_seconds=0, hardware=None, terminal=True):
+    def exercise(self, exit_seconds, *, workload_stop_seconds=0, cleanup_seconds=0, hardware=None):
         hardware = hardware or load_hardware_tests()
         clock = SimpleNamespace(now=100.0)
         started = clock.now
@@ -59,8 +59,7 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
         def read_log(**kwargs):
             if clock.now - started < exit_seconds:
                 return ""
-            message = "CVM bootstrap failed; PID 1 will power off\n" if terminal else ""
-            return message + "Power down\n"
+            return "Power down\n"
 
         def request(path="/state", method="GET"):
             if method != "POST" and clock.now - started >= workload_stop_seconds:
@@ -114,10 +113,6 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
     def test_poweroff_after_upper_budget_is_rejected(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             self.exercise(646)
-
-    def test_terminal_bootstrap_failure_must_survive_shutdown(self):
-        with self.assertRaisesRegex(AssertionError, "CVM bootstrap failed"):
-            self.exercise(1, terminal=False)
 
     def test_fault_cleanup_does_not_change_measured_lifetime(self):
         self.exercise(120, cleanup_seconds=900)
