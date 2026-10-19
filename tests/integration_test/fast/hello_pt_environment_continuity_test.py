@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
+from tests.hello_pt_test_utils import REPO_ROOT, assert_hello_pt_failure_summary, load_hello_pt_module
 
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
 
@@ -75,12 +75,20 @@ def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output
-    assert "ROUND 3 / 3" in output
-    assert "✓ Aggregated 2 client updates" in output
-    assert "accuracy_after_local_training" in output
-    assert "Evaluating saved models on 2 clients" in output
+    # Live progress replays a bounded log tail. A delayed monitor need not see
+    # every training phase, or poll while the job is still RUNNING.
+    server_log = "\n".join(
+        json.loads(line).get("message", "")
+        for line in (result_path / "workspace" / "log.json").read_text().splitlines()
+    )
+    assert "ROUND 3 / 3" in server_log
+    assert "✓ Aggregated 2 client updates" in server_log
+    assert "Evaluating saved models on 2 clients" in server_log
+    metrics = json.loads((result_path / "workspace" / "metrics" / "metrics_summary.json").read_text())
+    assert metrics["final_round"] == 2
+    assert "accuracy_after_local_training" in {metric["name"] for metric in metrics["final_aggregated_metrics"]}
     assert "SRV_FL_global_model.pt" in output
-    assert "Job status: RUNNING" in output
+    assert "Job status: FINISHED:COMPLETED" in output
     assert "Job Meta:" not in output
     assert f"Results   {poc_result}" in output
     assert "Model evaluation · accuracy" in output
@@ -89,6 +97,7 @@ def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("missing_cifar", [False, True])
 def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys, missing_cifar):
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
     monkeypatch.delenv("NVFLARE_HOME", raising=False)
@@ -111,17 +120,32 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
     summary = captured.out.split("RUN SUMMARY", 1)[1]
     assert "NVIDIA FLARE · hello-pt" in summary
     assert "POC · 2 clients" in summary
-    assert expected_error in " ".join(summary.split())
-    assert "site-1, site-2 / TaskScriptRunner" in summary
-    assert ("prepare_data.py:" if missing_cifar else "client.py:") in summary
-    assert "Client logs are not included" not in summary
+    # Either client can fail first and abort its peer before the peer records
+    # the same exception. Unit tests exercise these same assertions with both
+    # orderings and with identical errors grouped together.
+    assert_hello_pt_failure_summary(
+        summary, expected_error=expected_error, expected_file="prepare_data.py:" if missing_cifar else "client.py:"
+    )
     output = captured.err
     result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
     result_path = Path(result_line.split(":", 1)[1].strip())
     assert result_path.is_dir()
+    client_logs = {path.parent.name: path for path in result_path.glob("failure-logs-*/*/error_log.txt")}
+    assert client_logs
+    assert set(client_logs) <= {"site-1", "site-2"}
+    assert any(expected_error in path.read_text() for path in client_logs.values())
     workspaces = list(tmp_path.glob("poc.recipe-*"))
     assert len(workspaces) == 1
     workspace = workspaces[0]
+    # Verify every stored error stream was downloaded, without requiring a
+    # cancelled peer to have emitted an error of its own.
+    stored_logs = {
+        path.name.removeprefix("ERRORLOG_"): path
+        for path in (workspace / "jobs-storage" / result_path.name).glob("ERRORLOG_*")
+        if path.stat().st_size > 0
+    }
+    assert set(client_logs) == set(stored_logs)
+    assert all(path.read_bytes() == stored_logs[site].read_bytes() for site, path in client_logs.items())
     logs = list(workspace.rglob("poc_console.log"))
     assert logs
     assert any(expected_error in log.read_text() for log in logs)
