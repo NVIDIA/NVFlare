@@ -18,23 +18,36 @@ import logging
 import os
 import resource
 import sys
+import tempfile
 import time
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import pop_credential_env
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.abstract.statistics_spec import Statistics
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.client.config import ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
+from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
+from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import configure_logging
+from nvflare.job_config.task_execution import (
+    CLIENT_API_EXECUTOR_PATH,
+    DECOMPOSER_REGISTER_PATH,
+    STATISTICS_EXECUTOR_PATH,
+    task_constructor_args,
+)
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
-from nvflare.private.fed.utils.worker_component_builder import WorkerComponentBuilder
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
-from .artifacts import FileTaskArtifactStore, TaskCompletion
+from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
 from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
@@ -71,10 +84,10 @@ def _read_job_meta(workspace: Workspace, job_id: str) -> dict:
     return meta
 
 
-def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace):
+def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_context_keys=(), *, components=None):
     identity = bootstrap.identity
     app_root = workspace.get_app_dir(identity.job_id)
-    runtime = TaskRuntime(workspace, identity.site_name, identity.job_id)
+    runtime = TaskRuntime(workspace, identity.site_name, identity.job_id, components=components)
     fl_ctx = runtime.new_context()
     built_ins = {
         FLContextKey.APP_ROOT: app_root,
@@ -94,7 +107,7 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace):
             private=True,
             sticky=name not in (FLContextKey.TASK_ID, FLContextKey.TASK_NAME, FLContextKey.TASK_ATTEMPT_ID),
         )
-    protected = _PROTECTED_CONTEXT_KEYS
+    protected = _PROTECTED_CONTEXT_KEYS | set(protected_context_keys)
     for name, prop in bootstrap.context_properties.items():
         if name in protected:
             raise ValueError(f"worker bootstrap cannot override framework context property {name!r}")
@@ -102,54 +115,55 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace):
     return runtime, fl_ctx
 
 
-def _authorize_compute_graph(bootstrap, workspace, fl_ctx):
-    builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=workspace)
+def _class_path(config):
+    scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "widgets"], True)
+    return get_class_path_from_config(config, resolve_name=scanner.get_module_name)
+
+
+def _authorize_bootstrap(bootstrap, workspace, fl_ctx):
+    """Check site policy before logging factories, codecs or executor imports."""
+    authorizer = ComponentPathAuthorizer()
     config = bootstrap.to_dict()
-    for index, component in enumerate(config["components"]):
-        builder.authorize_tree(component, builder.make_component_node(component, index + 1))
-    builder.authorize_tree(config["executor"])
-    return builder
+    executor = config["executor"]
+    generator_id = (
+        task_constructor_args(executor).get("generator_id")
+        if _class_path(executor) == STATISTICS_EXECUTOR_PATH
+        else None
+    )
+    if _class_path(executor) == STATISTICS_EXECUTOR_PATH and (
+        not isinstance(generator_id, str) or generator_id not in {spec["id"] for spec in config["components"]}
+    ):
+        raise ValueError("StatisticsExecutor requires a configured statistics generator_id")
+    specs = [("executor", executor)]
+    specs.extend((f"components.#{index}", spec) for index, spec in enumerate(config["components"], 1))
+    for path, spec in specs:
+        # Normalize aliases without importing the selected class.
+        class_path = _class_path(spec)
+        node = Node(spec)
+        node.paths = path.split(".")
+        try:
+            authorizer.authorize_component_config(
+                {**spec, "path": class_path}, node, fl_ctx=fl_ctx, workspace=workspace
+            )
+        except UnsafeComponentError as error:
+            raise ComponentNotAuthorized(f"component not authorized: {error}") from error
+        task_constructor_args(spec)
+        if path != "executor" and class_path != DECOMPOSER_REGISTER_PATH and spec.get("id") != generator_id:
+            raise ValueError(
+                "task workers accept only decomposer registration and the statistics generator in components"
+            )
 
 
-def _build_compute_graph(bootstrap: WorkerBootstrap, workspace: Workspace, fl_ctx: FLContext, runtime: TaskRuntime):
-    builder = _authorize_compute_graph(bootstrap, workspace, fl_ctx)
-    components = {}
-    for index, original in enumerate(bootstrap.components):
-        config = _thaw_json(original)
-        component_id = config.get("id")
-        node = builder.make_component_node(config, index + 1)
-        components[component_id] = builder.build_component(config, node)
-
-    executor_config = _thaw_json(bootstrap.executor)
-    executor = builder.build_component(executor_config, builder.make_component_node(executor_config))
+def _build_executor(config):
+    config = _thaw_json(config)
+    executor = (
+        None
+        if config.get("disabled") is True
+        else instantiate_class(_class_path(config), task_constructor_args(config))
+    )
     if not isinstance(executor, Executor):
         raise TypeError(f"worker executor config built {type(executor)} instead of Executor")
-    # START_RUN/END_RUN are attempt-scoped initialization adapters here. Only
-    # the explicitly selected compute graph receives them; job-scoped
-    # handlers are neither copied nor replayed.
-    runtime.set_compute_graph(components, executor, handlers=builder.handlers)
     return executor
-
-
-def _raise_event_errors(fl_ctx: FLContext, event_type: str):
-    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-    if not exceptions:
-        return
-    fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
-    names = ", ".join(sorted(str(name) for name in exceptions))
-    first = next(iter(exceptions.values()))
-    raise RuntimeError(
-        f"task worker {event_type} handler failed ({names}): {secure_format_exception(first)}"
-    ) from first
-
-
-def _fire_checked(runtime: TaskRuntime, event_type: str, fl_ctx: FLContext):
-    fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
-    fl_ctx.remove_prop(FLContextKey.EVENT_DATA, force_removal=True)
-    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.LOCAL, private=True, sticky=False)
-    runtime.fire_event(event_type, fl_ctx)
-    _raise_event_errors(fl_ctx, event_type)
-    runtime.raise_if_failed()
 
 
 def _restore_peer_context(data: Shareable, fl_ctx: FLContext):
@@ -165,47 +179,64 @@ def _execute(
     data: Shareable,
     workspace: Workspace,
     store: FileTaskArtifactStore,
+    *,
+    context_binding=None,
+    protected_context_keys=(),
+    analytics=None,
 ):
-    runtime, fl_ctx = _new_context(bootstrap, workspace)
-    executor = _build_compute_graph(bootstrap, workspace, fl_ctx, runtime)
+    components = {}
+    for original in bootstrap.components:
+        spec = _thaw_json(original)
+        if _class_path(spec) != DECOMPOSER_REGISTER_PATH:
+            component = (
+                None
+                if spec.get("disabled") is True
+                else instantiate_class(_class_path(spec), task_constructor_args(spec))
+            )
+            if not isinstance(component, Statistics):
+                raise TypeError(f"statistics generator {spec['id']!r} must implement Statistics")
+            components[spec["id"]] = component
+    runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys, components=components or None)
+    adapt_executor = None
+    if context_binding is not None:
+        adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
+    executor = _build_executor(bootstrap.executor)
+    if adapt_executor is not None:
+        executor = adapt_executor(executor)
     _restore_peer_context(data, fl_ctx)
 
-    started = False
-    first_error = None
     try:
-        started = True
-        _fire_checked(runtime, EventType.ABOUT_TO_START_RUN, fl_ctx)
-        _fire_checked(runtime, EventType.START_RUN, fl_ctx)
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
-        _fire_checked(runtime, EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
+        initialize = getattr(executor, "initialize", None)
+        if initialize is not None:
+            with runtime.operation():
+                initialize(fl_ctx)
         runtime.raise_if_failed()
-        if not isinstance(result, Shareable):
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
+        with runtime.operation():
+            result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
+        runtime.raise_if_failed()
+        if not isinstance(result, (Shareable, ArtifactReference)):
             raise TypeError(f"Executor returned {type(result)} instead of Shareable")
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
-        _fire_checked(runtime, EventType.AFTER_TASK_EXECUTION, fl_ctx)
-    except BaseException as e:
-        first_error = e
+    except BaseException as error:
+        runtime.fail(error)
     finally:
-        if started:
-            for event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
-                try:
-                    _fire_checked(runtime, event_type, fl_ctx)
-                except BaseException as e:
-                    # Finalizers must all run, but cannot replace the failure
-                    # that caused cleanup, or an earlier finalizer failure.
-                    if first_error is None:
-                        first_error = e
-    if first_error is not None:
-        raise first_error
+        try:
+            finalize = getattr(executor, "finalize", None)
+            if finalize is not None:
+                with runtime.operation():
+                    finalize(fl_ctx)
+        except BaseException as error:
+            runtime.fail(error)
+    runtime.raise_if_failed()
     result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-    if not isinstance(result, Shareable):
-        raise TypeError("task hooks must leave a Shareable result")
+    if not isinstance(result, (Shareable, ArtifactReference)):
+        raise TypeError("executor finalization must leave a Shareable or staged result reference")
     runtime.raise_if_failed()
     return result, runtime
 
 
-def run_worker(bootstrap_path: str) -> TaskCompletion:
+def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
     # Strip CJ bootstrap credentials from the environment before importing job
@@ -223,23 +254,48 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
     owns_auditor = False
+    analytics = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
             AuditService.initialize(workspace.get_audit_file_path(identity.job_id))
             owns_auditor = True
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
-        _runtime, fl_ctx = _new_context(bootstrap, workspace)
-        _authorize_compute_graph(bootstrap, workspace, fl_ctx)
+        _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
+        _authorize_bootstrap(bootstrap, workspace, fl_ctx)
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
             logging.basicConfig(level=logging.INFO)
         refresh_custom_dir_import_path(workspace.get_app_custom_dir(identity.job_id))
         fobs_initialize(workspace=workspace, job_id=identity.job_id)
+        if _class_path(bootstrap.executor) == CLIENT_API_EXECUTOR_PATH:
+            args = task_constructor_args(_thaw_json(bootstrap.executor))
+            register_framework_decomposers(
+                args.get("params_exchange_format", ExchangeFormat.RAW),
+                args.get("server_expected_format", ExchangeFormat.NUMPY),
+            )
+        # The same serialization registrations are needed on both sides of
+        # the payload handoff, before decoding input or building the trainer.
+        for original in bootstrap.components:
+            spec = _thaw_json(original)
+            if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
+                instantiate_class(_class_path(spec), task_constructor_args(spec))
         data = store.read_input(identity)
-        result, runtime = _execute(bootstrap, data, workspace, store)
-        reference = store.stage_result(identity, result)
+        if context_binding is None:
+            result, runtime = _execute(bootstrap, data, workspace, store)
+        else:
+            analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity))
+            result, runtime = _execute(
+                bootstrap,
+                data,
+                workspace,
+                store,
+                context_binding=context_binding,
+                protected_context_keys=protected_context_keys,
+                analytics=analytics,
+            )
+        reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
@@ -252,6 +308,13 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             "max_rss_native_units": usage.ru_maxrss,
             "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
         }
+        checkpoint = store.stage_checkpoint(identity)
+        if checkpoint is not None:
+            diagnostics["checkpoint"] = checkpoint.to_dict()
+        if analytics is not None:
+            analytics_reference = store.write_analytics(identity, analytics)
+            if analytics_reference is not None:
+                diagnostics["analytics"] = analytics_reference.to_dict()
         return store.commit_staged_result(
             identity,
             reference,
@@ -277,6 +340,8 @@ def run_worker(bootstrap_path: str) -> TaskCompletion:
             pass
         raise
     finally:
+        if analytics is not None:
+            analytics.close()
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
