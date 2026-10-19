@@ -232,6 +232,8 @@ class LabStateTests(unittest.TestCase):
                     for check in checks
                 )
                 with self.subTest(platform=platform, gpu=gpu, vault_prescan=vault_prescan):
+                    self.assertEqual("attestation_quarantine_recovery" in required, gpu == "none")
+                    self.assertEqual("periodic_gpu_denial" in required, gpu == "nvidia_cc")
                     self.assertEqual(set(generated) & required, required)
                     self.assertTrue(all(generated[check] == 1 for check in required))
 

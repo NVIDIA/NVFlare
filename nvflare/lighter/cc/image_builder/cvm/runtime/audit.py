@@ -29,7 +29,7 @@ from ..common.io import canonical, read_json
 # Advisory records may be dropped on congestion or process exit.
 _records = queue.Queue(maxsize=8)
 _writer = None
-_DIAGNOSTIC_CODES = frozenset({"gpu_readiness_revoke_failed"})
+_DIAGNOSTIC_CODES = frozenset({"gpu_quarantine_terminal", "gpu_readiness_revoke_failed"})
 
 
 class _Diagnostic(NamedTuple):

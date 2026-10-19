@@ -565,8 +565,7 @@ signed result schema:
 }
 ```
 
-Every CPU profile requires: `attestation_quarantine_recovery`,
-`boot_measurements`, `clear_sidecar_scan`,
+Every profile requires: `boot_measurements`, `clear_sidecar_scan`,
 `clock_synchronized_before_attestation`, `cross_vault_key_denial`,
 `durable_key_retry`, `exclusive_attachment`, `generic_container`,
 `header_snapshot`, `initramfs_no_kbs`, `integrity_monitor_failure`,
@@ -575,8 +574,9 @@ Every CPU profile requires: `attestation_quarantine_recovery`,
 `policy_selection`, `read_only_input_disks`, `reboot_after_writes`,
 `rollback_retirement`, `root_disk_corruption`, `root_overlay_capacity`,
 `ssh_service_and_socket_disabled`, `unauthorized_administration`,
-`writable_applog`, and `wrong_binding`. AMD SEV-SNP additionally requires
-`snp_collateral_availability`. An NVIDIA CC GPU profile additionally requires
+`writable_applog`, and `wrong_binding`. CPU-only profiles additionally require
+`attestation_quarantine_recovery`. AMD SEV-SNP additionally requires
+`snp_collateral_availability`. NVIDIA CC GPU profiles additionally require
 `cross_class_denial`, `gpu_negative_key_denial`, `gpu_policy_selection`,
 `gpu_positive_key_release`, and `periodic_gpu_denial`.
 
@@ -938,23 +938,25 @@ The application image must contain CUDA/application user-space components that
 are compatible with the pinned guest driver. For explicit placement, repeat `launch_cvm.sh --gpu PCI_ADDRESS` once for every GPU required by `gpu_count`.
 
 GPU quarantine stops the application and container daemons, revokes GPU
-readiness, closes the vault, and retries authorization for at most 900 seconds.
+readiness, closes the vault, and powers the guest off. NVIDIA documents that
+disabling Ready state after attestation is terminal for the running VM and that
+recovery requires resetting the VM. The measured runtime therefore never tries
+to reopen the vault or restore GPU readiness in the same guest. CPU-only
+quarantine continues to retry authorization for at most 900 seconds.
 If the readiness-reset command fails, bounded readback must confirm the expected
-number of distinct GPUs and explicitly report Not Ready before quarantine can
-continue. Ready, unknown or malformed output, a query error, or failed vault
-closure forces poweroff after vault cleanup is attempted. Not Ready prevents new
-CUDA work; it does not establish that GPU memory has been erased. Workloads
-restart only after a fresh successful appraisal and GPU readiness restoration.
-The recovery deadline is not extended by cleanup: retry cleanup and terminal
-cleanup each have a separate 180-second bound and can delay final poweroff past
-the 900-second recovery window.
+number of distinct GPUs and explicitly report Not Ready before containment can
+complete. Ready, unknown or malformed output, a query error, or failed vault
+closure remains fatal after vault cleanup is attempted. Not Ready prevents new
+CUDA work; it does not establish that GPU memory has been erased.
 
-At most one static `CVM_DIAGNOSTIC` record with code
-`gpu_readiness_revoke_failed` is queued per quarantine episode. This advisory
-appears only on the console, separately from authorization decisions; it is not
-written to `attestation.log` and may be dropped if logging is congested.
+The static `CVM_DIAGNOSTIC` code `gpu_quarantine_terminal` records successful
+terminal GPU containment. If the readiness command itself failed but readback
+confirmed Not Ready, `gpu_readiness_revoke_failed` is also queued. These
+advisories appear only on the console, separately from authorization decisions;
+they are not written to `attestation.log` and may be dropped if logging is
+congested.
 Physical validation of readiness readback with the pinned NVIDIA 580 driver,
-GPU quarantine recovery, and poweroff timing remains required; synthetic parser
+terminal GPU quarantine, and poweroff timing remains required; synthetic parser
 fixtures do not establish driver or hardware behavior.
 
 This supervisor is part of the measured guest image: deploy the change by incrementing `profile_version`,

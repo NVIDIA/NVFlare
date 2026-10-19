@@ -42,7 +42,7 @@ from cvm.common.errors import require
 from cvm.common.io import digest_file, read_json, write_json
 from cvm.common.linux import run
 from cvm.common.luks import snapshot_header
-from cvm.runtime.supervisor import QUARANTINE_WINDOW_SECONDS, REVOCATION_TIMEOUT_SECONDS, periodic_timeout
+from cvm.runtime.supervisor import REVOCATION_TIMEOUT_SECONDS, periodic_timeout
 
 ACCEPTANCE_CHECKS = {
     "test_generic_app_binding_and_exclusive_attachment": [
@@ -415,6 +415,8 @@ class HardwareTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
     def test_attestation_drop_quarantines_and_recovers(self):
+        if self.manifest["contract"]["gpu"] == "nvidia_cc":
+            self.skipTest("GPU Ready-state revocation is terminal; the GPU denial case verifies bounded poweroff")
         self.boot()
         self.ready()
         kbs = urlparse(self.manifest["contract"]["kbs_url"])
@@ -491,55 +493,34 @@ class HardwareTests(unittest.TestCase):
         started = time.monotonic()
         config = self.manifest["contract"]
         entry_timeout = periodic_timeout(config) + REVOCATION_TIMEOUT_SECONDS + 45
-        # Periodic check, initial stop/cleanup, recovery window, final cleanup,
-        # terminal best-effort cleanup, and a bounded scheduling allowance.
-        poweroff_timeout = periodic_timeout(config) + QUARANTINE_WINDOW_SECONDS + 3 * REVOCATION_TIMEOUT_SECONDS + 45
+        # Periodic check, quarantine containment, and a bounded scheduling
+        # allowance. GPU Ready-state revocation is terminal for this guest.
+        poweroff_timeout = periodic_timeout(config) + 2 * REVOCATION_TIMEOUT_SECONDS + 45
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
             deadline = started + entry_timeout
             while time.monotonic() < deadline:
-                self.assertIsNone(self.process.poll(), "Guest powered off before entering quarantine")
-                text = self.logs[-1].read_text(errors="replace")
-                if '"decision":"quarantine"' in text.replace(" ", ""):
+                if self.process.poll() is not None:
+                    break
+                try:
+                    self.request()
+                except (OSError, urllib.error.URLError):
                     break
                 time.sleep(1)
             else:
-                self.fail("GPU attestation failure did not enter quarantine within its bounded budget")
-            with self.assertRaises((OSError, urllib.error.URLError)):
-                self.request()
-            # Observe the guest through a retry interval: it must remain alive
-            # with its workload unavailable while the backend is still denied.
-            time.sleep(65)
-            self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
-            with self.assertRaises((OSError, urllib.error.URLError)):
-                self.request()
-            # Fault start gives a conservative minimum lifetime: quarantine
-            # starts later. Its exact 900-second deadline is covered by runtime
-            # unit tests; asynchronous audit receipt must not reset this clock.
-            minimum_remaining = started + QUARANTINE_WINDOW_SECONDS - time.monotonic()
-            if minimum_remaining > 0:
-                try:
-                    self.process.wait(timeout=minimum_remaining)
-                except subprocess.TimeoutExpired:
-                    pass  # The guest must remain alive through the minimum.
-                else:
-                    self.assertGreaterEqual(
-                        time.monotonic() - started,
-                        QUARANTINE_WINDOW_SECONDS,
-                        "Guest powered off before its quarantine recovery window",
-                    )
-            else:
-                self.assertIsNone(self.process.poll(), "Guest exited before the minimum-lifetime observation")
+                self.fail("GPU attestation failure did not stop the workload within its bounded budget")
             self.process.wait(timeout=max(0, started + poweroff_timeout - time.monotonic()))
             # Measure before firewall cleanup, which can take additional time.
             elapsed = time.monotonic() - started
-            self.assertGreaterEqual(elapsed, QUARANTINE_WINDOW_SECONDS)
             self.assertLessEqual(elapsed, poweroff_timeout)
+        with self.assertRaises((OSError, urllib.error.URLError)):
+            self.request()
         self.assert_powered_off()
         self.result(
             periodic_gpu_denial=True,
             backend_nras_drop=True,
             workload_denied_while_isolated=True,
+            terminal_gpu_quarantine=True,
             fail_closed_seconds=round(elapsed, 3),
         )
 

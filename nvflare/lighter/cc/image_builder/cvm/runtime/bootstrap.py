@@ -348,9 +348,10 @@ def mount_vault(config, dev=False):
 
 
 def reopen():
-    """Regain authorization after quarantine: same vault identity, fresh appraisal and key."""
+    """Regain CPU-only authorization: same vault identity, fresh appraisal and key."""
     config = read_json(CONFIG)
     require(not Path("/etc/cvm/dev_mode").exists(), "Development images do not quarantine")
+    require(config.get("gpu") != "nvidia_cc", "GPU quarantine requires a guest restart")
     protect_process()
     time_sync(max_tries=5)
     platform = guest_platform()
