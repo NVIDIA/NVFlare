@@ -18,10 +18,13 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConnPropKey, SystemConfigs, SystemVarName
 from nvflare.apis.workspace import Workspace
+from nvflare.client.config import ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, task_constructor_args
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
@@ -50,6 +53,10 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         """
         self.args = args
         self.app_root = app_root
+        self.workspace_obj = workspace_obj
+        self.task_execution = None
+        self.task_policy = None
+        self._worker_config_paths = ()
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -108,7 +115,61 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.current_exe = None
         self._default_task_fetch_interval = 0.5
 
+    def start_config(self, config_ctx: ConfigContext):
+        self.task_execution = prepare_task_execution(self.config_data)
+        if self.task_execution is None:
+            return
+        worker_paths = [
+            (f"components.#{index}", component)
+            for index, component in enumerate(self.config_data.get("components", []), 1)
+            if component["id"] in self.task_execution.compute_component_ids
+        ]
+        for index, definition in enumerate(self.config_data["executors"], 1):
+            worker_paths.append((f"executors.#{index}.executor", definition["executor"]))
+        # Authorize compute specifications before importing application code.
+        # The trusted adapter is never a component selected by the job.
+        for path, component in worker_paths:
+            node = Node(component)
+            node.paths = path.split(".")
+            self._authorize_component_config_tree(component, config_ctx, node, force_current=True)
+        self._worker_config_paths = tuple(path for path, _ in worker_paths)
+        # CJ decodes federation tasks and worker results before/after worker execution.
+        for plan in self.task_execution.executors:
+            if self.get_class_path(plan.executor) == CLIENT_API_EXECUTOR_PATH:
+                args = task_constructor_args(plan.executor)
+                register_framework_decomposers(
+                    args.get("params_exchange_format", ExchangeFormat.RAW),
+                    args.get("server_expected_format", ExchangeFormat.NUMPY),
+                )
+        if self.task_execution.compute_component_ids:
+            # The resident statistics privacy filters decode these payloads too.
+            from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
+
+            fobs_registration()
+        from .task_execution_policy import TaskExecutionPolicy
+
+        self.task_policy = TaskExecutionPolicy.from_workspace(self.workspace_obj)
+
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        path = node.path()
+        if self.task_execution is not None:
+            match = re.fullmatch(r"executors\.#([0-9]+)\.executor", path)
+            if match:
+                from .task_worker_executor import TaskWorkerExecutor
+
+                plan = self.task_execution.executors[int(match.group(1)) - 1]
+                adapter = TaskWorkerExecutor(
+                    plan.executor,
+                    plan.components,
+                    self.task_policy,
+                    worker_timeout=plan.worker_timeout,
+                    result_wait_timeout=plan.result_wait_timeout,
+                )
+                self.current_exe.executor = adapter
+                self.handlers.append(adapter)
+                return
+            if any(path == root or path.startswith(root + ".") for root in self._worker_config_paths):
+                return
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
 
         element = node.element

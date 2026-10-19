@@ -153,6 +153,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         enable_disk_aggregation: bool = False,
+        execution_lifetime: str = "job",
     ):
         self.enable_disk_aggregation = enable_disk_aggregation
         if enable_tensor_disk_offload is None:
@@ -214,6 +215,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             enable_tensor_disk_offload=enable_tensor_disk_offload,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            execution_lifetime=execution_lifetime,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

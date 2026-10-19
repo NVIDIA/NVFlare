@@ -255,6 +255,7 @@ class FedAvgRecipe(Recipe):
         sampling_seed: Optional[int] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        execution_lifetime: str = "job",
     ):
         explicit_best_model_filename = best_model_filename is not None
         explicit_save_filename = save_filename is not None
@@ -409,6 +410,7 @@ class FedAvgRecipe(Recipe):
         job.to_server(controller)
 
         Recipe.__init__(self, job)
+        job.set_execution_lifetime(execution_lifetime)
 
         if legacy_per_site_config is not None:
             _apply_legacy_constructor_config(self, legacy_per_site_config)

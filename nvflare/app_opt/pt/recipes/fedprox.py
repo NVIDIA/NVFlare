@@ -75,6 +75,7 @@ class FedProxRecipe(FedAvgRecipe):
         cuda_empty_cache: Whether clients empty the CUDA cache during cleanup.
         fedprox_mu: Finite positive proximal coefficient. Defaults to 0.01.
         enable_disk_aggregation: Enable disk-backed server aggregation and safetensors model persistence.
+        execution_lifetime: Keep client compute for the job or recreate it for each task.
     """
 
     def __init__(
@@ -114,6 +115,7 @@ class FedProxRecipe(FedAvgRecipe):
         cuda_empty_cache: bool = False,
         fedprox_mu: float = 0.01,
         enable_disk_aggregation: bool = False,
+        execution_lifetime: str = "job",
     ):
         # FedAvgRecipe builds the controller through _get_controller_kwargs(), so this must precede super().__init__.
         self.fedprox_mu = validate_fedprox_mu(fedprox_mu)
@@ -151,6 +153,7 @@ class FedProxRecipe(FedAvgRecipe):
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
             enable_disk_aggregation=enable_disk_aggregation,
+            execution_lifetime=execution_lifetime,
         )
 
     def _get_controller_kwargs(self) -> dict[str, Any]:
