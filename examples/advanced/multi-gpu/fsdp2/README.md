@@ -12,6 +12,7 @@ Each GPU runs one process, called a rank. The training loop uses native PyTorch 
 
 - Linux, four BF16-capable CUDA GPUs, and NCCL support.
 - Python 3.10 or later and CUDA-enabled PyTorch 2.6 or later.
+- Newer PyTorch versions using Triton need a C compiler and matching Python development headers.
 - Substantial host RAM for the server and full-state exchange; plan for at least 128 GB for the simulation.
 
 The default job was validated on four NVIDIA A10G 24 GB GPUs with PyTorch 2.6 and CUDA 12.6.
