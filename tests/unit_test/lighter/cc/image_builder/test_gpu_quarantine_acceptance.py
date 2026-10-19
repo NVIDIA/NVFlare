@@ -33,7 +33,7 @@ def load_hardware_tests():
 
 
 class GPUQuarantineAcceptanceTests(unittest.TestCase):
-    def exercise(self, exit_seconds, *, audit_seconds=0, cleanup_seconds=0, hardware=None):
+    def exercise(self, exit_seconds, *, workload_stop_seconds=0, cleanup_seconds=0, hardware=None, terminal=True):
         hardware = hardware or load_hardware_tests()
         clock = SimpleNamespace(now=100.0)
         started = clock.now
@@ -57,11 +57,15 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
             clock.now += seconds
 
         def read_log(**kwargs):
-            return '{"decision":"quarantine"}' if clock.now - started >= audit_seconds else ""
+            if clock.now - started < exit_seconds:
+                return ""
+            message = "CVM bootstrap failed; PID 1 will power off\n" if terminal else ""
+            return message + "Power down\n"
 
         def request(path="/state", method="GET"):
-            if method != "POST":
+            if method != "POST" and clock.now - started >= workload_stop_seconds:
                 raise OSError("workload is stopped")
+            return b"{}"
 
         @contextlib.contextmanager
         def drop_egress(*args):
@@ -92,15 +96,15 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
             terminal_gpu_quarantine=True,
             fail_closed_seconds=float(exit_seconds),
         )
-        self.assertEqual(case.request.call_count, 2)
+        case.request.assert_any_call("/periodic", "POST")
         return case
 
-    def test_exit_before_quarantine_is_rejected(self):
-        with self.assertRaisesRegex(AssertionError, "before entering quarantine"):
-            self.exercise(0, audit_seconds=1)
+    def test_clean_terminal_poweroff_does_not_require_an_advisory_record(self):
+        self.exercise(1)
 
-    def test_shutdown_between_polls_uses_final_quarantine_log(self):
-        self.exercise(1, audit_seconds=1)
+    def test_workload_must_stop_within_the_containment_budget(self):
+        with self.assertRaisesRegex(AssertionError, "did not stop the workload"):
+            self.exercise(646, workload_stop_seconds=466)
 
     def test_terminal_poweroff_lifetime_boundaries(self):
         for lifetime in (1, 120, 645):
@@ -111,8 +115,9 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
         with self.assertRaises(subprocess.TimeoutExpired):
             self.exercise(646)
 
-    def test_delayed_audit_before_poweroff_is_observed(self):
-        self.exercise(300, audit_seconds=120)
+    def test_terminal_bootstrap_failure_must_survive_shutdown(self):
+        with self.assertRaisesRegex(AssertionError, "CVM bootstrap failed"):
+            self.exercise(1, terminal=False)
 
     def test_fault_cleanup_does_not_change_measured_lifetime(self):
         self.exercise(120, cleanup_seconds=900)

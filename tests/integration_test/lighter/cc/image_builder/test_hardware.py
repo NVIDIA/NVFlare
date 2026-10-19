@@ -496,33 +496,31 @@ class HardwareTests(unittest.TestCase):
         # Periodic check, quarantine containment, and a bounded scheduling
         # allowance. GPU Ready-state revocation is terminal for this guest.
         poweroff_timeout = periodic_timeout(config) + 2 * REVOCATION_TIMEOUT_SECONDS + 45
-        poweroff_confirmed = False
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
             deadline = started + entry_timeout
             while time.monotonic() < deadline:
-                exited = self.process.poll() is not None
-                text = self.logs[-1].read_text(errors="replace")
-                if exited:
-                    # QEMU may exit between polls after writing the terminal
-                    # quarantine record. Inspect the final log and confirm a
-                    # clean poweroff before deciding containment was too early.
-                    self.assert_powered_off()
-                    poweroff_confirmed = True
-                if '"decision":"quarantine"' in text.replace(" ", ""):
+                if self.process.poll() is not None:
                     break
-                self.assertFalse(exited, "Guest powered off before entering quarantine")
+                try:
+                    self.request()
+                except (OSError, urllib.error.URLError):
+                    break
                 time.sleep(1)
             else:
-                self.fail("GPU attestation failure did not enter quarantine within its bounded budget")
-            with self.assertRaises((OSError, urllib.error.URLError)):
-                self.request()
+                self.fail("GPU attestation failure did not stop the workload within its bounded budget")
             self.process.wait(timeout=max(0, started + poweroff_timeout - time.monotonic()))
             # Measure before firewall cleanup, which can take additional time.
             elapsed = time.monotonic() - started
             self.assertLessEqual(elapsed, poweroff_timeout)
-        if not poweroff_confirmed:
-            self.assert_powered_off()
+        with self.assertRaises((OSError, urllib.error.URLError)):
+            self.request()
+        self.assert_powered_off()
+        # Authorization and diagnostic records are advisory and may be lost
+        # when the supervisor exits. The bootstrap failure and PID 1 poweroff
+        # messages are emitted synchronously and survive the shutdown.
+        text = self.logs[-1].read_text(errors="replace")
+        self.assertIn("CVM bootstrap failed; PID 1 will power off", text)
         self.result(
             periodic_gpu_denial=True,
             backend_nras_drop=True,
