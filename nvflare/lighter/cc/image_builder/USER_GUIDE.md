@@ -236,28 +236,33 @@ retains its watchdog.
 
 A failed periodic check no longer powers the guest off at once. The supervisor
 enters quarantine: it stops the application units, Docker and containerd,
-revokes GPU readiness, unmounts `/vault` and closes its mapping, which drops the
-key from the kernel, then retries a fresh appraisal and key retrieval once a
-minute for up to fifteen minutes. If a GPU readiness-reset command fails,
-bounded readback must confirm the configured number of distinct GPUs and their
-Not Ready state before retries can continue. Ready, unknown or malformed output,
-a query error, or failed vault closure forces poweroff after vault cleanup is
-attempted. Not Ready prevents new CUDA work; it does not establish GPU-memory
-erasure.
+revokes GPU readiness when configured, and unmounts `/vault` and closes its
+mapping, which drops the key from the kernel. CPU-only guests then retry a fresh
+appraisal and key retrieval once a minute for up to fifteen minutes.
 
-A successful retry re-verifies the same vault identity, re-mounts the vault,
-restores GPU readiness and restarts the application units. The supervisor queues
-`quarantine` and recovery `allow` authorization records. A readiness-reset error
-queues at most one separate console-only `CVM_DIAGNOSTIC` record with code
-`gpu_readiness_revoke_failed` per quarantine episode, without adding a decision
-value or writing the diagnostic to `attestation.log`. These advisory records may
-be dropped when logging is congested. If recovery eligibility expires, or
-containment or an internal supervisor operation fails, PID 1 forces poweroff.
-The 900-second recovery deadline never resets; retry cleanup and terminal
-cleanup each have a separate 180-second bound and can extend final poweroff
-beyond that deadline. Bootstrap failures still force poweroff after bounded
-cleanup; an integrity failure or exit of either supervisor still invokes
-PID 1's forced-poweroff policy.
+GPU quarantine is terminal for the running guest. After workload stop, Ready
+state revocation, and vault closure, the supervisor exits and PID 1 forces
+poweroff; it never runs `reopen`, restores Ready state, or restarts the workload
+in that VM. If the readiness-reset command fails, bounded readback must confirm
+the configured number of distinct GPUs and their Not Ready state before
+containment can complete. Ready, unknown or malformed output, a query error, or
+failed vault closure remains fatal after vault cleanup is attempted. Not Ready
+prevents new CUDA work; it does not establish GPU-memory erasure. Launch a new
+guest to recover GPU service.
+
+A successful CPU-only retry re-verifies the same vault identity, re-mounts the
+vault and restarts the application units. The supervisor queues `quarantine` and
+recovery `allow` authorization records. GPU containment queues the separate
+console-only `CVM_DIAGNOSTIC` code `gpu_quarantine_terminal`; a readiness command
+error followed by confirmed Not Ready state also queues
+`gpu_readiness_revoke_failed`. These advisory records add no decision value, are
+not written to `attestation.log`, and may be dropped when logging is congested.
+If CPU recovery eligibility expires, or containment or an internal supervisor
+operation fails, PID 1 forces poweroff. The CPU-only 900-second recovery deadline
+never resets; retry cleanup and terminal cleanup each have a separate 180-second
+bound and can extend final poweroff beyond that deadline. Bootstrap failures
+still force poweroff after bounded cleanup; an integrity failure or exit of
+either supervisor still invokes PID 1's forced-poweroff policy.
 `cvm_app.service` stops its container itself on SIGTERM, so a requested stop is
 not a workload failure; an unexpected container exit keeps its status and
 triggers the forced power-off. Development images use the same unit files and

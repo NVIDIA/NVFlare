@@ -65,21 +65,23 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(link.read_bytes(), b"first\nsecond\n")
 
     def test_diagnostic_has_separate_console_stream_and_no_identity_or_sidecar(self):
-        with (
-            patch.object(audit.Path, "exists", return_value=False),
-            patch.object(audit, "read_json") as read,
-            patch.object(audit, "append") as append_log,
-            patch("builtins.print") as output,
-        ):
-            audit._write(audit._Diagnostic("gpu_readiness_revoke_failed"))
-        output.assert_called_once()
-        line = output.call_args.args[0]
-        self.assertTrue(line.startswith("CVM_DIAGNOSTIC="))
-        value = json.loads(line.removeprefix("CVM_DIAGNOSTIC="))
-        self.assertEqual(set(value), {"ts", "code"})
-        self.assertEqual(value["code"], "gpu_readiness_revoke_failed")
-        read.assert_not_called()
-        append_log.assert_not_called()
+        for code in ("gpu_readiness_revoke_failed", "gpu_quarantine_terminal"):
+            with (
+                self.subTest(code=code),
+                patch.object(audit.Path, "exists", return_value=False),
+                patch.object(audit, "read_json") as read,
+                patch.object(audit, "append") as append_log,
+                patch("builtins.print") as output,
+            ):
+                audit._write(audit._Diagnostic(code))
+            output.assert_called_once()
+            line = output.call_args.args[0]
+            self.assertTrue(line.startswith("CVM_DIAGNOSTIC="))
+            value = json.loads(line.removeprefix("CVM_DIAGNOSTIC="))
+            self.assertEqual(set(value), {"ts", "code"})
+            self.assertEqual(value["code"], code)
+            read.assert_not_called()
+            append_log.assert_not_called()
 
     def test_authorization_writer_retains_six_fields_and_sidecar(self):
         with (
@@ -115,7 +117,14 @@ class AuditTests(unittest.TestCase):
                 audit.emit_diagnostic(code)
             enqueue.assert_not_called()
             audit.emit_diagnostic("gpu_readiness_revoke_failed")
-        enqueue.assert_called_once_with(audit._Diagnostic("gpu_readiness_revoke_failed"))
+            audit.emit_diagnostic("gpu_quarantine_terminal")
+        self.assertEqual(
+            enqueue.call_args_list,
+            [
+                unittest.mock.call(audit._Diagnostic("gpu_readiness_revoke_failed")),
+                unittest.mock.call(audit._Diagnostic("gpu_quarantine_terminal")),
+            ],
+        )
 
     def test_both_record_types_share_bounded_nonblocking_queue(self):
         records = queue.Queue(maxsize=8)

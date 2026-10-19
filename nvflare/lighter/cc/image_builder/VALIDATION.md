@@ -6,6 +6,24 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Terminal GPU quarantine source validation — 2026-10-19 UTC
+
+The runtime now treats GPU Ready-state revocation as terminal for the running
+VM. A periodic GPU appraisal failure stops the workloads and container daemons,
+revokes Ready state, closes the vault, and exits for PID 1 forced poweroff
+without calling `reopen`. CPU-only profiles retain the bounded recovery loop.
+The hardware acceptance contract now requires recovery only for CPU profiles
+and requires bounded terminal poweroff for GPU profiles.
+
+Focused runtime, audit, acceptance-contract, and lab-helper tests passed: **79
+passed, 22 skipped, 70 subtests passed**. The complete standalone builder unit
+suite ran **372 tests** on macOS: 331 passed, 36 skipped, and the five existing
+Linux-platform assumptions remained non-passing (three `memfd_create` errors
+and two `/private/var` canonical-path differences). Project Black, isort, flake8,
+and agent-skill style checks passed. No physical GPU test was run; readiness
+revocation and poweroff timing still require the opt-in GPU hardware acceptance
+case before production approval.
+
 ## AMD portable launch policy — 2026-10-01 UTC
 
 The checked-in `cpu-2026.09-r5` profile defaults `snp_single_socket` to
@@ -319,8 +337,9 @@ platform-related failures out of 229; all four cases pass on Linux.
 
 The Linux checks above alone do not validate guest boot or QMP power-off; the
 fresh CPU hardware run and its shutdown warnings are recorded above. Real-guest
-quarantine/reopen, lockdown compatibility with the pinned NVIDIA modules, chrony
-NTS startup and finalize hygiene inside a construction VM remain unvalidated.
+CPU quarantine/reopen, terminal GPU quarantine, lockdown compatibility with the
+pinned NVIDIA modules, chrony NTS startup and finalize hygiene inside a
+construction VM remain unvalidated.
 The lab-host block tests do not establish compatibility with every guest kernel.
 Every measured root must be rebuilt, remeasured and reapproved; earlier hardware
 records do not cover these changes.

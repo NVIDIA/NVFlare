@@ -33,7 +33,7 @@ def load_hardware_tests():
 
 
 class GPUQuarantineAcceptanceTests(unittest.TestCase):
-    def exercise(self, exit_seconds, *, audit_seconds=0, cleanup_seconds=0, late_request_seconds=0, hardware=None):
+    def exercise(self, exit_seconds, *, audit_seconds=0, cleanup_seconds=0, hardware=None):
         hardware = hardware or load_hardware_tests()
         clock = SimpleNamespace(now=100.0)
         started = clock.now
@@ -62,8 +62,6 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
 
         def request(path="/state", method="GET"):
             if method != "POST":
-                if case.request.call_count == 3:
-                    clock.now += late_request_seconds
                 raise OSError("workload is stopped")
 
         @contextlib.contextmanager
@@ -92,35 +90,30 @@ class GPUQuarantineAcceptanceTests(unittest.TestCase):
             periodic_gpu_denial=True,
             backend_nras_drop=True,
             workload_denied_while_isolated=True,
-            fail_closed_seconds=float(exit_seconds),
+            terminal_gpu_quarantine=True,
+            fail_closed_seconds=float(max(exit_seconds, audit_seconds)),
         )
-        self.assertEqual(case.request.call_count, 3)
+        self.assertEqual(case.request.call_count, 2)
         return case
 
-    def test_early_poweroff_is_rejected_even_with_slow_fault_cleanup(self):
-        for cleanup in (0, 900):
-            with self.subTest(cleanup=cleanup):
-                with self.assertRaisesRegex(AssertionError, "quarantine recovery window"):
-                    self.exercise(120, cleanup_seconds=cleanup)
+    def test_exit_before_quarantine_is_rejected(self):
+        with self.assertRaisesRegex(AssertionError, "before entering quarantine"):
+            self.exercise(0)
 
-    def test_minimum_and_upper_lifetime_boundaries(self):
-        for lifetime in (900, 901, 1725):
+    def test_terminal_poweroff_lifetime_boundaries(self):
+        for lifetime in (1, 120, 645):
             with self.subTest(lifetime=lifetime):
                 self.exercise(lifetime)
 
     def test_poweroff_after_upper_budget_is_rejected(self):
         with self.assertRaises(subprocess.TimeoutExpired):
-            self.exercise(1726)
+            self.exercise(646)
 
-    def test_delayed_audit_does_not_reset_minimum_lifetime(self):
-        self.exercise(900, audit_seconds=300)
+    def test_delayed_audit_still_observes_terminal_poweroff(self):
+        self.exercise(120, audit_seconds=300)
 
     def test_fault_cleanup_does_not_change_measured_lifetime(self):
-        self.exercise(901, cleanup_seconds=900)
-
-    def test_slow_workload_probe_cannot_hide_early_guest_exit(self):
-        with self.assertRaisesRegex(AssertionError, "minimum-lifetime observation"):
-            self.exercise(120, late_request_seconds=900)
+        self.exercise(120, cleanup_seconds=900)
 
 
 if __name__ == "__main__":

@@ -110,10 +110,12 @@ ACCEPTANCE_CHECKS = {
     "writable_applog",
     "root_disk_corruption",
     "ssh_service_and_socket_disabled",
-    "attestation_quarantine_recovery",
     "clock_synchronized_before_attestation",
     "root_overlay_capacity",
 }
+
+
+CPU_RECOVERY_ACCEPTANCE_CHECKS = {"attestation_quarantine_recovery"}
 
 
 SNP_ACCEPTANCE_CHECKS = {"snp_collateral_availability"}
@@ -134,6 +136,8 @@ def required_acceptance_checks(manifest):
         checks |= SNP_ACCEPTANCE_CHECKS
     if manifest.get("contract", {}).get("gpu") == "nvidia_cc":
         checks |= GPU_ACCEPTANCE_CHECKS
+    else:
+        checks |= CPU_RECOVERY_ACCEPTANCE_CHECKS
     return checks
 
 
