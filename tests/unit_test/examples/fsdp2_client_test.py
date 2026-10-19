@@ -124,12 +124,20 @@ def test_two_rank_full_state_exchange_and_stop(tmp_path):
     mp.spawn(_check_collective_exchange, args=(str(tmp_path / "rendezvous"), str(model_dir)), nprocs=2, join=True)
 
 
-def test_job_export_packages_training_and_tensor_exchange(tmp_path):
+@pytest.mark.parametrize("local_model", [False, True])
+def test_job_export_packages_training_and_tensor_exchange(tmp_path, local_model):
+    model_name = "Qwen/Qwen2.5-1.5B"
+    expected_model_name = model_name
+    if local_model:
+        model_dir = tmp_path / "local model"
+        model_dir.mkdir()
+        model_name = os.path.relpath(model_dir, EXAMPLE_DIR)
+        expected_model_name = str(model_dir.resolve())
     env = os.environ.copy()
     env["HF_HUB_OFFLINE"] = "1"
     env["PYTHONPATH"] = os.pathsep.join((str(REPO_ROOT), env.get("PYTHONPATH", "")))
     subprocess.run(
-        [sys.executable, "job.py", "--export", "--export-dir", str(tmp_path)],
+        [sys.executable, "job.py", "--model_name", model_name, "--export", "--export-dir", str(tmp_path)],
         cwd=EXAMPLE_DIR,
         env=env,
         check=True,
@@ -146,3 +154,7 @@ def test_job_export_packages_training_and_tensor_exchange(tmp_path):
     assert "--standalone" in executor["command"]
     assert executor["server_expected_format"] == "pytorch"
     assert executor["shutdown_timeout"] == 10.0
+    assert executor["command"][executor["command"].index("--model_name") + 1] == expected_model_name
+    server = json.loads((app_dir / "config" / "config_fed_server.json").read_text())
+    persistor = next(component for component in server["components"] if component["id"] == "persistor")
+    assert persistor["args"]["model"]["args"]["model_name"] == expected_model_name

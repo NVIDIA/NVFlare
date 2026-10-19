@@ -37,6 +37,10 @@ def main():
     if min(args.num_rounds, args.local_steps, args.eval_steps, args.batch_size) < 1:
         parser.error("rounds, steps and batch_size must be positive")
 
+    model_path = Path(args.model_name).expanduser()
+    if model_path.is_dir():
+        args.model_name = str(model_path.resolve())
+
     recipe = FedAvgRecipe(
         name="pt_fsdp2",
         # Defer the large CPU model allocation/download until the server starts.
