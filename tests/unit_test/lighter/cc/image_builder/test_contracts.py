@@ -1490,31 +1490,38 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(execute.call_args.kwargs["timeout"], 7)
         self.assertEqual(execute.call_args.args[0], ["/usr/bin/chronyc", "waitsync", "5", "0.5", "1000", "1"])
 
-    def test_cold_clock_collects_samples_before_enforcing_final_quality_gate(self):
+    def test_cold_clock_allows_natural_polls_before_enforcing_final_quality_gate(self):
         with patch("cvm.runtime.bootstrap.run") as execute:
-            runtime.time_sync(max_tries=90, initialize=True)
+            runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
         self.assertEqual(
             [call.args[0] for call in execute.call_args_list],
             [
                 ["/usr/bin/chronyc", "maxupdateskew", "1000"],
                 ["/usr/bin/chronyc", "waitsync", "30", "0.5", "0", "1"],
-                ["/usr/bin/chronyc", "burst", "8/16"],
-                ["/usr/bin/chronyc", "waitsync", "90", "0.5", "1000", "1"],
+                ["/usr/bin/chronyc", "waitsync", "180", "0.5", "1000", "1"],
             ],
         )
-        self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 2, 92])
+        self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 182])
 
     def test_cold_clock_tolerates_preliminary_wait_failure(self):
-        failure = [None, BuildError("clock not ready"), None, None]
+        failure = [None, BuildError("clock not ready"), None]
         with patch("cvm.runtime.bootstrap.run", side_effect=failure) as execute:
-            runtime.time_sync(max_tries=90, initialize=True)
-        self.assertEqual(execute.call_count, 4)
+            runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
+        self.assertEqual(execute.call_count, 3)
 
-    def test_cold_clock_rejects_setup_burst_or_final_gate_failure(self):
-        for failure_at in (0, 2, 3):
+    def test_cold_clock_rejects_setup_or_final_gate_failure(self):
+        for failure_at in (0, 2):
             with patch("cvm.runtime.bootstrap.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
                 with self.assertRaises(BuildError):
-                    runtime.time_sync(max_tries=90, initialize=True)
+                    runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
+
+    def test_clock_gate_rejects_invalid_budget(self):
+        for max_tries in (0, runtime.CLOCK_INITIAL_SYNC_TRIES + 1, True, 1.5):
+            with (
+                self.subTest(max_tries=max_tries),
+                self.assertRaisesRegex(BuildError, "Invalid clock synchronization budget"),
+            ):
+                runtime.time_sync(max_tries=max_tries)
 
     def test_monitor_status_is_fail_closed(self):
         healthy_status("0 123456 integrity 0 123456 0")
