@@ -17,8 +17,8 @@ Client training script for federated SVM with scikit-learn.
 Uses the NVFlare Client API for federated learning.
 
 SVM training requires two rounds:
-- Round 0: Train local SVM, extract and send support vectors
-- Round 1: Validate using global support vectors
+- Round 0: Train local SVM; send exact support feature rows and labels to the server
+- Round 1: Refit on server-selected support rows and labels; validate locally
 """
 
 import argparse
@@ -98,7 +98,7 @@ def main():
             local_svm = svm_lib.SVC(kernel=kernel)
             local_svm.fit(X_train, y_train)
 
-            # Extract support vectors
+            # support_ indexes original training rows, not anonymized model parameters.
             support_indices = local_svm.support_
             local_support_x = X_train[support_indices]
             local_support_y = y_train[support_indices]
@@ -106,7 +106,7 @@ def main():
             print("Local SVM training complete")
             print(f"Number of support vectors: {len(support_indices)}")
 
-            # Send support vectors to server
+            # Send selected training feature rows and their labels to the server.
             params = {
                 "support_x": local_support_x,
                 "support_y": local_support_y,
@@ -132,7 +132,7 @@ def main():
             auc = roc_auc_score(y_valid, y_pred)
             print(f"Validation AUC: {auc:.4f}")
 
-            # No parameters to send in round 1 (just validation)
+            # Return the same global support rows with the validation metric.
             params = {
                 "support_x": global_support_x,
                 "support_y": global_support_y,

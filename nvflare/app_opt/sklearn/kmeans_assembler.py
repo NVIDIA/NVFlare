@@ -27,10 +27,14 @@ class KMeansAssembler(Assembler):
 
     This assembler implements the aggregation logic for federated K-Means clustering
     following the Mini-Batch K-Means approach where:
-    - Round 0: Collect initial centers from all clients and perform one round of K-Means
-      to generate the initial global centers
-    - Subsequent rounds: Aggregate centers using weighted averaging based on counts,
-      following the mini-batch update rule
+    - Round 0: Fit KMeans to the pooled client seeds to generate global centers.
+      With the example client, k-means++ seeds are exact training feature rows.
+    - Subsequent rounds: Average corresponding local centers and the previous
+      global centers, weighted by per-center update counts. Counts accumulate
+      across rounds and may include repeated assignments of the same sample.
+
+    Global centers are returned to clients. Seed rows and later centers can
+    disclose individual feature rows; this assembler provides no privacy filter.
 
     The assembler maintains:
     - center: Global cluster centers
@@ -59,9 +63,8 @@ class KMeansAssembler(Assembler):
             n_feature = self.collection[client_0]["center"].shape[1]
             self.center = np.zeros([self.n_cluster, n_feature])
             self.count = np.zeros([self.n_cluster])
-            # perform one round of KMeans over the submitted centers
-            # to be used as the original center points
-            # no count for this round
+            # Fit KMeans to pooled seeds (exact feature rows with the example client).
+            # Broadcast the resulting global centers; no counts in this round.
             center_collect = []
             for _, record in self.collection.items():
                 center_collect.append(record["center"])
@@ -77,6 +80,9 @@ class KMeansAssembler(Assembler):
                 for _, record in self.collection.items():
                     centers_global_rescale += record["center"][center_idx] * record["count"][center_idx]
                     self.count[center_idx] += record["count"][center_idx]
+                if self.count[center_idx] == 0:
+                    # Keep the initial center until a client contributes to this cluster.
+                    continue
                 # Rescale to compute mean of all points (old and new combined)
                 alpha = 1 / self.count[center_idx]
                 centers_global_rescale *= alpha

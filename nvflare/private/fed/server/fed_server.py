@@ -69,7 +69,7 @@ from nvflare.private.defs import (
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
-    JobFailureMsgKey,
+    JobOutcomeMsgKey,
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
@@ -461,7 +461,8 @@ class FederatedServer(BaseServer):
 
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
-            topic=CellChannelTopic.REPORT_JOB_FAILURE,
+            topic=CellChannelTopic.REPORT_JOB_OUTCOME,
+            # Preserve existing overrides through the legacy forwarding method.
             cb=self.process_job_failure,
         )
 
@@ -906,32 +907,33 @@ class FederatedServer(BaseServer):
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 
-    def process_job_failure(self, request: Message):
+    def process_job_outcome(self, request: Message):
+        """Apply a client's terminal result and resolve its pending outcome, including success."""
         payload = request.payload
         client = request.get_header(key=MessageHeaderKey.ORIGIN)
 
         # Validate sender identity using token only.
         # Note: validate_client() cannot be used here because the
-        # REPORT_JOB_FAILURE message (sent by ClientExecutor via
+        # REPORT_JOB_OUTCOME message (sent by ClientExecutor via
         # send_request) does not carry a PROJECT_NAME header —
         # only TOKEN is injected by the outgoing auth filter.
         token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token or not self.client_manager.is_from_authorized_client(token):
-            self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
+            self.logger.warning(f"Dropped unauthenticated job outcome report from {client}")
             return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
 
         if not isinstance(payload, dict):
             self.logger.error(
-                f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
+                f"dropped bad job outcome report from {client}: expect payload to be dict but got {type(payload)}"
             )
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
-        job_id = payload.get(JobFailureMsgKey.JOB_ID)
+        job_id = payload.get(JobOutcomeMsgKey.JOB_ID)
         if not job_id:
-            self.logger.error(f"dropped bad Job Failure report from {client}: no job_id")
+            self.logger.error(f"dropped bad job outcome report from {client}: no job_id")
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
-        code = payload.get(JobFailureMsgKey.CODE)
-        reason = payload.get(JobFailureMsgKey.REASON, "?")
+        code = payload.get(JobOutcomeMsgKey.CODE)
+        reason = payload.get(JobOutcomeMsgKey.REASON, "?")
         registered_client = self.client_manager.clients.get(token)
         if not registered_client:
             self.logger.warning(f"Dropped terminal outcome from unknown client token for job {job_id}")
@@ -958,6 +960,10 @@ class FederatedServer(BaseServer):
                 job_runner.stop_run(job_id, fl_ctx)
         job_runner.resolve_client_outcome(job_id, client_name)
         return make_cellnet_reply(F3ReturnCode.OK, "", None)
+
+    def process_job_failure(self, request: Message):
+        """Compatibility entry point; use process_job_outcome for all terminal results."""
+        return self.process_job_outcome(request)
 
     def client_heartbeat(self, request: Message) -> Message:
 

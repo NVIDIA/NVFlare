@@ -36,11 +36,58 @@ or editable NVFlare installation.
 | POC | `PocEnv` provisions, starts, and stops a local system for this job. | `python job.py --env poc` |
 | Production | `ProdEnv` connects to an already-running system through an authorized admin startup kit. | `python job.py --env prod --startup-kit <admin-kit> --username <admin-identity>` |
 
-The Recipe, model, client script, data code, and local training loop stay the same across all three stages. With the
-fixed seeds, local runs currently report 75% final accuracy on site-1 and 77% on site-2; these are observations,
-not benchmark claims or exact CI thresholds. Premerge CI checks that simulation and POC produce identical per-site
-final accuracies. Unit tests cover production argument handling, environment construction, and job export; they do
-not connect to a live production federation.
+The Recipe, model, client script, data code, and local training loop stay the same across all three stages. Unit tests
+verify the fixed model and data seeds, serialized model configuration, recipe construction, and client counts.
+Premerge functional tests exercise simulation and POC separately and require both sites to reach at least 60% final
+accuracy. The slower integration suite checks that simulation and POC produce identical per-site final accuracies;
+local runs currently report 75% on site-1 and 77% on site-2. Tests cover production argument handling, environment
+construction, and job export, but do not connect to a live production federation.
+
+## Choose the client compute lifetime
+
+The default `--execution_lifetime job` retains each client's script and optimizer
+for the job. `--execution_lifetime task` starts a fresh CPU Process worker for each
+training or final global evaluation task. Both modes use the same `client.py`.
+Job mode retains its optimizer and loaders; task mode explicitly restores optimizer
+momentum, the training DataLoader generator and PyTorch RNG state with
+`torch.load` / `torch.save`:
+
+```bash
+python job.py --execution_lifetime task
+python job.py --env poc --execution_lifetime task
+python job.py --env prod --startup-kit /path/to/admin/startup-kit --execution_lifetime task
+```
+
+Use the same `--seed` in both modes to select the initial model and training
+shuffle seeds. For a controlled comparison, run both on CPU with the same thread
+count, batch size, epoch count and dataset. PyTorch thread settings remain unchanged
+unless `--torch_threads` is explicitly supplied. For example:
+
+```bash
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --seed 731
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --seed 731 --execution_lifetime task
+```
+
+Pass `--no-resume_training` with task lifetime to start each assignment with a fresh
+optimizer and shuffle generator. A seed alone does not preserve their advancing
+state across rounds. `flare.system_info()["task_checkpoint"]` supplies an isolated
+previous checkpoint path and a pending output path. The script selects the contents
+with PyTorch; the runtime binds the candidate to the result and promotes it after
+worker finalization, settlement and validation. Failed attempts cannot overwrite
+committed state, and result-submission retries reuse the completed result without
+training again. Checkpoints stay client-local and are not aggregated. The incoming
+server model supplies each round's weights; evaluation does not update the checkpoint.
+After missed rounds, the script restores the last earlier successful checkpoint,
+or starts fresh if the site has no checkpoint yet. Same/future-round and foreign
+job/site checkpoints are rejected. These paired runs qualify this explicitly checkpoint-aware example under matching CPU settings;
+lifetime alone cannot preserve arbitrary state in unchanged training scripts.
+Automatic worker retries and recovery after Client Job death are outside this scope.
+
+Task lifetime requires the in-process script backend, so omit
+`--launch_external_process`. This script's cross-site local-model submission needs
+its previous in-memory model and uses job lifetime. Final global evaluation remains
+the default for both lifetimes. All participating clients need this task execution
+support; the production command still connects to an already-running system.
 
 ## Run a job-scoped local POC
 

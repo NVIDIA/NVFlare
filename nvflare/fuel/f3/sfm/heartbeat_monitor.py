@@ -64,7 +64,7 @@ class HeartbeatMonitor(Thread):
     def _check_heartbeat(self):
 
         active_keys = set()
-        for sfm_conn in self.conns.values():
+        for sfm_conn in list(self.conns.values()):
             conn_key = sfm_conn.get_name() if hasattr(sfm_conn, "get_name") else str(id(sfm_conn))
             active_keys.add(conn_key)
 

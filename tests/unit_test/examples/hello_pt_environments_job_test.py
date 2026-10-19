@@ -23,7 +23,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.recipe.run import Run
-from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module
+from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module, run_hello_pt_export
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
@@ -101,13 +101,18 @@ def test_environment_selection_uses_the_same_client_count(tmp_path):
     assert prod_env.username == "researcher@example.com"
 
 
-def test_default_recipe_forwards_only_application_selection(monkeypatch):
+@pytest.mark.parametrize(
+    "environment_args",
+    [[], ["--env", "poc"], ["--env", "prod", "--startup-kit", "/tmp/admin"]],
+    ids=["sim", "poc", "prod"],
+)
+def test_application_recipe_is_independent_of_environment(monkeypatch, environment_args):
     job_module = _load_job_module()
     calls = []
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -116,7 +121,7 @@ def test_default_recipe_forwards_only_application_selection(monkeypatch):
         lambda value, tracking_type: calls.append(("tracking", value, tracking_type)),
     )
 
-    result = job_module.create_recipe(job_module.parse_args([]))
+    result = job_module.create_recipe(job_module.parse_args(environment_args))
 
     assert result is recipe
     assert recipe_kwargs["model"] == "model"
@@ -133,7 +138,7 @@ def test_advanced_recipe_controls_are_explicit(monkeypatch):
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -320,6 +325,21 @@ def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch)
     assert executor_args["task_script_path"] == "client.py"
 
 
+def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
+        args = job_module.parse_args(["--execution_lifetime", "task", "--seed", "731", "--no-resume_training"])
+        recipe = job_module.create_recipe(args)
+        monkeypatch.chdir(ADVANCED_DIR)
+        recipe.export(job_dir=str(tmp_path), env=job_module.create_environment(args))
+    job_dir = tmp_path / "hello-pt"
+    custom = job_dir / "app" / "custom"
+    assert all((custom / name).is_file() for name in ("client.py", "model.py", "prepare_data.py"))
+    config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+    executor_args = config["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_path"] == "client.py"
+    assert executor_args["task_script_args"] == ["--dataset", "synthetic", "--seed", "731", "--no-resume_training"]
+
+
 @pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, GeneratorExit, pytest.fail.Exception])
 def test_monitoring_interruption_stops_poc(monkeypatch, error_type):
     job_module = _load_job_module()
@@ -348,12 +368,15 @@ def test_negative_memory_gc_interval_is_rejected_before_execution(monkeypatch, c
 def test_copied_example_reports_missing_shared_application(tmp_path):
     script = tmp_path / "job.py"
     script.write_text((ADVANCED_DIR / "job.py").read_text())
-    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=10)
+    # The missing-checkout guard uses only the standard library. Isolate it from
+    # site initialization and environment hooks that can stall subprocess startup.
+    result = subprocess.run([sys.executable, "-I", "-S", str(script)], capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert "full NVFlare checkout" in result.stderr
     assert "Traceback" not in result.stderr
 
 
+@pytest.mark.xdist_group(name="hello_pt_cli_export")
 @pytest.mark.parametrize("env_name", ["sim", "poc", "prod"])
 def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name):
     command = [
@@ -373,13 +396,9 @@ def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name):
         kit = tmp_path / "admin"
         kit.mkdir()
         command.extend(["--startup-kit", str(kit)])
-    subprocess.run(
+    run_hello_pt_export(
         command,
         cwd=ADVANCED_DIR,
         env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
     )
     assert (tmp_path / "export" / "hello-pt" / "meta.json").is_file()

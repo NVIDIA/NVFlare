@@ -63,7 +63,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 
   * :github_nvflare_link:`Federated Linear Model with Scikit-learn (GitHub) <examples/advanced/sklearn-linear>` - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
   * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
-  * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_.
+  * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - Two-stage `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_ training that shares selected client feature rows and labels with the server and clients sampled for validation.
   * :github_nvflare_link:`Federated XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches. Also includes an example of vertical federated XGBoost.
 
 6. Medical Image Analysis
@@ -115,7 +115,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 11. Federated Large Language Model (LLM)
 ========================================
 
-  * :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` - Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
+  * :github_nvflare_link:`Parameter Efficient Fine Tuning <integration/nemo/examples/peft>` - Federated LoRA adaptation of Nemotron 3 Nano and Nemotron 3.5 Lightning with NeMo AutoModel.
   * :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` - Example to fine-tune all parameters of a LLM on supervised data.
   * :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` - Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 

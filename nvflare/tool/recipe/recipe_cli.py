@@ -271,7 +271,7 @@ _DOCUMENTED_RECIPE_SPECS = {
     "kmeans-sklearn": {
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "algorithm": "kmeans",
         "aggregation": "cluster_centers",

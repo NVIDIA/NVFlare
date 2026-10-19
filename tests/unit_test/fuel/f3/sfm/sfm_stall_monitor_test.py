@@ -60,6 +60,16 @@ class MutableFakeSfmConn(FakeSfmConn):
         self._stall_sec = stall_sec
 
 
+def test_heartbeat_can_remove_connection_while_iterating():
+    conn = FakeSfmConn(stall_sec=0, last_activity=0)
+    connections = {"test": conn}
+    monitor = HeartbeatMonitor(connections)
+    monitor.curr_time = monitor.interval + 1
+    conn.send_heartbeat.side_effect = lambda *_: connections.clear()
+    monitor._check_heartbeat()
+    assert not connections
+
+
 class DummySendConn:
     def __init__(self, should_raise=False):
         self.name = "dummy"

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+from concurrent.futures import CancelledError
 from typing import Any, Dict, List
 
 import aiohttp
@@ -22,8 +23,8 @@ from aiohttp.web_response import StreamResponse
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers import net_utils
+from nvflare.fuel.f3.drivers.aio_base_driver import AioBaseDriver
 from nvflare.fuel.f3.drivers.aio_context import AioContext
-from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
@@ -83,7 +84,7 @@ class WsConnection(Connection):
             self.close()
 
 
-class AioHttpDriver(BaseDriver):
+class AioHttpDriver(AioBaseDriver):
     """Async HTTP driver using aiohttp library"""
 
     def __init__(self):
@@ -112,14 +113,18 @@ class AioHttpDriver(BaseDriver):
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
 
-        self.app = web.Application(client_max_size=MAX_FRAME_SIZE)
-        self.app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
+        app = web.Application(client_max_size=MAX_FRAME_SIZE)
+        app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
 
         async def setup():
-            self.runner = web.AppRunner(self.app, access_log=None)
-            await self.runner.setup()
-            self.site = web.TCPSite(self.runner, host, port, ssl_context=self.ssl_context)
-            await self.site.start()
+            runner = web.AppRunner(app, access_log=None)
+            await runner.setup()
+            site = web.TCPSite(runner, host, port, ssl_context=self.ssl_context)
+            await site.start()
+            # Publish only after startup so shutdown cannot detach a partially started site.
+            self.app, self.runner, self.site = app, runner, site
+            if self.is_stopping() or connector.stopped.is_set() or self.stop_event.done():
+                await self._async_shutdown()
             await self.stop_event
 
         self.aio_context.run_coro(setup()).result()
@@ -139,10 +144,14 @@ class AioHttpDriver(BaseDriver):
                 async with session.ws_connect(url, ssl_context=self.ssl_context) as ws:
                     await self._connection_handler(ws)
 
-        self.aio_context.run_coro(async_connect()).result()
+        try:
+            self.aio_context.run_coro(self._run_connect(connector, async_connect)).result()
+        except CancelledError:
+            log.debug(f"Connector {connector} is cancelled")
 
     def shutdown(self):
-        self.aio_context.run_coro(self._async_shutdown())
+        self.stop_connection_admission()
+        return self.aio_context.run_coro(self._async_shutdown())
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
@@ -155,15 +164,24 @@ class AioHttpDriver(BaseDriver):
     # Internal methods
 
     async def _connection_handler(self, websocket):
+        # A pending upgrade or incoming request may complete after shutdown's
+        # connection snapshot. Do not admit it into the receive loop.
+        if self.is_stopping() or self.connector.stopped.is_set():
+            await websocket.close()
+            return
         conn = None
         try:
             conn = WsConnection(websocket, self.aio_context, self.connector, self.ssl_context)
-            self.add_connection(conn)
+            if not self.add_connection(conn):
+                await websocket.close()
+                return
             await self._read_loop(conn)
-            self.close_connection(conn)
         except Exception as ex:
             conn_info = str(conn) if conn else "N/A"
             log.error(f"Connection {conn_info} is closed due to error: {secure_format_exception(ex)}")
+        finally:
+            if conn:
+                self.close_connection(conn)
 
     async def _websocket_handler(self, request: Request) -> StreamResponse:
         ws = web.WebSocketResponse(max_msg_size=MAX_FRAME_SIZE)
@@ -191,18 +209,26 @@ class AioHttpDriver(BaseDriver):
                 break
 
     async def _async_shutdown(self):
-        self.close_all()
+        self.stop_connection_admission()
+        # Keep completion behind cleanup, including when shutdown calls overlap.
+        async with self._shutdown_lock:
+            await self._cancel_connect_tasks()
+            self.close_all()
 
-        if self.site:
-            await self.site.stop()
+            # Detach before awaiting so repeated shutdowns cannot clean up the same site.
+            site, self.site = self.site, None
+            runner, self.runner = self.runner, None
+            app, self.app = self.app, None
 
-        if self.runner:
-            await self.runner.cleanup()
+            if site:
+                await site.stop()
 
-        if self.app:
-            await self.app.shutdown()
-            await self.app.cleanup()
-            self.app = None
+            if runner:
+                await runner.cleanup()
 
-        if self.stop_event:
-            self.stop_event.set_result(None)
+            if app:
+                await app.shutdown()
+                await app.cleanup()
+
+            if self.stop_event and not self.stop_event.done():
+                self.stop_event.set_result(None)

@@ -19,13 +19,12 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 from types import SimpleNamespace
 
 import pytest
 
-from tests.hello_pt_test_utils import load_hello_pt_module
+from tests.hello_pt_test_utils import load_hello_pt_module, run_hello_pt_export
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
@@ -71,10 +70,14 @@ def test_zero_flag_defaults_are_portable_and_bounded():
     args = job_module.define_parser().parse_args([])
 
     assert vars(args) == {
+        "execution_lifetime": "job",
         "data_root": "/tmp/nvflare/data",
         "dataset": "synthetic",
         "n_clients": 2,
         "num_rounds": 3,
+        "seed": 202610,
+        "torch_threads": None,
+        "resume_training": None,
     }
 
 
@@ -95,6 +98,7 @@ def test_help_includes_recipe_export_options():
     assert "--export-dir EXPORT_DIR" in help_text
 
 
+@pytest.mark.xdist_group(name="hello_pt_cli_export")
 @pytest.mark.parametrize(
     "cell_id, expected_rounds, expected_train_args",
     [
@@ -112,14 +116,10 @@ def test_cli_notebook_exports_bundled_job_with_log_streaming(tmp_path, cell_id, 
     assert command[0] == "python"
     command[0] = sys.executable
     command[command.index("--job-dir") + 1] = str(tmp_path)
-    subprocess.run(
+    run_hello_pt_export(
         command,
         cwd=tutorial_dir,
         env={**os.environ, "PYTHONPATH": os.pathsep.join((repo_root, os.environ.get("PYTHONPATH", "")))},
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
     )
 
     job_dir = tmp_path / "hello-pt"
@@ -199,7 +199,7 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
         return recipe
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", make_recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
 
     result = job_module.create_recipe(job_module.define_parser().parse_args([]))
@@ -213,13 +213,14 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
     assert calls == [("final", recipe)]
 
 
+@pytest.mark.xdist_group(name="hello_pt_cli_export")
 @pytest.mark.parametrize("relative_cache", [False, True])
 def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
     cache_path = tmp_path / "remote site's cache"
     remote_cache = os.path.relpath(cache_path, example_dir) if relative_cache else str(cache_path)
-    subprocess.run(
+    run_hello_pt_export(
         [
             sys.executable,
             "job.py",
@@ -233,10 +234,6 @@ def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
         ],
         cwd=example_dir,
         env={**os.environ, "PYTHONPATH": os.pathsep.join((repo_root, os.environ.get("PYTHONPATH", "")))},
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
     )
     client_config = tmp_path / "export" / "hello-pt" / "app" / "config" / "config_fed_client.json"
     executor_args = json.loads(client_config.read_text())["executors"][0]["executor"]["args"]
@@ -250,7 +247,7 @@ def test_cifar_recipe_preserves_data_root_with_spaces(monkeypatch):
     recipe = object()
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: None)
 
     args = job_module.define_parser().parse_args(["--dataset", "cifar10", "--data_root", "/data/cifar cache"])
@@ -275,7 +272,7 @@ def test_cifar_remains_an_explicit_option(monkeypatch):
         return recipe
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", make_recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     args = job_module.define_parser().parse_args(["--dataset", "cifar10", "--data_root", "/data/cifar"])
 

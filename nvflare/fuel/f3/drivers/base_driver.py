@@ -15,6 +15,7 @@ import logging
 import threading
 from abc import ABC
 from typing import Dict, Optional
+from weakref import WeakKeyDictionary
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, ConnState
@@ -33,32 +34,64 @@ class BaseDriver(Driver, ABC):
         self.connections: Dict[str, Connection] = {}
         self.connector: Optional[ConnectorInfo] = None
         self.conn_lock = threading.Lock()
+        # Keep CONNECTED before CLOSED for each connection without serializing
+        # monitor callbacks for unrelated connections.
+        self._connection_lifecycle_lock = threading.Lock()
+        self._connection_locks = WeakKeyDictionary()
+        self._connection_admission_closed = False
+
+    def _get_connection_lock(self, conn: Connection):
+        with self._connection_lifecycle_lock:
+            lock = self._connection_locks.get(conn)
+            if lock is None:
+                lock = threading.RLock()
+                self._connection_locks[conn] = lock
+            return lock
+
+    def stop_connection_admission(self):
+        """Close admission before cancelling resources or taking a connection snapshot."""
+        with self.conn_lock:
+            self._connection_admission_closed = True
+
+    def is_stopping(self):
+        with self.conn_lock:
+            return self._connection_admission_closed
 
     def add_connection(self, conn: Connection):
-        with self.conn_lock:
-            self.connections[conn.name] = conn
+        with self._get_connection_lock(conn):
+            with self.conn_lock:
+                admitted = not self._connection_admission_closed and not conn.connector.stopped.is_set()
+                if admitted:
+                    self.connections[conn.name] = conn
 
-        conn.state = ConnState.CONNECTED
-        self._notify_monitor(conn)
+            if admitted:
+                conn.state = ConnState.CONNECTED
+                self._notify_monitor(conn)
+                log.debug(f"Connection created: {self.get_name()}:{conn}")
+                return True
 
-        log.debug(f"Connection created: {self.get_name()}:{conn}")
+        # Native close and monitor callbacks can re-enter the driver.
+        conn.close()
+        return False
 
     def close_connection(self, conn: Connection):
         log.debug(f"Connection removed: {self.get_name()}:{conn}")
 
-        conn.state = ConnState.CLOSED
-        self._notify_monitor(conn)
+        with self._get_connection_lock(conn):
+            with self.conn_lock:
+                if not self.connections.pop(conn.name, None):
+                    log.debug(f"{conn.name} is already removed from driver")
+                    return
 
-        with self.conn_lock:
-            if not self.connections.pop(conn.name, None):
-                log.debug(f"{conn.name} is already removed from driver")
+            conn.state = ConnState.CLOSED
+            self._notify_monitor(conn)
 
     def close_all(self):
         with self.conn_lock:
-            for name in sorted(self.connections.keys()):
-                conn = self.connections[name]
-                log.debug(f"Closing connection: {self.get_name()}:{conn}")
-                conn.close()
+            connections = list(self.connections.values())
+        for conn in connections:
+            log.debug(f"Closing connection: {self.get_name()}:{conn}")
+            conn.close()
 
     def _notify_monitor(self, conn: Connection):
         if not self.conn_monitor:

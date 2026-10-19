@@ -30,9 +30,9 @@ def _make_ctx(kit_dir, ws_dir=None, local_dir=None, root_pri_key="fake_key"):
     return ctx
 
 
-def _make_participant(cc_enabled=False):
+def _make_participant(cc_enabled=False, external_cert=False):
     p = MagicMock()
-    p.get_prop.side_effect = lambda key: cc_enabled if key == PropKey.CC_ENABLED else None
+    p.get_prop.side_effect = {PropKey.CC_ENABLED: cc_enabled, PropKey.EXTERNAL_CERT: external_cert}.get
     return p
 
 
@@ -117,15 +117,33 @@ def test_no_tenseal_files_no_signature_json(tmp_path):
         mock_sign.assert_not_called()
 
 
-def test_missing_root_pri_key_raises(tmp_path):
-    """Missing ROOT_PRI_KEY raises RuntimeError."""
-    ctx = MagicMock()
-    ctx.get.return_value = None
-    proj = _make_project([_make_participant()])
+@pytest.mark.parametrize("content_mode", ["cc", "he"])
+def test_missing_root_pri_key_raises_for_content_signing(tmp_path, content_mode):
+    """Public trust alone cannot satisfy CC/HE artifact signing."""
+    ctx = _make_ctx(str(tmp_path), root_pri_key=None)
+    if content_mode == "he":
+        (tmp_path / ProvFileName.SERVER_CONTEXT_TENSEAL).touch()
+    proj = _make_project([_make_participant(cc_enabled=content_mode == "cc")])
     builder = SignatureBuilder()
 
-    with pytest.raises(RuntimeError, match="missing"):
+    with pytest.raises(RuntimeError, match="content signing requires"):
         builder.build(proj, ctx)
+
+
+@pytest.mark.parametrize(
+    "kit_type", ["plain", "cc", ProvFileName.SERVER_CONTEXT_TENSEAL, ProvFileName.CLIENT_CONTEXT_TENSEAL]
+)
+def test_external_cert_only_supported_for_unsigned_kits(tmp_path, kit_type):
+    if kit_type.endswith(".tenseal"):
+        (tmp_path / kit_type).touch()
+    project = _make_project([_make_participant(cc_enabled=kit_type == "cc", external_cert=True)])
+    with patch("nvflare.lighter.impl.signature.sign_folders") as sign:
+        if kit_type == "plain":
+            SignatureBuilder().build(project, _make_ctx(str(tmp_path)))
+        else:
+            with pytest.raises(ValueError, match="external_cert.*signed HE/CC"):
+                SignatureBuilder().build(project, _make_ctx(str(tmp_path)))
+        sign.assert_not_called()
 
 
 def test_he_both_contexts_generates_signature_json(tmp_path):

@@ -1,0 +1,3 @@
+
+# Generated FedSCS experiment checkpoints
+experiments/*/initial_model.pt

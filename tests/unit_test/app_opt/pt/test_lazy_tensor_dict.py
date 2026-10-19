@@ -197,6 +197,34 @@ class TestLazyTensorDict:
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
         assert set(ltd.keys()) == set(tensors.keys())
 
+    @pytest.mark.parametrize("has_metadata", [False, True])
+    def test_get_shape_uses_metadata_without_loading_tensors(self, temp_safetensors, monkeypatch, has_metadata):
+        key_to_file, temp_dir, tensors = temp_safetensors
+        # FOBS item IDs can differ from the tensor key in the safetensors file.
+        tensor = tensors["layer1.weight"]
+        metadata = {"item-id": tensor_metadata(tensor)} if has_metadata else None
+        ltd = LazyTensorDict(
+            key_to_file={"item-id": key_to_file["layer1.weight"]}, temp_dir=temp_dir, metadata=metadata
+        )
+        header_reads = []
+        original_read_metadata = lazy_tensor_dict.read_safetensors_metadata
+
+        def read_metadata(path):
+            header_reads.append(path)
+            return original_read_metadata(path)
+
+        def unexpected_getitem(mapping, key):
+            raise AssertionError("Shape lookup must not load tensor data")
+
+        monkeypatch.setattr(lazy_tensor_dict, "read_safetensors_metadata", read_metadata)
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", unexpected_getitem)
+
+        assert ltd.get_shape("item-id") == tuple(tensor.shape)
+        assert ltd.get_shape("item-id") == tuple(tensor.shape)
+        assert header_reads == ([] if has_metadata else [key_to_file["layer1.weight"][0]])
+        with pytest.raises(KeyError):
+            ltd.get_shape("nonexistent")
+
     def test_iter_yields_keys(self, temp_safetensors):
         key_to_file, temp_dir, tensors = temp_safetensors
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
@@ -246,6 +274,100 @@ class TestLazyTensorDict:
 
 
 class TestAggregationHelperWithLazyRefs:
+    def test_collection_preflight_does_not_materialize_lazy_refs_until_accepted(self, temp_safetensors, monkeypatch):
+        from nvflare.apis.dxo import DXO, DataKind, from_shareable
+        from nvflare.apis.fl_constant import ReservedKey
+        from nvflare.apis.fl_context import FLContext
+        from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+        from nvflare.app_common.app_constant import AppConstants
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        lazy_refs = {key: ltd.make_lazy_ref(key) for key in ltd.keys()}
+        aggregator = InTimeAccumulateWeightedAggregator(
+            expected_data_kind={"weights": DataKind.WEIGHTS, "metrics": DataKind.METRICS}
+        )
+        aggregator._initialize(aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        def contribution(name, weights, metric):
+            members = {"weights": DXO(DataKind.WEIGHTS, weights), "metrics": DXO(DataKind.METRICS, {"loss": metric})}
+            shareable = DXO(DataKind.COLLECTION, members).to_shareable()
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: name})
+            shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            return shareable
+
+        assert aggregator.accept(contribution("site-1", tensors, torch.ones(2)), fl_ctx)
+        reads = []
+        original_materialize = _LazyRef.materialize
+
+        def materialize(ref):
+            reads.append(ref.key)
+            return original_materialize(ref)
+
+        monkeypatch.setattr(_LazyRef, "materialize", materialize)
+
+        assert not aggregator.accept(contribution("site-2", lazy_refs, torch.ones(1)), fl_ctx)
+        assert reads == []
+        assert aggregator.accept(contribution("site-2", lazy_refs, torch.ones(2)), fl_ctx)
+        assert reads == list(tensors)
+        result = from_shareable(aggregator.aggregate(fl_ctx))
+        for key, value in result.data["weights"].data.items():
+            torch.testing.assert_close(value, tensors[key])
+
+    @pytest.mark.parametrize("has_previous_contribution", [False, True])
+    def test_materializing_mapping_reads_each_tensor_once(
+        self, temp_safetensors, monkeypatch, has_previous_contribution
+    ):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper()
+        if has_previous_contribution:
+            helper.add({key: value + 1.0 for key, value in tensors.items()}, 2.0, "site-1", 0)
+        reads = []
+        original_getitem = LazyTensorDict.__getitem__
+
+        def getitem(mapping, key):
+            reads.append(key)
+            return original_getitem(mapping, key)
+
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", getitem)
+        helper.add(ltd, 3.0, "site-2", 0)
+
+        assert reads == list(tensors)
+        result = helper.get_result()
+        for key, value in tensors.items():
+            expected = value + 0.4 if has_previous_contribution else value
+            torch.testing.assert_close(result[key], expected)
+
+    def test_materializing_mapping_mismatch_is_rejected_before_tensor_reads(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+        accepted = {key: value.clone() for key, value in tensors.items() if "bias" not in key}
+        accepted["layer2.weight"] = torch.ones(1)
+        helper.add(accepted, 2.0, "site-1", 0)
+        previous_stats = helper.get_aggregation_stats()
+
+        def unexpected_getitem(mapping, key):
+            raise AssertionError("Shape validation must not load tensor data")
+
+        monkeypatch.setattr(LazyTensorDict, "__getitem__", unexpected_getitem)
+        # Even metadata for an excluded key must not be read.
+        os.remove(key_to_file["layer1.bias"][0])
+        with pytest.raises(ValueError, match="layer2.weight"):
+            helper.add(ltd, 3.0, "site-2", 0)
+
+        assert helper.get_aggregation_stats() == previous_stats
+        assert helper.counts == {key: 2.0 for key in accepted}
+        for key, value in helper.get_result().items():
+            torch.testing.assert_close(value, accepted[key])
+
     def test_helper_materializes_lazy_refs(self, temp_safetensors):
         """WeightedAggregationHelper materializes _LazyRef via duck-typed materialize()."""
         key_to_file, temp_dir, tensors = temp_safetensors
@@ -261,3 +383,54 @@ class TestAggregationHelperWithLazyRefs:
         result = helper.get_result()
         for name, expected in tensors.items():
             assert torch.allclose(result[name], expected, atol=1e-6)
+
+    def test_repeated_lazy_refs_are_aggregated_one_at_a_time(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+        helper.add({key: value + 1.0 for key, value in tensors.items()}, 2.0, "site-1", 0)
+        loaded = []
+        original_materialize = _LazyRef.materialize
+
+        def materialize(ref):
+            if loaded:
+                previous = loaded[-1]
+                torch.testing.assert_close(helper.total[previous], 5.0 * tensors[previous] + 2.0)
+            loaded.append(ref.key)
+            return original_materialize(ref)
+
+        monkeypatch.setattr(_LazyRef, "materialize", materialize)
+        helper.add({key: ltd.make_lazy_ref(key) for key in ltd.keys()}, 3.0, "site-2", 0)
+
+        expected_keys = [key for key in tensors if "bias" not in key]
+        assert loaded == expected_keys
+        result = helper.get_result()
+        assert list(result) == expected_keys
+        for key in expected_keys:
+            torch.testing.assert_close(result[key], tensors[key] + 0.4)
+
+    def test_late_shape_mismatch_does_not_materialize_earlier_refs(self, temp_safetensors, monkeypatch):
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        helper = WeightedAggregationHelper()
+        helper.add(tensors, 1.0, "site-1", 0)
+
+        def unexpected_materialize(ref):
+            raise AssertionError("Shape validation must finish before materialization")
+
+        monkeypatch.setattr(_LazyRef, "materialize", unexpected_materialize)
+        with pytest.raises(ValueError, match="layer2.weight"):
+            helper.add(
+                {"layer1.weight": ltd.make_lazy_ref("layer1.weight"), "layer2.weight": torch.ones(1)},
+                1.0,
+                "site-2",
+                0,
+            )
+
+        assert helper.get_len() == 1
+        for key, value in helper.get_result().items():
+            torch.testing.assert_close(value, tensors[key])

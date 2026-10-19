@@ -27,3 +27,16 @@ class FilterType:
 
     TASK_RESULT = "TASK_RESULT"
     TASK_DATA = "TASK_DATA"
+
+
+class ExecutionLifetime:
+    """Client compute lifetime configured on a job."""
+
+    JOB = "job"
+    TASK = "task"
+
+    @classmethod
+    def validate(cls, value):
+        if value not in (cls.JOB, cls.TASK):
+            raise ValueError("execution_lifetime must be 'job' or 'task'")
+        return value

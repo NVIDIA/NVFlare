@@ -979,6 +979,13 @@
             "required": false,
             "default": false,
             "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
+            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [],
@@ -1671,6 +1678,13 @@
             "type": "bool",
             "required": false,
             "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
             "kind": "keyword_only"
           }
         ],
@@ -3053,6 +3067,13 @@
             "required": false,
             "default": false,
             "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
+            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [
@@ -3180,7 +3201,7 @@
     {
       "summary": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",
@@ -3191,7 +3212,7 @@
       },
       "detail": {
         "name": "kmeans-sklearn",
-        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "description": "Federated K-Means with seed sharing and count-weighted center aggregation.",
         "framework": "sklearn",
         "module": "nvflare.app_opt.sklearn.recipes.kmeans",
         "class": "KMeansFedAvgRecipe",

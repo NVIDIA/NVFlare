@@ -1,208 +1,707 @@
 ---
+import { Image } from "astro:assets";
 import Layout from "@layouts/Layout.astro";
-import NvflareResearch from '../images/nvflare_research.png'
-import ExamFL from '../images/research/exam.jpg'
-import Mammography from '../images/research/mammography.jpg'
-import MammographyGraphs from '../images/research/mammography_graphs.jpg'
-import Pancreas from '../images/research/pancreas.jpg'
-import Sun from '../images/research/sun.jpg'
+import { researchProjects } from "../data/research";
 
-const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH || "main";
-const base_url = import.meta.env.BASE_URL;
-
-const case_studies = [
+const baseUrl = import.meta.env.BASE_URL;
+const docsBranch = import.meta.env.VITE_PUBLIC_GH_BRANCH || "main";
+// This catalog includes projects absent from release branches; examples link to main.
+const researchUrl = "https://github.com/NVIDIA/NVFlare/tree/main/research";
+const docsUrl = `https://nvflare.readthedocs.io/en/${docsBranch}`;
+const highlights = researchProjects.flatMap((project) =>
+  project.highlight ? [{ ...project, highlight: project.highlight }] : [],
+);
+const topics = [
+  ...new Set(researchProjects.map((project) => project.topic)),
+].sort();
+const tools = [
   {
-    id: "exam_ai",
-    title: "EXAM AI Model for Predicting Oxygen Requirements in COVID Patients",
-    subheader: "AI model to predict oxygen requirements",
-    team: "NVIDIA researchers, Massachusetts General Brigham Hospital",
-    problem: "During COVID-19, it was challenging to determine which patients would need a higher level of care in the near future, despite perhaps presenting with minimal symptoms. Therefore the goal of this study was to train a previously developed AI model that determines whether a person with COVID-19 symptoms will need supplemental oxygen hours or even days after an initial exam.",
-    approach: "The approach included a separate server hosted on AWS, which held the global deep neural network. Each client-site received a copy of the model to train on its own dataset and FLARE was used to aggregate to form a global model.",
-    result: "Training was completed in two weeks and produced a global model with .94 Area Under the Curve (AUC), resulting in excellent prediction for the level of oxygen required by incoming patients.",
-    reference: "Federated learning for predicting clinical outcomes in patients with COVID-19",
-    link: "https://doi.org/10.1038/s41591-021-01506-3",
-    image: ExamFL.src,
+    title: "Build an experiment",
+    description:
+      "Use recipes to configure common algorithms, or the Client API and Collab API to express custom training and coordination logic.",
+    links: [
+      {
+        label: "Recipe API",
+        path: "/user_guide/data_scientist_guide/recipe_api.html",
+      },
+      {
+        label: "Client API",
+        path: "/programming_guide/execution_api_type/client_api.html",
+      },
+      {
+        label: "Collab API",
+        path: "/user_guide/data_scientist_guide/collab_api.html",
+      },
+    ],
   },
   {
-    id: "adops",
-    title: "ADOPS (ACR DASA OSU Partners HealthCare Stanford)",
-    subheader: "Breast Mammography AI Model. Early detection: breast density classification Improvement",
-    team: "The American College of Radiology (ACR), Diagnosticos da America (DASA), Ohio State University (OSU), Partners HealthCare (PHS), and Stanford University",
-    problem: "Breast Mammography AI Model Early detection through mammography is critical when it comes to reducing breast cancer deaths, but breast density can make it harder to detect the disease.",
-    approach: "The team used a 2D mammography classification model provided by PHS, which was trained using NVIDIA Clara Train on NVIDIA GPUs. The model was then retrained using NVIDIA Clara Federated Learning at PHS, as well as the client-sites, without any data being transferred.",
-    result: "Each institution obtained a better performing model that had an overall superior predictive power on their own local dataset. In doing so, Federated Learning enabled improved breast density classification from mammograms, which could lead to better breast cancer risk assessment.",
-    image: Mammography.src,
-    image2: MammographyGraphs.src,
-    reference: "Federated Learning for Breast Density Classification: A Real-World Implementation",
-    link: "https://arxiv.org/pdf/2009.01871.pdf",
+    title: "Simulate and evaluate",
+    description:
+      "Run federated clients on one machine with the Simulator, then use POC mode to exercise server and client processes in a local deployment.",
+    links: [
+      {
+        label: "FL Simulator",
+        path: "/user_guide/nvflare_cli/fl_simulator.html",
+      },
+      { label: "POC mode", path: "/user_guide/nvflare_cli/poc_command.html" },
+    ],
   },
   {
-    id: "um_fairview",
-    title: "University of Minnesota and Fairview X-Ray COVID AI Model",
-    subheader: "Improve AI models for COVID-19 diagnosis based on chest X-rays",
-    team: "University of Minnesota and Fairview Mhealth, Indiana University (Indiana, USA), and Emory University (Georgia, USA)",
-    problem: "The goal of this study was to improve real-world AI models for COVID-19 diagnosis based on chest X-rays.",
-    approach: "This study leveraged a three-phase pipeline composed of U-Net lung segmentation, a conditional Generative Adversarial Network (cGAN) for outlier detection, and a DenseNet121 COVID-19 Classification model. The aggregate multi-institutional dataset consisted of approximately 80,000 labeled images with a 30/70% positive/negative COVID classification. This classification model was trained with a federation of Federated Learning server and Federated Learning clients at University of Minnesota and Fairview (Minnesota, USA), with additional participant clients at Indiana University (Indiana, USA) and Emory University (Georgia, USA) using a mix of cloud (AWS/Azure) and local servers.",
-    result: "Initial results showed an improvement in performance of the global model of 5% AUROC and 8% AUPRC on the UMN local dataset as compared to the UMN local model.",
-    image: "",
-  },
-  {
-    id: "sun_prostate",
-    title: "SUN Initiative Prostate Cancer AI Model",
-    subheader: "Federated segmentation model",
-    team: "SUNY, UCLA, NIH",
-    problem: "Prostate cancer is a common cancer of the prostate gland in men. Accurate segmentation of the prostate gland is useful for developing AI models to help in detection of Prostate cancer.",
-    approach: "In this initiative, we tested the hypothesis that Federated Learning can be used to train a segmentation model comparable to one trained from a pooled data (PD) set.",
-    result: "The results showed equivalent performance from both the experimental Federated Learning and benchmark PD models, showing the feasibility of training an AI model in a Federated Learning approach.",
-    image: Sun.src,
-  },
-  {
-    id: "ct_pancreas",
-    title: "CT Pancreas Segmentation AI Model",
-    subheader: "Automated segmentation model of the pancreas and pancreatic tumors in abdominal CT",
-    team: "National Taiwan University, Taiwan, and Nagoya University, Japan",
-    problem: "The aim of this experiment was to build models for the automated segmentation of the pancreas and pancreatic tumors in abdominal CT.",
-    approach: "A 3D segmentation model based on neural architecture search developed by NVIDIA's Applied Research team was collaboratively trained using Federated Learning.",
-    result: "The global Federated Learning model achieved a segmentation performance of 82.3% Dice score on healthy pancreatic patients on average.",
-    image: Pancreas.src,
+    title: "Track and compare",
+    description:
+      "Record metrics with TensorBoard, MLflow, or Weights & Biases, and inspect recipe metrics and artifacts to compare experiments.",
+    links: [
+      {
+        label: "Experiment tracking",
+        path: "/programming_guide/experiment_tracking.html",
+      },
+      {
+        label: "Metrics and artifacts",
+        path: "/user_guide/data_scientist_guide/recipe_metrics_artifacts.html",
+      },
+    ],
   },
 ];
-
 ---
 
-<Layout title="">
-  <div class="bg-white py-16 sm:py-16">
-    <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
-      <div class="mx-auto max-w-5xl mt-10 flex justify-left">
-        <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
-          <span aria-hidden="true">&larr;</span>
-          Back to home
+<Layout title="Research">
+  <main class="research-page">
+    <header class="research-hero">
+      <div class="page-width">
+        <a class="back-link" href={baseUrl}>
+          <span aria-hidden="true">&larr;</span> NVIDIA FLARE home
         </a>
-      </div>
-      <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
-        <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
-          Research with NVIDIA FLARE
-        </h2>
-        <p class="text-lg mt-4 text-slate-600 m-auto">
-          Learn how NVIDIA FLARE faciliates research from simulation tools to real-world case studies.
+        <p class="eyebrow">Research with NVIDIA FLARE</p>
+        <h1>
+          Explore ideas.
+          <br />
+          Build federated experiments.
+        </h1>
+        <p class="hero-description">
+          From multimodal foundation models to efficient training and medical
+          imaging, explore papers and reference implementations built with
+          NVIDIA FLARE.
         </p>
+        <nav aria-label="Research page sections" class="section-links">
+          <a class="primary-link" href="#highlights">
+            Research highlights <span aria-hidden="true">&darr;</span>
+          </a>
+          <a href="#catalog">Browse all {researchProjects.length} projects</a>
+          <a href="#tools">Research tools</a>
+        </nav>
+        <p class="source-note">
+          Based on the <a href={researchUrl}>main-branch research directory</a>.
+          Follow each project's README for setup, data, and implementation
+          scope.
+        </p>
+      </div>
+    </header>
 
-        <div class="mx-auto lg:mx-0 text-left py-20 text-slate-600">
-          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
-            Research Tools
-          </h2>
-
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              NVIDIA FLARE is an excellent research tool, offering robust simulation capabilities and extensive support for experimentation in federated learning.
-              Many researchers need to simulate federated learning scenarios without setting up an actual federated learning system.
-              NVIDIA FLARE allows for repeated experimentation with different parameters, facilitating quick evaluations and monitoring of results.
-            </p>
-
-          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
-            NVIDIA FLARE Simulation Tools
-          </h2>
-
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/fl_simulator.html#fl-simulator`>Simulator</a>:
-              The Simulator is a multi-threaded/process simulation tool that offers both a Command Line Interface (CLI) and a Python API.
-              It enables the simulation of different numbers of clients and the execution of various federated learning jobs.
-              Once a simulation is complete, users can deploy the same code in production without any changes.
-              Additionally, users can utilize an Integrated Development Environment (IDE) debugger to step through the code for easier debugging.
-            </p>
-
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/poc_command.html`>Proof of Concept (POC) Mode</a>:
-              POC mode simulates real-world deployment on a local host.
-              Clients and servers can be deployed in different directories and launched using separate terminals, each representing a different client or server startup.
-              This mode allows for job submissions to the server as would occur in a real production environment.
-            </p>
-
-          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
-            Interaction Methods with FL Server
-          </h2>
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/operation.html`>Admin Console</a>:
-              Issue interactive commands such as submitting jobs, listing jobs, and aborting jobs.
-            </p>
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/job_cli.html`>Job CLI</a>:
-              Command-line interface is used for job submission.
-            </p>
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/data_scientist_guide/flare_api.html`>FLARE API</a>:
-              Allows submission and listing of jobs through Python code.
-            </p>
-          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
-            Experiment Tracking Tools Integration
-          </h2>
-
-            <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/experiment_tracking.html`>Experiment tracking</a>:
-              FLARE supports logging metrics using FLARE's metrics tracking log writers. Users can choose from TensorBoard, MLflow, or W&B syntax.
-              Metrics can be streamed to either the FL server or FL client, and changing the metric system does not require any code changes.
-            </p>
-
+    <section
+      id="highlights"
+      class="page-width section"
+      aria-labelledby="highlights-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">From the papers</p>
+          <h2 id="highlights-title">Research highlights</h2>
         </div>
+        <p>
+          Selected figures connect the research questions to examples you can
+          explore.
+        </p>
+      </div>
+      <div class="highlights">
+        {highlights.map((project) => (
+          <article class="highlight" id={`highlight-${project.directory}`}>
+            <div class="highlight-copy">
+              <p class="project-meta">
+                {project.topic} <span aria-hidden="true"> / </span>{" "}
+                {project.publication}
+              </p>
+              <p class="project-name">{project.name}</p>
+              <h3>{project.highlight.title}</h3>
+              <p>{project.highlight.description}</p>
+              <p class="example-scope">
+                <strong>Explore the example.</strong>{" "}
+                {project.highlight.example}
+              </p>
+              <div class="resource-links">
+                <a
+                  href={`${researchUrl}/${project.directory}`}
+                  aria-label={`Explore ${project.name} example`}>
+                  Explore example <span aria-hidden="true">&rarr;</span>
+                </a>
+                <a
+                  href={project.paper}
+                  aria-label={`Read paper: ${project.paperTitle}`}>
+                  Read paper <span aria-hidden="true">&nearr;</span>
+                </a>
+              </div>
+            </div>
+            <figure>
+              <a
+                class="figure-link"
+                href={project.highlight.image.src}
+                target="_blank"
+                rel="noopener"
+                aria-label={`Open full-size ${project.name} figure in a new tab`}>
+                <Image
+                  src={project.highlight.image}
+                  width={Math.min(1400, project.highlight.image.width)}
+                  alt={project.highlight.alt}
+                  loading="lazy"
+                  decoding="async"
+                />
+                <span class="full-figure">
+                  View full figure <span aria-hidden="true">&nearr;</span>
+                </span>
+              </a>
+              <figcaption>
+                {project.highlight.caption}
+                <a href={project.highlight.figureUrl}>
+                  Source: {project.highlight.credit}
+                </a>
+              </figcaption>
+            </figure>
+          </article>
+        ))}
+      </div>
+    </section>
 
-        <div class="mx-auto lg:mx-0 text-left py-20">
-          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
-            Research Works
-          </h2>
-
-          <p class="text-lg mt-4 text-slate-600 m-auto">
-            NVIDIA FLARE offers a lot of state of art research work, here is a quick view of the recent work.
-            Learn more in the research directory in our <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`>GitHub</a> and view our list of <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/publications_and_talks.html`>Publications</a>.
+    <section
+      id="catalog"
+      class="catalog-section section"
+      aria-labelledby="catalog-title">
+      <div class="page-width">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Find your starting point</p>
+            <h2 id="catalog-title">Explore the research catalog</h2>
+          </div>
+          <p>
+            Browse current and foundational work. Examples range from runnable
+            jobs to links to the authors' reference code.
           </p>
-
-          <img class="mt-10 flex items-center w-full" src={NvflareResearch.src} alt="NVFLARE research">
-
         </div>
-
-        <div class="mx-auto lg:mx-0 text-left py-20">
-          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
-            Case Studies
-          </h2>
-
-          <p class="text-lg mt-4 text-slate-600 m-auto">
-            NVIDIA has worked with several institutions to test and validate the utility of federated learning.  We hope this will help to inspire or relate to your research cases.
-            <br><br>
-            Here are five real life implementations in healthcare, pushing the envelope for training robust, generalizable AI models:
-          </p>
-
-          <ul class="ml-12 list-disc text-lg mt-4 text-slate-600 m-auto">
-            {
-              case_studies.map((item) => (
-                <li>{item.title}</li>
-              ))
-            }
-          </ul>
-
-          <div
-            class="">
-            {
-              case_studies.map((item) => (
-                <div class="mt-20">
-                  <h3 class="mt-3 text-2xl font-semibold leading-6 text-gray-900 group-hover:text-gray-600">
-                    {item.title}
-                  </h3>
-                  <p class="mt-5 text-lg leading-6 text-slate-600">
-                    {item.subheader} <br>
-                    {item.team} <br>
-                    <div class="flex justify-left">
-                      <img class="mt-6 items-center w-2/3 mb-6" src={item.image} alt="">
-                    </div>
-                    {item.problem}{" "+item.approach}
-                    <br><br>
-                    {item.result}
-                    <br><br>
-                    <a class="text-nvidia" href={item.link}>{item.reference}</a>
-                  </p>
-                </div>
-              ))
-            }
+        <div class="catalog-filters" id="catalog-filters" hidden>
+          <div class="search-field">
+            <label for="research-search">Search projects</label>
+            <input
+              id="research-search"
+              type="search"
+              placeholder="Try multimodal, privacy, or CIFAR-10"
+              aria-controls="research-projects"
+            />
+          </div>
+          <div>
+            <label for="research-topic">Research area</label>
+            <select id="research-topic" aria-controls="research-projects">
+              <option value="">All areas</option>
+              {topics.map((topic) => (
+                <option value={topic}>{topic}</option>
+              ))}
+            </select>
           </div>
         </div>
+        <p
+          id="research-count"
+          class="result-count"
+          role="status"
+          aria-live="polite">
+          {researchProjects.length} projects
+        </p>
+        <ul id="research-projects" class="project-list">
+          {researchProjects.map((project) => (
+            <li
+              data-project
+              data-topic={project.topic}
+              data-search={`${project.name} ${project.directory} ${project.topic} ${project.publication} ${project.paperTitle} ${project.summary} ${project.highlight?.description ?? ""} ${project.highlight?.example ?? ""}`.toLowerCase()}>
+              <div>
+                <h3>
+                  <a href={`${researchUrl}/${project.directory}`}>
+                    {project.name}
+                  </a>
+                </h3>
+                <p class="catalog-meta">
+                  {project.publication} <span aria-hidden="true">·</span>{" "}
+                  {project.topic}
+                </p>
+              </div>
+              <p class="project-summary">{project.summary}</p>
+              <a
+                class="paper-link"
+                href={project.paper}
+                aria-label={`Read paper: ${project.paperTitle}`}>
+                Paper <span aria-hidden="true">&nearr;</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p id="research-empty" class="empty-state" hidden>
+          No projects match. Try another search or choose all research areas.
+        </p>
+        <div class="support-links">
+          <p>
+            <strong>Shared data preparation</strong>
+            <br />
+            <a href={`${researchUrl}/prostate`}>
+              Multi-source prostate segmentation data
+            </a>{" "}
+            supports projects including FedCE and FedSM.
+          </p>
+          <p>
+            <strong>Bring your research</strong>
+            <br />
+            Start with the{" "}
+            <a href={`${researchUrl}/sample-research`}>research template</a> and
+            the{" "}
+            <a href={`${researchUrl}/CONTRIBUTING.md`}>contribution guide</a>.
+          </p>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
+
+    <section
+      id="tools"
+      class="page-width section"
+      aria-labelledby="tools-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">From idea to experiment</p>
+          <h2 id="tools-title">Research tools</h2>
+        </div>
+        <p>
+          Compose a workflow, simulate a federation, and inspect the results
+          with NVIDIA FLARE.
+        </p>
+      </div>
+      <div class="tools-grid">
+        {tools.map((tool, index) => (
+          <article>
+            <span class="tool-number" aria-hidden="true">
+              0{index + 1}
+            </span>
+            <h3>{tool.title}</h3>
+            <p>{tool.description}</p>
+            <ul>
+              {tool.links.map((link) => (
+                <li>
+                  <a href={`${docsUrl}${link.path}`}>
+                    {link.label} <span aria-hidden="true">&rarr;</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+      <p class="more-research">
+        Looking for more? Browse{" "}
+        <a href={`${docsUrl}/publications_and_talks.html`}>
+          publications and talks
+        </a>{" "}
+        and the <a href={researchUrl}>full research directory</a>.
+      </p>
+    </section>
+  </main>
 </Layout>
+
+<script>
+  const filters = document.querySelector<HTMLElement>("#catalog-filters");
+  const search = document.querySelector<HTMLInputElement>("#research-search");
+  const topic = document.querySelector<HTMLSelectElement>("#research-topic");
+  const count = document.querySelector<HTMLElement>("#research-count");
+  const empty = document.querySelector<HTMLElement>("#research-empty");
+  const projects = [
+    ...document.querySelectorAll<HTMLElement>("[data-project]"),
+  ];
+
+  if (filters && search && topic && count && empty) {
+    const filterProjects = () => {
+      const terms = search.value
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      let visible = 0;
+      for (const project of projects) {
+        const matchesSearch = terms.every((term) =>
+          project.dataset.search?.includes(term),
+        );
+        const matchesTopic =
+          !topic.value || project.dataset.topic === topic.value;
+        project.hidden = !matchesSearch || !matchesTopic;
+        if (!project.hidden) visible++;
+      }
+      count.textContent = `${visible} of ${projects.length} projects`;
+      empty.hidden = visible !== 0;
+    };
+    filters.hidden = false;
+    search.addEventListener("input", filterProjects);
+    topic.addEventListener("change", filterProjects);
+    filterProjects();
+  }
+</script>
+
+<style>
+  .research-page {
+    color: #1a202c;
+    line-height: 1.65;
+  }
+  .page-width {
+    width: min(1200px, calc(100% - 48px));
+    margin-inline: auto;
+  }
+  .research-page a {
+    color: #426b00;
+    text-underline-offset: 4px;
+  }
+  .research-page a:hover {
+    text-decoration: underline;
+  }
+  .research-page :is(a, input, select):focus-visible {
+    outline: 3px solid #426b00;
+    outline-offset: 5px;
+  }
+  .research-page [hidden] {
+    display: none !important;
+  }
+  .research-hero {
+    padding: 38px 0 58px;
+    background: linear-gradient(115deg, #f4f8ee, #fff 75%);
+    border-bottom: 1px solid #e2e8d8;
+  }
+  .back-link {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .eyebrow {
+    margin: 0 0 12px;
+    color: #426b00;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .research-hero .eyebrow {
+    margin-top: 52px;
+  }
+  h1 {
+    max-width: 950px;
+    font-size: clamp(2.25rem, 4.5vw, 4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.045em;
+  }
+  .hero-description {
+    max-width: 730px;
+    margin-top: 24px;
+    color: #4b5563;
+    font-size: 1.125rem;
+  }
+  .section-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px 28px;
+    margin-top: 32px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+  .section-links .primary-link {
+    padding: 12px 20px;
+    background: #76b900;
+    color: #142000;
+  }
+  .source-note {
+    margin-top: 28px;
+    max-width: 800px;
+    font-size: 0.8125rem;
+    color: #59616b;
+  }
+  .source-note a {
+    text-decoration: underline;
+  }
+  .section {
+    padding-block: 64px;
+    scroll-margin-top: 24px;
+  }
+  .section-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 32px;
+    margin-bottom: 32px;
+  }
+  h2 {
+    font-size: clamp(1.75rem, 2.8vw, 2.25rem);
+    font-weight: 650;
+    line-height: 1.2;
+    letter-spacing: -0.035em;
+  }
+  .section-heading > p {
+    max-width: 400px;
+    color: #59616b;
+    font-size: 0.9375rem;
+  }
+  .highlight {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+    align-items: center;
+    gap: 48px;
+    padding-block: 40px;
+    border-top: 1px solid #e0e4e8;
+  }
+  .project-meta {
+    color: #59616b;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .project-name {
+    margin-top: 14px;
+    color: #426b00;
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+  .highlight h3 {
+    margin-top: 6px;
+    font-size: 1.75rem;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    font-weight: 650;
+  }
+  .highlight-copy > p:not(.project-meta, .project-name) {
+    margin-top: 18px;
+    color: #4b5563;
+    font-size: 0.9375rem;
+  }
+  .highlight-copy > .example-scope {
+    border-left: 3px solid #c9dfac;
+    padding-left: 16px;
+  }
+  .example-scope strong {
+    color: #283421;
+    font-weight: 600;
+  }
+  .resource-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    margin-top: 22px;
+    font-size: 0.875rem;
+    font-weight: 650;
+  }
+  .figure-link {
+    display: block;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #e0e4e8;
+    border-radius: 8px;
+  }
+  .figure-link img {
+    width: 100%;
+    height: auto;
+  }
+  .full-figure {
+    display: block;
+    margin-top: 12px;
+    font-size: 0.75rem;
+    text-align: right;
+  }
+  figcaption {
+    margin-top: 12px;
+    color: #59616b;
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+  figcaption a {
+    display: block;
+    text-decoration: underline;
+  }
+  .catalog-section {
+    background: #f6f7f8;
+    border-block: 1px solid #e0e4e8;
+  }
+  .catalog-filters {
+    display: flex;
+    gap: 24px;
+    margin-top: 36px;
+  }
+  .search-field {
+    flex: 1;
+  }
+  .catalog-filters label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .catalog-filters input,
+  .catalog-filters select {
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid #9ca3af;
+    border-radius: 4px;
+    background: white;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 0.9375rem;
+  }
+  .catalog-filters select {
+    min-width: 235px;
+    padding-right: 36px;
+  }
+  .result-count {
+    margin-block: 22px 12px;
+    color: #59616b;
+    font-size: 0.8125rem;
+  }
+  .project-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid #d5d9de;
+  }
+  .project-list li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+    gap: 24px;
+    align-items: center;
+    padding: 22px 0;
+    border-bottom: 1px solid #d5d9de;
+  }
+  .project-list h3 {
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.4;
+  }
+  .catalog-meta {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    color: #59616b;
+  }
+  .project-summary {
+    font-size: 0.875rem;
+    color: #4b5563;
+  }
+  .paper-link {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .empty-state {
+    padding-block: 36px;
+    color: #4b5563;
+  }
+  .support-links {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    padding-top: 32px;
+    font-size: 0.875rem;
+    color: #4b5563;
+  }
+  .support-links strong {
+    color: #1a202c;
+  }
+  .support-links a {
+    text-decoration: underline;
+  }
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 40px;
+    margin-top: 40px;
+  }
+  .tools-grid article {
+    border-top: 3px solid #76b900;
+    padding-top: 20px;
+  }
+  .tool-number {
+    color: #637052;
+    font-size: 0.8125rem;
+  }
+  .tools-grid h3 {
+    margin-top: 8px;
+    font-size: 1.25rem;
+    font-weight: 650;
+  }
+  .tools-grid p {
+    margin-top: 12px;
+    color: #4b5563;
+    font-size: 0.9375rem;
+  }
+  .tools-grid ul {
+    margin-top: 20px;
+    font-size: 0.875rem;
+    line-height: 2;
+  }
+  .more-research {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #e0e4e8;
+    color: #59616b;
+    font-size: 0.875rem;
+  }
+  .more-research a {
+    text-decoration: underline;
+  }
+  @media (max-width: 900px) {
+    .highlight {
+      grid-template-columns: 1fr;
+      gap: 28px;
+    }
+    .section-heading {
+      align-items: start;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .section-heading > p {
+      max-width: 650px;
+    }
+    .tools-grid {
+      gap: 24px;
+    }
+  }
+  @media (max-width: 600px) {
+    .page-width {
+      width: calc(100% - 36px);
+    }
+    .research-hero {
+      padding-block: 24px 40px;
+    }
+    .research-hero .eyebrow {
+      margin-top: 36px;
+    }
+    .section {
+      padding-block: 44px;
+    }
+    .section-links {
+      gap: 16px 24px;
+    }
+    .highlight {
+      padding-block: 32px;
+    }
+    .figure-link {
+      padding: 10px;
+    }
+    .catalog-filters {
+      flex-direction: column;
+      gap: 16px;
+    }
+    .project-list li {
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+    .project-summary {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .support-links,
+    .tools-grid {
+      grid-template-columns: 1fr;
+      gap: 28px;
+    }
+  }
+</style>

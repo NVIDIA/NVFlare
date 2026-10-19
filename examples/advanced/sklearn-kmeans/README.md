@@ -1,6 +1,13 @@
 # Federated K-Means Clustering with Scikit-learn
 
-Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+Set up a virtual environment and JupyterLab following the [example root README](../../README.md).
+
+> **Data sharing:** Round 0 uploads `n_clusters` exact training feature rows from
+> each client to the server as initial centers. Later rounds upload centroids and
+> update counts. These can still disclose individual feature rows, for example
+> when a center represents a single sample. This example provides no differential
+> privacy, secure aggregation, or minimum cluster-size protection. Use it only
+> where sharing these feature rows and derived statistics is permitted.
 
 ## Introduction to Scikit-learn, tabular data, and federated k-Means
 ### Scikit-learn
@@ -17,40 +24,65 @@ The data used in this example is tabular in a format that can be handled by [pan
 
 Each client is expected to have one local data file containing both training
 and validation samples. To load the data for each client, the following
-parameters are expected by the local learner:
-- data_file_path: string, the full path to the client's data file
-- train_start: int, start row index for the training set
-- train_end: int, end row index for the training set
-- valid_start: int, start row index for the validation set
-- valid_end: int, end row index for the validation set
+arguments are expected by the client script:
+- `--data_path`: string, the full path to the client's data file
+- `--train_start`: int, start row index for the training set
+- `--train_end`: int, end row index for the training set
+- `--valid_start`: int, start row index for the validation set
+- `--valid_end`: int, end row index for the validation set
 
 ### Federated k-Means clustering
-The machine learning algorithm in this example is [k-Means clustering](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html).
-The aggregation follows the scheme defined in [Mini-batch k-Means](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html).
-Under this setting, each round of federated learning can be formulated as follows:
-- local training: starting from global centers, each client trains a local MiniBatchKMeans model with their own data
-- global aggregation: server collects the cluster center,
-  counts information from all clients, aggregates them by considering
-  each client's results as a mini-batch, and updates the global center and per-center counts.
+The machine learning algorithm in this example is [K-Means clustering](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html).
+`KMeansFedAvgRecipe` coordinates rounds with a FedAvg controller and uses a custom
+`KMeansAssembler` for count-weighted center updates inspired by
+[MiniBatchKMeans](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html).
 
-For center initialization, at the first round, each client generates its
-initial centers with the k-means++ method. Then, the server collects all
-initial centers and performs one round of k-means to generate the initial
-global center.
+| Stage | Client sends to server | Server action |
+| --- | --- | --- |
+| Initialization (round 0) | `n_clusters` feature rows selected by [k-means++](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.kmeans_plusplus.html), as `center`; `count` is `None` | Fits `KMeans` to the pooled seed rows to produce global centers |
+| Training (rounds 1 onward) | Local `MiniBatchKMeans` centers and per-center update counts | Combines local centers with the previous global centers, weighted by their corresponding counts |
+
+The server sends the resulting global centers to clients and saves them as model
+parameters. It retains accumulated per-center counts across training rounds.
+A center with no assignments keeps its previous value until it receives a contribution.
+Each client starts its local model from the same global centers with cluster
+reassignment disabled, so corresponding center indices can be aggregated.
+The counts describe assignments processed by the local mini-batch updates;
+they can include repeated samples and are not counts of distinct training rows.
+This procedure does not guarantee the same result as centralized `KMeans`.
+
+The bundled client recreates `MiniBatchKMeans` with `random_state=0` each round,
+reusing the same sampled row indices. Review the local sampling and iteration
+settings when adapting this example for convergence studies.
+
+Clients also send a homogeneity score as a metric and their training sample count as metadata.
+Labels are used locally to evaluate the received global centers and are not
+included in the transmitted parameters. Round 0 reports a placeholder score of
+zero; later scores evaluate the global centers before that round's local update.
+`num_rounds` includes initialization: the default of 5 gives one initialization
+round and four training rounds.
 
 ## Data preparation
 This example uses the Iris dataset available from Scikit-learn's dataset API.
 ```commandline
 bash prepare_data.sh
 ```
-This will load the data, format it properly by removing the header, order
-the label and feature columns, randomize the dataset, and save it to a CSV file with comma separation.
+This loads the data and saves a headerless CSV with the label in the first
+column. The default preparation preserves the Iris dataset's class order.
 The default path is `/tmp/nvflare/dataset/sklearn_iris.csv`.
 
 Note that the dataset contains a label for each sample, which will not be
 used for training since k-Means clustering is an unsupervised method.
-The entire dataset with labels will be used for performance evaluation
-based on [homogeneity_score](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.homogeneity_score.html).
+The validation range and its labels are used locally to compute
+[homogeneity_score](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.homogeneity_score.html).
+With the default class order, the shared validation range `[120:150]` contains
+only one class, so homogeneity is 1 regardless of clustering quality. For a more
+meaningful evaluation, shuffle before splitting or choose a validation range
+that covers multiple classes. To regenerate a shuffled CSV, run:
+
+```bash
+python utils/prepare_data.py --dataset_name iris --randomize 1 --out_path /tmp/nvflare/dataset/sklearn_iris.csv
+```
 
 ## Run with Job Recipe (Recommended)
 
@@ -63,8 +95,8 @@ python job.py --n_clients 3 --num_rounds 5 --n_clusters 3 --data_path /tmp/nvfla
 ```
 
 This will:
-- Create a K-Means recipe with 3 clients, 5 rounds, and 3 clusters
-- Run in simulation environment (all clients on one machine as threads)
+- Create a K-Means recipe with 3 clients, 1 initialization round, 4 training rounds, and 3 clusters
+- Run in a local simulator, with client training scripts running as threads
 - Store results in `/tmp/nvflare/simulation/sklearn_kmeans/`
 
 ### Options
@@ -75,7 +107,7 @@ python job.py --help
 
 Available arguments:
 - `--n_clients`: Number of clients (default: 3)
-- `--num_rounds`: Number of training rounds (default: 5)
+- `--num_rounds`: Total rounds, including round-zero initialization (default: 5)
 - `--n_clusters`: Number of clusters (default: 3)
 - `--data_path`: Path to iris CSV file (default: /tmp/nvflare/dataset/sklearn_iris.csv)
 
@@ -147,7 +179,7 @@ tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
 
 The same recipe can run in different environments by changing just one line:
 
-**Simulation (default)**: All clients run as threads in a single process
+**Simulation (default)**: A local simulator runs the client training scripts as threads
 ```python
 from nvflare.recipe import SimEnv
 env = SimEnv(num_clients=3)
@@ -188,7 +220,9 @@ to generate per-client data ranges and pass them as arguments to the client scri
 
 ## Results
 
-The resulting curve for `homogeneity_score` shows the clustering quality improving over rounds:
+The figure illustrates logged homogeneity scores. Scores depend on the data
+split and need not improve each round; the default single-class validation
+split is not a meaningful clustering-quality benchmark:
 
 ![minibatch curve](./figs/minibatch.png)
 

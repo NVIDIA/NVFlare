@@ -8,13 +8,14 @@ new community contributions.
 
 Research projects in this directory do not all use the same layout. Some provide
 NVFlare jobs under `jobs/`, some use a `job.py` recipe, and others include
-scripts, notebooks, or links to external reference code. Start with the local
-README in each subfolder for setup, data, and run instructions.
+scripts, notebooks, or links to external reference code. Start with the project's
+local or upstream README for setup, data, and run instructions.
 
 ## Published and Reference Implementations
 
 | Project | Description |
 | --- | --- |
+| [BreastG-FCL: Graph-Conditioned Federated Continual Learning for Breast Cancer Radiogenomics](./breastg-fcl/README.md) | TCGA-BRCA classification with TCIA spatial/temporal graph context, generative replay, and NVFlare Collab API execution ([IEEE HealthCom 2026](https://ryougish1k1.github.io/assets/pdf/qiangyang2026healthcom.pdf)). |
 | [FedRevive: Reviving Stale Updates with Data-Free Knowledge Distillation](./fedrevive/README.md) | CollabAPI implementation of FedAvg, FedBuff, and FedRevive under reproducible asynchronous arrival schedules ([arXiv 2025](https://arxiv.org/abs/2511.00655)). |
 | [FedCoRe: Federated Cross-Modal Representation Completion](./fedcore/README.md) | Missing-image completion with Qwen3-VL, valid-supervision aggregation, and an MNIST public quickstart ([arXiv 2026](https://arxiv.org/abs/2608.18311)). |
 | [Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE](./fsi-fraud-detection/README.md) | Payment fraud detection across heterogeneous financial institutions ([arXiv 2026](https://arxiv.org/abs/2603.13617)). |
@@ -31,6 +32,7 @@ README in each subfolder for setup, data, and run instructions.
 | [Auto-FedRL](./auto-fed-rl/README.md) | Federated hyperparameter optimization for medical image segmentation ([ECCV 2022](https://arxiv.org/abs/2203.06338)). |
 | [FedBN: Federated Learning on Non-IID Features via Local Batch Normalization](./fed-bn/README.md) | Local batch normalization for feature-shifted federated learning ([ICLR 2021](https://arxiv.org/abs/2102.07623)). |
 | [Privacy-preserving Federated Brain Tumour Segmentation](./brats18/README.md) | Federated brain tumor segmentation with privacy-preserving training ([MLMI 2019](https://arxiv.org/abs/1910.00962)). |
+| [telltale: cross-round client drift monitoring](https://github.com/rybrennan/telltale/tree/main/examples/nvflare) | Externally maintained experimental example of cross-round client drift monitoring, with measured detection delay and false-alarm rates ([results](https://github.com/rybrennan/telltale/blob/main/examples/nvflare/README.md#results)). |
 
 ## Agent-Assisted Research Workflow
 
@@ -53,6 +55,13 @@ README in each subfolder for setup, data, and run instructions.
 
 ## Contributing
 
-To provide your own research implementation, start with the
-[sample research template](./sample-research/README.md) and follow the
-[research contribution guide](./CONTRIBUTING.md).
+You can contribute a link to an external NVFlare research example or a full
+implementation under `research/`. If your project already has an author-maintained
+repository, we encourage linking to it. Both paths call for a meaningful, working
+NVFlare example, clear public documentation, and evidence of a successful run.
+A paper or preprint is encouraged but not required.
+
+Follow the [research contribution guide](./CONTRIBUTING.md) for submission and
+validation expectations. For implementations hosted here, start with the
+[sample research template](./sample-research/README.md); link-only submissions do
+not require a local project directory or copy of the template.

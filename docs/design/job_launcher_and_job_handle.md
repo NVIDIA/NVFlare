@@ -224,6 +224,13 @@ start_app(job_id, job_meta, ...)
 The Slurm manager resolves and caches the scheduler-aware terminal result before waking waiters. After `wait()`,
 the generic function uses `_process_rc.txt` when the worker wrote it and otherwise polls that cached handle result.
 
+The client parent sends every terminal result, including success, to the root server on
+`CellChannelTopic.REPORT_JOB_OUTCOME`. The payload uses `JobOutcomeMsgKey` for the job ID, return code,
+and optional failure reason. `FederatedServer.process_job_outcome()` applies any actionable failure
+and resolves that client's pending outcome before the server finalizes the job. The topic retains
+the wire value `report_job_failure` for existing clients and servers; the old Python names remain
+compatibility aliases. This request reports one client's terminal result, not whole-job completion.
+
 ---
 
 ## 4. The Four Implementations

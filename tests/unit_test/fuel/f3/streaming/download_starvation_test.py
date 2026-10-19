@@ -44,6 +44,7 @@ from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, P
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import wait_for
 
 SERVER_CELL = "server"
 CLIENT_CELL = "client"
@@ -57,7 +58,6 @@ NUM_PARALLEL = 8
 # reproducer below keeps its intentionally tight 3-second timeout.
 PER_REQ_TIMEOUT = 10.0
 TX_TIMEOUT = 120.0
-CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 
 # Event used to cancel the slow _read_stream delay during teardown,
 # so deadlocked workers unblock and the process exits cleanly.
@@ -205,11 +205,17 @@ class TestDownloadWithFix:
     def cells(self):
         port = get_open_ports(1)[0]
         server = Cell(SERVER_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
-        server.core_cell.start()
         client = Cell(CLIENT_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
-        client.core_cell.start()
-        time.sleep(CELL_CONNECT_TIMEOUT)
         try:
+            server.core_cell.start()
+            client.core_cell.start()
+            wait_for(
+                lambda: server.core_cell.running
+                and client.core_cell.running
+                and client.core_cell.is_cell_connected(server.get_fqcn())
+                and server.core_cell.is_cell_connected(client.get_fqcn()),
+                message="download test cells did not become ready",
+            )
             yield server, client
         finally:
             client.core_cell.stop()
@@ -269,12 +275,18 @@ class TestDownloadPreFixStarvation:
 
         port = get_open_ports(1)[0]
         server = Cell(SERVER2_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
-        server.core_cell.start()
         client = Cell(CLIENT2_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
-        client.core_cell.start()
-        time.sleep(CELL_CONNECT_TIMEOUT)
 
         try:
+            server.core_cell.start()
+            client.core_cell.start()
+            wait_for(
+                lambda: server.core_cell.running
+                and client.core_cell.running
+                and client.core_cell.is_cell_connected(server.get_fqcn())
+                and server.core_cell.is_cell_connected(client.get_fqcn()),
+                message="download test cells did not become ready",
+            )
             yield server, client
         finally:
             # Restore original pools and class method FIRST

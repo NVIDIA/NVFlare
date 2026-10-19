@@ -249,7 +249,7 @@ example ``collab.clients(blocking=False, timeout=30).train(weights)``:
   calls may be in flight for that group call at once.
 * ``process_resp_cb`` (group calls only) -- a callback invoked as each
   response arrives, useful for streaming/in-time aggregation instead of
-  waiting for the whole group. See the ``async_aggregation`` example
+  waiting for the whole group. See the ``response_callbacks`` example
   below.
 
 **Error handling**
@@ -325,12 +325,18 @@ Examples
   <examples/hello-world/hello-collab>` -- the minimal example above, complete
   and runnable.
 * :github_nvflare_link:`Advanced Collab examples <examples/advanced/collab>`
-  -- a table of further examples, including:
+  -- a guided learning path and grouped examples, including:
 
-  * ``simple_split_learning`` -- split learning on MNIST, with a client-side
-    bottom model and server-side top model exchanging activations and
-    gradients directly.
-  * ``async_aggregation`` -- in-time aggregation using a response callback.
+  * :github_nvflare_link:`simple_async <examples/advanced/collab/simple_async>`
+    -- asynchronous MNIST training with nonblocking calls and immediate
+    client refill.
+  * :github_nvflare_link:`simple_split_learning
+    <examples/advanced/collab/simple_split_learning>` -- split learning on
+    MNIST, with a client-side bottom model and server-side top model
+    exchanging activations and gradients directly.
+  * :github_nvflare_link:`response_callbacks
+    <examples/advanced/collab/response_callbacks>` -- in-time aggregation
+    using a response callback within each round.
   * ``swarm`` -- decentralized swarm learning with client-to-client calls.
   * ``pt_cifar10`` -- synchronous PyTorch FedAvg, FedProx, and SCAFFOLD
     variants with direct client calls.

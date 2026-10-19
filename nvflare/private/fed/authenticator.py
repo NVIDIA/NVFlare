@@ -116,7 +116,7 @@ class Authenticator:
         self.site_config = site_config
         self.logger = get_obj_logger(self)
 
-    def _challenge_server(self):
+    def challenge_server(self):
         # ask server for its info and make sure that it matches expected host
         my_nonce = str(uuid.uuid4())
         headers = {IdentityChallengeKey.COMMON_NAME: self.client_name, IdentityChallengeKey.NONCE: my_nonce}
@@ -218,7 +218,7 @@ class Authenticator:
             # explicitly authenticate with the Server
             start_time = time.time()
             while True:
-                server_nonce, token_verifier = self._challenge_server()
+                server_nonce, token_verifier = self.challenge_server()
 
                 if abort_signal.triggered:
                     return None, None, None, None

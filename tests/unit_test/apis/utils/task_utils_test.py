@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 
@@ -22,13 +22,96 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.utils.task_utils import apply_filters, get_filters
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey, dots
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+
+def _filter():
+    filter_ = MagicMock()
+    filter_.process.side_effect = lambda data, fl_ctx: data
+    return filter_
+
+
+def test_apply_filters_without_configured_filters_returns_input():
+    shareable = Shareable()
+
+    result = apply_filters("unused", shareable, FLContext(), {}, "train", "in")
+
+    assert result is shareable
+
+
+def test_apply_filters_matches_all_tasks_wildcard():
+    wildcard_filter = _filter()
+    shareable = Shareable()
+
+    result = apply_filters("unused", shareable, FLContext(), {"*/in": [wildcard_filter]}, "train", "in")
+
+    assert result is shareable
+    wildcard_filter.process.assert_called_once()
+
+
+def test_apply_filters_matches_task_pattern():
+    pattern_filter = _filter()
+    shareable = Shareable()
+
+    result = apply_filters("unused", shareable, FLContext(), {"train_*/in": [pattern_filter]}, "train_model", "in")
+
+    assert result is shareable
+    pattern_filter.process.assert_called_once()
+
+
+def test_apply_filters_prefers_exact_match_over_patterns():
+    wildcard_filter = _filter()
+    pattern_filter = _filter()
+    exact_filter = _filter()
+    config_filters = {
+        "*/in": [wildcard_filter],
+        "train_*/in": [pattern_filter],
+        "train_model/in": [exact_filter],
+    }
+
+    apply_filters("unused", Shareable(), FLContext(), config_filters, "train_model", "in")
+
+    exact_filter.process.assert_called_once()
+    pattern_filter.process.assert_not_called()
+    wildcard_filter.process.assert_not_called()
+
+
+def test_apply_filters_uses_first_matching_pattern():
+    pattern_filter = _filter()
+    wildcard_filter = _filter()
+    config_filters = {
+        "train_*/out": [pattern_filter],
+        "*/out": [wildcard_filter],
+    }
+
+    apply_filters("unused", Shareable(), FLContext(), config_filters, "train_model", "out")
+
+    pattern_filter.process.assert_called_once()
+    wildcard_filter.process.assert_not_called()
+
+
+def test_apply_filters_only_matches_requested_direction():
+    inbound_filter = _filter()
+    shareable = Shareable()
+
+    result = apply_filters("unused", shareable, FLContext(), {"*/in": [inbound_filter]}, "train", "out")
+
+    assert result is shareable
+    inbound_filter.process.assert_not_called()
+
+
+def test_get_filters_matches_wildcard_for_filter_consumers():
+    wildcard_filter = _filter()
+
+    result = get_filters("unused", FLContext(), {"*/out": [wildcard_filter]}, "train", FilterKey.OUT)
+
+    assert result == [wildcard_filter]
 
 
 def _make_fl_ctx(cell):
@@ -75,7 +158,7 @@ def test_apply_filters_does_not_scan_reserved_peer_context_header():
             "task_data_filters",
             shareable,
             fl_ctx,
-            {"train/in": [filter_component]},
+            {"*/in": [filter_component]},
             "train",
             FilterKey.IN,
         )
@@ -159,7 +242,7 @@ def test_apply_filters_materializes_lazy_values_before_filter_process():
             "task_data_filters",
             shareable,
             fl_ctx,
-            {"train/in": [filter_component]},
+            {"*/in": [filter_component]},
             "train",
             FilterKey.IN,
             abort_signal=abort_signal,

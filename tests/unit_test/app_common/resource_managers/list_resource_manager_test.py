@@ -19,6 +19,7 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
+from tests.timing_utils import isolate_time
 
 
 class MockEngine:
@@ -186,3 +187,11 @@ class TestListResourceManager:
 
         assert list_resource_manager.reserved_resources == {}
         assert list_resource_manager.resources == {"gpu": deque(["gpu_0", "gpu_1", "gpu_2", "gpu_3"])}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.resource_managers.auto_clean_resource_manager",
+    )

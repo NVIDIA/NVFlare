@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import fnmatch
+
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref as _contains_lazy_download_ref
@@ -20,6 +22,23 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
 )
 
 _FILTER_GRAPH_EXCLUDED_DICT_KEYS = frozenset({ReservedHeaderKey.PEER_CTX})
+
+
+def _find_task_filters(config_filters, task_name, direction):
+    task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
+    if task_filter_list:
+        return task_filter_list
+
+    direction_suffix = FilterKey.DELIMITER + direction
+    for key, filters in config_filters.items():
+        if not key.endswith(direction_suffix):
+            continue
+
+        task_pattern = key[: -len(direction_suffix)]
+        if "*" in task_pattern and fnmatch.fnmatch(task_name, task_pattern):
+            return filters
+
+    return None
 
 
 def contains_lazy_download_ref(value) -> bool:
@@ -46,7 +65,7 @@ def get_filters(filters_name, fl_ctx, config_filters, task_name, direction):
         if filters:
             filter_list.extend(filters.get(direction, []))
 
-    task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
+    task_filter_list = _find_task_filters(config_filters, task_name, direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
     return filter_list

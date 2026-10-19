@@ -14,7 +14,6 @@
 import copy
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -75,6 +74,7 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.process_utils import popen_in_new_session
 
 CLIENT_CREATE_POOL_SIZE = 200
 POOL_STATS_DIR = "pool_stats"
@@ -730,33 +730,35 @@ class SimulatorClientRunner(FLComponent):
             SimulatorConstants.JOB_NAME
         )
 
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
-            + client_workspace
-            + " --logging_config "
-            + logging_config
-            + " --client "
-            + client.client_name
-            + " --token "
-            + client.token
-            + " --port "
-            + str(open_port)
-            + " --parent_pid "
-            + str(os.getpid())
-            + " --simulator_root "
-            + self.simulator_root
-            + " --root_url "
-            + str(client.cell.get_root_url_for_child())
-            + " --parent_url "
-            + str(client.cell.get_internal_listener_url())
-            + " --task_name "
-            + str(task_name)
-            + " --decomposer_module "
-            + str(decomposer_module)
-        )
+        args = [
+            sys.executable,
+            "-m",
+            "nvflare.private.fed.app.simulator.simulator_worker",
+            "-o",
+            client_workspace,
+            "--logging_config",
+            logging_config,
+            "--client",
+            client.client_name,
+            "--token",
+            client.token,
+            "--port",
+            str(open_port),
+            "--parent_pid",
+            str(os.getpid()),
+            "--simulator_root",
+            self.simulator_root,
+            "--root_url",
+            str(client.cell.get_root_url_for_child()),
+            "--parent_url",
+            str(client.cell.get_internal_listener_url()),
+            "--task_name",
+            str(task_name),
+            "--decomposer_module",
+            str(decomposer_module),
+        ]
         if gpu:
-            command += " --gpu " + str(gpu)
+            args += ["--gpu", str(gpu)]
         new_env = os.environ.copy()
         add_custom_dir_to_path(app_custom_folder, new_env)
         if os.path.isdir(self.server_custom_folder):
@@ -765,7 +767,7 @@ class SimulatorClientRunner(FLComponent):
                 python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
-        process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
+        process = popen_in_new_session(args, shell=False, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 

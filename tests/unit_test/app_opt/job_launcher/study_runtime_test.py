@@ -98,6 +98,52 @@ studies:
 
 
 class TestLoadStudyRuntimeFile:
+    def test_process_environment(self, tmp_path):
+        runtime = load_study_runtime_file(
+            _write(
+                tmp_path,
+                "format_version: 2\nstudies:\n  study-a:\n"
+                '    env: {EMPTY: "", PORT: 5432, ENABLED: true, SLURM_SETTING: ordinary-value}\n'
+                "    secret_env:\n"
+                "      PASSWORD: {source: DB_PASSWORD}\n"
+                "      USER: {source: DB_USER, key: ignored}\n",
+            ),
+            launcher_mode="process",
+        )["study-a"]
+        assert runtime.env == {"EMPTY": "", "PORT": "5432", "ENABLED": "true", "SLURM_SETTING": "ordinary-value"}
+        assert [(ref.name, ref.source, ref.key) for ref in runtime.secret_env] == [
+            ("PASSWORD", "DB_PASSWORD", None),
+            ("USER", "DB_USER", "ignored"),
+        ]
+
+    @pytest.mark.parametrize(
+        "field", ["container", "datasets", "secret_mounts", "pod_template", "docker_kwargs", "slurm"]
+    )
+    def test_process_rejects_non_environment_fields(self, tmp_path, field):
+        with pytest.raises(ValueError, match="does not support|Slurm-only"):
+            load_study_runtime_file(
+                _write(tmp_path, f"format_version: 2\nstudies:\n  study-a:\n    {field}: {{}}\n"),
+                launcher_mode="process",
+            )
+
+    @pytest.mark.parametrize(
+        "entry, error",
+        [
+            ("env: {BAD-NAME: value}", "POSIX environment variable"),
+            ("secret_env: {PASSWORD: {source: BAD-SOURCE}}", "POSIX environment variable"),
+            ("secret_env: {PASSWORD: {source: NVFLARE_JOB_AUTH_TOKEN}}", "launcher-owned"),
+            ('secret_env: {PASSWORD: {source: SOURCE, key: ""}}', "non-empty string"),
+            ('env: {VALUE: "\\0"}', "NUL"),
+            ('env: {VALUE: "\\uD800"}', "UTF-8"),
+        ],
+    )
+    def test_process_rejects_invalid_environment(self, tmp_path, entry, error):
+        with pytest.raises(ValueError, match=error):
+            load_study_runtime_file(
+                _write(tmp_path, f"format_version: 2\nstudies:\n  study-a:\n    {entry}\n"),
+                launcher_mode="process",
+            )
+
     def test_parses_full_example(self, tmp_path):
         (tmp_path / "lung_cancer_pod.yaml").write_text(
             "apiVersion: v1\nkind: Pod\nspec:\n  serviceAccountName: study-sa\n", encoding="utf-8"
@@ -263,7 +309,8 @@ class TestLoadStudyRuntimeFile:
                 )
             )
 
-    def test_env_and_secret_env_collision_rejected(self, tmp_path):
+    @pytest.mark.parametrize("launcher_mode", ["k8s", "process"])
+    def test_env_and_secret_env_collision_rejected(self, tmp_path, launcher_mode):
         with pytest.raises(ValueError, match="both env and secret_env"):
             load_study_runtime_file(
                 _write(
@@ -274,8 +321,9 @@ class TestLoadStudyRuntimeFile:
                     "    env:\n"
                     "      DB_USER: admin\n"
                     "    secret_env:\n"
-                    "      DB_USER: {source: study-db, key: username}\n",
-                )
+                    "      DB_USER: {source: STUDY_DB, key: username}\n",
+                ),
+                launcher_mode=launcher_mode,
             )
 
     @pytest.mark.parametrize(
@@ -290,13 +338,15 @@ class TestLoadStudyRuntimeFile:
             ("secret_env", "NVFLARE_JOB_SSID: {source: study-db, key: ssid}"),
         ],
     )
-    def test_launcher_owned_env_names_rejected(self, tmp_path, section, entry):
+    @pytest.mark.parametrize("launcher_mode", ["k8s", "process"])
+    def test_launcher_owned_env_names_rejected(self, tmp_path, section, entry, launcher_mode):
         with pytest.raises(ValueError, match="launcher-owned"):
             load_study_runtime_file(
                 _write(
                     tmp_path,
                     "format_version: 2\n" "studies:\n" "  study-a:\n" f"    {section}:\n" f"      {entry}\n",
-                )
+                ),
+                launcher_mode=launcher_mode,
             )
 
     def test_docker_kwargs_parsed(self, tmp_path):
