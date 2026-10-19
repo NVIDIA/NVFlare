@@ -99,7 +99,7 @@ class BootstrapTests(unittest.TestCase):
                 patch.object(bootstrap, "run", side_effect=lambda *a, **k: events.append("firewall")),
                 patch.object(bootstrap, "discovered_resolvers", return_value=["10.0.0.53"]),
                 patch.object(bootstrap, "firewall", side_effect=lambda *a, **k: events.append("narrow")) as narrow,
-                patch.object(bootstrap, "time_sync", side_effect=lambda **k: events.append("clock")),
+                patch.object(bootstrap, "time_sync", side_effect=lambda **k: events.append("clock")) as clock,
                 patch.object(bootstrap, "mount_vault", side_effect=lambda *a, **k: events.append("vault")),
                 patch.object(
                     bootstrap,
@@ -116,6 +116,7 @@ class BootstrapTests(unittest.TestCase):
             if not dev:
                 # Pre-unlock rules keep only bootstrap egress and the learned resolvers.
                 narrow.assert_called_once_with([], [443], resolvers=["10.0.0.53"])
+                clock.assert_called_once_with(max_tries=bootstrap.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
 
     def test_missing_firewall_or_bad_clock_never_reaches_vault(self):
         for failed in ("run", "time_sync"):

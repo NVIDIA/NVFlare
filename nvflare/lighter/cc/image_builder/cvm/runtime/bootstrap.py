@@ -57,6 +57,9 @@ CLOCK_MAX_CORRECTION_SECONDS = 0.5
 CLOCK_MAX_SKEW_PPM = 1000
 
 
+CLOCK_INITIAL_SYNC_TRIES = 180
+
+
 CONTAINER_NAME = "cvm-application"
 
 
@@ -190,11 +193,15 @@ def time_sync(max_tries=30, *, initialize=False):
     """Require chronyd synchronization before relying on signed token time claims."""
     if Path("/etc/cvm/dev_mode").exists():
         return
-    require(type(max_tries) is int and 1 <= max_tries <= 90, "Invalid clock synchronization budget")
+    require(
+        type(max_tries) is int and 1 <= max_tries <= CLOCK_INITIAL_SYNC_TRIES,
+        "Invalid clock synchronization budget",
+    )
     if initialize:
         # A sealed image has no saved frequency estimate. Align chrony's update
-        # threshold with our gate, obtain an initial correction, then collect
-        # extra samples. Only the final bounded skew check authorizes startup.
+        # threshold with our gate and obtain an initial correction. Rapid burst
+        # samples do not span enough time to estimate skew, so the final bounded
+        # gate allows natural polls to establish frequency before authorizing startup.
         run(["/usr/bin/chronyc", "maxupdateskew", str(CLOCK_MAX_SKEW_PPM)], timeout=2)
         try:
             run(
@@ -202,10 +209,9 @@ def time_sync(max_tries=30, *, initialize=False):
                 timeout=32,
             )
         except BuildError:
-            # A cold clock may need the following burst before it has enough
+            # A cold clock may need natural poll intervals before it has enough
             # samples. The final bounded gate below still authorizes startup.
             pass
-        run(["/usr/bin/chronyc", "burst", "8/16"], timeout=2)
     run(
         [
             "/usr/bin/chronyc",
@@ -230,7 +236,7 @@ def bootstrap():
         # Narrow the measured bootstrap rules to the resolvers this boot learned
         # before the first KBS contact; the measured file cannot know them.
         firewall([], config["bootstrap_egress"], resolvers=discovered_resolvers())
-        time_sync(max_tries=90, initialize=True)
+        time_sync(max_tries=CLOCK_INITIAL_SYNC_TRIES, initialize=True)
     mount_vault(config, dev=dev)
     units = finish_bootstrap(config, dev=dev)
     supervise(config, units, STATE)
