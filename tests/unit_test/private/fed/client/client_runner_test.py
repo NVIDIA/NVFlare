@@ -37,6 +37,7 @@ from nvflare.private.fed.client.client_runner import (
 )
 from nvflare.private.json_configer import ConfigError
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+from tests.timing_utils import isolate_time
 
 
 def _runner():
@@ -406,6 +407,9 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     ctx = FLContext()
     saved = tmp_path / "result"
     saved.write_bytes(b"finished task output")
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.write_bytes(b"matching committed state")
+    committed_at = checkpoint.stat().st_mtime_ns
     result = Shareable({"result_file": str(saved)})
     result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt")
     observed = []
@@ -413,6 +417,8 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     def send(current, fl_ctx, **kwargs):
         observed.append(current)
         assert saved.read_bytes() == b"finished task output"
+        assert checkpoint.read_bytes() == b"matching committed state"
+        assert checkpoint.stat().st_mtime_ns == committed_at
         receipt = TaskResultReceipt.RETRY if len(observed) == 1 else TaskResultReceipt.RECEIVED
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
         return True
@@ -558,3 +564,11 @@ def test_handle_event_reports_running_tasks_and_aborts_on_fatal_error():
     fl_ctx.set_prop(FLContextKey.EVENT_DATA, "fatal", private=True, sticky=False)
     runner.handle_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
     assert runner.run_abort_signal.triggered
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.private.fed.client.client_runner",
+    )

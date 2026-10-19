@@ -133,6 +133,30 @@ def test_lifecycle_event_delivers_explicit_job_id_to_scheduler():
     assert scheduler.scheduled_jobs == []
 
 
+@pytest.mark.parametrize("operation", ["mark_run_aborted", "fail_run"])
+def test_job_terminal_operations_do_not_change_other_contexts(operation):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+    engine = MagicMock()
+    engine.exception_run_processes = {}
+    engine.run_processes = {}
+    manager = FLContextManager(engine=engine)
+    contexts = []
+    for job_id in ("job-A", "job-B"):
+        ctx = manager.new_context()
+        job = MagicMock(job_id=job_id)
+        runner.running_jobs[job_id] = job
+        if operation == "fail_run":
+            assert runner.fail_run(job_id, ProcessExitCode.EXCEPTION, ctx) == ""
+        else:
+            assert runner.mark_run_aborted(job_id, ctx) == ""
+        contexts.append(ctx)
+
+    assert [ctx.get_prop(FLContextKey.CURRENT_JOB_ID) for ctx in contexts] == ["job-A", "job-B"]
+    assert manager.new_context().get_prop(FLContextKey.CURRENT_JOB_ID) is None
+
+
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=False)
 def test_start_run_passes_strict_false_when_flag_disabled(mock_get_bool, mock_check_replies):
@@ -614,7 +638,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
+    completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1", sticky=False)
     assert parent.mock_calls == [
         call.save_workspace(completion_ctx, ANY, "job-1"),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
@@ -748,7 +772,7 @@ def test_fail_run_records_exception_process_without_setting_aborted_status():
     engine.lock.__enter__.assert_called_once()
     assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
-    fl_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
+    fl_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1", sticky=False)
 
 
 def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock():

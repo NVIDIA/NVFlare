@@ -249,7 +249,7 @@ class TestConcurrentSameIdCreation:
         service = _make_service()
         for round_no in range(30):
             tid = f"TX-RACE2-{round_no}"
-            barrier = th.Barrier(2)
+            barrier = th.Barrier(2, timeout=10)
             results = []
 
             def create():

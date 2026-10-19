@@ -68,7 +68,7 @@ def load_hello_pt_module(file_name, example_dir=HELLO_PT_DIR):
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
 
-    sibling_names = ("model", "prepare_data")
+    sibling_names = ("model", "prepare_data", "client")
     original_sys_path = list(sys.path)
     original_modules = {name: sys.modules[name] for name in sibling_names if name in sys.modules}
     for name in sibling_names:

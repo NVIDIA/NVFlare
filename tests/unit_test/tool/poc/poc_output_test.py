@@ -24,6 +24,7 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.tool import cli_output
+from tests.timing_utils import isolate_time
 
 
 class TestPocOutput:
@@ -1722,3 +1723,11 @@ class TestPocOutput:
         assert admin_cmd.endswith("fl_admin.sh --study cancer_research")
         assert server_cmd.endswith("start.sh")
         assert "--study" not in server_cmd
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.tool.poc.poc_commands",
+    )

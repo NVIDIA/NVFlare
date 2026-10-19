@@ -226,26 +226,27 @@ class SocketConnection(Connection):
 
 class ConnectionHandler(BaseRequestHandler):
     def handle(self):
+        driver = self.server.driver
+        if not driver.register_pending_socket(self.request):
+            return
         # A silent TLS peer must not block the listener's accept/shutdown loop.
-        if self.server.ssl_context:
-            try:
+        try:
+            if self.server.ssl_context:
                 # Honor the connector timeout; default to asyncio's TLS handshake budget.
                 timeout = self.server.connector.params.get(DriverParams.CONNECT_TIMEOUT, 60.0)
                 self.request.settimeout(float(timeout) if timeout is not None else None)
                 self.request.do_handshake()
                 self.request.settimeout(None)
-            except OSError as ex:
-                log.debug(f"TLS handshake failed: {secure_format_exception(ex)}")
-                return
+        except OSError as ex:
+            log.debug(f"TLS handshake failed: {secure_format_exception(ex)}")
+            return
+        finally:
+            driver.release_pending_socket(self.request)
 
         # noinspection PyUnresolvedReferences
         connection = SocketConnection(self.request, self.server.connector, self.server.ssl_context)
         # noinspection PyUnresolvedReferences
-        driver = self.server.driver
-
-        driver.add_connection(connection)
-        # Shutdown may have taken its snapshot while this peer was still handshaking.
-        if self.server.connector.stopped.is_set():
-            connection.close()
+        if not driver.add_connection(connection):
+            return
         connection.read_loop()
         driver.close_connection(connection)

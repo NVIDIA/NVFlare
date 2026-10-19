@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -132,6 +133,62 @@ def test_bootstrap_publish_tolerates_temporary_file_disappearing(tmp_path, boots
     path = str(tmp_path / "bootstrap.json")
     protocol.write_bootstrap(path, bootstrap)
     assert protocol.read_bootstrap(path) == bootstrap
+
+
+@pytest.mark.parametrize("boundary", ["writer", "file_fsync", "guard", "link", "directory_fsync"])
+def test_publication_cleanup_preserves_primary_failure(tmp_path, monkeypatch, boundary, caplog):
+    primary = RuntimeError(f"primary {boundary} failure")
+    unlink = protocol.os.unlink
+    fsync = protocol.os.fsync
+    fsync_calls = 0
+
+    def write(stream):
+        if boundary == "writer":
+            raise primary
+        stream.write(b"payload")
+
+    @contextmanager
+    def guard():
+        if boundary == "guard":
+            raise primary
+        yield
+
+    def fail_fsync(fd):
+        nonlocal fsync_calls
+        fsync_calls += 1
+        if (boundary == "file_fsync" and fsync_calls == 1) or (boundary == "directory_fsync" and fsync_calls == 2):
+            raise primary
+        return fsync(fd)
+
+    def fail_link(*args, **kwargs):
+        raise primary
+
+    def fail_cleanup(path, **kwargs):
+        unlink(path, **kwargs)
+        raise PermissionError("secondary temporary cleanup failure")
+
+    monkeypatch.setattr(protocol.os, "fsync", fail_fsync)
+    monkeypatch.setattr(protocol.os, "unlink", fail_cleanup)
+    if boundary == "link":
+        monkeypatch.setattr(protocol.os, "link", fail_link)
+    with pytest.raises(RuntimeError, match=f"primary {boundary} failure") as raised:
+        protocol._publish_exclusive(str(tmp_path), "result", write, publication_guard=guard)
+    assert raised.value is primary
+    assert "secondary temporary cleanup failure" in caplog.text
+    assert not list(tmp_path.glob(".result.*"))
+
+
+def test_publication_cleanup_failure_is_reported_when_publication_succeeded(tmp_path, monkeypatch):
+    unlink = protocol.os.unlink
+
+    def fail_cleanup(path, **kwargs):
+        unlink(path, **kwargs)
+        raise PermissionError("temporary cleanup failure")
+
+    monkeypatch.setattr(protocol.os, "unlink", fail_cleanup)
+    with pytest.raises(PermissionError, match="temporary cleanup failure"):
+        protocol._publish_exclusive(str(tmp_path), "result", lambda stream: stream.write(b"payload"))
+    assert (tmp_path / "result").read_bytes() == b"payload"
 
 
 @pytest.mark.parametrize("field", ["state_names", "state_revision", "state_records", "script"])
