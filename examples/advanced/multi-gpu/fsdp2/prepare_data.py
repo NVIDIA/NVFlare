@@ -65,7 +65,7 @@ def main():
     }
     for name, split in splits.items():
         packed = pack_text(split, tokenizer, args.seq_length)
-        path = Path(args.data_dir) / name
+        path = Path(args.data_dir).expanduser() / name
         packed.save_to_disk(str(path))
         print(f"{name}: {len(packed):,} blocks of {args.seq_length} tokens -> {path}")
 
