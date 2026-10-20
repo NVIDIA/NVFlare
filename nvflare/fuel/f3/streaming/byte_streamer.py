@@ -904,7 +904,9 @@ class ByteStreamer:
                 def finish_accounting():
                     try:
                         if tx_task.stream_future.exception(timeout=0) is None:
-                            accounting_attempt.accepted(stream_size)
+                            # A stream may declare size=0 when its length is
+                            # unknown. TxTask resolves success with bytes sent.
+                            accounting_attempt.accepted(tx_task.stream_future.result(timeout=0))
                         else:
                             accounting_attempt.abandon()
                     except BaseException as ex:

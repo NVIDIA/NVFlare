@@ -624,8 +624,46 @@ def test_byte_streamer_accounts_one_whole_stream_at_terminal_success(monkeypatch
     assert _counter_value(counter) == {"payload_bytes": "6", "messages": "1"}
 
 
+@pytest.mark.parametrize("declared_size,payload", [(6, b"abcdef"), (0, b"abcdef"), (0, b""), (99, b"abcdef")])
+def test_byte_streamer_counts_actual_streamed_bytes_instead_of_declared_size(monkeypatch, declared_size, payload):
+    cell = SimpleNamespace(my_info=FqcnInfo("origin"), ALL_CELLS={}, fire_and_forget=MagicMock(return_value={}))
+    streamer = ByteStreamer.__new__(ByteStreamer)
+    streamer.cell = cell
+    streamer.chunk_size = 4
+    counter = F3Counter()
+    context = attach_logical_send_context(Message(), counter, F3TrafficClass.TASK_RESULT, recipient_name="site-1")
+    stream = MagicMock()
+    stream.get_size.return_value = declared_size
+    stream.read.side_effect = [payload[:4], payload[4:], b""] if payload else [b""]
+    tasks = []
+
+    def admit_task(task, _handler):
+        tasks.append(task)
+        task.task_future = MagicMock()
+
+    monkeypatch.setattr(TxTask, "start_task_thread", admit_task)
+    monkeypatch.setattr(ByteStreamer.sent_stream_counter_pool, "increment", lambda **_kwargs: None)
+    monkeypatch.setattr(ByteStreamer.sent_stream_size_pool, "record_value", lambda **_kwargs: None)
+
+    future = streamer.send("channel", "topic", "site-1", {}, stream, reliable=False, accounting_context=context)
+    try:
+        assert counter.pending_count == 1
+        tasks[0].send_loop()
+
+        assert future.result(timeout=0) == len(payload)
+        assert counter.pending_count == 0
+        assert _counter_value(counter) == {"payload_bytes": str(len(payload)), "messages": "1"}
+        sent_bytes = sum(len(sent.args[3].payload) for sent in cell.fire_and_forget.call_args_list)
+        assert sent_bytes == len(payload)
+    finally:
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map.pop(future.stream_id, None)
+            ByteStreamer.error_context_map.pop(future.stream_id, None)
+
+
 @pytest.mark.parametrize("terminal", ("error", "cancel"))
-def test_byte_streamer_abandons_accounting_on_async_failure_or_cancel(monkeypatch, terminal):
+@pytest.mark.parametrize("declared_size", (0, 6))
+def test_byte_streamer_abandons_accounting_on_async_failure_or_cancel(monkeypatch, terminal, declared_size):
     from nvflare.fuel.f3.streaming.stream_types import StreamError
 
     cell = SimpleNamespace(my_info=FqcnInfo("origin"), ALL_CELLS={})
@@ -635,6 +673,7 @@ def test_byte_streamer_abandons_accounting_on_async_failure_or_cancel(monkeypatc
     counter = F3Counter()
     context = attach_logical_send_context(Message(), counter, F3TrafficClass.TASK_RESULT, recipient_name="site-1")
     stream = BlobStream(b"abcdef", {})
+    stream.size = declared_size
 
     def admit_task(task, _handler):
         task.task_future = MagicMock()
