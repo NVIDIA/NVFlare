@@ -28,7 +28,7 @@ from ..common.contracts import (
 from ..common.errors import BuildError, require
 from ..common.io import read_json, write_json
 from ..common.linux import run
-from .audit import emit, emit_diagnostic
+from .audit import emit, emit_diagnostic, flush
 from .gpu import confirm_not_ready, readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
@@ -50,6 +50,7 @@ QUARANTINE_RETRY_SECONDS = 60
 REOPEN_TIMEOUT_SECONDS = 900
 WATCHDOG_SECONDS = 360
 REVOCATION_TIMEOUT_SECONDS = 180
+TERMINAL_AUDIT_FLUSH_SECONDS = 1
 
 
 def periodic_timeout(config):
@@ -187,6 +188,10 @@ def quarantine(config, units, state):
     emit("quarantine")
     if config.get("gpu") == "nvidia_cc":
         emit_diagnostic("gpu_quarantine_terminal")
+        # The supervisor exits immediately after terminal containment. Give
+        # the daemon writer time to publish the decision and diagnostic, but
+        # never let untrusted audit storage delay fail-closed poweroff.
+        flush(TERMINAL_AUDIT_FLUSH_SECONDS)
         return
     environment = dict(os.environ)
     environment.pop("NOTIFY_SOCKET", None)

@@ -26,7 +26,8 @@ from ..common.io import canonical, read_json
 
 # One daemon writer and a bounded queue per process. Regular-file/block-device
 # I/O can sleep despite O_NONBLOCK; it must never run on the supervisor thread.
-# Advisory records may be dropped on congestion or process exit.
+# Advisory records may be dropped on congestion or process exit. Terminal
+# paths can request a bounded drain so healthy outputs are not lost on exit.
 _records = queue.Queue(maxsize=8)
 _writer = None
 _DIAGNOSTIC_CODES = frozenset({"gpu_quarantine_terminal", "gpu_readiness_revoke_failed"})
@@ -34,6 +35,10 @@ _DIAGNOSTIC_CODES = frozenset({"gpu_quarantine_terminal", "gpu_readiness_revoke_
 
 class _Diagnostic(NamedTuple):
     code: str
+
+
+class _Barrier(NamedTuple):
+    done: threading.Event
 
 
 def record(config, identity, decision):
@@ -90,7 +95,11 @@ def _write(item):
 
 def _drain():
     while True:
-        _write(_records.get())
+        item = _records.get()
+        if isinstance(item, _Barrier):
+            item.done.set()
+        else:
+            _write(item)
 
 
 def _enqueue(item):
@@ -101,8 +110,9 @@ def _enqueue(item):
             _writer = threading.Thread(target=_drain, name="cvm-audit", daemon=True)
             _writer.start()
         _records.put_nowait(item)
+        return True
     except (RuntimeError, queue.Full):
-        pass
+        return False
 
 
 def emit(decision):
@@ -114,3 +124,9 @@ def emit_diagnostic(code):
     """Queue a static operational code without accepting exception details."""
     if isinstance(code, str) and code in _DIAGNOSTIC_CODES:
         _enqueue(_Diagnostic(code))
+
+
+def flush(timeout):
+    """Give queued records a bounded opportunity to reach their outputs."""
+    barrier = _Barrier(threading.Event())
+    return _enqueue(barrier) and barrier.done.wait(timeout)
