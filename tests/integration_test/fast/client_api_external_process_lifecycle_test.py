@@ -23,7 +23,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
@@ -267,6 +267,8 @@ def _paused_download(env, result, monkeypatch):
 def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_process_env, monkeypatch, caplog):
     env = external_process_env
     result, trainer = _accepted_lazy_result(env)
+    request_shutdown = Mock(wraps=env.backend._request_trainer_shutdown)
+    monkeypatch.setattr(env.backend, "_request_trainer_shutdown", request_shutdown)
     with _paused_download(env, result, monkeypatch) as download:
         caplog.clear()
         env.run_abort_signal.trigger("job aborted")
@@ -283,6 +285,9 @@ def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_p
     assert not trainer.result_source_live.is_set()
     assert env.backend._result_reapers == set()
     assert env.backend._active_launch is None
+    # Abort must bypass the normal shutdown-ack wait, even on a busy host.
+    wait_timeouts = [call.kwargs["wait_timeout"] for call in request_shutdown.call_args_list]
+    assert set(wait_timeouts) == {0.0}, wait_timeouts
     assert "DOWNLOAD_RETRY" not in caplog.text
     env.executor.system_panic.assert_not_called()
 

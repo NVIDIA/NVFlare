@@ -528,8 +528,7 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_trainer_abort_mid_task_returns_task_aborted(self, clean_databus, custom_dir, monkeypatch):
-        """TOPIC_ABORT arriving mid-wait (what TaskScriptRunner fires when the script raises)
-        aborts the current task well before the result-wait bound -- legacy parity."""
+        """A trainer abort during task delivery returns before the first result poll."""
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=30.0)
         try:
             # deterministic: the abort fires synchronously right after the task is delivered
@@ -543,6 +542,39 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             assert backend._abort_reason == "ABORT: script failure"
             sleep.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("abort_source", ["trainer", "signal"])
+    def test_abort_during_result_poll_returns_task_aborted(self, clean_databus, custom_dir, monkeypatch, abort_source):
+        """An abort arriving after polling starts is observed on the next iteration."""
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=30.0)
+        abort_signal = Signal()
+        now = [0.0]
+
+        def abort_during_poll(delay):
+            if sleep.call_count > 1:
+                pytest.fail("result polling continued after abort")
+            now[0] += delay
+            if abort_source == "trainer":
+                clean_databus.publish([TOPIC_ABORT], "script failure")
+            else:
+                abort_signal.trigger("task cancelled")
+
+        sleep = Mock(side_effect=abort_during_poll)
+        try:
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ipb_module, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep))
+                result = backend.execute("train", _result_shareable(), fl_ctx, abort_signal)
+
+            assert result.get_return_code() == ReturnCode.TASK_ABORTED
+            expected_reason = (
+                "ABORT: script failure"
+                if abort_source == "trainer"
+                else "ABORT: 'train' is aborted, abort_signal_triggered"
+            )
+            assert backend._abort_reason == expected_reason
+            sleep.assert_called_once()
         finally:
             backend.finalize(FLContext())
 

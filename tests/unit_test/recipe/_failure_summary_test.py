@@ -235,7 +235,7 @@ def test_existing_client_error_streams_are_saved_and_summarized(tmp_path, failed
         output, expected_error="FileNotFoundError: missing training.npy", expected_file="client.py:"
     )
     assert output.count("FileNotFoundError: missing training.npy") == 1
-    assert f"{', '.join(failed_sites)} / TaskScriptRunner" in output
+    assert f"Where     {', '.join(failed_sites)} / TaskScriptRunner" in output
     assert "client.py:31 (train)" in output
     assert "fire abort event" not in output
     assert len(list(tmp_path.rglob("error_log.txt"))) == len(available_sites)
