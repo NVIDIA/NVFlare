@@ -22,6 +22,21 @@ import pytest
 from tests.hello_pt_test_utils import REPO_ROOT, assert_hello_pt_failure_summary, load_hello_pt_module
 
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
+pytestmark = pytest.mark.usefixtures("single_threaded_torch")
+
+
+@pytest.fixture
+def poc_env_module(monkeypatch):
+    module = importlib.import_module("nvflare.recipe.poc_env")
+    get_job_result = module.PocEnv.get_job_result
+
+    def bounded_job_result(env, job_id, timeout=0.0):
+        # The CLI waits indefinitely by default. Let its real monitor time out
+        # and close normally before pytest's outer guard interrupts cleanup.
+        return get_job_result(env, job_id, timeout=timeout or 120)
+
+    monkeypatch.setattr(module.PocEnv, "get_job_result", bounded_job_result)
+    return module
 
 
 def _read_final_accuracies(result_path):
@@ -36,9 +51,9 @@ def _read_final_accuracies(result_path):
 
 
 @pytest.mark.timeout(300)
-def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys):
+def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys, poc_env_module):
+    """Two clients aggregate and evaluate, retaining results in an isolated POC."""
     monkeypatch.setenv("FL_LOG_LEVEL", "progress")
-    poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     poc_workspace = tmp_path / "poc-workspace"
     poc_workspace.mkdir()
     retained_result = poc_workspace / "retained-result"
@@ -56,7 +71,9 @@ def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys
     monkeypatch.setenv("PYTHONPATH", source_pythonpath)
 
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
-        poc_result = job_module.main(["--env", "poc"])
+        # Keep the real three-round learning/evaluation contract while bounding
+        # each client's CPU use independently of the host's core count.
+        poc_result = job_module.main(["--env", "poc", "--torch_threads", "1"])
 
     result_path = Path(poc_result).resolve()
     assert result_path.is_dir()
@@ -96,10 +113,11 @@ def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys
 
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("missing_cifar", [False, True])
-def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys, missing_cifar):
+def test_failed_poc_job_retains_download_and_client_error_logs(
+    tmp_path, monkeypatch, capsys, missing_cifar, poc_env_module
+):
     """A deployed client failure preserves diagnostics after the POC services stop."""
     monkeypatch.setenv("FL_LOG_LEVEL", "concise")
-    poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
     monkeypatch.delenv("NVFLARE_HOME", raising=False)
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
