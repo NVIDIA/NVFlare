@@ -12,7 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
+from nvflare.client.cell.defs import (
+    CHANNEL,
+    PROTOCOL_VERSION,
+    RESOURCE_TRANSFER_BRIDGE_VERSION,
+    RESOURCE_TRANSFER_MAX_BYTES,
+    RESOURCE_TRANSFER_MAX_GROUPS,
+    MsgKey,
+    ResultState,
+    TaskState,
+    Topic,
+)
 from nvflare.client.ipc import defs as ipc_defs
 
 
@@ -23,6 +33,11 @@ def _public_str_values(clazz) -> dict:
 class TestDefs:
     def test_protocol_version(self):
         assert PROTOCOL_VERSION == 1
+
+    def test_accounting_extension_is_separately_versioned_and_bounded(self):
+        assert RESOURCE_TRANSFER_BRIDGE_VERSION == 1
+        assert RESOURCE_TRANSFER_MAX_BYTES == 64 * 1024
+        assert RESOURCE_TRANSFER_MAX_GROUPS == 256
 
     def test_expected_topics_present(self):
         expected = {
@@ -109,6 +124,9 @@ class TestDefs:
             "TRAINER_FQCN": "trainer_fqcn",
             "RANK": "rank",
             "PROTOCOL_VERSION": "protocol_version",
+            "RESOURCE_TRANSFER_VERSION": "resource_transfer_version",
+            "RESOURCE_TRANSFER": "resource_transfer",
+            "RESOURCE_TRANSFER_RECIPIENTS": "resource_transfer_recipients",
             "PROOF": "proof",
             "REASON": "reason",
             "ATTACH_ID": "attach_id",

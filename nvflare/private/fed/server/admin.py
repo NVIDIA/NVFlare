@@ -283,7 +283,13 @@ class FedAdminServer(AdminServer):
             else:
                 return replies[0]
 
-    def send_requests_and_get_reply_dict(self, requests: dict, timeout_secs=2.0) -> dict:
+    def send_requests_and_get_reply_dict(
+        self,
+        requests: dict,
+        timeout_secs=2.0,
+        logical_send_accounting=None,
+        logical_send_traffic_class=None,
+    ) -> dict:
         """Send requests to clients
 
         Args:
@@ -299,12 +305,26 @@ class FedAdminServer(AdminServer):
                 result[token] = None
 
             with self.sai.new_context() as fl_ctx:
-                replies = self.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
+                replies = self.send_requests(
+                    requests,
+                    fl_ctx,
+                    timeout_secs=timeout_secs,
+                    logical_send_accounting=logical_send_accounting,
+                    logical_send_traffic_class=logical_send_traffic_class,
+                )
                 for r in replies:
                     result[r.client_token] = r.reply
         return result
 
-    def send_requests(self, requests: dict, fl_ctx: FLContext, timeout_secs=2.0, optional=False) -> [ClientReply]:
+    def send_requests(
+        self,
+        requests: dict,
+        fl_ctx: FLContext,
+        timeout_secs=2.0,
+        optional=False,
+        logical_send_accounting=None,
+        logical_send_traffic_class=None,
+    ) -> [ClientReply]:
         """Send requests to clients.
 
         NOTE::
@@ -329,7 +349,7 @@ class FedAdminServer(AdminServer):
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
             request.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-        return send_requests(
+        send_args = dict(
             cell=self.cell,
             command="admin",
             requests=requests,
@@ -337,6 +357,12 @@ class FedAdminServer(AdminServer):
             timeout_secs=timeout_secs,
             optional=optional,
         )
+        if logical_send_accounting is not None and logical_send_traffic_class is not None:
+            send_args.update(
+                logical_send_accounting=logical_send_accounting,
+                logical_send_traffic_class=logical_send_traffic_class,
+            )
+        return send_requests(**send_args)
 
     def stop(self):
         super().stop()

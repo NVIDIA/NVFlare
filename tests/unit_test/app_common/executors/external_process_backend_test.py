@@ -54,7 +54,7 @@ from nvflare.client.cell.bootstrap import (
     BootstrapKey,
     read_bootstrap_config,
 )
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, RESOURCE_TRANSFER_BRIDGE_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.data_event.utils import set_scope_property
@@ -448,6 +448,178 @@ def _install_auto_result(env, lazy_result=False):
         CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: lazy_result}
     )
     return seen
+
+
+class TestResourceTransferBridge:
+    @pytest.mark.parametrize("version", [None, 99, True, "1", RESOURCE_TRANSFER_BRIDGE_VERSION])
+    def test_capability_requires_exact_supported_version_and_active_accounting(self, env, monkeypatch, version):
+        manager = Mock()
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", lambda _cell: manager)
+        if version is not None:
+            env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: version})
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
+        try:
+            reply = env.harness.hello_replies[0]
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_ACCEPTED
+            if type(version) is int and version == RESOURCE_TRANSFER_BRIDGE_VERSION:
+                assert reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] == 1
+            else:
+                assert MsgKey.RESOURCE_TRANSFER_VERSION not in reply.payload
+        finally:
+            backend.finalize(FLContext())
+
+    def test_disabled_accounting_does_not_negotiate_the_bridge(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", lambda _cell: None)
+        env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: 1})
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
+        try:
+            assert MsgKey.RESOURCE_TRANSFER_VERSION not in env.harness.hello_replies[0].payload
+        finally:
+            backend.finalize(FLContext())
+
+    def test_accounting_initialization_error_does_not_block_the_handshake(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", Mock(side_effect=RuntimeError("counter unavailable")))
+        env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: 1})
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
+        try:
+            assert env.harness.hello_replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_ACCEPTED
+            assert MsgKey.RESOURCE_TRANSFER_VERSION not in env.harness.hello_replies[0].payload
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("supported", [False, True])
+    def test_task_sends_resolved_accounting_destination_without_adding_lifetime_header(
+        self, env, monkeypatch, supported
+    ):
+        manager = Mock()
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", lambda _cell: manager)
+        if supported:
+            env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: 1})
+        backend, fl_ctx = _initialized_backend(env, shutdown_timeout=0.0)
+        try:
+            seen = _install_auto_result(env)
+            shareable = _result_shareable()
+            assert shareable.get_header(FOBSContextKey.RECEIVER_IDS) is None
+            assert backend.execute("train", shareable, fl_ctx, Signal()).get_return_code() == ReturnCode.OK
+            task_payload = seen.task_payloads[0][2]
+            if supported:
+                assert task_payload[MsgKey.RESOURCE_TRANSFER_RECIPIENTS] == ["server.job-1"]
+            else:
+                assert MsgKey.RESOURCE_TRANSFER_RECIPIENTS not in task_payload
+            assert task_payload[MsgKey.MODEL].get_header(FOBSContextKey.RECEIVER_IDS) is None
+        finally:
+            backend.finalize(FLContext())
+
+    def _accept_lazy_result(self, env, monkeypatch, *, supported=True):
+        manager = Mock()
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", lambda _cell: manager)
+        if supported:
+            env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: 1})
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
+        monkeypatch.setattr(backend, "_monitor_accepted_result_source", lambda *_args: None)
+        trainer = backend._active_launch
+        task = ebp._TaskContext(task_id="task-1")
+        task.result_receiver_ids = ("server.job-1",)
+        backend._current_task = task
+        result = _result_shareable()
+        result["lazy"] = LazyDownloadRef(trainer.trainer_fqcn, "ref-a", "T0")
+        reply = env.cell.deliver(
+            Topic.RESULT_READY,
+            trainer.trainer_fqcn,
+            {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id, MsgKey.RESULT: result},
+        )
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+        return backend, trainer, task, manager
+
+    def test_inline_result_does_not_create_a_missing_source_accounting_gap(self, env, monkeypatch):
+        manager = Mock()
+        monkeypatch.setattr(ebp, "get_external_transfer_manager", lambda _cell: manager)
+        env.harness.hello_mutator = lambda payload: payload.update({MsgKey.RESOURCE_TRANSFER_VERSION: 1})
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
+        try:
+            trainer = backend._active_launch
+            task = ebp._TaskContext(task_id="inline-task")
+            backend._current_task = task
+            env.cell.deliver(
+                Topic.RESULT_READY,
+                trainer.trainer_fqcn,
+                {
+                    MsgKey.SESSION_ID: trainer.session_id,
+                    MsgKey.TASK_ID: task.task_id,
+                    MsgKey.RESULT: _result_shareable(),
+                },
+            )
+            reply = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {
+                    MsgKey.SESSION_ID: trainer.session_id,
+                    MsgKey.TASK_ID: task.task_id,
+                    MsgKey.RESOURCE_TRANSFER: {"version": 1, "groups": []},
+                },
+            )
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+            manager.register_result_source.assert_not_called()
+            manager.accept_summary.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("supported", [False, True])
+    def test_result_source_registration_uses_validated_session_and_actual_refs(self, env, monkeypatch, supported):
+        backend, trainer, task, manager = self._accept_lazy_result(env, monkeypatch, supported=supported)
+        try:
+            manager.register_result_source.assert_called_once_with(
+                trainer.session_id, task.task_id, trainer.trainer_fqcn, ("ref-a",), ("server.job-1",), supported
+            )
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("block", [None, "not-a-block", {"version": 99}, {"version": 1, "groups": "bad"}])
+    def test_malformed_accounting_still_retires_source_and_acknowledges(self, env, monkeypatch, block):
+        backend, trainer, task, manager = self._accept_lazy_result(env, monkeypatch)
+
+        def reject_optional_summary(*_args):
+            assert trainer.result_source_refs == ("ref-a",)
+            raise ValueError("malformed optional summary")
+
+        manager.accept_summary.side_effect = reject_optional_summary
+        try:
+            payload = {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id}
+            if block is not None:
+                payload[MsgKey.RESOURCE_TRANSFER] = block
+            reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, payload)
+            assert reply.payload == {MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: task.task_id}
+            assert not trainer.result_source_live.is_set()
+            assert trainer.result_source_task_id is None
+            assert trainer.result_source_refs == ()
+            manager.accept_summary.assert_called_once_with(
+                trainer.session_id, task.task_id, trainer.trainer_fqcn, block
+            )
+
+            # Keep the existing stale-message policy; do not reopen or reimport
+            # a result solely because the optional accounting block was replayed.
+            repeated = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, payload)
+            assert repeated.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+            assert manager.accept_summary.call_count == 1
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("mismatch", ["origin", "session", "task"])
+    def test_unmatched_outer_identity_never_reaches_accounting(self, env, monkeypatch, mismatch):
+        backend, trainer, task, manager = self._accept_lazy_result(env, monkeypatch)
+        try:
+            origin = trainer.trainer_fqcn if mismatch != "origin" else "another.job-1.trainer"
+            payload = {
+                MsgKey.SESSION_ID: trainer.session_id if mismatch != "session" else "stale-session",
+                MsgKey.TASK_ID: task.task_id if mismatch != "task" else "different-task",
+                MsgKey.RESOURCE_TRANSFER: {"version": 1, "groups": []},
+            }
+            reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, origin, payload)
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+            assert trainer.result_source_live.is_set()
+            manager.accept_summary.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
 
 
 class TestFactory:

@@ -17,6 +17,7 @@ from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.core_cell import TargetMessage
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.fed.resource_stats.f3_bindings import attach_f3_context
 
 
 class ClientReply(object):
@@ -36,7 +37,15 @@ class ClientReply(object):
 
 
 def send_requests(
-    cell, command: str, requests: dict, clients, job_id=None, timeout_secs=2.0, optional=False
+    cell,
+    command: str,
+    requests: dict,
+    clients,
+    job_id=None,
+    timeout_secs=2.0,
+    optional=False,
+    logical_send_accounting=None,
+    logical_send_traffic_class=None,
 ) -> [ClientReply]:
     """Send requests to clients.
 
@@ -83,9 +92,12 @@ def send_requests(
             fqcn = client.fqcn
             channel = CellChannel.CLIENT_MAIN
 
-        target_msgs[fqcn] = TargetMessage(
-            target=fqcn, channel=channel, topic=command, message=new_cell_message({}, req)
-        )
+        cell_message = new_cell_message({}, req)
+        if logical_send_accounting is not None and logical_send_traffic_class is not None:
+            attach_f3_context(
+                cell_message, logical_send_accounting, logical_send_traffic_class, recipient_name=client.name
+            )
+        target_msgs[fqcn] = TargetMessage(target=fqcn, channel=channel, topic=command, message=cell_message)
 
         fqcn_to_client[fqcn] = client
         fqcn_to_req[fqcn] = req

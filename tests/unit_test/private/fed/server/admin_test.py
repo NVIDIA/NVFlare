@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.hci.proto import StreamChannel
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
+from nvflare.private.fed.resource_stats.f3_counter import F3Counter, F3TrafficClass
 from nvflare.private.fed.server.admin import FedAdminServer, check_client_replies
 from nvflare.private.fed.server.message_send import ClientReply
 
@@ -257,4 +258,37 @@ def test_fed_admin_server_disabled_preserves_outbound_helpers_without_admin_comp
         clients=server.clients,
         timeout_secs=2.0,
         optional=False,
+    )
+
+
+def test_fed_admin_server_forwards_explicit_deployment_accounting_only():
+    server = object.__new__(FedAdminServer)
+    server.cell = MagicMock()
+    server.clients = {}
+    server.sai = MagicMock()
+    fl_ctx = MagicMock()
+    counter = F3Counter()
+    request = Message(topic="deploy", body=b"application")
+
+    with (
+        patch("nvflare.private.fed.server.admin.gen_new_peer_ctx", return_value=MagicMock()),
+        patch("nvflare.private.fed.server.admin.send_requests", return_value=[]) as send_client_requests,
+    ):
+        replies = server.send_requests(
+            {"token": request},
+            fl_ctx,
+            logical_send_accounting=counter,
+            logical_send_traffic_class=F3TrafficClass.JOB_APPLICATION,
+        )
+
+    assert replies == []
+    send_client_requests.assert_called_once_with(
+        cell=server.cell,
+        command="admin",
+        requests={"token": request},
+        clients=server.clients,
+        timeout_secs=2.0,
+        optional=False,
+        logical_send_accounting=counter,
+        logical_send_traffic_class=F3TrafficClass.JOB_APPLICATION,
     )
