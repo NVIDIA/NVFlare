@@ -296,6 +296,7 @@ class BlobStreamer:
             secure=secure,
             optional=optional,
             reliable=reliable,
+            accounting_context=message.get_logical_send_context(),
         )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):

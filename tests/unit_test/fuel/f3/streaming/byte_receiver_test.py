@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
@@ -104,6 +104,35 @@ def _make_chunk(
         headers.update(streaming_parameters)
     message.add_headers(headers)
     return message
+
+
+def test_first_chunk_preserves_only_local_receive_identity_not_wire_claims():
+    chunk = _make_chunk("site-1.job-1.trainer", 91, 0, StreamDataType.FINAL)
+    endpoint = SimpleNamespace(name="site-1.job-1.trainer")
+    chunk.set_header(MessagePropKey.COMMON_NAME, "forged-wire-site")
+    chunk.set_prop(MessagePropKey.ENDPOINT, endpoint)
+    chunk.set_prop(MessagePropKey.COMMON_NAME, "site-1")
+    chunk.set_prop("unrelated-local-property", "not-copied")
+    task = RxTask(91, "site-1.job-1.trainer", SimpleNamespace())
+
+    task._handle_new_stream(chunk)
+
+    assert task.stream_future.receive_properties == {
+        MessagePropKey.ENDPOINT: endpoint,
+        MessagePropKey.COMMON_NAME: "site-1",
+    }
+    assert task.stream_future.headers[MessagePropKey.COMMON_NAME] == "forged-wire-site"
+    assert MessagePropKey.ENDPOINT not in task.stream_future.headers
+
+
+def test_first_chunk_without_local_identity_does_not_promote_wire_claims():
+    chunk = _make_chunk("site-1.job-1.trainer", 92, 0, StreamDataType.FINAL)
+    chunk.set_header(MessagePropKey.COMMON_NAME, "site-1")
+    task = RxTask(92, "site-1.job-1.trainer", SimpleNamespace())
+
+    task._handle_new_stream(chunk)
+
+    assert task.stream_future.receive_properties == {}
 
 
 def test_find_or_create_task_stops_outside_map_lock(monkeypatch):

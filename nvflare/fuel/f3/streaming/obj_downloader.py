@@ -32,6 +32,7 @@ class ObjectDownloader:
         min_receivers=None,
         receiver_acquire_timeout=None,
         receiver_idle_timeout=None,
+        send_accounting_context=None,
         **cb_kwargs,
     ):
         """Constructor of ObjectDownloader.
@@ -75,6 +76,7 @@ class ObjectDownloader:
             min_receivers=min_receivers,
             receiver_acquire_timeout=receiver_acquire_timeout,
             receiver_idle_timeout=receiver_idle_timeout,
+            send_accounting_context=send_accounting_context,
             **cb_kwargs,
         )
 

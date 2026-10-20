@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -33,6 +34,26 @@ class Message:
 
         self.headers = headers
         self.payload = payload
+        self._logical_send_context = None
+
+    def clone(self, deep_copy_headers: bool = False) -> "Message":
+        """Clone wire content and deliberately retain local send accounting.
+
+        Other ad-hoc Python attributes are not copied.  In particular, the
+        accounting context is never inserted into ``headers`` and therefore
+        cannot cross a serialized transport boundary.
+        """
+
+        copy_fn = copy.deepcopy if deep_copy_headers else copy.copy
+        message = Message(headers=copy_fn(self.headers), payload=self.payload)
+        message._logical_send_context = self._logical_send_context
+        return message
+
+    def set_logical_send_context(self, context) -> None:
+        self._logical_send_context = context
+
+    def get_logical_send_context(self):
+        return self._logical_send_context
 
     def set_header(self, key: str, value):
         if self.headers is None:

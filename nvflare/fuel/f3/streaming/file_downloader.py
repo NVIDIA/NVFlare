@@ -103,6 +103,10 @@ class FileDownloadable(Downloadable):
         self.logger.debug(f"{received_bytes=}; sending {len(chunk)} bytes")
         return ProduceRC.OK, chunk, {_StateKey.RECEIVED_BYTES: received_bytes + len(chunk)}
 
+    def accounting_chunk_key(self, current_state, next_state) -> tuple[int, int]:
+        start = current_state.get(_StateKey.RECEIVED_BYTES, 0) if current_state else 0
+        return start, next_state[_StateKey.RECEIVED_BYTES]
+
     def downloaded_to_one(self, to_receiver: str, status: str):
         if self.file_downloaded_cb:
             self.file_downloaded_cb(to_receiver, status, self.name, **self.cb_kwargs)

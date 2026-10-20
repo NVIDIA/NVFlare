@@ -1325,8 +1325,33 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
+        accounting_attempt = None
+        direct_delivery = False
+        destination = message.get_header(MessageHeaderKey.DESTINATION, to_endpoint.name)
+        accounting_context = message.get_logical_send_context()
+        accounting_enabled = False
+        if accounting_context is not None:
+            try:
+                accounting_enabled = accounting_context.is_origin(self.my_info.fqcn)
+            except BaseException as ex:
+                self.logger.warning("logical-send accounting origin check failed: %s", secure_format_exception(ex))
+                self._mark_accounting_gap(accounting_context)
         try:
-            encode_payload(message, fobs_ctx=self.get_fobs_context())
+            if accounting_enabled:
+                try:
+                    prepare = getattr(accounting_context, "prepare_destination", None)
+                    if callable(prepare):
+                        prepare(self.my_info.fqcn, destination)
+                except BaseException:
+                    self._mark_accounting_gap(accounting_context)
+            fobs_ctx = self.get_fobs_context()
+            payload_size = encode_payload(message, fobs_ctx=fobs_ctx)
+            if accounting_enabled:
+                try:
+                    accounting_attempt = accounting_context.try_begin(self.my_info.fqcn, destination)
+                except BaseException as ex:
+                    self.logger.warning("logical-send accounting admission failed: %s", secure_format_exception(ex))
+                    self._mark_accounting_gap(accounting_context)
             self.encrypt_payload(message)
 
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())
@@ -1343,6 +1368,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
                 msg_size_mbs = self._msg_size_mbs(message)
                 if direct_cell:
+                    # A local final destination is excluded from the public
+                    # remote-accepted metric. A local first-hop relay still
+                    # represents the origin's logical send to a remote target.
+                    direct_delivery = to_endpoint.name == destination
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
                     self._send_direct_message(direct_cell, message)
@@ -1355,7 +1384,33 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self.log_error(err_text, message)
             self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
+        finally:
+            if accounting_attempt is not None:
+                try:
+                    if err or direct_delivery:
+                        accounting_attempt.abandon()
+                    else:
+                        accounting_attempt.accepted(payload_size)
+                except BaseException as ex:
+                    self.logger.warning("logical-send accounting completion failed: %s", secure_format_exception(ex))
+                    self._mark_accounting_gap(accounting_context)
+            elif err and accounting_enabled:
+                try:
+                    abandon = getattr(accounting_context, "abandon_before_send", None)
+                    if callable(abandon):
+                        abandon(self.my_info.fqcn, destination)
+                except BaseException:
+                    # Keep the original send result if optional cleanup fails.
+                    pass
         return err
+
+    def _mark_accounting_gap(self, accounting_context) -> None:
+        try:
+            mark_counter_gap = getattr(accounting_context, "mark_counter_gap", None)
+            if callable(mark_counter_gap):
+                mark_counter_gap()
+        except BaseException as ex:
+            self.logger.warning("logical-send accounting gap reporting failed: %s", secure_format_exception(ex))
 
     def _send_direct_message(self, target_cell, message):
         target_cell.process_message(
@@ -1376,7 +1431,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if ep:
                 reachable_targets[t] = ep
             else:
-                msg = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
+                msg = tm.message.clone()
                 msg.add_headers(
                     {
                         MessageHeaderKey.CHANNEL: tm.channel,
@@ -1392,7 +1447,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
-            req = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
+            req = tm.message.clone()
 
             req.add_headers(
                 {
