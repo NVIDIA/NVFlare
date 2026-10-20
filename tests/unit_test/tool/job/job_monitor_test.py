@@ -35,6 +35,7 @@ from nvflare.tool.job.job_cli import (
     _parse_monitor_duration_seconds,
     _parse_monitor_start_ts,
 )
+from tests.timing_utils import isolate_time
 
 
 def _configure_active_startup_kit(tmp_path, monkeypatch):
@@ -1042,3 +1043,11 @@ class TestJobMonitorOutput:
         )
         assert args.stats_target == "client"
         assert args.metrics == ["loss", "accuracy"]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.tool.job.job_cli",
+    )
