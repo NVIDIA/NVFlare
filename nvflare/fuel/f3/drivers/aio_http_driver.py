@@ -140,7 +140,7 @@ class AioHttpDriver(AioBaseDriver):
             scheme = "wss" if self.ssl_context else "ws"
             url = f"{scheme}://{host}:{port}/{WS_PATH}"
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(trust_env=True) as session:
                 async with session.ws_connect(url, ssl_context=self.ssl_context) as ws:
                     await self._connection_handler(ws)
 
