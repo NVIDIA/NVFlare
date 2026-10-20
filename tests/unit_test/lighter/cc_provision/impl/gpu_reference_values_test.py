@@ -170,6 +170,7 @@ def test_gpu_release_gate_precedes_publication_and_cpu_bypasses_it(tmp_path):
         assert result.stdout.startswith("LOCKED\n")
 
 
+@pytest.mark.usefixtures("require_source_git_commit")
 def test_gpu_reference_scripts_are_packaged_as_tracked_role_files():
     source = COCO / "role_kits.py"
     spec = importlib.util.spec_from_file_location("coco_role_kits_gpu", source)
