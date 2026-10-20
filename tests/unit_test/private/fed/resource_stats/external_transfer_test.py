@@ -152,7 +152,7 @@ def test_recent_state_is_bounded_and_unresolved_eviction_partial():
     context.register_external_source(SOURCE, "ref-1")
     send(context)
     for i in range(MAX_RESULTS):
-        manager.register_result_source("session", f"task-{i}", SOURCE, (f"ref-{i+2}",), (DEST,), True)
+        manager.register_result_source("session", f"task-{i}", SOURCE, (f"ref-{i + 2}",), (DEST,), True)
     assert len(manager._results) == MAX_RESULTS
     assert len(manager._sources) == MAX_RESULTS
     assert counter.freeze()["status"] == "partial"
