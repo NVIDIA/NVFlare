@@ -18,14 +18,22 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ServerCommandKey, SystemComponents, TaskResultReceipt
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+    SystemComponents,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.private.defs import ClientRegMsgKey, SpecialTaskName, new_cell_message
+from nvflare.private.defs import CellChannel, ClientRegMsgKey, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.communicator import Communicator
+from nvflare.private.fed.client.utils import determine_parent_name
 from nvflare.private.fed.resource_stats.f3_counter import F3Counter, F3TrafficClass
 
 
@@ -234,13 +242,31 @@ def test_task_poll_request_is_not_included_in_f3():
     assert request.get_logical_send_context() is None
 
 
-def test_submit_update_attaches_task_result_context_at_the_producer():
-    communicator = Communicator(client_config={"client_name": "site-1"})
+@pytest.mark.parametrize("accounting_enabled", [True, False])
+@pytest.mark.parametrize(
+    "fqsn,recipient_name,parent_fqcn",
+    [
+        (None, "server", "server"),
+        ("site-1", "server", "server"),
+        ("parent.site-1", "parent", "relay.parent"),
+        ("root.parent.site-1", "parent", "relay.parent"),
+    ],
+)
+def test_submit_update_attributes_result_to_its_consuming_parent(accounting_enabled, fqsn, recipient_name, parent_fqcn):
+    client_config = {"client_name": "site-1"}
+    if fqsn is not None:
+        client_config["fqsn"] = fqsn
+    communicator = Communicator(client_config=client_config)
     communicator.cell = MagicMock()
     communicator.ssid = "session-1"
 
     def send_request(**kwargs):
         kwargs["request"].set_header(MessageHeaderKey.PAYLOAD_LEN, 7)
+        context = kwargs["request"].get_logical_send_context()
+        if context is not None:
+            attempt = context.try_begin(origin="site-1.job-1", destination=kwargs["target"])
+            assert attempt is not None
+            attempt.accepted(7)
         return CellMessage(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK})
 
     communicator.cell.send_request.side_effect = send_request
@@ -248,12 +274,22 @@ def test_submit_update_attaches_task_result_context_at_the_producer():
     fl_ctx = MagicMock()
     fl_ctx.get_job_id.return_value = "job-1"
     fl_ctx.get_prop.side_effect = lambda key, default=None: "session-1" if key == FLContextKey.SSID else default
+    parent = Client(recipient_name, "parent-token")
+    parent.set_fqcn(parent_fqcn)
+    engine = fl_ctx.get_engine.return_value
+    engine.get_client_from_name.return_value = parent
     result = Shareable()
     counter = F3Counter()
 
     with (
         patch("nvflare.private.fed.client.communicator.gen_new_peer_ctx", return_value=FLContext()),
-        patch("nvflare.private.fed.client.communicator.get_job_f3_counter", return_value=counter),
+        patch(
+            "nvflare.private.fed.client.communicator.get_job_f3_counter",
+            return_value=counter if accounting_enabled else None,
+        ),
+        patch(
+            "nvflare.private.fed.client.communicator.determine_parent_name", wraps=determine_parent_name
+        ) as accounting_parent,
     ):
         return_code = communicator.submit_update(
             project_name="project",
@@ -266,9 +302,29 @@ def test_submit_update_attaches_task_result_context_at_the_producer():
         )
 
     assert return_code == ReturnCode.OK
-    request = communicator.cell.send_request.call_args.kwargs["request"]
+    sent = communicator.cell.send_request.call_args.kwargs
+    assert sent["target"] == f"{parent_fqcn}.job-1"
+    assert sent["channel"] == CellChannel.SERVER_COMMAND
+    assert sent["topic"] == ServerCommandNames.SUBMIT_UPDATE
+    assert sent["request"].payload is result
+    assert result.get_header(FLContextKey.TASK_NAME) == "train"
+    if recipient_name == "server":
+        engine.get_client_from_name.assert_not_called()
+    else:
+        engine.get_client_from_name.assert_called_once_with(recipient_name)
+    request = sent["request"]
     context = request.get_logical_send_context()
+    if not accounting_enabled:
+        assert context is None
+        accounting_parent.assert_not_called()
+        assert counter.snapshot() == {"sent_to": []}
+        return
+
+    accounting_parent.assert_called_once_with(client_config)
     assert context is not None
     assert context._accounting is counter
     assert context._traffic_class is F3TrafficClass.TASK_RESULT
-    assert context._recipient_name == "server"
+    assert context._recipient_name == recipient_name
+    assert counter.freeze() == {
+        "sent_to": [{"participant_name": recipient_name, "payload_bytes": "7", "messages": "1"}]
+    }

@@ -57,7 +57,7 @@ from nvflare.private.fed.resource_stats.f3_counter import F3TrafficClass
 from nvflare.private.fed.resource_stats.f3_job_counter import get_job_f3_counter
 from nvflare.security.logging import secure_format_exception
 
-from .utils import determine_parent_fqcn
+from .utils import determine_parent_fqcn, determine_parent_name
 
 
 class Communicator:
@@ -605,9 +605,6 @@ class Communicator:
             msg_headers[MessageHeaderKey.MSG_ROOT_TTL] = msg_root_ttl
 
         task_message = new_cell_message(msg_headers, shareable)
-        attach_f3_context(
-            task_message, get_job_f3_counter(), F3TrafficClass.TASK_RESULT, recipient_name=SiteType.SERVER
-        )
         job_id = fl_ctx.get_job_id()
 
         if not timeout:
@@ -615,6 +612,15 @@ class Communicator:
 
         parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
         self.logger.debug(f"submitting update to parent FQCN: {parent_fqcn}")
+
+        counter = get_job_f3_counter()
+        if counter is not None:
+            attach_f3_context(
+                task_message,
+                counter,
+                F3TrafficClass.TASK_RESULT,
+                recipient_name=determine_parent_name(self.client_config) or SiteType.SERVER,
+            )
 
         fqcn = FQCN.join([parent_fqcn, job_id])
         # Join only outgoing source references. A fully filtered-out source batch
