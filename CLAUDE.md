@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+For code reviews and pre-PR self-review, follow [REVIEW.md](REVIEW.md).
+
 ## Project Overview
 
 NVIDIA FLARE (NVFlare) is a domain-agnostic, open-source Python SDK for federated learning. It allows ML/DL workflows to be adapted to a federated paradigm, enabling secure, privacy-preserving distributed multi-party collaboration.
@@ -142,6 +144,13 @@ The `nvflare` CLI is the main entry point:
 nvflare --help
 nvflare simulator --help
 ```
+
+## Pull Request Preparation
+
+- Before creating or updating a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and follow its submission requirements.
+- Before opening a PR or requesting re-review of changed code, self-review the final diff using [REVIEW.md](REVIEW.md). Fix confirmed defects or clearly report unresolved findings and validation limits.
+- Read and use [.github/pull_request_template.md](.github/pull_request_template.md) for the PR body, including when supplying a custom body through a CLI or API. Fill the description, testing, risk, and rollback sections with change-specific details; check only completed checklist items.
+- Verify the submitted PR body contains the template sections and accurate validation results.
 
 ## Personal Configuration
 

@@ -12,3 +12,15 @@ A few sentences describing the changes proposed in this pull request.
 - [ ] Quick tests passed locally by running `./runtest.sh`.
 - [ ] In-line docstrings updated.
 - [ ] Documentation updated.
+
+### Testing
+
+<!-- List commands and results, behavior checks, and anything that could not be verified. -->
+
+### Risk
+
+<!-- Describe affected users/components, likely failure modes, and compatibility impact. -->
+
+### How to revert
+
+<!-- Explain rollback steps, including configuration or saved-state constraints. -->
