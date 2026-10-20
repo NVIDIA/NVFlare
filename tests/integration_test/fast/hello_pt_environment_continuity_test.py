@@ -97,6 +97,7 @@ def test_hello_pt_application_runs_in_isolated_poc(tmp_path, monkeypatch, capsys
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("missing_cifar", [False, True])
 def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys, missing_cifar):
+    """A deployed client failure preserves diagnostics after the POC services stop."""
     monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
@@ -105,8 +106,9 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
     monkeypatch.chdir(ADVANCED_DIR)
 
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
-        # Both failures must occur on the clients after deployment and leave
-        # the diagnostic logs available, without downloading data.
+        # Either injected failure occurs in the client after deployment, without
+        # downloading data. One client exercises diagnostic retention and cleanup;
+        # peer cancellation and error grouping have deterministic unit coverage.
         if missing_cifar:
             client_args = ["--dataset", "cifar10", "--data_root", str(tmp_path / "missing")]
             expected_error = "python prepare_data.py --data_root"
@@ -114,31 +116,30 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
             client_args = ["--batch_size", "0"]
             expected_error = "batch_size should be a positive integer"
         with pytest.raises(RuntimeError, match="unsuccessful status: FINISHED"):
-            job_module.main(["--env", "poc", "--num_rounds", "1", *client_args])
+            job_module.main(["--env", "poc", "--n_clients", "1", "--num_rounds", "1", *client_args])
 
     captured = capsys.readouterr()
     summary = captured.out.split("RUN SUMMARY", 1)[1]
     assert "NVIDIA FLARE · hello-pt" in summary
-    assert "POC · 2 clients" in summary
-    # Either client can fail first and abort its peer before the peer records
-    # the same exception. Unit tests exercise these same assertions with both
-    # orderings and with identical errors grouped together.
+    assert "POC · 1 client" in summary
     assert_hello_pt_failure_summary(
-        summary, expected_error=expected_error, expected_file="prepare_data.py:" if missing_cifar else "client.py:"
+        summary,
+        expected_error=expected_error,
+        expected_file="prepare_data.py:" if missing_cifar else "client.py:",
+        expected_site="site-1",
     )
     output = captured.err
     result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
     result_path = Path(result_line.split(":", 1)[1].strip())
     assert result_path.is_dir()
+    assert (result_path / "workspace" / "log.txt").is_file()
     client_logs = {path.parent.name: path for path in result_path.glob("failure-logs-*/*/error_log.txt")}
-    assert client_logs
-    assert set(client_logs) <= {"site-1", "site-2"}
-    assert any(expected_error in path.read_text() for path in client_logs.values())
+    assert set(client_logs) == {"site-1"}
+    assert expected_error in client_logs["site-1"].read_text()
     workspaces = list(tmp_path.glob("poc.recipe-*"))
     assert len(workspaces) == 1
     workspace = workspaces[0]
-    # Verify every stored error stream was downloaded, without requiring a
-    # cancelled peer to have emitted an error of its own.
+    # Verify the stored client error stream was downloaded intact.
     stored_logs = {
         path.name.removeprefix("ERRORLOG_"): path
         for path in (workspace / "jobs-storage" / result_path.name).glob("ERRORLOG_*")
