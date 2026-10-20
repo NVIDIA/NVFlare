@@ -103,6 +103,27 @@ The details of the driver can be configured with a section named with the scheme
 
 Note that different drivers have different configuration parameters.
 
+HTTPS Proxy Configuration
+-------------------------
+
+FLARE's secure HTTP transport (``https``) uses WebSockets (``wss``) internally.
+For provisioning, select ``scheme: http`` in ``StaticFileBuilder``; secure connections use ``https``.
+To connect through an HTTP CONNECT proxy, set these environment variables before starting the client:
+
+.. code-block:: bash
+
+  export wss_proxy=http://proxy.example.org:3128
+  export no_proxy=localhost,127.0.0.1
+
+Use ``wss_proxy`` (or ``WSS_PROXY``), rather than ``https_proxy``, because the underlying connection uses WSS.
+Add any internal destination hostnames that should bypass the proxy to ``no_proxy``.
+Make these variables available to every client process that connects through the proxy.
+The proxy must permit CONNECT to the FLARE server's host and port. TLS, including mutual authentication,
+remains between the FLARE client and server inside the tunnel.
+
+For a proxy requiring Basic authentication, use a proxy URL of the form
+``http://username:password@proxy.example.org:3128``, URL-encoding special characters in the credentials.
+
 GRPC Configuration
 ------------------
 
