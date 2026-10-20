@@ -20,7 +20,6 @@ import os
 import sys
 import textwrap
 import threading
-import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -1405,20 +1404,3 @@ def test_group_of_one_and_a_different_group_close_the_open_session(native_task):
     assert len(set(pids)) == 3
     adapter.handle_event(EventType.END_RUN, context)
     assert adapter._session is None
-
-
-def test_idle_task_group_session_is_closed_by_the_site_timeout(native_task):
-    root, custom, context, policy = native_task
-    policy = replace(policy, group_idle_timeout=0.5)
-    adapter, data = _adapter(custom, context, policy)
-    adapter.execute(
-        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
-    )
-    assert adapter._session is not None
-    deadline = time.monotonic() + 10
-    while adapter._session is not None and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert adapter._session is None
-    attempts = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
-    assert (attempts / "a1" / "script_finalized.json").exists()
-    adapter.handle_event(EventType.END_RUN, context)

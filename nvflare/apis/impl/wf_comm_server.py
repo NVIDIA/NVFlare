@@ -45,6 +45,7 @@ _CLIENT_TASK_RESULT_RECEIVED = "___result_received"
 _SUBMISSION_CLAIM = "__submission_claim"
 _CLIENT_TASK_JOB_ID = "___job_id"
 _COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
+_CLOSURE_ANNOUNCEMENTS = 2  # replies in which a closed task group is listed to each touched client
 
 
 def _check_positive_int(name, value):
@@ -112,8 +113,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._completed_client_task_cache_size = _COMPLETED_CLIENT_TASK_CACHE_SIZE
         self._all_done = False
         self._group_clients = {}  # open group id => names of clients that received one of its tasks
-        self._closed_groups_pending = {}  # client name => closed group ids not announced yet
-        self._closed_groups_announced = {}  # client name => closed group ids announced in the last reply
+        self._closed_groups = {}  # client name => [group id, replies it is still announced in]
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
         self._task_check_period = task_check_period
@@ -232,19 +232,22 @@ class WFCommServer(FLComponent, WFCommSpec):
     def close_task_group(self, group_id: str, fl_ctx: FLContext):
         with self._task_lock:
             for client_name in self._group_clients.pop(group_id, ()):
-                self._closed_groups_pending.setdefault(client_name, []).append(group_id)
+                self._closed_groups.setdefault(client_name, []).append([group_id, _CLOSURE_ANNOUNCEMENTS])
 
     def _announce_closed_groups(self, client: Client, fl_ctx: FLContext):
         # The runner copies this list onto whatever reply it finally builds. Each closure is
-        # listed in two consecutive replies so one lost reply does not lose it.
+        # listed in consecutive replies so one lost reply does not lose it.
+        if not self._closed_groups:
+            return
         with self._task_lock:
-            previous = self._closed_groups_announced.pop(client.name, [])
-            fresh = self._closed_groups_pending.pop(client.name, [])
-            if fresh:
-                self._closed_groups_announced[client.name] = fresh
-        closed = previous + fresh
-        if closed:
-            fl_ctx.set_prop(FLContextKey.TASK_GROUPS_CLOSED, closed, private=True, sticky=False)
+            entries = self._closed_groups.pop(client.name, None)
+            if not entries:
+                return
+            closed = [group_id for group_id, _ in entries]
+            remaining = [[group_id, left - 1] for group_id, left in entries if left > 1]
+            if remaining:
+                self._closed_groups[client.name] = remaining
+        fl_ctx.set_prop(FLContextKey.TASK_GROUPS_CLOSED, closed, private=True, sticky=False)
 
     def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):

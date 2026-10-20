@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
 from abc import ABC
 from contextlib import contextmanager
 from typing import List, Optional, Union
@@ -36,19 +35,19 @@ class Controller(FLComponent, ControllerSpec, ABC):
         super().__init__()
         self._task_check_period = task_check_period
         self.communicator = None
-        self._ambient_group = threading.local()
+        self._ambient_group = None
 
     @contextmanager
     def task_group(self, fl_ctx: FLContext):
-        """Every task issued from this thread inside the block may be served by one client worker."""
-        if getattr(self._ambient_group, "group", None) is not None:
+        """Every task this controller issues while the block is open, from any thread, may share one client worker."""
+        if self._ambient_group is not None:
             raise RuntimeError("task groups do not nest")
         group = TaskGroup()
-        self._ambient_group.group = group
+        self._ambient_group = group
         try:
             yield group
         finally:
-            self._ambient_group.group = None
+            self._ambient_group = None
             group.closed = True
             self.communicator.close_task_group(group.id, fl_ctx)
 
@@ -56,7 +55,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         if not isinstance(task, Task):
             return  # the communicator reports the type error
         if task.group is None:
-            task.group = getattr(self._ambient_group, "group", None)
+            task.group = self._ambient_group
         if task.group is not None and task.group.closed:
             raise RuntimeError(f"task {task.name} is issued into a closed task group")
 

@@ -48,10 +48,18 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion, _read_json
-from .protocol import SESSION_END_MARKER, TaskAttemptIdentity, WorkerBootstrap, _thaw_json, read_bootstrap
+from .protocol import (
+    SESSION_END_MARKER,
+    TaskAttemptIdentity,
+    WorkerBootstrap,
+    _thaw_json,
+    read_bootstrap,
+    session_entry_name,
+)
 from .runtime import TaskRuntime
 
 _SESSION_POLL_INTERVAL = 0.05
+_SESSION_POLL_MAX_INTERVAL = 0.5
 
 _PROTECTED_CONTEXT_KEYS = {
     ReservedKey.ENGINE,
@@ -95,20 +103,13 @@ def _new_context(bootstrap: WorkerBootstrap, workspace: Workspace, protected_con
         FLContextKey.APP_ROOT: app_root,
         FLContextKey.CURRENT_JOB_ID: identity.job_id,
         FLContextKey.JOB_META: _read_job_meta(workspace, identity.job_id),
-        FLContextKey.TASK_ID: identity.task_id,
-        FLContextKey.TASK_ATTEMPT_ID: identity.attempt_id,
         FLContextKey.TASK_ATTEMPT_REQUIRED: True,
-        FLContextKey.TASK_NAME: identity.task_name,
         FLContextKey.WORKSPACE_OBJECT: workspace,
         FLContextKey.WORKSPACE_ROOT: workspace.get_root_dir(),
     }
     for name, value in built_ins.items():
-        fl_ctx.set_prop(
-            name,
-            value,
-            private=True,
-            sticky=name not in (FLContextKey.TASK_ID, FLContextKey.TASK_NAME, FLContextKey.TASK_ATTEMPT_ID),
-        )
+        fl_ctx.set_prop(name, value, private=True, sticky=True)
+    _set_attempt_context(fl_ctx, identity)
     protected = _PROTECTED_CONTEXT_KEYS | set(protected_context_keys)
     for name, prop in bootstrap.context_properties.items():
         if name in protected:
@@ -197,16 +198,20 @@ def _attempt_identities(bootstrap: WorkerBootstrap):
     yield bootstrap.identity
     if bootstrap.session_dir is None:
         return
+    end_path = os.path.join(bootstrap.session_dir, SESSION_END_MARKER)
     sequence = 2
+    interval = _SESSION_POLL_INTERVAL
     while True:
-        next_path = os.path.join(bootstrap.session_dir, f"{sequence:06d}.json")
+        next_path = os.path.join(bootstrap.session_dir, session_entry_name(sequence))
         if os.path.lexists(next_path):
             yield TaskAttemptIdentity.from_dict(_read_json(next_path))
             sequence += 1
-        elif os.path.lexists(os.path.join(bootstrap.session_dir, SESSION_END_MARKER)):
+            interval = _SESSION_POLL_INTERVAL
+        elif os.path.lexists(end_path):
             return
         else:
-            time.sleep(_SESSION_POLL_INTERVAL)
+            time.sleep(interval)
+            interval = min(interval * 2, _SESSION_POLL_MAX_INTERVAL)
 
 
 def _commit_attempt(store, identity, result, analytics, runtime, started_at, started_monotonic, *, final):
@@ -250,8 +255,8 @@ def _execute(
     *,
     context_binding=None,
     protected_context_keys=(),
-    spool_analytics=False,
-    started=None,
+    started_at=None,
+    started_monotonic=None,
 ):
     """Run every attempt of this worker on one executor; return the last completion.
 
@@ -279,6 +284,7 @@ def _execute(
     if adapt_executor is not None:
         executor = adapt_executor(executor)
 
+    spool_analytics = context_binding is not None
     completion = None
     pending = None
     try:
@@ -288,10 +294,9 @@ def _execute(
                 initialize(fl_ctx)
         runtime.raise_if_failed()
         for identity in _attempt_identities(bootstrap):
-            # The first attempt's start is the worker's start, preflight included, as in #5405.
-            started_at, started_monotonic = (
-                started if started and identity == bootstrap.identity else (time.time(), time.monotonic())
-            )
+            if identity != bootstrap.identity:
+                # Only the first attempt's start is the worker's start, preflight included.
+                started_at, started_monotonic = time.time(), time.monotonic()
             if identity != bootstrap.identity:
                 store.claim_worker(identity)
             binding.identity = identity
@@ -396,8 +401,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             binding,
             context_binding=context_binding,
             protected_context_keys=protected_context_keys,
-            spool_analytics=context_binding is not None,
-            started=(started_at, started_monotonic),
+            started_at=started_at,
+            started_monotonic=started_monotonic,
         )
     except BaseException as e:
         try:

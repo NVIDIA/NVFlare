@@ -53,12 +53,13 @@ class CrossSiteModelEval(Controller):
 ```
 
 - `Controller.task_group(fl_ctx) -> TaskGroup` is a context manager. Every
-  `Task` issued through `broadcast`, `send` or `relay` (and their `_and_wait`
-  forms) from the thread that opened the block carries the group's ID.
+  `Task` the controller issues through `broadcast`, `send` or `relay` (and
+  their `_and_wait` forms) while the block is open carries the group's ID,
+  including tasks issued from `result_received_cb` and the other task
+  callbacks on server request threads. A controller has one control flow, so
+  the ambient group is controller-scoped, not thread-scoped.
 - `Task(..., group=some_group)` sets it explicitly. Explicit wins over the
-  ambient block. Tasks issued from `result_received_cb` and the other task
-  callbacks run on server request threads, not the control-flow thread, so
-  they are a group of one unless they pass `group=` explicitly.
+  ambient block.
 - A group closes on block exit, including by exception. Issuing a task into
   a closed group raises.
 - Groups do not nest. Opening a group inside an open group is an error.
@@ -91,22 +92,14 @@ assignment sees its own task's checkpoint.
 
 ### 2.3 Site
 
-`local/resources.json` `task_execution` gains one setting:
-
-```json
-"task_execution": {
-  "worker_timeout": 600,            // unchanged: bounds one attempt's execution
-  "group_idle_timeout": 120,        // new: worker ends after this long without a next assignment
-  "settlement_timeout": 10, "poll_interval": 0.05, "finalization_timeout": 30,
-  "artifact_cleanup": "receipt", "environment_variables": []
-}
-```
-
-The site cannot extend a group beyond what the controller declared; it can
-only shorten it. A worker ended by the site, by abort or by failure looks to
-the workflow like any other worker end: the next assignment of the same
-group starts a fresh worker. A group therefore spans one or more sequential
-workers on a client; it never spans two at once.
+No new site setting. `worker_timeout` bounds each attempt as before, and
+`finalization_timeout` bounds the worker's exit after its group ends. There
+is deliberately no idle timeout inside a group: a fast client legitimately
+idles while the server waits for stragglers, and ending its worker there
+would force the relaunch the group exists to avoid. A worker ended by abort
+or by failure looks to the workflow like any other worker end: the next
+assignment of the same group starts a fresh worker. A group therefore spans
+one or more sequential workers on a client; it never spans two at once.
 
 ## 3. Server side
 
@@ -116,7 +109,7 @@ workers on a client; it never spans two at once.
 and cookie on task data in `WFCommServer._do_process_task_request`, next to
 `TASK_ID` and `TASK_ATTEMPT_ID`. `TaskGroup` (`nvflare/apis/controller_spec.py`)
 holds `id` (uuid4) and `closed`. `Task` gains `group: Optional[TaskGroup]`.
-The ambient block is a thread-local on the controller, read by
+The ambient block is an attribute of the controller, read by
 `Controller.broadcast/send/relay` when `task.group is None`.
 
 ### 3.2 Open-group table
@@ -133,9 +126,10 @@ The Task plane is pull based, so closure is delivered on the client's next
 `SpecialTaskName.TRY_AGAIN`, gets a header
 `ReservedHeaderKey.TASK_GROUPS_CLOSED = "__task_groups_closed__"` listing
 closed group IDs that touched this client. Each ID is listed in two
-consecutive replies, so one lost reply does not lose the closure; the site
-idle timeout covers a client that never polls again. The client treats the
-list as idempotent.
+consecutive replies (the server keeps one small table, client to pending
+closures with a reply count), so one lost reply does not lose the closure. A
+client that never polls again ends its worker at `END_RUN`. The client treats
+the list as idempotent.
 
 Why a header and not a new special task name: `TRY_AGAIN` replies already
 carry headers (`TaskConstant.WAIT_TIME`), older clients ignore unknown
@@ -178,18 +172,17 @@ are contiguous per group as the server issued them.
 State: at most one open worker session, `(group_id, session)`. On `execute`:
 
 1. If the assignment was completed before, return the saved result, as today.
-2. Read `group_id` from the context. No group means a group of one, which
-   takes #5405's `TaskSupervisor.run` path unchanged.
+2. Read `group_id` from the context. No group means a session of one: a
+   worker with no session directory, which exits after its attempt exactly
+   as #5405's worker does.
 3. If a session is open for a different group, close it: the server
    sequences a client's assignments, so a different group means the previous
    one is over even if the closure header has not arrived yet.
-4. If no session is open, open one and launch the worker with this attempt
-   as its first.
+4. If no session is open for this group, open one and launch the worker
+   with this attempt as its first.
 5. Run the attempt: stage input and checkpoint snapshot, hand the attempt to
    the live worker, wait for its completion record, validate identity, PID,
    digest, replay analytics, promote the checkpoint, record completion.
-6. Arm the idle timer. It closes the session if no assignment arrives before
-   `group_idle_timeout`.
 
 `handle_event`:
 
@@ -204,20 +197,22 @@ and exit, confirms settlement, and replays the worker log.
 
 ### 4.3 `TaskSupervisor`
 
-#5405's `run` (one process per attempt) stays as is. Three methods are
-added beside it:
+The supervisor owns one session at a time; #5405's `run` becomes a session
+of one:
 
 ```python
-open_session(group_id, store, runtime_root, launcher, request_factory) -> Session
+open_session(group_id, store, runtime_root, launcher, request_factory) -> Session   # group_id None: no session directory
 run_attempt(session, bootstrap, input_payload, abort_signal, options, deadline_provider, stage_hook) -> TaskSupervisorOutcome
 close_session(session, timeout, options) -> TaskExecutionStatus | None
+run(...)  # open_session(None, ...) + run_attempt(...)
 ```
 
 `run_attempt` stages the attempt directory, input and checkpoint snapshot,
 then either launches the worker (first attempt: the bootstrap carries the
 session directory) or publishes the attempt to the running worker through
-the session directory. It waits for the attempt's `completion.json` or
-`failure.json`, or for the process to end. A worker that ends mid-attempt is
+the session directory. With a session directory it waits for the attempt's
+`completion.json` or for the process to end; without one it waits for the
+process to end, which is #5405's settle-before-read rule. A worker that ends mid-attempt is
 settled and treated as #5405 treats a worker exit. Per-attempt bookkeeping
 (`record_receipt`, `read_saved_result`, payload release, launch identity
 replay prevention) is unchanged and keyed by attempt identity.
@@ -326,7 +321,7 @@ block then needs nothing the Task plane group does not already have.
 - Unit, `TaskWorkerExecutor` with the real worker: group of one behaves
   exactly as #5405; two assignments of one group reach one worker with
   `initialize` once and `finalize` once; a different group closes the open
-  session; `TASK_GROUP_CLOSED` closes it; idle timeout closes it; resend of
+  session; `TASK_GROUP_CLOSED` closes it; resend of
   a completed attempt re-reads the saved result; checkpoint promoted per
   attempt.
 - Worker loop: two attempts in one process with per-attempt completion
@@ -338,9 +333,9 @@ block then needs nothing the Task plane group does not already have.
 1. A task from a different group implicitly closes the open session. The
    server sequences a client's assignments, and two workers on one client
    is a resource surprise.
-2. `group_idle_timeout` defaults to 120 s: long enough for server-side
-   aggregation between a round's `train` and `validate`, short enough that an
-   abandoned group releases resources.
-3. Both the ambient block and explicit `Task(group=)` ship; callbacks on
-   other threads need the explicit form.
+2. No idle timeout inside a group. Group end is signalled by the closure
+   header, by a task of a different group, and by `END_RUN`; a lost header
+   costs at most one idle worker until the next of those.
+3. Both the ambient block and explicit `Task(group=)` ship; the explicit
+   form is an escape hatch, since the ambient group is controller-scoped.
 4. Checkpoint slot stays per executor and task name.

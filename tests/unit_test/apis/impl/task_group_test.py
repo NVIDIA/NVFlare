@@ -102,7 +102,7 @@ def test_outside_block_tasks_have_no_group_and_closed_or_nested_groups_are_rejec
         controller.broadcast(Task("late", Shareable(), group=group), fl_ctx, targets=[clients[0]])
 
 
-def test_explicit_group_wins_and_other_threads_do_not_inherit_the_block(system):
+def test_explicit_group_wins_and_callback_threads_inherit_the_block(system):
     controller, communicator, manager, clients = system
     fl_ctx = manager.new_context()
     explicit = TaskGroup()
@@ -120,7 +120,7 @@ def test_explicit_group_wins_and_other_threads_do_not_inherit_the_block(system):
         thread = threading.Thread(target=issue_from_thread)
         thread.start()
         thread.join()
-    assert seen["group"] is None
+    assert seen["group"] is ambient
     assert ambient.closed and not explicit.closed
 
 

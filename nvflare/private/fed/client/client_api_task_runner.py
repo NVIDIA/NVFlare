@@ -30,7 +30,7 @@ from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, 
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey
-from nvflare.client.in_process.adapters import TASK_GROUP_STOP_REASON, TaskInProcessAdapter
+from nvflare.client.in_process.adapters import TASK_GROUP_STOP_REASON, TASK_RESULT_STOP_REASON, TaskInProcessAdapter
 from nvflare.client.in_process.api import InProcessClientAPI
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.private.fed.task_worker.protocol import _atomic_publish, _open_regular
@@ -45,9 +45,9 @@ def _mark_progress(store, identity, name):
     _atomic_publish(path, json.dumps(record, sort_keys=True).encode("utf-8"))
 
 
-def _read_progress(store, identity, name):
+def _read_progress(attempt_dir, identity, name):
     try:
-        with _open_regular(os.path.join(store.attempt_dir(identity), name)) as stream:
+        with _open_regular(os.path.join(attempt_dir, name)) as stream:
             data = stream.read(65537)
     except FileNotFoundError:
         return None
@@ -64,11 +64,12 @@ def _read_progress(store, identity, name):
 
 def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0):
     """Bound application execution, excluding framework-owned artifact I/O."""
-    if _read_progress(store, identity, "script_finalized.json") is not None:
+    attempt_dir = store.attempt_dir(identity)
+    if _read_progress(attempt_dir, identity, "script_finalized.json") is not None:
         return None
-    started = _read_progress(store, identity, "result_wait_started.json")
-    sent = _read_progress(store, identity, "script_result_sent.json")
-    staging = _read_progress(store, identity, "result_staging_started.json")
+    started = _read_progress(attempt_dir, identity, "result_wait_started.json")
+    sent = _read_progress(attempt_dir, identity, "script_result_sent.json")
+    staging = _read_progress(attempt_dir, identity, "result_staging_started.json")
     if staging is not None and sent is None:
         return None
     staging_seconds = sent - staging if staging is not None and sent is not None else 0
@@ -103,7 +104,6 @@ class _ClientAPITaskRunner:
         self._runner = None
         self._executed = False
         self._thread = None
-        self._script_done = threading.Event()
         self._script_error = None
 
     def initialize(self, fl_ctx):
@@ -124,7 +124,7 @@ class _ClientAPITaskRunner:
                 if self._on_log is not None:
                     self._on_log(create_analytic_dxo(**message))
 
-            self._adapter = TaskInProcessAdapter(self._on_result, log_handler, stop_after_result=not self._session)
+            self._adapter = TaskInProcessAdapter(self._publish_result, log_handler)
             self._api = InProcessClientAPI(metadata, adapter=self._adapter)
             self._api.init()
             self._api.configure_memory_management(context.memory_gc_rounds, context.cuda_empty_cache)
@@ -177,11 +177,19 @@ class _ClientAPITaskRunner:
         while not self._adapter.wait_result(_RESULT_POLL_INTERVAL):
             if abort_signal.triggered:
                 raise RuntimeError("task Client API assignment was aborted")
-            if self._script_done.is_set():
+            if not self._thread.is_alive():
                 if self._script_error is not None:
                     raise self._script_error
                 raise RuntimeError("Client API task script exited without sending a result")
         return self._adapter.get_result()
+
+    def _publish_result(self, shareable):
+        reference = self._on_result(shareable) if self._on_result is not None else None
+        if not self._session:
+            # A one-shot script has nothing more to receive; let its loop exit.
+            self._api.stop = True
+            self._api.stop_reason = TASK_RESULT_STOP_REASON
+        return reference
 
     def _run_script(self):
         try:
@@ -191,8 +199,6 @@ class _ClientAPITaskRunner:
                 self._script_error = e
         except BaseException as e:
             self._script_error = e
-        finally:
-            self._script_done.set()
 
     def finalize(self, fl_ctx):
         api, self._api = self._api, None

@@ -27,6 +27,13 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 1
 SESSION_END_MARKER = "end"
+
+
+def session_entry_name(sequence: int) -> str:
+    """File in a session directory that hands attempt number ``sequence`` to the live worker."""
+    return f"{sequence:06d}.json"
+
+
 _MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 _MAX_IDENTITY_VALUE_LENGTH = 4096
 _LOGGER = logging.getLogger(__name__)

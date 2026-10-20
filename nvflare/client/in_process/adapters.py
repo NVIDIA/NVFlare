@@ -48,10 +48,9 @@ class JobInProcessAdapter:
 
 
 class TaskInProcessAdapter:
-    def __init__(self, on_result=None, log_handler=None, stop_after_result=True):
+    def __init__(self, on_result=None, log_handler=None):
         self._on_result = on_result
         self._log_handler = log_handler
-        self._stop_after_result = stop_after_result
         self._result = None
         self._result_ready = threading.Event()
         self._current_round = None
@@ -75,9 +74,6 @@ class TaskInProcessAdapter:
         # The writer freezes the values before send() returns. Retain only its
         # storage reference, never another copy of the script's model.
         self._result = self._on_result(shareable)
-        if self._stop_after_result:
-            self.api.stop = True
-            self.api.stop_reason = TASK_RESULT_STOP_REASON
         self._result_ready.set()
 
     def publish_log(self, message):
