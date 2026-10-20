@@ -15,9 +15,15 @@
 name: pre-merge
 
 on:
-  # quick tests for pull requests and the releasing branches
+  # Queue branches are tested by merge_group, avoiding a duplicate push build.
   push:
+    branches-ignore:
+      - 'gh-readonly-queue/**'
+    tags:
+      - '**'
   pull_request:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 jobs:
@@ -34,12 +40,12 @@ jobs:
       - id: select
         name: Select Tier 1 skill security validation
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha || github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          # A manual dispatch deliberately runs the gate. For push and pull-request
-          # events, restrict the expensive scans to changes that can affect shipped
-          # skills or this gate's implementation and dependencies.
+          # A manual dispatch deliberately runs the gate. For push, pull-request,
+          # and merge-group events, inspect all changes since the event's base,
+          # including earlier queued PRs, for skill-security validation changes.
           if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BASE_SHA" ] || \
             [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "run-tier1-security=true" >> "$GITHUB_OUTPUT"
