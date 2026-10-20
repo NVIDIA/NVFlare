@@ -967,6 +967,13 @@
             "kind": "keyword_only"
           },
           {
+            "name": "sampling_seed",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
             "name": "client_memory_gc_rounds",
             "type": "int",
             "required": false,
@@ -1653,6 +1660,13 @@
             "kind": "keyword_only"
           },
           {
+            "name": "sampling_seed",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
             "name": "enable_tensor_disk_offload",
             "type": "Optional[bool]",
             "required": false,
@@ -2073,6 +2087,13 @@
             "kind": "keyword_only"
           },
           {
+            "name": "sampling_seed",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
             "name": "client_memory_gc_rounds",
             "type": "int",
             "required": false,
@@ -2282,6 +2303,13 @@
             "type": "int",
             "required": false,
             "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "sampling_seed",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
@@ -3031,6 +3059,13 @@
             "type": "int",
             "required": false,
             "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "sampling_seed",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
             "kind": "keyword_only"
           },
           {
