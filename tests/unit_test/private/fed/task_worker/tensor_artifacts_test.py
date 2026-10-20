@@ -97,15 +97,48 @@ def test_ref_link_fallback_keeps_its_key(payload_store, tmp_path, monkeypatch, l
     assert torch.equal(store.read_input(identity)["w"], tensors["a"])
 
 
-def test_linking_rejects_replacement_of_a_fixed_checkpoint(payload_store, tmp_path):
+@pytest.mark.parametrize("replace_during_open", [False, True])
+def test_linking_rejects_replacement_of_a_fixed_checkpoint(payload_store, tmp_path, monkeypatch, replace_during_open):
     store, identity, directory = payload_store
     source = tmp_path / "checkpoint.safetensors"
     save_file({"w": torch.ones(3)}, str(source), metadata={"nvflare_model_id": "original"})
     ref = safetensors_refs(str(source))["w"]
-    save_file({"w": torch.zeros(3)}, str(source), metadata={"nvflare_model_id": "replacement"})
+    replacement = tmp_path / "replacement.safetensors"
+    save_file({"w": torch.zeros(3)}, str(replacement), metadata={"nvflare_model_id": "replacement"})
+    if replace_during_open:
+        open_file = artifacts._open_protocol_file
+
+        def replace_before_open(path):
+            if os.fspath(path) == str(source):
+                os.replace(replacement, source)
+            return open_file(path)
+
+        monkeypatch.setattr(artifacts, "_open_protocol_file", replace_before_open)
+    else:
+        os.replace(replacement, source)
     with pytest.raises(RuntimeError, match="model was replaced"):
         store.write_input(identity, Shareable({"w": ref}))
     assert not (directory / "input.json").exists()
+    assert not (directory / "input.T0.safetensors").exists()
+
+
+def test_linked_checkpoint_keeps_original_model_when_source_slot_advances(payload_store, tmp_path, monkeypatch):
+    store, identity, directory = payload_store
+    source = tmp_path / "checkpoint.safetensors"
+    save_file({"w": torch.ones(3)}, str(source), metadata={"nvflare_model_id": "original"})
+    ref = safetensors_refs(str(source))["w"]
+    replacement = tmp_path / "replacement.safetensors"
+    save_file({"w": torch.zeros(3)}, str(replacement), metadata={"nvflare_model_id": "replacement"})
+    link_file = artifacts._link_regular
+
+    def replace_after_link(*args):
+        link_file(*args)
+        os.replace(replacement, source)
+
+    monkeypatch.setattr(artifacts, "_link_regular", replace_after_link)
+    store.write_input(identity, Shareable({"w": ref}))
+    assert os.stat(source).st_ino != os.stat(directory / "input.T0.safetensors").st_ino
+    assert torch.equal(store.read_input(identity)["w"], torch.ones(3))
 
 
 def test_mapped_result_edits_upload_after_artifact_names_are_removed(payload_store):

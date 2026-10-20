@@ -204,9 +204,9 @@ class _LazyRef:
         self._model_id = model_id
 
     @contextmanager
-    def open(self):
-        """Open the backing file, rejecting replacement of a fixed checkpoint slot."""
-        with safe_open(self.file_path, framework="pt") as f:
+    def open(self, file_path=None):
+        """Open the backing file or a pinned hard link, rejecting a replaced model."""
+        with safe_open(self.file_path if file_path is None else file_path, framework="pt") as f:
             if (f.metadata() or {}).get(_MODEL_ID) != self._model_id:
                 raise RuntimeError("disk-backed model was replaced before tensor read")
             yield f

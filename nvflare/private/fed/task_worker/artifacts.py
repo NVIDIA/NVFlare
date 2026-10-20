@@ -100,11 +100,19 @@ class _TensorFileSink:
                 if set(tensors.keys()) == {value.key}:
                     with _open_protocol_file(value.file_path) as stream:
                         size, digest = _fingerprint(stream, remaining)
+                        destination = os.path.join(self.directory, file_name)
                         try:
-                            _link_regular(value.file_path, os.path.join(self.directory, file_name), stream)
+                            _link_regular(value.file_path, destination, stream)
                         except OSError as e:
                             _LOGGER.warning("Cannot hard-link tensor %s; writing it instead: %s", file_name, e)
                         else:
+                            try:
+                                # Validate the pinned inode, not the mutable checkpoint slot.
+                                with value.open(file_path=destination):
+                                    pass
+                            except BaseException:
+                                os.unlink(destination)
+                                raise
                             entry = {"file": file_name, "key": value.key, "size": size, "sha256": digest}
         if entry is None:
             tensor = value.materialize() if isinstance(value, _LazyRef) else value
