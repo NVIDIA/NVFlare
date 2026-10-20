@@ -1217,12 +1217,14 @@ class QuarantineRevocationTests(unittest.TestCase):
         self.addCleanup(stack.close)
         self.readback = stack.enter_context(patch.object(supervisor, "confirm_not_ready"))
         self.diagnostic = stack.enter_context(patch.object(supervisor, "emit_diagnostic"))
+        self.flush = stack.enter_context(patch.object(supervisor, "flush"))
 
     def test_gpu_quarantine_is_terminal_after_stopping_and_closing(self):
         for reset_fails in (False, True):
             events = []
             self.readback.reset_mock()
             self.diagnostic.reset_mock()
+            self.flush.reset_mock()
 
             def reset(config, ready):
                 self.assertFalse(ready)
@@ -1254,6 +1256,7 @@ class QuarantineRevocationTests(unittest.TestCase):
                 expected.insert(0, "gpu_readiness_revoke_failed")
             self.assertEqual([c.args[0] for c in self.diagnostic.call_args_list], expected)
             self.assertEqual([c.args[0] for c in audit.call_args_list], ["quarantine"])
+            self.flush.assert_called_once_with(supervisor.TERMINAL_AUDIT_FLUSH_SECONDS)
             self.assertNotIn("private GPU diagnostic", str(self.diagnostic.call_args_list))
 
     def test_vault_closure_failure_is_fatal_even_when_gpu_reset_also_fails(self):

@@ -18,6 +18,7 @@ import json
 import os
 import queue
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -137,6 +138,40 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(records.get_nowait(), "quarantine")
         while not records.empty():
             self.assertEqual(records.get_nowait(), audit._Diagnostic("gpu_readiness_revoke_failed"))
+
+    def test_flush_waits_until_prior_records_are_written(self):
+        records = queue.Queue(maxsize=8)
+        written = []
+        with (
+            patch.object(audit, "_writer", None),
+            patch.object(audit, "_records", records),
+            patch.object(audit, "_write", side_effect=written.append),
+        ):
+            audit.emit("quarantine")
+            audit.emit_diagnostic("gpu_quarantine_terminal")
+            self.assertTrue(audit.flush(1))
+        self.assertEqual(written, ["quarantine", audit._Diagnostic("gpu_quarantine_terminal")])
+
+    def test_flush_is_bounded_when_writer_is_stalled(self):
+        records = queue.Queue(maxsize=8)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def stall(item):
+            entered.set()
+            release.wait(2)
+
+        try:
+            with (
+                patch.object(audit, "_writer", None),
+                patch.object(audit, "_records", records),
+                patch.object(audit, "_write", side_effect=stall),
+            ):
+                audit.emit("allow")
+                self.assertTrue(entered.wait(1))
+                self.assertFalse(audit.flush(0))
+        finally:
+            release.set()
 
     def test_worker_start_failure_does_not_escape_diagnostic_emitter(self):
         for constructor_fails in (True, False):
