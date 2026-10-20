@@ -35,7 +35,13 @@ def define_parser():
     parser.add_argument(
         "--num_workers", type=int, default=2, help="Number of worker processes for data loading (0 = main process only)"
     )
-    parser.add_argument("--execution_lifetime", choices=("job", "task"), default="job")
+    parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Client compute lifetime: job (default) stays alive across tasks; task starts a fresh CPU-only worker "
+        "for each task (requires NVFlare 2.10+). With task and num_workers > 0, data-worker RNG state is not restored.",
+    )
     parser.add_argument("--lr", type=float, default=5e-2, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=64, help="Training batch size for each client")
     parser.add_argument(
@@ -94,7 +100,9 @@ def main():
         fedprox_mu=fedprox_mu,
     )
     recipe.add_client_config({"execution_lifetime": args.execution_lifetime})
-    recipe.add_client_file(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
+    source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+    for filename in ("model.py", "train_utils.py", "task_checkpoint.py", "data/cifar10_data_utils.py"):
+        recipe.add_client_file(os.path.join(source_dir, filename))
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients)

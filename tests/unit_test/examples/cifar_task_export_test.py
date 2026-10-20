@@ -14,6 +14,7 @@
 
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,9 +30,19 @@ from nvflare.recipe.spec import Recipe
 @pytest.mark.parametrize("algorithm", ["fedavg", "fedopt", "fedprox"])
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 def test_shipped_cifar_job_bundles_native_checkpoint_modules(tmp_path, monkeypatch, algorithm, lifetime):
-    root = Path(__file__).parents[3] / "examples/advanced/cifar10/pt"
+    original = Path(__file__).parents[3] / "examples/advanced/cifar10/pt"
+    root = tmp_path / "example"
     source = root / "src"
+    shutil.copytree(original / "src", source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     job_file = root / "cifar10-sim" / f"cifar10_{algorithm}" / "job.py"
+    job_file.parent.mkdir(parents=True)
+    for name in ("job.py", "client.py"):
+        shutil.copy2(original / "cifar10-sim" / f"cifar10_{algorithm}" / name, job_file.parent / name)
+    for directory in (source, source / "data"):
+        cache = directory / "__pycache__"
+        cache.mkdir()
+        (cache / "stale.pyc").write_bytes(b"not a source module")
+    (source / "local-artifact.txt").write_text("not part of the client application")
     for path in (source, job_file.parent):
         monkeypatch.syspath_prepend(str(path))
 
@@ -62,9 +73,17 @@ def test_shipped_cifar_job_bundles_native_checkpoint_modules(tmp_path, monkeypat
         assert config["execution_lifetime"] == lifetime
         assert config["format_version"] == (3 if lifetime == "task" else 2)
         custom = config_path.parent.parent / "custom"
-        for name in ("task_checkpoint.py", "train_utils.py", "data/cifar10_data_utils.py"):
+        for name in (
+            "model.py",
+            "task_checkpoint.py",
+            "train_utils.py",
+            "data/cifar10_data_utils.py",
+            "data/cifar10_dataset.py",
+        ):
             assert (custom / name).read_bytes() == (source / name).read_bytes()
-        assert not (custom / "data/stateful_loader.py").exists()
+        assert not list(custom.rglob("__pycache__"))
+        assert not list(custom.rglob("*.pyc"))
+        assert not (custom / "local-artifact.txt").exists()
     finally:
         for name in list(sys.modules):
             if local_module(name):

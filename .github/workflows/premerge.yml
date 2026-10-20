@@ -147,6 +147,14 @@ jobs:
           python3 -m pytest -q
           tests/integration_test/fast/hello_pt_environment_continuity_test.py
 
+      - name: Run CIFAR task-lifetime state equivalence
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.14' }}
+        timeout-minutes: 10
+        run: >-
+          python3 -m pytest -q
+          tests/integration_test/fast/cifar_task_state_test.py
+          -k no_data_workers
+
   hf-client-api-tests:
     runs-on: ubuntu-24.04
     permissions:

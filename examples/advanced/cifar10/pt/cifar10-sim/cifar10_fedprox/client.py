@@ -194,7 +194,7 @@ def main(args):
         flare.send(output_model)
 
 
-if __name__ == "__main__":
+def define_parser(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_idx_root",
@@ -218,7 +218,7 @@ if __name__ == "__main__":
         "--cosine_lr_eta_min_factor",
         type=float,
         default=0.01,
-        help="Minimum learning rate as a factor of the initial learning rate for cosine annealing scheduler. Default is 0.01 (or 1%).",
+        help="Minimum learning rate as a factor of the initial learning rate for cosine annealing scheduler. Default is 0.01 (or 1%%).",
     )
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training. Default is 64.")
     parser.add_argument("--num_workers", type=int, default=2, help="Number of workers for data loading. Default is 2.")
@@ -227,6 +227,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Whether to evaluate the local model on the validation set. Default is False.",
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    main(args)
+
+if __name__ == "__main__":
+    main(define_parser())

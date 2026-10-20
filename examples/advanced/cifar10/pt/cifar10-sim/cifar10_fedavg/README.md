@@ -26,11 +26,29 @@ Run FedAvg with 8 clients, 50 rounds, and uniform data distribution (α=1.0):
 python job.py --n_clients 8 --num_rounds 50 --alpha 1.0
 ```
 
+### Task-based CPU Execution
+
+Install the dependencies in [`../requirements.txt`](../requirements.txt); task lifetime requires NVFlare 2.10 or newer.
+The default `--execution_lifetime job` keeps client compute alive across rounds and uses a GPU when available.
+Select `task` to run each assignment in a fresh **CPU-only** worker, including on hosts with GPUs:
+
+```bash
+python job.py --n_clients 2 --num_rounds 3 --aggregation_epochs 1 --execution_lifetime task --num_workers 0
+```
+
+Training tasks save and restore native optimizer, scheduler, and main-process random-number state.
+For CPU job/task comparisons, use `--num_workers 0`. The default `--num_workers 2` uses persistent data workers
+whose random-number state is not checkpointed, so results differ between job and task lifetime.
+Worker-state continuity is tracked in [#5475](https://github.com/NVIDIA/NVFlare/issues/5475).
+Global-model evaluation supports task lifetime; cross-site evaluation that requests each client's previous
+local model requires job lifetime.
+
 ### Command-line Arguments
 
 #### Federated Learning Parameters
 - `--n_clients` - Number of FL clients (default: `8`)
 - `--num_rounds` - Number of FL rounds (default: `50`)
+- `--execution_lifetime` - Client compute lifetime: `job` (default) or `task` (fresh CPU-only worker)
 - `--alpha` - Data heterogeneity parameter (default: `0.5`)
   - Higher values (e.g., 1.0) = more uniform/IID data distribution
   - Lower values (e.g., 0.1) = more heterogeneous/non-IID distribution

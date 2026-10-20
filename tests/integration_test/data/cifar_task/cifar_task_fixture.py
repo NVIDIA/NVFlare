@@ -17,7 +17,6 @@
 import argparse
 import random
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import torch
@@ -129,15 +128,20 @@ def main():
     flare.receive, flare.send = receive, send
     client.restore_training_state, client.save_training_state = restore, save
     client.main(
-        SimpleNamespace(
-            aggregation_epochs=2,
-            batch_size=2,
-            cosine_lr_eta_min_factor=0.01,
-            evaluate_local=True,
-            lr=0.02,
-            no_lr_scheduler=False,
-            num_workers=args.num_workers,
-            train_idx_root="unused-offline-test-data",
+        client.define_parser(
+            [
+                "--aggregation_epochs",
+                "2",
+                "--batch_size",
+                "2",
+                "--evaluate_local",
+                "--lr",
+                "0.02",
+                "--num_workers",
+                str(args.num_workers),
+                "--train_idx_root",
+                "unused-offline-test-data",
+            ]
         )
     )
 

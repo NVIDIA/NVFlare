@@ -61,7 +61,9 @@ def _read_site(root, site, filename):
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("algorithm", ["fedavg", "fedopt", "fedprox"])
-@pytest.mark.parametrize("num_workers", [0, 2])
+@pytest.mark.parametrize(
+    "num_workers", [pytest.param(0, id="no_data_workers"), pytest.param(2, id="persistent_workers")]
+)
 def test_shipped_cifar_clients_restore_native_training_state(tmp_path, monkeypatch, algorithm, num_workers):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
