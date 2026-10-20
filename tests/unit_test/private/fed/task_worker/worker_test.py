@@ -1001,7 +1001,10 @@ def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
         f"Path({str(ready.with_suffix('.tmp'))!r}).write_text(str(os.getpid()))\n"
         f"os.replace({str(ready.with_suffix('.tmp'))!r}, {str(ready)!r})\n"
         + (
-            "while owner.is_running() and owner.status() not in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD):\n"
+            "while True:\n"
+            " try:\n"
+            "  if not owner.is_running() or owner.status() in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD): break\n"
+            " except psutil.NoSuchProcess: break\n"
             " time.sleep(0.01)\n"
             "cleanup()\n"
             if shutdown == "normal"

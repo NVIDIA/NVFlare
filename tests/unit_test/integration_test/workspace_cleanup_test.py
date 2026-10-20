@@ -111,7 +111,7 @@ def test_cleanup_reaps_detached_workspace_job_and_trainer_without_touching_sibli
 
         assert properties.process is None
         assert properties.processes_stopped
-        assert all(not child.is_running() or child.status() == psutil.STATUS_ZOMBIE for child in jobs)
+        assert all(not utils._process_running(child) for child in jobs)
         assert sibling.poll() is None, "cleanup killed a different site's process"
     finally:
         for child in set(identities):
@@ -165,14 +165,14 @@ def test_cleanup_retry_retains_orphaned_trainer_identity(tmp_path, monkeypatch):
         with pytest.raises(RuntimeError, match="Preserving workspace") as caught:
             launcher.cleanup()
         assert job.poll() is not None, str(caught.value)
-        assert trainer.is_running() and trainer.status() != psutil.STATUS_ZOMBIE
+        assert utils._process_running(trainer)
         assert trainer in properties.owned_processes
         assert not properties.processes_stopped
         assert workspace.exists()
 
         launcher.cleanup()
         assert not workspace.exists()
-        assert not trainer.is_running() or trainer.status() == psutil.STATUS_ZOMBIE
+        assert not utils._process_running(trainer)
         assert properties.processes_stopped
         assert not properties.owned_processes
     finally:

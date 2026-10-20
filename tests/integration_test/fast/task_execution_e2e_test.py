@@ -31,6 +31,7 @@ from nvflare.recipe import SimEnv
 from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
 
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
+pytestmark = pytest.mark.usefixtures("single_threaded_torch")
 
 
 @pytest.mark.timeout(300)

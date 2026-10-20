@@ -96,6 +96,42 @@ def _assert_pid_not_running(pid):
     pytest.fail(f"process {pid} is still running after confirmed process-group settlement")
 
 
+def _process_running(process):
+    try:
+        # The retained Process checks identity; the process may still disappear
+        # between that check and status(), especially after deliberate SIGTERM.
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+    except psutil.NoSuchProcess:
+        return False
+
+
+def test_process_exit_probe_accepts_disappearance_between_identity_and_status():
+    process = Mock(pid=1234)
+    process.is_running.return_value = True
+    process.status.side_effect = psutil.NoSuchProcess(process.pid)
+
+    assert not _process_running(process)
+    process.status.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [psutil.STATUS_RUNNING, psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD])
+def test_process_exit_probe_distinguishes_live_and_terminal_processes(status):
+    process = Mock()
+    process.is_running.return_value = True
+    process.status.return_value = status
+
+    assert _process_running(process) == (status == psutil.STATUS_RUNNING)
+
+
+def test_process_exit_probe_does_not_treat_access_denied_as_exit():
+    process = Mock(pid=1234)
+    process.is_running.return_value = True
+    process.status.side_effect = psutil.AccessDenied(process.pid)
+
+    with pytest.raises(psutil.AccessDenied):
+        _process_running(process)
+
+
 @pytest.mark.parametrize("field", ["stop_grace_period", "descendant_settle_timeout", "poll_interval"])
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), 0, -1, True, False, None, "0.5"])
 def test_launcher_rejects_invalid_timers(field, value):
@@ -1025,7 +1061,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
         with pytest.raises(TaskSettlementError, match="ownership is lost"):
             handle._signal_group(signal.SIGKILL)
         assert emitted == [signal.SIGTERM]
-        while child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+        while _process_running(child):
             assert time.monotonic() < deadline
             time.sleep(0.01)
     finally:
@@ -1038,7 +1074,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
         process.wait()
         if child is not None:
             try:
-                if child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                if _process_running(child):
                     child.kill()
             except psutil.NoSuchProcess:
                 pass
@@ -1283,12 +1319,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             fork_now.write_text("fork")
             _wait_for_file(child_pid_path)
             deadline = time.monotonic() + 5
-            while True:
-                try:
-                    if not forker.is_running() or forker.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                        break
-                except psutil.NoSuchProcess:
-                    break
+            while _process_running(forker):
                 assert time.monotonic() < deadline
                 time.sleep(0.01)
             return snapshot
