@@ -12,23 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Site-owned policy for the initial CPU Process task execution profile."""
+"""Site-owned selection and resource policy for disposable task execution."""
 
+import importlib
 import os
 import re
 from dataclasses import dataclass
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.apis.task_launcher_spec import TaskLauncherSpec
+from nvflare.apis.task_launcher_spec import TaskLauncherSpec, TaskResourceRequest
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.job_config.task_execution import _timeout
+from nvflare.job_config.task_execution import _timeout, validate_task_resources
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource_manager_spec
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -45,6 +47,12 @@ FORBIDDEN_ENVIRONMENT_NAMES = (
         "NVFLARE_CLIENT_API_CONFIG",
         "NVFLARE_CLIENT_API_CONFIG_PATH",
         "NVFLARE_CLIENT_API_SERVICE_CONF",
+        "NVFLARE_DOCKER_TASK_SESSION",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CERT_PATH",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_API_VERSION",
     }
 )
 PASSTHROUGH_ENVIRONMENT_NAMES = {
@@ -66,6 +74,21 @@ PASSTHROUGH_ENVIRONMENT_NAMES = {
     "NVFLARE_SECURE_LOGGING",
     "FL_LOG_LEVEL",
 }
+
+_NATIVE_TASK_LAUNCHERS = {
+    "docker": ("nvflare.app_opt.task_launcher.docker_launcher", "DockerTaskLauncher"),
+    "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
+    "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
+}
+
+
+def _supported_native_launcher(launcher):
+    """Import only the selected backend; optional backends stay optional."""
+    target = _NATIVE_TASK_LAUNCHERS.get(launcher.launch_mode)
+    if target is None:
+        return False
+    module_name, class_name = target
+    return type(launcher) is getattr(importlib.import_module(module_name), class_name)
 
 
 class _SiteBuilder(ComponentBuilder):
@@ -90,7 +113,29 @@ class TaskExecutionPolicy:
         # canonical site's resources.json (or its default fallback) owns policy.
         path = workspace.get_resources_file_path()
         data = ConfigService.load_config_dict(path) if path and os.path.isfile(path) else {}
-        return cls.from_config(data.get("task_execution", {}))
+        policy = cls.from_config(data.get("task_execution", {}))
+        # Only the canonical site file may establish the CP/CJ backend. A
+        # container environment or job meta cannot select its own authority.
+        if _supported_native_launcher(policy.launcher):
+            policy.launcher.validate_site_config(data)
+            return policy
+        launchers = []
+        for item in data.get("components", []):
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path", item.get("class_path", item.get("name", "")))
+            if isinstance(path, str) and path.endswith("JobLauncher"):
+                launchers.append((path, item))
+        if launchers and (
+            len(launchers) != 1
+            or launchers[0][0]
+            not in {
+                "ClientProcessJobLauncher",
+                "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+            }
+        ):
+            raise ValueError("task and job launch modes must match; configure a supported site TaskLauncher")
+        return policy
 
     @classmethod
     def from_config(cls, config):
@@ -132,8 +177,12 @@ class TaskExecutionPolicy:
             raise ValueError("finalization_timeout must be finite and positive")
         launcher_config = config.get("launcher")
         launcher = ProcessTaskLauncher() if launcher_config is None else _SiteBuilder().build_component(launcher_config)
-        if not isinstance(launcher, TaskLauncherSpec) or launcher.launch_mode != "process":
-            raise ValueError("this task execution profile requires a Process TaskLauncherSpec")
+        if not isinstance(launcher, TaskLauncherSpec) or not (
+            launcher.launch_mode == "process" or _supported_native_launcher(launcher)
+        ):
+            raise ValueError("task execution requires a supported Process, Docker, Kubernetes or Slurm TaskLauncher")
+        if launcher.launch_mode != "process" and names:
+            raise ValueError("native worker environment belongs to trusted backend configuration")
         return cls(
             launcher,
             tuple(dict.fromkeys(names)),
@@ -146,6 +195,8 @@ class TaskExecutionPolicy:
         )
 
     def worker_environment(self):
+        if self.launcher.launch_mode != "process":
+            return {}
         allowed = PASSTHROUGH_ENVIRONMENT_NAMES | set(self.environment_variables)
         environment = {
             name: value
@@ -161,3 +212,13 @@ class TaskExecutionPolicy:
             }
         )
         return environment
+
+    def task_resources(self, meta, site_name):
+        native_mode = _supported_native_launcher(self.launcher)
+        validate_task_resources(meta, site_name, allow_gpu=native_mode)
+        if native_mode and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
+            raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
+        if not native_mode or self.launcher.launch_mode != "docker":
+            return TaskResourceRequest()
+        spec = get_job_launcher_spec(meta, site_name, "docker")
+        return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))

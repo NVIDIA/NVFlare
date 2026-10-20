@@ -32,7 +32,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
-from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, _open_regular
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
@@ -77,6 +76,7 @@ class TaskWorkerExecutor(Executor):
                     if self._ending:
                         raise RuntimeError("task worker owner cannot restart after ending")
                     self._started = True
+                self.policy.launcher.handle_event(event_type, fl_ctx)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
@@ -134,7 +134,7 @@ class TaskWorkerExecutor(Executor):
                 with self._checkpoint_commit_guard(abort_signal):
                     fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
                     return result
-            validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
+            resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = os.path.join(workspace.get_run_dir(identity.job_id), ".nvflare", "task-execution")
             store = FileTaskArtifactStore(
@@ -171,6 +171,7 @@ class TaskWorkerExecutor(Executor):
                     ),
                     environment=self.policy.worker_environment(),
                     cwd=workspace.get_run_dir(attempt.job_id),
+                    resources=resources,
                 )
 
             outcome = self.supervisor.run(
