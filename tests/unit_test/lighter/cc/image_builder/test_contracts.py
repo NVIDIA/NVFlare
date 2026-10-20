@@ -77,6 +77,56 @@ from cvm.runtime.storage import disk_device
 from cvm.trustee.admin import verify_readback
 
 
+def elf64_with_dependencies(dependencies, extra_strings=()):
+    """Build the minimal ELF image needed to distinguish DT_NEEDED from stray strings."""
+    strings = bytearray(b"\0")
+    offsets = {}
+    for name in (*dependencies, *extra_strings):
+        if name not in offsets:
+            offsets[name] = len(strings)
+            strings.extend(name.encode() + b"\0")
+
+    base = 0x400000
+    program_offset = 64
+    program_size = 56
+    dynamic_offset = program_offset + 2 * program_size
+    dynamic = [(5, 0), (10, len(strings)), *((1, offsets[name]) for name in dependencies), (0, 0)]
+    string_offset = dynamic_offset + len(dynamic) * 16
+    dynamic[0] = (5, base + string_offset)
+    file_size = string_offset + len(strings)
+    ident = b"\x7fELF" + bytes((2, 1, 1)) + bytes(9)
+    header = ident + struct.pack(
+        "<HHIQQQIHHHHHH",
+        3,
+        62,
+        1,
+        0,
+        program_offset,
+        0,
+        0,
+        64,
+        program_size,
+        2,
+        0,
+        0,
+        0,
+    )
+    load = struct.pack("<IIQQQQQQ", 1, 4, 0, base, base, file_size, file_size, 0x1000)
+    dynamic_segment = struct.pack(
+        "<IIQQQQQQ",
+        2,
+        4,
+        dynamic_offset,
+        base + dynamic_offset,
+        base + dynamic_offset,
+        len(dynamic) * 16,
+        len(dynamic) * 16,
+        8,
+    )
+    entries = b"".join(struct.pack("<qQ", tag, value) for tag, value in dynamic)
+    return header + load + dynamic_segment + entries + strings
+
+
 class BindingTests(unittest.TestCase):
     @staticmethod
     def tdx_evidence():
@@ -326,12 +376,12 @@ class ProfileTests(unittest.TestCase):
 
     def test_kbs_client_nvat_linkage_must_match_profile(self):
         client = Path(self.temp_directory()) / "kbs-client"
-        client.write_bytes(b"cpu client")
+        client.write_bytes(elf64_with_dependencies(("libc.so.6",), ("libnvat.so.1",)))
         config.validate_kbs_client_linkage(client, "none")
         with self.assertRaisesRegex(BuildError, "must link libnvat"):
             config.validate_kbs_client_linkage(client, "nvidia_cc")
 
-        client.write_bytes(b"gpu client\0libnvat.so.1\0libc.so.6\0")
+        client.write_bytes(elf64_with_dependencies(("libnvat.so.1", "libc.so.6")))
         config.validate_kbs_client_linkage(client, "nvidia_cc")
         with self.assertRaisesRegex(BuildError, "must not link libnvat"):
             config.validate_kbs_client_linkage(client, "none")
