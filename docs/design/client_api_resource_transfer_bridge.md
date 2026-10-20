@@ -7,6 +7,14 @@ source lifetime, or shutdown policy. `PROTOCOL_VERSION` remains 1. Existing
 v1 handlers accept additional dictionary keys; the earlier optional delegated
 security fields use the same additive compatibility policy.
 
+## Reporting integration
+
+The hooks do not start counters. The reporting lifecycle starts them and
+handles final collection, storage, and shutdown draining separately.
+Delegated-token verification also needs the parent server's existing public
+certificate. Supplying that verifier is part of reporting integration, not
+this protocol extension; it requires no new operator configuration.
+
 ## Negotiation
 
 The trainer includes `resource_transfer_version: 1` in its existing `HELLO`.
@@ -105,7 +113,7 @@ budget. The summary is snapped once and reused for those attempts. If the
 existing transfer barrier fails, no complete contribution is claimed. Late
 summaries cannot reopen a frozen job counter or rewrite an archive.
 
-## Implementation and validation boundary
+## Implementation
 
 - [Protocol constants](../../nvflare/client/cell/defs.py): existing v1 values
   plus the separate optional extension and fixed bounds.
@@ -123,15 +131,18 @@ barrier ordering, per-result isolation, inline results, size/snapshot failures,
 outer-identity rejection, and acknowledgement despite optional accounting
 failure. They also cover resolved destinations without a lifetime header,
 accepted tensor bytes on a count-based transfer, and task-scoped reset after
-missing or malformed optional metadata. Live large-tensor qualification is
-tracked separately; controlled tests alone do not prove every topology.
+missing or malformed optional metadata.
+
+## Delegated trainer identity
+
 For server-side tasks, the secure managed trainer carries the site's existing
-delegated name, token, and signature through the relay. At `GET_TASK`, the
-private resolver verifies that tuple using the provisioned parent server's
-public certificate, checks the registered client, and binds its current job.
-The server job's different TLS certificate is not the token-signing identity.
-The configured parent public certificate is retained before job TLS replacement;
-no parent private key or new configuration is required.
+delegated name, token, and signature through the relay. When reporting
+integration supplies a verifier, the private resolver checks that tuple at
+`GET_TASK`, checks the registered client, and binds its current job. The
+verifier uses the parent server's existing public certificate, not the job
+process's TLS certificate. No parent private key is used. Without a verifier,
+the delegated-token path cannot establish accounting attribution; it does not
+prevent the download.
 
 While accounting is active, every descendant pull, retry, and EOF request must
 carry that exact tuple and match the current client registration and known
@@ -149,5 +160,4 @@ Forwarded downloads without either accepted proof remain deliberately partial.
 The [binding tests](../../tests/unit_test/private/fed/resource_stats/external_transfer_test.py)
 cover valid, missing, invalid, and changed proof; the
 [integration tests](../../tests/unit_test/private/fed/resource_stats/external_process_accounting_test.py)
-exercise the managed source contribution. Live large-tensor jobs and fault
-recovery on the final branch remain separate qualification work.
+exercise the managed source contribution.
