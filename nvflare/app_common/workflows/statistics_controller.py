@@ -187,20 +187,22 @@ class StatisticsController(Controller):
         if abort_signal.triggered:
             return False
 
-        if self.enable_pre_run_task:
-            self.pre_run_task_flow(abort_signal, fl_ctx)
+        # One client worker, and so one generator, may serve every statistics task.
+        with self.task_group(fl_ctx):
+            if self.enable_pre_run_task:
+                self.pre_run_task_flow(abort_signal, fl_ctx)
+                if abort_signal.triggered:
+                    return False
+
+            log_progress(self.logger, "  Computing first-pass statistics…")
+            self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_STATISTICS)
             if abort_signal.triggered:
                 return False
 
-        log_progress(self.logger, "  Computing first-pass statistics…")
-        self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_STATISTICS)
-        if abort_signal.triggered:
-            return False
-
-        log_progress(self.logger, "  Computing derived statistics…")
-        self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
-        if abort_signal.triggered:
-            return False
+            log_progress(self.logger, "  Computing derived statistics…")
+            self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
+            if abort_signal.triggered:
+                return False
 
         if not StatisticsController._wait_for_all_results(
             self.logger, self.result_wait_timeout, self.min_clients, self.client_statistics, 1.0, abort_signal

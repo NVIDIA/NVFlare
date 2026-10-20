@@ -111,6 +111,9 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
         self._completed_client_task_cache_size = _COMPLETED_CLIENT_TASK_CACHE_SIZE
         self._all_done = False
+        self._group_clients = {}  # open group id => names of clients that received one of its tasks
+        self._closed_groups_pending = {}  # client name => closed group ids not announced yet
+        self._closed_groups_announced = {}  # client name => closed group ids announced in the last reply
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
         self._task_check_period = task_check_period
@@ -223,7 +226,25 @@ class WFCommServer(FLComponent, WFCommSpec):
             Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this request
         """
         with self._controller_lock:
+            self._announce_closed_groups(client, fl_ctx)
             return self._do_process_task_request(client, fl_ctx)
+
+    def close_task_group(self, group_id: str, fl_ctx: FLContext):
+        with self._task_lock:
+            for client_name in self._group_clients.pop(group_id, ()):
+                self._closed_groups_pending.setdefault(client_name, []).append(group_id)
+
+    def _announce_closed_groups(self, client: Client, fl_ctx: FLContext):
+        # The runner copies this list onto whatever reply it finally builds. Each closure is
+        # listed in two consecutive replies so one lost reply does not lose it.
+        with self._task_lock:
+            previous = self._closed_groups_announced.pop(client.name, [])
+            fresh = self._closed_groups_pending.pop(client.name, [])
+            if fresh:
+                self._closed_groups_announced[client.name] = fresh
+        closed = previous + fresh
+        if closed:
+            fl_ctx.set_prop(FLContextKey.TASK_GROUPS_CLOSED, closed, private=True, sticky=False)
 
     def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
@@ -390,6 +411,10 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_data.add_cookie(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
             client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
             client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+            if task.group is not None:
+                client_data.set_header(ReservedHeaderKey.TASK_GROUP_ID, task.group.id)
+                client_data.add_cookie(ReservedHeaderKey.TASK_GROUP_ID, task.group.id)
+                self._group_clients.setdefault(task.group.id, set()).add(client.name)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, client_data

@@ -69,6 +69,14 @@ class OperatorConfigKey:
     OPERATORS = "operators"
 
 
+class TaskGroup:
+    """A controller-declared span of assignments one client worker may serve."""
+
+    def __init__(self):
+        self.id = str(uuid.uuid4())
+        self.closed = False
+
+
 class Task:
     def __init__(
         self,
@@ -82,6 +90,7 @@ class Task:
         task_done_cb=None,
         operator=None,
         secure=False,
+        group: TaskGroup | None = None,
     ):
         """Init the Task.
 
@@ -103,6 +112,7 @@ class Task:
                 It needs to follow the task_done_cb_signature.
             operator: task operator that describes the operation of the task
             secure: should this task be transmitted in a secure way
+            group: task group this task belongs to; None takes the controller's ambient group, if any
 
         """
         if not isinstance(name, str):
@@ -112,12 +122,15 @@ class Task:
             raise TypeError(f"data must be an instance of Shareable, but got {type(data)}.")
         if operator and not isinstance(operator, dict):
             raise TypeError(f"operator must be a dict but got {type(operator)}")
+        if group is not None and not isinstance(group, TaskGroup):
+            raise TypeError(f"group must be a TaskGroup but got {type(group)}")
 
         self.name = name  # name of the task
         self.data = data  # task data to be sent to client(s)
         self.operator = operator
         self.cb_lock = threading.Lock()
         self.secure = secure
+        self.group = group
 
         data.set_header(ReservedHeaderKey.TASK_NAME, name)
 

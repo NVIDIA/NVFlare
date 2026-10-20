@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
 from abc import ABC
+from contextlib import contextmanager
 from typing import List, Optional, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ControllerSpec, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.controller_spec import ControllerSpec, SendOrder, Task, TaskCompletionStatus, TaskGroup
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
@@ -34,6 +36,29 @@ class Controller(FLComponent, ControllerSpec, ABC):
         super().__init__()
         self._task_check_period = task_check_period
         self.communicator = None
+        self._ambient_group = threading.local()
+
+    @contextmanager
+    def task_group(self, fl_ctx: FLContext):
+        """Every task issued from this thread inside the block may be served by one client worker."""
+        if getattr(self._ambient_group, "group", None) is not None:
+            raise RuntimeError("task groups do not nest")
+        group = TaskGroup()
+        self._ambient_group.group = group
+        try:
+            yield group
+        finally:
+            self._ambient_group.group = None
+            group.closed = True
+            self.communicator.close_task_group(group.id, fl_ctx)
+
+    def _bind_group(self, task: Task):
+        if not isinstance(task, Task):
+            return  # the communicator reports the type error
+        if task.group is None:
+            task.group = getattr(self._ambient_group, "group", None)
+        if task.group is not None and task.group.closed:
+            raise RuntimeError(f"task {task.name} is issued into a closed task group")
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -60,6 +85,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
     ):
+        self._bind_group(task)
         return self.communicator.broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
     def broadcast_and_wait(
@@ -71,11 +97,13 @@ class Controller(FLComponent, ControllerSpec, ABC):
         wait_time_after_min_received: int = 0,
         abort_signal: Optional[Signal] = None,
     ):
+        self._bind_group(task)
         return self.communicator.broadcast_and_wait(
             task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal
         )
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
+        self._bind_group(task)
         return self.communicator.broadcast_forever(task, fl_ctx, targets)
 
     def send(
@@ -86,6 +114,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
+        self._bind_group(task)
         return self.communicator.send(task, fl_ctx, targets, send_order, task_assignment_timeout)
 
     def send_and_wait(
@@ -97,6 +126,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
     ):
+        self._bind_group(task)
         return self.communicator.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout, abort_signal)
 
     def relay(
@@ -109,6 +139,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         task_result_timeout: int = 0,
         dynamic_targets: bool = True,
     ):
+        self._bind_group(task)
         return self.communicator.relay(
             task, fl_ctx, targets, send_order, task_assignment_timeout, task_result_timeout, dynamic_targets
         )
@@ -124,6 +155,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         dynamic_targets: bool = True,
         abort_signal: Optional[Signal] = None,
     ):
+        self._bind_group(task)
         return self.communicator.relay_and_wait(
             task,
             fl_ctx,

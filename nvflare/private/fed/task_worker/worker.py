@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Execute one staged assignment without a federation Cell or live job engine."""
+"""Execute staged assignments without a federation Cell or live job engine."""
 
 import logging
 import os
@@ -47,9 +47,11 @@ from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_fr
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
-from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
-from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
+from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion, _read_json
+from .protocol import SESSION_END_MARKER, TaskAttemptIdentity, WorkerBootstrap, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
+
+_SESSION_POLL_INTERVAL = 0.05
 
 _PROTECTED_CONTEXT_KEYS = {
     ReservedKey.ENGINE,
@@ -174,16 +176,88 @@ def _restore_peer_context(data: Shareable, fl_ctx: FLContext):
         fl_ctx.set_peer_context(peer_ctx)
 
 
+class AttemptBinding:
+    """Per-attempt handles that adapters read at call time, so one worker can serve several attempts."""
+
+    def __init__(self, identity):
+        self.identity = identity
+        self.analytics = None
+
+
+def _set_attempt_context(fl_ctx, identity):
+    for name, value in (
+        (FLContextKey.TASK_ID, identity.task_id),
+        (FLContextKey.TASK_ATTEMPT_ID, identity.attempt_id),
+        (FLContextKey.TASK_NAME, identity.task_name),
+    ):
+        fl_ctx.set_prop(name, value, private=True, sticky=False)
+
+
+def _attempt_identities(bootstrap: WorkerBootstrap):
+    yield bootstrap.identity
+    if bootstrap.session_dir is None:
+        return
+    sequence = 2
+    while True:
+        next_path = os.path.join(bootstrap.session_dir, f"{sequence:06d}.json")
+        if os.path.lexists(next_path):
+            yield TaskAttemptIdentity.from_dict(_read_json(next_path))
+            sequence += 1
+        elif os.path.lexists(os.path.join(bootstrap.session_dir, SESSION_END_MARKER)):
+            return
+        else:
+            time.sleep(_SESSION_POLL_INTERVAL)
+
+
+def _commit_attempt(store, identity, result, analytics, runtime, started_at, started_monotonic, *, final):
+    reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
+    # Serialization can invoke application decomposers. Fail early here;
+    # the publication guard makes the final decision after verification.
+    runtime.raise_if_failed()
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    completed_at = time.time()
+    diagnostics = {
+        "elapsed_seconds": time.monotonic() - started_monotonic,
+        "user_cpu_seconds": usage.ru_utime,
+        "system_cpu_seconds": usage.ru_stime,
+        "max_rss_native_units": usage.ru_maxrss,
+        "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
+    }
+    checkpoint = store.stage_checkpoint(identity)
+    if checkpoint is not None:
+        diagnostics["checkpoint"] = checkpoint.to_dict()
+    if analytics is not None:
+        analytics_reference = store.write_analytics(identity, analytics)
+        if analytics_reference is not None:
+            diagnostics["analytics"] = analytics_reference.to_dict()
+    return store.commit_staged_result(
+        identity,
+        reference,
+        worker_pid=os.getpid(),
+        worker_ppid=os.getppid(),
+        started_at=started_at,
+        completed_at=completed_at,
+        diagnostics=diagnostics,
+        publication_guard=runtime.completion_guard if final else runtime.attempt_guard,
+    )
+
+
 def _execute(
     bootstrap: WorkerBootstrap,
-    data: Shareable,
     workspace: Workspace,
     store: FileTaskArtifactStore,
+    binding: AttemptBinding,
     *,
     context_binding=None,
     protected_context_keys=(),
-    analytics=None,
+    spool_analytics=False,
+    started=None,
 ):
+    """Run every attempt of this worker on one executor; return the last completion.
+
+    A one-shot worker (no session directory) commits after finalization, as #5405 does.
+    A session worker commits each attempt as it finishes and finalizes once at the end.
+    """
     components = {}
     for original in bootstrap.components:
         spec = _thaw_json(original)
@@ -197,27 +271,52 @@ def _execute(
                 raise TypeError(f"statistics generator {spec['id']!r} must implement Statistics")
             components[spec["id"]] = component
     runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys, components=components or None)
+    session = bootstrap.session_dir is not None
     adapt_executor = None
     if context_binding is not None:
-        adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
+        adapt_executor = context_binding(fl_ctx, binding, store, session)
     executor = _build_executor(bootstrap.executor)
     if adapt_executor is not None:
         executor = adapt_executor(executor)
-    _restore_peer_context(data, fl_ctx)
 
+    completion = None
+    pending = None
     try:
         initialize = getattr(executor, "initialize", None)
         if initialize is not None:
             with runtime.operation():
                 initialize(fl_ctx)
         runtime.raise_if_failed()
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
-        with runtime.operation():
-            result = executor.execute(bootstrap.identity.task_name, data, fl_ctx, runtime.abort_signal)
-        runtime.raise_if_failed()
-        if not isinstance(result, (Shareable, ArtifactReference)):
-            raise TypeError(f"Executor returned {type(result)} instead of Shareable")
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+        for identity in _attempt_identities(bootstrap):
+            # The first attempt's start is the worker's start, preflight included, as in #5405.
+            started_at, started_monotonic = (
+                started if started and identity == bootstrap.identity else (time.time(), time.monotonic())
+            )
+            if identity != bootstrap.identity:
+                store.claim_worker(identity)
+            binding.identity = identity
+            binding.analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity)) if spool_analytics else None
+            try:
+                _set_attempt_context(fl_ctx, identity)
+                data = store.read_input(identity)
+                _restore_peer_context(data, fl_ctx)
+                fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
+                with runtime.operation():
+                    result = executor.execute(identity.task_name, data, fl_ctx, runtime.abort_signal)
+                runtime.raise_if_failed()
+                if not isinstance(result, (Shareable, ArtifactReference)):
+                    raise TypeError(f"Executor returned {type(result)} instead of Shareable")
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+                if session:
+                    completion = _commit_attempt(
+                        store, identity, result, binding.analytics, runtime, started_at, started_monotonic, final=False
+                    )
+                else:
+                    pending = (identity, started_at, started_monotonic, binding.analytics)
+            finally:
+                if session and binding.analytics is not None:
+                    binding.analytics.close()
+                    binding.analytics = None
     except BaseException as error:
         runtime.fail(error)
     finally:
@@ -229,15 +328,24 @@ def _execute(
         except BaseException as error:
             runtime.fail(error)
     runtime.raise_if_failed()
-    result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-    if not isinstance(result, (Shareable, ArtifactReference)):
-        raise TypeError("executor finalization must leave a Shareable or staged result reference")
+    if pending is not None:
+        identity, started_at, started_monotonic, analytics = pending
+        result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+        if not isinstance(result, (Shareable, ArtifactReference)):
+            raise TypeError("executor finalization must leave a Shareable or staged result reference")
+        try:
+            completion = _commit_attempt(
+                store, identity, result, analytics, runtime, started_at, started_monotonic, final=True
+            )
+        finally:
+            if analytics is not None:
+                analytics.close()
     runtime.raise_if_failed()
-    return result, runtime
+    return completion
 
 
 def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
-    """Run one bootstrap and commit its result after successful finalization."""
+    """Run one bootstrap: a single attempt, or every attempt of its session."""
 
     # Strip CJ bootstrap credentials from the environment before importing job
     # custom code. This is not filesystem isolation: Process workers share the
@@ -248,13 +356,13 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     started_monotonic = time.monotonic()
     bootstrap = read_bootstrap(bootstrap_path)
     identity = bootstrap.identity
+    binding = AttemptBinding(identity)
     store = FileTaskArtifactStore(bootstrap.artifact_root, max_payload_bytes=bootstrap.max_payload_bytes)
     workspace = Workspace(bootstrap.workspace_root, site_name=identity.site_name)
     old_sys_path = sys.path.copy()
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
     owns_auditor = False
-    analytics = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -281,54 +389,20 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             spec = _thaw_json(original)
             if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
                 instantiate_class(_class_path(spec), task_constructor_args(spec))
-        data = store.read_input(identity)
-        if context_binding is None:
-            result, runtime = _execute(bootstrap, data, workspace, store)
-        else:
-            analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity))
-            result, runtime = _execute(
-                bootstrap,
-                data,
-                workspace,
-                store,
-                context_binding=context_binding,
-                protected_context_keys=protected_context_keys,
-                analytics=analytics,
-            )
-        reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
-        # Serialization can invoke application decomposers. Fail early here;
-        # the publication guard makes the final decision after verification.
-        runtime.raise_if_failed()
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        completed_at = time.time()
-        diagnostics = {
-            "elapsed_seconds": time.monotonic() - started_monotonic,
-            "user_cpu_seconds": usage.ru_utime,
-            "system_cpu_seconds": usage.ru_stime,
-            "max_rss_native_units": usage.ru_maxrss,
-            "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
-        }
-        checkpoint = store.stage_checkpoint(identity)
-        if checkpoint is not None:
-            diagnostics["checkpoint"] = checkpoint.to_dict()
-        if analytics is not None:
-            analytics_reference = store.write_analytics(identity, analytics)
-            if analytics_reference is not None:
-                diagnostics["analytics"] = analytics_reference.to_dict()
-        return store.commit_staged_result(
-            identity,
-            reference,
-            worker_pid=os.getpid(),
-            worker_ppid=os.getppid(),
-            started_at=started_at,
-            completed_at=completed_at,
-            diagnostics=diagnostics,
-            publication_guard=runtime.completion_guard,
+        return _execute(
+            bootstrap,
+            workspace,
+            store,
+            binding,
+            context_binding=context_binding,
+            protected_context_keys=protected_context_keys,
+            spool_analytics=context_binding is not None,
+            started=(started_at, started_monotonic),
         )
     except BaseException as e:
         try:
             store.record_failure(
-                identity,
+                binding.identity,
                 worker_pid=os.getpid(),
                 worker_ppid=os.getppid(),
                 started_at=started_at,
@@ -340,8 +414,6 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
-        if analytics is not None:
-            analytics.close()
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()

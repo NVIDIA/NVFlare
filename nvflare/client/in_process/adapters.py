@@ -14,6 +14,8 @@
 
 """Internal adapters for job and task lifetime of the shared in-process API."""
 
+import threading
+
 from nvflare.app_common.app_constant import AppConstants
 
 TOPIC_LOG_DATA = "LOG_DATA"
@@ -22,6 +24,7 @@ TOPIC_ABORT = "ABORT"
 TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
 TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
 TASK_RESULT_STOP_REASON = "task result handed off"
+TASK_GROUP_STOP_REASON = "task group ended"
 
 
 class JobInProcessAdapter:
@@ -45,22 +48,26 @@ class JobInProcessAdapter:
 
 
 class TaskInProcessAdapter:
-    def __init__(self, on_result=None, log_handler=None):
+    def __init__(self, on_result=None, log_handler=None, stop_after_result=True):
         self._on_result = on_result
         self._log_handler = log_handler
+        self._stop_after_result = stop_after_result
         self._result = None
+        self._result_ready = threading.Event()
         self._current_round = None
 
     def bind(self, api, receive_callback, abort_callback):
         self.api = api
 
     def stage_input(self, shareable):
+        self._result = None
+        self._result_ready.clear()
         self._current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         self.api._set_received_shareable(shareable)
 
     def publish_result(self, shareable):
         if self._result is not None:
-            raise RuntimeError("a task worker may send exactly one result")
+            raise RuntimeError("a task worker may send exactly one result per assignment")
         if self._current_round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
         if self._on_result is None:
@@ -68,12 +75,17 @@ class TaskInProcessAdapter:
         # The writer freezes the values before send() returns. Retain only its
         # storage reference, never another copy of the script's model.
         self._result = self._on_result(shareable)
-        self.api.stop = True
-        self.api.stop_reason = TASK_RESULT_STOP_REASON
+        if self._stop_after_result:
+            self.api.stop = True
+            self.api.stop_reason = TASK_RESULT_STOP_REASON
+        self._result_ready.set()
 
     def publish_log(self, message):
         if self._log_handler is not None:
             self._log_handler(message)
+
+    def wait_result(self, timeout):
+        return self._result_ready.wait(timeout)
 
     def get_result(self):
         if self._result is None:

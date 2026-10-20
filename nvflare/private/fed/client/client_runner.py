@@ -287,6 +287,12 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=task.attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.TASK_GROUP_ID,
+            value=task.data.get_header(ReservedHeaderKey.TASK_GROUP_ID),
+            private=True,
+            sticky=False,
+        )
         fl_ctx.set_prop(FLContextKey.WORKFLOW, value=task.workflow_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
@@ -583,7 +589,8 @@ class ClientRunner(TBI):
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))
             return default_task_fetch_interval, False
-        elif task.name == SpecialTaskName.END_RUN:
+        self._fire_closed_task_groups(task, fl_ctx)
+        if task.name == SpecialTaskName.END_RUN:
             self.log_info(fl_ctx, "server asked to end the run")
             self.run_abort_signal.trigger(True)
             return default_task_fetch_interval, False
@@ -612,6 +619,15 @@ class ClientRunner(TBI):
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
+
+    def _fire_closed_task_groups(self, task: TaskAssignment, fl_ctx: FLContext):
+        closed = (
+            task.data.get_header(ReservedHeaderKey.TASK_GROUPS_CLOSED) if isinstance(task.data, Shareable) else None
+        )
+        for group_id in closed or ():
+            fl_ctx.set_prop(FLContextKey.TASK_GROUP_ID, group_id, private=True, sticky=False)
+            self.fire_event(EventType.TASK_GROUP_CLOSED, fl_ctx)
+        fl_ctx.remove_prop(FLContextKey.TASK_GROUP_ID, force_removal=True)
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
         # This fact spans retries: False proves the result never reached the

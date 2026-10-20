@@ -20,6 +20,7 @@ import os
 import sys
 import textwrap
 import threading
+import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -1328,3 +1329,96 @@ assert reference() is None, "worker retains decoded input after send"
         assert from_shareable(adapter.execute("train", data, context, Signal())).data["w"][0] == 2.0
     finally:
         adapter.handle_event(EventType.END_RUN, context)
+
+
+def _group_assignment(context, data, *, group, attempt, task_id):
+    for key, value in (
+        (FLContextKey.TASK_GROUP_ID, group),
+        (FLContextKey.TASK_ATTEMPT_ID, attempt),
+        (FLContextKey.TASK_ID, task_id),
+    ):
+        context.set_prop(key, value, private=True, sticky=True)
+    payload = DXO(DataKind.WEIGHTS, {"w": np.array([1.0, 2.0])}).to_shareable()
+    payload.set_header(AppConstants.CURRENT_ROUND, data.get_header(AppConstants.CURRENT_ROUND))
+    return payload
+
+
+def test_task_group_assignments_share_one_worker_until_the_group_closes(native_task):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    adapter, data = _adapter(custom, context, policy)
+    attempts = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
+
+    first = adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
+    )
+    second = adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a2", task_id="t2"), context, Signal()
+    )
+    metrics_1, metrics_2 = (FLModelUtils.from_shareable(result).metrics for result in (first, second))
+    assert metrics_1["pid"] == metrics_2["pid"] != os.getpid()
+    assert metrics_2["main_thread"] is False
+    assert first.get_header(AppConstants.CURRENT_ROUND) == second.get_header(AppConstants.CURRENT_ROUND) == 3
+    assert adapter._session is not None and adapter._session.group_id == "g1"
+    assert context.get_engine().fire_event.call_count == 2, "one analytics replay per attempt"
+    assert (attempts / "a1" / "completion.json").exists() and (attempts / "a2" / "completion.json").exists()
+    assert not (attempts / "a2" / "script_finalized.json").exists()
+
+    # A resend of a completed attempt re-reads the saved result; the live worker is not involved.
+    _group_assignment(context, data, group="g1", attempt="a1", task_id="t1")
+    assert FLModelUtils.from_shareable(adapter.execute("train", Shareable(), context, Signal())).metrics == metrics_1
+
+    adapter.handle_event(EventType.TASK_GROUP_CLOSED, context)  # context still names group g1
+    assert adapter._session is None
+    assert (attempts / "a2" / "script_finalized.json").exists(), "the script loop ended and finalized once"
+
+    third = adapter.execute(
+        "train", _group_assignment(context, data, group="g2", attempt="a3", task_id="t3"), context, Signal()
+    )
+    assert FLModelUtils.from_shareable(third).metrics["pid"] != metrics_1["pid"]
+    adapter.handle_event(EventType.END_RUN, context)
+    assert adapter._session is None
+    assert (attempts / "a3" / "script_finalized.json").exists()
+
+
+def test_group_of_one_and_a_different_group_close_the_open_session(native_task):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    adapter, data = _adapter(custom, context, policy)
+
+    grouped = adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
+    )
+    assert adapter._session is not None
+    other = adapter.execute(
+        "train", _group_assignment(context, data, group="g2", attempt="a2", task_id="t2"), context, Signal()
+    )
+    assert adapter._session.group_id == "g2"
+    context.set_prop(FLContextKey.TASK_GROUP_ID, None, private=True, sticky=True)
+    single = adapter.execute(
+        "train", _group_assignment(context, data, group=None, attempt="a3", task_id="t3"), context, Signal()
+    )
+    assert adapter._session is not None, "a group of one does not touch the open session"
+    pids = [FLModelUtils.from_shareable(result).metrics["pid"] for result in (grouped, other, single)]
+    assert len(set(pids)) == 3
+    adapter.handle_event(EventType.END_RUN, context)
+    assert adapter._session is None
+
+
+def test_idle_task_group_session_is_closed_by_the_site_timeout(native_task):
+    root, custom, context, policy = native_task
+    policy = replace(policy, group_idle_timeout=0.5)
+    adapter, data = _adapter(custom, context, policy)
+    adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
+    )
+    assert adapter._session is not None
+    deadline = time.monotonic() + 10
+    while adapter._session is not None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert adapter._session is None
+    attempts = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
+    assert (attempts / "a1" / "script_finalized.json").exists()
+    adapter.handle_event(EventType.END_RUN, context)

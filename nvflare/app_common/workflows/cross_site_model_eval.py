@@ -117,6 +117,7 @@ class CrossSiteModelEval(Controller):
         self._validation_timeout = validation_timeout
         self._wait_for_clients_timeout = wait_for_clients_timeout
         self._cleanup_models = cleanup_models
+        self._validation_group = None
         self._participating_clients = participating_clients
 
         self._val_results = {}
@@ -222,23 +223,26 @@ class CrossSiteModelEval(Controller):
                 self.log_info(fl_ctx, "Abort signal triggered. Finishing model validation.")
                 return
 
-            # Load server models and assign those tasks
-            if self._model_locator:
-                success = self._locate_server_models(fl_ctx)
-                if not success:
-                    return
+            # One client worker may serve every validation task of this phase.
+            with self.task_group(fl_ctx) as validation_group:
+                self._validation_group = validation_group
+                # Load server models and assign those tasks
+                if self._model_locator:
+                    success = self._locate_server_models(fl_ctx)
+                    if not success:
+                        return
 
-                for server_model in self._server_models:
-                    self._send_validation_task(server_model, fl_ctx)
-            else:
-                self.log_info(fl_ctx, "ModelLocator not present. No server models will be included.")
+                    for server_model in self._server_models:
+                        self._send_validation_task(server_model, fl_ctx)
+                else:
+                    self.log_info(fl_ctx, "ModelLocator not present. No server models will be included.")
 
-            while self.get_num_standing_tasks():
-                if abort_signal.triggered:
-                    self.log_info(fl_ctx, "Abort signal triggered. Finishing cross site validation.")
-                    return
-                self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
-                time.sleep(self._task_check_period)
+                while self.get_num_standing_tasks():
+                    if abort_signal.triggered:
+                        self.log_info(fl_ctx, "Abort signal triggered. Finishing cross site validation.")
+                        return
+                    self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
+                    time.sleep(self._task_check_period)
         except Exception as e:
             error_msg = f"Exception in cross site validator control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
@@ -400,6 +404,8 @@ class CrossSiteModelEval(Controller):
         self.log_info(fl_ctx, f"Sending {model_name} model to all participating clients for validation.")
 
         # Create validation task and broadcast to all participating clients.
+        # Client-model validations are issued from result callbacks on other
+        # threads, so the group is passed explicitly rather than ambiently.
         task = Task(
             name=self._validation_task_name,
             data=Shareable(),
@@ -408,6 +414,7 @@ class CrossSiteModelEval(Controller):
             result_received_cb=self._receive_val_result_cb,
             timeout=self._validation_timeout,
             props={AppConstants.MODEL_OWNER: model_name},
+            group=self._validation_group if self._validation_group and not self._validation_group.closed else None,
         )
 
         self.broadcast(

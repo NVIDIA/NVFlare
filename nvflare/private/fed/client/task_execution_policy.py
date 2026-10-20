@@ -83,6 +83,7 @@ class TaskExecutionPolicy:
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
     finalization_timeout: float = 30.0
+    group_idle_timeout: float = 120.0
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -105,6 +106,7 @@ class TaskExecutionPolicy:
             "poll_interval",
             "max_payload_bytes",
             "finalization_timeout",
+            "group_idle_timeout",
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
@@ -130,6 +132,9 @@ class TaskExecutionPolicy:
         finalization_timeout = _timeout("finalization_timeout", config.get("finalization_timeout", 30.0))
         if finalization_timeout is None or finalization_timeout <= 0:
             raise ValueError("finalization_timeout must be finite and positive")
+        group_idle_timeout = _timeout("group_idle_timeout", config.get("group_idle_timeout", 120.0))
+        if group_idle_timeout is None or group_idle_timeout <= 0:
+            raise ValueError("group_idle_timeout must be finite and positive")
         launcher_config = config.get("launcher")
         launcher = ProcessTaskLauncher() if launcher_config is None else _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or launcher.launch_mode != "process":
@@ -143,6 +148,7 @@ class TaskExecutionPolicy:
             options.poll_interval,
             limit,
             finalization_timeout,
+            group_idle_timeout,
         )
 
     def worker_environment(self):

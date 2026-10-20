@@ -28,7 +28,12 @@ from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.converter_utils import convert_params
-from nvflare.client.in_process.adapters import TASK_RESULT_STOP_REASON, TOPIC_ABORT, TOPIC_GLOBAL_RESULT
+from nvflare.client.in_process.adapters import (
+    TASK_GROUP_STOP_REASON,
+    TASK_RESULT_STOP_REASON,
+    TOPIC_ABORT,
+    TOPIC_GLOBAL_RESULT,
+)
 from nvflare.client.in_process.adapters import TOPIC_LOCAL_RESULT as TOPIC_LOCAL_RESULT  # noqa: F401 - public export
 from nvflare.client.in_process.adapters import TOPIC_LOG_DATA as TOPIC_LOG_DATA  # noqa: F401 - public export
 from nvflare.client.in_process.adapters import TOPIC_STOP, JobInProcessAdapter
@@ -40,7 +45,12 @@ from nvflare.fuel.utils.mem_utils import log_rss
 
 _END_RUN_STOP_REASON = "END_RUN received"
 _API_SHUTDOWN_STOP_REASON = "API shutdown called."
-_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON, TASK_RESULT_STOP_REASON}
+_EXPECTED_STOP_REASONS = {
+    _END_RUN_STOP_REASON,
+    _API_SHUTDOWN_STOP_REASON,
+    TASK_RESULT_STOP_REASON,
+    TASK_GROUP_STOP_REASON,
+}
 
 
 def _stop_log_level(reason):

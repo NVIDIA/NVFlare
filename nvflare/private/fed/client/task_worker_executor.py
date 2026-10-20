@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from functools import partial
 
@@ -44,7 +45,12 @@ TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 
 
 class TaskWorkerExecutor(Executor):
-    """Trusted runtime adapter constructed from authorized inert application specs."""
+    """Trusted runtime adapter constructed from authorized inert application specs.
+
+    Without a task group every assignment is one worker process (#5405). Inside a
+    group one worker session serves the group's assignments until the group closes,
+    the site idle timeout fires, the job ends, or a different group arrives.
+    """
 
     def __init__(self, executor, components, policy, *, worker_timeout=None, result_wait_timeout=None):
         super().__init__()
@@ -69,6 +75,10 @@ class TaskWorkerExecutor(Executor):
         self._ending = False
         self._panic_reported = False
         self._completed_attempts = set()
+        self._session = None
+        self._session_ctx = None
+        self._idle_deadline = None
+        self._idle_timer = None
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -79,9 +89,12 @@ class TaskWorkerExecutor(Executor):
                     self._started = True
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
+            elif event_type == EventType.TASK_GROUP_CLOSED:
+                self._close_session_if(lambda session: session.group_id == fl_ctx.get_prop(FLContextKey.TASK_GROUP_ID))
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
                 with self._state_lock:
                     self._ending = True
+                self._close_session_if(lambda session: True)
                 self.supervisor.end_run()
                 if (
                     event_type == EventType.END_RUN
@@ -118,14 +131,18 @@ class TaskWorkerExecutor(Executor):
         )
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
-        if not self._gate.acquire(blocking=False):
-            raise RuntimeError("task worker executor already has an active attempt")
+        # The idle timer may be closing a session; wait for it rather than failing the assignment.
+        self._gate.acquire()
         self._done.clear()
         identity = workspace = outcome = None
+        session = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
                     raise RuntimeError("task worker executor is not running")
+                self._idle_deadline = None
+                if self._idle_timer is not None:
+                    self._idle_timer.cancel()
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             identity = self._identity(task_name, fl_ctx)
@@ -144,53 +161,37 @@ class TaskWorkerExecutor(Executor):
                 json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
             ).hexdigest()
             checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
-            bootstrap = WorkerBootstrap(
-                identity,
-                store.root_dir,
-                workspace.get_root_dir(),
-                self.executor_spec,
-                self.component_specs,
-                max_payload_bytes=self.policy.max_payload_bytes,
+            stage_hook = partial(self._prepare_checkpoint, store, checkpoint_file)
+            request_factory = partial(self._launch_request, workspace)
+            deadline_provider = partial(
+                result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
             )
-
-            def request_factory(attempt, path):
-                store.prepare_checkpoint(attempt, checkpoint_file)
-                return TaskLaunchRequest(
-                    attempt.job_id,
-                    attempt.site_name,
-                    attempt.task_id,
-                    attempt.attempt_id,
-                    (
-                        sys.executable,
-                        "-m",
-                        "nvflare.private.fed.app.client.task_worker_process",
-                        "--bootstrap",
-                        path,
-                        "--parent_pid",
-                        str(os.getpid()),
-                    ),
-                    environment=self.policy.worker_environment(),
-                    cwd=workspace.get_run_dir(attempt.job_id),
+            group_id = fl_ctx.get_prop(FLContextKey.TASK_GROUP_ID)
+            if group_id is None:
+                bootstrap = self._bootstrap(identity, store, workspace)
+                outcome = self.supervisor.run(
+                    bootstrap=bootstrap,
+                    store=store,
+                    input_payload=shareable,
+                    runtime_root=runtime_root,
+                    launcher=self.policy.launcher,
+                    abort_signal=abort_signal,
+                    request_factory=request_factory,
+                    options=self.options,
+                    deadline_provider=deadline_provider,
+                    stage_hook=stage_hook,
                 )
-
-            outcome = self.supervisor.run(
-                bootstrap=bootstrap,
-                store=store,
-                input_payload=shareable,
-                runtime_root=runtime_root,
-                launcher=self.policy.launcher,
-                abort_signal=abort_signal,
-                request_factory=request_factory,
-                options=self.options,
-                deadline_provider=partial(
-                    result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
-                ),
-            )
+            else:
+                session = self._session_for(group_id, store, runtime_root, request_factory, fl_ctx)
+                bootstrap = self._bootstrap(identity, store, workspace, session_dir=session.session_dir)
+                outcome = self.supervisor.run_attempt(
+                    session, bootstrap, shareable, abort_signal, self.options, deadline_provider, stage_hook
+                )
             # Finish fallible CJ replay/reporting before promoting application
             # state. The success path's finally block only releases ownership.
             self._report_issues(fl_ctx)
-            if not self.supervisor.owns_execution and not self.supervisor.settlement_unconfirmed:
-                self._replay_worker_log(workspace, identity, fl_ctx)
+            if session is None:
+                self._replay_settled_log(workspace, identity, fl_ctx)
             if outcome.aborted or abort_signal.triggered:
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -206,7 +207,9 @@ class TaskWorkerExecutor(Executor):
             return outcome.result
         finally:
             try:
-                if (
+                if session is not None:
+                    self._settle_session(session, fl_ctx)
+                elif (
                     outcome is None
                     and workspace is not None
                     and not self.supervisor.owns_execution
@@ -218,6 +221,120 @@ class TaskWorkerExecutor(Executor):
                 self._gate.release()
                 if outcome is None:
                     self._report_issues(fl_ctx)
+
+    def _bootstrap(self, identity, store, workspace, session_dir=None):
+        return WorkerBootstrap(
+            identity,
+            store.root_dir,
+            workspace.get_root_dir(),
+            self.executor_spec,
+            self.component_specs,
+            max_payload_bytes=self.policy.max_payload_bytes,
+            session_dir=session_dir,
+        )
+
+    @staticmethod
+    def _prepare_checkpoint(store, checkpoint_file, attempt):
+        store.prepare_checkpoint(attempt, checkpoint_file)
+
+    def _launch_request(self, workspace, attempt, path):
+        return TaskLaunchRequest(
+            attempt.job_id,
+            attempt.site_name,
+            attempt.task_id,
+            attempt.attempt_id,
+            (
+                sys.executable,
+                "-m",
+                "nvflare.private.fed.app.client.task_worker_process",
+                "--bootstrap",
+                path,
+                "--parent_pid",
+                str(os.getpid()),
+            ),
+            environment=self.policy.worker_environment(),
+            cwd=workspace.get_run_dir(attempt.job_id),
+        )
+
+    def _replay_settled_log(self, workspace, identity, fl_ctx):
+        if not self.supervisor.owns_execution and not self.supervisor.settlement_unconfirmed:
+            self._replay_worker_log(workspace, identity, fl_ctx)
+
+    # ---- task group sessions ----
+
+    def _session_for(self, group_id, store, runtime_root, request_factory, fl_ctx):
+        """Return the open session for this group, closing a session of another group first."""
+        session = self._session
+        if session is not None and (session.group_id != group_id or not self._reusable(session)):
+            self._close_session(fl_ctx)
+            session = None
+        if session is None:
+            session = self.supervisor.open_session(group_id, store, runtime_root, self.policy.launcher, request_factory)
+            with self._state_lock:
+                self._session = session
+                self._session_ctx = fl_ctx
+            self.log_info(fl_ctx, f"opened task worker session for group {group_id}")
+        return session
+
+    @staticmethod
+    def _reusable(session):
+        return not (session.settled or session.ended or session.cancel_requested.is_set())
+
+    def _settle_session(self, session, fl_ctx):
+        """After an attempt: drop a dead session, or arm the idle timer on a live one."""
+        if not self._reusable(session):
+            self._close_session(fl_ctx)
+            return
+        timer = threading.Timer(self.policy.group_idle_timeout, self._close_idle_session, args=(session,))
+        timer.daemon = True
+        with self._state_lock:
+            self._idle_deadline = time.monotonic() + self.policy.group_idle_timeout
+            self._idle_timer = timer
+        timer.start()
+
+    def _close_idle_session(self, session):
+        with self._gate:
+            with self._state_lock:
+                expired = (
+                    self._session is session
+                    and self._idle_deadline is not None
+                    and time.monotonic() >= self._idle_deadline
+                )
+            if expired:
+                self.log_info(self._session_ctx, f"task worker session for group {session.group_id} is idle; closing")
+                self._close_session(self._session_ctx)
+
+    def _close_session_if(self, predicate):
+        with self._state_lock:
+            session = self._session
+        if session is None or not predicate(session):
+            return
+        # A running attempt holds the gate; its own settlement path drops a dead session.
+        if self._gate.acquire(timeout=self.policy.finalization_timeout):
+            try:
+                if self._session is session:
+                    self._close_session(self._session_ctx)
+            finally:
+                self._gate.release()
+
+    def _close_session(self, fl_ctx):
+        """Caller holds the gate. The session is dropped only once its worker has exited."""
+        with self._state_lock:
+            session = self._session
+            self._idle_deadline = None
+        if session is None:
+            return
+        try:
+            status = self.supervisor.close_session(session, self.policy.finalization_timeout, self.options)
+            if status is not None and not status.succeeded:
+                self.log_warning(fl_ctx, f"task worker session for group {session.group_id} ended abnormally: {status}")
+        finally:
+            with self._state_lock:
+                self._session = None
+            self._report_issues(fl_ctx)
+            if session.identity is not None and not self.supervisor.settlement_unconfirmed:
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
+                self._replay_worker_log(workspace, session.identity, fl_ctx)
 
     @contextmanager
     def _checkpoint_commit_guard(self, abort_signal):
