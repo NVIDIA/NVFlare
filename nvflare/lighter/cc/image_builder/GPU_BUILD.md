@@ -26,7 +26,8 @@ Fetch the public signing key and verify the reviewed keyring bytes before use:
 The primary key fingerprint is
 `C95B321B61E88C1809C4F759DDCAE044F796ECB0`. A rotated key requires a reviewed
 profile update; do not replace the digest automatically when verification fails.
-Add these fields to a copy of `config/cvm_profile.yml`:
+Set these fields in a copy of `config/cvm_profile.yml`. Update the existing
+`platforms` entries shown below; do not add a second `platforms` mapping:
 
 ```yaml
 gpu: nvidia_cc
@@ -35,6 +36,13 @@ gpu_policy: gpu_policy.json
 gpu_attestation_url: https://nras.attestation.nvidia.com/v4/attest/gpu
 gpu_attestation_library: ../inputs/libnvat.so.1
 gpu_attestation_provenance: ../inputs/nvat_build.json
+platforms:
+  amd_sev_snp:
+    kbs_client: ../inputs/kbs-client-gpu
+    kbs_client_provenance: ../inputs/kbs_client_gpu_build.json
+  intel_tdx:
+    kbs_client: ../inputs/kbs-client-gpu
+    kbs_client_provenance: ../inputs/kbs_client_gpu_build.json
 gpu_apt_repositories:
   - url: https://nvidia.github.io/libnvidia-container/stable/deb/amd64
     suite: /
@@ -148,10 +156,12 @@ sudo ln -sfn libnvat.so.1 /usr/lib/x86_64-linux-gnu/libnvat.so
 sudo ldconfig
 NVAT_USE_SYSTEM_LIB=1 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester,nvidia-attester
-install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
-./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
+install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client-gpu
+./cvmctl provenance /tmp/trustee inputs/kbs-client-gpu inputs/kbs_client_gpu_build.json
 ```
 
 The guest receives the pinned library bytes and its runtime dependencies, not the
 SDK source or development packages. Validate GPU evidence collection and encrypted
 key retrieval with these exact artifacts before approving the generic CVM.
+The builder verifies that a GPU profile's client links `libnvat.so.1`; the
+separate filename prevents this binary from replacing the CPU-only client.

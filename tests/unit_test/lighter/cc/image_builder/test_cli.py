@@ -173,6 +173,7 @@ class CliTests(unittest.TestCase):
                 patch.object(
                     cli.vault.config, "project", return_value={"trustee": {}, "approval": {"public_keys": ["k"]}}
                 ),
+                patch.object(cli.vault.trustee_client, "admin_token"),
                 patch.object(cli.vault, "profile_from_image", return_value=contextlib.nullcontext(profiles)),
                 patch.object(cli.vault, "protect_process") as protect,
                 patch.object(cli.vault, "memory_file") as key,
@@ -246,6 +247,21 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": "release.pub"})
                 cli.main(["pull", str(archive), "--allow-unverified"])
                 self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": None})
+
+    def test_pull_prints_root_accessible_absolute_launch_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output with spaces"
+            result = (
+                output,
+                {"artifactType": "t", "digest": "sha256:" + "b" * 64},
+                {"launch_directory": "intel_tdx"},
+            )
+            stdout = io.StringIO()
+            with patch.object(cli.oci, "materialize", return_value=result), contextlib.redirect_stdout(stdout):
+                cli.main(["pull", "delivery.oci.tar", "--allow-unverified"])
+            launch = str(output / "intel_tdx/launch_cvm.sh")
+            self.assertIn(f"Launch: sudo -- '{launch}'", stdout.getvalue())
+            self.assertNotIn("Launch: cd ", stdout.getvalue())
 
     def test_admin_acl_prints_a_bundle_scoped_resource_role(self):
         stdout = io.StringIO()

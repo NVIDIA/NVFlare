@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 from cvm.artifacts.oci import CVM_ARTIFACT_TYPE, DELIVERY_ARTIFACT_TYPE
 from cvm.build import config, storage, vault
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, ConfigurationError
 
 
 class VaultInputTests(unittest.TestCase):
@@ -217,6 +217,7 @@ class VaultInputTests(unittest.TestCase):
             patch(
                 "cvm.build.vault.profile_from_image", side_effect=lambda *a, **kw: contextlib.nullcontext(self.profiles)
             ),
+            patch("cvm.build.vault.trustee_client.admin_token"),
             patch("cvm.build.vault.build_with_profile", side_effect=build),
         ):
             for output in (self.root / "first", self.root / "second"):
@@ -232,6 +233,7 @@ class VaultInputTests(unittest.TestCase):
         with (
             patch("cvm.build.vault.config.application", return_value={"cvm_image": self.reference}),
             patch("cvm.build.vault.config.project", return_value=project_value) as project,
+            patch("cvm.build.vault.trustee_client.admin_token") as token,
             patch("cvm.build.vault.profile_from_image", return_value=contextlib.nullcontext(self.profiles)) as retrieve,
             patch("cvm.build.vault.build_with_profile") as seal,
         ):
@@ -241,12 +243,31 @@ class VaultInputTests(unittest.TestCase):
             self.assertEqual(seal.call_args.args[0]["approval_keys"], ["/srv/project/acceptance.pub"])
             self.assertEqual(retrieve.call_args.kwargs["trusted_keys"], ("/srv/project/acceptance.pub",))
             self.assertTrue(retrieve.call_args.kwargs["approved"])
+            token.assert_called_once_with(service)
 
         with (
             patch("cvm.build.vault.config.application", return_value={"cvm_image": self.reference}),
             patch("cvm.build.vault.config.project", side_effect=BuildError("Missing project")),
             patch("cvm.build.vault.profile_from_image") as retrieve,
             self.assertRaises(BuildError),
+        ):
+            vault.build("/tmp/build.yml")
+        retrieve.assert_not_called()
+
+    def test_expired_resource_token_fails_before_image_retrieval(self):
+        project_value = {
+            "trustee": {"admin_token_file": "/srv/project/expired.jwt"},
+            "approval": {"public_keys": ["/srv/project/acceptance.pub"]},
+        }
+        with (
+            patch("cvm.build.vault.config.application", return_value={"cvm_image": self.reference}),
+            patch("cvm.build.vault.config.project", return_value=project_value),
+            patch(
+                "cvm.build.vault.trustee_client.admin_token",
+                side_effect=BuildError("Trustee administration token has expired"),
+            ),
+            patch("cvm.build.vault.profile_from_image") as retrieve,
+            self.assertRaisesRegex(ConfigurationError, "Invalid cvm_project.yml inputs"),
         ):
             vault.build("/tmp/build.yml")
         retrieve.assert_not_called()

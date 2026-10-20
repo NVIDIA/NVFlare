@@ -84,7 +84,8 @@ container tags. The conventional `inputs/` and `credentials/` directories hold
 bearer tokens, CAs, signing keys and multi-gigabyte images and are ignored by
 git. Production builds also require a `kbs_client_provenance` record for the
 selected platform, produced by `./cvmctl provenance` beside the clean Trustee
-checkout that built `kbs-client`.
+checkout that built `kbs-client`. CPU and GPU profiles use distinct client and
+provenance filenames, and Stage 1 verifies whether the binary links NVAT.
 Use [config/cvm_profile.yml](config/cvm_profile.yml) and
 [config/vault_build.yml](config/vault_build.yml) as configuration templates.
 They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
@@ -263,11 +264,11 @@ CVM layer plus a deployment-specific vault/runtime layer. Digests are recorded i
 and Python bytecode caches.
 
 ```sh
-# Use the staging folder printed by cvmctl vault.
-cd target/vault_0123456789ab4def8123456789abcdef/intel_tdx
-sudo ./launch_cvm.sh
+# Use an absolute path so sudo can traverse the root-only staging folder.
+delivery="$PWD/target/vault_0123456789ab4def8123456789abcdef/intel_tdx"
+sudo -- "$delivery/launch_cvm.sh"
 # From another shell:
-sudo ./shutdown_cvm.sh
+sudo -- "$delivery/shutdown_cvm.sh"
 ```
 
 The launcher verifies the embedded `cvm_bundle/` by platform and build id. GPU

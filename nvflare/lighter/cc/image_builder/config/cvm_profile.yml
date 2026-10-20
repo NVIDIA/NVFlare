@@ -82,16 +82,16 @@ platforms:
     enabled: true
     attester: snp
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
-    kbs_client: ../inputs/kbs-client
+    kbs_client: ../inputs/kbs-client-cpu
     # Produced by `cvmctl provenance` after applying the reviewed standalone
     # client patch. Production builds require it; the digest alone names no source.
-    kbs_client_provenance: ../inputs/kbs_client_build.json
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
     cpu_model: EPYC-v4
   intel_tdx:
     enabled: true
     attester: tdx
     firmware: ../inputs/OVMF.inteltdx.fd
-    kbs_client: ../inputs/kbs-client
-    kbs_client_provenance: ../inputs/kbs_client_build.json
+    kbs_client: ../inputs/kbs-client-cpu
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
     cpu_model: host
     quote_generation: {type: vsock, cid: 2, port: 4050}

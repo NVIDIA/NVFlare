@@ -53,7 +53,7 @@ git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 ./cvmctl provenance /tmp/trustee \
-  /tmp/trustee/target/release/kbs-client /tmp/kbs_client_build.json
+  /tmp/trustee/target/release/kbs-client /tmp/kbs_client_cpu_build.json
 ```
 
 Keep the client's default crypto features. In this release, `native-tls` selects
@@ -312,10 +312,13 @@ trustee:
 ```
 
 The token file contains only the signed JWT, with restricted file permissions.
-Paths resolve relative to this YAML. Stage 2 validates the vault, then uploads its
-64-byte key with `POST /kbs/v0/resource/keys/<build_id>/<binding_id>` using that
-bearer token. Guest retrieval still requires successful attestation and resource
-policy authorization; administration credentials are never delivered to guests.
+Paths resolve relative to this YAML. Stage 2 checks the token syntax and lifetime
+locally before retrieving the generic image or sealing a vault, then reads and
+checks it again when uploading the 64-byte key with
+`POST /kbs/v0/resource/keys/<build_id>/<binding_id>`. Operators may therefore
+rotate a still-valid token during a long build. Guest retrieval still requires
+successful attestation and resource policy authorization; administration
+credentials are never delivered to guests.
 
 Native POST permits replacement. Builds always seal fresh vaults and issue one
 upload attempt; they do not automatically retry an uncertain request. Preserve
