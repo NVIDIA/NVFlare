@@ -78,6 +78,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
       These counts describe sampled assignments and can include repeated rows.
 
     Args:
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
         name: Name of the federated learning job. Defaults to "kmeans_fedavg".
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Total federated rounds, including round-zero initialization.
@@ -164,6 +166,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
         key_metric_mode: Literal["min", "max"] = "max",
+        execution_lifetime: str = "job",
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)
         self.n_clusters = v.n_clusters
@@ -199,5 +202,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             per_site_config=per_site_config,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
+            execution_lifetime=execution_lifetime,
         )
         self._job.to_server(assembler, id=assembler_id)

@@ -126,8 +126,10 @@ gaps. This is not completion of flag-only compatibility for all FedAvg scripts.
 
 Preparation and source inventory above are bound to merged base
 `94c5b0aebd3de9a6733926d5fc285144bfd335da` and its identical P4 head tree.
-The scoped overlay changes only the PT FedOpt recipe, generated CLI catalog,
-this inventory, and three test files. No predecessor P4 test count is reused.
+The initial FedOpt slice changed the PT FedOpt recipe, generated CLI catalog,
+this inventory and three test files. The constructor extension described below
+also changes five recipe wrappers and adds their export tests. No predecessor
+P4 test count is reused.
 
 On macOS / Python 3.14.4 / PyTorch 2.12.1:
 
@@ -162,8 +164,11 @@ python -m pytest -q tests/integration_test/fast/fedopt_task_compatibility_test.p
 ./runtest.sh -s --skip-install
 ```
 
-The exact tested code overlay is bound by these SHA-256 values (the shared
-hello-pt source is unchanged from the merged base):
+The original FedOpt qualification at commit
+`edb7991d7b9410809abf34fb50db72aee98ff3f1` is bound by these SHA-256 values.
+The FedOpt implementation, its three tests and shared hello-pt source are
+unchanged by the constructor extension below. The catalog hash in this historical
+table predates that extension.
 
 | File | SHA-256 |
 | --- | --- |
@@ -187,3 +192,44 @@ resident regressions above are unit/configuration evidence; deployed resident
 qualification for non-FedAvg families remains required. The 22 skipped unit
 cases count as no qualification evidence. Oversubscribed simulator qualification
 (more clients than concurrent slots) also remains a release requirement.
+
+## Constructor API extension
+
+The same constructor option is now exposed by five additional recipes:
+
+- `NumpyFedAvgRecipe` (`fedavg-numpy`)
+- `SklearnFedAvgRecipe` (`fedavg-sklearn`)
+- `KMeansFedAvgRecipe` (`kmeans-sklearn`)
+- `SVMFedAvgRecipe` (`svm-sklearn`)
+- PyTorch `FedCERecipe` (`fedce-pt`)
+
+All five already export the common CPU in-process task configuration through
+`recipe.add_client_config()`. Their constructors now forward
+`execution_lifetime="job"|"task"` to that existing path, and the generated CLI
+catalog exposes the option. Job lifetime remains the default, including the
+existing implicit job lifetime in format-version-2 client configs. No algorithm,
+server workflow, executor or application-state implementation changes.
+
+The new constructor/export tests compare each explicit task constructor with
+the existing common-config selection. They require unchanged server/algorithm
+configuration, the original default-job client config apart from task lifetime
+and format version, valid task admission, invalid-lifetime rejection and
+unchanged external-process rejection. Catalog tests cover all five options.
+Together with the existing six FedOpt checks, 26 focused checks passed with no
+skips. Adjacent FedAvg/FedOpt/FedCE/sklearn, task-contract, evaluation-helper and
+CLI regressions passed 316 cases, with six TensorFlow cases skipped because
+TensorFlow is unavailable. The expanded revision also passed the full Python style wrapper; notebook
+formatting was skipped because Black's Jupyter dependencies are absent.
+
+These are API/export checks. They do not qualify the five algorithms' numerical
+behavior, arbitrary training scripts, estimator history, FedCE client state or
+native checkpoint integration. Their baseline numerical/application statuses
+in the matrix remain U. PyTorch FedAvg and FedProx already expose this option;
+TensorFlow and HE integrations require their own framework/filter qualification.
+
+Reproduce the added checks with:
+
+```bash
+python -m pytest -q tests/unit_test/recipe/task_lifetime_constructor_test.py tests/unit_test/app_opt/pt/recipes/fedopt_task_lifetime_test.py
+python -m nvflare.tool.recipe.generate_recipe_catalog --check
+```

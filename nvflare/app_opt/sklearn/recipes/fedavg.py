@@ -39,6 +39,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     - Script runners for client-side training execution
 
     Args:
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
         name: Name of the federated learning job. Defaults to "sklearn_fedavg".
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
@@ -148,6 +150,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
+        execution_lifetime: str = "job",
     ):
         validate_model_path(model_path)
 
@@ -178,4 +181,5 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
+            execution_lifetime=execution_lifetime,
         )
