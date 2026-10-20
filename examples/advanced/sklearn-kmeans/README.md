@@ -236,3 +236,14 @@ tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
 ## Legacy Approach
 
 > **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous Job API or JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-kmeans) or earlier versions.
+
+## Client execution lifetime
+
+Use NVFlare 2.10 or newer from `requirements.txt`. The default `--execution_lifetime job` keeps the client process alive across rounds. Select fresh CPU-only task workers with:
+
+```bash
+python job.py --execution_lifetime task
+```
+
+The client derives the cluster count from the received global centers on every training round.
+Custom client scripts must also restore any state they retain between rounds.

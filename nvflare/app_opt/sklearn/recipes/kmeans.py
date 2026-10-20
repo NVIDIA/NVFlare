@@ -78,8 +78,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
       These counts describe sampled assignments and can include repeated rows.
 
     Args:
-        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime requires CPU in-process execution and application-owned native state restoration.
         name: Name of the federated learning job. Defaults to "kmeans_fedavg".
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Total federated rounds, including round-zero initialization.
@@ -102,6 +100,9 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             (which corresponds to the homogeneity score sent by the K-Means client).
         key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
             and "max" when higher values are better. Defaults to "max".
+
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
 
     Example:
         Basic usage with same config for all clients:

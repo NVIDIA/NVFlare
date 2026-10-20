@@ -34,8 +34,8 @@ see :ref:`recipe_api`.
 Client Execution Lifetime
 =========================
 
-Recipes use ``execution_lifetime="job"`` by default: client compute stays alive
-across tasks. With ``execution_lifetime="task"``, each client task runs in a fresh
+NVFlare 2.10 adds the task-lifetime options below. Recipes default to
+``execution_lifetime="job"``: client compute stays alive across tasks. With ``execution_lifetime="task"``, each client task runs in a fresh
 CPU worker process. The server workflow and its aggregation state continue
 across rounds.
 
@@ -60,12 +60,18 @@ below.
      - Task-lifetime selection
    * - ``fedavg``, ``fedavg-pt``
      - Constructor
-   * - ``fedopt-pt``, ``fedprox-pt``, ``fedce-pt``
+   * - ``fedopt-pt``, ``fedprox-pt``
      - Constructor
    * - ``fedavg-numpy``
      - Constructor
-   * - ``fedavg-sklearn``, ``kmeans-sklearn``, ``svm-sklearn``
+   * - ``fedavg-sklearn``
+     - Constructor; the sklearn-linear client restores a native classifier checkpoint
+   * - ``kmeans-sklearn``
+     - Constructor; the shipped client derives cluster count from each received model
+   * - ``svm-sklearn``
      - Constructor
+   * - ``fedce-pt``
+     - Use job lifetime; previous local model and score history are not restored between workers
    * - ``fedavg-tf``, ``fedopt-tf``
      - Client config
    * - ``lr``

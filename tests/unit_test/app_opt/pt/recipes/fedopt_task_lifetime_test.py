@@ -79,3 +79,15 @@ def test_fedopt_local_model_submission_remains_rejected(tmp_path):
     add_cross_site_evaluation(recipe)
     with pytest.raises(ValueError, match="local-model submission"):
         recipe.export(str(tmp_path))
+
+
+def test_fedopt_job_cross_site_evaluation_reuses_existing_locator(tmp_path):
+    recipe = _recipe()
+    add_cross_site_evaluation(recipe)
+    server, client = _export(recipe, tmp_path)
+    evaluation = server["workflows"][1]
+    assert evaluation["args"]["model_locator_id"] == "locator"
+    assert evaluation["args"].get("submit_model_task_name", "submit_model") == "submit_model"
+    assert recipe._job.comp_ids["locator_id"] == "locator"
+    assert sum(c["path"].endswith(".PTFileModelLocator") for c in server["components"]) == 1
+    assert client["execution_lifetime"] == "job"

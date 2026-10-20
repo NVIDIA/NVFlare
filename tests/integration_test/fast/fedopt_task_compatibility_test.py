@@ -26,7 +26,7 @@ from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 from nvflare.client.config import ExchangeFormat
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
-from nvflare.recipe import SimEnv, add_final_global_evaluation
+from nvflare.recipe import SimEnv, add_cross_site_evaluation, add_final_global_evaluation
 from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module
 
 FIXTURE_DIR = REPO_ROOT / "tests/integration_test/data/fedopt_task"
@@ -163,3 +163,36 @@ def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, e
     )
     assert {item["identity"]["task_name"] for item in completions} == {"train", "validate"}
     assert all("checkpoint" in item["diagnostics"] for item in training)
+
+
+@pytest.mark.timeout(300)
+def test_fedopt_job_cross_site_evaluation_submits_local_models(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    monkeypatch.setenv("MKL_NUM_THREADS", "1")
+    monkeypatch.delenv("NVFLARE_HOME", raising=False)
+    with load_hello_pt_module("job.py") as example:
+        recipe = FedOptRecipe(
+            name="fedopt_cross_site",
+            model=example.create_model(seed=731),
+            min_clients=2,
+            num_rounds=2,
+            train_script=str(HELLO_PT_DIR / "client.py"),
+            train_args="--dataset synthetic --seed 731 --torch_threads 1 --train_size 16 --test_size 8",
+            optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 0.5, "momentum": 0.6}},
+            device="cpu",
+        )
+        for name in ("client.py", "model.py", "prepare_data.py"):
+            recipe.add_client_file(str(HELLO_PT_DIR / name))
+        add_cross_site_evaluation(recipe)
+        env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / "simulation"))
+        run = recipe.execute(env)
+        result = run.get_result(timeout=240, clean_up=False)
+        assert result is not None and not env.last_run_failed
+    evaluations = json.loads(next(Path(result).rglob("cross_val_results.json")).read_text())
+    sites = {"site-1", "site-2"}
+    assert set(evaluations) == sites
+    for site in sites:
+        assert (sites | {"SRV_FL_global_model.pt"}).issubset(evaluations[site])
+        assert all("accuracy" in metrics for metrics in evaluations[site].values())

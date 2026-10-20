@@ -20,23 +20,18 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
-
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
-from nvflare.app_opt.pt.recipes.fedce import FedCERecipe
 from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
 from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
 from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution
 
-RECIPE_CLASSES = [NumpyFedAvgRecipe, SklearnFedAvgRecipe, KMeansFedAvgRecipe, SVMFedAvgRecipe, FedCERecipe]
+RECIPE_CLASSES = [NumpyFedAvgRecipe, SklearnFedAvgRecipe, KMeansFedAvgRecipe, SVMFedAvgRecipe]
 
 
 def _recipe(recipe_class, *, train_script=__file__, **kwargs):
     if recipe_class is NumpyFedAvgRecipe:
         kwargs["model"] = np.zeros(2)
-    elif recipe_class is FedCERecipe:
-        kwargs["model"] = torch.nn.Linear(2, 1)
     return recipe_class(name="lifetime", min_clients=2, train_script=train_script, **kwargs)
 
 
@@ -80,9 +75,7 @@ def test_external_task_launch_still_rejected(tmp_path, recipe_class):
         recipe.export(str(tmp_path))
 
 
-@pytest.mark.parametrize(
-    "catalog_name", ["fedavg-numpy", "fedavg-sklearn", "kmeans-sklearn", "svm-sklearn", "fedce-pt"]
-)
+@pytest.mark.parametrize("catalog_name", ["fedavg-numpy", "fedavg-sklearn", "kmeans-sklearn", "svm-sklearn"])
 def test_generated_catalog_exposes_lifetime(catalog_name):
     root = Path(__file__).parents[3]
     catalog = json.loads((root / "nvflare/tool/recipe/recipe_catalog.json").read_text())

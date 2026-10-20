@@ -40,8 +40,6 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     - Script runners for client-side training execution
 
     Args:
-        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime requires CPU in-process execution and application-owned native state restoration.
         name: Name of the federated learning job. Defaults to "fedavg".
         model: Initial model (as list or numpy array) to start federated training with.
             Lists are preferred for JSON serialization compatibility. Required unless
@@ -83,6 +81,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
 
     Example:
         ```python

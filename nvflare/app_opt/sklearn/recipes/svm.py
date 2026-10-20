@@ -73,8 +73,6 @@ class SVMFedAvgRecipe(FedAvgRecipe):
       records and validates against its local validation data.
 
     Args:
-        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime requires CPU in-process execution and application-owned native state restoration.
         name: Name of the federated learning job. Defaults to "svm_fedavg".
         min_clients: Minimum number of clients required to start and number sampled per round.
         kernel: Kernel type for SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
@@ -96,6 +94,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).
         key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
             and "max" when higher values are better. Defaults to "max".
+
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
 
     Example:
         Basic usage with same config for all clients:

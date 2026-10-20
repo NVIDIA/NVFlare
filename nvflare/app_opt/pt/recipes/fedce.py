@@ -36,8 +36,8 @@ class FedCERecipe(FedAvgRecipe):
     participate in every round. If participation changes, the aggregator logs
     a warning and carries prior contribution weights forward.
 
-    ``execution_lifetime`` keeps client compute for the job (default) or recreates it for each task.
-    Task lifetime requires CPU in-process execution and application-owned native state restoration.
+    Task lifetime is not supported: client previous-model and score-history state
+    must survive between rounds. Use job lifetime.
     """
 
     def __init__(
@@ -67,7 +67,6 @@ class FedCERecipe(FedAvgRecipe):
         enable_tensor_disk_offload: bool = False,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
-        execution_lifetime: str = "job",
     ):
         if not isinstance(min_clients, int):
             raise TypeError(f"min_clients must be int, got {type(min_clients).__name__}")
@@ -125,5 +124,4 @@ class FedCERecipe(FedAvgRecipe):
             enable_tensor_disk_offload=enable_tensor_disk_offload,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
-            execution_lifetime=execution_lifetime,
         )

@@ -2318,13 +2318,6 @@
             "required": false,
             "default": false,
             "kind": "keyword_only"
-          },
-          {
-            "name": "execution_lifetime",
-            "type": "str",
-            "required": false,
-            "default": "job",
-            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [
