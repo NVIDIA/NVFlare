@@ -324,6 +324,18 @@ class ProfileTests(unittest.TestCase):
         path.write_text(yaml.safe_dump(value))
         return path, value
 
+    def test_kbs_client_nvat_linkage_must_match_profile(self):
+        client = Path(self.temp_directory()) / "kbs-client"
+        client.write_bytes(b"cpu client")
+        config.validate_kbs_client_linkage(client, "none")
+        with self.assertRaisesRegex(BuildError, "must link libnvat"):
+            config.validate_kbs_client_linkage(client, "nvidia_cc")
+
+        client.write_bytes(b"gpu client\0libnvat.so.1\0libc.so.6\0")
+        config.validate_kbs_client_linkage(client, "nvidia_cc")
+        with self.assertRaisesRegex(BuildError, "must not link libnvat"):
+            config.validate_kbs_client_linkage(client, "none")
+
     def test_disabled_platforms_need_no_artifacts_or_references(self):
         for enabled in platforms.PLATFORMS:
             with self.subTest(enabled=enabled):

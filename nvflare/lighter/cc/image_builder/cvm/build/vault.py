@@ -129,10 +129,7 @@ def _resolved_archive_file(archive, name):
     seen = set()
     for _ in range(32):
         require(
-            isinstance(current, str)
-            and current
-            and not posixpath.isabs(current)
-            and ".." not in Path(current).parts,
+            isinstance(current, str) and current and not posixpath.isabs(current) and ".." not in Path(current).parts,
             "Invalid Docker archive member",
         )
         require(current not in seen, "Docker archive link cycle")
@@ -394,10 +391,10 @@ def delivery(directory, app, manifest, digest, internal, bundle, trusted_keys=()
     (directory / "README.txt").write_text(
         f'CVM vault delivery for {manifest["platform"]}\nGeneric bundle: {manifest["build_id"]}\n\n'
         "This directory is a self-contained platform/application delivery.\n"
-        "Run: sudo ./launch_cvm.sh\n"
+        "Run launch_cvm.sh by absolute path with sudo; this directory may be root-only.\n"
         "The complete generic CVM bundle is included in cvm_bundle; no separate download is required.\n"
         "The launcher verifies that included bundle and detects and binds the required NVIDIA GPUs.\n"
-        "Repeat --gpu PCI_ADDRESS for explicit GPU placement. Stop with: sudo ./shutdown_cvm.sh\n"
+        "Repeat --gpu PCI_ADDRESS for explicit GPU placement. Stop shutdown_cvm.sh by absolute path with sudo.\n"
         "Shutdown requests an orderly guest power-off through QMP before terminating QEMU.\n"
         "One vault file may be attached to only one CVM. Copy only stopped, detached disks.\n"
         "Copies retain the same identity, key authorization and revocation scope.\n"
@@ -511,6 +508,10 @@ def build(path, output=None, candidate=False, dev=False, plain_http=False, proje
         else:
             section = "cvm_project.yml"
             project = config.project(path, project_config)
+            # Reject stale credentials before image retrieval and vault sealing.
+            # api() reads the file again at publication, so operators may still
+            # rotate a valid short-lived token while a build is running.
+            trustee_client.admin_token(project["trustee"])
             app["trustee"] = project["trustee"]
             app["approval_keys"] = project["approval"]["public_keys"]
     except ConfigurationError:

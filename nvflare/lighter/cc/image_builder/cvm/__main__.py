@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -95,7 +96,8 @@ def pull(args):
     if args.allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
         print("Publisher authentication was skipped; the digest alone does not identify who selected it.")
     if config.get("launch_directory"):
-        print(f"Launch: cd {output / config['launch_directory']} && sudo ./launch_cvm.sh")
+        launcher = output / config["launch_directory"] / "launch_cvm.sh"
+        print(f"Launch: sudo -- {shlex.quote(str(launcher))}")
 
 
 def approve(args):

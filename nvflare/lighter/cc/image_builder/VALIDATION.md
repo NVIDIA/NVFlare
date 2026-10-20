@@ -294,7 +294,7 @@ identity scrubbing, `kbs-client` provenance, token lifetime and bundle-scoped
 resource roles, a root-only lock directory, `--diagnostics`, git-ignored
 `inputs/`, the `nvflare-cvmctl` entry point and ownership-checked wrappers).
 
-New operator inputs: `inputs/kbs_client_build.json` from `cvmctl provenance`,
+New operator inputs: `inputs/kbs_client_cpu_build.json` from `cvmctl provenance`,
 an Ed25519 acceptance signing key pair, `approval.public_keys` in
 `cvm_project.yml`, `approval_public_keys` in the administration configuration,
 `--signing-key` for `admin approve`, and `--archive-sha256`/`--cosign-key` (or an

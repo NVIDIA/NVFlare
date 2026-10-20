@@ -160,7 +160,7 @@ git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.gi
 git -C /tmp/trustee apply "$PWD/cvm/build/kbs_client_policy_selector.patch"
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
-install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
+install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client-cpu
 ```
 
 Record the exact reviewed client build. Production builds require this record
@@ -168,7 +168,7 @@ for the selected platform (`kbs_client_provenance`), because a measured digest
 alone does not say what source produced it:
 
 ```sh
-./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
+./cvmctl provenance /tmp/trustee inputs/kbs-client-cpu inputs/kbs_client_cpu_build.json
 ```
 
 Create separate Ed25519 key pairs for the authority that signs `approval.json`
@@ -202,7 +202,9 @@ and cannot be downloaded from this repository:
 - `inputs/kbs-ca.pem`: CA for the production KBS HTTPS endpoint.
 - `inputs/as-public.pem`: public key used to verify Attestation Service tokens.
 - `inputs/approved-tcb-references.json`: approved platform TCB reference values.
-- `inputs/kbs_client_build.json`: the `cvmctl provenance` record for `kbs-client`.
+- `inputs/kbs_client_cpu_build.json`: the `cvmctl provenance` record for
+  `kbs-client-cpu`. GPU profiles use the distinct client and record documented
+  in [GPU_BUILD.md](GPU_BUILD.md).
 - `inputs/acceptance-signing.key` and `.pub`: the acceptance authority's Ed25519 pair.
 - `inputs/evidence-signing.key` and `.pub`: the site test-result authority's separate Ed25519 pair.
 - A private evidence directory for the acceptance results described in §2.1.
@@ -472,16 +474,23 @@ reference_values: ../inputs/approved-tcb-references.json
 platforms:
   amd_sev_snp:
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
-    kbs_client: ../inputs/kbs-client
+    kbs_client: ../inputs/kbs-client-cpu
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
   intel_tdx:
     firmware: ../inputs/OVMF.inteltdx.fd
-    kbs_client: ../inputs/kbs-client
+    kbs_client: ../inputs/kbs-client-cpu
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
 ```
 
 The checked-in profile also supplies the complete package pins, Trustee revision,
 policy ID, quote-generation socket, and storage profile. Do not put an NVFlare
 startup kit or `cc_params.yml` in this profile. NVFlare provisioning owns them
 and may supply its output later as application content.
+
+Stage 1 rejects a CPU-only profile whose client links `libnvat.so.1`, and rejects
+a GPU profile whose client does not. Keep the CPU and GPU binaries and provenance
+records at distinct paths so preparing one profile cannot silently change the
+other profile's attestation dependencies.
 
 `production_ready: false` is deliberate: the checked-in kernel/storage pins
 failed the recorded production gate. Such a manifest can be built and tested,

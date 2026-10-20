@@ -44,6 +44,9 @@ PRIVATE_KEY_MARKERS = (
 )
 
 
+NVAT_SHARED_LIBRARY = b"libnvat.so.1\0"
+
+
 SOURCE = Path(__file__).resolve().parents[2]
 
 
@@ -166,14 +169,14 @@ PROFILE_DEFAULTS = {
             "enabled": True,
             "attester": "snp",
             "firmware": "/usr/share/ovmf/OVMF.amdsev.fd",
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "EPYC-v4",
         },
         "intel_tdx": {
             "enabled": True,
             "attester": "tdx",
             "firmware": str(INPUTS / "OVMF.inteltdx.fd"),
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "host",
             "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
         },
@@ -207,6 +210,30 @@ def contains_private_key(path):
                 return True
             overlap = value[-keep:]
     return False
+
+
+def validate_kbs_client_linkage(path, gpu):
+    """Reject a selector client whose NVAT linkage disagrees with its profile."""
+    overlap = b""
+    found = False
+    keep = len(NVAT_SHARED_LIBRARY) - 1
+    with Path(path).open("rb") as stream:
+        while block := stream.read(1024 * 1024):
+            value = overlap + block
+            if NVAT_SHARED_LIBRARY in value:
+                found = True
+                break
+            overlap = value[-keep:]
+    if gpu == "nvidia_cc":
+        require(
+            found,
+            "GPU profile kbs-client must link libnvat.so.1; build it with the nvidia-attester feature",
+        )
+    else:
+        require(
+            not found,
+            "CPU-only profile kbs-client must not link libnvat.so.1; build it without the nvidia-attester feature",
+        )
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -465,6 +492,7 @@ def profile(path):
         settings = value["platforms"][name]
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
+        validate_kbs_client_linkage(settings["kbs_client"], value["gpu"])
         if settings.get("kbs_client_provenance") is not None:
             settings["kbs_client_provenance"] = local_path(path, settings["kbs_client_provenance"])
             validate_kbs_client_provenance(
