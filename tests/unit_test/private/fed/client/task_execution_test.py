@@ -652,6 +652,51 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
         adapter.handle_event(EventType.END_RUN, context)
 
 
+def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_path, monkeypatch):
+    from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
+    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
+    from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
+
+    # Accounting regression with synthetic UUIDs. CUDA qualification is separate.
+    _, custom, context, policy = native_task
+    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
+    config = {
+        "id": "task-only",
+        "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
+        "exclusive": True,
+        "reservation_root": str(tmp_path / "gpu-pool"),
+    }
+    launcher = ProcessTaskLauncher(gpu_partition=config)
+    policy = replace(policy, launcher=launcher)
+    context.set_prop(FLContextKey.JOB_META, {"launcher_spec": {"site-1": {"process": {"num_of_gpus": 1}}}})
+    adapter, data = _adapter(custom, context, policy)
+    launch = launcher.launch_task = Mock(wraps=launcher.launch_task)
+    try:
+        first = adapter.execute("train", data, context, Signal())
+        # The prior CJ result has no server receipt and is still retained.
+        # A different CJ can nevertheless run on the exact same GPU now.
+        second_launcher = ProcessTaskLauncher(gpu_partition=config)
+        second = second_launcher.launch_task(
+            TaskLaunchRequest(
+                "other-job",
+                "site-1",
+                "task",
+                "attempt",
+                (sys.executable, "-c", "pass"),
+                resources=TaskResourceRequest(gpu_count=1),
+            )
+        )
+        try:
+            assert second.wait_for_settlement(10).succeeded
+        finally:
+            second.cancel()
+        repeated = adapter.execute("train", data, context, Signal())
+        np.testing.assert_array_equal(from_shareable(repeated).data["w"], from_shareable(first).data["w"])
+        assert launch.call_count == 1
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
 @pytest.mark.parametrize("event", [EventType.END_RUN, EventType.ABORT_TASK])
 def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_false_panic(
     native_task, monkeypatch, event

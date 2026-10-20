@@ -135,6 +135,8 @@ class TaskExecutionPolicy:
             }
         ):
             raise ValueError("task and job launch modes must match; configure a supported site TaskLauncher")
+        if type(policy.launcher) is ProcessTaskLauncher and policy.launcher.gpu_pool is not None:
+            policy.launcher.validate_site_config(data)
         return policy
 
     @classmethod
@@ -215,9 +217,18 @@ class TaskExecutionPolicy:
 
     def task_resources(self, meta, site_name):
         native_mode = _supported_native_launcher(self.launcher)
-        validate_task_resources(meta, site_name, allow_gpu=native_mode)
-        if native_mode and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
+        process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_pool is not None
+        validate_task_resources(meta, site_name, allow_gpu=native_mode or process_gpu)
+        if (native_mode or process_gpu) and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
             raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
+        if process_gpu:
+            for mode, field in (("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")):
+                if get_job_launcher_spec(meta, site_name, mode).get(field, 0):
+                    raise ValueError("Process GPU tasks require process launcher_spec")
+            spec = get_job_launcher_spec(meta, site_name, "process")
+            if set(spec) - {"num_of_gpus"}:
+                raise ValueError("Process task GPU launcher_spec supports only whole-GPU counts")
+            return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))
         if not native_mode or self.launcher.launch_mode != "docker":
             return TaskResourceRequest()
         spec = get_job_launcher_spec(meta, site_name, "docker")

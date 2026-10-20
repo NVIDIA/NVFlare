@@ -48,6 +48,8 @@ from nvflare.apis.task_launcher_spec import (
 )
 from nvflare.utils.process_utils import ProcessAdapter, ProcessSpawnError, spawn_process
 
+from .process_gpu import ProcessGpuPool
+
 
 def _positive_number(value, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
@@ -435,12 +437,63 @@ class ProcessTaskHandle(TaskHandleSpec):
         return self._terminate_group(deadline=deadline)
 
 
+class _GpuTaskHandle(TaskHandleSpec):
+    """Settlement includes durable release, independently from result receipt."""
+
+    def __init__(self, request, reservation, process=None):
+        self._request = request
+        self.reservation = reservation
+        self.process = process
+        self._lock = threading.RLock()
+        self._release_failure = None
+
+    @property
+    def request(self):
+        return self._request
+
+    @property
+    def execution_id(self):
+        return self.process.execution_id if self.process else "process:unstarted:" + self.request.attempt_id
+
+    @property
+    def process_group_id(self):
+        return self.process.process_group_id if self.process else None
+
+    def _release(self, status):
+        with self._lock:
+            if self._release_failure:
+                return replace(status, settled=False, failure_reason=self._release_failure)
+            if status.settled:
+                try:
+                    self.reservation.release()
+                except Exception as error:
+                    self._release_failure = f"Process GPU reservation release is unconfirmed: {error}"
+                    return replace(status, settled=False, failure_reason=self._release_failure)
+            return status
+
+    def poll(self):
+        status = self.process.poll() if self.process else TaskExecutionStatus(TaskExecutionPhase.TERMINAL, settled=True)
+        return self._release(status)
+
+    def cancel(self):
+        status = self._release(self.process.cancel()) if self.process else self.poll()
+        if not status.settled:
+            raise TaskSettlementError("Process GPU settlement is unconfirmed", status)
+        return status
+
+    def wait_for_settlement(self, timeout=None):
+        status = self._release(self.process.wait_for_settlement(timeout)) if self.process else self.poll()
+        if not status.settled:
+            raise TaskSettlementError("Process GPU settlement is unconfirmed", status)
+        return status
+
+
 class ProcessTaskLauncher(TaskLauncherSpec):
     """Launch trusted task workers as isolated local POSIX process groups.
 
-    This backend has no CPU, memory, or GPU admission authority. It rejects
-    non-empty resource requests rather than treating environment visibility as
-    a reservation. Multi-process applications are supported only when every
+    CPU/memory admission is unsupported. An optional site-exclusive whole-GPU
+    partition provides durable task reservations; its pool must be excluded
+    from job-lifetime and external allocators. Multi-process applications are supported only when every
     descendant remains in the owned process group. Changing group or session
     is unsupported, including a different group in the same POSIX session.
     Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
@@ -463,6 +516,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         descendant_settle_timeout: float = 0.25,
         poll_interval: float = 0.05,
         max_attempt_identities: int = 10000,
+        gpu_partition: Optional[dict] = None,
     ):
         super().__init__()
         self.stop_grace_period = _positive_number(stop_grace_period, "stop_grace_period")
@@ -477,15 +531,40 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         self._max_attempt_identities = max_attempt_identities
         self._attempt_identities = set()
         self._lock = threading.Lock()
+        self.gpu_pool = ProcessGpuPool(gpu_partition) if gpu_partition is not None else None
 
-    def launch_task(self, request: TaskLaunchRequest) -> ProcessTaskHandle:
+    def validate_site_config(self, site_config):
+        """This opt-in profile dedicates the site's GPU capacity to task workers.
+
+        The existing CP manager continues owning job reservations. It must have
+        an empty GPU pool here, so task-only CJs cannot reserve GPUs for a job.
+        Other host allocators/CPs must exclude this partition or participate in
+        the same local ledger, as attested by the site's exclusive flag.
+        """
+        if self.gpu_pool is None:
+            return
+        managers = [item for item in site_config.get("components", []) if item.get("id") == "resource_manager"]
+        expected = "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager"
+        if (
+            len(managers) != 1
+            or managers[0].get("path") != expected
+            or type(managers[0].get("args", {}).get("num_of_gpus")) is not int
+            or managers[0]["args"]["num_of_gpus"] != 0
+        ):
+            raise ValueError("Process task GPU profile requires GPUResourceManager with num_of_gpus=0 for CJs")
+
+    def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
         if not isinstance(request, TaskLaunchRequest):
             raise TypeError("request must be a TaskLaunchRequest")
         if os.name != "posix" or not all(
             hasattr(os, name) for name in ("killpg", "waitid", "WNOWAIT", "P_PID", "WEXITED", "WNOHANG")
         ):
             raise TaskLauncherError("ProcessTaskLauncher requires POSIX process groups and waitid/WNOWAIT support")
-        if not request.resources.is_empty():
+        if (
+            request.resources.cpu_cores is not None
+            or request.resources.memory_mb is not None
+            or (request.resources.gpu_count and self.gpu_pool is None)
+        ):
             raise UnsupportedTaskResourceError(
                 "ProcessTaskLauncher has no CPU, memory, or GPU admission/reservation mechanism"
             )
@@ -497,15 +576,48 @@ class ProcessTaskLauncher(TaskLauncherSpec):
                 raise TaskLauncherError("task attempt identity capacity exhausted; use a new launcher for a new scope")
             self._attempt_identities.add(request.identity)
 
+        reservation = None
+        environment = dict(request.environment)
+        if self.gpu_pool is not None:
+            environment.update(
+                CUDA_VISIBLE_DEVICES="", HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none"
+            )
+        if request.resources.gpu_count:
+            try:
+                self.gpu_pool.validate_host()
+                reservation = self.gpu_pool.acquire(request.identity, request.resources.gpu_count)
+            except BaseException:
+                with self._lock:
+                    self._attempt_identities.remove(request.identity)
+                raise
+            environment.update(
+                CUDA_VISIBLE_DEVICES=",".join(reservation.devices),
+                CUDA_DEVICE_ORDER="PCI_BUS_ID",
+                HIP_VISIBLE_DEVICES="",
+                ROCR_VISIBLE_DEVICES="",
+                NVIDIA_VISIBLE_DEVICES="none",
+            )
+
+        request = replace(request, environment=environment)
         launch_error = None
         try:
-            adapter = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+            adapter = spawn_process(list(request.argv), environment, cwd=request.cwd)
         except ProcessSpawnError as e:
             # The execution already exists. Keep its attempt fenced and take
             # responsibility for cleanup rather than retrying its spawn.
             adapter = e.adapter
             launch_error = e
-        except Exception:
+        except Exception as error:
+            if reservation is not None:
+                handle = _GpuTaskHandle(request, reservation)
+                try:
+                    handle.cancel()
+                except Exception as cleanup_error:
+                    raise TaskLaunchError(
+                        f"Process launch failed; GPU release unconfirmed: {cleanup_error}", handle
+                    ) from error
+                # Admission is durable even when spawn failed: retain its identity.
+                raise TaskLaunchError("Process launch failed before spawn; GPU reservation released", handle) from error
             # spawn_process reports post-acquisition failures separately, so
             # only a failure before process creation releases the identity.
             with self._lock:
@@ -519,7 +631,11 @@ class ProcessTaskLauncher(TaskLauncherSpec):
             descendant_settle_timeout=self.descendant_settle_timeout,
             poll_interval=self.poll_interval,
         )
+        if reservation is not None:
+            handle = _GpuTaskHandle(request, reservation, handle)
         try:
+            if reservation is not None:
+                reservation.record_execution(handle.execution_id)
             if launch_error is not None:
                 raise launch_error
             self.logger.info("launched task attempt %r as %s", request.identity, handle.execution_id)

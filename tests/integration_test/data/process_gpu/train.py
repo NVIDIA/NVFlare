@@ -1,0 +1,90 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Small deterministic real CPU/CUDA regression, shared by both lifetimes."""
+
+import argparse
+import json
+import os
+import time
+from pathlib import Path
+
+import torch
+
+import nvflare.client as flare
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
+args = parser.parse_args()
+torch.set_num_threads(1)
+expected_gpus = 1 if args.device == "cuda" else 0
+if torch.cuda.device_count() != expected_gpus:
+    raise RuntimeError(f"expected {expected_gpus} visible GPUs; observed {torch.cuda.device_count()}")
+if expected_gpus and not torch.cuda.is_available():
+    raise RuntimeError("CUDA qualification requires real CUDA kernels")
+
+flare.init()
+while flare.is_running():
+    received = flare.receive()
+    if received is None:
+        break
+    model = torch.nn.Linear(2, 1).to(args.device)
+    model.load_state_dict({key: torch.as_tensor(value) for key, value in received.params.items()})
+    inputs = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]], device=args.device)
+    targets = inputs @ torch.tensor([[2.0], [-3.0]], device=args.device)
+    initial_loss = torch.nn.functional.mse_loss(model(inputs), targets).item()
+    if flare.is_train():
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.2)
+        for _ in range(100):
+            optimizer.zero_grad()
+            loss = torch.nn.functional.mse_loss(model(inputs), targets)
+            loss.backward()
+            optimizer.step()
+    final_loss = torch.nn.functional.mse_loss(model(inputs), targets).item()
+    if args.device == "cuda":
+        torch.cuda.synchronize()
+    if not final_loss < 1e-4:
+        raise RuntimeError(f"model did not converge: {final_loss}")
+    params = {name: value.detach().cpu() for name, value in model.state_dict().items()}
+    output_dir = Path("process-gpu-models")
+    output_dir.mkdir(exist_ok=True)
+    torch.save(params, output_dir / f"{os.getpid()}-{received.current_round}.pt")
+    print(
+        json.dumps(
+            {
+                "event": "process_gpu_compute",
+                "pid": os.getpid(),
+                "ppid": os.getppid(),
+                "site": flare.get_site_name(),
+                "round": received.current_round,
+                "task": "train" if flare.is_train() else "validate",
+                "device": args.device,
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "gpu_count": torch.cuda.device_count(),
+                "mse_before": initial_loss,
+                "mse": final_loss,
+                "gpu_name": torch.cuda.get_device_name(0) if expected_gpus else None,
+                "allocated_bytes": torch.cuda.max_memory_allocated() if expected_gpus else 0,
+                "finished_at": time.time(),
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+    # Model selection scores the received global model, before local updates.
+    metrics = {"mse": initial_loss, "accuracy": max(0.0, 100.0 * (1.0 - initial_loss))}
+    if flare.is_train():
+        flare.send(flare.FLModel(params=params, metrics=metrics, meta={"NUM_STEPS_CURRENT_ROUND": 100}))
+    else:
+        flare.send(flare.FLModel(metrics=metrics))

@@ -98,10 +98,16 @@ class ProcessJobLauncher(JobLauncherSpec):
         command = self.get_command(job_meta, fl_ctx)
         argv = shlex.split(command, True)
 
+        self.prepare_environment(job_meta, fl_ctx, new_env)
+
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
         process_adapter = spawn_process(argv, new_env)
 
         return ProcessHandle(process_adapter=process_adapter)
+
+    def prepare_environment(self, job_meta, fl_ctx, environment):
+        """Apply trusted launch-specific policy after study environment overrides."""
+        pass
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
