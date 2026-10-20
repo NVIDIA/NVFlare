@@ -27,20 +27,30 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandNames
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
+from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
 from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.job_config.task_execution import validate_task_resources
+from nvflare.private.defs import CellChannel
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
-from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, _open_regular
+from nvflare.private.fed.task_worker.protocol import (
+    TaskAttemptIdentity,
+    WorkerBootstrap,
+    _open_directory,
+    _open_regular,
+)
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
 from .task_execution_policy import TaskExecutionPolicy
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
+_TASK_ROUTE = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
 
 
 class TaskWorkerExecutor(Executor):
@@ -76,10 +86,16 @@ class TaskWorkerExecutor(Executor):
                 with self._state_lock:
                     if self._ending:
                         raise RuntimeError("task worker owner cannot restart after ending")
+                    cell = fl_ctx.get_engine().get_cell()
+                    if cell is None:
+                        raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
+                cell.decode_pass_through_topics.add(_TASK_ROUTE)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
+                if event_type == EventType.END_RUN:
+                    fl_ctx.get_engine().get_cell().decode_pass_through_topics.discard(_TASK_ROUTE)
                 with self._state_lock:
                     self._ending = True
                 self.supervisor.end_run()
@@ -117,6 +133,34 @@ class TaskWorkerExecutor(Executor):
             fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
         )
 
+    @staticmethod
+    def _runtime_root(workspace, job_id):
+        return os.path.join(workspace.get_run_dir(job_id), ".nvflare", "task-execution")
+
+    def resolve_task_data(self, data, fl_ctx, *, abort_signal):
+        cell = fl_ctx.get_engine().get_cell()
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
+        root = os.path.realpath(os.path.join(self._runtime_root(workspace, fl_ctx.get_job_id()), "offload"))
+        os.close(_open_directory(root, create=True))
+        owners = []
+
+        def release():
+            for owner in owners:
+                owner.cleanup()
+
+        try:
+            resolved = materialize_lazy_download_refs(
+                data,
+                cell,
+                abort_signal,
+                download_props={FOBSContextKey.TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: root},
+                owners=owners,
+            )
+        except BaseException:
+            release()
+            raise
+        return resolved, release
+
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         if not self._gate.acquire(blocking=False):
             raise RuntimeError("task worker executor already has an active attempt")
@@ -136,7 +180,7 @@ class TaskWorkerExecutor(Executor):
                     return result
             validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
-            runtime_root = os.path.join(workspace.get_run_dir(identity.job_id), ".nvflare", "task-execution")
+            runtime_root = self._runtime_root(workspace, identity.job_id)
             store = FileTaskArtifactStore(
                 os.path.join(runtime_root, "attempts"), max_payload_bytes=self.policy.max_payload_bytes
             )

@@ -240,11 +240,30 @@ that guarantee.
 
 ## Payload storage
 
+PyTorch task payloads use the [disk-backed payload format](disk_backed_task_payloads.md).
+The GET_TASK route decodes pass-through references. Before task-data events, the CJ
+resolves inputs eagerly if a site or job data filter applies, or to local tensor
+files otherwise. On unfiltered tasks, CJ input hooks receive local lazy refs with
+metadata and `nbytes`; tensor operations such as `.shape`, `.numel()` and arithmetic
+are unavailable. Workers always receive ordinary mapped tensors. The existing
+clearing of `TASK_DATA` after execution, before result filters, is unchanged.
+
+Input and result artifacts contain small FOBS records with tensor file descriptors
+and hashed per-tensor safetensors files alongside them. Received single-tensor files
+are hard-linked into the attempt on the same filesystem; other tensors are written
+one at a time. The runner releases receive scratch files in a `finally`, including
+when execution never starts. Result callbacks and the sender receive mapped tensors,
+so callback edits are transmitted and already-open mappings survive filename
+cleanup. Retained result files are revalidated and mapped for resubmission. Many
+small tensors require many files; temporary serialization remains proportional to
+the largest tensor plus the existing sender's bounded cache and prefetch.
+
 There is no fixed 4 GiB payload ceiling. FileTaskArtifactStore and WorkerBootstrap
 accept an optional positive max_payload_bytes supplied by the trusted site/client
 adapter. The adapter must apply the same policy to input staging, the bootstrap,
 and result reading. None leaves capacity to the filesystem and its quota. The
-separate bootstrap and metadata record limits remain in place.
+separate bootstrap and metadata record limits remain in place. The payload limit
+counts the FOBS record and all referenced tensor files together.
 
 After confirming writer and reader quiescence, release_payloads also removes
 interrupted publication temporaries for its payload/metadata names. Full retention
