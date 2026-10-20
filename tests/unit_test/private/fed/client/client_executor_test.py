@@ -23,6 +23,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
+from tests.timing_utils import isolate_time
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -110,3 +111,8 @@ def test_wait_child_process_does_not_report_non_failure_return_code(return_code)
     client.cell.fire_and_forget.assert_not_called()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.private.fed.client.client_executor")

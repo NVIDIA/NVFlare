@@ -35,6 +35,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from tests.timing_utils import isolate_time
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -623,3 +624,8 @@ class TestWorkspaceBootstrapHelpers:
 
             assert created["path"]
             assert not os.path.exists(created["path"])
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.app_opt.job_launcher.workspace_cell_transfer")

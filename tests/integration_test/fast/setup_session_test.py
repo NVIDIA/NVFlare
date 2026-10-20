@@ -28,6 +28,10 @@ def test_setup_keeps_admin_session_active(monkeypatch, setup_duration):
     monkeypatch.chdir(Path(__file__).resolve().parents[1])
     system_test = importlib.import_module("tests.integration_test.system_test")
     clock = SimpleNamespace(now=0, last_active=0)
+    from tests.integration_test.src import utils
+
+    monkeypatch.setattr(utils, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(utils, "process_group_alive", lambda process: False)
 
     def check_session():
         if clock.now - clock.last_active > 1800:

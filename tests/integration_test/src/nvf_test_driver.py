@@ -24,6 +24,7 @@ from nvflare.fuel.hci.proto import MetaStatusValue
 from tests.integration_test.src.action_handlers import (
     _AbortJobHandler,
     _AdminCommandsHandler,
+    _AppCommandHandler,
     _CheckJobHandler,
     _CloneJobHandler,
     _KillHandler,
@@ -108,7 +109,7 @@ def _parse_workflow_states(stats_message: dict):
         return workflow_states
     for k, v in stats_message.items():
         # each controller inherit from nvflare/apis/impl/controller has tasks
-        if v.get("tasks"):
+        if "tasks" in v:
             workflow_states[k] = v.copy()
             workflow_states[k].pop("tasks")
     return workflow_states
@@ -121,7 +122,7 @@ def _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a: dict, dict_b: 
         return False
     for k in dict_a:
         if isinstance(dict_a[k], dict):
-            if not _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a[k], dict_b[k]):
+            if not _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a[k], dict_b.get(k)):
                 return False
         elif dict_b.get(k) != dict_a[k]:
             return False
@@ -213,6 +214,7 @@ class NVFTestDriver:
             "submit_job": _SubmitJobHandler(),
             "clone_job": _CloneJobHandler(),
             "abort_job": _AbortJobHandler(),
+            "app_command": _AppCommandHandler(),
             "list_job": _ListJobHandler(),
             "shell_commands": _ShellCommandHandler(),
             "ensure_current_job_done": _CheckJobHandler(),
@@ -271,10 +273,10 @@ class NVFTestDriver:
         return run_data
 
     def ensure_clients_started(self, num_clients: int, timeout: int):
-        start_time = time.time()
+        start_time = time.monotonic()
         clients_up = False
         while not clients_up:
-            if time.time() - start_time > timeout:
+            if time.monotonic() - start_time > timeout:
                 raise NVFTestError(f"Clients could not be started in {timeout} seconds.")
 
             time.sleep(0.5)
@@ -352,7 +354,7 @@ class NVFTestDriver:
             f"run_state={run_state}, server_status={self.server_status()}, client_status={self.client_status()}"
         )
 
-    def _check_for_failed_terminal_job(
+    def _check_for_terminal_job(
         self,
         event: dict,
         event_is_triggered: bool,
@@ -361,9 +363,29 @@ class NVFTestDriver:
         event_triggered: list,
     ):
         job_status = run_state.get("job_status")
-        if not _is_failed_terminal_run_status(job_status):
+        if not _is_terminal_run_status(job_status):
             return
-        if not _event_waits_for_successful_run(event=event, event_triggered=event_is_triggered):
+
+        pending = event.get("result" if event_is_triggered else "trigger", {})
+        expected_status = pending.get("data", {}).get("job_status") if pending.get("type") == "run_state" else None
+        if expected_status is not None and job_status != expected_status:
+            # A finished job cannot become RUNNING or finish with a different status.
+            # In particular, completion before an abort must not count as a successful abort.
+            raise NVFTestError(
+                self._build_event_sequence_error(
+                    message=(
+                        f"Job reached terminal status {job_status!r} "
+                        f"while waiting for job_status={expected_status!r}."
+                    ),
+                    run_state=run_state,
+                    event_idx=event_idx,
+                    event_triggered=event_triggered,
+                )
+            )
+
+        if not _is_failed_terminal_run_status(job_status) or not _event_waits_for_successful_run(
+            event=event, event_triggered=event_is_triggered
+        ):
             return
 
         raise NVFTestError(
@@ -384,7 +406,7 @@ class NVFTestDriver:
 
     def run_event_sequence(self, event_sequence):
         run_state = {"job_status": None, "job_terminal": None, "run_finished": None, "workflows": None}
-        start_time = time.time()
+        start_time = time.monotonic()
         self.event_sequence_deadline = start_time + self.event_sequence_timeout if self.event_sequence_timeout else None
 
         event_idx = 0
@@ -397,7 +419,7 @@ class NVFTestDriver:
             run_state = self._get_run_state(run_state)
 
             if event_idx < len(event_sequence):
-                self._check_for_failed_terminal_job(
+                self._check_for_terminal_job(
                     event=event_sequence[event_idx],
                     event_is_triggered=event_triggered[event_idx],
                     run_state=run_state,
@@ -463,7 +485,7 @@ class NVFTestDriver:
                             raise NVFTestError(f"Job submission failed with: {self.admin_api_response}")
                         event_idx += 1
 
-            elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
             if self.event_sequence_timeout and elapsed > self.event_sequence_timeout:
                 raise NVFTestError(
                     self._build_event_sequence_error(
@@ -533,4 +555,3 @@ class NVFTestDriver:
                         self.super_admin_api.close()
                     except Exception:
                         pass
-        time.sleep(1)

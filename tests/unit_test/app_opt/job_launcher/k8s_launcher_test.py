@@ -72,6 +72,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+from tests.timing_utils import isolate_time
 
 _DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
 
@@ -2131,3 +2132,8 @@ class TestJobHandleSecurityContext:
         handle = self._make_handle_with_sec(security_context={})
         manifest = handle.get_manifest()
         assert "securityContext" not in manifest["spec"]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.app_opt.job_launcher.k8s_launcher")

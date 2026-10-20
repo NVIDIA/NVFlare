@@ -30,7 +30,7 @@ def completion_driver(monkeypatch):
         clock.now += seconds
         assert clock.now <= 10, "Completion polling did not stop"
 
-    clock.time = lambda: clock.now
+    clock.monotonic = lambda: clock.now
     clock.sleep = sleep
     monkeypatch.setattr(action_handlers, "time", clock)
     monkeypatch.setattr(nvf_test_driver, "time", clock)

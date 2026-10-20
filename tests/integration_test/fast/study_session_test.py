@@ -43,7 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 
 import numpy as np
 import pytest
@@ -51,7 +51,7 @@ import pytest
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
-from nvflare.fuel.flare_api.api_spec import AuthorizationError, InvalidJobDefinition, JobNotFound
+from nvflare.fuel.flare_api.api_spec import AuthorizationError, InvalidJobDefinition, JobNotFound, MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session as FlareSession
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
@@ -77,8 +77,8 @@ MIN_CLIENTS = 2
 
 
 def _wait_for_job_meta(admin_api, job_id: str, timeout: float = 30.0) -> dict:
-    end_time = time.time() + timeout
-    while time.time() < end_time:
+    end_time = time.monotonic() + timeout
+    while time.monotonic() < end_time:
         meta = get_job_meta(admin_api, job_id)
         if meta.get(JobMetaKey.JOB_ID.value) == job_id:
             return meta
@@ -87,8 +87,8 @@ def _wait_for_job_meta(admin_api, job_id: str, timeout: float = 30.0) -> dict:
 
 
 def _wait_for_session_job_meta(session, job_id: str, timeout: float = 30.0) -> dict:
-    end_time = time.time() + timeout
-    while time.time() < end_time:
+    end_time = time.monotonic() + timeout
+    while time.monotonic() < end_time:
         try:
             meta = session.get_job_meta(job_id)
         except JobNotFound:
@@ -134,27 +134,34 @@ def _wait_for_runtime_job_meta(workspace_root: str, site_name: str, job_id: str,
     workspace = Workspace(root_dir=site_root, site_name=site_name)
     meta_path = workspace.get_job_meta_path(job_id)
 
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        if os.path.exists(meta_path):
+    end_time = time.monotonic() + timeout
+    while time.monotonic() < end_time:
+        try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            if meta.get(JobMetaKey.JOB_ID.value) == job_id:
-                return meta
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Deployment may have created the file without finishing its write.
+            meta = {}
+        if meta.get(JobMetaKey.JOB_ID.value) == job_id:
+            return meta
         time.sleep(0.5)
     raise AssertionError(f"Timed out waiting for runtime job meta for {job_id} at site {site_name}")
 
 
-def _assert_runtime_job_meta_absent(workspace_root: str, site_name: str, job_id: str, timeout: float = 10.0):
+def _assert_runtime_job_meta_absent(
+    workspace_root: str, site_name: str, job_id: str, *, session, timeout: float = 60.0
+):
     site_root = os.path.join(workspace_root, site_name)
     workspace = Workspace(root_dir=site_root, site_name=site_name)
     meta_path = workspace.get_job_meta_path(job_id)
 
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        if os.path.exists(meta_path):
-            raise AssertionError(f"Unexpected runtime job meta for {job_id} at site {site_name}: {meta_path}")
-        time.sleep(0.5)
+    # A quiet time window does not prove deployment has finished. Inspect the
+    # excluded site only after this specific job reaches a terminal state.
+    result = session.monitor_job(job_id, timeout=timeout)
+    assert (
+        result == MonitorReturnCode.JOB_FINISHED
+    ), f"Job {job_id} did not finish before deployment was inspected: {result}"
+    assert not os.path.exists(meta_path), f"Unexpected runtime job meta for {job_id} at site {site_name}: {meta_path}"
 
 
 def _make_numpy_recipe(name: str, min_clients: int = MIN_CLIENTS) -> NumpyFedAvgRecipe:
@@ -193,10 +200,10 @@ def _extract_client_names_from_check_status(response: dict) -> set[str]:
 
 
 def _read_until(master_fd: int, patterns: list[str], timeout: float = 30.0) -> str:
-    end_time = time.time() + timeout
+    end_time = time.monotonic() + timeout
     output = ""
-    while time.time() < end_time:
-        remaining = max(0.1, end_time - time.time())
+    while time.monotonic() < end_time:
+        remaining = max(0.0, end_time - time.monotonic())
         ready, _, _ = select.select([master_fd], [], [], remaining)
         if not ready:
             continue
@@ -297,35 +304,35 @@ def _assert_login_rejected(admin_root: str, username: str, study: str):
 @contextmanager
 def _running_provisioned_system(project_yaml: str, super_user_name: str):
     site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml)
-    workspace_root = os.path.abspath(site_launcher.prepare_workspace())
-    site_launcher.start_servers()
-    site_launcher.start_clients()
-
-    download_root_dir = tempfile.mkdtemp(prefix="study-session-download-")
-    test_driver = NVFTestDriver(download_root_dir=download_root_dir, site_launcher=site_launcher, poll_period=1)
-    sessions = []
-    try:
-        test_driver.initialize_super_user(
-            workspace_root_dir=workspace_root,
-            upload_root_dir=JOBS_ROOT_DIR,
-            super_user_name=super_user_name,
-        )
-        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties), timeout=300)
-        yield {
-            "workspace_root": workspace_root,
-            "admin_roots": {name: os.path.join(workspace_root, name) for name in site_launcher.admin_user_names},
-            "old_admin_api": test_driver.super_admin_api,
-            "sessions": sessions,
-            "server_name": next(iter(site_launcher.server_properties)),
-        }
-    finally:
-        for session in sessions:
-            with suppress(Exception):
-                session.close()
-        test_driver.finalize()
-        site_launcher.stop_all_sites()
-        site_launcher.cleanup()
-        shutil.rmtree(download_root_dir, ignore_errors=True)
+    with ExitStack() as cleanup:
+        download_root_dir = tempfile.mkdtemp(prefix="study-session-download-")
+        cleanup.callback(shutil.rmtree, download_root_dir, ignore_errors=True)
+        cleanup.callback(site_launcher.cleanup)
+        cleanup.callback(site_launcher.stop_all_sites)
+        workspace_root = os.path.abspath(site_launcher.prepare_workspace())
+        site_launcher.start_servers()
+        site_launcher.start_clients()
+        test_driver = NVFTestDriver(download_root_dir=download_root_dir, site_launcher=site_launcher, poll_period=1)
+        cleanup.callback(test_driver.finalize)
+        sessions = []
+        try:
+            test_driver.initialize_super_user(
+                workspace_root_dir=workspace_root,
+                upload_root_dir=JOBS_ROOT_DIR,
+                super_user_name=super_user_name,
+            )
+            test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties), timeout=300)
+            yield {
+                "workspace_root": workspace_root,
+                "admin_roots": {name: os.path.join(workspace_root, name) for name in site_launcher.admin_user_names},
+                "old_admin_api": test_driver.super_admin_api,
+                "sessions": sessions,
+                "server_name": next(iter(site_launcher.server_properties)),
+            }
+        finally:
+            for session in sessions:
+                with suppress(Exception):
+                    session.close()
 
 
 @pytest.fixture(scope="class")
@@ -513,7 +520,7 @@ class TestMultiStudySessionIntegration:
             runtime_meta = _wait_for_runtime_job_meta(workspace_root, site_name, job_id)
             assert runtime_meta[JobMetaKey.STUDY.value] == "study-a"
 
-        _assert_runtime_job_meta_absent(workspace_root, "site-3", job_id)
+        _assert_runtime_job_meta_absent(workspace_root, "site-3", job_id, session=study_a_session)
 
     def test_multistudy_rejects_deploy_map_sites_outside_study(self, multi_study_system, tmp_path):
         admin_root = multi_study_system["admin_roots"][MAIN_ADMIN]
@@ -542,7 +549,7 @@ class TestMultiStudySessionIntegration:
         server_name = multi_study_system["server_name"]
 
         recipe = _make_numpy_recipe("prod-env-study-a")
-        env = ProdEnv(startup_kit_location=admin_root, username=MAIN_ADMIN, study="study-a", login_timeout=2.0)
+        env = ProdEnv(startup_kit_location=admin_root, username=MAIN_ADMIN, study="study-a")
         recipe.process_env(env)
         job_id = env.deploy(recipe.job)
         study_a_session = new_secure_session(MAIN_ADMIN, admin_root, study="study-a")
@@ -555,7 +562,7 @@ class TestMultiStudySessionIntegration:
             runtime_meta = _wait_for_runtime_job_meta(workspace_root, site_name, job_id)
             assert runtime_meta[JobMetaKey.STUDY.value] == "study-a"
 
-        _assert_runtime_job_meta_absent(workspace_root, "site-3", job_id)
+        _assert_runtime_job_meta_absent(workspace_root, "site-3", job_id, session=study_a_session)
 
     def test_multistudy_fl_admin_shell_scopes_terminal_session(self, multi_study_system):
         admin_root = multi_study_system["admin_roots"][MAIN_ADMIN]

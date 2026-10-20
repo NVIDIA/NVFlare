@@ -22,6 +22,7 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, download_object
+from tests.timing_utils import isolate_time
 
 
 class MockConsumer(Consumer):
@@ -339,3 +340,8 @@ class TestDownloadObject:
         """Test that negative max_retries raises ValueError."""
         with pytest.raises(ValueError, match="max_retries must be non-negative"):
             download_object("server.site-1", "ref-001", 10.0, cell, consumer, max_retries=-1)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.fuel.f3.streaming.download_service")
