@@ -16,7 +16,6 @@ import json
 import os
 import shutil
 import sys
-import threading
 import uuid
 from argparse import Namespace
 from tempfile import TemporaryDirectory
