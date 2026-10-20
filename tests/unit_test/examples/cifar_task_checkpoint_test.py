@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 import importlib.util
 import random
 from pathlib import Path
@@ -21,44 +20,6 @@ import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
-
-
-class RandomDataset(torch.utils.data.Dataset):
-    def __len__(self):
-        return 8
-
-    def __getitem__(self, index):
-        return torch.tensor([float(index), float(torch.rand(())), random.random(), float(np.random.random())]), index
-
-
-@pytest.mark.parametrize("num_workers", [0, 2])
-def test_checkpoint_loader_preserves_native_job_trajectory(monkeypatch, num_workers):
-    source_dir = Path(__file__).parents[3] / "examples/advanced/cifar10/pt/src/data"
-    monkeypatch.syspath_prepend(str(source_dir))
-    loader_module = importlib.import_module("stateful_loader")
-
-    def run(checkpointable):
-        random.seed(731)
-        np.random.seed(731)
-        torch.manual_seed(731)
-        kwargs = dict(batch_size=2, shuffle=True, num_workers=num_workers, pin_memory=False)
-        loader = (
-            loader_module.CheckpointDataLoader(RandomDataset(), **kwargs)
-            if checkpointable
-            else torch.utils.data.DataLoader(RandomDataset(), persistent_workers=bool(num_workers), **kwargs)
-        )
-        results = []
-        for _ in range(3):
-            for batch in loader:
-                # Include model-side RNG consumption between batches as well as
-                # all three augmentation RNG streams inside the dataset.
-                results.extend((batch[0].clone(), batch[1].clone(), torch.rand(2)))
-        results.append(torch.get_rng_state())
-        return results
-
-    original, checkpointable = run(False), run(True)
-    assert len(original) == len(checkpointable)
-    assert all(torch.equal(a, b) for a, b in zip(original, checkpointable))
 
 
 @pytest.fixture

@@ -62,8 +62,9 @@ def test_shipped_cifar_job_bundles_native_checkpoint_modules(tmp_path, monkeypat
         assert config["execution_lifetime"] == lifetime
         assert config["format_version"] == (3 if lifetime == "task" else 2)
         custom = config_path.parent.parent / "custom"
-        for name in ("task_checkpoint.py", "train_utils.py", "data/cifar10_data_utils.py", "data/stateful_loader.py"):
+        for name in ("task_checkpoint.py", "train_utils.py", "data/cifar10_data_utils.py"):
             assert (custom / name).read_bytes() == (source / name).read_bytes()
+        assert not (custom / "data/stateful_loader.py").exists()
     finally:
         for name in list(sys.modules):
             if local_module(name):

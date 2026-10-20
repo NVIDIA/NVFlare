@@ -80,7 +80,7 @@ def main():
         OfflineCifar(991, False),
     )
     original_receive, original_send = flare.receive, flare.send
-    original_save = client.save_training_state
+    original_restore, original_save = client.restore_training_state, client.save_training_state
     folder = Path("cifar_state_evidence")
     folder.mkdir(exist_ok=True)
     current_round = None
@@ -93,22 +93,28 @@ def main():
             torch.save(snapshot(model.params), folder / f"{current_round}_input.pt")
         return model
 
-    def save(optimizer, scheduler, current_round, **kwargs):
-        original_save(optimizer, scheduler, current_round, **kwargs)
+    def record_state(optimizer, scheduler, current_round, suffix):
         numpy_rng = np.random.get_state()
         torch.save(
             snapshot(
                 {
                     "optimizer": optimizer.state_dict(),
                     "scheduler": scheduler.state_dict(),
-                    "loaders": [loader.state_dict() for loader in kwargs["data_loaders"]],
                     "torch_rng": torch.get_rng_state(),
                     "python_rng": random.getstate(),
                     "numpy_rng": (numpy_rng[0], numpy_rng[1].astype(np.int64), *numpy_rng[2:]),
                 }
             ),
-            folder / f"{current_round}_state.pt",
+            folder / f"{current_round}_{suffix}.pt",
         )
+
+    def restore(optimizer, scheduler, current_round):
+        original_restore(optimizer, scheduler, current_round)
+        record_state(optimizer, scheduler, current_round, "resume")
+
+    def save(optimizer, scheduler, current_round):
+        original_save(optimizer, scheduler, current_round)
+        record_state(optimizer, scheduler, current_round, "state")
 
     def send(model, *args, **kwargs):
         if flare.is_train():
@@ -121,7 +127,7 @@ def main():
         return original_send(model, *args, **kwargs)
 
     flare.receive, flare.send = receive, send
-    client.save_training_state = save
+    client.restore_training_state, client.save_training_state = restore, save
     client.main(
         SimpleNamespace(
             aggregation_epochs=2,

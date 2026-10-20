@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Native training state for the CIFAR clients; CJ owns checkpoint promotion."""
+"""Native optimizer/scheduler and main-process RNG state; CJ owns promotion.
+
+Standard PyTorch data loaders are unchanged. Their persistent worker RNG streams
+are not captured by this helper.
+"""
 
 import random
 
@@ -22,7 +26,7 @@ import torch
 import nvflare.client as flare
 
 
-def restore_training_state(optimizer, scheduler, current_round, *, data_loaders=()):
+def restore_training_state(optimizer, scheduler, current_round):
     info = flare.system_info()
     paths = info.get("task_checkpoint")
     if paths is None or paths["input"] is None:
@@ -35,20 +39,16 @@ def restore_training_state(optimizer, scheduler, current_round, *, data_loaders=
         raise RuntimeError("Training checkpoint must come from an earlier successful round")
     if (state["scheduler"] is None) != (scheduler is None):
         raise RuntimeError("Training checkpoint scheduler configuration changed")
-    if len(state["loaders"]) != len(data_loaders):
-        raise RuntimeError("Training checkpoint DataLoader configuration changed")
     optimizer.load_state_dict(state["optimizer"])
     if scheduler is not None:
         scheduler.load_state_dict(state["scheduler"])
-    for loader, loader_state in zip(data_loaders, state["loaders"]):
-        loader.load_state_dict(loader_state)
     random.setstate(state["python_rng"])
     numpy_rng = state["numpy_rng"]
     np.random.set_state((numpy_rng[0], numpy_rng[1].numpy().astype(np.uint32), *numpy_rng[2:]))
     torch.set_rng_state(state["torch_rng"])
 
 
-def save_training_state(optimizer, scheduler, current_round, *, data_loaders=()):
+def save_training_state(optimizer, scheduler, current_round):
     info = flare.system_info()
     paths = info.get("task_checkpoint")
     if paths is None:
@@ -62,7 +62,6 @@ def save_training_state(optimizer, scheduler, current_round, *, data_loaders=())
             "round": current_round,
             "optimizer": optimizer.state_dict(),
             "scheduler": None if scheduler is None else scheduler.state_dict(),
-            "loaders": [loader.state_dict() for loader in data_loaders],
             "python_rng": random.getstate(),
             "numpy_rng": (numpy_rng[0], torch.from_numpy(numpy_rng[1].astype(np.int64)), *numpy_rng[2:]),
             "torch_rng": torch.get_rng_state(),

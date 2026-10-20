@@ -131,16 +131,7 @@ def create_datasets(site_name, train_idx_root, central=False):
     return train_dataset, valid_dataset
 
 
-def create_data_loaders(train_dataset, valid_dataset, batch_size, num_workers, *, checkpointable=False):
-    if checkpointable:
-        from data.stateful_loader import CheckpointDataLoader
-
-        return tuple(
-            CheckpointDataLoader(
-                dataset, batch_size=batch_size, shuffle=training, num_workers=num_workers, pin_memory=True
-            )
-            for dataset, training in ((train_dataset, True), (valid_dataset, False))
-        )
+def create_data_loaders(train_dataset, valid_dataset, batch_size, num_workers):
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,

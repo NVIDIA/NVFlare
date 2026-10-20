@@ -56,7 +56,7 @@ def main(args):
     print(f"Create datasets for site {site_name}")
     train_dataset, valid_dataset = create_datasets(site_name, train_idx_root=args.train_idx_root)
     train_loader, valid_loader = create_data_loaders(
-        train_dataset, valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers, checkpointable=True
+        train_dataset, valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers
     )
 
     summary_writer = SummaryWriter()
@@ -83,9 +83,7 @@ def main(args):
                 f"{site_name}: Using CosineAnnealingLR scheduler: initial_lr={args.lr}, eta_min={eta_min}, T_max={T_max}"
             )
 
-        restore_training_state(
-            optimizer, scheduler, input_model.current_round, data_loaders=(train_loader, valid_loader)
-        )
+        restore_training_state(optimizer, scheduler, input_model.current_round)
 
         # Load model from NVFlare
         model.load_state_dict(input_model.params, strict=True)  # make sure all parameters are loaded with strict mode
@@ -170,7 +168,7 @@ def main(args):
             meta=meta,
         )
 
-        save_training_state(optimizer, scheduler, input_model.current_round, data_loaders=(train_loader, valid_loader))
+        save_training_state(optimizer, scheduler, input_model.current_round)
 
         # Send model back to NVFlare
         flare.send(output_model)
