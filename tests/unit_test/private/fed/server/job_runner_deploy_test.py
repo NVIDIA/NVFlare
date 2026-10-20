@@ -35,6 +35,8 @@ from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader
+from nvflare.private.fed.resource_stats.f3_counter import F3TrafficClass
+from nvflare.private.fed.resource_stats.f3_registry import F3CounterRegistry
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.utils.job_cert_utils import (
     get_cert_job_id,
@@ -238,6 +240,30 @@ def _run_deploy(runner, job, sites, fl_ctx, *, extra_patches=None):
     with patch.object(runner, "_make_deploy_message", return_value=MagicMock()):
         with patch(patches[0]), patch(patches[1]), patch(patches[2], return_value=True):
             return runner._deploy_job(job, sites, fl_ctx)
+
+
+@pytest.mark.parametrize("registry_state", ["absent", "empty", "other_job", "active"])
+def test_deployment_uses_only_an_existing_counter_for_this_job(registry_state):
+    runner, fl_ctx, engine, job, sites = _build_fl_ctx({"token-1": _ok_reply()}, min_sites=1)
+    if hasattr(runner, "f3_counters"):
+        del runner.f3_counters
+    registry = F3CounterRegistry()
+    counter = None
+    if registry_state != "absent":
+        runner.f3_counters = registry
+    if registry_state in {"other_job", "active"}:
+        counter = registry.start_job(job.job_id if registry_state == "active" else "other-job")
+
+    with patch.object(registry, "start_job", side_effect=AssertionError("deployment must not start accounting")):
+        assert _run_deploy(runner, job, sites, fl_ctx) == (job.job_id, [])
+
+    call = engine.server.admin_server.send_requests_and_get_reply_dict.call_args
+    expected = {"timeout_secs": engine.server.admin_server.timeout}
+    if registry_state == "active":
+        expected.update(logical_send_accounting=counter, logical_send_traffic_class=F3TrafficClass.JOB_APPLICATION)
+    assert call.kwargs == expected
+    assert registry.get(job.job_id) is (counter if registry_state == "active" else None)
+    assert hasattr(runner, "f3_counters") is (registry_state != "absent")
 
 
 class TestDeployJobTimeoutClassification:
