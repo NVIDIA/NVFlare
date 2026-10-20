@@ -144,15 +144,22 @@ def test_corrupt_payload_is_rejected_before_reaching_the_caller(payload_store, c
             store.read_result(identity)
 
 
-def test_limit_counts_fobs_record_and_tensor_files(payload_store):
+@pytest.mark.parametrize("tensor_count", [1, 3])
+def test_limit_counts_fobs_record_and_tensor_files(payload_store, tensor_count):
     store, identity, directory = payload_store
-    payload = Shareable({"w": torch.ones(4096)})
+    payload = Shareable({"w": [torch.full((4096,), float(i)) for i in range(tensor_count)]})
     reference = store.write_input(identity, payload)
-    tensor_size = (directory / "input.T0.safetensors").stat().st_size
-    limited = FileTaskArtifactStore(store.root_dir, max_payload_bytes=tensor_size - 1)
+    tensor_sizes = [path.stat().st_size for path in directory.glob("input.T*.safetensors")]
+    limited = FileTaskArtifactStore(store.root_dir, max_payload_bytes=min(tensor_sizes) - 1)
     with pytest.raises(ValueError, match="too large"):
         limited.read_input(identity)
-    limited = FileTaskArtifactStore(store.root_dir, max_payload_bytes=reference.size + tensor_size - 1)
+    total_size = reference.size + sum(tensor_sizes)
+    limited = FileTaskArtifactStore(store.root_dir, max_payload_bytes=total_size)
+    restored = limited.read_input(identity)
+    assert all(torch.equal(actual, expected) for actual, expected in zip(restored["w"], payload["w"]))
+    limited = FileTaskArtifactStore(store.root_dir, max_payload_bytes=total_size - 1)
+    with pytest.raises(ValueError, match="too large"):
+        limited.read_input(identity)
     other = TaskAttemptIdentity("job", "site", "other-task", "train", "other-attempt")
     limited.create_attempt(other)
     with pytest.raises(ValueError, match="too large"):

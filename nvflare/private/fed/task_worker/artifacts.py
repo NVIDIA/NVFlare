@@ -126,6 +126,7 @@ class _TensorFileSource:
     def __init__(self, directory, reference, max_payload_bytes):
         self.directory, self.kind = directory, reference.kind
         self.max_payload_bytes = max_payload_bytes
+        self.size = reference.size
 
     def get(self, entry):
         from safetensors import safe_open
@@ -141,9 +142,11 @@ class _TensorFileSource:
         ):
             raise ValueError("invalid tensor artifact descriptor")
         path = os.path.join(self.directory, entry["file"])
+        remaining = None if self.max_payload_bytes is None else self.max_payload_bytes - self.size
         with _open_regular(path) as stream:
-            if _fingerprint(stream, self.max_payload_bytes) != (entry["size"], entry["sha256"]):
+            if _fingerprint(stream, remaining) != (entry["size"], entry["sha256"]):
                 raise ValueError("tensor artifact size or checksum mismatch")
+        self.size += entry["size"]
         with safe_open(path, framework="pt") as tensors:
             return tensors.get_tensor(entry["key"])
 
