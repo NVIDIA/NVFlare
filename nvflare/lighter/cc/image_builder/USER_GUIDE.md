@@ -59,7 +59,7 @@ everything needed to launch:
 
 Vault Build generates the archive's deployment ID automatically. Use the filename
 provided by the builder; the ID below is illustrative. The `--output` folder is
-an operator-selected local name and can remain readable.
+an operator-selected local name and is materialized as a root-only directory.
 
 ```sh
 sudo ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
@@ -99,11 +99,11 @@ that digest.
 
 ## 3. Launch CVM
 
-Change to the delivery's platform directory and run:
+Use the absolute launch command printed by `cvmctl pull`. Do not first `cd` as an
+unprivileged user: the materialized directory is intentionally root-only.
 
 ```sh
-cd /srv/cvm/vault_my-app-site1/intel_tdx
-sudo ./launch_cvm.sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh
 ```
 
 The wrapper first refuses a delivery directory that is not root-owned or is
@@ -119,7 +119,8 @@ is started by Docker with `--gpus all`. The
 launcher restores the original host drivers when QEMU exits. For explicit placement, repeat `--gpu` exactly `gpu_count` times:
 
 ```sh
-sudo ./launch_cvm.sh --gpu 0000:41:00.0 --gpu 0000:43:00.0
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
+  --gpu 0000:41:00.0 --gpu 0000:43:00.0
 ```
 
 Advanced operators may override the embedded bundle with a separately managed
@@ -127,7 +128,7 @@ shared bundle directory. If the embedded bundle is absent, this explicit path is
 required; the launcher does not search sibling folders or local build caches:
 
 ```sh
-sudo ./launch_cvm.sh \
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
   --cvm-bundle /opt/cvm-bundles/cvm_cpu-2026.09/intel_tdx
 ```
 
@@ -179,7 +180,7 @@ sidecar content as public and untrusted; keep secrets and confidential logs in
 From another shell in the same delivery directory, run:
 
 ```sh
-sudo ./shutdown_cvm.sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/shutdown_cvm.sh
 ```
 
 The script validates the root-owned runtime record and signals the exact

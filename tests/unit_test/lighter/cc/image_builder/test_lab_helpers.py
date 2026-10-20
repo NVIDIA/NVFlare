@@ -149,6 +149,7 @@ class LabProfileTests(unittest.TestCase):
                 with (
                     patch.object(config, "local_path", side_effect=lambda path, value: value),
                     patch.object(config, "validate_kbs_client_provenance"),
+                    patch.object(config, "validate_kbs_client_linkage"),
                 ):
                     with self.assertRaisesRegex(BuildError, "Missing approved TCB"):
                         config.profile(path)

@@ -19,6 +19,7 @@ import ipaddress
 import json
 import os
 import re
+import struct
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -42,6 +43,9 @@ PRIVATE_KEY_MARKERS = (
     b"-----BEGIN DSA PRIVATE KEY-----",
     b"-----BEGIN OPENSSH PRIVATE KEY-----",
 )
+
+
+NVAT_SHARED_LIBRARY = b"libnvat.so.1"
 
 
 SOURCE = Path(__file__).resolve().parents[2]
@@ -166,14 +170,14 @@ PROFILE_DEFAULTS = {
             "enabled": True,
             "attester": "snp",
             "firmware": "/usr/share/ovmf/OVMF.amdsev.fd",
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "EPYC-v4",
         },
         "intel_tdx": {
             "enabled": True,
             "attester": "tdx",
             "firmware": str(INPUTS / "OVMF.inteltdx.fd"),
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "host",
             "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
         },
@@ -207,6 +211,98 @@ def contains_private_key(path):
                 return True
             overlap = value[-keep:]
     return False
+
+
+def _elf_dependencies(path):
+    """Read DT_NEEDED names without trusting incidental strings in the ELF."""
+    data = Path(path).read_bytes()
+    if len(data) < 16 or data[:4] != b"\x7fELF":
+        return set()
+    elf_class, encoding = data[4:6]
+    require(elf_class in (1, 2) and encoding in (1, 2), "Invalid kbs-client ELF format")
+    endian = "<" if encoding == 1 else ">"
+    header_format = "HHIIIIIHHHHHH" if elf_class == 1 else "HHIQQQIHHHHHH"
+    program_format = "IIIIIIII" if elf_class == 1 else "IIQQQQQQ"
+    dynamic_format = "iI" if elf_class == 1 else "qQ"
+    try:
+        header = struct.unpack_from(endian + header_format, data, 16)
+    except struct.error:
+        raise BuildError("Invalid kbs-client ELF header") from None
+    program_offset, program_size, program_count = header[4], header[8], header[9]
+    entry_size = struct.calcsize(endian + program_format)
+    require(
+        program_size >= entry_size and program_count < 4096,
+        "Invalid kbs-client ELF program headers",
+    )
+    require(
+        program_offset + program_size * program_count <= len(data),
+        "Invalid kbs-client ELF program headers",
+    )
+    loads = []
+    dynamic = None
+    for index in range(program_count):
+        entry = struct.unpack_from(endian + program_format, data, program_offset + index * program_size)
+        entry_type = entry[0]
+        offset, virtual_address, file_size = (entry[1], entry[2], entry[4]) if elf_class == 1 else (entry[2], entry[3], entry[5])
+        require(offset + file_size <= len(data), "Invalid kbs-client ELF segment")
+        if entry_type == 1:
+            loads.append((virtual_address, offset, file_size))
+        elif entry_type == 2:
+            require(dynamic is None, "Invalid kbs-client ELF dynamic segments")
+            dynamic = (offset, file_size)
+    if dynamic is None:
+        return set()
+
+    dynamic_size = struct.calcsize(endian + dynamic_format)
+    dynamic_offset, dynamic_length = dynamic
+    require(dynamic_length % dynamic_size == 0, "Invalid kbs-client ELF dynamic table")
+    needed = []
+    string_address = string_size = None
+    terminated = False
+    for offset in range(dynamic_offset, dynamic_offset + dynamic_length, dynamic_size):
+        tag, value = struct.unpack_from(endian + dynamic_format, data, offset)
+        if tag == 0:
+            terminated = True
+            break
+        if tag == 1:
+            needed.append(value)
+        elif tag == 5:
+            string_address = value
+        elif tag == 10:
+            string_size = value
+    require(terminated, "Invalid kbs-client ELF dynamic table")
+    if not needed:
+        return set()
+    require(string_address is not None and string_size, "Invalid kbs-client ELF string table")
+    candidates = [
+        file_offset + string_address - virtual_address
+        for virtual_address, file_offset, file_size in loads
+        if virtual_address <= string_address and string_address + string_size <= virtual_address + file_size
+    ]
+    require(len(candidates) == 1, "Invalid kbs-client ELF string table")
+    strings = data[candidates[0] : candidates[0] + string_size]
+    dependencies = set()
+    for offset in needed:
+        require(offset < len(strings), "Invalid kbs-client ELF dependency")
+        end = strings.find(b"\0", offset)
+        require(end >= 0, "Invalid kbs-client ELF dependency")
+        dependencies.add(strings[offset:end])
+    return dependencies
+
+
+def validate_kbs_client_linkage(path, gpu):
+    """Reject a selector client whose NVAT linkage disagrees with its profile."""
+    found = NVAT_SHARED_LIBRARY in _elf_dependencies(path)
+    if gpu == "nvidia_cc":
+        require(
+            found,
+            "GPU profile kbs-client must link libnvat.so.1; build it with the nvidia-attester feature",
+        )
+    else:
+        require(
+            not found,
+            "CPU-only profile kbs-client must not link libnvat.so.1; build it without the nvidia-attester feature",
+        )
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -465,6 +561,7 @@ def profile(path):
         settings = value["platforms"][name]
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
+        validate_kbs_client_linkage(settings["kbs_client"], value["gpu"])
         if settings.get("kbs_client_provenance") is not None:
             settings["kbs_client_provenance"] = local_path(path, settings["kbs_client_provenance"])
             validate_kbs_client_provenance(

@@ -61,6 +61,7 @@ class ProfileTests(unittest.TestCase):
             patch.object(config, "local_path", side_effect=lambda path, value: value),
             patch.object(config, "read_json", return_value={"snp_single_socket": False}) as read,
             patch.object(config, "validate_references") as validate,
+            patch.object(config, "validate_kbs_client_linkage") as linkage,
             patch.object(config, "gpu_inputs") as gpu_inputs,
             patch.object(config, "validate_gpu_policy"),
         ):
@@ -69,6 +70,7 @@ class ProfileTests(unittest.TestCase):
         read.assert_called_once_with(profile["reference_values"])
         self.assertIs(profile["snp_single_socket"], False)
         validate.assert_called_once_with({"snp_single_socket": False}, ["amd_sev_snp", "intel_tdx"], gpu=True)
+        self.assertEqual(linkage.call_count, 2)
         gpu_inputs.assert_called_once()
 
     def test_snp_profile_and_approved_reference_must_match(self):
@@ -77,6 +79,7 @@ class ProfileTests(unittest.TestCase):
             patch.object(config, "local_path", side_effect=lambda path, value: value),
             patch.object(config, "read_json", return_value={"snp_single_socket": False}),
             patch.object(config, "validate_references"),
+            patch.object(config, "validate_kbs_client_linkage"),
             self.assertRaisesRegex(BuildError, "snp_single_socket reference must match"),
         ):
             config.profile("profile.yml")
