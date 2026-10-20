@@ -17,9 +17,8 @@ and [AGENTS.md](AGENTS.md) for agent rules. PR requirements and human approvals 
   code, and deeper failure-path and security checks for distributed execution or sensitive changes.
   Auth, provisioning, wire/persisted formats, and CI/release changes warrant human code-owner scrutiny.
   AI review does not replace required human approvals.
-- Before handing off an authored change, run relevant checks and review the diff. Record actual
-  commands, results, and validation gaps in the PR template. Reviewers with execution tools should
-  use focused tests or reproductions; otherwise state the limits of static review.
+- Reviewers with execution tools should use focused tests or reproductions; otherwise state
+  the limits of static review.
 
 ## What failure looks like in NVFlare
 

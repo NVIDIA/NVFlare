@@ -6,7 +6,7 @@
 - Start with targeted tests for changed files, then run broader checks as needed.
 - Before pushing or opening a PR, run the project style check (`./runtest.sh -s`, or the closest scoped equivalent when justified). If it cannot be run, state that clearly before pushing.
 - Read `CLAUDE.md` for shared repo guidance such as project overview, architecture notes, commands, package layout, and style/testing conventions. Keep `AGENTS.md` limited to agent-specific addenda.
-- For code reviews and pre-PR self-review, follow [REVIEW.md](REVIEW.md).
+- For code reviews and pre-PR review, follow [REVIEW.md](REVIEW.md).
 
 ## Public Pull Requests
 
