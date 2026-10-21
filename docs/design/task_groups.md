@@ -4,9 +4,8 @@ Status: proposal for 2.10. Builds on #5405 (`execution_lifetime="task"`,
 `TaskWorkerExecutor`, `TaskSupervisor`, the task worker and its artifact
 store). Companion to `collab_single_workflow_interface_design.md`, where
 `with collab.task()` is the same concept on the Collab side. The cellnet
-worker transport that an earlier draft of this document bundled in is now
-its own proposal, `task_worker_cellnet_session.md`; groups do not depend on
-it.
+worker transport that an earlier draft of this document bundled in is a
+separate proposal, developed on its own branch; groups do not depend on it.
 
 ## 1. Problem
 
@@ -279,10 +278,11 @@ already polls the process at that interval. Nothing about
 payload storage, digests, settlement or retention changes. The worker's log
 file is per session, replayed when the session closes.
 
-`task_worker_cellnet_session.md` proposes replacing the per-attempt file
-handoff with a cellnet session for large payloads, live analytics and
-launchers without a shared filesystem. That proposal keeps this section's
-semantics and changes only the transport.
+A separate proposal, on its own branch, adds a cellnet session between the
+Client Job and the worker for the exchanges strictly inside a group, live
+analytics and launchers without a shared filesystem. It keeps this section's
+semantics and the files that must outlive a worker, and changes only the
+transport of the messages between the two live processes.
 
 ## 6. Packaged workflows that adopt groups
 
