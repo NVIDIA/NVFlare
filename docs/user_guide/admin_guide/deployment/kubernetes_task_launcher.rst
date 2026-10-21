@@ -36,6 +36,11 @@ Backend contract
 Trusted site selection
 -----------------------
 
+The current profile uses one backend for the full CP/CJ/task-worker chain:
+Process launches all three as processes; Kubernetes runs all three in Pods.
+Mixed chains are unsupported. CPU versus GPU is a resource choice within that
+backend, so the CPU CJ can launch either CPU or GPU task Pods.
+
 The shared task policy selects the exact site-configured task launcher and
 validates its canonical ``local/resources.json`` configuration. Kubernetes
 requires one matching ``ClientK8sJobLauncher`` / ``K8sTaskLauncher`` pair,
@@ -51,11 +56,13 @@ only the site-configured worker environment. Process-style environment
 passthrough is rejected for native backends. These shared selection and resource
 rules also apply to Docker and Slurm, with their own site validators.
 
-The Kubernetes adapter materializes P4's strict staged-bootstrap request into a
-site-image command. It ignores the CJ interpreter, parent PID and Process
-environment and uses only its configured image Python/environment and resource
-defaults, overridden by the bound job's resource metadata. Explicit image-native
-requests remain available to trusted callers. Both backends invoke the existing
+The Kubernetes adapter accepts only the common CJ's strict staged-bootstrap
+request, bound to its owning job/site by ``START_RUN``. The request's local
+interpreter and parent PID are never used in the Pod command and do not select
+a Process backend. The Pod command uses the configured image Python and site
+worker environment, with resource defaults overridden by the bound job's resource
+metadata. Standalone native requests and per-request environment/resource
+overrides are rejected. Both backends invoke the existing
 ``task_worker_process`` entry point. The Pod launcher selects
 ``--execution_scope native`` because CJ is not the worker's OS parent. Process
 launches retain expected-parent and owned-process-group checks, including when

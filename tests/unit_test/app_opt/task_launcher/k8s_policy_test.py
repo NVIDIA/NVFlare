@@ -145,7 +145,7 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         "environment",
     ],
 )
-def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile, fault):
+def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile, tmp_path, monkeypatch, fault):
     launcher, config = profile
     config = copy.deepcopy(config)
     cp = config["components"][0]
@@ -171,9 +171,24 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
         cp["args"].pop("task_workspace_pvc_root")
     elif fault == "environment":
         config["task_execution"]["environment_variables"] = ["PYTHONPATH"]
+    (tmp_path / "local").mkdir()
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
+    api = Mock(side_effect=AssertionError("invalid site profile must fail before Kubernetes access"))
+    monkeypatch.setattr(K8sTaskLauncher, "_api", api)
     with pytest.raises(ValueError):
-        launcher.validate_site_config(config)
-    assert launcher.core_v1 is None
+        TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
+    api.assert_not_called()
+
+
+def test_process_task_policy_rejects_kubernetes_job_launcher(profile, tmp_path):
+    _, config = profile
+    config["task_execution"] = {}
+    (tmp_path / "local").mkdir()
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="task and job launch modes must match"):
+        TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
 
 
 def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch(profile, tmp_path):

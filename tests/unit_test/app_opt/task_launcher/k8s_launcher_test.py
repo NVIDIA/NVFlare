@@ -138,6 +138,15 @@ class PodApi:
         ]
 
 
+def _bind_to_cj(launcher, request, meta=None):
+    context = Mock()
+    context.get_job_id.return_value = request.job_id
+    context.get_identity_name.return_value = request.site_name
+    context.get_prop.side_effect = lambda key, default=None: meta if key == FLContextKey.JOB_META else default
+    launcher.handle_event(EventType.START_RUN, context)
+    return context
+
+
 @pytest.fixture
 def setup(tmp_path, isolated_fobs):
     identity = TaskAttemptIdentity("job", "site-1", "task", "compute", "attempt")
@@ -151,10 +160,8 @@ def setup(tmp_path, isolated_fobs):
         identity.site_name,
         identity.task_id,
         identity.attempt_id,
-        ("/usr/local/bin/python", "-m", WORKER_MODULE, "--bootstrap", path, "--execution_scope", "native"),
-        environment={"LANG": "", "MY_SETTING": "explicit"},
+        ("/cj/python", "-m", WORKER_MODULE, "--bootstrap", path, "--parent_pid", "456"),
         cwd=str(tmp_path),
-        resources=TaskResourceRequest(cpu_cores=1.5, memory_mb=512, gpu_count=1),
     )
     launcher = K8sTaskLauncher(
         namespace="site",
@@ -164,7 +171,12 @@ def setup(tmp_path, isolated_fobs):
         worker_service_account="task-no-api",
         cleanup_timeout=5,
         poll_interval=0.001,
+        cpu_cores=1.5,
+        memory_mb=512,
+        gpu_count=1,
+        environment={"LANG": "", "MY_SETTING": "explicit"},
     )
+    _bind_to_cj(launcher, request)
     api = launcher.core_v1 = PodApi()
     return launcher, api, request, store, bootstrap
 
@@ -196,7 +208,7 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
         "requests": {"cpu": "1.5", "memory": "512Mi", "nvidia.com/gpu": "1"},
         "limits": {"cpu": "1.5", "memory": "512Mi", "nvidia.com/gpu": "1"},
     }
-    assert {v["name"]: v["value"] for v in container["env"]} == dict(request.environment)
+    assert {v["name"]: v["value"] for v in container["env"]} == launcher.environment
     assert spec["volumes"][0] == {"name": "workspace", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
     assert "secret" in spec["volumes"][1]
     assert container["volumeMounts"][0] == {
@@ -226,20 +238,24 @@ def test_identity_fenced_and_distinct_across_sites_and_attempts(setup):
         other_store.create_attempt(identity)
         path = other_store.bootstrap_path(identity)
         write_bootstrap(path, replace(bootstrap, identity=identity, artifact_root=other_store.root_dir))
-        handle = launcher.launch_task(
-            replace(
-                request,
-                site_name=identity.site_name,
-                attempt_id=identity.attempt_id,
-                argv=(*request.argv[:4], path, *request.argv[5:]),
-            )
+        other_request = replace(
+            request,
+            site_name=identity.site_name,
+            attempt_id=identity.attempt_id,
+            argv=(*request.argv[:4], path, *request.argv[5:]),
         )
+        owner = launcher
+        if identity.site_name != request.site_name:
+            owner = K8sTaskLauncher("site", launcher.image, launcher.workspace_root, "existing-pvc", "task-no-api")
+            _bind_to_cj(owner, other_request)
+            owner.core_v1 = api
+        handle = owner.launch_task(other_request)
         names.add(handle.pod_name)
     assert len(names) == 3
 
 
-@pytest.mark.parametrize("fault", ["cwd", "bootstrap", "workspace", "identity", "command", "process", "missing-scope"])
-def test_invalid_path_or_process_request_fails_before_create(setup, tmp_path, fault):
+@pytest.mark.parametrize("fault", ["cwd", "bootstrap", "workspace", "identity", "command", "native", "missing-parent"])
+def test_invalid_path_or_non_cj_request_fails_before_create(setup, tmp_path, fault):
     launcher, api, request, store, bootstrap = setup
     if fault == "cwd":
         request = replace(request, cwd="/outside")
@@ -253,40 +269,24 @@ def test_invalid_path_or_process_request_fails_before_create(setup, tmp_path, fa
         request = replace(request, task_id="other")
     elif fault == "command":
         request = replace(request, argv=("/bin/sh", "-c", "run-anything"))
-    elif fault == "missing-scope":
+    elif fault == "missing-parent":
         request = replace(request, argv=request.argv[:5])
     else:
-        request = replace(request, argv=(*request.argv, "--parent_pid", "42"))
+        request = replace(request, argv=(*request.argv[:5], "--execution_scope", "native"))
     with pytest.raises(ValueError):
         launcher.launch_task(request)
     assert api.calls == []
 
 
-def test_p4_request_materializes_site_image_environment_and_native_defaults(setup):
+def test_cj_request_materializes_site_image_environment_and_native_defaults(setup):
     launcher, api, request, _, _ = setup
     launcher.environment = {"SITE_SETTING": "fixed"}
     launcher.resources = TaskResourceRequest(cpu_cores=2, memory_mb=1024, gpu_count=1)
-    context = Mock()
-    context.get_job_id.return_value, context.get_identity_name.return_value = request.job_id, request.site_name
-    context.get_prop.return_value = {}
-    launcher.handle_event(EventType.START_RUN, context)
-    p4 = replace(
-        request,
-        argv=(
-            "/cj/python",
-            "-m",
-            "nvflare.private.fed.app.client.task_worker_process",
-            "--bootstrap",
-            request.argv[4],
-            "--parent_pid",
-            "456",
-        ),
-        environment={"CUDA_VISIBLE_DEVICES": "", "PYTHONPATH": "/cj/only/path"},
-        resources=TaskResourceRequest(),
-    )
-    handle = launcher.launch_task(p4)
+    launcher._job_binding = None
+    _bind_to_cj(launcher, request)
+    handle = launcher.launch_task(request)
     container = api.manifest["spec"]["containers"][0]
-    assert handle.request is p4
+    assert handle.request is request
     assert container["command"] == ["/usr/local/bin/python"]
     assert "--parent_pid" not in container["args"]
     assert container["args"][-2:] == ["--execution_scope", "native"]
@@ -302,26 +302,11 @@ def test_cj_metadata_routes_cpu_or_gpu_to_task_pod_instead_of_site_default(setup
         "resource_spec": {"@default": {"num_of_cpus": 2, "memory": "1Gi"}},
         "launcher_spec": {"default": {"k8s": {"num_of_gpus": gpu_count}}},
     }
-    context = Mock()
-    context.get_job_id.return_value, context.get_identity_name.return_value = request.job_id, request.site_name
-    context.get_prop.side_effect = lambda key, default=None: meta if key == FLContextKey.JOB_META else default
-    launcher.handle_event(EventType.START_RUN, context)
+    launcher._job_binding = None
+    context = _bind_to_cj(launcher, request, meta)
     # Multiple executor adapters share one site launcher and deliver START_RUN.
     launcher.handle_event(EventType.START_RUN, context)
-    p4 = replace(
-        request,
-        argv=(
-            "/cj/python",
-            "-m",
-            "nvflare.private.fed.app.client.task_worker_process",
-            "--bootstrap",
-            request.argv[4],
-            "--parent_pid",
-            "123",
-        ),
-        resources=TaskResourceRequest(),
-    )
-    launcher.launch_task(p4)
+    launcher.launch_task(request)
     container = api.manifest["spec"]["containers"][0]
     assert container["resources"]["requests"]["cpu"] == "2"
     assert container["resources"]["requests"]["memory"] == "1Gi"
@@ -408,31 +393,31 @@ def test_resource_binding_cannot_be_reassigned_to_another_cj(setup):
 
 def test_cj_request_without_resource_binding_cannot_fall_back_to_wrong_allocation(setup):
     launcher, api, request, _, _ = setup
-    p4 = replace(
-        request,
-        argv=(
-            "/cj/python",
-            "-m",
-            "nvflare.private.fed.app.client.task_worker_process",
-            "--bootstrap",
-            request.argv[4],
-            "--parent_pid",
-            "123",
-        ),
-    )
+    launcher._job_binding = None
     with pytest.raises(ValueError, match="START_RUN resource binding"):
-        launcher.launch_task(p4)
+        launcher.launch_task(request)
     assert api.calls == []
 
 
-@pytest.mark.parametrize("name", ["NVFLARE_AUTH_TOKEN", "NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"])
-def test_backend_rejects_credentials_and_manual_gpu_visibility(setup, name):
+@pytest.mark.parametrize("name", ["MY_SETTING", "NVFLARE_AUTH_TOKEN", "NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"])
+def test_request_cannot_override_site_worker_environment(setup, name):
     from nvflare.apis.job_launcher_spec import JobProcessEnv
 
     launcher, api, request, _, _ = setup
     name = JobProcessEnv.AUTH_TOKEN if name == "NVFLARE_AUTH_TOKEN" else name
-    with pytest.raises(ValueError, match="credentials or manual GPU visibility"):
+    with pytest.raises(ValueError, match="environment and resources belong to site policy"):
         launcher.launch_task(replace(request, environment={name: "sensitive"}))
+    assert api.calls == []
+
+
+@pytest.mark.parametrize(
+    "resources",
+    [TaskResourceRequest(cpu_cores=4), TaskResourceRequest(memory_mb=4096), TaskResourceRequest(gpu_count=2)],
+)
+def test_request_cannot_override_bound_cj_resource_admission(setup, resources):
+    launcher, api, request, _, _ = setup
+    with pytest.raises(ValueError, match="environment and resources belong to site policy"):
+        launcher.launch_task(replace(request, resources=resources))
     assert api.calls == []
 
 

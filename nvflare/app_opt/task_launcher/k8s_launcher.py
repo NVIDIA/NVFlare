@@ -171,9 +171,9 @@ class K8sTaskLauncher(TaskLauncherSpec):
     """Site-owned image and existing POSIX PVC; one bare Pod per physical attempt.
 
     No Kubernetes resources are created until launch_task. No kubeconfig or
-    parent environment is implicitly forwarded into workers. P4 bootstrap
-    requests are materialized into the site image; trusted callers can also
-    supply an image-native request for WORKER_MODULE, without a local PID.
+    parent environment is implicitly forwarded into workers. The CP, CJ and
+    worker use Kubernetes; the common CJ request is staged metadata, then
+    materialized into the site image using the owning CJ's resource binding.
     """
 
     launch_mode = "k8s"
@@ -295,34 +295,24 @@ class K8sTaskLauncher(TaskLauncherSpec):
     def launch_task(self, request: TaskLaunchRequest):
         if not isinstance(request, TaskLaunchRequest):
             raise TypeError("request must be TaskLaunchRequest")
-        process_request = (
+        if not (
             len(request.argv) == 7
-            and request.argv[1:4] == ("-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap")
+            and request.argv[1:4] == ("-m", WORKER_MODULE, "--bootstrap")
             and request.argv[5] == "--parent_pid"
             and request.argv[6].isdigit()
-        )
-        if not process_request and set(request.environment) & FORBIDDEN_ENVIRONMENT_NAMES:
-            raise ValueError("task pods cannot receive federation/API credentials or manual GPU visibility")
-        if not process_request and (
-            request.argv[:4] != (self.python_path, "-m", WORKER_MODULE, "--bootstrap")
-            or len(request.argv) != 7
-            or request.argv[5:] != ("--execution_scope", "native")
         ):
-            raise ValueError("Kubernetes requires a native-scope worker request without Process parent PID arguments")
-        # P4's command shape identifies staged bootstrap, not authority to run
-        # a CJ interpreter, forward its host paths/environment, or use its PID.
-        environment = dict(self.environment) if process_request else {**self.environment, **request.environment}
-        resource_request = self.resources if request.resources.is_empty() else request.resources
-        resources = _native_resources(resource_request)
+            raise ValueError("Kubernetes requires the owning CJ's staged task-worker request")
+        if request.environment or not request.resources.is_empty():
+            raise ValueError("Kubernetes task environment and resources belong to site policy and the bound CJ")
         binding = self._job_binding
-        if process_request and binding is None:
+        if binding is None:
             raise ValueError("staged CJ task requests require the owning START_RUN resource binding")
-        if binding is not None:
-            job_id, site_name, job_resources = binding
-            if (request.job_id, request.site_name) != (job_id, site_name):
-                raise ValueError("task request does not belong to the bound Kubernetes CJ")
-            if process_request:
-                resources = job_resources
+        job_id, site_name, resources = binding
+        if (request.job_id, request.site_name) != (job_id, site_name):
+            raise ValueError("task request does not belong to the bound Kubernetes CJ")
+        # The common command locates staged bootstrap. The Pod always uses the
+        # site image/interpreter and native scope, without the CJ's local PID.
+        environment = dict(self.environment)
         if "nvidia.com/gpu" not in resources["limits"]:
             # CPU tasks can use the same GPU-capable image. Do not inherit an
             # image's NVIDIA_VISIBLE_DEVICES=all on a GPU-runtime node.
