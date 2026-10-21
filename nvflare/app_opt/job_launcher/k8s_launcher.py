@@ -1227,8 +1227,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 resources["limits"]["memory"] = portable_spec["memory"]
                 resources["requests"]["memory"] = portable_spec["memory"]
             if job_resource:
-                resources["limits"]["nvidia.com/gpu"] = job_resource
-                resources["requests"]["nvidia.com/gpu"] = job_resource
+                resources["limits"]["nvidia.com/gpu"] = str(job_resource)
+                resources["requests"]["nvidia.com/gpu"] = str(job_resource)
             job_config["resources"] = resources
             if self.security_context:
                 job_config["security_context"] = self.security_context
@@ -1252,6 +1252,8 @@ class K8sJobLauncher(JobLauncherSpec):
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
                 self._replace_pod_manifest_template_namespace(pod_manifest)
+            self.prepare_job_manifest(pod_manifest, raw_job_id, site_name, workspace_obj)
+            job_handle.pod_manifest = pod_manifest
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
                 pod_manifest["metadata"]["name"],
@@ -1280,6 +1282,9 @@ class K8sJobLauncher(JobLauncherSpec):
         if not entered_running:
             self.logger.warning(f"unable to enter running phase {job_id}")
         return job_handle
+
+    def prepare_job_manifest(self, manifest, job_id, site_name, workspace):
+        """Apply a trusted backend profile before creation; resident defaults are unchanged."""
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:

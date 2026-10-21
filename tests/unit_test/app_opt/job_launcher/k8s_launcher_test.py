@@ -42,15 +42,23 @@ _k8s_api.core_v1_api = _k8s_core
 _k8s_mock.config = _k8s_config
 _k8s_mock.client = _k8s_client
 
-for _mod_name, _mod_obj in [
-    ("kubernetes", _k8s_mock),
-    ("kubernetes.config", _k8s_config),
-    ("kubernetes.client", _k8s_client),
-    ("kubernetes.client.rest", _k8s_rest),
-    ("kubernetes.client.api", _k8s_api),
-    ("kubernetes.client.api.core_v1_api", _k8s_core),
-]:
-    sys.modules[_mod_name] = _mod_obj
+_K8S_MODULES = {
+    "kubernetes": _k8s_mock,
+    "kubernetes.config": _k8s_config,
+    "kubernetes.client": _k8s_client,
+    "kubernetes.client.rest": _k8s_rest,
+    "kubernetes.client.api": _k8s_api,
+    "kubernetes.client.api.core_v1_api": _k8s_core,
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kubernetes_modules():
+    # The SDK is imported lazily by the resident launcher. Keep these stubs
+    # local to its tests so other backends can use the real SDK utilities.
+    with patch.dict(sys.modules, _K8S_MODULES):
+        yield
+
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
@@ -1399,7 +1407,7 @@ class TestJobArgsDict:
 # ---------------------------------------------------------------------------
 def _make_k8s_launcher_patches(patch_open=True):
     # kubernetes is imported inside launch_job (not at module level), so we rely
-    # on the sys.modules stubs injected at the top of this file.  The only
+    # on the sys.modules stubs scoped by this module's fixture. The only
     # YAML dependency we need to intercept is in the shared study_data helper,
     # plus builtins.open for reading the study-data file. CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
@@ -3023,7 +3031,7 @@ spec:
         try:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3036,7 +3044,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3066,7 +3074,7 @@ spec:
             }
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3079,7 +3087,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 3
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "3"
         finally:
             _exit_patches(patches)
 
@@ -3153,7 +3161,7 @@ spec:
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             limits = manifest["spec"]["containers"][0]["resources"]["limits"]
-            assert limits["nvidia.com/gpu"] == 2
+            assert limits["nvidia.com/gpu"] == "2"
             assert limits["cpu"] == "1000m"
             assert limits["memory"] == "4Gi"
         finally:
@@ -3205,8 +3213,8 @@ spec:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             resources = manifest["spec"]["containers"][0]["resources"]
-            assert resources["requests"]["nvidia.com/gpu"] == 2
-            assert resources["limits"]["nvidia.com/gpu"] == 2
+            assert resources["requests"]["nvidia.com/gpu"] == "2"
+            assert resources["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
