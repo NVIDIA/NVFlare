@@ -778,7 +778,15 @@ class TestConfigureSiteLog:
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_site_log("INFO", target="site-2")
         cmd = mock_cmd.call_args[0][0]
-        assert "site-2" in cmd
+        assert cmd == "configure_site_log client site-2 INFO"
+
+    @pytest.mark.parametrize("target", ["all", "server", "client"])
+    def test_target_type_passed_through(self, target):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_site_log("INFO", target=target)
+        cmd = mock_cmd.call_args[0][0]
+        assert cmd == f"configure_site_log {target} INFO"
 
     def test_disables_meta_enforcement(self):
         session = _make_session()
