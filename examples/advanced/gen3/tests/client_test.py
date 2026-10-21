@@ -13,7 +13,11 @@
 # limitations under the License.
 
 import importlib.util
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -41,6 +45,82 @@ def test_training_matches_independent_closed_form_control(tmp_path):
         weights = np.average(updates, axis=0, weights=[len(labels) for _, labels in arrays])
     expected = verification.expected_model(tmp_path / "manifest.json", tmp_path)
     np.testing.assert_allclose(weights, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.fixture
+def client_main(monkeypatch, tmp_path):
+    training = load_module("client")
+    sites = {
+        site: [{"object_id": f"{site}-{i}", "file_name": f"{site}-{i}.csv"} for i in range(2)]
+        for site in ("site-1", "site-2")
+    }
+    records = {record["object_id"]: record for assigned in sites.values() for record in assigned}
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"sites": sites}))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["client.py", "--manifest", str(manifest)])
+    for name, value in {
+        "GEN3_ENDPOINT": "https://commons.example",
+        "GEN3_CLIENT_ID": "study-client",
+        "GEN3_CLIENT_SECRET": "test-secret",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    def download(object_id, directory):
+        (Path(directory) / records[object_id]["file_name"]).write_text("x0,x1,y\n1,0,2.5\n0,1,-2.5\n")
+        return True
+
+    files = SimpleNamespace(download_single=Mock(side_effect=download))
+    monkeypatch.setattr(training, "Gen3Auth", Mock(return_value=object()))
+    monkeypatch.setattr(training, "Gen3File", Mock(return_value=files))
+    flare = SimpleNamespace(
+        init=Mock(),
+        system_info=Mock(return_value={"site_name": "site-1"}),
+        is_running=Mock(side_effect=[True, True, False]),
+        receive=Mock(
+            side_effect=[
+                SimpleNamespace(params={training.NPConstants.NUMPY_KEY: np.zeros(3)}, current_round=round_number)
+                for round_number in range(2)
+            ]
+        ),
+        send=Mock(),
+        FLModel=SimpleNamespace,
+    )
+    monkeypatch.setattr(training, "flare", flare)
+    return training, sites, files.download_single
+
+
+@pytest.mark.parametrize("site", ["site-1", "site-2"])
+def test_main_downloads_only_assigned_objects_once_across_rounds(client_main, site):
+    training, sites, download = client_main
+    training.flare.system_info.return_value = {"site_name": site}
+    training.main()
+
+    assert [call.args[0] for call in download.call_args_list] == [record["object_id"] for record in sites[site]]
+    training.Gen3Auth.assert_called_once_with(
+        endpoint="https://commons.example", client_credentials=("study-client", "test-secret")
+    )
+    training.Gen3File.assert_called_once_with(auth_provider=training.Gen3Auth.return_value)
+    sent = [call.args[0] for call in training.flare.send.call_args_list]
+    assert [model.current_round for model in sent] == [0, 1]
+    assert all(model.meta[training.FLMetaKey.NUM_STEPS_CURRENT_ROUND] == 4 for model in sent)
+
+
+@pytest.mark.parametrize("failed_object", [0, 1])
+def test_main_sends_no_model_when_a_download_fails(client_main, failed_object):
+    training, sites, download = client_main
+    failed_id = sites["site-1"][failed_object]["object_id"]
+    successful_download = download.side_effect
+    download.side_effect = lambda object_id, directory: (
+        False if object_id == failed_id else successful_download(object_id, directory)
+    )
+
+    with pytest.raises(RuntimeError, match=f"Download failed for {failed_id}"):
+        training.main()
+
+    assert download.call_count == failed_object + 1
+    training.flare.receive.assert_not_called()
+    training.flare.send.assert_not_called()
 
 
 @pytest.mark.parametrize("authoring_path", ["example", "data"])
