@@ -85,7 +85,8 @@ class _Attempt:
     runtime_root: str
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     handle: Optional[TaskHandleSpec] = None
-    settled: bool = False
+    settled: bool = False  # physical: the process that owned this record has exited and been reaped
+    published: bool = False  # the attempt's artifacts are final; the worker never touches them again
     validated: bool = False
     completion: Optional[TaskCompletion] = None
     failed: bool = False
@@ -361,8 +362,9 @@ class TaskSupervisor:
                 if self._aborted(session, abort_signal):
                     attempt.failed = True
                     return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
-                # The worker never touches a published attempt again, so its artifacts are final.
-                attempt.settled = True
+                # The worker never touches a published attempt again, so its artifacts are final
+                # even while the session's process lives on; physical settlement is the session's.
+                attempt.published = True
                 attempt.validated = True
                 attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
@@ -531,12 +533,12 @@ class TaskSupervisor:
                 self._stopping
                 or self._settlement_unconfirmed
                 or attempt is None
-                or not attempt.settled
+                or not attempt.published
                 or not attempt.validated
                 or attempt.releasing
                 or attempt.released
             ):
-                raise RuntimeError("task attempt has no retained, settled result to resubmit")
+                raise RuntimeError("task attempt has no retained, published result to resubmit")
         result, completion = attempt.store.read_result(identity)
         if completion != attempt.completion:
             raise ValueError("saved task completion changed after validation")
@@ -561,7 +563,7 @@ class TaskSupervisor:
             with self._state_lock:
                 if (
                     self._settlement_unconfirmed
-                    or not attempt.settled
+                    or not attempt.published
                     or not attempt.validated
                     or attempt.failed
                     or attempt.receipt is None

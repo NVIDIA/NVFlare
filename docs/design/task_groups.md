@@ -116,22 +116,33 @@ The ambient block is an attribute of the controller, read by
 
 ### 3.2 Open-group table
 
-`WFCommServer` keeps `group id -> clients touched` for the current workflow,
-filled when a `ClientTask` of a grouped task is sent. `close_task_group(id)`
-moves the touched clients to a per-client "closed, to announce" list and
-drops the group. Nothing else is kept per group.
+`WFCommServer` keeps one record per group: the tasks issued into it, the
+clients that received one of them, and whether the controller has closed it.
+The record is dropped when the group is closed and none of its tasks is
+standing any more. Nothing else is kept per group.
 
 ### 3.3 Telling the client the group ended
 
+A group ends for a client when two things are true: the controller's block
+has exited, and none of the group's tasks can still reach a client. The
+second condition matters because `broadcast` is asynchronous: a block can
+exit while a task issued inside it is still queued, and a client may fetch
+that task after the block exit. Such a task still carries the group id, is
+served by the group's worker on that client, and the closure is announced
+only after the task has left the standing set (completed, timed out or
+cancelled), so no client is told a group ended while it still has that
+group's work to receive. This also closes a group a client first touched
+after block exit.
+
 The Task plane is pull based, so closure is delivered on the client's next
-`getTask`. Every reply to `getTask`, whether it carries a task or
+`getTask`. Every reply, whether it carries a task or
 `SpecialTaskName.TRY_AGAIN`, gets a header
 `ReservedHeaderKey.TASK_GROUPS_CLOSED = "__task_groups_closed__"` listing
-closed group IDs that touched this client. Each ID is listed in two
-consecutive replies (the server keeps one small table, client to pending
-closures with a reply count), so one lost reply does not lose the closure. A
-client that never polls again ends its worker at `END_RUN`. The client treats
-the list as idempotent.
+the ended groups that touched this client. Each id is listed in two
+consecutive replies. This is not an acknowledgement protocol: if a client
+loses two consecutive replies its worker stays alive until a task of another
+group arrives or the job ends, which is bounded and safe because the worker
+is idle. The client treats the list as idempotent.
 
 Why a header and not a new special task name: `TRY_AGAIN` replies already
 carry headers (`TaskConstant.WAIT_TIME`), older clients ignore unknown
@@ -195,7 +206,12 @@ State: at most one open worker session, `(group_id, session)`. On `execute`:
   shutdown path.
 
 Closing a session writes the end marker, waits for the worker to finalize
-and exit, confirms settlement, and replays the worker log.
+and exit, confirms settlement, and replays the worker log. Whatever ended
+the session, the group id is retired on this client: a later assignment of
+the same group (for instance `G1, G2, G1`, which an explicit `Task(group=)`
+can produce) fails rather than running in a fresh worker. Group contiguity
+per client is therefore enforced where the state lives, not assumed from the
+server's ordering.
 
 ### 4.3 `TaskSupervisor`
 
@@ -257,6 +273,32 @@ across groups. A group makes two of #5405's exclusions removable:
 Those two changes are in the executors, not in the group mechanism, and are
 not part of this proposal.
 
+### 4.6 Attempt publication and physical settlement
+
+#5405 has one rule: a result is read only after the worker process has
+exited and been reaped (physical settlement). A session splits that into
+two facts, kept apart in the supervisor:
+
+- An attempt is *published* when the live worker has written its result,
+  checkpoint candidate, analytics and `completion.json`, and the Client Job
+  has validated identity, PID and digests. The worker never touches that
+  attempt's directory again, so the artifacts are final and the result can
+  be consumed, resent and released on receipt exactly as before.
+- The *session* settles physically once, when its worker exits at group end
+  (or is killed). Only then are the process's resources known to be gone.
+
+Resource retention follows from this: a group worker holds its memory, and
+with a resource-reserving launcher its reservation, from its first attempt
+until the group ends on that client, including server-side aggregation and
+waits for stragglers between attempts. That is the cost the controller
+accepts by opening a group, and it is why `FedAvg`-style one-task rounds do
+not group. The site bounds each attempt with `worker_timeout` and the exit
+with `finalization_timeout`; it has no idle bound inside a group by design
+(section 2.3). This PR ships the CPU Process launcher only. Before a
+resource-reserving launcher serves groups, that launcher's reservation must
+be tied to the session, not the attempt, and its site policy may want a
+bound on group duration; neither exists yet.
+
 ## 5. Session directory: the disk protocol between Client Job and worker
 
 A group needs three things the one-shot worker did not: deliver attempt
@@ -296,12 +338,26 @@ transport of the messages between the two live processes.
 `SwarmClientController` and the other client-side controllers are job
 lifetime and unaffected.
 
-## 7. Compatibility
+## 7. Contract and compatibility
 
-- Older clients ignore the group header and the closure header: one worker
-  per assignment, correct and slower. Older servers send no header: same.
-  No `format_version` change is required; #5405's version 3 gate for task
-  lifetime stays as it is.
+A group is a required state-affinity guarantee, not an optimisation hint:
+an executor inside a group may rely on memory from the group's earlier
+assignments. Two mechanisms enforce it.
+
+- On a client that understands groups, a group's worker is never replaced
+  (sections 2.3 and 4.2).
+- A client that does not understand groups runs each task in a worker of
+  its own and returns results without the `TASK_GROUP_ID` header that a
+  group-aware client echoes. The server records such a client on its first
+  grouped result and sends it no further grouped tasks; the controller sees
+  the missing results through its normal timeout path. The first result is
+  still correct, since the first attempt of a group starts fresh everywhere.
+
+Other compatibility points:
+
+- Older servers send no group headers; clients run one worker per task,
+  which is the pre-group behaviour and correct.
+- No `format_version` change; #5405's version 3 gate for task lifetime stays.
 - Job-lifetime clients see the headers and the `TASK_GROUP_CLOSED` event and
   may ignore both.
 - `execution_lifetime="job"` remains the default. Groups change nothing for
@@ -344,3 +400,7 @@ block then needs nothing the Task plane group does not already have.
 3. Both the ambient block and explicit `Task(group=)` ship; the explicit
    form is an escape hatch, since the ambient group is controller-scoped.
 4. Checkpoint slot stays per executor and task name.
+5. Closure is announced only once the group's tasks have all left the
+   standing set, so a task queued before block exit still joins the group.
+6. A group is a guarantee: clients that cannot honour it are excluded from
+   further grouped tasks rather than run silently ungrouped.

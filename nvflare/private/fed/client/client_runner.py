@@ -240,6 +240,7 @@ class ClientRunner(TBI):
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         cookie_jar = task.data.get_cookie_jar() if isinstance(task.data, Shareable) else None
         cookie_jar = dict(cookie_jar) if cookie_jar else None
+        group_id = task.data.get_header(ReservedHeaderKey.TASK_GROUP_ID) if isinstance(task.data, Shareable) else None
         reply = self._do_process_task(task, fl_ctx)
         # Bind the actual outgoing reply on every path, including an early
         # filter failure that replaced a previously successful executor result.
@@ -253,6 +254,9 @@ class ClientRunner(TBI):
         if task.attempt_id is not None:
             reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task.attempt_id)
             reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+        if group_id is not None:
+            # Tells the server this client honoured the group; older clients send no such header.
+            reply.set_header(ReservedHeaderKey.TASK_GROUP_ID, group_id)
         return reply
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:

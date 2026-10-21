@@ -1407,6 +1407,23 @@ def test_group_of_one_and_a_different_group_close_the_open_session(native_task):
     assert adapter._session is None
 
 
+def test_a_group_interrupted_by_another_group_is_not_resumed_in_a_fresh_worker(native_task):
+    root, custom, context, policy = native_task
+    adapter, data = _adapter(custom, context, policy)
+    adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
+    )
+    adapter.execute(
+        "train", _group_assignment(context, data, group="g2", attempt="a2", task_id="t2"), context, Signal()
+    )
+    with pytest.raises(RuntimeError, match="already ended"):
+        adapter.execute(
+            "train", _group_assignment(context, data, group="g1", attempt="a3", task_id="t3"), context, Signal()
+        )
+    assert adapter._session.group_id == "g2"
+    adapter.handle_event(EventType.END_RUN, context)
+
+
 def test_a_group_whose_worker_died_is_not_continued_with_fresh_memory(native_task):
     from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 

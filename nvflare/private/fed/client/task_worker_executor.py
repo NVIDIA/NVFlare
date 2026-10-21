@@ -91,7 +91,7 @@ class TaskWorkerExecutor(Executor):
         self._completed_attempts = set()
         self._session = None
         self._session_ctx = None
-        self._broken_group = None
+        self._ended_groups = set()
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -287,20 +287,20 @@ class TaskWorkerExecutor(Executor):
         """Return the open session for this group, closing a session of another group first.
 
         A group's worker is never replaced: executors keep state in memory across the
-        group's assignments, so once the worker is gone the group's remaining
-        assignments fail on this client instead of silently running with fresh memory.
+        group's assignments, so once its session has ended for any reason (worker death,
+        abort, closure, or another group taking over) the group's later assignments fail
+        on this client instead of silently running with fresh memory.
         """
+        if group_id in self._ended_groups:
+            raise RuntimeError(f"task group {group_id} already ended on this client; its later assignments cannot run")
         session = self._session
-        if session is not None and session.group_id != group_id:
+        if session is not None and (session.group_id != group_id or not self._reusable(session)):
             self._close_session(fl_ctx)
             session = None
-        elif session is not None and not self._reusable(session):
-            self._break_group(fl_ctx)
-            session = None
-        if group_id == self._broken_group:
-            raise RuntimeError(
-                f"task group {group_id} lost its worker on this client; its remaining assignments cannot run"
-            )
+            if group_id in self._ended_groups:
+                raise RuntimeError(
+                    f"task group {group_id} lost its worker on this client; its later assignments cannot run"
+                )
         if session is None:
             session = self.supervisor.open_session(group_id, store, runtime_root, self.policy.launcher, request_factory)
             with self._state_lock:
@@ -318,12 +318,7 @@ class TaskWorkerExecutor(Executor):
         with self._state_lock:
             session = self._session
         if session is not None and not self._reusable(session):
-            self._break_group(fl_ctx)
-
-    def _break_group(self, fl_ctx):
-        with self._state_lock:
-            self._broken_group = self._session.group_id
-        self._close_session(fl_ctx)
+            self._close_session(fl_ctx)
 
     def _close_session_if(self, group_id=None):
         """Close the open session when it serves ``group_id``, or any session when no group is named."""
@@ -352,6 +347,7 @@ class TaskWorkerExecutor(Executor):
         finally:
             with self._state_lock:
                 self._session = None
+                self._ended_groups.add(session.group_id)
             self._report_issues(fl_ctx)
             if session.identity is not None and not self.supervisor.settlement_unconfirmed:
                 self._replay_worker_log(_workspace(fl_ctx), session.identity, fl_ctx)

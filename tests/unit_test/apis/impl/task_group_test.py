@@ -64,6 +64,18 @@ def _request(communicator, manager, client):
     return name, data, fl_ctx.get_prop(FLContextKey.TASK_GROUPS_CLOSED)
 
 
+def _submit(communicator, manager, client, name, data, *, grouped=True):
+    """Return the task's result the way a client does; a client that honours groups echoes the group id."""
+    result = Shareable()
+    result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, data.get_header(ReservedHeaderKey.TASK_ATTEMPT_ID))
+    if grouped and data.get_header(ReservedHeaderKey.TASK_GROUP_ID) is not None:
+        result.set_header(ReservedHeaderKey.TASK_GROUP_ID, data.get_header(ReservedHeaderKey.TASK_GROUP_ID))
+    fl_ctx = manager.new_context()
+    fl_ctx.set_peer_context(FLContextManager(identity_name=client.name, job_id="job-1").new_context())
+    communicator.process_submission(client, name, data.get_header(ReservedHeaderKey.TASK_ID), result, fl_ctx)
+    communicator.check_tasks()
+
+
 def test_tasks_in_block_carry_group_and_closure_reaches_touched_clients_twice(system):
     controller, communicator, manager, clients = system
     fl_ctx = manager.new_context()
@@ -77,12 +89,44 @@ def test_tasks_in_block_carry_group_and_closure_reaches_touched_clients_twice(sy
         assert data.get_cookie(ReservedHeaderKey.TASK_GROUP_ID) == group.id
         assert closed is None
         assert not group.closed
+        _submit(communicator, manager, clients[0], name, data)
     assert group.closed
 
     assert _request(communicator, manager, clients[1])[2] is None
     assert _request(communicator, manager, clients[0])[2] == [group.id]
     assert _request(communicator, manager, clients[0])[2] == [group.id]
     assert _request(communicator, manager, clients[0])[2] is None
+
+
+def test_closure_waits_for_tasks_queued_before_block_exit(system):
+    controller, communicator, manager, clients = system
+    fl_ctx = manager.new_context()
+    with controller.task_group(fl_ctx) as group:
+        controller.broadcast(Task("train", Shareable()), fl_ctx, targets=[clients[0]], min_responses=1)
+    assert group.closed
+    # The client first fetches the group's task after the block exited; it still carries the group.
+    name, data, closed = _request(communicator, manager, clients[0])
+    assert name == "train"
+    assert data.get_header(ReservedHeaderKey.TASK_GROUP_ID) == group.id
+    assert closed is None
+    assert _request(communicator, manager, clients[0])[2] is None, "not announced while the task stands"
+    _submit(communicator, manager, clients[0], name, data)
+    assert _request(communicator, manager, clients[0])[2] == [group.id]
+
+
+def test_client_that_ignores_groups_receives_no_further_grouped_tasks(system):
+    controller, communicator, manager, clients = system
+    fl_ctx = manager.new_context()
+    with controller.task_group(fl_ctx):
+        controller.broadcast(Task("first", Shareable()), fl_ctx, targets=[clients[0]], min_responses=1)
+        name, data, _ = _request(communicator, manager, clients[0])
+        _submit(communicator, manager, clients[0], name, data, grouped=False)
+        controller.broadcast(Task("second", Shareable()), fl_ctx, targets=[clients[0]], min_responses=1)
+        assert _request(communicator, manager, clients[0])[0] == ""
+        controller.broadcast(Task("ungrouped", Shareable(), group=None), fl_ctx, targets=[clients[0]])
+    assert _request(communicator, manager, clients[0])[0] == ""
+    controller.broadcast(Task("later", Shareable()), fl_ctx, targets=[clients[0]], min_responses=1)
+    assert _request(communicator, manager, clients[0])[0] == "later"
 
 
 def test_outside_block_tasks_have_no_group_and_closed_or_nested_groups_are_rejected(system):
@@ -130,7 +174,10 @@ def test_block_closes_on_exception(system):
     with pytest.raises(ValueError):
         with controller.task_group(fl_ctx) as group:
             controller.broadcast(Task("train", Shareable()), fl_ctx, targets=[clients[0]], min_responses=1)
-            _request(communicator, manager, clients[0])
+            name, data, _ = _request(communicator, manager, clients[0])
             raise ValueError("workflow failed")
     assert group.closed
+    with pytest.raises(RuntimeError, match="closed task group"):
+        controller.broadcast(Task("late", Shareable(), group=group), fl_ctx, targets=[clients[0]])
+    _submit(communicator, manager, clients[0], name, data)
     assert _request(communicator, manager, clients[0])[2] == [group.id]
