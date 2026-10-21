@@ -39,7 +39,6 @@ from nvflare.apis.task_launcher_spec import (
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
     WORKSPACE_MOUNT_PATH,
-    K8sJobHandle,
     _dns_name,
     _is_cpu_memory_gpu_shortage,
     reject_job_gpu_reservation,
@@ -47,6 +46,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     task_security_context,
     task_workspace_subpath,
 )
+from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from nvflare.utils.job_launcher_utils import (
@@ -339,11 +339,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
         owner = uuid.uuid4().hex
         digest = hashlib.sha256(json.dumps(request.identity).encode()).hexdigest()[:20]
         name = f"nvft-{digest}-{owner[:16]}"
-        # Reuse the resident launcher's physical Pod manifest builder, without
-        # reusing its acknowledgment-based terminate/status semantics.
-        builder = K8sJobHandle(
-            request.job_id,
-            api,
+        manifest = build_pod_manifest(
             {
                 "name": name,
                 "container_name": _CONTAINER,
@@ -378,13 +374,9 @@ class K8sTaskLauncher(TaskLauncherSpec):
                     },
                 ],
             },
-            namespace=self.namespace,
             python_path=self.python_path,
+            preserve_empty_env=True,
         )
-        manifest = builder.get_manifest()
-        # The job builder omits empty env values; task environment snapshots
-        # preserve them (e.g. deliberately empty user configuration).
-        manifest["spec"]["containers"][0]["env"] = [{"name": key, "value": value} for key, value in environment.items()]
         manifest["spec"]["containers"][0]["workingDir"] = request.cwd
         manifest["metadata"].update(
             namespace=self.namespace,
@@ -406,7 +398,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
         }
-        handle = K8sTaskHandle(self, request, name, owner, builder)
+        handle = K8sTaskHandle(self, request, name, owner)
         try:
             pod = api.create_namespaced_pod(
                 namespace=self.namespace, body=manifest, _request_timeout=self.request_timeout
@@ -425,13 +417,12 @@ class K8sTaskLauncher(TaskLauncherSpec):
 
 
 class K8sTaskHandle(TaskHandleSpec):
-    def __init__(self, launcher, request, name, owner, builder):
+    def __init__(self, launcher, request, name, owner):
         self.launcher = launcher
         self._request = request
         self.pod_name = name
         self._owner = owner
         self._uid = None
-        self._builder = builder
         self._lock = threading.RLock()
         self._started = time.monotonic()
         self._cancel_requested = False
@@ -564,7 +555,7 @@ class K8sTaskHandle(TaskHandleSpec):
                 elif phase == "Running":
                     self._phase = TaskExecutionPhase.RUNNING
                 elif phase == "Pending":
-                    failure = self._builder._get_container_waiting_failure(pod.status)
+                    failure = get_container_waiting_failure(pod.status)
                     for condition in pod.status.conditions or []:
                         if condition.type == "PodScheduled" and condition.status == "False":
                             detail = f"{condition.reason or ''} {condition.message or ''}"

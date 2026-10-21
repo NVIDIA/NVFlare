@@ -37,6 +37,12 @@ from nvflare.apis.job_launcher_spec import (
     JobReturnCode,
     add_launcher,
 )
+from nvflare.app_opt.job_launcher.k8s_pod import (
+    _ensure_manifest_mapping,
+    _normalize_image_pull_secrets,
+    build_pod_manifest,
+    get_container_waiting_failure,
+)
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -139,16 +145,6 @@ SCHEDULED_EVENT_FAILURE_MAX_AGE = 60
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
-_PENDING_FAILURE_WAITING_REASONS = {
-    "CreateContainerConfigError",
-    "CreateContainerError",
-    "ErrImagePull",
-    "ErrImageNeverPull",
-    "ImagePullBackOff",
-    "InvalidImageName",
-    "RunContainerError",
-    "CrashLoopBackOff",
-}
 _PENDING_FAILURE_EVENT_REASONS = {
     "BackOff",
     "Failed",
@@ -170,17 +166,6 @@ _STARTUP_KEEP_SUFFIXES = (".crt", ".pem", ".json")
 
 def _keep_startup_file(fname: str) -> bool:
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
-
-
-def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
-    if image_pull_secrets is None:
-        return []
-    if not isinstance(image_pull_secrets, list):
-        raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
-    for name in image_pull_secrets:
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("image_pull_secrets entries must be non-empty strings")
-    return list(image_pull_secrets)
 
 
 def _normalize_pending_timeout(pending_timeout, field_name="pending_timeout"):
@@ -292,97 +277,6 @@ def study_secret_volume_name(study: str, name: str) -> str:
     return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
-def _ensure_manifest_mapping(parent: dict, key: str, label: str) -> dict:
-    value = parent.get(key)
-    if value is None:
-        value = {}
-        parent[key] = value
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be a dictionary.")
-    return value
-
-
-def _ensure_manifest_containers(spec: dict) -> list[dict]:
-    containers = spec.get("containers")
-    if containers is None:
-        containers = [{}]
-        spec["containers"] = containers
-    if not isinstance(containers, list):
-        raise ValueError("pod spec containers must be a list.")
-    if not containers:
-        containers.append({})
-    for container in containers:
-        if not isinstance(container, dict):
-            raise ValueError("pod spec containers entries must be dictionaries.")
-    return containers
-
-
-def _prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
-    if not isinstance(pod_manifest_template, dict):
-        raise ValueError("pod manifest template must be a dictionary.")
-    kind = pod_manifest_template.get("kind")
-    if kind and kind != "Pod":
-        raise ValueError("pod manifest template must define kind: Pod.")
-    pod_manifest = copy.deepcopy(pod_manifest_template)
-    pod_manifest.setdefault("apiVersion", "v1")
-    pod_manifest["kind"] = "Pod"
-    _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
-    spec = _ensure_manifest_mapping(pod_manifest, "spec", "pod manifest spec")
-    _ensure_manifest_containers(spec)
-    return pod_manifest
-
-
-def _merge_named_items(template_items, job_items, label: str) -> list:
-    if template_items is None:
-        template_items = []
-    if job_items is None:
-        job_items = []
-    if not isinstance(template_items, list) or not isinstance(job_items, list):
-        raise ValueError(f"{label} must be a list.")
-
-    job_items_by_name = {}
-    unnamed_job_items = []
-    for item in job_items:
-        if not isinstance(item, dict):
-            raise ValueError(f"{label} entries must be dictionaries.")
-        name = item.get("name")
-        if isinstance(name, str) and name:
-            job_items_by_name[name] = item
-        else:
-            unnamed_job_items.append(item)
-
-    result = []
-    used_job_item_names = set()
-    for item in template_items:
-        if not isinstance(item, dict):
-            raise ValueError(f"{label} entries must be dictionaries.")
-        name = item.get("name")
-        if name in job_items_by_name:
-            result.append(copy.deepcopy(job_items_by_name[name]))
-            used_job_item_names.add(name)
-        else:
-            result.append(copy.deepcopy(item))
-
-    for name, item in job_items_by_name.items():
-        if name not in used_job_item_names:
-            result.append(copy.deepcopy(item))
-    result.extend(copy.deepcopy(unnamed_job_items))
-    return result
-
-
-def _select_job_container(containers: list[dict], container_name: str, require_main_container: bool = False) -> dict:
-    target_names = {name for name in (container_name, "nvflare_job") if isinstance(name, str) and name}
-    for container in containers:
-        if container.get("name") in target_names:
-            return container
-    if require_main_container and len(containers) > 1:
-        raise ValueError(
-            f"pod_template has multiple containers and none is named one of {sorted(target_names)}; "
-            "mark the main container so study env/secret entries cannot land on a sidecar."
-        )
-    return containers[0]
-
-
 class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
@@ -412,46 +306,8 @@ class K8sJobHandle(JobHandleSpec):
         self.namespace = namespace
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.python_path = python_path
-        self.uses_pod_manifest_template = pod_manifest_template is not None
-        if self.uses_pod_manifest_template:
-            self.pod_manifest = _prepare_pod_manifest_template(pod_manifest_template)
-        else:
-            self.pod_manifest = {
-                "apiVersion": "v1",
-                "kind": "Pod",
-                "metadata": {"name": None},  # set by job_config['name']
-                "spec": {
-                    "containers": None,  # link to container_list
-                    "volumes": None,  # link to volume_list
-                    "restartPolicy": "Never",
-                },
-            }
-        self.volume_list = []
-
-        if self.uses_pod_manifest_template:
-            spec = self.pod_manifest["spec"]
-            self.container_list = spec["containers"]
-            self.job_container = _select_job_container(
-                self.container_list, job_config.get("container_name"), job_config.get("require_main_container", False)
-            )
-        else:
-            self.container_list = [
-                {
-                    "image": None,
-                    "name": None,
-                    "command": [python_path],
-                    "args": None,  # args_list + args_dict + args_sets
-                    "volumeMounts": None,  # volume_mount_list
-                    "imagePullPolicy": "Always",
-                }
-            ]
-            self.job_container = self.container_list[0]
-        command = job_config.get("command")
-        if not command:
-            raise ValueError("job_config must contain a non-empty 'command' key")
-        self.container_args_python_args_list = ["-u", "-m", command]
-        self.container_volume_mount_list = []
-        self._make_manifest(job_config)
+        self.pod_manifest = build_pod_manifest(job_config, python_path, pod_manifest_template)
+        self._job_container_name = job_config.get("container_name", "nvflare_job")
         self._stuck_count = 0
         self._pending_since = None
         # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
@@ -459,79 +315,6 @@ class K8sJobHandle(JobHandleSpec):
         self._last_event_query_failed = False
         self._pending_timer_paused_at = None
         self.logger = logging.getLogger(self.__class__.__name__)
-
-    def _make_manifest(self, job_config):
-        self.container_volume_mount_list.extend(job_config.get("volume_mount_list", []))
-        set_list = job_config.get("set_list")
-        if not set_list:
-            self.container_args_module_args_sets = list()
-        else:
-            self.container_args_module_args_sets = ["--set"] + set_list
-        self.container_args_module_args_dict = job_config.get("module_args") or {}
-        self.container_args_module_args_dict_as_list = list()
-        for k, v in self.container_args_module_args_dict.items():
-            if v is None:
-                continue
-            self.container_args_module_args_dict_as_list.append(k)
-            self.container_args_module_args_dict_as_list.append(str(v))
-        job_volume_list = job_config.get("volume_list", [])
-        metadata = _ensure_manifest_mapping(self.pod_manifest, "metadata", "pod manifest metadata")
-        spec = _ensure_manifest_mapping(self.pod_manifest, "spec", "pod manifest spec")
-        metadata["name"] = job_config.get("name")
-        spec["restartPolicy"] = "Never"
-        if self.uses_pod_manifest_template:
-            spec["volumes"] = _merge_named_items(spec.get("volumes"), job_volume_list, "pod spec volumes")
-        else:
-            self.volume_list.extend(job_volume_list)
-            spec["containers"] = self.container_list
-            spec["volumes"] = self.volume_list
-        image_pull_secrets = _normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
-        if image_pull_secrets:
-            image_pull_secret_refs = [{"name": name} for name in image_pull_secrets]
-            if self.uses_pod_manifest_template:
-                spec["imagePullSecrets"] = _merge_named_items(
-                    spec.get("imagePullSecrets"), image_pull_secret_refs, "pod spec imagePullSecrets"
-                )
-            else:
-                spec["imagePullSecrets"] = image_pull_secret_refs
-        security_context = job_config.get("security_context")
-        if security_context:
-            spec["securityContext"] = security_context
-
-        image = job_config.get("image")
-        if not image:
-            raise ValueError("job_config must contain a non-empty 'image' key")
-        container = self.job_container
-        container["image"] = image
-        container["name"] = job_config.get("container_name", "nvflare_job")
-        container["command"] = [self.python_path]
-        container["args"] = (
-            self.container_args_python_args_list
-            + self.container_args_module_args_dict_as_list
-            + self.container_args_module_args_sets
-        )
-        if self.uses_pod_manifest_template:
-            container.setdefault("imagePullPolicy", "Always")
-            container["volumeMounts"] = _merge_named_items(
-                container.get("volumeMounts"), self.container_volume_mount_list, "container volumeMounts"
-            )
-        else:
-            container["volumeMounts"] = self.container_volume_mount_list
-        # resources now always includes ephemeral-storage; GPU limits are merged
-        # into the same dict only when requested for the job.
-        if job_config.get("resources"):
-            container["resources"] = job_config["resources"]
-        env_vars = {k: v for k, v in job_config.get("env", {}).items() if str(v)}
-        env_items = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
-        env_items.extend(
-            {"name": ref["name"], "valueFrom": {"secretKeyRef": {"name": ref["source"], "key": ref["key"]}}}
-            for ref in job_config.get("secret_env", [])
-        )
-        if env_items:
-            if self.uses_pod_manifest_template:
-                container["env"] = _merge_named_items(container.get("env"), env_items, "container env")
-            else:
-                container["env"] = env_items
 
     def get_manifest(self):
         return copy.deepcopy(self.pod_manifest)
@@ -631,7 +414,7 @@ class K8sJobHandle(JobHandleSpec):
     def _record_terminal_state(self, pod, pod_phase):
         self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if self.terminal_state == JobState.TERMINATED:
-            job_container_name = self.job_container["name"]
+            job_container_name = self._job_container_name
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
@@ -830,16 +613,7 @@ class K8sJobHandle(JobHandleSpec):
         return PendingPodAction.WAIT, ""
 
     def _get_container_waiting_failure(self, status):
-        for container_status in self._get_all_container_statuses(status):
-            waiting = getattr(getattr(container_status, "state", None), "waiting", None)
-            if not waiting:
-                continue
-            reason = getattr(waiting, "reason", None)
-            message = getattr(waiting, "message", None)
-            detail = _obj_text(reason, message) or "container is waiting"
-            if reason in _PENDING_FAILURE_WAITING_REASONS:
-                return detail
-        return ""
+        return get_container_waiting_failure(status)
 
     def _get_event_failure(self, ignore_failed_scheduling=False, now=None):
         now = time.time() if now is None else now
@@ -879,14 +653,6 @@ class K8sJobHandle(JobHandleSpec):
     def _get_pod_conditions(self, status):
         conditions = getattr(status, "conditions", None)
         return conditions if isinstance(conditions, (list, tuple)) else []
-
-    def _get_all_container_statuses(self, status):
-        result = []
-        for attr_name in ("init_container_statuses", "container_statuses"):
-            statuses = getattr(status, attr_name, None)
-            if isinstance(statuses, (list, tuple)):
-                result.extend(statuses)
-        return result
 
     def wait(self):
         while True:

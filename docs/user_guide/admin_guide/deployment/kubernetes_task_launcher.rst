@@ -69,6 +69,11 @@ launches retain expected-parent and owned-process-group checks, including when
 the live CJ has PID 1. ``TaskLaunchRequest``, ``TaskSupervisor`` and artifact
 formats are unchanged.
 
+Job and task launchers share stateless Pod construction and startup diagnostics.
+The task path creates only a ``K8sTaskHandle``. Credential/workspace-transfer
+cleanup stays with the job handle, and task Pod settlement stays with the task
+handle.
+
 The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
 optional task storage, service-account and numeric identity settings enable CJ
 preparation for task mode. It replaces the generated ``workspace-job`` emptyDir

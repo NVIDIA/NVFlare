@@ -224,6 +224,36 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
     assert handle.poll().phase == TaskExecutionPhase.QUEUED
 
 
+@pytest.mark.parametrize("gpu_count", [0, 1])
+@pytest.mark.parametrize("startup_failure", [False, True])
+def test_task_lifecycle_is_independent_of_job_handles(setup, monkeypatch, gpu_count, startup_failure):
+    from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle
+
+    def unexpected_job_handle(*args, **kwargs):
+        raise AssertionError("task execution must not construct or use a job handle")
+
+    monkeypatch.setattr(K8sJobHandle, "__init__", unexpected_job_handle)
+    monkeypatch.setattr(K8sJobHandle, "_get_container_waiting_failure", unexpected_job_handle)
+    launcher, api, request, store, bootstrap = setup
+    launcher._job_binding = None
+    _bind_to_cj(launcher, request, {"launcher_spec": {"site-1": {"k8s": {"num_of_gpus": gpu_count}}}})
+    handle = launcher.launch_task(request)
+    if startup_failure:
+        api.pod.status.container_statuses = [
+            NS(name="nvflare-task", state=NS(waiting=NS(reason="ErrImagePull", message="pull failed"), terminated=None))
+        ]
+    else:
+        store.commit_result(bootstrap.identity, Shareable({"value": 3}))
+        api.finish()
+    status = handle.wait_for_settlement(1)
+    assert api.deleted
+    assert status.succeeded == (not startup_failure)
+    if startup_failure:
+        assert status.failure_reason == "ErrImagePull pull failed"
+    else:
+        assert store.read_result(bootstrap.identity)[0]["value"] == 3
+
+
 def test_identity_fenced_and_distinct_across_sites_and_attempts(setup):
     launcher, api, request, store, bootstrap = setup
     first = launcher.launch_task(request)

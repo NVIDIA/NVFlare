@@ -482,7 +482,13 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         cfg["module_args"] = None
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        assert handle.container_args_module_args_dict_as_list == []
+        assert handle.get_manifest()["spec"]["containers"][0]["args"] == [
+            "-u",
+            "-m",
+            cfg["command"],
+            "--set",
+            *cfg["set_list"],
+        ]
 
     def test_manifest_gpu_resources(self):
         cfg = _make_job_config()
