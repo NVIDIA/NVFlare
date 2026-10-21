@@ -272,8 +272,10 @@ Job and the worker today:
 | attempt done | `<attempt>/completion.json` or `<attempt>/failure.json`, as today | worker |
 | session over | `<runtime_root>/sessions/<session>/end` | Client Job |
 
-The worker polls the session directory at the site poll interval. The
-Client Job already polls the process at that interval. Nothing about
+The worker polls the session directory at the site poll interval, backing
+off to half a second while idle, and exits through `finalize` if its parent
+Client Job disappears, since no end marker would ever come. The Client Job
+already polls the process at that interval. Nothing about
 payload storage, digests, settlement or retention changes. The worker's log
 file is per session, replayed when the session closes.
 

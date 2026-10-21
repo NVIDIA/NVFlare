@@ -199,6 +199,7 @@ def _attempt_identities(bootstrap: WorkerBootstrap):
     if bootstrap.session_dir is None:
         return
     end_path = os.path.join(bootstrap.session_dir, SESSION_END_MARKER)
+    client_job_pid = os.getppid()
     sequence = 2
     interval = _SESSION_POLL_INTERVAL
     while True:
@@ -207,7 +208,8 @@ def _attempt_identities(bootstrap: WorkerBootstrap):
             yield TaskAttemptIdentity.from_dict(_read_json(next_path))
             sequence += 1
             interval = _SESSION_POLL_INTERVAL
-        elif os.path.lexists(end_path):
+        elif os.path.lexists(end_path) or os.getppid() != client_job_pid:
+            # No end marker will come from a Client Job that is gone; finalize and exit.
             return
         else:
             time.sleep(interval)

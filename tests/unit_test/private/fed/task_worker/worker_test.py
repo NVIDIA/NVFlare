@@ -294,6 +294,17 @@ def test_session_worker_serves_staged_attempts_on_one_executor_until_the_end_mar
     assert marker.read_text().splitlines() == ["initialize", "finalize"]
 
 
+def test_session_worker_stops_waiting_when_its_client_job_is_gone(tmp_path, monkeypatch):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    bootstrap = WorkerBootstrap(_identity("attempt-1"), str(tmp_path), str(tmp_path), {}, session_dir=str(session_dir))
+    parents = iter([4242, 4242, 1])
+    monkeypatch.setattr(worker.os, "getppid", lambda: next(parents))
+    monkeypatch.setattr(worker.time, "sleep", lambda _interval: None)
+
+    assert list(worker._attempt_identities(bootstrap)) == [bootstrap.identity]
+
+
 def test_session_worker_failure_keeps_the_earlier_completion_and_ends_the_session(tmp_path):
     marker = tmp_path / "events.txt"
     store, first, second, bootstrap_path = _stage_session(tmp_path, "worker_components.FailLargeValueExecutor", marker)
