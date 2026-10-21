@@ -91,6 +91,7 @@ class _Attempt:
     receipt: Optional[str] = None
     releasing: bool = False
     released: bool = False
+    result_readers: int = 0
 
 
 class TaskSupervisor:
@@ -404,10 +405,20 @@ class TaskSupervisor:
                 or attempt.released
             ):
                 raise RuntimeError("task attempt has no retained, settled result to resubmit")
-        result, completion = attempt.store.read_result(identity)
-        if completion != attempt.completion:
-            raise ValueError("saved task completion changed after validation")
-        return result
+            attempt.result_readers += 1
+        try:
+            result, completion = attempt.store.read_result(identity)
+            if completion != attempt.completion:
+                raise ValueError("saved task completion changed after validation")
+            return result
+        except BaseException:
+            with self._state_lock:
+                attempt.failed = True
+            raise
+        finally:
+            with self._state_lock:
+                attempt.result_readers -= 1
+            self.cleanup_job_payloads()
 
     def retain_attempt(self, identity: TaskAttemptIdentity):
         """Keep evidence when caller-owned result processing fails after compute."""
@@ -431,6 +442,7 @@ class TaskSupervisor:
                     or not attempt.settled
                     or not attempt.validated
                     or attempt.failed
+                    or attempt.result_readers
                     or attempt.receipt is None
                     or attempt.releasing
                     or attempt.released

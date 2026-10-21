@@ -275,6 +275,47 @@ def test_cleanup_does_not_block_next_assignment_or_another_receipt(tmp_path):
     first["store"].release_payloads.assert_called_once()
 
 
+@pytest.mark.parametrize("receipt", [TaskResultReceipt.RECEIVED, TaskResultReceipt.TASK_CLOSED])
+@pytest.mark.parametrize("readers", [1, 2])
+@pytest.mark.parametrize("read_failure", [False, True])
+def test_saved_result_readers_hold_payloads_without_holding_compute(tmp_path, receipt, readers, read_failure):
+    supervisor = TaskSupervisor()
+    first, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**first)
+    reading, proceed = threading.Barrier(readers + 1), threading.Event()
+    read_result = first["store"].read_result
+
+    def blocked_read(identity):
+        reading.wait(timeout=5)
+        assert proceed.wait(5)
+        if read_failure:
+            raise OSError("saved result read failed")
+        return read_result(identity)
+
+    first["store"].read_result = Mock(side_effect=blocked_read)
+    with ThreadPoolExecutor(max_workers=readers) as pool:
+        replays = [pool.submit(supervisor.read_saved_result, outcome.identity) for _ in range(readers)]
+        try:
+            reading.wait(timeout=5)
+            assert supervisor.record_receipt(outcome.identity, receipt)
+            supervisor.cleanup_job_payloads()
+            assert _payload(first).exists()
+            second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+            next_outcome = supervisor.run(**second)
+            supervisor.record_receipt(next_outcome.identity, TaskResultReceipt.RECEIVED)
+            assert not _payload(second).exists()
+            assert _payload(first).exists()
+        finally:
+            proceed.set()
+        for replay in replays:
+            if read_failure:
+                with pytest.raises(OSError, match="saved result read failed"):
+                    replay.result(timeout=5)
+            else:
+                assert replay.result(timeout=5)["value"] == 2
+    assert _payload(first).exists() is read_failure
+
+
 def test_cleanup_failure_retains_diagnostics_and_does_not_block_new_work(tmp_path):
     supervisor = TaskSupervisor()
     first, _ = _attempt(tmp_path)
