@@ -1,5 +1,5 @@
-Kubernetes task launcher (experimental adapter)
-==================================================
+Kubernetes task launcher
+========================
 
 Backend contract
 ----------------
