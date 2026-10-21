@@ -14,7 +14,7 @@
 
 
 from collections import deque
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 
@@ -48,6 +48,11 @@ class ListResourceManager(AutoCleanResourceManager):
                 raise TypeError(f"item in resources should be of type list, but got {type(resources[k])}.")
             resource_queue[k] = deque(resources[k])
         super().__init__(resources=resource_queue, expiration_period=expiration_period)
+
+    def get_gpu_capacity(self) -> Optional[int]:
+        # An empty resource manager cannot assign GPU devices. Nonempty generic
+        # inventories do not identify resource types, so their GPU capacity is unknown.
+        return None if self.resources else 0
 
     def _deallocate(self, resources: dict):
         for k, v in resources.items():

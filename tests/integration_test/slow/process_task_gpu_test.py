@@ -14,8 +14,7 @@
 
 """Explicitly scheduled real-GPU scope checks; federation controls run separately.
 
-NVFLARE_PROCESS_GPU_PARTITION names a JSON file containing the approved site
-partition, including its canonical persistent ledger directory. Never substitute
+NVFLARE_PROCESS_GPU_ALLOCATOR names a JSON file containing the approved allocator arguments, including its canonical persistent ledger directory. Never substitute
 a fresh ledger to bypass an existing reservation.
 """
 
@@ -33,10 +32,11 @@ import psutil
 import pytest
 
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
+from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("NVFLARE_PROCESS_GPU_PARTITION"), reason="requires explicitly scheduled real GPU capacity"
+    not os.environ.get("NVFLARE_PROCESS_GPU_ALLOCATOR"), reason="requires explicitly scheduled real GPU capacity"
 )
 
 COMPUTE = """
@@ -72,9 +72,9 @@ if mode == 'abrupt':
 
 @pytest.fixture
 def gpu_launcher():
-    config = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_PARTITION"]).read_text())
-    launcher = ProcessTaskLauncher(gpu_partition=config)
-    launcher.gpu_pool.validate_host()
+    config = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
+    launcher.gpu_allocator.validate_host()
     return launcher
 
 
@@ -150,9 +150,9 @@ def test_real_cuda_contention_and_descendant_cancellation(gpu_launcher, tmp_path
     try:
         facts = _ready(tmp_path / "held.json")
         # Use a one-device view of the SAME ledger to test that assigned device.
-        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_PARTITION"]).read_text())
+        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
         selected["devices"] = [facts["visible"]]
-        other = ProcessTaskLauncher(gpu_partition=selected)
+        other = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**selected))
         with pytest.raises(RuntimeError, match="capacity"):
             _launch(other, tmp_path / "must-not-start.json")
         assert not (tmp_path / "must-not-start.json").exists()
@@ -177,7 +177,7 @@ def test_real_cuda_worker_failure_releases_only_after_settlement(gpu_launcher, t
         assert status.settled and not status.succeeded
         facts = _ready(tmp_path / "failure.json")
         _no_live_pid(facts["pid"])
-        with sqlite3.connect(gpu_launcher.gpu_pool.path) as connection:
+        with sqlite3.connect(gpu_launcher.gpu_allocator.path) as connection:
             record = connection.execute(
                 "SELECT released,execution_id FROM attempts WHERE identity=?", (handle.reservation.identity,)
             ).fetchone()
@@ -197,12 +197,12 @@ def test_real_cuda_uncertain_scope_retains_reservation(gpu_launcher, tmp_path, m
         monkeypatch.setattr(handle.process, "_group_exists", lambda: True)
         with pytest.raises(TimeoutError):
             handle.wait_for_settlement(0.2)
-        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_PARTITION"]).read_text())
+        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
         selected["devices"] = [facts["visible"]]
-        other = ProcessTaskLauncher(gpu_partition=selected)
+        other = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**selected))
         with pytest.raises(RuntimeError, match="capacity"):
             _launch(other, tmp_path / "must-not-start.json")
-        with sqlite3.connect(gpu_launcher.gpu_pool.path) as connection:
+        with sqlite3.connect(gpu_launcher.gpu_allocator.path) as connection:
             released = connection.execute(
                 "SELECT released FROM attempts WHERE identity=?", (handle.reservation.identity,)
             ).fetchone()[0]

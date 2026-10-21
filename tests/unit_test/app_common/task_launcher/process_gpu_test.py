@@ -26,15 +26,17 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.gpu_allocator_spec import GpuAllocatorSpec
 from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskLaunchRequest, TaskResourceRequest, TaskSettlementError
+from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 
 GPU = "GPU-00000000-0000-0000-0000-000000000001"
 GPU2 = "GPU-00000000-0000-0000-0000-000000000002"
 
 
-def _partition(tmp_path):
-    return {"id": "task-only", "devices": [GPU], "exclusive": True, "reservation_root": str(tmp_path / "pool")}
+def _allocator_args(tmp_path):
+    return {"pool_id": "task-only", "devices": [GPU], "reservation_root": str(tmp_path / "pool")}
 
 
 def _request(tmp_path, attempt="a", code="pass"):
@@ -51,41 +53,38 @@ def _request(tmp_path, attempt="a", code="pass"):
 
 
 def test_pool_reservations_survive_owner_exit_and_reject_overcommit(tmp_path):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    config = _partition(tmp_path)
+    config = _allocator_args(tmp_path)
     script = (
-        "import json,sys; from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool; "
-        "pool=ProcessGpuPool(json.loads(sys.argv[1])); pool.acquire(('j','s','t','a'),1)"
+        "import json,sys; from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger; "
+        "pool=GpuReservationLedger(**json.loads(sys.argv[1])); pool.acquire(('j','s','t','a'),1)"
     )
     subprocess.run([sys.executable, "-c", script, json.dumps(config)], check=True)
-    pool = ProcessGpuPool(config)
+    pool = GpuReservationLedger(**config)
     with pytest.raises(RuntimeError, match="capacity"):
         pool.acquire(("other", "s", "t", "a"), 1)
 
 
 def test_released_attempt_cannot_be_physically_relaunched(tmp_path):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    pool = ProcessGpuPool(_partition(tmp_path))
+    pool = GpuReservationLedger(**_allocator_args(tmp_path))
     identity = ("j", "s", "t", "a")
     reservation = pool.acquire(identity, 1)
     assert reservation.devices == (GPU,)
     reservation.release()
     reservation.release()
     with pytest.raises(RuntimeError, match="already"):
-        ProcessGpuPool(_partition(tmp_path)).acquire(identity, 1)
+        GpuReservationLedger(**_allocator_args(tmp_path)).acquire(identity, 1)
     next_reservation = pool.acquire(("j2", "s", "t", "a"), 1)
     next_reservation.release()
 
 
-def test_multi_gpu_admission_is_atomic_across_overlapping_partitions(tmp_path):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
+def test_multi_gpu_admission_is_atomic_across_overlapping_allocator_argss(tmp_path):
 
-    config = _partition(tmp_path)
-    first_pool = ProcessGpuPool(config)
+    config = _allocator_args(tmp_path)
+    first_pool = GpuReservationLedger(**config)
     reservation = first_pool.acquire(("j", "s", "t", "a"), 1)
-    second_pool = ProcessGpuPool({**config, "id": "other", "devices": [GPU, GPU2]})
+    second_pool = GpuReservationLedger(**{**config, "pool_id": "other", "devices": [GPU, GPU2]})
     with pytest.raises(RuntimeError, match="capacity"):
         second_pool.acquire(("j2", "s", "t", "a"), 2)
     # Failure did not acquire GPU2 or consume the physical-attempt identity.
@@ -96,9 +95,8 @@ def test_multi_gpu_admission_is_atomic_across_overlapping_partitions(tmp_path):
 
 
 def test_concurrent_admission_has_one_winner(tmp_path):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    pools = [ProcessGpuPool(_partition(tmp_path)) for _ in range(8)]
+    pools = [GpuReservationLedger(**_allocator_args(tmp_path)) for _ in range(8)]
 
     def acquire(item):
         index, pool = item
@@ -120,33 +118,31 @@ def test_concurrent_admission_has_one_winner(tmp_path):
         ("devices", ["0"]),
         ("devices", ["MIG-foo"]),
         ("devices", [GPU, GPU]),
-        ("exclusive", False),
+        ("pool_id", ""),
         ("reservation_root", "relative"),
     ],
 )
 def test_pool_rejects_unsupported_or_ambiguous_configuration(tmp_path, field, value):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
     with pytest.raises(ValueError):
-        ProcessGpuPool({**_partition(tmp_path), field: value})
+        GpuReservationLedger(**{**_allocator_args(tmp_path), field: value})
 
 
 def test_pool_rejects_missing_or_mig_enabled_host_device(tmp_path, monkeypatch):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
+    from nvflare.fuel.utils import gpu_utils
 
-    pool = ProcessGpuPool(_partition(tmp_path))
-    monkeypatch.setattr(subprocess, "run", Mock(return_value=Mock(stdout=GPU2 + ", Disabled\n")))
+    pool = GpuReservationLedger(**_allocator_args(tmp_path))
+    monkeypatch.setattr(gpu_utils, "use_nvidia_smi", lambda *a, **k: [GPU2 + ", Disabled"])
     with pytest.raises(RuntimeError, match="whole GPUs"):
         pool.validate_host()
-    monkeypatch.setattr(subprocess, "run", Mock(return_value=Mock(stdout=GPU + ", Enabled\n")))
+    monkeypatch.setattr(gpu_utils, "use_nvidia_smi", lambda *a, **k: [GPU + ", Enabled"])
     with pytest.raises(RuntimeError, match="whole GPUs"):
         pool.validate_host()
 
 
 def test_release_refuses_changed_ownership(tmp_path):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    pool = ProcessGpuPool(_partition(tmp_path))
+    pool = GpuReservationLedger(**_allocator_args(tmp_path))
     reservation = pool.acquire(("j", "s", "t", "a"), 1)
     with sqlite3.connect(pool.path) as connection:
         connection.execute("UPDATE allocations SET token='different'")
@@ -158,9 +154,8 @@ def test_release_refuses_changed_ownership(tmp_path):
 
 @pytest.mark.parametrize("commit_applied", [False, True])
 def test_uncertain_release_commit_blocks_other_cjs(tmp_path, monkeypatch, commit_applied):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    pool = ProcessGpuPool(_partition(tmp_path))
+    pool = GpuReservationLedger(**_allocator_args(tmp_path))
     reservation = pool.acquire(("j", "s", "t", "a"), 1)
     connect = sqlite3.connect
 
@@ -176,15 +171,14 @@ def test_uncertain_release_commit_blocks_other_cjs(tmp_path, monkeypatch, commit
             reservation.release()
     assert not reservation.released
     with pytest.raises(RuntimeError, match="release is unconfirmed"):
-        ProcessGpuPool(_partition(tmp_path)).acquire(("other", "s", "t", "a"), 1)
+        GpuReservationLedger(**_allocator_args(tmp_path)).acquire(("other", "s", "t", "a"), 1)
 
 
 @pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
 def test_worker_visibility_and_release_before_publication(tmp_path, monkeypatch):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     output = tmp_path / "environment.json"
     code = f"import json,os; open({str(output)!r},'w').write(json.dumps(dict(os.environ)))"
     handle = launcher.launch_task(_request(tmp_path, code=code))
@@ -192,7 +186,7 @@ def test_worker_visibility_and_release_before_publication(tmp_path, monkeypatch)
         assert handle.wait_for_settlement(10).succeeded
         assert json.loads(output.read_text())["CUDA_VISIBLE_DEVICES"] == GPU
         # No receipt/publication operation has occurred. Another CJ can admit.
-        other = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+        other = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
         second = other.launch_task(replace(_request(tmp_path), job_id="other"))
         try:
             assert second.wait_for_settlement(10).succeeded
@@ -205,15 +199,14 @@ def test_worker_visibility_and_release_before_publication(tmp_path, monkeypatch)
 @pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
 @pytest.mark.parametrize("code", ["raise RuntimeError('worker failed')", "import os; os._exit(17)"])
 def test_failed_worker_releases_reservation_after_settlement(tmp_path, monkeypatch, code):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     handle = launcher.launch_task(_request(tmp_path, code=code))
     try:
         status = handle.wait_for_settlement(10)
         assert status.settled and not status.succeeded
-        reservation = launcher.gpu_pool.acquire(("other", "s", "t", "a"), 1)
+        reservation = launcher.gpu_allocator.acquire(("other", "s", "t", "a"), 1)
         reservation.release()
     finally:
         handle.cancel()
@@ -221,10 +214,9 @@ def test_failed_worker_releases_reservation_after_settlement(tmp_path, monkeypat
 
 @pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
 def test_uncertain_settlement_retains_reservation(tmp_path, monkeypatch):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     ready = tmp_path / "ready"
     code = f"import time; open({str(ready)!r},'w').close(); time.sleep(60)"
     handle = launcher.launch_task(_request(tmp_path, code=code))
@@ -238,7 +230,7 @@ def test_uncertain_settlement_retains_reservation(tmp_path, monkeypatch):
         with pytest.raises(TimeoutError):
             handle.wait_for_settlement(0.01)
         with pytest.raises(RuntimeError, match="capacity"):
-            ProcessGpuPool(_partition(tmp_path)).acquire(("other", "s", "t", "a"), 1)
+            GpuReservationLedger(**_allocator_args(tmp_path)).acquire(("other", "s", "t", "a"), 1)
         monkeypatch.setattr(handle.process, "_group_exists", original)
         assert handle.cancel().settled
     finally:
@@ -248,10 +240,9 @@ def test_uncertain_settlement_retains_reservation(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
 def test_release_failure_fences_handle_and_retains_capacity(tmp_path, monkeypatch):
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     handle = launcher.launch_task(_request(tmp_path))
     release = handle.reservation.release
     monkeypatch.setattr(handle.reservation, "release", Mock(side_effect=OSError("release failed")))
@@ -260,7 +251,7 @@ def test_release_failure_fences_handle_and_retains_capacity(tmp_path, monkeypatc
             handle.wait_for_settlement(10)
         assert not handle.poll().settled
         with pytest.raises(RuntimeError, match="capacity"):
-            ProcessGpuPool(_partition(tmp_path)).acquire(("other", "s", "t", "a"), 1)
+            GpuReservationLedger(**_allocator_args(tmp_path)).acquire(("other", "s", "t", "a"), 1)
     finally:
         # Test-owned repair only after the real process scope settled.
         assert handle.process.poll().settled
@@ -270,17 +261,16 @@ def test_release_failure_fences_handle_and_retains_capacity(tmp_path, monkeypatc
 @pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
 def test_spawn_failure_releases_acquired_gpu_but_fences_attempt_identity(tmp_path, monkeypatch):
     from nvflare.app_common.task_launcher import process_launcher
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
 
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
     monkeypatch.setattr(process_launcher, "spawn_process", Mock(side_effect=OSError("spawn failed")))
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     with pytest.raises(TaskLaunchError, match="GPU reservation released") as failure:
         launcher.launch_task(_request(tmp_path))
     assert failure.value.handle.poll().settled
     with pytest.raises(RuntimeError, match="already launched"):
         launcher.launch_task(_request(tmp_path))
-    reservation = ProcessGpuPool(_partition(tmp_path)).acquire(("other", "s", "t", "a"), 1)
+    reservation = GpuReservationLedger(**_allocator_args(tmp_path)).acquire(("other", "s", "t", "a"), 1)
     reservation.release()
 
 
@@ -288,10 +278,43 @@ def test_spawn_failure_releases_acquired_gpu_but_fences_attempt_identity(tmp_pat
 def test_cpu_attempt_on_gpu_site_cannot_inherit_gpu_visibility(tmp_path):
     output = tmp_path / "cpu-environment.json"
     code = f"import json,os; open({str(output)!r},'w').write(json.dumps(dict(os.environ)))"
-    launcher = ProcessTaskLauncher(gpu_partition=_partition(tmp_path))
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**_allocator_args(tmp_path)))
     handle = launcher.launch_task(replace(_request(tmp_path, code=code), resources=TaskResourceRequest()))
     try:
         assert handle.wait_for_settlement(10).succeeded
         assert json.loads(output.read_text())["CUDA_VISIBLE_DEVICES"] == ""
+    finally:
+        handle.cancel()
+
+
+@pytest.mark.skipif(not hasattr(os, "waitid"), reason="requires waitid/WNOWAIT")
+def test_process_launcher_uses_injected_assignment_and_releases_after_settlement(tmp_path):
+    # A site can supply an allocator with its own coordination mechanism.
+    # The launcher must consume the assignment without constructing a ledger.
+    ledger = GpuReservationLedger(**_allocator_args(tmp_path))
+    output = tmp_path / "assigned-device"
+    request = _request(
+        tmp_path, code=f"import os; open({str(output)!r}, 'w').write(os.environ['CUDA_VISIBLE_DEVICES'])"
+    )
+    reservation = ledger.acquire(request.identity, 1)
+    calls = []
+
+    class SiteAllocator(GpuAllocatorSpec):
+        def validate_host(self):
+            calls.append("validate")
+
+        def acquire(self, identity, count):
+            calls.append((identity, count))
+            return reservation
+
+    launcher = ProcessTaskLauncher(gpu_allocator=SiteAllocator())
+    handle = launcher.launch_task(request)
+    try:
+        assert calls == ["validate", (request.identity, 1)]
+        assert handle.wait_for_settlement(10).succeeded
+        assert output.read_text() == GPU
+        assert reservation.released
+        replacement = ledger.acquire(("another", "site", "task", "a"), 1)
+        replacement.release()
     finally:
         handle.cancel()

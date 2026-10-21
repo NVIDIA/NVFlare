@@ -16,7 +16,7 @@ python tests/integration_test/data/process_gpu/export_job.py --device cuda --lif
 python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime job --output /tmp/process-gpu-jobs
 ```
 
-Run the first three serially on a task-exclusive site configuration from
+Run the first three serially on a task-allocation site configuration from
 [the profile](../../../../docs/design/process_task_gpu_profile.md). Each site's
 GPU pool must contain sufficient approved devices. Sites sharing devices must
 use the same canonical ledger. Both CPU rows assert zero CUDA devices; the GPU
@@ -24,7 +24,7 @@ task row asserts one and executes actual CUDA training and evaluation.
 
 For the GPU job row, after all task workers and reservations are settled, use
 the supported serial job-mode configuration described in the profile. Each site
-must have its own approved GPU capacity. Remove the task partition and enable
+must have its own approved GPU capacity. Remove the task allocator and enable
 the ordinary CP GPUResourceManager/GPUResourceConsumer; do not submit this row
 to the task-only empty job pool. Submit each exported directory through the
 existing provisioned admin connection and retain job IDs and terminal states.
@@ -42,13 +42,15 @@ descendant or GPU compute context remains. CPU CJs must not own GPU contexts.
 
 ## Real GPU failure and reuse scope tests
 
-On the approved host, save only the site's `gpu_partition` object as a test
+On the approved host, save the site's `gpu_allocator.args` object as a test
 configuration JSON file. It must name the SAME persistent ledger used by its
 participating CJs, not a new directory. Schedule these tests serially after the
-normal task jobs; no unrelated GPU workload may use the tested partition.
+normal task jobs; arrange for other GPU workloads to avoid the tested devices.
+These checks validate coordinated claims and worker visibility, not device
+access enforcement or GPU compute/memory shares.
 
 ```bash
-NVFLARE_PROCESS_GPU_PARTITION=/approved/path/partition.json python -m pytest -v \
+NVFLARE_PROCESS_GPU_ALLOCATOR=/approved/path/allocator.json python -m pytest -v \
   --basetemp=/approved/path/process-gpu-evidence \
   tests/integration_test/slow/process_task_gpu_test.py
 ```
@@ -92,7 +94,7 @@ While the CUDA task job starts, run:
 
 ```bash
 python tests/integration_test/data/process_gpu/reuse_during_upload.py \
-  --partition /approved/path/partition.json \
+  --allocator-config /approved/path/allocator.json \
   --pause-root /approved/path/fresh-cj-traces \
   --output /approved/path/fresh-reuse-evidence
 ```
@@ -110,6 +112,6 @@ owned participants before other work resumes. A missing hook marker, timeout,
 failed receipt, or missing final artifact is a failed/incomplete case.
 
 Keep logs, models, JSON facts, exact source/tree/config hashes, ledger snapshots
-and initial failed attempts. Test collection without the explicit partition
+and initial failed attempts. Test collection without the explicit allocator
 environment skips GPU cases; a skip is not a GPU pass. Never export private kits
 or credentials as evidence. An acknowledgment or active chat is not a running job.

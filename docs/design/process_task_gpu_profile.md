@@ -1,25 +1,40 @@
 # Process task GPU profile
 
-This experimental profile keeps Process CP and resident CJs on CPU and gives
-each disposable worker an exclusive allocation of whole NVIDIA GPUs. It uses
-the existing TaskLauncherSpec, TaskHandleSpec, TaskLaunchRequest, task supervisor,
+This experimental profile keeps Process CP and resident CJs on CPU and assigns
+whole NVIDIA GPU identifiers to disposable workers through a configured allocator.
+It uses the existing TaskLauncherSpec, TaskHandleSpec, TaskLaunchRequest, task supervisor,
 artifact completion and result-receipt contracts. No additional federation or
 CP-to-CJ task protocol is introduced.
 
 ## Authority and configuration
 
-The administrator dedicates a physical GPU partition to Process tasks. All job
-allocators and external workloads must exclude that partition. Participating
-CJs on the same host use the same persistent local reservation directory and
+The administrator supplies a device inventory for Process tasks. All job
+allocators and external workloads must exclude those devices by site administration.
+Participating CJs on the same host use the same persistent local reservation directory and
 site UID. Disjoint hosts or device partitions may use separate directories.
 Different directories must never account for overlapping devices.
 
+The Process launcher accepts a `GpuAllocatorSpec` component and applies its
+assigned devices to the worker environment. The supplied `GpuReservationLedger`
+implementation records device claims in a persistent SQLite ledger shared by
+CJs. It coordinates participating launchers; it does not partition GPU compute
+or memory, guarantee available capacity, detect outside users, or enforce device
+access. Workers are trusted to obey their CUDA visibility assignment. There is
+no `exclusive` switch: configuration alone cannot establish hardware exclusivity.
+
 The existing CP ResourceManager continues to own job-lifetime reservations.
-GPUResourceManager accounts GPU memory within one CP process, and its consumer
-sets that process's environment. It is therefore not a shared task-attempt
-authority. This initial profile requires its job GPU pool to be empty. Sharing
-devices between job-lifetime and task allocations would require integrating a
-common CP/host authority and is outside this profile.
+GPUResourceManager accounts GPU memory within one CP process. It is not used
+as the task allocator or instantiated in each CJ to create independent inventories.
+Both paths use GPU utilities for discovery and CUDA visibility; their accounting
+lifetimes remain distinct. Job admission expires unallocated reservation tokens;
+the task ledger retains admitted claims until process settlement is proved.
+
+The live CP resource manager must declare zero job GPU capacity through
+`ResourceManagerSpec.get_gpu_capacity()`. An empty `ListResourceManager`, an empty
+`GPUResourceManager`, or a custom manager explicitly declaring zero is supported.
+Unknown or positive capacity rejects CJ launch. The check uses the live manager,
+so editing a site file cannot conceal a stale running CP. Sharing devices between
+job and task allocators would require a common authority and is outside this profile.
 
 Configure each site's canonical `local/resources.json`, retaining its other
 settings and components:
@@ -29,19 +44,21 @@ settings and components:
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-      "args": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 0}
+      "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+      "args": {"resources": {}}
     }
   ],
   "task_execution": {
     "launcher": {
       "path": "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher",
       "args": {
-        "gpu_partition": {
-          "id": "site-task-pool",
-          "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
-          "exclusive": true,
-          "reservation_root": "/var/lib/nvflare/process-task-gpus"
+        "gpu_allocator": {
+          "path": "nvflare.app_common.resource_managers.gpu_reservation_ledger.GpuReservationLedger",
+          "args": {
+            "pool_id": "site-task-pool",
+            "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
+            "reservation_root": "/var/lib/nvflare/process-task-gpus"
+          }
         }
       }
     }
@@ -56,6 +73,13 @@ with SQLite atomic transactions and locking. Network filesystems, deleting or
 replacing the ledger, disk corruption and transparent storage recovery are
 unsupported. Keep this authority outside job workspace cleanup.
 
+The ledger retains its original `process-gpu.sqlite3` filename and schema.
+When upgrading an earlier experimental `gpu_partition` configuration, configure
+the allocator with the same `reservation_root` and device inventory, rename `id`
+to `pool_id`, and remove `exclusive`. Never change the directory or delete the
+ledger to bypass existing claims. The Process launcher no longer accepts
+`gpu_partition` or constructs a hidden allocator from that dictionary.
+
 Application client configuration still selects `execution_lifetime: "task"`.
 GPU counts are declared in job metadata, for example:
 
@@ -68,9 +92,9 @@ GPU counts are declared in job metadata, for example:
 ```
 
 Positive portable `resource_spec.num_of_gpus` is rejected because it would
-reserve GPUs for the standing job. The site rejects mismatched launcher modes
-and GPU pools for CJs. The client JobLauncher checks the live CP manager too,
-so editing a site file cannot mask a running CP with a stale GPU pool.
+reserve GPUs for the standing job. The site rejects mismatched launcher modes;
+the client JobLauncher checks the live CP's declared job GPU capacity before
+spawning CJs.
 ProcessJobLauncher applies the trusted CPU environment
 after study environment overrides, before spawning the CJ. GPU workers receive
 only their assigned full UUIDs in CUDA_VISIBLE_DEVICES. CPU task workers receive
@@ -124,10 +148,10 @@ An administrator must confirm whole execution settlement before repairing stale
 records. Retain the ledger and diagnostics; never erase the directory to unblock
 a pending workload.
 
-Opting out preserves existing job-mode and CPU task behavior. This task-exclusive
+Opting out preserves existing job-mode and CPU task behavior. This task-allocation
 profile cannot run a GPU resident job concurrently. To run a GPU job control,
 first confirm all owned workers and allocations are settled, stop only owned
-idle participants, remove the opt-in task partition, and configure the normal
+idle participants, remove the opt-in task allocator, and configure the normal
 job GPU manager/consumer with disjoint per-site device capacity. Restart those
 participants and run the resident control serially. Merely submitting it to an
 empty job GPU pool is a failed control, not a compatibility pass.

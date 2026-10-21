@@ -27,6 +27,7 @@ from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment
 from nvflare.job_config.task_execution import _timeout, validate_task_resources
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
@@ -135,8 +136,6 @@ class TaskExecutionPolicy:
             }
         ):
             raise ValueError("task and job launch modes must match; configure a supported site TaskLauncher")
-        if type(policy.launcher) is ProcessTaskLauncher and policy.launcher.gpu_pool is not None:
-            policy.launcher.validate_site_config(data)
         return policy
 
     @classmethod
@@ -207,7 +206,7 @@ class TaskExecutionPolicy:
         }
         environment.update(
             {
-                "CUDA_VISIBLE_DEVICES": "",
+                **get_cuda_device_environment(()),
                 "HIP_VISIBLE_DEVICES": "",
                 "NVIDIA_VISIBLE_DEVICES": "none",
                 "ROCR_VISIBLE_DEVICES": "",
@@ -217,7 +216,7 @@ class TaskExecutionPolicy:
 
     def task_resources(self, meta, site_name):
         native_mode = _supported_native_launcher(self.launcher)
-        process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_pool is not None
+        process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_allocator is not None
         validate_task_resources(meta, site_name, allow_gpu=native_mode or process_gpu)
         if (native_mode or process_gpu) and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
             raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")

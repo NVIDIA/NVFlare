@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import subprocess
+import uuid
 from typing import List
 
 
@@ -21,12 +22,13 @@ def has_nvidia_smi() -> bool:
     return which("nvidia-smi") is not None
 
 
-def use_nvidia_smi(query: str, report_format: str = "csv"):
+def use_nvidia_smi(query: str, report_format: str = "csv", timeout=None):
     if has_nvidia_smi():
         result = subprocess.run(
             ["nvidia-smi", f"--query-gpu={query}", f"--format={report_format}"],
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
         rc = result.returncode
         if rc > 0:
@@ -34,6 +36,36 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
         else:
             return result.stdout.splitlines()
     return None
+
+
+def get_cuda_device_environment(devices) -> dict[str, str]:
+    """Build CUDA visibility settings; these do not enforce device access."""
+    return {"CUDA_DEVICE_ORDER": "PCI_BUS_ID", "CUDA_VISIBLE_DEVICES": ",".join(str(device) for device in devices)}
+
+
+def normalize_gpu_uuid(value: str) -> str:
+    """Validate and canonicalize a full physical NVIDIA GPU UUID."""
+    if not isinstance(value, str) or not value.startswith("GPU-"):
+        raise ValueError("devices must be full physical NVIDIA GPU UUIDs")
+    try:
+        canonical = "GPU-" + str(uuid.UUID(value[4:]))
+    except ValueError as error:
+        raise ValueError("devices must be full physical NVIDIA GPU UUIDs") from error
+    if canonical.lower() != value.lower():
+        raise ValueError("devices must be full hyphenated GPU UUIDs")
+    return canonical
+
+
+def get_host_gpu_uuid_modes() -> dict[str, str]:
+    """Return host physical GPU UUIDs and their reported current MIG modes."""
+    rows = use_nvidia_smi("uuid,mig.mode.current", report_format="csv,noheader", timeout=10)
+    if rows is None:
+        raise RuntimeError("nvidia-smi is required to discover local GPU UUIDs")
+    devices = {}
+    for row in rows:
+        device, mode = (item.strip() for item in row.split(",", 1))
+        devices[normalize_gpu_uuid(device)] = mode
+    return devices
 
 
 def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:

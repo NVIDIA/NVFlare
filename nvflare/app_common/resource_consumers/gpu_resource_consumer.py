@@ -15,7 +15,7 @@
 import os
 
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec
-from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_free
+from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment, get_host_gpu_ids, get_host_gpu_memory_free
 
 
 class GPUResourceConsumer(ResourceConsumerSpec):
@@ -30,4 +30,4 @@ class GPUResourceConsumer(ResourceConsumerSpec):
                 raise RuntimeError(f"GPU ID {gpu_id} does not exist")
             if gpu_mem * 1024.0 > host_gpu_memory_free[gpu_id]:
                 raise RuntimeError("GPU free mem is not enough")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in resources.keys()])
+        os.environ.update(get_cuda_device_environment(resources))

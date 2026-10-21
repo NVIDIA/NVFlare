@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Exclusive whole-GPU accounting for a trusted local Process task partition.
+"""Durable whole-device claims shared by trusted local GPU allocator clients.
 
 All participating CJs on this host must use the same persistent local directory.
-The partition must be excluded from job-lifetime and external GPU allocators.
+The device inventory must be excluded from job-lifetime and external GPU allocators.
 Records deliberately survive process death. There is no timeout, automatic
 reclamation, or restart/adoption: an administrator must prove orphan settlement
 before repairing records. This is accounting for trusted code, not a sandbox.
@@ -26,27 +26,15 @@ import logging
 import os
 import sqlite3
 import stat
-import subprocess
 import time
 import uuid
 from contextlib import contextmanager
 
-from nvflare.apis.task_launcher_spec import TaskLauncherError
+from nvflare.apis.gpu_allocator_spec import GpuAllocationError, GpuAllocatorSpec, GpuReservationSpec
+from nvflare.fuel.utils.gpu_utils import get_host_gpu_uuid_modes, normalize_gpu_uuid
 
 
-def _gpu_uuid(value):
-    if not isinstance(value, str) or not value.startswith("GPU-"):
-        raise ValueError("devices must be full physical NVIDIA GPU UUIDs")
-    try:
-        canonical = "GPU-" + str(uuid.UUID(value[4:]))
-    except ValueError as error:
-        raise ValueError("devices must be full physical NVIDIA GPU UUIDs") from error
-    if canonical.lower() != value.lower():
-        raise ValueError("devices must be full hyphenated GPU UUIDs")
-    return canonical
-
-
-class ProcessGpuPool:
+class GpuReservationLedger(GpuAllocatorSpec):
     """Durable task-attempt reservations in a site-owned local SQLite ledger.
 
     SQLite serializes whole-attempt admission across processes. FULL synchronous
@@ -55,23 +43,21 @@ class ProcessGpuPool:
     this profile. Allocated records never expire when their owner disappears.
     """
 
-    def __init__(self, config):
-        if not isinstance(config, dict) or set(config) != {"id", "devices", "exclusive", "reservation_root"}:
-            raise ValueError("gpu_partition requires id, devices, exclusive and reservation_root")
-        if config["exclusive"] is not True:
-            raise ValueError("gpu_partition must be site-approved exclusive to Process task workers")
-        if not isinstance(config["id"], str) or not config["id"].strip() or "\x00" in config["id"]:
-            raise ValueError("gpu_partition id must be nonempty text without NUL")
-        if not isinstance(config["devices"], list) or not config["devices"]:
-            raise ValueError("gpu_partition devices must be a nonempty list")
-        self.devices = tuple(sorted(_gpu_uuid(value) for value in config["devices"]))
+    def __init__(self, pool_id: str, devices: list[str], reservation_root: str):
+        if not isinstance(pool_id, str) or not pool_id.strip() or "\x00" in pool_id:
+            raise ValueError("pool_id must be nonempty text without NUL")
+        if not isinstance(devices, list) or not devices:
+            raise ValueError("devices must be a nonempty list")
+        self.devices = tuple(sorted(normalize_gpu_uuid(value) for value in devices))
         if len(set(self.devices)) != len(self.devices):
-            raise ValueError("gpu_partition devices must be distinct")
-        root = config["reservation_root"]
+            raise ValueError("devices must be distinct")
+        root = reservation_root
         if not isinstance(root, str) or not os.path.isabs(root) or "\x00" in root:
             raise ValueError("reservation_root must be an absolute local directory")
         self.root = os.path.realpath(root)
-        self.partition_id = config["id"]
+        self.partition_id = pool_id
+        # Keep the original filename/schema so configuration upgrades retain
+        # existing claims. A new allocator must never bypass an occupied ledger.
         self.path = os.path.join(self.root, "process-gpu.sqlite3")
         self._failed = False
         os.makedirs(self.root, mode=0o700, exist_ok=True)
@@ -92,11 +78,11 @@ class ProcessGpuPool:
     @contextmanager
     def _transaction(self):
         if self._failed:
-            raise TaskLauncherError("Process GPU ledger is fenced after an uncertain transaction")
+            raise GpuAllocationError("GPU ledger is fenced after an uncertain transaction")
         if os.path.lexists(self.path):
             info = os.lstat(self.path)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-                raise TaskLauncherError("Process GPU ledger is not a site-owned regular file")
+                raise GpuAllocationError("GPU ledger is not a site-owned regular file")
         connection = sqlite3.connect(self.path, timeout=5.0)
         try:
             connection.execute("PRAGMA synchronous=FULL")
@@ -107,7 +93,7 @@ class ProcessGpuPool:
             # Never interpret a failed storage operation as free capacity.
             self._failed = True
             connection.rollback()
-            raise TaskLauncherError("Process GPU ledger transaction failed; retain ownership for inspection") from error
+            raise GpuAllocationError("GPU ledger transaction failed; retain ownership for inspection") from error
         except BaseException:
             connection.rollback()
             raise
@@ -115,33 +101,25 @@ class ProcessGpuPool:
             connection.close()
 
     def validate_host(self):
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=uuid,mig.mode.current", "--format=csv,noheader"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        available = {}
-        for line in result.stdout.splitlines():
-            device, mig_mode = (value.strip() for value in line.split(",", 1))
-            available[_gpu_uuid(device)] = mig_mode
+        available = get_host_gpu_uuid_modes()
         for device in self.devices:
             if device not in available or available[device] not in {"Disabled", "[N/A]", "N/A"}:
-                raise TaskLauncherError("Process task partition requires locally present whole GPUs with MIG disabled")
+                raise GpuAllocationError("GPU ledger requires locally present whole GPUs with MIG disabled")
 
     def acquire(self, identity, count):
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("GPU count must be a positive integer")
         identity = json.dumps(tuple(identity), separators=(",", ":"))
         token = str(uuid.uuid4())
         with self._transaction() as connection:
             if any(name.startswith(".release-") for name in os.listdir(self.root)):
-                raise TaskLauncherError("Process GPU release is unconfirmed; retain the pool for inspection")
+                raise GpuAllocationError("GPU release is unconfirmed; retain the pool for inspection")
             if connection.execute("SELECT 1 FROM attempts WHERE identity=?", (identity,)).fetchone():
-                raise TaskLauncherError("task attempt was already admitted; resubmit its saved result")
+                raise GpuAllocationError("task attempt was already admitted; resubmit its saved result")
             used = {row[0] for row in connection.execute("SELECT device FROM allocations")}
             devices = tuple(device for device in self.devices if device not in used)[:count]
             if not count or len(devices) != count:
-                raise TaskLauncherError("approved Process GPU partition has insufficient free capacity")
+                raise GpuAllocationError("configured GPU inventory has insufficient unclaimed capacity")
             connection.execute(
                 "INSERT INTO attempts(identity,token,partition_id,devices,acquired_at,owner_pid) VALUES(?,?,?,?,?,?)",
                 (identity, token, self.partition_id, json.dumps(devices), time.time(), os.getpid()),
@@ -150,13 +128,17 @@ class ProcessGpuPool:
                 "INSERT INTO allocations(device,identity,token) VALUES(?,?,?)",
                 [(device, identity, token) for device in devices],
             )
-        return _ProcessGpuReservation(self, identity, token, devices)
+        return _GpuReservation(self, identity, token, devices)
 
 
-class _ProcessGpuReservation:
+class _GpuReservation(GpuReservationSpec):
     def __init__(self, pool, identity, token, devices):
-        self.pool, self.identity, self.token, self.devices = pool, identity, token, devices
+        self.pool, self.identity, self.token, self._devices = pool, identity, token, devices
         self.released = False
+
+    @property
+    def devices(self):
+        return self._devices
 
     def record_execution(self, execution_id):
         with self.pool._transaction() as connection:
@@ -165,7 +147,7 @@ class _ProcessGpuReservation:
                 (execution_id, self.identity, self.token),
             ).rowcount
             if changed != 1:
-                raise TaskLauncherError("Process GPU reservation ownership changed during launch")
+                raise GpuAllocationError("GPU reservation ownership changed during launch")
 
     def release(self):
         if self.released:
@@ -208,7 +190,7 @@ class _ProcessGpuReservation:
                 or tuple(json.loads(row[1])) != self.devices
                 or owned != self.devices
             ):
-                raise TaskLauncherError("Process GPU reservation ownership changed; retain evidence")
+                raise GpuAllocationError("GPU reservation ownership changed; retain evidence")
             connection.execute("DELETE FROM allocations WHERE identity=? AND token=?", (self.identity, self.token))
             connection.execute(
                 "UPDATE attempts SET released=1,released_at=? WHERE identity=?", (time.time(), self.identity)

@@ -35,6 +35,7 @@ from typing import Optional
 
 import psutil
 
+from nvflare.apis.gpu_allocator_spec import GpuAllocatorSpec
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
     TaskExecutionStatus,
@@ -46,9 +47,8 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
     UnsupportedTaskResourceError,
 )
+from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment
 from nvflare.utils.process_utils import ProcessAdapter, ProcessSpawnError, spawn_process
-
-from .process_gpu import ProcessGpuPool
 
 
 def _positive_number(value, name: str) -> float:
@@ -491,9 +491,11 @@ class _GpuTaskHandle(TaskHandleSpec):
 class ProcessTaskLauncher(TaskLauncherSpec):
     """Launch trusted task workers as isolated local POSIX process groups.
 
-    CPU/memory admission is unsupported. An optional site-exclusive whole-GPU
-    partition provides durable task reservations; its pool must be excluded
-    from job-lifetime and external allocators. Multi-process applications are supported only when every
+    CPU/memory admission is unsupported. An optional site-configured GPU allocator
+    coordinates device claims. This launcher applies the resulting CUDA visibility;
+    it does not partition compute/memory or enforce device access. The allocator's
+    inventory must be excluded from other allocators by site administration.
+    Multi-process applications are supported only when every
     descendant remains in the owned process group. Changing group or session
     is unsupported, including a different group in the same POSIX session.
     Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
@@ -516,7 +518,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         descendant_settle_timeout: float = 0.25,
         poll_interval: float = 0.05,
         max_attempt_identities: int = 10000,
-        gpu_partition: Optional[dict] = None,
+        gpu_allocator: Optional[GpuAllocatorSpec] = None,
     ):
         super().__init__()
         self.stop_grace_period = _positive_number(stop_grace_period, "stop_grace_period")
@@ -531,27 +533,9 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         self._max_attempt_identities = max_attempt_identities
         self._attempt_identities = set()
         self._lock = threading.Lock()
-        self.gpu_pool = ProcessGpuPool(gpu_partition) if gpu_partition is not None else None
-
-    def validate_site_config(self, site_config):
-        """This opt-in profile dedicates the site's GPU capacity to task workers.
-
-        The existing CP manager continues owning job reservations. It must have
-        an empty GPU pool here, so task-only CJs cannot reserve GPUs for a job.
-        Other host allocators/CPs must exclude this partition or participate in
-        the same local ledger, as attested by the site's exclusive flag.
-        """
-        if self.gpu_pool is None:
-            return
-        managers = [item for item in site_config.get("components", []) if item.get("id") == "resource_manager"]
-        expected = "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager"
-        if (
-            len(managers) != 1
-            or managers[0].get("path") != expected
-            or type(managers[0].get("args", {}).get("num_of_gpus")) is not int
-            or managers[0]["args"]["num_of_gpus"] != 0
-        ):
-            raise ValueError("Process task GPU profile requires GPUResourceManager with num_of_gpus=0 for CJs")
+        if gpu_allocator is not None and not isinstance(gpu_allocator, GpuAllocatorSpec):
+            raise TypeError("gpu_allocator must implement GpuAllocatorSpec")
+        self.gpu_allocator = gpu_allocator
 
     def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
         if not isinstance(request, TaskLaunchRequest):
@@ -563,7 +547,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         if (
             request.resources.cpu_cores is not None
             or request.resources.memory_mb is not None
-            or (request.resources.gpu_count and self.gpu_pool is None)
+            or (request.resources.gpu_count and self.gpu_allocator is None)
         ):
             raise UnsupportedTaskResourceError(
                 "ProcessTaskLauncher has no CPU, memory, or GPU admission/reservation mechanism"
@@ -578,25 +562,20 @@ class ProcessTaskLauncher(TaskLauncherSpec):
 
         reservation = None
         environment = dict(request.environment)
-        if self.gpu_pool is not None:
-            environment.update(
-                CUDA_VISIBLE_DEVICES="", HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none"
-            )
+        if self.gpu_allocator is not None:
+            environment.update(get_cuda_device_environment(()))
+            environment.update(HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none")
         if request.resources.gpu_count:
             try:
-                self.gpu_pool.validate_host()
-                reservation = self.gpu_pool.acquire(request.identity, request.resources.gpu_count)
-            except BaseException:
+                self.gpu_allocator.validate_host()
+                reservation = self.gpu_allocator.acquire(request.identity, request.resources.gpu_count)
+            except BaseException as error:
                 with self._lock:
                     self._attempt_identities.remove(request.identity)
+                if isinstance(error, Exception):
+                    raise TaskLauncherError(f"GPU admission failed: {error}") from error
                 raise
-            environment.update(
-                CUDA_VISIBLE_DEVICES=",".join(reservation.devices),
-                CUDA_DEVICE_ORDER="PCI_BUS_ID",
-                HIP_VISIBLE_DEVICES="",
-                ROCR_VISIBLE_DEVICES="",
-                NVIDIA_VISIBLE_DEVICES="none",
-            )
+            environment.update(get_cuda_device_environment(reservation.devices))
 
         request = replace(request, environment=environment)
         launch_error = None

@@ -654,19 +654,18 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
 
 def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_path, monkeypatch):
     from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
-    from nvflare.app_common.task_launcher.process_gpu import ProcessGpuPool
+    from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
     from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 
     # Accounting regression with synthetic UUIDs. CUDA qualification is separate.
     _, custom, context, policy = native_task
-    monkeypatch.setattr(ProcessGpuPool, "validate_host", lambda self: None)
+    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
     config = {
-        "id": "task-only",
+        "pool_id": "task-only",
         "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
-        "exclusive": True,
         "reservation_root": str(tmp_path / "gpu-pool"),
     }
-    launcher = ProcessTaskLauncher(gpu_partition=config)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
     policy = replace(policy, launcher=launcher)
     context.set_prop(FLContextKey.JOB_META, {"launcher_spec": {"site-1": {"process": {"num_of_gpus": 1}}}})
     adapter, data = _adapter(custom, context, policy)
@@ -675,7 +674,7 @@ def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_
         first = adapter.execute("train", data, context, Signal())
         # The prior CJ result has no server receipt and is still retained.
         # A different CJ can nevertheless run on the exact same GPU now.
-        second_launcher = ProcessTaskLauncher(gpu_partition=config)
+        second_launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
         second = second_launcher.launch_task(
             TaskLaunchRequest(
                 "other-job",

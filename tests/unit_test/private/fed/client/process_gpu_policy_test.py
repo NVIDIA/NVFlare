@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
 GPU = "GPU-00000000-0000-0000-0000-000000000001"
@@ -31,19 +32,21 @@ def _config(tmp_path):
         "components": [
             {
                 "id": "resource_manager",
-                "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-                "args": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 0},
+                "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+                "args": {"resources": {}},
             }
         ],
         "task_execution": {
             "launcher": {
                 "path": "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher",
                 "args": {
-                    "gpu_partition": {
-                        "id": "task-only",
-                        "devices": [GPU],
-                        "exclusive": True,
-                        "reservation_root": str(tmp_path / "pool"),
+                    "gpu_allocator": {
+                        "path": "nvflare.app_common.resource_managers.gpu_reservation_ledger.GpuReservationLedger",
+                        "args": {
+                            "pool_id": "task-only",
+                            "devices": [GPU],
+                            "reservation_root": str(tmp_path / "pool"),
+                        },
                     }
                 },
             }
@@ -68,24 +71,17 @@ def test_task_gpu_count_uses_launcher_spec_without_job_reservation(tmp_path):
         policy.task_resources({"launcher_spec": {"site": {"docker": {"num_of_gpus": 1}}}}, "site")
 
 
-@pytest.mark.parametrize("gpu_count", [1, True, None])
-def test_task_gpu_profile_rejects_nonempty_or_ambiguous_cp_job_pool(tmp_path, gpu_count):
-    config = _config(tmp_path)
-    config["components"][0]["args"]["num_of_gpus"] = gpu_count
-    with pytest.raises(ValueError, match="num_of_gpus=0"):
-        TaskExecutionPolicy.from_workspace(_workspace(tmp_path, config))
-
-
 def test_cp_hides_gpus_after_study_overrides_only_for_opted_in_profile(tmp_path):
     workspace = _workspace(tmp_path, _config(tmp_path))
     context = FLContext()
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
-    manager = GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0)
+    manager = ListResourceManager(resources={})
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: manager))
     environment = {"CUDA_VISIBLE_DEVICES": "all", "NVIDIA_VISIBLE_DEVICES": "all", "UNCHANGED": "yes"}
     ClientProcessJobLauncher().prepare_environment({}, context, environment)
     assert environment == {
         "CUDA_VISIBLE_DEVICES": "",
+        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
         "NVIDIA_VISIBLE_DEVICES": "none",
         "HIP_VISIBLE_DEVICES": "",
         "ROCR_VISIBLE_DEVICES": "",
@@ -103,8 +99,36 @@ def test_cp_rejects_stale_live_gpu_pool_even_when_site_file_requests_zero(tmp_pa
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     stale_manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=1, ignore_host=True)
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: stale_manager))
-    with pytest.raises(ValueError, match="empty live CP"):
+    with pytest.raises(ValueError, match="zero job GPU capacity"):
         ClientProcessJobLauncher().prepare_environment({}, context, {})
+
+
+@pytest.mark.parametrize("capacity", [None, True, -1, 1])
+def test_cp_rejects_unknown_or_nonzero_gpu_capacity_from_custom_manager(tmp_path, capacity):
+    class SiteResourceManager(ListResourceManager):
+        def get_gpu_capacity(self):
+            return capacity
+
+    context = FLContext()
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, _workspace(tmp_path, _config(tmp_path)))
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: SiteResourceManager({})))
+    environment = {"CUDA_VISIBLE_DEVICES": "unchanged"}
+    with pytest.raises(ValueError, match="zero job GPU capacity"):
+        ClientProcessJobLauncher().prepare_environment({}, context, environment)
+    assert environment == {"CUDA_VISIBLE_DEVICES": "unchanged"}
+
+
+def test_cp_accepts_custom_manager_declaring_zero_gpu_capacity(tmp_path):
+    class SiteResourceManager(ListResourceManager):
+        def get_gpu_capacity(self):
+            return 0
+
+    context = FLContext()
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, _workspace(tmp_path, _config(tmp_path)))
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: SiteResourceManager({"cpu": [1]})))
+    environment = {"CUDA_VISIBLE_DEVICES": "all"}
+    ClientProcessJobLauncher().prepare_environment({}, context, environment)
+    assert environment["CUDA_VISIBLE_DEVICES"] == ""
 
 
 def test_cpu_only_process_policy_still_rejects_gpu_tasks():

@@ -145,6 +145,9 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         super().__init__(resources=resources, expiration_period=expiration_period)
 
+    def get_gpu_capacity(self) -> int:
+        return len(self.resources)
+
     def _deallocate(self, resources: dict):
         for k, v in resources.items():
             self.resources[k].memory += v

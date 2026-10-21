@@ -20,13 +20,14 @@ import sqlite3
 import time
 from pathlib import Path
 
+from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from tests.integration_test.slow.process_task_gpu_test import _launch, _ready
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--partition", required=True)
+    parser.add_argument("--allocator-config", required=True)
     parser.add_argument("--pause-root", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -41,7 +42,7 @@ def main():
         raise RuntimeError("use a fresh pause directory for exactly one scheduled CJ case")
     paused = json.loads(markers[0].read_text())
     identity = json.dumps(paused["identity"], separators=(",", ":"))
-    partition = json.loads(Path(args.partition).read_text())
+    partition = json.loads(Path(args.allocator_config).read_text())
     ledger = Path(partition["reservation_root"]) / "process-gpu.sqlite3"
     with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as connection:
         row = connection.execute(
@@ -52,7 +53,7 @@ def main():
     partition["devices"] = json.loads(row[0])
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    launcher = ProcessTaskLauncher(gpu_partition=partition)
+    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**partition))
     probe = _launch(launcher, output / "reuse.json")
     try:
         if not probe.wait_for_settlement(60).succeeded:
