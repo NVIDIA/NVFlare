@@ -17,12 +17,14 @@ This creates two CSV files with 128 samples each and a manifest assigning object
 
 1. Upload the CSVs to protected storage and register their manifest object IDs in Gen3 Indexd. The registered `file_name` must match the manifest filename.
 2. Create a Gen3 application principal for each site's study workload and grant access to its assigned objects. Enable the OAuth `client_credentials` grant and Fence's `CLIENT_CREDENTIALS_ON_DOWNLOAD_ENABLED` setting.
-3. At each site, supply its endpoint, client ID, and client secret through study runtime settings:
+3. At each site, supply its job image, endpoint, client ID, and client secret through study runtime settings:
 
 ```yaml
 format_version: 2
 studies:
   gen3-demo:
+    container:
+      image: your-registry/gen3-client:your-tag
     env:
       GEN3_ENDPOINT: https://gen3-test.example.org
       GEN3_CLIENT_ID: replace-with-this-sites-application-client-id
@@ -32,7 +34,9 @@ studies:
         key: client_secret
 ```
 
-Create the `gen3-demo-credentials` Kubernetes Secret with key `client_secret` using your organization's secret tooling. Copy [study_runtime.yaml](study_runtime.yaml) into the site's `local/` directory, merging with existing settings if needed. Install the example's dependencies in the client job image.
+Configure each client site with `ClientK8sJobLauncher` using the [Kubernetes deployment guide](../../../docs/user_guide/admin_guide/deployment/helm_chart.rst). Replace `container.image` with an image that the site's cluster can pull and that contains NVFlare and this example's dependencies.
+
+Create the `gen3-demo-credentials` Kubernetes Secret with key `client_secret` using your organization's secret tooling. Copy [study_runtime.yaml](study_runtime.yaml) into the site's `local/` directory, merging with existing settings if needed.
 
 Configure both sites for the `gen3-demo` study using the [multi-study guide](../../../docs/user_guide/admin_guide/multi_study_guide.rst). Each site supplies its own credentials; the server does not need them. The principal's permissions are configured in Gen3, independently of FLARE job submission.
 
