@@ -96,10 +96,13 @@ No new site setting. `worker_timeout` bounds each attempt as before, and
 `finalization_timeout` bounds the worker's exit after its group ends. There
 is deliberately no idle timeout inside a group: a fast client legitimately
 idles while the server waits for stragglers, and ending its worker there
-would force the relaunch the group exists to avoid. A worker ended by abort
-or by failure looks to the workflow like any other worker end: the next
-assignment of the same group starts a fresh worker. A group therefore spans
-one or more sequential workers on a client; it never spans two at once.
+would force the relaunch the group exists to avoid. A group is exactly one
+worker on a client. If that worker ends before the group closes, by abort or
+by failure, the group's remaining assignments on that client fail instead of
+running in a fresh process: an executor keeps state in memory across the
+group's assignments and cannot tell a continuing group from one whose memory
+was silently reset. The controller sees the failed tasks and decides; the
+next group gets a new worker as usual.
 
 ## 3. Server side
 
@@ -188,7 +191,7 @@ State: at most one open worker session, `(group_id, session)`. On `execute`:
 
 - `TASK_GROUP_CLOSED` for the open session's group: close the session.
 - `ABORT_TASK`: cancel the active worker; a cancelled worker is killed, not
-  reused, and the session is dropped.
+  reused, and the group is broken on this client (section 2.3).
 - `ABOUT_TO_END_RUN` / `END_RUN`: close any open session, then the existing
   shutdown path.
 

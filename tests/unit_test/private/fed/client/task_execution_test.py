@@ -1404,3 +1404,28 @@ def test_group_of_one_and_a_different_group_close_the_open_session(native_task):
     assert len(set(pids)) == 3
     adapter.handle_event(EventType.END_RUN, context)
     assert adapter._session is None
+
+
+def test_a_group_whose_worker_died_is_not_continued_with_fresh_memory(native_task):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    adapter, data = _adapter(custom, context, policy)
+    first = adapter.execute(
+        "train", _group_assignment(context, data, group="g1", attempt="a1", task_id="t1"), context, Signal()
+    )
+    adapter.handle_event(EventType.ABORT_TASK, context)  # kills the idle worker of g1
+
+    with pytest.raises(RuntimeError, match="lost its worker"):
+        adapter.execute(
+            "train", _group_assignment(context, data, group="g1", attempt="a2", task_id="t2"), context, Signal()
+        )
+    attempts = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
+    assert not (attempts / "a2").exists(), "the refused assignment was never staged"
+
+    third = adapter.execute(
+        "train", _group_assignment(context, data, group="g2", attempt="a3", task_id="t3"), context, Signal()
+    )
+    pids = [FLModelUtils.from_shareable(result).metrics["pid"] for result in (first, third)]
+    assert pids[0] != pids[1]
+    adapter.handle_event(EventType.END_RUN, context)
