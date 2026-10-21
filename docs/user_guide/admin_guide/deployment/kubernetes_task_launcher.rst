@@ -405,19 +405,20 @@ when any required operation is unsupported.
 The backend deletes only its Pod. Immutable results, native checkpoint candidates
 and worker file logs live on the PVC after removal. API logs are a bounded,
 best-effort tail cached in the handle; they do not replace durable worker logs.
-The existing result reader eagerly decodes and closes its source file before
-returning to CJ. Transfers use the decoded result; this adapter adds no lazy
-PVC-backed transfer source. Shared saved-result replay pins payloads while any
-reader is active; a concurrent terminal receipt defers cleanup until all those
-readers finish. A failed read retains the payload and diagnostics. Keep attempt
-payloads while receipt is unknown or
-``RETRY``. Finish any additional storage readers before forwarding terminal
-``RECEIVED``/``TASK_CLOSED`` into the existing supervisor's cleanup path. A
-future lazy transfer path requires explicit reader ownership; the current
-supervisor has no general reader-lease API. Failures and unresolved settlement
-retain diagnostics and payloads. Checkpoint promotion continues to use P4's
-opaque file, immutable hard links and atomic local manifest, independently of
-server receipt or algorithm use.
+The existing result reader decodes the FOBS record and closes that record's
+source file before returning to CJ. PyTorch tensor payloads may remain mapped
+from adjacent files; the existing sender serializes those tensors individually.
+Attempt tensor files remain until terminal receipt, and active POSIX mappings
+survive unlink. Shared saved-result replay pins payloads while a reader decodes
+or maps them; a concurrent terminal receipt defers cleanup until those readers
+finish. A failed read retains the payload and diagnostics. Keep attempt payloads
+while receipt is unknown or ``RETRY``. Finish any additional readers that reopen
+storage paths before forwarding terminal ``RECEIVED``/``TASK_CLOSED`` into the
+existing supervisor's cleanup path. Such lazy readers require explicit ownership;
+the supervisor has no general reader-lease API. Failures and unresolved
+settlement retain diagnostics and payloads. Checkpoint promotion continues to
+use P4's opaque file, immutable hard links and atomic local manifest,
+independently of server receipt or algorithm use.
 
 Local reproduction and deployment qualification
 --------------------------------------------------

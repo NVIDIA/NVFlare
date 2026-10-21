@@ -78,6 +78,87 @@ class _PayloadWriter:
         return written
 
 
+class _TensorFileSink:
+    """Externalize tensor leaves as owned files without retaining serialized tensors."""
+
+    def __init__(self, directory, kind, max_payload_bytes):
+        self.directory, self.kind = directory, kind
+        self.max_payload_bytes = max_payload_bytes
+        self.count = self.size = 0
+
+    def add(self, value):
+        from safetensors.torch import save
+
+        from nvflare.app_opt.pt.lazy_tensor_dict import _LazyRef
+
+        item_id = f"T{self.count}"
+        file_name = f"{self.kind}.{item_id}.safetensors"
+        remaining = None if self.max_payload_bytes is None else self.max_payload_bytes - self.size
+        entry = None
+        if isinstance(value, _LazyRef):
+            with value.open() as tensors:
+                if set(tensors.keys()) == {value.key}:
+                    with _open_protocol_file(value.file_path) as stream:
+                        size, digest = _fingerprint(stream, remaining)
+                        destination = os.path.join(self.directory, file_name)
+                        try:
+                            _link_regular(value.file_path, destination, stream)
+                        except OSError as e:
+                            _LOGGER.warning("Cannot hard-link tensor %s; writing it instead: %s", file_name, e)
+                        else:
+                            try:
+                                # Validate the pinned inode, not the mutable checkpoint slot.
+                                with value.open(file_path=destination):
+                                    pass
+                            except BaseException:
+                                os.unlink(destination)
+                                raise
+                            entry = {"file": file_name, "key": value.key, "size": size, "sha256": digest}
+        if entry is None:
+            tensor = value.materialize() if isinstance(value, _LazyRef) else value
+            details = {}
+
+            def write(stream):
+                output = _PayloadWriter(stream, remaining)
+                output.write(save({item_id: tensor}))
+                details.update(size=output.size, sha256=output.digest.hexdigest())
+
+            _publish_exclusive(self.directory, file_name, write)
+            entry = {"file": file_name, "key": item_id, **details}
+        self.count += 1
+        self.size += entry["size"]
+        return entry
+
+
+class _TensorFileSource:
+    def __init__(self, directory, reference, max_payload_bytes):
+        self.directory, self.kind = directory, reference.kind
+        self.max_payload_bytes = max_payload_bytes
+        self.size = reference.size
+
+    def get(self, entry):
+        from safetensors import safe_open
+
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"file", "key", "size", "sha256"}
+            or not isinstance(entry["file"], str)
+            or not re.fullmatch(rf"{self.kind}\.T[0-9]+\.safetensors", entry["file"])
+            or not isinstance(entry["key"], str)
+            or type(entry["size"]) is not int
+            or entry["size"] < 0
+        ):
+            raise ValueError("invalid tensor artifact descriptor")
+        path = os.path.join(self.directory, entry["file"])
+        remaining = None if self.max_payload_bytes is None else self.max_payload_bytes - self.size
+        with _open_regular(path) as stream:
+            if _fingerprint(stream, remaining) != (entry["size"], entry["sha256"]):
+                raise ValueError("tensor artifact size or checksum mismatch")
+        self.size += entry["size"]
+        with safe_open(path, framework="pt") as tensors:
+            return tensors.get_tensor(entry["key"])
+
+
 def _fingerprint(stream, max_payload_bytes=None) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
@@ -376,6 +457,8 @@ class FileTaskArtifactStore:
         """
         self._check_identity(identity)
         directory = self.attempt_dir(identity)
+        if any(name.startswith(("result.T", ".result.T")) for name in os.listdir(directory)):
+            raise FileExistsError("attempt already contains worker artifacts")
         for name in ("result.fobs", "analytics.fobs", "completion.json", "failure.json"):
             if os.path.lexists(os.path.join(directory, name)):
                 raise FileExistsError("attempt already contains worker artifacts")
@@ -383,11 +466,20 @@ class FileTaskArtifactStore:
 
     def _write_payload(self, identity: TaskAttemptIdentity, kind: str, data: Shareable) -> ArtifactReference:
         require_eager_shareable(data)
-        return self._write_payload_stream(
+        sink = _TensorFileSink(self.attempt_dir(identity), kind, self.max_payload_bytes)
+        reference = self._write_payload_stream(
             identity,
             kind,
-            lambda stream: fobs.dump_to_stream(data, stream, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True}),
+            lambda stream: fobs.dump_to_stream(
+                data,
+                stream,
+                max_value_size=_CHUNK_SIZE,
+                fobs_ctx={"native": True, fobs.FOBSContextKey.TENSOR_FILE_SINK: sink},
+            ),
         )
+        if self.max_payload_bytes is not None and reference.size + sink.size > self.max_payload_bytes:
+            raise ValueError("artifact payload is too large")
+        return reference
 
     def _write_payload_stream(self, identity, kind, write):
         directory = self.attempt_dir(identity)
@@ -423,8 +515,14 @@ class FileTaskArtifactStore:
             yield stream
 
     def _read_payload(self, identity: TaskAttemptIdentity, reference: ArtifactReference) -> Shareable:
+        fobs_ctx = {
+            "native": True,
+            fobs.FOBSContextKey.TENSOR_FILE_SOURCE: _TensorFileSource(
+                self.attempt_dir(identity), reference, self.max_payload_bytes
+            ),
+        }
         with self._verified_payload(identity, reference) as stream:
-            data = fobs.load_from_stream(stream, fobs_ctx={"native": True})
+            data = fobs.load_from_stream(stream, fobs_ctx=fobs_ctx)
         require_eager_shareable(data)
         return data
 
@@ -496,7 +594,7 @@ class FileTaskArtifactStore:
         diagnostics: Optional[Mapping[str, Any]] = None,
         publication_guard=nullcontext,
     ) -> TaskCompletion:
-        """Verify the result, then guard the final atomic completion publication."""
+        """Verify the result record, then guard the final atomic completion publication."""
         if not isinstance(reference, ArtifactReference) or reference.kind != _RESULT_KIND:
             raise ValueError("staged result must be a result artifact reference")
         with self._verified_payload(identity, reference):
@@ -753,7 +851,12 @@ class FileTaskArtifactStore:
                 "checkpoint.pending",
                 "checkpoint.bin",
             )
-            temporary_prefixes = tuple(f".{name}." for name in payload_names)
+            temporary_prefixes = tuple(f".{name}." for name in payload_names) + (
+                "input.T",
+                ".input.T",
+                "result.T",
+                ".result.T",
+            )
             names = set(payload_names)
             names.update(name for name in os.listdir(directory_fd) if name.startswith(temporary_prefixes))
             for name in names:

@@ -329,10 +329,11 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[5]))
     monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
     workspace = Workspace(str(root), site_name="site-1")
+    cell = SimpleNamespace(decode_pass_through_topics=set())
     context = FLContext()
     context.set_prop(
         ReservedKey.ENGINE,
-        SimpleNamespace(get_workspace=lambda: workspace, fire_event=Mock()),
+        SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
         private=True,
         sticky=True,
     )
@@ -1382,3 +1383,68 @@ assert reference() is None, "worker retains decoded input after send"
         assert from_shareable(adapter.execute("train", data, context, Signal())).data["w"][0] == 2.0
     finally:
         adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
+    from nvflare.apis.fl_constant import ServerCommandNames
+    from nvflare.private.defs import CellChannel
+
+    route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
+    unrelated = ("aux", "tensor-message")
+    cell = SimpleNamespace(decode_pass_through_topics={unrelated})
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter.handle_event(EventType.START_RUN, context)
+    assert cell.decode_pass_through_topics == {route, unrelated}
+    adapter.handle_event(EventType.END_RUN, context)
+    assert cell.decode_pass_through_topics == {unrelated}
+
+
+def test_task_adapter_requires_a_cell_before_starting():
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    with pytest.raises(RuntimeError, match="task lifetime requires a Cell"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started
+
+
+def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_path, monkeypatch):
+    import torch
+    from safetensors.torch import save_file
+
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    class FakeCell:
+        def get_fobs_context(self, props=None):
+            return {fobs.FOBSContextKey.CELL: self, **(props or {})}
+
+    fobs.register(TensorDecomposer)
+    scratch = tmp_path / "offload"
+    scratch.mkdir()
+    file = scratch / "chunk.safetensors"
+    save_file({"T0": torch.ones(4)}, str(file))
+    owner = LazyTensorDict({"T0": (str(file), "T0")}, str(scratch))
+    calls = []
+
+    def download(**kwargs):
+        calls.append(kwargs["ref_id"])
+        if len(calls) == 2:
+            raise RuntimeError("later batch aborted")
+        return None, owner
+
+    monkeypatch.setattr("nvflare.app_opt.pt.decomposers.download_tensors_to_disk", download)
+    value = [LazyDownloadRef("server", batch, "T0", dot=TensorDecomposer().get_download_dot()) for batch in ("a", "b")]
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=FakeCell))
+    context.set_prop(ReservedKey.RUN_NUM, "job")
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, SimpleNamespace(get_run_dir=lambda _: str(tmp_path / "job")))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    with pytest.raises(RuntimeError, match="later batch aborted"):
+        adapter.resolve_task_data(value, context, abort_signal=Signal())
+    assert calls == ["a", "b"]
+    assert not scratch.exists()

@@ -87,6 +87,8 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     assert type(policy.launcher) is K8sTaskLauncher
     assert policy.worker_environment() == {}
     context = FLContext()
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell), private=True, sticky=True)
     for key, value in (
         (ReservedKey.RUN_NUM, "job"),
         (ReservedKey.IDENTITY_NAME, "site-1"),
