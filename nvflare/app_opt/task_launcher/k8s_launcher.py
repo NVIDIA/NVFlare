@@ -55,7 +55,7 @@ from nvflare.utils.job_launcher_utils import (
     validate_portable_resource_conflicts,
 )
 
-WORKER_MODULE = "nvflare.app_opt.task_launcher.k8s_worker"
+WORKER_MODULE = "nvflare.private.fed.app.client.task_worker_process"
 SETTLEMENT_FINALIZER = "nvflare.nvidia.com/task-settlement"
 _OWNER_ANNOTATION = "nvflare.nvidia.com/launch-owner"
 _IDENTITY_ANNOTATION = "nvflare.nvidia.com/task-identity"
@@ -304,9 +304,11 @@ class K8sTaskLauncher(TaskLauncherSpec):
         if not process_request and set(request.environment) & FORBIDDEN_ENVIRONMENT_NAMES:
             raise ValueError("task pods cannot receive federation/API credentials or manual GPU visibility")
         if not process_request and (
-            request.argv[:4] != (self.python_path, "-m", WORKER_MODULE, "--bootstrap") or len(request.argv) != 5
+            request.argv[:4] != (self.python_path, "-m", WORKER_MODULE, "--bootstrap")
+            or len(request.argv) != 7
+            or request.argv[5:] != ("--execution_scope", "native")
         ):
-            raise ValueError("Kubernetes requires an image-native worker request without Process parent PID arguments")
+            raise ValueError("Kubernetes requires a native-scope worker request without Process parent PID arguments")
         # P4's command shape identifies staged bootstrap, not authority to run
         # a CJ interpreter, forward its host paths/environment, or use its PID.
         environment = dict(self.environment) if process_request else {**self.environment, **request.environment}
@@ -357,7 +359,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
                 "container_name": _CONTAINER,
                 "image": self.image,
                 "command": WORKER_MODULE,
-                "module_args": {"--bootstrap": path},
+                "module_args": {"--bootstrap": path, "--execution_scope": "native"},
                 "resources": resources,
                 "env": environment,
                 "volume_list": [

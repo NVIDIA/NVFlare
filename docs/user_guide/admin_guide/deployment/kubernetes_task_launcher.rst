@@ -55,9 +55,12 @@ The Kubernetes adapter materializes P4's strict staged-bootstrap request into a
 site-image command. It ignores the CJ interpreter, parent PID and Process
 environment and uses only its configured image Python/environment and resource
 defaults, overridden by the bound job's resource metadata. Explicit image-native
-requests remain available to trusted callers.
-Neither ``TaskLaunchRequest``, ``TaskSupervisor``, artifact formats nor the
-Process worker's parent/group guards are changed.
+requests remain available to trusted callers. Both backends invoke the existing
+``task_worker_process`` entry point. The Pod launcher selects
+``--execution_scope native`` because CJ is not the worker's OS parent. Process
+launches retain expected-parent and owned-process-group checks, including when
+the live CJ has PID 1. ``TaskLaunchRequest``, ``TaskSupervisor`` and artifact
+formats are unchanged.
 
 The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
 optional task storage, service-account and numeric identity settings enable CJ

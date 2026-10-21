@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Process entry point; the Client Job owns cancellation and settlement."""
+"""Shared task-worker entry point; the selected launcher owns settlement."""
 
 import argparse
 import logging
@@ -31,14 +31,25 @@ def _flush_logs():
 def main():
     parser = argparse.ArgumentParser(description="Execute one staged NVFlare task assignment")
     parser.add_argument("--bootstrap", required=True, help="absolute path to the worker bootstrap JSON")
+    parser.add_argument(
+        "--execution_scope",
+        choices=("process", "native"),
+        default="process",
+        help="launcher-owned execution scope; native workers have no local CJ parent",
+    )
     parser.add_argument("--parent_pid", type=int, default=None, help="owning Client Job PID (Process launcher)")
     args = parser.parse_args()
+    if args.execution_scope == "native" and args.parent_pid is not None:
+        parser.error("native execution cannot use a local parent PID")
     sys.argv[:] = ["nvflare-task-worker"]
-    parent_pid = args.parent_pid if args.parent_pid is not None else os.getppid()
-    if parent_pid <= 1 or os.getpgrp() != os.getpid():
-        raise RuntimeError("a Process task worker requires a live parent and its own process group")
-    if os.getppid() != parent_pid:
-        os.killpg(os.getpid(), signal.SIGKILL)
+    if args.execution_scope == "process":
+        parent_pid = args.parent_pid if args.parent_pid is not None else os.getppid()
+        # PID 1 can be the owning CJ inside a container. Validate the expected
+        # parent relationship and group, rather than treating PID 1 as orphaned.
+        if parent_pid < 1 or os.getpgrp() != os.getpid():
+            raise RuntimeError("a Process task worker requires a positive parent PID and its own process group")
+        if os.getppid() != parent_pid:
+            os.killpg(os.getpid(), signal.SIGKILL)
     from nvflare.apis.job_launcher_spec import pop_credential_env
 
     pop_credential_env()
@@ -58,7 +69,7 @@ def main():
     finally:
         # run_worker has already finalized components and committed completion.
         # Do not enter Python's unbounded threading/multiprocessing atexit joins.
-        # The launcher settles any remaining members of the owned process group.
+        # The launcher settles the complete owned process group or native scope.
         try:
             flush = threading.Thread(target=_flush_logs, daemon=True, name="task-log-flush")
             flush.start()

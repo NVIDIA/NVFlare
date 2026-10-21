@@ -151,7 +151,7 @@ def setup(tmp_path, isolated_fobs):
         identity.site_name,
         identity.task_id,
         identity.attempt_id,
-        ("/usr/local/bin/python", "-m", WORKER_MODULE, "--bootstrap", path),
+        ("/usr/local/bin/python", "-m", WORKER_MODULE, "--bootstrap", path, "--execution_scope", "native"),
         environment={"LANG": "", "MY_SETTING": "explicit"},
         cwd=str(tmp_path),
         resources=TaskResourceRequest(cpu_cores=1.5, memory_mb=512, gpu_count=1),
@@ -183,7 +183,15 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
     assert spec["serviceAccountName"] == "task-no-api"
     assert spec["restartPolicy"] == "Never"
     assert container["command"] == ["/usr/local/bin/python"]
-    assert container["args"] == ["-u", "-m", WORKER_MODULE, "--bootstrap", request.argv[-1]]
+    assert container["args"] == [
+        "-u",
+        "-m",
+        WORKER_MODULE,
+        "--bootstrap",
+        request.argv[4],
+        "--execution_scope",
+        "native",
+    ]
     assert container["resources"] == {
         "requests": {"cpu": "1.5", "memory": "512Mi", "nvidia.com/gpu": "1"},
         "limits": {"cpu": "1.5", "memory": "512Mi", "nvidia.com/gpu": "1"},
@@ -220,28 +228,33 @@ def test_identity_fenced_and_distinct_across_sites_and_attempts(setup):
         write_bootstrap(path, replace(bootstrap, identity=identity, artifact_root=other_store.root_dir))
         handle = launcher.launch_task(
             replace(
-                request, site_name=identity.site_name, attempt_id=identity.attempt_id, argv=(*request.argv[:4], path)
+                request,
+                site_name=identity.site_name,
+                attempt_id=identity.attempt_id,
+                argv=(*request.argv[:4], path, *request.argv[5:]),
             )
         )
         names.add(handle.pod_name)
     assert len(names) == 3
 
 
-@pytest.mark.parametrize("fault", ["cwd", "bootstrap", "workspace", "identity", "command", "process"])
+@pytest.mark.parametrize("fault", ["cwd", "bootstrap", "workspace", "identity", "command", "process", "missing-scope"])
 def test_invalid_path_or_process_request_fails_before_create(setup, tmp_path, fault):
     launcher, api, request, store, bootstrap = setup
     if fault == "cwd":
         request = replace(request, cwd="/outside")
     elif fault == "bootstrap":
-        request = replace(request, argv=(*request.argv[:4], "/outside/bootstrap.json"))
+        request = replace(request, argv=(*request.argv[:4], "/outside/bootstrap.json", *request.argv[5:]))
     elif fault == "workspace":
         path = str(tmp_path / "wrong.json")
         write_bootstrap(path, replace(bootstrap, workspace_root="/outside"))
-        request = replace(request, argv=(*request.argv[:4], path))
+        request = replace(request, argv=(*request.argv[:4], path, *request.argv[5:]))
     elif fault == "identity":
         request = replace(request, task_id="other")
     elif fault == "command":
         request = replace(request, argv=("/bin/sh", "-c", "run-anything"))
+    elif fault == "missing-scope":
+        request = replace(request, argv=request.argv[:5])
     else:
         request = replace(request, argv=(*request.argv, "--parent_pid", "42"))
     with pytest.raises(ValueError):
@@ -264,7 +277,7 @@ def test_p4_request_materializes_site_image_environment_and_native_defaults(setu
             "-m",
             "nvflare.private.fed.app.client.task_worker_process",
             "--bootstrap",
-            request.argv[-1],
+            request.argv[4],
             "--parent_pid",
             "456",
         ),
@@ -276,6 +289,7 @@ def test_p4_request_materializes_site_image_environment_and_native_defaults(setu
     assert handle.request is p4
     assert container["command"] == ["/usr/local/bin/python"]
     assert "--parent_pid" not in container["args"]
+    assert container["args"][-2:] == ["--execution_scope", "native"]
     assert container["env"] == [{"name": "SITE_SETTING", "value": "fixed"}]
     assert container["resources"]["requests"] == {"cpu": "2", "memory": "1024Mi", "nvidia.com/gpu": "1"}
 
@@ -301,7 +315,7 @@ def test_cj_metadata_routes_cpu_or_gpu_to_task_pod_instead_of_site_default(setup
             "-m",
             "nvflare.private.fed.app.client.task_worker_process",
             "--bootstrap",
-            request.argv[-1],
+            request.argv[4],
             "--parent_pid",
             "123",
         ),
@@ -401,7 +415,7 @@ def test_cj_request_without_resource_binding_cannot_fall_back_to_wrong_allocatio
             "-m",
             "nvflare.private.fed.app.client.task_worker_process",
             "--bootstrap",
-            request.argv[-1],
+            request.argv[4],
             "--parent_pid",
             "123",
         ),
@@ -687,7 +701,7 @@ def _supervised(setup, *, completion=True, corrupt=False, abort=False):
         launcher=launcher,
         abort_signal=signal,
         request_factory=lambda actual, path: replace(
-            request, attempt_id=actual.attempt_id, argv=(*request.argv[:4], path)
+            request, attempt_id=actual.attempt_id, argv=(*request.argv[:4], path, *request.argv[5:])
         ),
         options=TaskSupervisorOptions(poll_interval=0.001, settlement_timeout=1),
     )
@@ -753,7 +767,7 @@ def test_unconfirmed_resource_settlement_prevents_result_read(setup):
             launcher=launcher,
             abort_signal=Signal(),
             request_factory=lambda actual, path: replace(
-                request, attempt_id=actual.attempt_id, argv=(*request.argv[:4], path)
+                request, attempt_id=actual.attempt_id, argv=(*request.argv[:4], path, *request.argv[5:])
             ),
             options=TaskSupervisorOptions(poll_interval=0.001, settlement_timeout=0.001),
         )

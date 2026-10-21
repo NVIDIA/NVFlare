@@ -104,7 +104,8 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     adapter = TaskWorkerExecutor({"path": "nvflare.app_common.np.np_trainer.NPTrainer"}, (), policy)
 
     def complete():
-        bootstrap = read_bootstrap(api.manifest["spec"]["containers"][0]["args"][-1])
+        argv = api.manifest["spec"]["containers"][0]["args"]
+        bootstrap = read_bootstrap(argv[argv.index("--bootstrap") + 1])
         FileTaskArtifactStore(bootstrap.artifact_root).commit_result(bootstrap.identity, Shareable({"gpu": gpu_count}))
         api.finish()
 
