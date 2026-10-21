@@ -178,6 +178,16 @@ poc_workspace {
 
         assert not config_path.exists()
 
+    @pytest.mark.parametrize("ext", [".yml", ".yaml"])
+    def test_save_config_writes_yaml(self, tmp_path, ext):
+        pytest.importorskip("omegaconf")
+        config_path = tmp_path / f"config_fed_client{ext}"
+        config = CF.parse_string("version = 2")
+
+        save_config(config, str(config_path))
+
+        assert "version: 2" in config_path.read_text()
+
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
     )
