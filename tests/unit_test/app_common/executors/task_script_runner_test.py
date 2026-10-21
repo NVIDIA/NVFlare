@@ -460,7 +460,7 @@ def test_print_redirection_is_scoped_to_runner_thread(tmp_path, capsys):
     def run_path(*args, **kwargs):
         print("trainer output")
         trainer_started.set()
-        release_trainer.wait(timeout=5.0)
+        release_trainer.wait()
 
     with (
         patch("nvflare.app_common.executors.task_script_runner.runpy.run_path", side_effect=run_path),
@@ -469,7 +469,8 @@ def test_print_redirection_is_scoped_to_runner_thread(tmp_path, capsys):
         trainer_thread = threading.Thread(target=runner.run)
         trainer_thread.start()
         try:
-            assert trainer_started.wait(timeout=2.0)
+            assert trainer_started.wait(timeout=10.0)
+            assert trainer_thread.is_alive()
             print("main-thread output")
             assert capsys.readouterr().out == "main-thread output\n"
             log_info.assert_any_call("trainer output")
