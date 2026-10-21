@@ -40,14 +40,10 @@ def _owned_group(monkeypatch):
 
 
 @pytest.mark.parametrize("fails", [False, True])
-@pytest.mark.parametrize("parent", [1, 456, None])
-def test_cli_runs_without_forking_a_guardian_and_exits_without_atexit_joins(monkeypatch, fails, parent, _owned_group):
+def test_cli_runs_without_forking_a_guardian_and_exits_without_atexit_joins(monkeypatch, fails, _owned_group):
     events = []
-    argv = ["worker", "--bootstrap", "/attempt/bootstrap.json"]
-    if parent is not None:
-        argv.extend(["--parent_pid", str(parent)])
+    argv = ["worker", "--bootstrap", "/attempt/bootstrap.json", "--parent_pid", "456"]
     monkeypatch.setattr(process.sys, "argv", argv)
-    monkeypatch.setattr(process.os, "getppid", lambda: parent if parent is not None else 1)
     fork = Mock(side_effect=AssertionError("task entry must not fork a guardian"))
     monkeypatch.setattr(process.os, "fork", fork)
     monkeypatch.setattr("nvflare.apis.job_launcher_spec.pop_credential_env", lambda: events.append("strip_credentials"))
@@ -72,14 +68,28 @@ def test_cli_runs_without_forking_a_guardian_and_exits_without_atexit_joins(monk
     exit_call.assert_called_once_with(1 if fails else 0)
 
 
-@pytest.mark.parametrize("parent, group", [(0, 123), (-1, 123), (456, 999)])
-def test_cli_requires_own_process_group_and_positive_parent(monkeypatch, parent, group, _owned_group):
+@pytest.mark.parametrize("parent, group", [(0, 123), (-1, 123), (1, 123), (456, 999)])
+def test_cli_requires_own_process_group_and_live_parent(monkeypatch, parent, group, _owned_group):
     monkeypatch.setattr(
         process.sys, "argv", ["worker", "--bootstrap", "/attempt/bootstrap.json", "--parent_pid", str(parent)]
     )
     monkeypatch.setattr(process.os, "getpgrp", lambda: group)
-    with pytest.raises(RuntimeError, match="positive parent PID and its own process group"):
+    with pytest.raises(RuntimeError, match="live parent and its own process group"):
         process.main()
+
+
+@pytest.mark.parametrize("scope_args", [[], ["--execution_scope", "process"]])
+@pytest.mark.parametrize("actual_parent", [1, 456])
+def test_cli_requires_explicit_process_parent(monkeypatch, scope_args, actual_parent, _owned_group):
+    monkeypatch.setattr(process.sys, "argv", ["worker", "--bootstrap", "/attempt/bootstrap.json", *scope_args])
+    monkeypatch.setattr(process.os, "getppid", lambda: actual_parent)
+    compute = Mock()
+    monkeypatch.setattr(worker, "run_worker", compute)
+    monkeypatch.setattr(process.os, "_exit", Mock(side_effect=SystemExit(0)))
+    with pytest.raises(SystemExit) as error:
+        process.main()
+    assert error.value.code == 2
+    compute.assert_not_called()
 
 
 def test_cli_stops_before_compute_if_launch_parent_has_changed(monkeypatch, _owned_group):

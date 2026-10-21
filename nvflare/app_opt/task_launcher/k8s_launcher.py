@@ -167,6 +167,10 @@ def task_pod_resources(meta, site_name, defaults):
     return result
 
 
+class _PodOwnershipError(RuntimeError):
+    """An observed Pod no longer preserves the launcher's ownership fence."""
+
+
 class K8sTaskLauncher(TaskLauncherSpec):
     """Site-owned image and existing POSIX PVC; one bare Pod per physical attempt.
 
@@ -231,6 +235,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
         self._lock = threading.Lock()
         self._identities = set()
         self._job_binding = None
+        self._storage_checked = False
 
     def validate_site_config(self, site_config):
         """Check the canonical CP/CJ/task profile without creating any resources."""
@@ -240,6 +245,8 @@ class K8sTaskLauncher(TaskLauncherSpec):
             if not isinstance(item, dict):
                 continue
             path = item.get("path", item.get("class_path", item.get("name", "")))
+            if path == "ClientK8sJobLauncher":
+                raise ValueError(f"Kubernetes CJ launcher is not registered by short name; specify path={expected!r}")
             if isinstance(path, str) and path.endswith("JobLauncher"):
                 launchers.append((path, item))
         if len(launchers) != 1 or launchers[0][0] != expected:
@@ -330,8 +337,10 @@ class K8sTaskLauncher(TaskLauncherSpec):
         identity = bootstrap.identity
         if request.identity != (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id):
             raise ValueError("request and bootstrap identities differ")
-        check_posix_storage(self.workspace_root)
         with self._lock:
+            if not self._storage_checked:
+                check_posix_storage(self.workspace_root)
+                self._storage_checked = True
             if request.identity in self._identities:
                 raise TaskLauncherError("task attempt already owned; resubmit its saved result")
             self._identities.add(request.identity)
@@ -405,7 +414,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
             )
             handle._identify(pod)
             if SETTLEMENT_FINALIZER not in (pod.metadata.finalizers or []):
-                raise RuntimeError("admission removed the task settlement finalizer")
+                raise _PodOwnershipError("admission removed the task settlement finalizer")
         except BaseException as error:
             # A transport failure may mean the pod exists. Keep the name/nonce
             # and a cleanup-capable handle rather than retrying physical compute.
@@ -454,7 +463,7 @@ class K8sTaskHandle(TaskHandleSpec):
             or not metadata.uid
             or (self._uid is not None and metadata.uid != self._uid)
         ):
-            raise RuntimeError("pod ownership or UID differs from launched execution")
+            raise _PodOwnershipError("pod ownership or UID differs from launched execution")
         self._uid = metadata.uid
 
     def _status(self):
@@ -542,7 +551,7 @@ class K8sTaskHandle(TaskHandleSpec):
                 )
                 self._identify(pod)
                 if SETTLEMENT_FINALIZER not in (pod.metadata.finalizers or []) and not self._release_authorized:
-                    raise RuntimeError("task settlement finalizer disappeared before shutdown confirmation")
+                    raise _PodOwnershipError("task settlement finalizer disappeared before shutdown confirmation")
                 self._observation_error = None
                 phase = pod.status.phase
                 if phase in ("Succeeded", "Failed"):
@@ -597,18 +606,17 @@ class K8sTaskHandle(TaskHandleSpec):
                         )
                 return self._status()
             except Exception as error:
-                # Terminal-but-unsettled enters the supervisor's bounded
-                # settlement/cancellation path even without worker_timeout.
-                # Otherwise a missing pod could leave a RUNNING observation
-                # cached forever while the supervisor waits indefinitely.
-                self._phase = TaskExecutionPhase.TERMINAL
+                # Missing/replaced Pods must enter bounded settlement, but an
+                # observation failure must not terminate healthy running work.
                 if getattr(error, "status", None) == 404 and self._release_authorized:
                     self._settled = True
                     self._phase = TaskExecutionPhase.TERMINAL
                     self._observation_error = None
                 elif getattr(error, "status", None) == 404:
+                    self._phase = TaskExecutionPhase.TERMINAL
                     self._failure = self._failure or "pod disappeared without confirmed shutdown"
-                elif isinstance(error, RuntimeError):
+                elif isinstance(error, _PodOwnershipError):
+                    self._phase = TaskExecutionPhase.TERMINAL
                     self._failure = self._failure or str(error)
                 else:
                     # Observation errors cannot authorize settlement. Keep the

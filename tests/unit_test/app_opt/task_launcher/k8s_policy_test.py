@@ -66,6 +66,15 @@ def profile(tmp_path):
     return launcher, config
 
 
+def test_cj_short_name_requests_its_unregistered_full_path(profile):
+    launcher, config = profile
+    component = config["components"][0]
+    component.pop("path")
+    component["name"] = "ClientK8sJobLauncher"
+    with pytest.raises(ValueError, match="not registered by short name; specify path=.*ClientK8sJobLauncher"):
+        launcher.validate_site_config(config)
+
+
 def test_matching_site_profile_validates_without_backend_access(profile):
     launcher, config = profile
     launcher.validate_site_config(config)

@@ -27,7 +27,11 @@ Backend contract
   teardown evidence. An unscheduled pod requires a deletion timestamp that
   fences scheduling. Only after this evidence and confirmed pod removal does
   the handle report settlement. Missing/replaced pods without prior evidence,
-  API errors, node loss, and timeouts retain unresolved ownership.
+  API errors, node loss, and timeouts retain unresolved ownership. Transient
+  observation errors preserve the last-known execution phase and report a
+  diagnostic; they do not start terminal settlement of a healthy Running Pod.
+  An ambiguous create remains fenced even after a 404 with an unknown UID:
+  the server may still admit the outstanding request later.
 * Results: pod cleanup never deletes PVC files. CJ validates the existing
   immutable result/checkpoint contract after settlement. Receipt, algorithm
   acceptance and local checkpoint promotion remain separate. Payload release
@@ -54,7 +58,11 @@ Kubernetes hook binds its owning job/site and resolves that site's job metadata
 before launch; missing or changed bindings fail closed. Native workers receive
 only the site-configured worker environment. Process-style environment
 passthrough is rejected for native backends. These shared selection and resource
-rules also apply to Docker and Slurm, with their own site validators.
+rules delegate to an installed native backend's site validator. A backend whose
+implementation is absent is rejected as unsupported. This change supplies the
+Kubernetes implementation; Docker and Slurm implementations are delivered
+separately. Use the full ``path`` for ``ClientK8sJobLauncher``; its short ``name``
+is not registered in the component registry.
 
 The Kubernetes adapter accepts only the common CJ's strict staged-bootstrap
 request, bound to its owning job/site by ``START_RUN``. The request's local
@@ -65,9 +73,11 @@ metadata. Standalone native requests and per-request environment/resource
 overrides are rejected. Both backends invoke the existing
 ``task_worker_process`` entry point. The Pod launcher selects
 ``--execution_scope native`` because CJ is not the worker's OS parent. Process
-launches retain expected-parent and owned-process-group checks, including when
-the live CJ has PID 1. ``TaskLaunchRequest``, ``TaskSupervisor`` and artifact
-formats are unchanged.
+launches require an explicit ``--parent_pid`` greater than 1 and retain
+expected-parent and owned-process-group checks. A missing parent flag or an
+init-adopted Process worker is rejected before compute. Native workers support
+PID 1 without Process parent/group checks. ``TaskLaunchRequest``,
+``TaskSupervisor`` and artifact formats are unchanged.
 
 Job and task launchers share stateless Pod construction and startup diagnostics.
 The task path creates only a ``K8sTaskHandle``. Credential/workspace-transfer
@@ -411,9 +421,12 @@ Storage and retention verification
 ----------------------------------
 
 ``check_posix_storage`` checks local hard links, rename publication, file fsync,
-directory fsync and reading an inode after unlinking its other name. It is a
-preflight, not certification of a storage driver. Before deployment qualification,
-run it in both CJ and task images on the chosen volume, and exercise cross-pod
+directory fsync and reading an inode after unlinking its other name. The task
+launcher caches a successful probe for its bound CJ; failed probes are retried
+on the next launch. Per-attempt workspace, filesystem and identity checks still
+run on every launch. The probe is a preflight, not certification of a storage
+driver. Before deployment qualification, run it in both CJ and task images on
+the chosen volume, and exercise cross-pod
 visibility, exclusive creation, no-follow directory operations, file fsync,
 atomic small-manifest replacement and crash durability. Attempt and checkpoint
 directories must reside on the same filesystem. Do not disable P4 validation
@@ -436,6 +449,15 @@ the supervisor has no general reader-lease API. Failures and unresolved
 settlement retain diagnostics and payloads. Checkpoint promotion continues to
 use P4's opaque file, immutable hard links and atomic local manifest,
 independently of server receipt or algorithm use.
+
+Per-job/site PVC subtrees are retained after CJ shutdown; there is no automatic
+subtree garbage collector. The operator owns archival and deletion under the
+site's retention policy. Before removing a subtree, confirm that the job is
+closed, all CJ/task Pods and in-flight create requests are settled, and no
+result/checkpoint readers or uploads still use its files. Retain failure and
+unresolved-settlement evidence. Re-launching the same job/site while its subtree
+exists raises ``ValueError`` and preserves the files; use a new job identity or
+complete operator cleanup before reusing that identity.
 
 Local reproduction and deployment qualification
 --------------------------------------------------

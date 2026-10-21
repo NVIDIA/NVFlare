@@ -59,6 +59,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
@@ -1145,8 +1146,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if self.task_workspace_pvc is not None and workspace is not None:
             job_id = job_meta.get(JobConstants.JOB_ID)
-            with open(workspace.get_client_app_config_file_path(job_id)) as stream:
-                lifetime = json.load(stream).get("execution_lifetime", "job")
+            client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
+            lifetime = client_config.get("execution_lifetime", "job")
             if lifetime == "task":
                 reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
         return super().launch_job(job_meta, fl_ctx)
@@ -1156,8 +1157,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
         from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
 
-        with open(workspace.get_client_app_config_file_path(job_id)) as stream:
-            client_config = json.load(stream)
+        client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
         lifetime = client_config.get("execution_lifetime", "job")
         if lifetime == "job":
             return
@@ -1218,7 +1218,10 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         if os.path.islink(parent) or os.path.realpath(parent) != parent:
             raise ValueError("task workspace parent must be a real directory on the configured PVC")
         directory = os.path.join(root, subpath)
-        os.mkdir(directory, mode=0o700)
+        try:
+            os.mkdir(directory, mode=0o700)
+        except FileExistsError as error:
+            raise ValueError("task workspace already exists; retained job/site data cannot be reused") from error
         info = os.stat(directory)
         if info.st_uid != self.task_security_context["runAsUser"]:
             raise ValueError("CP, CJ and task workers must use the same nonroot numeric UID")

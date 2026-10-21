@@ -41,13 +41,15 @@ def main():
     args = parser.parse_args()
     if args.execution_scope == "native" and args.parent_pid is not None:
         parser.error("native execution cannot use a local parent PID")
+    if args.execution_scope == "process" and args.parent_pid is None:
+        parser.error("process execution requires --parent_pid")
     sys.argv[:] = ["nvflare-task-worker"]
     if args.execution_scope == "process":
-        parent_pid = args.parent_pid if args.parent_pid is not None else os.getppid()
-        # PID 1 can be the owning CJ inside a container. Validate the expected
-        # parent relationship and group, rather than treating PID 1 as orphaned.
-        if parent_pid < 1 or os.getpgrp() != os.getpid():
-            raise RuntimeError("a Process task worker requires a positive parent PID and its own process group")
+        parent_pid = args.parent_pid
+        # Process mode requires a Process CJ. Native Pod workers use native
+        # scope above and do not rely on local PID or process-group ownership.
+        if parent_pid <= 1 or os.getpgrp() != os.getpid():
+            raise RuntimeError("a Process task worker requires a live parent and its own process group")
         if os.getppid() != parent_pid:
             os.killpg(os.getpid(), signal.SIGKILL)
     from nvflare.apis.job_launcher_spec import pop_credential_env

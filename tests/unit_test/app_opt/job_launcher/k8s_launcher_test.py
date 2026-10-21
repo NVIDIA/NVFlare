@@ -3765,12 +3765,16 @@ def _task_profile(pvc_root):
 
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, lifetime):
+@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, lifetime, extension):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
     config.mkdir(parents=True)
-    (config / "config_fed_client.json").write_text(json.dumps({"execution_lifetime": lifetime}))
+    content = (
+        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
+    )
+    (config / f"config_fed_client.{extension}").write_text(content)
     workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)
@@ -3886,7 +3890,7 @@ def test_cp_creates_fresh_owned_subpath_without_reusing_retained_workspace(tmp_p
     assert directory.is_dir()
     assert directory.stat().st_uid == os.getuid()
     (directory / "retained-result").write_bytes(b"do not discard")
-    with pytest.raises(FileExistsError):
+    with pytest.raises(ValueError, match="retained job/site data cannot be reused"):
         launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
     assert (directory / "retained-result").read_bytes() == b"do not discard"
 

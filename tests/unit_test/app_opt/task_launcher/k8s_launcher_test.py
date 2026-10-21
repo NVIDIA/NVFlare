@@ -457,7 +457,26 @@ def test_failed_storage_primitives_prevent_launch(setup):
         with pytest.raises(OSError, match="not supported"):
             launcher.launch_task(request)
     assert api.calls == []
-    check_posix_storage(launcher.workspace_root)
+    # A failed probe must not be cached or consume the attempt identity.
+    launcher.launch_task(request)
+    assert api.calls == ["create"]
+
+
+def test_storage_probe_is_cached_after_success_for_the_bound_cj(setup, monkeypatch):
+    launcher, api, request, store, bootstrap = setup
+    probe = Mock(wraps=check_posix_storage)
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.check_posix_storage", probe)
+    handle = launcher.launch_task(request)
+    api.finish()
+    assert handle.wait_for_settlement(1).settled
+    identity = replace(bootstrap.identity, attempt_id="second")
+    store.create_attempt(identity)
+    path = store.bootstrap_path(identity)
+    write_bootstrap(path, replace(bootstrap, identity=identity))
+    launcher.launch_task(
+        replace(request, attempt_id=identity.attempt_id, argv=(*request.argv[:4], path, *request.argv[5:]))
+    )
+    probe.assert_called_once_with(launcher.workspace_root)
 
 
 @pytest.mark.parametrize("exit_code,reason", [(0, None), (137, "Evicted"), (1, "Error")])
@@ -634,6 +653,37 @@ def test_lost_create_response_recovers_only_nonce_owned_pod(setup):
     assert "@uid-1" in handle.execution_id
 
 
+def test_ambiguous_create_stays_fenced_through_404_until_delayed_admission(setup):
+    launcher, api, request, _, _ = setup
+    create = api.create_namespaced_pod
+    pending = {}
+    launcher.cleanup_timeout = 0.01
+
+    def delayed_create(**kwargs):
+        pending.update(kwargs)
+        raise TimeoutError("response lost before admission")
+
+    api.create_namespaced_pod = delayed_create
+    with pytest.raises(TaskLaunchError) as error:
+        launcher.launch_task(request)
+    handle = error.value.handle
+    with pytest.raises(TaskSettlementError):
+        handle.cancel()
+    assert not handle.poll().settled
+    assert handle.execution_id.endswith("@unresolved")
+    assert "delete" not in api.calls
+    with pytest.raises(TaskLauncherError, match="already owned"):
+        launcher.launch_task(request)
+    # A 404 observed before the outstanding create finishes cannot prove that
+    # the attempt will never run. Recover the nonce-owned Pod when admitted.
+    create(**pending)
+    api.running()
+    api.on_delete = api.finish
+    assert handle.cancel().settled
+    assert "@uid-1" in handle.execution_id
+    assert api.deleted
+
+
 @pytest.mark.parametrize(
     "reason", ["ImagePullBackOff", "InvalidImageName", "Unschedulable", "Insufficient nvidia.com/gpu"]
 )
@@ -680,14 +730,72 @@ def test_unknown_pod_phase_enters_bounded_settlement_with_retained_ownership(set
         handle.cancel()
 
 
-def test_api_observation_error_is_reported_and_can_recover(setup):
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize("error", [ApiError(503), RuntimeError("transport interrupted")])
+def test_api_observation_error_is_reported_and_can_recover(setup, running, error):
     launcher, api, request, _, _ = setup
     handle = launcher.launch_task(request)
-    api.read_error = ApiError(503)
-    assert handle.poll().failure_reason == "pod observation failed: HTTP 503"
+    if running:
+        api.running()
+    phase = handle.poll().phase
+    api.read_error = error
+    status = handle.poll()
+    detail = "HTTP 503" if isinstance(error, ApiError) else "RuntimeError"
+    assert status.failure_reason == f"pod observation failed: {detail}"
+    assert status.phase == phase
+    assert not status.settled
+    assert "delete" not in api.calls
     api.read_error = None
+    assert handle.poll().failure_reason is None
     api.finish()
     assert handle.wait_for_settlement(1).succeeded
+
+
+@pytest.mark.parametrize("observation_error", [ApiError(503), RuntimeError("transport interrupted")])
+def test_supervisor_keeps_running_after_transient_observation_error(setup, monkeypatch, observation_error):
+    launcher, api, request, store, bootstrap = setup
+    bootstrap = replace(bootstrap, identity=replace(bootstrap.identity, attempt_id="api-recovery"))
+    clock = [0.0]
+    reads = [0]
+    deleted_at = []
+    launcher.cleanup_timeout = 0.1
+    monkeypatch.setattr(
+        "nvflare.app_opt.task_launcher.k8s_launcher.time",
+        NS(monotonic=lambda: clock[0], sleep=lambda delay: clock.__setitem__(0, clock[0] + delay)),
+    )
+    read = api.read_namespaced_pod
+
+    def observe(**kwargs):
+        reads[0] += 1
+        clock[0] += 0.02
+        if reads[0] == 2:
+            raise observation_error
+        # Stay Running for ten settlement windows after the API recovers.
+        if clock[0] >= 1.0 and api.pod is not None and api.pod.status.phase == "Running":
+            store.commit_result(bootstrap.identity, Shareable({"value": 9}))
+            api.finish()
+        return read(**kwargs)
+
+    api.read_namespaced_pod = observe
+    api.on_create = api.running
+    api.on_delete = lambda: deleted_at.append(clock[0])
+    supervisor = TaskSupervisor()
+    outcome = supervisor.run(
+        bootstrap=bootstrap,
+        store=store,
+        input_payload=Shareable(),
+        runtime_root=store.root_dir,
+        launcher=launcher,
+        abort_signal=Signal(),
+        request_factory=lambda actual, path: replace(
+            request, attempt_id=actual.attempt_id, argv=(*request.argv[:4], path, *request.argv[5:])
+        ),
+        options=TaskSupervisorOptions(poll_interval=0.001, settlement_timeout=0.1),
+    )
+    assert outcome.result["value"] == 9
+    assert outcome.execution_status.succeeded
+    assert deleted_at and min(deleted_at) >= 1.0
+    assert api.deleted
 
 
 def _supervised(setup, *, completion=True, corrupt=False, abort=False):

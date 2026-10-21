@@ -88,7 +88,13 @@ def _supported_native_launcher(launcher):
     if target is None:
         return False
     module_name, class_name = target
-    return type(launcher) is getattr(importlib.import_module(module_name), class_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name and (error.name == module_name or module_name.startswith(error.name + ".")):
+            return False
+        raise
+    return type(launcher) is getattr(module, class_name, None)
 
 
 class _SiteBuilder(ComponentBuilder):
