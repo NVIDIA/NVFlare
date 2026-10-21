@@ -49,7 +49,8 @@ class Controller(FLComponent, ControllerSpec, ABC):
         finally:
             self._ambient_group = None
             group.closed = True
-            self.communicator.close_task_group(group.id, fl_ctx)
+            if self.communicator is not None:
+                self.communicator.close_task_group(group.id, fl_ctx)
 
     def _bind_group(self, task: Task):
         if not isinstance(task, Task):
