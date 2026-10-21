@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import json
 import logging
 import os
 import re
@@ -58,8 +59,36 @@ from nvflare.utils.job_launcher_utils import (
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
+    get_resource_manager_spec,
     get_server_job_args,
 )
+
+
+def _dns_name(name, value):
+    if not isinstance(value, str) or len(value) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", value):
+        raise ValueError(f"{name} must be a DNS label")
+    return value
+
+
+def task_workspace_subpath(job_id, site_name):
+    """Separate each site's job workspace without embedding untrusted path components."""
+    digest = hashlib.sha256(json.dumps([job_id, site_name]).encode()).hexdigest()
+    return f"nvflare-tasks/{digest}"
+
+
+def task_security_context(uid, gid):
+    for name, value in (("run_as_user", uid), ("run_as_group", gid)):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be an explicit positive numeric ID shared by CJ and workers")
+    return {"runAsUser": uid, "runAsGroup": gid, "runAsNonRoot": True, "fsGroup": gid}
+
+
+def reject_job_gpu_reservation(meta, site_name):
+    if get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
+        raise ValueError(
+            "Kubernetes task GPUs require native launcher_spec k8s num_of_gpus; "
+            "whole-job CP GPU reservations are not supported by this task profile"
+        )
 
 
 class JobState(Enum):
@@ -1317,6 +1346,118 @@ def _job_args_dict(job_args: dict, arg_names: list) -> dict:
 
 
 class ClientK8sJobLauncher(K8sJobLauncher):
+    """Launch client jobs, optionally preparing CPU CJs for disposable task workers."""
+
+    def __init__(
+        self,
+        *args,
+        task_workspace_pvc: str = None,
+        task_workspace_pvc_root: str = None,
+        task_cj_service_account: str = None,
+        run_as_user: int = None,
+        run_as_group: int = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.task_workspace_pvc = None
+        self.task_workspace_pvc_root = None
+        self.task_cj_service_account = None
+        self.task_security_context = None
+        settings = (task_workspace_pvc, task_workspace_pvc_root, task_cj_service_account, run_as_user, run_as_group)
+        if all(value is None for value in settings):
+            return
+        if any(value is None for value in settings):
+            raise ValueError("task execution requires PVC, CP mount, CJ service account and numeric UID/GID together")
+        self.task_workspace_pvc = _dns_name("task_workspace_pvc", task_workspace_pvc)
+        if not isinstance(task_workspace_pvc_root, str) or not os.path.isabs(task_workspace_pvc_root):
+            raise ValueError("task_workspace_pvc_root must name the CP's explicit mount of the existing PVC")
+        self.task_workspace_pvc_root = os.path.realpath(task_workspace_pvc_root)
+        self.task_cj_service_account = _dns_name("task_cj_service_account", task_cj_service_account)
+        self.task_security_context = task_security_context(run_as_user, run_as_group)
+
+    def launch_job(self, job_meta, fl_ctx):
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if self.task_workspace_pvc is not None and workspace is not None:
+            job_id = job_meta.get(JobConstants.JOB_ID)
+            with open(workspace.get_client_app_config_file_path(job_id)) as stream:
+                lifetime = json.load(stream).get("execution_lifetime", "job")
+            if lifetime == "task":
+                reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
+        return super().launch_job(job_meta, fl_ctx)
+
+    def prepare_job_manifest(self, manifest, job_id, site_name, workspace):
+        if self.task_workspace_pvc is None:
+            return
+        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
+
+        with open(workspace.get_client_app_config_file_path(job_id)) as stream:
+            client_config = json.load(stream)
+        lifetime = client_config.get("execution_lifetime", "job")
+        if lifetime == "job":
+            return
+        if lifetime != "task":
+            raise ValueError("execution_lifetime must be 'job' or 'task'")
+        spec = manifest["spec"]
+        if (
+            len(spec["containers"]) != 1
+            or spec.get("initContainers")
+            or spec.get("ephemeralContainers")
+            or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
+        ):
+            raise ValueError("the Kubernetes task CJ profile requires one isolated container")
+        volumes = [volume for volume in spec["volumes"] if volume["name"] == "workspace-job"]
+        if len(volumes) != 1:
+            raise ValueError("task CJ requires the resident workspace-job volume")
+        volumes[0].clear()
+        volumes[0].update(name="workspace-job", persistentVolumeClaim={"claimName": self.task_workspace_pvc})
+        container = spec["containers"][0]
+        mounts = [mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]
+        if len(mounts) != 1 or mounts[0]["mountPath"] != self.workspace_mount_path:
+            raise ValueError("task CJ workspace mount differs from the configured durable workspace")
+        mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
+        for amounts in container.get("resources", {}).values():
+            for resource in list(amounts):
+                if "gpu" in resource.lower():
+                    del amounts[resource]
+        env = [item for item in container.get("env", []) if item["name"] not in GPU_ENVIRONMENT_NAMES]
+        env.extend(
+            {"name": name, "value": "none" if name == "NVIDIA_VISIBLE_DEVICES" else ""}
+            for name in sorted(GPU_ENVIRONMENT_NAMES)
+        )
+        container["env"] = env
+        container["securityContext"] = {
+            "runAsUser": self.task_security_context["runAsUser"],
+            "runAsGroup": self.task_security_context["runAsGroup"],
+            "runAsNonRoot": True,
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+        }
+        spec["securityContext"] = dict(self.task_security_context)
+        spec["serviceAccountName"] = self.task_cj_service_account
+        spec["automountServiceAccountToken"] = True
+
+    def _prepare_workspace_subpath(self, job_id, site_name):
+        subpath = task_workspace_subpath(job_id, site_name)
+        # CP explicitly mounts the same PVC. Create a fresh, owned job subtree
+        # instead of relying on kubelet-created subPath directory permissions.
+        # Never reuse retained data after a CJ/CP restart or failed launch.
+        from nvflare.app_opt.task_launcher.k8s_launcher import check_posix_storage
+
+        root = self.task_workspace_pvc_root
+        if not os.path.isdir(root):
+            raise ValueError("the task workspace PVC must already be mounted in CP")
+        check_posix_storage(root)
+        parent = os.path.join(root, "nvflare-tasks")
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+        if os.path.islink(parent) or os.path.realpath(parent) != parent:
+            raise ValueError("task workspace parent must be a real directory on the configured PVC")
+        directory = os.path.join(root, subpath)
+        os.mkdir(directory, mode=0o700)
+        info = os.stat(directory)
+        if info.st_uid != self.task_security_context["runAsUser"]:
+            raise ValueError("CP, CJ and task workers must use the same nonroot numeric UID")
+        return subpath
+
     def get_module_args(self, _job_id, fl_ctx: FLContext):
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:

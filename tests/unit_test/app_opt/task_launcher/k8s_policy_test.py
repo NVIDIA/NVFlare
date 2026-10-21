@@ -25,7 +25,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.task_launcher.k8s_job_launcher import ClientK8sTaskJobLauncher
+from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
@@ -47,9 +47,7 @@ def profile(tmp_path):
         "run_as_group": 1000,
     }
     config = {
-        "components": [
-            {"path": "nvflare.app_opt.task_launcher.k8s_job_launcher.ClientK8sTaskJobLauncher", "args": args}
-        ],
+        "components": [{"path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher", "args": args}],
         "task_execution": {
             "launcher": {
                 "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
@@ -133,7 +131,7 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     "fault",
     [
         "missing",
-        "resident",
+        "server",
         "process",
         "multiple",
         "namespace",
@@ -152,8 +150,8 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
     cp = config["components"][0]
     if fault == "missing":
         config["components"] = []
-    elif fault == "resident":
-        cp["path"] = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
+    elif fault == "server":
+        cp["path"] = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
     elif fault == "process":
         cp["path"] = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
     elif fault == "multiple":
@@ -192,7 +190,7 @@ def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch
     path = tmp_path / "client.json"
     path.write_text(json.dumps({"execution_lifetime": "task"}))
     context.get_prop.return_value = SimpleNamespace(get_client_app_config_file_path=lambda _: str(path))
-    cp_launcher = ClientK8sTaskJobLauncher(**config["components"][0]["args"])
+    cp_launcher = ClientK8sJobLauncher(**config["components"][0]["args"])
     with pytest.raises(ValueError, match="whole-job CP GPU reservations"):
         cp_launcher.launch_job(meta, context)
     assert cp_launcher.core_v1 is None

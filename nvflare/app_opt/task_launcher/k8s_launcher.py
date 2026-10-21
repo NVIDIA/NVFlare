@@ -40,8 +40,12 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
     WORKSPACE_MOUNT_PATH,
     K8sJobHandle,
+    _dns_name,
     _is_cpu_memory_gpu_shortage,
+    reject_job_gpu_reservation,
     site_name_to_rfc1123,
+    task_security_context,
+    task_workspace_subpath,
 )
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
@@ -50,8 +54,6 @@ from nvflare.utils.job_launcher_utils import (
     get_portable_resource_spec,
     validate_portable_resource_conflicts,
 )
-
-from .k8s_job_launcher import _dns_name, reject_job_gpu_reservation, task_security_context, task_workspace_subpath
 
 WORKER_MODULE = "nvflare.app_opt.task_launcher.k8s_worker"
 SETTLEMENT_FINALIZER = "nvflare.nvidia.com/task-settlement"
@@ -232,7 +234,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
 
     def validate_site_config(self, site_config):
         """Check the canonical CP/CJ/task profile without creating any resources."""
-        expected = "nvflare.app_opt.task_launcher.k8s_job_launcher.ClientK8sTaskJobLauncher"
+        expected = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
         launchers = []
         for item in site_config.get("components", []):
             if not isinstance(item, dict):

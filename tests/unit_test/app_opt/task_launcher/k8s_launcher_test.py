@@ -33,7 +33,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskResourceRequest,
     TaskSettlementError,
 )
-from nvflare.app_opt.task_launcher.k8s_job_launcher import task_workspace_subpath
+from nvflare.app_opt.job_launcher.k8s_launcher import task_workspace_subpath
 from nvflare.app_opt.task_launcher.k8s_launcher import (
     SETTLEMENT_FINALIZER,
     WORKER_MODULE,

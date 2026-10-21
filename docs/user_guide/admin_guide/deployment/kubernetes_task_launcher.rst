@@ -38,7 +38,7 @@ Trusted site selection
 
 The shared task policy selects the exact site-configured task launcher and
 validates its canonical ``local/resources.json`` configuration. Kubernetes
-requires one matching ``ClientK8sTaskJobLauncher`` / ``K8sTaskLauncher`` pair,
+requires one matching ``ClientK8sJobLauncher`` / ``K8sTaskLauncher`` pair,
 matching namespace, PVC, workspace path and numeric filesystem identity, and
 distinct CJ/worker service accounts. Mixed modes fail before task launch.
 Job configuration cannot choose the backend or launch authority. Resource
@@ -59,10 +59,11 @@ requests remain available to trusted callers.
 Neither ``TaskLaunchRequest``, ``TaskSupervisor``, artifact formats nor the
 Process worker's parent/group guards are changed.
 
-``ClientK8sTaskJobLauncher`` supplies the Kubernetes-specific CJ preparation. A
-small manifest hook in the resident JobLauncher replaces the generated
-``workspace-job`` emptyDir only for applications whose existing flag is
-``execution_lifetime="task"``. Job-lifetime manifests retain resident behavior.
+The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
+optional task storage, service-account and numeric identity settings enable CJ
+preparation for task mode. It replaces the generated ``workspace-job`` emptyDir
+only when the application selects ``execution_lifetime="task"``. Job-lifetime
+manifests retain resident behavior.
 The task profile removes CJ GPU requests/limits and visibility, selects the
 site-owned CJ account, and uses the durable workspace. It preserves the existing
 workspace download and credential-Secret lifecycle. A pod-template PVC override
@@ -130,8 +131,9 @@ CPU/memory mapping remains supported, subject to the existing native/portable
 conflict rules. Correct task delegation of whole-job GPU reservations is a
 separate prerequisite for portable GPU support.
 
-Configure the site's matching launcher pair in canonical resources, replacing
-its existing client JobLauncher component and preserving other components.
+Keep the existing ``ClientK8sJobLauncher`` component and add the task storage,
+service-account and identity arguments shown below. Configure ``K8sTaskLauncher``
+under ``task_execution.launcher`` and preserve the site's other components.
 After ``nvflare deploy prepare``, put this task profile in the canonical
 ``local/resources.json`` override. Keep the generated
 ``local/resources.json.default`` when using the existing ``deploy k8 stage``
@@ -142,7 +144,7 @@ override after preparation, then stage both local files::
    {
      "components": [{
        "id": "k8s_job_launcher",
-       "path": "nvflare.app_opt.task_launcher.k8s_job_launcher.ClientK8sTaskJobLauncher",
+       "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
        "args": {
          "config_file_path": null,
          "namespace": "site",
