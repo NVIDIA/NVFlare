@@ -28,6 +28,7 @@ pytest.importorskip("sklearn")
 
 from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
 from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 from nvflare.recipe import SimEnv, set_per_site_config
@@ -62,8 +63,18 @@ def _read_site(root, site, name):
     return joblib.load(paths[0])
 
 
+def _ordered_support_records(params):
+    # Support records are a multiset: preserve every row/label, compare independent
+    # of client-result arrival order. Raw wire records remain in the run artifacts.
+    if "support_x" not in params:
+        return params
+    records = np.column_stack((params["support_y"], params["support_x"]))
+    order = np.lexsort(records.T[::-1])
+    return {**params, "support_x": params["support_x"][order], "support_y": params["support_y"][order]}
+
+
 @pytest.mark.timeout(600)
-@pytest.mark.parametrize("algorithm", ["linear", "kmeans"])
+@pytest.mark.parametrize("algorithm", ["linear", "kmeans", "svm", "svm-linear"])
 def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch, algorithm):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(ROOT), os.environ.get("PYTHONPATH", ""))))
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
@@ -75,24 +86,28 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
     features = np.random.default_rng(731).normal(size=(80, 3)) + 3 * labels[:, None]
     data = tmp_path / "samples.csv"
     pd.DataFrame(np.column_stack((labels, features))).to_csv(data, header=False, index=False)
-    source = ROOT / "examples/advanced" / f"sklearn-{algorithm}" / "client.py"
+    source = ROOT / "examples/advanced" / f"sklearn-{algorithm.split('-')[0]}" / "client.py"
     script = tmp_path / "shipped_client.py"
     shutil.copy2(source, script)
     results = {}
+    is_svm = algorithm.startswith("svm")
+    num_rounds = 2 if is_svm else 3
     try:
         for lifetime in ("job", "task"):
             options = dict(
                 name=f"sklearn_{algorithm}",
                 min_clients=2,
-                num_rounds=3,
                 train_script=str(FIXTURE / "sklearn_observer.py"),
                 execution_lifetime=lifetime,
             )
             if algorithm == "kmeans":
-                recipe = KMeansFedAvgRecipe(**options, n_clusters=2)
+                recipe = KMeansFedAvgRecipe(**options, num_rounds=num_rounds, n_clusters=2)
+            elif is_svm:
+                recipe = SVMFedAvgRecipe(**options, kernel="linear" if algorithm == "svm-linear" else "rbf")
             else:
                 recipe = SklearnFedAvgRecipe(
                     **options,
+                    num_rounds=num_rounds,
                     model_params={
                         "n_classes": 2,
                         "learning_rate": "constant",
@@ -130,18 +145,26 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
     for site in ("site-1", "site-2"):
         pids = {}
         for lifetime, root in results.items():
-            pids[lifetime] = {_read_site(root, site, f"{r}_output.joblib")["pid"] for r in range(3)}
-        assert len(pids["job"]) == 1 and len(pids["task"]) == 3
-        for current_round in range(3):
+            pids[lifetime] = {_read_site(root, site, f"{r}_output.joblib")["pid"] for r in range(num_rounds)}
+        assert len(pids["job"]) == 1 and len(pids["task"]) == num_rounds
+        for current_round in range(num_rounds):
             for phase in ("input", "output"):
                 values = [_read_site(root, site, f"{current_round}_{phase}.joblib") for root in results.values()]
                 for value in values:
                     value.pop("pid", None)
+                    if is_svm:
+                        value["params"] = _ordered_support_records(value["params"])
                     # Participant weights are recorded in arrival order, not name order.
                     info = value.get("meta", {}).get("metrics_aggregation_info")
                     if info is not None and "site_weights" in info:
                         info["site_weights"].sort(key=lambda item: item["name"])
                 _equal(*values, tolerance=tolerance)
+            if is_svm:
+                output = _read_site(results["task"], site, f"{current_round}_output.joblib")
+                assert set(output["params"]) == {"support_x", "support_y"}
+                assert set(np.unique(output["params"]["support_y"])) == {0, 1}
+                if current_round == 1:
+                    assert output["metrics"]["AUC"] >= 0.9
             if algorithm == "linear":
                 _equal(*[_read_site(root, site, f"{current_round}_classifier.joblib") for root in results.values()])
         checkpoints = [p for p in results["task"].rglob("*.checkpoint") if site in p.parts]
@@ -157,7 +180,11 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
         else:
             assert not checkpoints
     models = [joblib.load(next(root.rglob("model_param.joblib"))) for root in results.values()]
+    if is_svm:
+        models = [_ordered_support_records(model) for model in models]
     _equal(*models, tolerance=tolerance)
     completions = [json.loads(p.read_text()) for p in results["task"].rglob("completion.json")]
-    assert len(completions) == len({c["worker_pid"] for c in completions}) == 6
-    assert sum("checkpoint" in c["diagnostics"] for c in completions) == (6 if algorithm == "linear" else 0)
+    assert len(completions) == len({c["worker_pid"] for c in completions}) == 2 * num_rounds
+    assert sum("checkpoint" in c["diagnostics"] for c in completions) == (
+        2 * num_rounds if algorithm == "linear" else 0
+    )
