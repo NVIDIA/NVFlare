@@ -24,7 +24,6 @@ from nvflare.apis.fl_constant import (
     SecureTrainConst,
     ServerCommandKey,
     ServerCommandNames,
-    SiteType,
     SystemComponents,
     TaskResultReceipt,
 )
@@ -52,12 +51,9 @@ from nvflare.private.defs import (
 )
 from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.resource_stats.f3_bindings import attach_f3_context
-from nvflare.private.fed.resource_stats.f3_counter import F3TrafficClass
-from nvflare.private.fed.resource_stats.f3_job_counter import get_job_f3_counter
 from nvflare.security.logging import secure_format_exception
 
-from .utils import determine_parent_fqcn, determine_parent_name
+from .utils import determine_parent_fqcn
 
 
 class Communicator:
@@ -243,9 +239,6 @@ class Communicator:
                         )
 
         task.set_peer_context(self._peer_ctx)
-        # This callback forwards a task that this participant previously
-        # received from its parent.  F3 v1 is origin-only, so the forwarding
-        # hop must not create another task-response observation.
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, task)
 
     def _process_submit_result(self, request: CellMessage):
@@ -613,28 +606,7 @@ class Communicator:
         parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
         self.logger.debug(f"submitting update to parent FQCN: {parent_fqcn}")
 
-        counter = get_job_f3_counter()
-        if counter is not None:
-            attach_f3_context(
-                task_message,
-                counter,
-                F3TrafficClass.TASK_RESULT,
-                recipient_name=determine_parent_name(self.client_config) or SiteType.SERVER,
-            )
-
         fqcn = FQCN.join([parent_fqcn, job_id])
-        # Join only outgoing source references. A fully filtered-out source batch
-        # contributes nothing; any remaining reference can download the batch.
-        context = task_message.get_logical_send_context()
-        if context is not None:
-            try:
-                from nvflare.private.fed.resource_stats.external_transfer import get_external_transfer_manager
-
-                manager = get_external_transfer_manager(self.cell)
-                if manager is not None:
-                    manager.bind_context(context, fqcn)
-            except BaseException:
-                context.mark_counter_gap()
         result = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,

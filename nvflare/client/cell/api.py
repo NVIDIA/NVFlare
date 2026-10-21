@@ -20,7 +20,6 @@ passive and rely on their training framework's collectives.
 """
 
 import copy
-import json
 import math
 import os
 import signal as process_signal
@@ -45,16 +44,7 @@ from nvflare.client.cell.bootstrap import (
     get_bootstrap_client_api_type,
     read_bootstrap_config,
 )
-from nvflare.client.cell.defs import (
-    CHANNEL,
-    PROTOCOL_VERSION,
-    RESOURCE_TRANSFER_BRIDGE_VERSION,
-    RESOURCE_TRANSFER_MAX_BYTES,
-    RESOURCE_TRANSFER_MAX_GROUPS,
-    SESSION_CONTROL_TIMEOUT,
-    MsgKey,
-    Topic,
-)
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, SESSION_CONTROL_TIMEOUT, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.converter_utils import convert_params
 from nvflare.client.decomposers import register_framework_decomposers
@@ -133,8 +123,6 @@ class CellClientAPI(APISpec):
         self._is_control_rank = False
         self._cell: Optional[Cell] = None
         self._session_id: Optional[str] = None
-        self._resource_transfer_enabled = False
-        self._result_resource_transfer = None
         self._cj_fqcn: Optional[str] = self._config.get(BootstrapKey.CJ_FQCN)
         self._cj_pid: Optional[int] = self._config.get(BootstrapKey.CJ_PID)
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
@@ -157,7 +145,6 @@ class CellClientAPI(APISpec):
         self._task_queue: "Queue[dict]" = Queue()
         self._current_task: Optional[dict] = None
         self._result_receiver_ids = None
-        self._resource_transfer_recipients = None
         self._fl_model: Optional[FLModel] = None
         self._receive_called = False
         self._abort = False
@@ -223,9 +210,6 @@ class CellClientAPI(APISpec):
 
             # A failed attempt may be retried on the same API object.
             self._session_id = None
-            self._resource_transfer_enabled = False
-            self._result_resource_transfer = None
-            self._resource_transfer_recipients = None
             self._protocol_secure = False
             self._session_security_configured = False
             self._heartbeat_interval = 0.0
@@ -306,7 +290,6 @@ class CellClientAPI(APISpec):
                         MsgKey.PROOF: self._config[BootstrapKey.LAUNCH_TOKEN],
                         # Negotiate with the trainer's compiled protocol version.
                         MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
-                        MsgKey.RESOURCE_TRANSFER_VERSION: RESOURCE_TRANSFER_BRIDGE_VERSION,
                         MsgKey.JOB_ID: self._job_id,
                         MsgKey.SITE_NAME: self._site_name,
                         MsgKey.RANK: str(self._rank),
@@ -346,10 +329,6 @@ class CellClientAPI(APISpec):
             token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
         )
         self._session_id = session_id
-        bridge_version = body.get(MsgKey.RESOURCE_TRANSFER_VERSION)
-        self._resource_transfer_enabled = (
-            type(bridge_version) is int and bridge_version == RESOURCE_TRANSFER_BRIDGE_VERSION
-        )
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
         self._confirm_session_ready()
@@ -447,7 +426,6 @@ class CellClientAPI(APISpec):
         if self._attach:
             self._attach.mark_task_delivered(task.get(MsgKey.TASK_ID))
         self._result_receiver_ids = entry.get("result_receiver_ids")
-        self._resource_transfer_recipients = entry.get("resource_transfer_recipients")
         self._fl_model = entry["model"]
         return self._fl_model
 
@@ -521,25 +499,6 @@ class CellClientAPI(APISpec):
         # materializes the result. A managed external trainer remains the source
         # for the ultimate server/peer receivers propagated with TASK_READY.
         source_receiver_ids = (self._cj_fqcn,) if self._attach else self._result_receiver_ids
-        source_accounting = None
-        self._result_resource_transfer = None
-        if self._resource_transfer_enabled and not self._attach:
-            try:
-                from nvflare.fuel.f3.send_accounting import (
-                    SOURCE_CONTRIBUTION_CONTEXT_KEY,
-                    SourceContributionAccumulator,
-                )
-
-                source_accounting = SourceContributionAccumulator(
-                    origin=self._trainer_fqcn,
-                    expected_recipients=self._resource_transfer_recipients or (),
-                    max_groups=RESOURCE_TRANSFER_MAX_GROUPS,
-                )
-                fobs_ctx_props[SOURCE_CONTRIBUTION_CONTEXT_KEY] = source_accounting
-            except BaseException:
-                # Missing source accounting becomes a gap at the job counter;
-                # it cannot change training or source-transfer lifetime.
-                self.logger.warning("Could not initialize optional result transfer accounting")
 
         result_accepted = False
         result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None
@@ -582,8 +541,6 @@ class CellClientAPI(APISpec):
             result_accepted = True
             self._note_cj_activity()
             self._wait_for_result_transfers(self._snapshot_result_transfer_waiters())
-            if source_accounting is not None:
-                self._result_resource_transfer = self._snapshot_result_resource_transfer(source_accounting)
             if self._attach:
                 self._attach.mark_task_complete(task.get(MsgKey.TASK_ID))
             if clear_cache:
@@ -601,7 +558,6 @@ class CellClientAPI(APISpec):
                 if self._attach:
                     self._attach.clear_result()
                 self._result_receiver_ids = None
-                self._resource_transfer_recipients = None
         except BaseException:
             self._delete_result_transfers(self._snapshot_result_transfer_waiters())
             if result_accepted:
@@ -612,7 +568,6 @@ class CellClientAPI(APISpec):
                 if self._attach:
                     self._attach.clear_result()
                 self._result_receiver_ids = None
-                self._resource_transfer_recipients = None
             raise
         finally:
             try:
@@ -626,7 +581,6 @@ class CellClientAPI(APISpec):
                     self._result_send_active = False
                 if result_accepted:
                     self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
-                self._result_resource_transfer = None
                 with self._lock:
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
@@ -635,10 +589,7 @@ class CellClientAPI(APISpec):
 
     def _notify_result_source_settled(self, task_id: str) -> None:
         """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
-        payload = {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id}
-        if self._resource_transfer_enabled and self._result_resource_transfer is not None:
-            payload[MsgKey.RESOURCE_TRANSFER] = self._result_resource_transfer
-        request = new_cell_message({}, payload)
+        request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
         for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
             try:
                 reply = self._cell.send_request(
@@ -669,18 +620,6 @@ class CellClientAPI(APISpec):
         self.logger.warning(
             f"result-source settlement was not acknowledged after {_RESULT_SOURCE_SETTLED_ATTEMPTS} attempts"
         )
-
-    def _snapshot_result_resource_transfer(self, source_accounting):
-        """Snapshot after the existing transfer barrier, without waiting again."""
-        try:
-            block = source_accounting.snapshot()
-            encoded = json.dumps(block, separators=(",", ":"), ensure_ascii=True)
-            if len(encoded.encode("utf-8")) <= RESOURCE_TRANSFER_MAX_BYTES:
-                return block
-        except BaseException:
-            pass
-        self.logger.warning("Optional result transfer accounting was unavailable or over its size bound")
-        return None
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
@@ -830,7 +769,6 @@ class CellClientAPI(APISpec):
         if self._attach:
             self._attach.clear_result()
         self._result_receiver_ids = None
-        self._resource_transfer_recipients = None
 
     def shutdown(self):
         """Stop this trainer session and any process-global F3 runtime it owns.
@@ -929,22 +867,10 @@ class CellClientAPI(APISpec):
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: f"invalid task model: {e}"},
             )
         result_receiver_ids = self._normalize_result_receiver_ids(shareable.get_header(FOBSContextKey.RECEIVER_IDS))
-        accounting_recipients = None
-        if self._resource_transfer_enabled and not self._attach:
-            accounting_recipients = self._normalize_resource_transfer_recipients(
-                payload.get(MsgKey.RESOURCE_TRANSFER_RECIPIENTS)
-            )
         with self._lock:
             terminal_reason = self._session_end_reason()
             if terminal_reason is None:
-                self._task_queue.put(
-                    {
-                        "task": payload,
-                        "model": model,
-                        "result_receiver_ids": result_receiver_ids,
-                        "resource_transfer_recipients": accounting_recipients,
-                    }
-                )
+                self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
                 if self._attach:
                     self._attach.commit_reserved_task_locked(task_id, attempt_id)
         if terminal_reason:
@@ -958,24 +884,6 @@ class CellClientAPI(APISpec):
     def _forget_reserved_task(self, task_id, attempt_id) -> None:
         if self._attach:
             self._attach.forget_reserved_task(task_id, attempt_id)
-
-    @staticmethod
-    def _normalize_resource_transfer_recipients(value):
-        """Validate bounded optional accounting labels, never lifetime IDs."""
-        if type(value) not in (list, tuple) or not 0 < len(value) <= RESOURCE_TRANSFER_MAX_GROUPS:
-            return None
-        recipients = []
-        for recipient in value:
-            if (
-                type(recipient) is not str
-                or not 0 < len(recipient) <= 512
-                or not recipient.isascii()
-                or FQCN.validate(recipient)
-                or recipient in recipients
-            ):
-                return None
-            recipients.append(recipient)
-        return tuple(recipients)
 
     def _handle_abort(self, request):
         payload = request.payload if isinstance(request.payload, dict) else {}

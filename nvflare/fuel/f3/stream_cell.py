@@ -78,7 +78,6 @@ class StreamCell:
             secure=secure,
             optional=optional,
             reliable=reliable,
-            accounting_context=message.get_logical_send_context(),
         )
 
     def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):

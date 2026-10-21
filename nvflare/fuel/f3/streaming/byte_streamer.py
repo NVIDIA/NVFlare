@@ -854,77 +854,15 @@ class ByteStreamer:
         secure=False,
         optional=False,
         reliable: Optional[bool] = None,
-        accounting_context=None,
     ) -> StreamFuture:
-        accounting_attempt = None
-        direct_final_delivery = target in getattr(self.cell, "ALL_CELLS", {})
-        if accounting_context is not None:
-            try:
-                if direct_final_delivery:
-                    # Task replies can already hold a pre-admission. Release
-                    # that observation, without admitting or counting this
-                    # excluded delivery or changing the real stream path.
-                    abandon_excluded = getattr(accounting_context, "abandon_excluded_delivery", None)
-                    if callable(abandon_excluded):
-                        abandon_excluded(self.cell.my_info.fqcn, target)
-                else:
-                    accounting_attempt = accounting_context.try_begin(self.cell.my_info.fqcn, target)
-            except BaseException as ex:
-                log.warning(f"logical-send accounting admission failed: {ex}")
-                self._mark_accounting_gap(accounting_context)
+        tx_task = TxTask(
+            self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional
+        )
+        with ByteStreamer.map_lock:
+            ByteStreamer.error_context_map.pop(tx_task.sid, None)
+            ByteStreamer.tx_task_map[tx_task.sid] = tx_task
 
-        try:
-            tx_task = TxTask(
-                self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional
-            )
-            with ByteStreamer.map_lock:
-                ByteStreamer.error_context_map.pop(tx_task.sid, None)
-                ByteStreamer.tx_task_map[tx_task.sid] = tx_task
-
-            tx_task.start_task_thread(self._transmit_task)
-        except BaseException:
-            if accounting_attempt is not None:
-                try:
-                    accounting_attempt.abandon()
-                except BaseException as ex:
-                    log.warning(f"logical-send accounting abandonment failed: {ex}")
-                    self._mark_accounting_gap(accounting_context)
-            raise
-
-        stream_size = stream.get_size()
-        if accounting_attempt is not None:
-            if tx_task.task_future is None:
-                try:
-                    accounting_attempt.abandon()
-                except BaseException as ex:
-                    log.warning(f"logical-send accounting abandonment failed: {ex}")
-                    self._mark_accounting_gap(accounting_context)
-            else:
-
-                def finish_accounting():
-                    try:
-                        if tx_task.stream_future.exception(timeout=0) is None:
-                            # A stream may declare size=0 when its length is
-                            # unknown. TxTask resolves success with bytes sent.
-                            accounting_attempt.accepted(tx_task.stream_future.result(timeout=0))
-                        else:
-                            accounting_attempt.abandon()
-                    except BaseException as ex:
-                        log.warning(f"logical-send accounting completion failed: {ex}")
-                        self._mark_accounting_gap(accounting_context)
-
-                try:
-                    # Keep the logical admission pending until the whole stream
-                    # reaches its terminal result. Individual frames and their
-                    # retries carry no accounting context.
-                    tx_task.stream_future.add_done_callback(finish_accounting)
-                except BaseException as ex:
-                    log.warning(f"logical-send accounting callback registration failed: {ex}")
-                    try:
-                        accounting_attempt.abandon()
-                    except BaseException:
-                        pass
-                    self._mark_accounting_gap(accounting_context)
+        tx_task.start_task_thread(self._transmit_task)
 
         fqcn = self.cell.my_info.fqcn
         ByteStreamer.sent_stream_counter_pool.increment(
@@ -932,19 +870,10 @@ class ByteStreamer:
         )
 
         ByteStreamer.sent_stream_size_pool.record_value(
-            category=stream_stats_category(fqcn, channel, topic, stream_type), value=stream_size / ONE_MB
+            category=stream_stats_category(fqcn, channel, topic, stream_type), value=stream.get_size() / ONE_MB
         )
 
         return tx_task.stream_future
-
-    @staticmethod
-    def _mark_accounting_gap(accounting_context) -> None:
-        try:
-            mark_counter_gap = getattr(accounting_context, "mark_counter_gap", None)
-            if callable(mark_counter_gap):
-                mark_counter_gap()
-        except BaseException as ex:
-            log.warning(f"logical-send accounting gap reporting failed: {ex}")
 
     @staticmethod
     def _transmit_task(task: TxTask):

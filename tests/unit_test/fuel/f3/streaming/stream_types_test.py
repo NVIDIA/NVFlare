@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+
 import pytest
 
 from nvflare.fuel.f3.streaming.stream_types import StreamCancelled, StreamError, StreamFuture, StreamTaskSpec
@@ -50,6 +52,27 @@ def test_stream_future_cancel_returns_false_after_completion_with_none_result():
     future.set_result(None)
 
     assert future.cancel() is False
+
+
+def test_cancel_task_can_complete_the_same_future_without_deadlocking():
+    future = StreamFuture(stream_id=9)
+    callback_calls = []
+
+    class CompletingTask(StreamTaskSpec):
+        def cancel(self):
+            future.set_exception(StreamError("task stopped"))
+
+    future.task_handle = CompletingTask()
+    future.add_done_callback(lambda: callback_calls.append("done"))
+    cancel_results = []
+    thread = threading.Thread(target=lambda: cancel_results.append(future.cancel()), daemon=True)
+    thread.start()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive(), "task cancellation must not re-enter a held future lock"
+    assert cancel_results == [True]
+    assert future.cancelled()
+    assert callback_calls == ["done"]
 
 
 def test_add_done_callback_invoked_immediately_when_future_already_done():

@@ -65,9 +65,6 @@ class MockDownloadable(Downloadable):
 
         return ProduceRC.OK, self.data_chunks[chunk_idx], {"chunk_idx": chunk_idx + 1}
 
-    def accounting_chunk_key(self, current_state, next_state) -> tuple[int, int]:
-        return next_state["chunk_idx"] - 1, next_state["chunk_idx"]
-
     def downloaded_to_one(self, to_receiver: str, status: str):
         self.downloaded_to_one_calls.append((to_receiver, status))
 

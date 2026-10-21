@@ -231,9 +231,6 @@ class CacheableObject(Downloadable):
         self.logger.debug(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
-    def accounting_chunk_key(self, current_state, next_state) -> tuple[int, int]:
-        return next_state[_StateKey.START], next_state[_StateKey.COUNT]
-
 
 class ItemConsumer(Consumer):
 

@@ -48,7 +48,7 @@ from nvflare.fuel.f3.cellnet.identity import (
     is_mtls_config,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
-from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply
+from nvflare.fuel.f3.cellnet.utils import buffer_len, decode_payload, encode_payload, format_log_message, make_reply
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
@@ -58,6 +58,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.traffic_stats import PeerTrafficCounters
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
@@ -366,6 +367,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
+        self._traffic_stats = PeerTrafficCounters()
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
@@ -596,6 +598,32 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
+
+    def get_traffic_stats(self) -> dict:
+        """Snapshot cumulative remote payload bytes for each adjacent peer."""
+        return {"cell": self.my_info.fqcn, **self._traffic_stats.snapshot()}
+
+    def _traffic_payload_size(self, message):
+        if getattr(self, "_traffic_stats", None) is None:
+            return None
+        try:
+            return buffer_len(message.payload)
+        except Exception:
+            return None
+
+    def _record_traffic(self, peer, payload_bytes, sent):
+        if payload_bytes is None or peer == self.my_info.fqcn:
+            return
+        try:
+            counters = getattr(self, "_traffic_stats", None)
+            if counters is not None:
+                if sent:
+                    counters.record_sent(peer, payload_bytes)
+                else:
+                    counters.record_received(peer, payload_bytes)
+        except Exception:
+            # Observing bytes must not change message delivery or its result.
+            pass
 
     def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
         if target_fqcn in self.ALL_CELLS:
@@ -1325,33 +1353,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
-        accounting_attempt = None
-        direct_delivery = False
-        destination = message.get_header(MessageHeaderKey.DESTINATION, to_endpoint.name)
-        accounting_context = message.get_logical_send_context()
-        accounting_enabled = False
-        if accounting_context is not None:
-            try:
-                accounting_enabled = accounting_context.is_origin(self.my_info.fqcn)
-            except BaseException as ex:
-                self.logger.warning("logical-send accounting origin check failed: %s", secure_format_exception(ex))
-                self._mark_accounting_gap(accounting_context)
         try:
-            if accounting_enabled:
-                try:
-                    prepare = getattr(accounting_context, "prepare_destination", None)
-                    if callable(prepare):
-                        prepare(self.my_info.fqcn, destination)
-                except BaseException:
-                    self._mark_accounting_gap(accounting_context)
-            fobs_ctx = self.get_fobs_context()
-            payload_size = encode_payload(message, fobs_ctx=fobs_ctx)
-            if accounting_enabled:
-                try:
-                    accounting_attempt = accounting_context.try_begin(self.my_info.fqcn, destination)
-                except BaseException as ex:
-                    self.logger.warning("logical-send accounting admission failed: %s", secure_format_exception(ex))
-                    self._mark_accounting_gap(accounting_context)
+            encode_payload(message, fobs_ctx=self.get_fobs_context())
             self.encrypt_payload(message)
 
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())
@@ -1368,49 +1371,22 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
                 msg_size_mbs = self._msg_size_mbs(message)
                 if direct_cell:
-                    # A local final destination is excluded from the public
-                    # remote-accepted metric. A local first-hop relay still
-                    # represents the origin's logical send to a remote target.
-                    direct_delivery = to_endpoint.name == destination
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
                     self._send_direct_message(direct_cell, message)
 
                 else:
+                    # Drivers may consume or replace payload buffers after send.
+                    traffic_bytes = self._traffic_payload_size(message)
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
+                    self._record_traffic(to_endpoint.name, traffic_bytes, sent=True)
                 self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
             self.log_error(err_text, message)
             self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
-        finally:
-            if accounting_attempt is not None:
-                try:
-                    if err or direct_delivery:
-                        accounting_attempt.abandon()
-                    else:
-                        accounting_attempt.accepted(payload_size)
-                except BaseException as ex:
-                    self.logger.warning("logical-send accounting completion failed: %s", secure_format_exception(ex))
-                    self._mark_accounting_gap(accounting_context)
-            elif err and accounting_enabled:
-                try:
-                    abandon = getattr(accounting_context, "abandon_before_send", None)
-                    if callable(abandon):
-                        abandon(self.my_info.fqcn, destination)
-                except BaseException:
-                    # Keep the original send result if optional cleanup fails.
-                    pass
         return err
-
-    def _mark_accounting_gap(self, accounting_context) -> None:
-        try:
-            mark_counter_gap = getattr(accounting_context, "mark_counter_gap", None)
-            if callable(mark_counter_gap):
-                mark_counter_gap()
-        except BaseException as ex:
-            self.logger.warning("logical-send accounting gap reporting failed: %s", secure_format_exception(ex))
 
     def _send_direct_message(self, target_cell, message):
         target_cell.process_message(
@@ -1431,7 +1407,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if ep:
                 reachable_targets[t] = ep
             else:
-                msg = tm.message.clone()
+                msg = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
                 msg.add_headers(
                     {
                         MessageHeaderKey.CHANNEL: tm.channel,
@@ -1447,7 +1423,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
-            req = tm.message.clone()
+            req = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
 
             req.add_headers(
                 {
@@ -2094,6 +2070,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return msg_size / _ONE_MB
 
     def _process_received_msg(self, endpoint: Endpoint, connection: Connection, message: Message):
+        # Direct in-process delivery has no transport connection.
+        if connection is not None:
+            self._record_traffic(endpoint.name, self._traffic_payload_size(message), sent=False)
         route = message.get_header(MessageHeaderKey.ROUTE)
         if route:
             origin_name = route[0][0]

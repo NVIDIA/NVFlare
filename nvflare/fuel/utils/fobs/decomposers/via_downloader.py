@@ -23,7 +23,6 @@ import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.send_accounting import SOURCE_CONTRIBUTION_CONTEXT_KEY
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.transfer_progress import (
@@ -517,18 +516,6 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # tensor data ever materialised on CJ.
         if isinstance(target, LazyDownloadRef):
             fobs_ctx = manager.fobs_ctx
-            message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
-            context = message.get_logical_send_context() if message else None
-            if context is not None:
-                try:
-                    register = getattr(context, "register_external_source", None)
-                    if callable(register):
-                        register(target.fqcn, target.ref_id)
-                except BaseException:
-                    try:
-                        context.mark_counter_gap()
-                    except BaseException:
-                        pass
             lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
             if lazy_batch_key not in fobs_ctx:
                 # First LazyDownloadRef of this batch: register a post-callback
@@ -627,31 +614,6 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
-            send_accounting_context = None
-            message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
-            if message:
-                context = message.get_logical_send_context()
-                if context:
-                    try:
-                        if context.is_origin(cell.get_fqcn()):
-                            send_accounting_context = context
-                    except BaseException as ex:
-                        self.logger.warning(f"logical-send accounting origin check failed: {ex}")
-                        try:
-                            context.mark_counter_gap()
-                        except BaseException:
-                            pass
-            if send_accounting_context is None:
-                source_context = fobs_ctx.get(SOURCE_CONTRIBUTION_CONTEXT_KEY)
-                if source_context is not None:
-                    try:
-                        if source_context.is_origin(cell.get_fqcn()):
-                            send_accounting_context = source_context
-                    except BaseException:
-                        try:
-                            source_context.mark_counter_gap()
-                        except BaseException:
-                            pass
             num = (
                 num_receivers_override
                 if num_receivers_override is not None
@@ -675,7 +637,6 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 # expected receiver identities: enables the transaction's per-receiver
                 # acquire budget; None when any identity is unknown
                 receiver_ids=receiver_ids,
-                send_accounting_context=send_accounting_context,
             )
 
         return downloader

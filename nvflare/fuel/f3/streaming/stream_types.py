@@ -120,8 +120,6 @@ class StreamFuture:
     def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
-        # Local receive identity supplied by CoreCell, never wire headers.
-        self.receive_properties = {}
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None

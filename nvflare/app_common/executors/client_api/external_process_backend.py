@@ -55,14 +55,7 @@ from nvflare.client.cell.bootstrap import (
     bootstrap_file_name,
     write_bootstrap_config,
 )
-from nvflare.client.cell.defs import (
-    CHANNEL,
-    PROTOCOL_VERSION,
-    RESOURCE_TRANSFER_BRIDGE_VERSION,
-    SESSION_CONTROL_TIMEOUT,
-    MsgKey,
-    Topic,
-)
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, SESSION_CONTROL_TIMEOUT, MsgKey, Topic
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -74,7 +67,6 @@ from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
-from nvflare.private.fed.resource_stats.external_transfer import get_external_transfer_manager
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
@@ -169,7 +161,6 @@ class _TrainerSession(CellSession):
         self._result_failure_lock = threading.Lock()
         self.result_source_refs = ()
         self.result_receiver_ids = ()
-        self.resource_transfer_version = None
         self.result_failure_notified = False
         self.result_failure_delivery_done = threading.Event()
         self.result_failure_delivery_done.set()
@@ -210,7 +201,6 @@ class ExternalProcessBackend(CellBackendBase):
         self._lifecycle_lock = threading.RLock()
         self._terminal_intent: Optional[str] = None
         self._failure_panic_sent = False
-        self._resource_transfer_manager = None
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -231,11 +221,6 @@ class ExternalProcessBackend(CellBackendBase):
                 delegate_site_auth=True,
             )
             cell = self._cell
-            try:
-                self._resource_transfer_manager = get_external_transfer_manager(cell)
-            except BaseException:
-                # Optional accounting must not block trainer initialization.
-                self.logger.warning("Could not initialize optional external transfer accounting")
             # A managed trainer may fail immediately after RESULT_READY is accepted,
             # before this CJ starts consuming a peer's result refs. Register the
             # source-failure route at job initialization so such a notice is not lost.
@@ -1105,10 +1090,6 @@ class ExternalProcessBackend(CellBackendBase):
                 MsgKey.TASK_NAME: task_name,
                 MsgKey.MODEL: shareable,
             }
-            if trainer.resource_transfer_version == RESOURCE_TRANSFER_BRIDGE_VERSION:
-                # The logical result destination is accounting metadata, not
-                # a new DownloadService receiver/lifetime requirement.
-                task_message[MsgKey.RESOURCE_TRANSFER_RECIPIENTS] = list(task.result_receiver_ids)
             executor.log_info(fl_ctx, f"sending TASK_READY for '{task_name}' to trainer {trainer.trainer_fqcn}")
             send_status, reply = self._send_task_ready(trainer, task_message, abort_signal)
             if send_status == _SEND_ABORTED:
@@ -1203,18 +1184,6 @@ class ExternalProcessBackend(CellBackendBase):
         except BaseException:
             self.logger.error(secure_format_traceback())
             return
-        if refs and self._resource_transfer_manager is not None:
-            try:
-                self._resource_transfer_manager.register_result_source(
-                    session.session_id,
-                    task.task_id,
-                    session.trainer_fqcn,
-                    refs,
-                    task.result_receiver_ids,
-                    session.resource_transfer_version == RESOURCE_TRANSFER_BRIDGE_VERSION,
-                )
-            except BaseException:
-                self.logger.warning("Could not register optional external result source accounting")
         if not refs or not task.result_receiver_ids:
             return
         with session._result_failure_lock:
@@ -1235,16 +1204,6 @@ class ExternalProcessBackend(CellBackendBase):
             except BaseException:
                 session.source_monitor_thread = None
                 self.logger.error(secure_format_traceback())
-
-    def _on_result_accounting_settled(self, session: CellSession, task_id: str, resource_transfer) -> None:
-        if (
-            isinstance(session, _TrainerSession)
-            and session.result_source_refs
-            and self._resource_transfer_manager is not None
-        ):
-            self._resource_transfer_manager.accept_summary(
-                session.session_id, task_id, session.trainer_fqcn, resource_transfer
-            )
 
     def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
         if not isinstance(session, _TrainerSession):
@@ -1568,23 +1527,11 @@ class ExternalProcessBackend(CellBackendBase):
         with self._launch_lock:
             if trainer.session_id is None:
                 trainer.session_id = uuid.uuid4().hex
-                bridge_version = payload.get(MsgKey.RESOURCE_TRANSFER_VERSION)
-                if (
-                    self._resource_transfer_manager is not None
-                    and type(bridge_version) is int
-                    and bridge_version == RESOURCE_TRANSFER_BRIDGE_VERSION
-                ):
-                    trainer.resource_transfer_version = RESOURCE_TRANSFER_BRIDGE_VERSION
                 self.logger.info(
                     f"HELLO accepted from {origin} (session_id={trainer.session_id}); awaiting SESSION_READY"
                 )
             trainer.touch_peer_activity()
             session_id = trainer.session_id
-            accounting_capability = (
-                {MsgKey.RESOURCE_TRANSFER_VERSION: RESOURCE_TRANSFER_BRIDGE_VERSION}
-                if trainer.resource_transfer_version == RESOURCE_TRANSFER_BRIDGE_VERSION
-                else {}
-            )
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
             **{
@@ -1593,7 +1540,6 @@ class ExternalProcessBackend(CellBackendBase):
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
                 MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
-                **accounting_capability,
                 **self._session_security_payload(),
             },
         )

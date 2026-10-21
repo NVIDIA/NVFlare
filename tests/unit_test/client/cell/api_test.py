@@ -47,15 +47,7 @@ from nvflare.client.cell.bootstrap import (
     read_bootstrap_config,
     write_bootstrap_config,
 )
-from nvflare.client.cell.defs import (
-    CHANNEL,
-    PROTOCOL_VERSION,
-    RESOURCE_TRANSFER_BRIDGE_VERSION,
-    MsgKey,
-    ResultState,
-    TaskState,
-    Topic,
-)
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -338,9 +330,7 @@ def _set_secure_mode(bootstrap_path, secure_mode):
     write_bootstrap_config(bootstrap_path, config)
 
 
-def _deliver_task(
-    env, task_name="train", task_id=None, model=None, result_receiver_ids=None, resource_transfer_recipients=None
-):
+def _deliver_task(env, task_name="train", task_id=None, model=None, result_receiver_ids=None):
     task_id = task_id or uuid.uuid4().hex
     if model is None:
         model = FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL)
@@ -353,8 +343,6 @@ def _deliver_task(
         MsgKey.TASK_NAME: task_name,
         MsgKey.MODEL: shareable,
     }
-    if resource_transfer_recipients is not None:
-        payload[MsgKey.RESOURCE_TRANSFER_RECIPIENTS] = resource_transfer_recipients
     reply = env.deliver(Topic.TASK_READY, CJ_FQCN, payload)
     return task_id, reply
 
@@ -373,248 +361,6 @@ def _send_and_capture_error(api, model, errors):
         api.send(model)
     except BaseException as e:
         errors.append(e)
-
-
-class TestResourceTransferBridge:
-    @pytest.mark.parametrize("version", [None, 99, True, "1"])
-    def test_old_or_unsupported_peer_keeps_normal_send_without_bridge(self, bootstrap_path, env, version):
-        def on_request(topic, _target, request):
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                if version is not None:
-                    reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = version
-                return reply
-            if topic == Topic.RESULT_READY:
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        try:
-            assert api._resource_transfer_enabled is False
-            hello = next(payload for topic, _, payload in env.requests if topic == Topic.HELLO)
-            assert hello[MsgKey.PROTOCOL_VERSION] == 1
-            assert hello[MsgKey.RESOURCE_TRANSFER_VERSION] == RESOURCE_TRANSFER_BRIDGE_VERSION
-            _deliver_task(env, resource_transfer_recipients=["server.job-1"])
-            api.receive()
-            assert api._resource_transfer_recipients is None
-            api.send(FLModel(params={"w": [2.0]}))
-            settled = next(payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED)
-            assert MsgKey.RESOURCE_TRANSFER not in settled
-        finally:
-            api.shutdown()
-
-    def test_supported_summary_follows_existing_barrier_with_no_extra_request(self, bootstrap_path, env, monkeypatch):
-        from nvflare.fuel.f3 import send_accounting
-
-        events = []
-        created = []
-        block = {
-            "version": 1,
-            "groups": [
-                {
-                    "source_ref": "ref-a",
-                    "recipient_fqcn": "server.job-1",
-                    "accepted_payload_bytes": "1048576",
-                    "complete": True,
-                }
-            ],
-        }
-
-        class SourceAccounting:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-                created.append(self)
-
-            def snapshot(self):
-                events.append("snapshot")
-                return block
-
-        monkeypatch.setattr(send_accounting, "SourceContributionAccumulator", SourceAccounting)
-
-        def on_request(topic, _target, _request):
-            events.append(topic)
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = 1
-                return reply
-            if topic == Topic.RESULT_READY:
-                assert (
-                    env.request_kwargs[-1]["fobs_ctx_props"][send_accounting.SOURCE_CONTRIBUTION_CONTEXT_KEY]
-                    is created[-1]
-                )
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        monkeypatch.setattr(api, "_wait_for_result_transfers", lambda _waiters: events.append("existing-barrier"))
-        try:
-            for task_id in ("task-a", "task-b"):
-                _deliver_task(
-                    env,
-                    task_id=task_id,
-                    result_receiver_ids=("server.job-1",),
-                    resource_transfer_recipients=["server.job-1"],
-                )
-                api.receive()
-                events.clear()
-                api.send(FLModel(params={"w": [2.0]}))
-                assert events == [Topic.RESULT_READY, "existing-barrier", "snapshot", Topic.RESULT_SOURCE_SETTLED]
-            assert len(created) == 2 and created[0] is not created[1]
-            assert created[0].kwargs == {
-                "origin": TRAINER_FQCN,
-                "expected_recipients": ("server.job-1",),
-                "max_groups": 256,
-            }
-            summaries = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
-            assert all(payload[MsgKey.RESOURCE_TRANSFER] == block for payload in summaries)
-            assert api._result_resource_transfer is None
-        finally:
-            api.shutdown()
-
-    def test_accounting_destination_preserves_count_based_download_lifetime(self, bootstrap_path, env):
-        from nvflare.fuel.f3.send_accounting import SOURCE_CONTRIBUTION_CONTEXT_KEY
-
-        def on_request(topic, _target, _request):
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = 1
-                return reply
-            if topic == Topic.RESULT_READY:
-                kwargs = env.request_kwargs[-1]
-                assert kwargs["receiver_ids"] is None
-                assert kwargs["num_receivers"] == 1
-                assert FOBSContextKey.RECEIVER_IDS not in kwargs["fobs_ctx_props"]
-                source = kwargs["fobs_ctx_props"][SOURCE_CONTRIBUTION_CONTEXT_KEY]
-                # Simulate the normal serializer and accepted tensor callbacks,
-                # while keeping the lifetime receiver identity unspecified.
-                source.register_oob_transaction("tx-a", None)
-                source.register_source_reference("tx-a", "ref-a")
-                chunk = source.make_oob_contribution_context("tx-a", "server.job-1", ("tx-a", "ref-a", 0), 1048576)
-                chunk.try_begin(TRAINER_FQCN, "server.job-1").accepted(1048576)
-                source.settle_oob_transaction("tx-a", ("server.job-1",))
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        try:
-            _, reply = _deliver_task(env, resource_transfer_recipients=["server.job-1"])
-            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
-            api.receive()
-            assert api._result_receiver_ids is None
-            assert api._resource_transfer_recipients == ("server.job-1",)
-            api.send(FLModel(params={"w": [2.0]}))
-            settled = next(payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED)
-            assert settled[MsgKey.RESOURCE_TRANSFER] == {
-                "version": 1,
-                "groups": [
-                    {
-                        "source_ref": "ref-a",
-                        "recipient_fqcn": "server.job-1",
-                        "accepted_payload_bytes": "1048576",
-                        "complete": True,
-                    }
-                ],
-            }
-            assert api._resource_transfer_recipients is None
-        finally:
-            api.shutdown()
-
-    @pytest.mark.parametrize(
-        "invalid",
-        [
-            None,
-            [],
-            "server.job-1",
-            ["server.job-1", "server.job-1"],
-            ["bad name"],
-            [True],
-            ["x" * 513],
-            ["n\u00f6de"],
-            [f"server.job-{index}" for index in range(257)],
-        ],
-    )
-    def test_missing_or_malformed_accounting_destinations_do_not_fail_or_reuse_previous_task(
-        self, bootstrap_path, env, invalid
-    ):
-        def on_request(topic, _target, _request):
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = 1
-                return reply
-            if topic == Topic.RESULT_READY:
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        try:
-            _deliver_task(env, task_id="first", resource_transfer_recipients=["server.job-1"])
-            api.receive()
-            assert api._resource_transfer_recipients == ("server.job-1",)
-            api.send(FLModel(params={"w": [2.0]}))
-            _, reply = _deliver_task(env, task_id="second", resource_transfer_recipients=invalid)
-            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
-            api.receive()
-            assert api._resource_transfer_recipients is None
-            assert api._result_receiver_ids is None
-            api.send(FLModel(params={"w": [3.0]}))
-            assert sum(topic == Topic.RESULT_SOURCE_SETTLED for topic, _, _ in env.requests) == 2
-        finally:
-            api.shutdown()
-
-    def test_inline_supported_result_reports_empty_groups_without_another_send(self, bootstrap_path, env):
-        def on_request(topic, _target, _request):
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = 1
-                return reply
-            if topic == Topic.RESULT_READY:
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        try:
-            _deliver_task(env)
-            api.receive()
-            api.send(FLModel(params={"w": [2.0]}))
-            summaries = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
-            assert len(summaries) == 1
-            assert summaries[0][MsgKey.RESOURCE_TRANSFER] == {"version": 1, "groups": []}
-        finally:
-            api.shutdown()
-
-    def test_summary_snapshot_error_or_size_limit_does_not_interrupt_settlement(self, bootstrap_path, env, monkeypatch):
-        from nvflare.fuel.f3 import send_accounting
-
-        source = MagicMock()
-        source.snapshot.side_effect = [RuntimeError("counter failure"), {"value": "x" * (64 * 1024)}]
-        monkeypatch.setattr(send_accounting, "SourceContributionAccumulator", lambda **_kwargs: source)
-
-        def on_request(topic, _target, _request):
-            if topic == Topic.HELLO:
-                reply = _hello_accepted_reply()
-                reply.payload[MsgKey.RESOURCE_TRANSFER_VERSION] = 1
-                return reply
-            if topic == Topic.RESULT_READY:
-                return _result_accepted_reply()
-            return make_cell_reply(CellReturnCode.OK)
-
-        env.on_request = on_request
-        api = _init_api(bootstrap_path, env)
-        try:
-            for task_id in ("task-a", "task-b"):
-                _deliver_task(env, task_id=task_id)
-                api.receive()
-                api.send(FLModel(params={"w": [2.0]}))
-            summaries = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
-            assert len(summaries) == 2
-            assert all(MsgKey.RESOURCE_TRANSFER not in payload for payload in summaries)
-        finally:
-            api.shutdown()
 
 
 def _init_and_capture_error(api, errors):
