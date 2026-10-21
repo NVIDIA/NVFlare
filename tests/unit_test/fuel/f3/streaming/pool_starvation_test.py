@@ -30,18 +30,23 @@ from unittest.mock import MagicMock
 
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from tests.timing_utils import WAIT_TIMEOUT
 
 
 class TestBlobHandlerPoolBlocking:
 
     def test_blob_handler_should_not_block_pool_worker(self):
-        """Pool worker should be free to handle other tasks while blob_cb executes."""
+        """An admitted application callback must not occupy the streaming pool."""
         callback_started = threading.Event()
         callback_release = threading.Event()
+        callback_completed = threading.Event()
 
         def slow_blob_cb(future, *args, **kwargs):
             callback_started.set()
-            callback_release.wait()  # simulates expensive produce + send_blob
+            try:
+                assert callback_release.wait(WAIT_TIMEOUT)
+            finally:
+                callback_completed.set()
 
         handler = BlobHandler(slow_blob_cb)
         mock_future = MagicMock(spec=StreamFuture)
@@ -50,24 +55,13 @@ class TestBlobHandlerPoolBlocking:
         mock_stream.get_size.return_value = 0
         mock_stream.read.return_value = b""
 
-        pool = ThreadPoolExecutor(max_workers=1)
-
-        def wrapper():
-            handler.handle_blob_cb(mock_future, mock_stream, False)
-
-        pool.submit(wrapper)
-        assert callback_started.wait(timeout=2.0)
-
-        # With correct behavior, the pool worker should be free to run other tasks
-        # even while blob_cb is still executing.
-        second_ran = threading.Event()
-        pool.submit(lambda: second_ran.set())
-        ran = second_ran.wait(timeout=0.5)
-
-        callback_release.set()
-        pool.shutdown(wait=True)
-
-        assert ran, (
-            "BUG: pool worker is blocked by synchronous blob_cb execution. "
-            "handle_blob_cb should not hold the worker while the callback runs."
-        )
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first = pool.submit(handler.handle_blob_cb, mock_future, mock_stream, False)
+            try:
+                assert callback_started.wait(WAIT_TIMEOUT)
+                second = pool.submit(lambda: "stream worker available")
+                assert second.result(timeout=WAIT_TIMEOUT) == "stream worker available"
+            finally:
+                callback_release.set()
+                first.result(timeout=WAIT_TIMEOUT)
+                assert callback_completed.wait(WAIT_TIMEOUT), "application callback survived test teardown"

@@ -77,6 +77,92 @@ class CheckedThread(threading.Thread):
             raise self.error
 
 
+class ThreadGroup:
+    """Release test gates and join every owned worker, including after an assertion fails."""
+
+    def __init__(self, *release_events, timeout=WAIT_TIMEOUT):
+        self.release_events = release_events
+        self.timeout = timeout
+        self.threads = []
+
+    def __enter__(self):
+        return self
+
+    def start(self, target, *args, **kwargs):
+        thread = CheckedThread(target=target, args=args, kwargs=kwargs)
+        self.threads.append(thread)
+        thread.start()
+        return thread
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        for event in self.release_events:
+            event.set()
+        deadline = _monotonic() + self.timeout
+        errors = []
+        for thread in self.threads:
+            try:
+                join_thread(thread, timeout=max(0, deadline - _monotonic()))
+            except BaseException as error:
+                errors.append(error)
+        if errors:
+            raise errors[0] from exc_value
+
+
+class ObservedLock:
+    """Report actual lock contention instead of guessing that a thread has reached a lock.
+
+    ``blocked`` is set only after a nonblocking acquisition fails. Waiting for
+    an event immediately before a protected method call leaves a scheduling
+    gap and can accept an implementation that never acquires its lock.
+    """
+
+    def __init__(self, lock=None):
+        self.lock = lock if lock is not None else threading.Lock()
+        self.blocked = threading.Event()
+
+    def acquire(self, blocking=True, timeout=-1):
+        if self.lock.acquire(blocking=False):
+            return True
+        self.blocked.set()
+        if not blocking:
+            return False
+        return self.lock.acquire(timeout=timeout)
+
+    def release(self):
+        self.lock.release()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.release()
+
+
+def stop_processes(*processes, timeout=WAIT_TIMEOUT):
+    """Join, terminate, then kill only the multiprocessing children owned by the test."""
+    pending = [process for process in processes if process is not None and process.pid is not None]
+    errors = []
+    for action in (None, "terminate", "kill"):
+        deadline = _monotonic() + timeout
+        for process in pending:
+            try:
+                if action is not None and process.is_alive():
+                    getattr(process, action)()
+                process.join(timeout=max(0, deadline - _monotonic()))
+            except ProcessLookupError:
+                pass
+            except Exception as error:
+                errors.append(error)
+        pending = [process for process in pending if process.is_alive()]
+        if not pending:
+            break
+    if pending:
+        raise AssertionError(f"test-owned child processes did not stop: {[process.pid for process in pending]}")
+    if errors:
+        raise RuntimeError(f"test child cleanup failed: {errors}") from errors[0]
+
+
 class ManualClock:
     """Replace a module's time reference, leaving other modules' clocks alone.
 
