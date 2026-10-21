@@ -684,24 +684,58 @@ def test_ambiguous_create_stays_fenced_through_404_until_delayed_admission(setup
     assert api.deleted
 
 
-@pytest.mark.parametrize(
-    "reason", ["ImagePullBackOff", "InvalidImageName", "Unschedulable", "Insufficient nvidia.com/gpu"]
-)
+@pytest.mark.parametrize("reason", ["Unschedulable", "Insufficient nvidia.com/gpu"])
 def test_pending_failure_and_native_queue_behavior(setup, reason):
     launcher, api, request, _, _ = setup
     handle = launcher.launch_task(request)
-    if reason in ("Unschedulable", "Insufficient nvidia.com/gpu"):
-        api.pod.status.conditions = [NS(type="PodScheduled", status="False", reason="Unschedulable", message=reason)]
-    else:
-        api.pod.status.container_statuses = [
-            NS(name="nvflare-task", state=NS(waiting=NS(reason=reason, message="pull failed"), terminated=None))
-        ]
+    api.pod.status.conditions = [NS(type="PodScheduled", status="False", reason="Unschedulable", message=reason)]
     status = handle.poll()
     assert status.phase == TaskExecutionPhase.QUEUED
     assert ("delete" in api.calls) == (reason != "Insufficient nvidia.com/gpu")
     if reason != "Insufficient nvidia.com/gpu":
         assert handle.wait_for_settlement(1).settled
         assert handle.poll().failure_reason
+
+
+@pytest.mark.parametrize("reason", ["ImagePullBackOff", "InvalidImageName"])
+@pytest.mark.parametrize("missing_evidence", ["terminal-phase", "container-termination", "sandbox-teardown"])
+def test_scheduled_image_pull_failure_requires_confirmed_shutdown(setup, reason, missing_evidence):
+    launcher, api, request, _, _ = setup
+    handle = launcher.launch_task(request)
+    api.pod.spec.node_name = "node-1"
+    waiting = [NS(name="nvflare-task", state=NS(waiting=NS(reason=reason, message="pull failed"), terminated=None))]
+    api.pod.status.container_statuses = waiting
+    status = handle.poll()
+    assert status.failure_reason == f"{reason} pull failed"
+    assert not status.settled and not status.succeeded
+    assert api.calls.count("delete") == 1
+    assert api.pod.metadata.deletion_timestamp is not None
+    assert api.pod.metadata.finalizers == [SETTLEMENT_FINALIZER]
+    assert "patch" not in api.calls
+
+    # Deletion acknowledgement and partial shutdown evidence cannot authorize
+    # releasing a scheduled Pod's settlement finalizer.
+    api.finish(exit_code=1, reason=reason)
+    if missing_evidence == "terminal-phase":
+        api.pod.status.phase = "Pending"
+    elif missing_evidence == "container-termination":
+        api.pod.status.container_statuses = waiting
+    else:
+        api.pod.status.conditions = [NS(type="PodReadyToStartContainers", status="True")]
+    with pytest.raises(TimeoutError, match="pod settlement unconfirmed"):
+        handle.wait_for_settlement(0)
+    assert api.pod.metadata.finalizers == [SETTLEMENT_FINALIZER]
+    assert "patch" not in api.calls
+
+    api.finish(exit_code=1, reason=reason)
+    # Removing the finalizer is followed by a separate observation of removal.
+    assert not handle.poll().settled
+    assert api.deleted
+    status = handle.poll()
+    assert status.settled and not status.succeeded
+    assert status.failure_reason == f"{reason} pull failed"
+    assert api.calls.count("delete") == 1
+    assert api.calls.index("delete") < api.calls.index("patch")
 
 
 def test_pending_timeout_cleans_up_without_admitting_another_attempt(setup):
