@@ -36,13 +36,15 @@ from nvflare.app_common.task_launcher.process_launcher import (
     _OwnedProcessAdapter,
 )
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
-from tests.process_launcher_test_utils import _assert_pid_not_running, _process_running, _request, _wait_for_file
-from tests.process_launcher_test_utils import cleanup_launched_groups as _cleanup_launched_groups
-from tests.process_launcher_test_utils import requires_waitid
+from tests.process_launcher_test_utils import cleanup_launched_groups  # noqa: F401 (pytest fixture registration)
+from tests.process_launcher_test_utils import (
+    _assert_pid_not_running,
+    _process_running,
+    _request,
+    _wait_for_file,
+    requires_waitid,
+)
 from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ThreadGroup
-
-# Register the shared fixture in this collected module only.
-cleanup_launched_groups = _cleanup_launched_groups
 
 
 @requires_waitid

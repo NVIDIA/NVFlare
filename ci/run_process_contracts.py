@@ -39,6 +39,7 @@ TESTS = (
 if __name__ == "__main__":
     raise SystemExit(
         subprocess.call(
-            [sys.executable, "-m", "pytest", "-q", *sys.argv[1:], *TESTS], cwd=Path(__file__).resolve().parents[1]
+            [sys.executable, "-m", "pytest", "-q", "-rs", *sys.argv[1:], *TESTS],
+            cwd=Path(__file__).resolve().parents[1],
         )
     )

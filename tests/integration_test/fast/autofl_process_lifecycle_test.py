@@ -26,6 +26,8 @@ import pytest
 from tests.autofl_test_utils import _load_runner
 from tests.timing_utils import ThreadGroup, wait_for
 
+_TIMEOUT_TRIGGER_TIME = 100.0
+
 
 @contextmanager
 def _timeout_after_output(runner, log_path, marker):
@@ -39,7 +41,7 @@ def _timeout_after_output(runner, log_path, marker):
     expired_at = []
 
     def monotonic():
-        return 0.0 if not expired_at else 100.0 + real_time.monotonic() - expired_at[0]
+        return 0.0 if not expired_at else _TIMEOUT_TRIGGER_TIME + real_time.monotonic() - expired_at[0]
 
     def expire_when_ready():
         try:
@@ -130,7 +132,7 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     log_path = tmp_path / "run.log"
 
     with _timeout_after_output(runner, tmp_path / "run.log", "partial output"):
-        rc, output, _, _command = runner.run_python(
+        rc, output, runtime, _command = runner.run_python(
             sys.executable,
             [
                 "-c",
@@ -143,6 +145,7 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
         )
 
     assert rc == 124
+    assert runtime - _TIMEOUT_TRIGGER_TIME < 5
     assert "partial output" in output
     assert "partial output" in log_path.read_text(encoding="utf-8")
 
@@ -163,7 +166,7 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
     )
 
     with _timeout_after_output(runner, tmp_path / "run.log", "descendant started"):
-        rc, output, _, _command = runner.run_python(
+        rc, output, runtime, _command = runner.run_python(
             sys.executable,
             ["-c", parent_code],
             cwd=tmp_path,
@@ -173,6 +176,7 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         )
 
     assert rc == 124
+    assert runtime - _TIMEOUT_TRIGGER_TIME < 5
     assert "leader exits" in output
     assert "descendant started" in tmp_path.joinpath("run.log").read_text(encoding="utf-8")
     child_pid = int(child_pid_path.read_text(encoding="utf-8"))
@@ -209,7 +213,7 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path,
     )
 
     with _timeout_after_output(runner, tmp_path / "run.log", "detached descendant started"):
-        rc, output, _, _command = runner.run_python(
+        rc, output, runtime, _command = runner.run_python(
             sys.executable,
             ["-c", parent_code],
             cwd=tmp_path,
@@ -219,6 +223,7 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path,
         )
 
     assert rc == 124
+    assert runtime - _TIMEOUT_TRIGGER_TIME < (25 if ignore_sigterm else 5)
     assert "leader exits" in output
     child_pid = int(child_pid_path.read_text(encoding="utf-8"))
     deadline = runner.time.monotonic() + 5

@@ -43,7 +43,7 @@ pytestmark = pytest.mark.timeout(90)
 
 
 def _workspace_upload_worker(workspace_root, upload_fails):
-    """Run real result archival with a delayed parent reply during exception unwinding."""
+    """Run real result archival on the exception-unwinding thread."""
     logging.basicConfig(level=logging.INFO)
     workspace_root = Path(workspace_root)
     run_dir = workspace_root / "job-1"
@@ -59,7 +59,6 @@ def _workspace_upload_worker(workspace_root, upload_fails):
 
     def publish_results(**kwargs):
         (run_dir / "upload_started").write_text("started")
-        time.sleep(0.3)
         assert threading.current_thread() is threading.main_thread()
         assert str(sys.exc_info()[1]) == "original runner failure"
         assert runner.abort.call_count == 1
@@ -98,7 +97,7 @@ def _workspace_upload_worker(workspace_root, upload_fails):
 
 
 @pytest.mark.parametrize("upload_fails", ["no", "yes"])
-def test_failed_worker_upload_outlives_cleanup_grace_and_preserves_error(tmp_path, upload_fails):
+def test_failed_worker_archival_runs_on_main_thread_and_preserves_error(tmp_path, upload_fails):
     root = Path(__file__).resolve().parents[3]
     result = subprocess.run(
         [

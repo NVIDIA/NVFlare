@@ -4407,11 +4407,20 @@ def test_cross_val_extraction_falls_back_to_first_match_without_server_final_ent
     assert evidence.source == "structured:cross_val_results.json"
 
 
+@pytest.mark.timeout(10)
 def test_timeout_includes_process_startup_without_waiting_for_output(tmp_path, monkeypatch):
     runner = _load_runner()
     clock = ManualClock()
     process = SimpleNamespace(pid=12345, stdout=io.BytesIO(b""), returncode=None)
-    process.poll = lambda: process.returncode
+    polls = 0
+
+    def poll():
+        nonlocal polls
+        polls += 1
+        assert polls <= 5, "runner did not count process startup against its timeout"
+        return process.returncode
+
+    process.poll = poll
 
     def slow_start(*args, **kwargs):
         clock.advance(2.0)

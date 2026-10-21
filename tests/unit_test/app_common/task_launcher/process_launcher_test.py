@@ -34,12 +34,8 @@ from nvflare.app_common.task_launcher.process_launcher import (
     _OwnedProcessAdapter,
 )
 from nvflare.utils.process_utils import ProcessAdapter
-from tests.process_launcher_test_utils import _mock_handle, _process_running, _request
-from tests.process_launcher_test_utils import cleanup_launched_groups as _cleanup_launched_groups
-from tests.process_launcher_test_utils import requires_waitid
-
-# Register the shared fixture in this collected module only.
-cleanup_launched_groups = _cleanup_launched_groups
+from tests.process_launcher_test_utils import cleanup_launched_groups  # noqa: F401 (pytest fixture registration)
+from tests.process_launcher_test_utils import _mock_handle, _process_running, _request, requires_waitid
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="ProcessTaskLauncher requires POSIX process groups")
 
