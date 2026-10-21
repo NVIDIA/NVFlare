@@ -40,28 +40,36 @@ class TestBlobHandlerPoolBlocking:
         callback_started = threading.Event()
         callback_release = threading.Event()
         callback_completed = threading.Event()
+        callback_errors = []
 
         def slow_blob_cb(future, *args, **kwargs):
-            callback_started.set()
             try:
-                assert callback_release.wait(WAIT_TIMEOUT)
+                callback_started.set()
+                # Only the test may release this gate. A timeout here could
+                # free an incorrectly occupied stream worker before the probe.
+                callback_release.wait()
+            except BaseException as error:
+                callback_errors.append(error)
+                raise
             finally:
                 callback_completed.set()
 
         handler = BlobHandler(slow_blob_cb)
-        mock_future = MagicMock(spec=StreamFuture)
-        mock_future.headers = {}
+        future = StreamFuture(stream_id=1, headers={})
         mock_stream = MagicMock()
         mock_stream.get_size.return_value = 0
         mock_stream.read.return_value = b""
 
         with ThreadPoolExecutor(max_workers=1) as pool:
-            first = pool.submit(handler.handle_blob_cb, mock_future, mock_stream, False)
+            first = pool.submit(handler.handle_blob_cb, future, mock_stream, False)
             try:
                 assert callback_started.wait(WAIT_TIMEOUT)
                 second = pool.submit(lambda: "stream worker available")
                 assert second.result(timeout=WAIT_TIMEOUT) == "stream worker available"
+                assert not callback_completed.is_set(), "callback completed before the test released it"
             finally:
                 callback_release.set()
                 first.result(timeout=WAIT_TIMEOUT)
                 assert callback_completed.wait(WAIT_TIMEOUT), "application callback survived test teardown"
+                if callback_errors:
+                    raise callback_errors[0]
