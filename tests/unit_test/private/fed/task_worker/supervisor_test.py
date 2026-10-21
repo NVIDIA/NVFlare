@@ -808,3 +808,38 @@ def test_released_attempts_drop_owned_handles_but_cannot_be_relaunched(tmp_path)
         with pytest.raises(RuntimeError, match="already owned"):
             supervisor.run(**attempt)
     assert len(supervisor._launch_identities) == 12
+
+
+def test_tensor_resend_retains_files_and_closed_receipt_preserves_active_mapping(tmp_path):
+    import torch
+    from safetensors.torch import load
+
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
+    from nvflare.fuel.utils import fobs
+
+    fobs.register(TensorDecomposer)
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    identity, store = attempt["bootstrap"].identity, attempt["store"]
+    handle.poll.return_value = SETTLED
+
+    def launch(request):
+        handle.request = request
+        store.commit_result(identity, Shareable({"params": {"w": torch.arange(4.0)}}))
+        return handle
+
+    attempt["launcher"].launch_task.side_effect = launch
+    outcome = supervisor.run(**attempt)
+    sender = TensorDownloadable(outcome.result["params"], 2 * 1024 * 1024)
+    directory = Path(store.attempt_dir(identity))
+    try:
+        assert supervisor.record_receipt(identity, TaskResultReceipt.RETRY)
+        assert (directory / "result.T0.safetensors").exists()
+        saved = supervisor.read_saved_result(identity)
+        assert torch.equal(saved["params"]["w"], torch.arange(4.0))
+        assert supervisor.record_receipt(identity, TaskResultReceipt.TASK_CLOSED)
+        assert not (directory / "result.T0.safetensors").exists()
+        assert torch.equal(load(sender.produce_item(0))["w"], torch.arange(4.0))
+    finally:
+        sender.release()

@@ -588,3 +588,151 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.private.fed.client.client_runner",
     )
+
+
+@pytest.mark.parametrize("filter_kind", ["none", "data", "result", "site-data"])
+def test_task_resolver_precedes_events_and_release_follows_result_filters(tmp_path, filter_kind):
+    import torch
+    from safetensors.torch import save_file
+
+    from nvflare.app_common.widgets.job_stats_reporter import _estimate_payload_mb
+    from nvflare.app_opt.pt.lazy_tensor_dict import safetensors_refs
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    file = tmp_path / "received.safetensors"
+    save_file({"w": torch.ones(4)}, str(file))
+    ref = safetensors_refs(str(file))["w"]
+    expected_eager = filter_kind in ("data", "site-data")
+    release = MagicMock()
+    executor = MagicMock()
+
+    def resolve(data, fl_ctx, *, abort_signal):
+        assert not expected_eager
+        data["w"] = ref
+        return data, release
+
+    def resolve_eager(data, cell, abort_signal):
+        assert expected_eager
+        data["w"] = torch.ones(4)
+        return data
+
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
+
+    executor.resolve_task_data.side_effect = resolve
+    executor.execute.return_value = Shareable({"w": torch.ones(4)})
+    runner.task_router.add_executor(["train"], executor)
+    input_filter = MagicMock()
+    input_filter.process.side_effect = lambda data, ctx: data
+    result_filter = MagicMock()
+
+    def filter_result(data, ctx):
+        assert isinstance(data["w"], torch.Tensor)
+        release.assert_not_called()
+        data["w"].add_(2)
+        return data
+
+    result_filter.process.side_effect = filter_result
+    if filter_kind == "data":
+        runner.task_data_filters["tra*" + FilterKey.DELIMITER + FilterKey.IN] = [input_filter]
+    elif filter_kind == "site-data":
+        context.set_prop(
+            FLContextKey.SCOPE_OBJECT,
+            SimpleNamespace(task_data_filters={FilterKey.IN: [input_filter]}, task_result_filters={}),
+        )
+    elif filter_kind == "result":
+        runner.task_result_filters["train" + FilterKey.DELIMITER + FilterKey.OUT] = [result_filter]
+    events = []
+
+    def event(event_type, ctx):
+        if event_type in (
+            EventType.BEFORE_TASK_DATA_FILTER,
+            EventType.AFTER_TASK_DATA_FILTER,
+            EventType.BEFORE_TASK_EXECUTION,
+        ):
+            data = ctx.get_prop(FLContextKey.TASK_DATA)
+            assert isinstance(data["w"], torch.Tensor) if expected_eager else data["w"] is ref
+            assert _estimate_payload_mb(data) > 0
+            release.assert_not_called()
+            events.append(event_type)
+
+    runner.fire_event.side_effect = event
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.materialize_lazy_download_refs", side_effect=resolve_eager),
+    ):
+        result = runner._do_task(task, context, Signal())
+    assert len(events) == 3
+    if expected_eager:
+        release.assert_not_called()
+        executor.resolve_task_data.assert_not_called()
+    else:
+        release.assert_called_once_with()
+    assert torch.equal(result["w"], torch.full((4,), 3.0 if filter_kind == "result" else 1.0))
+
+
+@pytest.mark.parametrize("failure", ["abort", "invalid"])
+@pytest.mark.parametrize("data_filter", [False, True])
+def test_task_resolution_maps_failure_before_executor(failure, data_filter):
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
+    executor = MagicMock()
+    runner.task_router.add_executor(["train"], executor)
+    if data_filter:
+        runner.task_data_filters["train" + FilterKey.DELIMITER + FilterKey.IN] = [MagicMock()]
+
+    def resolve(data, ctx, abort_signal):
+        if failure == "abort":
+            abort_signal.trigger(True)
+        raise RuntimeError("resolution failed")
+
+    executor.resolve_task_data.side_effect = resolve
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.materialize_lazy_download_refs", side_effect=resolve),
+    ):
+        result = runner._do_task(task, context, Signal())
+    expected = {"abort": ReturnCode.TASK_ABORTED, "invalid": ReturnCode.BAD_TASK_DATA}
+    assert result.get_return_code() == expected[failure]
+    executor.execute.assert_not_called()
+    runner.fire_event.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["event", "filter", "executor"])
+def test_task_resolver_releases_input_on_later_failure(phase):
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    release, executor = MagicMock(), MagicMock()
+    executor.resolve_task_data.return_value = (Shareable({"w": 1}), release)
+    executor.execute.return_value = Shareable()
+    runner.task_router.add_executor(["train"], executor)
+    if phase == "event":
+        runner.fire_event.side_effect = RuntimeError("hook failed")
+    elif phase == "filter":
+        filter_object = MagicMock()
+        filter_object.process.side_effect = RuntimeError("filter failed")
+        runner.task_result_filters["train" + FilterKey.DELIMITER + FilterKey.OUT] = [filter_object]
+    else:
+        executor.execute.side_effect = RuntimeError("executor failed")
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with patch("nvflare.private.fed.client.client_runner.add_job_audit_event"):
+        if phase == "event":
+            with pytest.raises(RuntimeError, match="hook failed"):
+                runner._do_task(task, context, Signal())
+        else:
+            assert runner._do_task(task, context, Signal()).get_return_code() != ReturnCode.OK
+    release.assert_called_once_with()

@@ -31,6 +31,7 @@ from nvflare.recipe import SimEnv
 from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
 
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
+pytestmark = pytest.mark.usefixtures("single_threaded_torch")
 
 
 @pytest.mark.timeout(300)
@@ -159,8 +160,9 @@ while flare.is_running():
     assert len(completions) == len({item["worker_pid"] for item in completions}) == 4
 
 
-@pytest.mark.timeout(600)
-def test_seeded_task_and_job_training_match_every_round(tmp_path, monkeypatch):
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("exchange_format,transfer_type", [("numpy", "FULL"), ("pytorch", "FULL"), ("pytorch", "DIFF")])
+def test_seeded_task_and_job_training_match_every_round(tmp_path, monkeypatch, exchange_format, transfer_type):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     monkeypatch.setenv("OMP_NUM_THREADS", "1")
@@ -174,11 +176,39 @@ def test_seeded_task_and_job_training_match_every_round(tmp_path, monkeypatch):
         """from pathlib import Path
 import torch
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.client import FLModel
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
+class OrderedFedAvg(ModelAggregator):
+    # Three float32 contributions need a fixed summation order for exact parity.
+    # Keep the existing weighted aggregation math, buffering only in this test.
+    def __init__(self):
+        super().__init__()
+        self.reset_stats()
+
+    def reset_stats(self):
+        self.models = []
+
+    def accept_model(self, model):
+        self.models.append(model)
+
+    def aggregate_model(self):
+        params, metrics = WeightedAggregationHelper(), WeightedAggregationHelper()
+        for model in sorted(self.models, key=lambda m: m.meta["client_name"]):
+            weight = model.meta["NUM_STEPS_CURRENT_ROUND"]
+            params.add(model.params, weight=weight, contributor_name=model.meta["client_name"],
+                       contribution_round=model.current_round)
+            metrics.add(model.metrics, weight=weight, contributor_name=model.meta["client_name"],
+                        contribution_round=model.current_round)
+        first = self.models[0]
+        return FLModel(params=params.get_result(), params_type=first.params_type,
+                       metrics=metrics.get_result(), current_round=first.current_round)
+
 class RoundRecorder(PTFileModelPersistor):
-    def __init__(self, model, output_dir):
-        super().__init__(model=model)
+    def __init__(self, model, output_dir, allow_numpy_conversion):
+        super().__init__(model=model, allow_numpy_conversion=allow_numpy_conversion)
         self.output_dir = output_dir
 
     def save_model(self, ml, fl_ctx):
@@ -242,7 +272,18 @@ if __name__ == "__main__":
         for lifetime in ("job", "task"):
             with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as example:
                 args = example.parse_args(
-                    ["--execution_lifetime", lifetime, "--num_rounds", "3", "--seed", "731", "--torch_threads", "1"]
+                    [
+                        "--execution_lifetime",
+                        lifetime,
+                        "--num_rounds",
+                        "3",
+                        "--n_clients",
+                        "3",
+                        "--seed",
+                        "731",
+                        "--torch_threads",
+                        "1",
+                    ]
                 )
                 factory = example.FedAvgRecipe
 
@@ -250,8 +291,13 @@ if __name__ == "__main__":
                     kwargs["train_script"] = str(client_recorders[lifetime])
                     return factory(
                         **kwargs,
+                        server_expected_format=exchange_format,
+                        params_transfer_type=transfer_type,
+                        aggregator=helper.OrderedFedAvg(),
                         model_persistor=helper.RoundRecorder(
-                            example.create_model(seed=731), str(tmp_path / lifetime / "rounds")
+                            example.create_model(seed=731),
+                            str(tmp_path / lifetime / "rounds"),
+                            allow_numpy_conversion=exchange_format != "pytorch",
                         ),
                     )
 
@@ -263,14 +309,14 @@ if __name__ == "__main__":
                 recipe = example.create_recipe(args)
                 for name in ("client.py", "model.py", "prepare_data.py"):
                     recipe.add_client_file(str(example.HELLO_PT_DIR / name))
-                env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / lifetime / "simulation"))
+                env = SimEnv(num_clients=3, num_threads=3, workspace_root=str(tmp_path / lifetime / "simulation"))
                 run = recipe.execute(env)
                 result = run.get_result(timeout=240, clean_up=False)
                 assert result is not None and not env.last_run_failed
                 results[lifetime] = Path(result)
     finally:
         sys.modules.pop("parity_recorder", None)
-    for site in ("site-1", "site-2"):
+    for site in ("site-1", "site-2", "site-3"):
         for current_round in range(3):
             for phase in ("input", "output"):
                 snapshots = []
@@ -302,12 +348,12 @@ if __name__ == "__main__":
     assert evaluations[0] == evaluations[1]
     completions = [json.loads(p.read_text()) for p in results["task"].rglob("completion.json")]
     training = [c for c in completions if c["identity"]["task_name"] == "train"]
-    assert len(training) == len({c["worker_pid"] for c in training}) == 6
+    assert len(training) == len({c["worker_pid"] for c in training}) == 9
     checkpoints = list(results["task"].rglob("*.checkpoint"))
-    assert len(checkpoints) == 2
+    assert len(checkpoints) == 3
     states = []
     for path in checkpoints:
-        site = next(site for site in ("site-1", "site-2") if site in path.parts)
+        site = next(site for site in ("site-1", "site-2", "site-3") if site in path.parts)
         inspection = FileTaskArtifactStore(str(tmp_path / "inspect-checkpoint" / site))
         identity = TaskAttemptIdentity("simulate_job", site, "inspect", "train", "inspect")
         inspection.create_attempt(identity)
@@ -315,7 +361,7 @@ if __name__ == "__main__":
         states.append(torch.load(inspection.checkpoint_paths(identity)["input"], weights_only=True))
     assert all("checkpoint" in c["diagnostics"] for c in training)
     assert all("checkpoint" not in c["diagnostics"] for c in completions if c not in training)
-    assert {state["site_name"] for state in states} == {"site-1", "site-2"}
+    assert {state["site_name"] for state in states} == {"site-1", "site-2", "site-3"}
     assert all(state["round"] == 2 for state in states)
     assert all(state["optimizer"]["state"] for state in states)
     assert all("momentum_buffer" in item for state in states for item in state["optimizer"]["state"].values())

@@ -26,6 +26,7 @@ from nvflare.fuel.utils.log_utils import BaseFormatter, JsonFormatter
 from nvflare.recipe import _failure_summary
 from nvflare.recipe._failure_summary import collect_client_errors, failure_summary
 from nvflare.recipe.run import Run
+from tests.hello_pt_test_utils import assert_hello_pt_failure_summary
 
 
 def _record(message, name="TaskScriptRunner", context=""):
@@ -93,6 +94,37 @@ def test_unrelated_client_error_does_not_hide_another_peers_abort(tmp_path, plai
     assert "Also reported" in output
 
 
+@pytest.mark.parametrize("failed_site, aborted_site", [("site-1", "site-2"), ("site-2", "site-1")])
+@pytest.mark.parametrize("plain_text", [False, True])
+@pytest.mark.parametrize("late_peer_traceback", [False, True])
+def test_client_failure_is_reported_with_peer_abort(
+    tmp_path, failed_site, aborted_site, plain_text, late_peer_traceback
+):
+    root = tmp_path / "failure-logs-snapshot"
+    error = "ValueError: batch_size should be a positive integer value, but got batch_size=0"
+    abort = "ask to abort job: reason: 'train' is aborted, abort_signal_triggered"
+    _write_log(root, failed_site, _record(_client_trace(failed_site, error)), plain_text)
+    peer_records = _record(abort, name="InProcessClientAPI")
+    if late_peer_traceback:
+        # Cancellation can be logged before a peer's application exception.
+        peer_records += _record(_client_trace(aborted_site, error))
+    _write_log(root, aborted_site, peer_records, plain_text)
+
+    output = failure_summary(tmp_path)
+
+    assert_hello_pt_failure_summary(output, expected_error=error, expected_file="client.py:")
+    assert " ".join(output.split()).count(error) == 1
+    assert output.index("ValueError:") < output.index("Also reported")
+    assert f"Where     {failed_site} / TaskScriptRunner" in output
+    assert "client.py:31 (train)" in output
+    assert f"Where     {aborted_site} / InProcessClientAPI" in output
+    assert "abort_signal_triggered" in output
+    assert "site-1, site-2 / TaskScriptRunner" not in output
+    for site in (failed_site, aborted_site):
+        assert f"{site}/error_log.txt" in output
+    assert "Client logs are not included" not in output
+
+
 def test_server_only_download_is_explicit_about_missing_client_logs(tmp_path):
     _write_log(tmp_path, "workspace", _record("ConnectionError: server connection lost", name="Cell"))
     output = failure_summary(tmp_path)
@@ -155,7 +187,18 @@ def test_failed_run_summarizes_before_cleanup_and_only_once(tmp_path, capsys, st
     assert capsys.readouterr().out == ""
 
 
-def test_existing_client_error_streams_are_saved_and_summarized(tmp_path):
+@pytest.mark.parametrize(
+    "failed_sites, aborted_sites",
+    [
+        (("site-1", "site-2"), ()),
+        (("site-1",), ("site-2",)),
+        (("site-2",), ("site-1",)),
+        (("site-1",), ()),
+        (("site-2",), ()),
+    ],
+)
+def test_existing_client_error_streams_are_saved_and_summarized(tmp_path, failed_sites, aborted_sites):
+    available_sites = (*failed_sites, *aborted_sites)
     session = MagicMock()
     session.get_job_logs.return_value = {
         "logs": {
@@ -167,10 +210,15 @@ def test_existing_client_error_streams_are_saved_and_summarized(tmp_path):
             "@ALL": "must not request aggregate logs",
             "../outside": "must not be written",
             **{
-                site: "2026-09-12 10:40:51,611 - TaskScriptRunner - ERROR - "
-                + _client_trace(site)
-                + "2026-09-12 10:40:51,612 - TaskScriptRunner - ERROR - fire abort event\n"
-                for site in ("site-1", "site-2")
+                site: (
+                    "2026-09-12 10:40:51,611 - TaskScriptRunner - ERROR - "
+                    + _client_trace(site)
+                    + "2026-09-12 10:40:51,612 - TaskScriptRunner - ERROR - fire abort event\n"
+                    if site in failed_sites
+                    else "2026-09-12 10:40:51,611 - InProcessClientAPI - ERROR - "
+                    "ask to abort job: reason: 'train' is aborted, abort_signal_triggered\n"
+                )
+                for site in available_sites
             },
         },
         "unavailable": {"site-3": "streaming disabled"},
@@ -179,15 +227,21 @@ def test_existing_client_error_streams_are_saved_and_summarized(tmp_path):
     session.list_job_components.return_value = ["workspace", *[f"ERRORLOG_{site}" for site in response["logs"]]]
     session.get_job_logs.side_effect = lambda job_id, target, **kwargs: {"logs": {target: response["logs"][target]}}
     collect_client_errors(session, "job-id", str(tmp_path))
-    assert session.get_job_logs.call_count == 2
-    assert {call.kwargs["target"] for call in session.get_job_logs.call_args_list} == {"site-1", "site-2"}
+    assert session.get_job_logs.call_count == len(available_sites)
+    assert {call.kwargs["target"] for call in session.get_job_logs.call_args_list} == set(available_sites)
     assert all(call.kwargs["max_bytes"] == 1024 * 1024 for call in session.get_job_logs.call_args_list)
     output = failure_summary(tmp_path)
+    assert_hello_pt_failure_summary(
+        output, expected_error="FileNotFoundError: missing training.npy", expected_file="client.py:"
+    )
     assert output.count("FileNotFoundError: missing training.npy") == 1
-    assert "site-1, site-2 / TaskScriptRunner" in output
+    assert f"Where     {', '.join(failed_sites)} / TaskScriptRunner" in output
     assert "client.py:31 (train)" in output
     assert "fire abort event" not in output
-    assert len(list(tmp_path.rglob("error_log.txt"))) == 2
+    assert len(list(tmp_path.rglob("error_log.txt"))) == len(available_sites)
+    for site in available_sites:
+        path = next(tmp_path.glob(f"failure-logs-*/{site}/error_log.txt"))
+        assert path.read_text() == response["logs"][site]
     assert "site-3" not in output  # Never invent a diagnosis for an unavailable site.
 
 
