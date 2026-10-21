@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+import re
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -35,6 +36,15 @@ sys.argv = sys.argv[2:]
 sys.path[0] = os.path.dirname(os.path.abspath(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
+
+
+def assert_hello_pt_failure_summary(summary, *, expected_error, expected_file, expected_site=None):
+    """Check client diagnostics for a specified site or either failure/cancellation ordering."""
+    assert expected_error in " ".join(summary.split()), summary
+    site_pattern = re.escape(expected_site) if expected_site else r"(?:site-1(?:, site-2)?|site-2)"
+    assert re.search(rf"Where\s+{site_pattern} / TaskScriptRunner", summary), summary
+    assert expected_file in summary, summary
+    assert "Client logs are not included" not in summary, summary
 
 
 def run_hello_pt_export(command, *, cwd, env, timeout=120, traceback_delay=90):

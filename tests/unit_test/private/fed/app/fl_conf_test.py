@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +26,11 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.lighter.constants import CtxKey
+from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.workspace import WorkspaceBuilder
+from nvflare.lighter.provision import prepare_project
+from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, FLServerStarterConfiger
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, write_job_cert
 
@@ -152,3 +159,57 @@ def test_client_configer_points_job_process_at_job_credential(tmp_path, job_id, 
     else:
         assert client[SecureTrainConst.SSL_CERT] == os.path.join(startup, "client.crt")
         assert client[SecureTrainConst.PRIVATE_KEY] == os.path.join(startup, "client.key")
+
+
+@pytest.mark.parametrize("security", [ConnectionSecurity.CLEAR, ConnectionSecurity.TLS, ConnectionSecurity.MTLS])
+@pytest.mark.parametrize("routed", [False, True])
+def test_provisioned_async_tcp_client_conn_props(tmp_path, security, routed):
+    client = {"name": "site-1", "type": "client", "org": "org", "use_aio": True, "connection_security": security}
+    if routed:
+        client["connect_to"] = {"name": "relay-1"}
+    project = prepare_project(
+        {
+            "api_version": 3,
+            "name": "async-tcp",
+            "participants": [
+                {"name": "server.example.com", "type": "server", "org": "org", "connection_security": security},
+                client,
+                {
+                    "name": "relay-1",
+                    "type": "relay",
+                    "org": "org",
+                    "use_aio": True,
+                    "listening_host": {
+                        "default_host": "relay-1",
+                        "port": 8004,
+                        "scheme": "atcp",
+                        "connection_security": security,
+                    },
+                },
+            ],
+        }
+    )
+    ctx = Provisioner(str(tmp_path), [WorkspaceBuilder(), StaticFileBuilder(scheme="tcp")]).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+    kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-1"
+    config = json.loads((kit / "startup/fed_client.json").read_text())
+    assert config["servers"][0]["service"]["scheme"] == "atcp"
+    if routed:
+        config.update(json.loads((kit / "local/relay__resources.json").read_text()))
+
+    configer = FLClientStarterConfiger.__new__(FLClientStarterConfiger)
+    configer.args = SimpleNamespace()
+    configer.logger = logging.getLogger(__name__)
+    configer.config_data = config
+    configer._determine_conn_props("site-1", config)
+
+    scheme = "atcp" if security == ConnectionSecurity.CLEAR else "satcp"
+    root = get_scope_property("site-1", ConnPropKey.ROOT_CONN_PROPS)
+    assert root[ConnPropKey.URL] == f"{scheme}://server.example.com:8002"
+    assert root[ConnPropKey.CONNECTION_SECURITY] == security
+    assert root[ConnPropKey.AUTH_IDENTITY] == "server.example.com"
+    if routed:
+        relay = get_scope_property("site-1", ConnPropKey.RELAY_CONN_PROPS)
+        assert relay[ConnPropKey.URL] == f"{scheme}://relay-1:8004"
+        assert relay[ConnPropKey.CONNECTION_SECURITY] == security
+        assert relay[ConnPropKey.AUTH_IDENTITY] == "relay-1"

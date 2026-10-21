@@ -23,6 +23,10 @@ class TestUrlUtils:
             ("tcp", "xyz.com", False, "tcp://xyz.com"),
             ("tcp", "xyz.com:1234", False, "tcp://xyz.com:1234"),
             ("tcp", "xyz.com:1234", True, "stcp://xyz.com:1234"),
+            ("atcp", "xyz.com:1234", False, "atcp://xyz.com:1234"),
+            ("atcp", "xyz.com:1234", True, "satcp://xyz.com:1234"),
+            ("satcp", "xyz.com:1234", False, "atcp://xyz.com:1234"),
+            ("satcp", "xyz.com:1234", True, "satcp://xyz.com:1234"),
             ("grpc", "xyz.com", False, "grpc://xyz.com"),
             ("grpc", "xyz.com:1234", False, "grpc://xyz.com:1234"),
             ("grpc", "xyz.com:1234", True, "grpcs://xyz.com:1234"),
@@ -52,6 +56,7 @@ class TestUrlUtils:
         [
             ("tcp", "", False),
             ("abc", "xyz.com:1234", False),
+            ("abc", "xyz.com:1234", True),
             ("tcp", 1234, True),
             ("grpc", [], False),
             ("grpc", (), False),

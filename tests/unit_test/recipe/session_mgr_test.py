@@ -62,6 +62,36 @@ def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, cap
         assert output.count(field) == (0 if log_mode in ("concise", "progress") else 2)
 
 
+@pytest.mark.parametrize("log_mode", ["concise", "progress"])
+def test_monitor_reports_completion_before_first_poll(monkeypatch, capsys, log_mode):
+    monkeypatch.setenv("FL_LOG_LEVEL", log_mode)
+    session = MagicMock()
+    session.get_job_logs.return_value = {
+        "logs": {
+            "server": json.dumps(
+                {
+                    "fullName": "nvflare.app_common.widgets.metrics_artifact_writer",
+                    "message": "✓ Aggregated 2 client updates",
+                    "nvflare_progress": True,
+                }
+            )
+        }
+    }
+    state = {"count": 0}
+    if log_mode == "progress":
+        state["progress"] = {"seen": set()}
+
+    assert _job_monitor_callback(session, "job-id", {"status": "FINISHED:COMPLETED"}, cb_run_counter=state)
+
+    output = capsys.readouterr().out
+    assert "Job ID: job-id" in output
+    assert "Job status: FINISHED:COMPLETED" in output
+    assert "Job status: RUNNING" not in output
+    assert ("✓ Aggregated 2 client updates" in output) == (log_mode == "progress")
+    assert state["status"] == "FINISHED:COMPLETED"
+    assert session.get_job_logs.call_count == int(log_mode == "progress")
+
+
 def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypatch, capsys):
     now = [0]
     monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
