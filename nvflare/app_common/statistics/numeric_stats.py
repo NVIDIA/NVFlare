@@ -167,7 +167,7 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
 
 
 def _merge_matching_histogram_infinity_edges(
-    existing: Histogram, incoming: Histogram, precision: int
+    existing: Histogram, incoming: Histogram, precision: Optional[int]
 ) -> Optional[Histogram]:
     """Align standard histograms differing only by infinite outer edges.
 
@@ -175,7 +175,8 @@ def _merge_matching_histogram_infinity_edges(
     without it retains the configured finite edge. Their counts belong to
     the same bin grid; matching solely by the resulting edge pair drops the
     second client's counts. Do not align different interior grids or any
-    finite-to-finite endpoint differences.
+    finite-to-finite endpoint differences. ``precision=None`` keeps the exact
+    source boundaries, as required for hierarchical histograms.
     """
     if (
         existing.hist_type != HistogramType.STANDARD
@@ -189,8 +190,12 @@ def _merge_matching_histogram_infinity_edges(
     extended = False
     last_index = len(existing.bins) - 1
     for index, (old, new) in enumerate(zip(existing.bins, incoming.bins)):
-        old_low, old_high = round(old.low_value, precision), round(old.high_value, precision)
-        new_low, new_high = round(new.low_value, precision), round(new.high_value, precision)
+        if precision is None:
+            old_low, old_high = old.low_value, old.high_value
+            new_low, new_high = new.low_value, new.high_value
+        else:
+            old_low, old_high = round(old.low_value, precision), round(old.high_value, precision)
+            new_low, new_high = round(new.low_value, precision), round(new.high_value, precision)
         low, high = min(old_low, new_low), max(old_high, new_high)
 
         if old_low != new_low:
