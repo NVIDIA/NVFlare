@@ -295,11 +295,6 @@
     "destination_path": "azure/aks",
     "category": "deployment"
   },
-  "devops-coco": {
-    "source_path": "examples/devops/coco",
-    "destination_path": "examples/devops/coco",
-    "category": "deployment"
-  },
   "devops-gcp-gke": {
     "source_path": "examples/devops/gcp/gke",
     "destination_path": "gcp/gke",
