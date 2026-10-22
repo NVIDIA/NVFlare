@@ -8,7 +8,7 @@ Status: implemented
 
 ## Purpose
 
-NVFlare has three confidential-computing deployment modes:
+NVIDIA FLARE has three confidential-computing deployment modes:
 
 - `bare_metal_cvm`: a complete Intel TDX or AMD SEV-SNP VM produced by CVM
   Builder, with an application-specific encrypted vault;
