@@ -661,8 +661,7 @@ Secrets, private receipts, and operator paths are forbidden.
 ## Documentation
 
 The canonical guide is
-[`docs/user_guide/confidential_computing/deployment.rst`](../user_guide/confidential_computing/deployment.rst).
-It contains:
+`docs/user_guide/confidential_computing/deployment.rst`. It contains:
 
 1. concepts, trust boundaries, and mode selection;
 2. common `project.yml`, `cc_project.yml`, and `cc_config` usage;
@@ -674,10 +673,8 @@ It contains:
 8. common results, troubleshooting, and migration.
 
 Mode sections contain only their differences. The shipped configuration
-examples are under
-[`examples/advanced/cvm_builder`](../../examples/advanced/cvm_builder),
-[`examples/devops/coco/provision`](../../examples/devops/coco/provision), and
-[`examples/advanced/azure_cc`](../../examples/advanced/azure_cc). Example
+examples are under `examples/advanced/cvm_builder`,
+`examples/devops/coco/provision`, and `examples/advanced/azure_cc`. Example
 runbooks may retain detailed commands, but they link to the canonical
 Trustee/KBS section instead of duplicating endpoints, certificates, tokens,
 retry policy, or timeouts.
