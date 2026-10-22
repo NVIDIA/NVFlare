@@ -39,6 +39,15 @@ NVFlare 2.10 adds the task-lifetime options below. Recipes default to
 CPU worker process. The server workflow and its aggregation state continue
 across rounds.
 
+Use task lifetime when releasing worker memory between tasks is worth the
+repeated process startup, data loading, and checkpoint I/O. Use job lifetime
+when retaining that state in memory is preferable. GPU training remains
+supported with the default job lifetime.
+
+Restarting workers adds overhead and does not imply higher throughput. The
+lifetime option does not provide cross-job scheduling, resource admission, or
+shared-GPU arbitration.
+
 The table below lists how to select task lifetime for the built-in recipe
 catalog. Names match ``nvflare recipe list``. For rows marked **Constructor**,
 pass ``execution_lifetime="task"`` to the recipe constructor. For rows marked
@@ -92,8 +101,10 @@ below.
    * - ``xgb-bagging``, ``xgb-horizontal``, ``xgb-vertical``
      - Use job lifetime
 
-Task lifetime currently requires CPU Process execution. Client API recipes must
-use in-process script execution (``launch_external_process=False``). External
+Task lifetime currently requires CPU Process execution on Linux, or on macOS
+with Python 3.13 or newer. The platform must support POSIX process groups and
+``waitid``/``WNOWAIT``. Client API recipes must use in-process script execution
+(``launch_external_process=False``). External
 process and Attach execution, GPU resource requests, and custom or legacy
 Learner executors are unsupported in this profile. Collab, Flower, PSI, and
 edge recipes also require job lifetime.
