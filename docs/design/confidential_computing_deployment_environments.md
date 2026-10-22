@@ -1,14 +1,14 @@
 # Unified Confidential Computing Provisioning
 
-Status: implemented in NVFlare 2.9
+Status: implemented
 
 - Created: 2026-09-28
 - Updated: 2026-10-22
-- Reviewed against: `upstream/2.9` at `64a58c928b6397081f8a12e0dc3c418bfd8168cb`
+- Reviewed against commit: `64a58c928b6397081f8a12e0dc3c418bfd8168cb`
 
 ## Purpose
 
-NVFlare 2.9 has three confidential-computing deployment modes:
+NVFlare has three confidential-computing deployment modes:
 
 - `bare_metal_cvm`: a complete Intel TDX or AMD SEV-SNP VM produced by CVM
   Builder, with an application-specific encrypted vault;
@@ -18,8 +18,7 @@ NVFlare 2.9 has three confidential-computing deployment modes:
   Instance, using Microsoft Azure Attestation (MAA).
 
 They use one provisioning contract while preserving their different trust
-boundaries and deliverables. The unified implementation was merged in
-[#5372](https://github.com/NVIDIA/NVFlare/pull/5372).
+boundaries and deliverables.
 
 ## Decisions
 
@@ -47,7 +46,7 @@ boundaries and deliverables. The unified implementation was merged in
 10. One user guide contains the common workflow once and then the three
     mode-specific sections.
 
-## Current 2.9 implementation
+## Current implementation
 
 | Concern | Bare-metal CVM | CoCo | Azure CC |
 |---|---|---|---|
@@ -415,7 +414,7 @@ azure_cc:
 execution unit. Azure settings must not be represented as Trustee settings
 because MAA and Trustee have different trust and key-release semantics.
 
-The first unified implementation deliberately matches the NVFlare 2.9 Azure
+The unified implementation deliberately matches the currently supported Azure
 integration rather than every workload that the Azure platform can host. It
 accepts only `cpu_tee: amd_sev_snp` and `gpu_tee: none` for `azure_cc`.
 `AzureCCDeployment` rejects Intel TDX and NVIDIA confidential GPU requests
@@ -629,7 +628,7 @@ participant.
 |---|---|---|---|
 | `BareMetalCVMDeployment` | Provide the Trustee authorizer specification, bind CVM Builder, and derive runtime/network settings | Validate CVM contract, build vault, install KBS resource, validate OCI | Complete CVM OCI artifact |
 | `CoCoDeployment` | Provide the Trustee authorizer specification; redirect startup-process stdout and stderr to `/dev/null` before signing so an untrusted host cannot collect sensitive console output, while retaining guest-local NVFlare file logs | Build/encrypt image, create Trustee handoff, validate measured Pod | Pod YAML and image metadata |
-| `AzureCCDeployment` | Provide the Azure authorizer specification and reject non-SNP or GPU targets in the 2.9 implementation | Validate/publish signed kit and sanitized deployment references | Startup kit and Azure metadata |
+| `AzureCCDeployment` | Provide the Azure authorizer specification and reject unsupported CPU or GPU targets | Validate/publish signed kit and sanitized deployment references | Startup kit and Azure metadata |
 
 The interface standardizes provisioning; it does not make the artifacts or
 attestation services interchangeable.
