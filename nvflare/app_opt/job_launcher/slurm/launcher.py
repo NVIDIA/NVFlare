@@ -110,7 +110,8 @@ def _resolve_resources(
         value = spec.get(name)
         return None if value is None else _require_int(value, name)
 
-    gpus_per_node = optional_int("gpus_per_node")
+    raw_gpus = spec.get("gpus_per_node")
+    gpus_per_node = None if raw_gpus is None else _require_int(raw_gpus, "gpus_per_node", 0)
     portable = get_portable_resource_spec(job_meta, site_name)
     portable_total = portable.get("num_of_gpus")
     if portable_total is not None:

@@ -1,0 +1,21 @@
+# Single-node qualification fixture. Set python_path and environment_setup to
+# the candidate's existing environment on the authorized host. Use a distinct
+# internal_port for each client; site-2 uses 18112. Keep connection security.
+runtime: slurm
+parent:
+  sbatch_directives:
+    partition: gpu
+    time: "1-00:00:00"
+  environment_setup: |
+    export PATH=/shared/nvflare/venv/bin:/usr/bin:/bin
+    export CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES= ROCR_VISIBLE_DEVICES= NVIDIA_VISIBLE_DEVICES=none
+job_launcher:
+  sandbox: none
+  python_path: /shared/nvflare/venv/bin/python
+  internal_port: 18111
+  parent_host: "127.0.0.1"
+  internal_connection_security: mtls
+  sbatch_directives:
+    partition: gpu
+    time: "01:00:00"
+  pending_timeout: 120
