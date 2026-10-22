@@ -19,6 +19,7 @@ import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
@@ -136,3 +137,43 @@ def test_cpu_only_process_policy_still_rejects_gpu_tasks():
         TaskExecutionPolicy.from_config({}).task_resources(
             {"launcher_spec": {"site": {"process": {"num_of_gpus": 1}}}}, "site"
         )
+
+
+@pytest.mark.parametrize("extension", [".json", ".conf", ".yml", ".json.default", ".conf.default", ".yml.default"])
+def test_cp_and_cj_use_same_gpu_allocator_from_supported_site_formats(tmp_path, extension):
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    (tmp_path / "local" / ("resources" + extension)).write_text(json.dumps(_config(tmp_path)))
+    workspace = Workspace(str(tmp_path), "site")
+    policy = TaskExecutionPolicy.from_workspace(workspace)
+    assert policy.launcher.gpu_allocator is not None
+    assert policy.task_resources({"launcher_spec": {"default": {"process": {"num_of_gpus": 1}}}}, "site").gpu_count == 1
+    context = FLContext()
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: ListResourceManager({})))
+    environment = {"CUDA_VISIBLE_DEVICES": "all"}
+    ClientProcessJobLauncher().prepare_environment({}, context, environment)
+    assert environment["CUDA_VISIBLE_DEVICES"] == ""
+
+
+def test_nominal_json_path_is_resolved_by_config_service_before_assuming_no_policy(tmp_path):
+    nominal = tmp_path / "resources.json"
+    nominal.with_suffix(".conf").write_text(json.dumps(_config(tmp_path)))
+    workspace = SimpleNamespace(get_resources_file_path=lambda: str(nominal))
+    assert TaskExecutionPolicy.from_workspace(workspace).launcher.gpu_allocator is not None
+
+
+def test_canonical_conf_is_not_shadowed_by_nested_json_in_cp_or_cj(tmp_path):
+    (tmp_path / "startup").mkdir()
+    custom = tmp_path / "local" / "custom"
+    custom.mkdir(parents=True)
+    (tmp_path / "local" / "resources.conf").write_text(json.dumps(_config(tmp_path)))
+    (custom / "resources.json").write_text("{}")
+    workspace = Workspace(str(tmp_path), "site")
+    assert TaskExecutionPolicy.from_workspace(workspace).launcher.gpu_allocator is not None
+    context = FLContext()
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_component=lambda _: ListResourceManager({})))
+    environment = {"CUDA_VISIBLE_DEVICES": "all"}
+    ClientProcessJobLauncher().prepare_environment({}, context, environment)
+    assert environment["CUDA_VISIBLE_DEVICES"] == ""

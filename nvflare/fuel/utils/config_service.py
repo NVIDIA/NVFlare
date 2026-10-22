@@ -192,7 +192,12 @@ class ConfigService:
 
     @classmethod
     def load_config_dict(
-        cls, file_basename: str, search_dirs: Optional[List] = None, raise_exception: bool = True
+        cls,
+        file_basename: str,
+        search_dirs: Optional[List] = None,
+        raise_exception: bool = True,
+        *,
+        prefer_exact_file: bool = False,
     ) -> Optional[Dict]:
         """
         Load a specified config file ( ignore extension)
@@ -208,11 +213,23 @@ class ConfigService:
             then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
             to YAML files. We use OmegaConf to load YAML
             search_dirs: which directories to search.
+            prefer_exact_file: if the supplied file exists, load it directly using its format.
+                Otherwise retain the normal format/default lookup. This lets callers that
+                resolved a canonical site file avoid a recursive search selecting another file.
 
         Returns: Dictionary from the configuration
                 if not found, exception will be raised.
         """
-        conf = ConfigFactory.load_config(file_basename, search_dirs)
+        if prefer_exact_file and os.path.isfile(file_basename):
+            fmt = next(
+                (fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if file_basename.endswith(ext)), None
+            )
+            loader = ConfigFactory.get_config_loader(fmt)
+            if loader is None:
+                raise ValueError(f"no configuration loader for selected file {file_basename}")
+            conf = loader.load_config(file_path=file_basename)
+        else:
+            conf = ConfigFactory.load_config(file_basename, search_dirs)
         if conf:
             return conf.to_dict()
         else:

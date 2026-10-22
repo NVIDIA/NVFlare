@@ -17,6 +17,7 @@ import os
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.utils.format_check import check_job_id
+from nvflare.fuel.utils.config import ConfigFormat
 
 
 class Workspace:
@@ -135,7 +136,14 @@ class Workspace:
         )
 
     def get_resources_file_path(self):
-        return self._fallback_path([WorkspaceConstants.RESOURCES_CONFIG, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG])
+        basename = WorkspaceConstants.RESOURCES_CONFIG.split(".", 1)[0]
+        # Resolve only canonical site files, in the same format/default order
+        # as ConfigService. Do not search job workspaces or nested custom code.
+        for extension in ConfigFormat.config_ext_formats():
+            path = self.get_file_path_in_site_config(basename + extension)
+            if os.path.isfile(path):
+                return path
+        return None
 
     def get_job_resources_file_path(self):
         return self.get_file_path_in_site_config(WorkspaceConstants.JOB_RESOURCES_CONFIG)

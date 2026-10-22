@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from functools import partial
 
@@ -82,13 +83,16 @@ class TaskWorkerExecutor(Executor):
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
                 with self._state_lock:
                     self._ending = True
-                self.supervisor.end_run()
-                if (
-                    event_type == EventType.END_RUN
-                    and not self._done.wait(self.policy.settlement_timeout)
-                    and self.supervisor.owns_execution
-                ):
-                    self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
+                if event_type == EventType.END_RUN and self.policy.launcher.launch_mode in ("docker", "k8s", "slurm"):
+                    self._end_native_run(fl_ctx)
+                else:
+                    self.supervisor.end_run()
+                    if (
+                        event_type == EventType.END_RUN
+                        and not self._done.wait(self.policy.settlement_timeout)
+                        and self.supervisor.owns_execution
+                    ):
+                        self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
                     fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
@@ -96,6 +100,20 @@ class TaskWorkerExecutor(Executor):
                 self._record_receipt(fl_ctx)
         finally:
             self._report_issues(fl_ctx)
+
+    def _end_native_run(self, fl_ctx):
+        # Readiness has a finite budget and event dispatch catches exceptions.
+        # The native cleanup owner must therefore hold END_RUN itself until a
+        # late launch returns and physical settlement has actually been proved.
+        while True:
+            try:
+                self.supervisor.end_run()
+            except Exception as error:
+                self.log_warning(fl_ctx, f"native task cleanup failed; retaining CJ and retrying: {error}")
+            self._report_issues(fl_ctx)
+            if not self.supervisor.owns_execution and self._done.is_set():
+                return
+            time.sleep(self.policy.poll_interval)
 
     def _report_issues(self, fl_ctx):
         for level, message in self.supervisor.take_issues():

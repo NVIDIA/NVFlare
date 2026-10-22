@@ -163,8 +163,9 @@ and restore native framework checkpoints explicitly.
 
 ## Site policy
 
-Only the site's canonical `local/resources.json` or its default fallback supplies
-`task_execution`. Job application and job resource overrides cannot select it.
+Only the site's canonical `local/resources` configuration, including JSON,
+CONF/YAML and default variants, supplies `task_execution`. Job application and
+job resource overrides cannot select it.
 The default launcher is ProcessTaskLauncher, environment forwarding is explicit,
 and successful payloads are released after terminal receipt. An optional site configuration is:
 
@@ -299,6 +300,15 @@ Cleanup is independent of admission of the next assignment.
 Explicit retention, failed cleanup and failed attempts keep their evidence. Completion and diagnostic
 records remain after successful payload release. Closure says nothing about an
 earlier upload's receipt or aggregation use.
+
+The shared worker entry requires an explicit owning parent PID for Process
+execution. Native Docker/Kubernetes/Slurm workers select native execution scope
+and do not rely on a local CJ parent or Process PID/group assumptions.
+
+Native task cleanup holds `END_RUN` until the supervisor no longer owns physical
+execution and the executor call has finished, including late launch handles.
+Bounded cleanup failures are retried after backend recovery. A readiness timeout
+is not settlement; the settlement-unconfirmed fence remains sticky after recovery.
 
 A local completion never overrides Client Job/task cancellation or authorizes
 network publication by itself. The adapter must drain pending launches during job

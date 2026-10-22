@@ -89,7 +89,13 @@ def _supported_native_launcher(launcher):
     if target is None:
         return False
     module_name, class_name = target
-    return type(launcher) is getattr(importlib.import_module(module_name), class_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name and (error.name == module_name or module_name.startswith(error.name + ".")):
+            return False
+        raise
+    return type(launcher) is getattr(module, class_name, None)
 
 
 class _SiteBuilder(ComponentBuilder):
@@ -111,9 +117,9 @@ class TaskExecutionPolicy:
     @classmethod
     def from_workspace(cls, workspace):
         # Do not consult APPLICATION_CONF or job-supplied resources. Only the
-        # canonical site's resources.json (or its default fallback) owns policy.
+        # canonical site's resources config (including format/default variants) owns policy.
         path = workspace.get_resources_file_path()
-        data = ConfigService.load_config_dict(path) if path and os.path.isfile(path) else {}
+        data = ConfigService.load_config_dict(path, prefer_exact_file=True) if path else {}
         policy = cls.from_config(data.get("task_execution", {}))
         # Only the canonical site file may establish the CP/CJ backend. A
         # container environment or job meta cannot select its own authority.

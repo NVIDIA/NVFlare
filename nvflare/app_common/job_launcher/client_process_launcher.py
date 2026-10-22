@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
@@ -26,7 +24,7 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
     def prepare_environment(self, job_meta, fl_ctx, environment):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         path = workspace.get_resources_file_path()
-        data = ConfigService.load_config_dict(path) if path and os.path.isfile(path) else {}
+        data = ConfigService.load_config_dict(path, prefer_exact_file=True) if path else {}
         launcher = data.get("task_execution", {}).get("launcher", {})
         if launcher.get("args", {}).get("gpu_allocator") is None:
             return

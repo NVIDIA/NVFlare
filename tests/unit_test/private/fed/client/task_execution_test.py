@@ -127,6 +127,38 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
         TaskExecutionPolicy.from_config(config)
 
 
+@pytest.mark.parametrize("mode", ["docker", "k8s", "slurm"])
+@pytest.mark.parametrize("missing", ["backend", "parent", "dependency"])
+def test_native_selection_reports_missing_backend_without_hiding_missing_dependency(monkeypatch, mode, missing):
+    class NativeLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise NotImplementedError()
+
+    module_name, class_name = policy_module._NATIVE_TASK_LAUNCHERS[mode]
+    missing_name = {
+        "backend": module_name,
+        "parent": module_name.rsplit(".", 1)[0],
+        "dependency": "missing_backend_dependency",
+    }[missing]
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: NativeLauncher())
+
+    def unavailable(name):
+        assert name == module_name
+        raise ModuleNotFoundError(name=missing_name)
+
+    monkeypatch.setattr(policy_module.importlib, "import_module", unavailable)
+    config = {"launcher": {"path": module_name + "." + class_name}}
+    expected = ModuleNotFoundError if missing == "dependency" else ValueError
+    with pytest.raises(expected) as error:
+        TaskExecutionPolicy.from_config(config)
+    if missing == "dependency":
+        assert error.value.name == missing_name
+    else:
+        assert "requires a supported" in str(error.value)
+
+
 def test_alias_timeout_and_specs_are_inert_snapshots():
     config = _config(result_wait_timeout=12)
     spec = config["executors"][0]["executor"]

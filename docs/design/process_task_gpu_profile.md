@@ -1,6 +1,6 @@
 # Process task GPU profile
 
-This experimental profile keeps Process CP and resident CJs on CPU and assigns
+This profile keeps Process CP and resident CJs on CPU and assigns
 whole NVIDIA GPU identifiers to disposable workers through a configured allocator.
 It uses the existing TaskLauncherSpec, TaskHandleSpec, TaskLaunchRequest, task supervisor,
 artifact completion and result-receipt contracts. No additional federation or
@@ -37,7 +37,8 @@ so editing a site file cannot conceal a stale running CP. Sharing devices betwee
 job and task allocators would require a common authority and is outside this profile.
 
 Configure each site's canonical `local/resources.json`, retaining its other
-settings and components:
+settings and components. CONF/YAML variants and default files use the same
+configuration resolution in the CP and CJ:
 
 ```json
 {
@@ -74,7 +75,7 @@ replacing the ledger, disk corruption and transparent storage recovery are
 unsupported. Keep this authority outside job workspace cleanup.
 
 The ledger retains its original `process-gpu.sqlite3` filename and schema.
-When upgrading an earlier experimental `gpu_partition` configuration, configure
+When upgrading the previous `gpu_partition` configuration, configure
 the allocator with the same `reservation_root` and device inventory, rename `id`
 to `pool_id`, and remove `exclusive`. Never change the directory or delete the
 ledger to bypass existing claims. The Process launcher no longer accepts
@@ -140,6 +141,14 @@ is not a hostile-code sandbox or device-access enforcement boundary. Workers
 must obey their CUDA assignment and may not detach processes or change groups.
 This profile does not extend to a container CP or a separately managed scheduler.
 GPU simulator scheduling is not integrated with this provisioned-site profile.
+The shared worker entry requires an explicit owning `--parent_pid` greater than
+one for Process execution and rejects a changed parent before compute. Native
+launchers select `--execution_scope native` and do not use a local CJ PID.
+
+The ledger rejects an admission request when the configured inventory is fully
+claimed. It does not implement a resource queue. Native queue/startup timeout
+settings do not apply to this Process profile. The common `worker_timeout`
+remains the overall attempt budget.
 
 Abrupt CJ death may leave workers or descendants running. Durable reservations
 remain held, so another participating CJ cannot reuse those devices. There is
