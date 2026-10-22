@@ -94,6 +94,20 @@ site-owned CJ account, and uses the durable workspace. It preserves the existing
 workspace download and credential-Secret lifecycle. A pod-template PVC override
 alone is insufficient because generated workspace volumes take precedence.
 
+For task lifetime, the parent client's abort fallback requests cooperative CJ
+shutdown over its existing command channel. It keeps CJ, its credential Secret
+and workspace transfer alive until the CJ Pod actually exits. Polling retries
+an abort request lost during startup or a transport outage. The normal
+10-second parent abort wait does not force-delete the owner of a task Pod whose
+termination grace or shutdown confirmation takes longer. CJ's end-run handler
+also waits for pending launches and confirmed native settlement, retrying bounded
+cleanup calls after API recovery even if the readiness timeout has elapsed. A
+settlement failure still fences the job and retains its evidence; later cleanup
+does not reopen task admission or publish a result. An unresponsive CJ
+remains owned for operator reconciliation; an elapsed timeout or an observation
+error is not permission to destroy its cleanup owner. Ordinary job-lifetime
+termination retains the existing behavior.
+
 Independent cleanup after abrupt CJ death remains outside this profile; the
 site operator owns reconciliation of stranded pods/finalizers after verifying
 node/runtime shutdown. Never remove a finalizer solely to clear a stuck pod.

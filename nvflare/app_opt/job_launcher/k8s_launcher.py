@@ -26,7 +26,7 @@ from datetime import datetime
 from enum import Enum
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import (
@@ -38,10 +38,10 @@ from nvflare.apis.job_launcher_spec import (
     add_launcher,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import (
-    _ensure_manifest_mapping,
-    _normalize_image_pull_secrets,
     build_pod_manifest,
+    ensure_manifest_mapping,
     get_container_waiting_failure,
+    normalize_image_pull_secrets,
 )
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -59,7 +59,9 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.defs import CellChannel, new_cell_message
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
@@ -71,7 +73,7 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 
-def _dns_name(name, value):
+def validate_dns_name(name, value):
     if not isinstance(value, str) or len(value) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", value):
         raise ValueError(f"{name} must be a DNS label")
     return value
@@ -183,7 +185,7 @@ def _obj_text(*values) -> str:
     return " ".join(str(v) for v in values if v)
 
 
-def _is_cpu_memory_gpu_shortage(message: str) -> bool:
+def is_cpu_memory_gpu_shortage(message: str) -> bool:
     if not message:
         return False
     for resource_name in re.findall(r"\binsufficient\s+([a-z0-9./_-]+)", message, flags=re.IGNORECASE):
@@ -300,6 +302,9 @@ class K8sJobHandle(JobHandleSpec):
         self.timeout = timeout
         self.terminal_state = None
         self.terminal_return_code = None
+        self.task_cj = False
+        self._abort_requested = False
+        self._last_abort_request = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -373,7 +378,31 @@ class K8sJobHandle(JobHandleSpec):
             self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
         self.credential_secret_name = None
 
+    def _request_cj_abort(self):
+        now = time.monotonic()
+        if self._last_abort_request is not None and now - self._last_abort_request < POLL_INTERVAL:
+            return
+        self._last_abort_request = now
+        try:
+            cell = self.workspace_transfer.cell
+            cell.fire_and_forget(
+                targets=FQCN.join([cell.get_fqcn(), self.workspace_job_id]),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.ABORT,
+                message=new_cell_message({}, {}),
+                optional=True,
+            )
+        except Exception as error:
+            self.logger.warning(f"failed to request CJ shutdown for {self.job_id}; retaining owner: {error}")
+
     def terminate(self):
+        if self.task_cj:
+            if self.terminal_state is None:
+                # The CJ owns independent task Pods. CP's ten-second abort
+                # fallback must retain that cleanup owner until it exits.
+                self._abort_requested = True
+                self._request_cj_abort()
+            return
         from kubernetes.client.rest import ApiException
 
         try:
@@ -408,6 +437,10 @@ class K8sJobHandle(JobHandleSpec):
         self.terminal_return_code = JobReturnCode.EXCEPTION
 
     def _get_return_code(self, job_state):
+        if self.task_cj and self.terminal_state is None:
+            # A startup/observation failure may request cooperative shutdown,
+            # but is not proof that CJ has exited or released native workers.
+            return JOB_RETURN_CODE_MAPPING.get(job_state)
         if self.terminal_return_code is not None:
             return self.terminal_return_code
         return JOB_RETURN_CODE_MAPPING.get(job_state)
@@ -431,6 +464,8 @@ class K8sJobHandle(JobHandleSpec):
                 ):
                     self.terminal_return_code = exit_code
                 break
+        if self._abort_requested and self.terminal_return_code is None:
+            self.terminal_return_code = JobReturnCode.ABORTED
         self._release_job_resources()
 
     def poll(self):
@@ -450,6 +485,8 @@ class K8sJobHandle(JobHandleSpec):
     def _query_pod(self):
         from kubernetes.client.rest import ApiException
 
+        if self._abort_requested:
+            self._request_cj_abort()
         try:
             return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
@@ -591,7 +628,7 @@ class K8sJobHandle(JobHandleSpec):
             reason = getattr(condition, "reason", None)
             message = getattr(condition, "message", None)
             detail = _obj_text(reason, message) or "pod is not scheduled"
-            if _is_cpu_memory_gpu_shortage(detail):
+            if is_cpu_memory_gpu_shortage(detail):
                 return PendingPodAction.WAIT_FOR_RESOURCES, detail
             if reason == "Unschedulable":
                 return PendingPodAction.FAIL, detail
@@ -605,7 +642,7 @@ class K8sJobHandle(JobHandleSpec):
             if event_type != "Warning":
                 continue
             detail = _obj_text(reason, message) or "pod event reported startup issue"
-            if _is_cpu_memory_gpu_shortage(detail):
+            if is_cpu_memory_gpu_shortage(detail):
                 return PendingPodAction.WAIT_FOR_RESOURCES, detail
             if reason == "FailedScheduling":
                 return PendingPodAction.FAIL, detail
@@ -664,7 +701,10 @@ class K8sJobHandle(JobHandleSpec):
                 return
             pod_phase = self._get_pod_phase(pod)
             if self._handle_starting_pod(pod, pod_phase):
-                return
+                if self.terminal_state is not None:
+                    return
+                time.sleep(POLL_INTERVAL)
+                continue
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self._record_terminal_state(pod, pod_phase)
@@ -710,7 +750,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
-        self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
+        self.image_pull_secrets = normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -810,7 +850,7 @@ class K8sJobLauncher(JobLauncherSpec):
             )
 
     def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:
-        metadata = _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
+        metadata = ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
         if "namespace" not in metadata:
             return
 
@@ -1048,7 +1088,7 @@ class K8sJobLauncher(JobLauncherSpec):
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
                 self._replace_pod_manifest_template_namespace(pod_manifest)
-            self.prepare_job_manifest(pod_manifest, raw_job_id, site_name, workspace_obj)
+            job_handle.task_cj = self.prepare_job_manifest(pod_manifest, raw_job_id, site_name, workspace_obj) is True
             job_handle.pod_manifest = pod_manifest
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
@@ -1080,7 +1120,7 @@ class K8sJobLauncher(JobLauncherSpec):
         return job_handle
 
     def prepare_job_manifest(self, manifest, job_id, site_name, workspace):
-        """Apply a trusted backend profile before creation; resident defaults are unchanged."""
+        """Prepare the manifest; return True when CJ must own native-task cleanup."""
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
@@ -1135,11 +1175,11 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
         if any(value is None for value in settings):
             raise ValueError("task execution requires PVC, CP mount, CJ service account and numeric UID/GID together")
-        self.task_workspace_pvc = _dns_name("task_workspace_pvc", task_workspace_pvc)
+        self.task_workspace_pvc = validate_dns_name("task_workspace_pvc", task_workspace_pvc)
         if not isinstance(task_workspace_pvc_root, str) or not os.path.isabs(task_workspace_pvc_root):
             raise ValueError("task_workspace_pvc_root must name the CP's explicit mount of the existing PVC")
         self.task_workspace_pvc_root = os.path.realpath(task_workspace_pvc_root)
-        self.task_cj_service_account = _dns_name("task_cj_service_account", task_cj_service_account)
+        self.task_cj_service_account = validate_dns_name("task_cj_service_account", task_cj_service_account)
         self.task_security_context = task_security_context(run_as_user, run_as_group)
 
     def launch_job(self, job_meta, fl_ctx):
@@ -1201,6 +1241,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         spec["securityContext"] = dict(self.task_security_context)
         spec["serviceAccountName"] = self.task_cj_service_account
         spec["automountServiceAccountToken"] = True
+        return True
 
     def _prepare_workspace_subpath(self, job_id, site_name):
         subpath = task_workspace_subpath(job_id, site_name)

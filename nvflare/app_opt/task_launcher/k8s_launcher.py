@@ -39,12 +39,12 @@ from nvflare.apis.task_launcher_spec import (
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
     WORKSPACE_MOUNT_PATH,
-    _dns_name,
-    _is_cpu_memory_gpu_shortage,
+    is_cpu_memory_gpu_shortage,
     reject_job_gpu_reservation,
     site_name_to_rfc1123,
     task_security_context,
     task_workspace_subpath,
+    validate_dns_name,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
@@ -204,9 +204,9 @@ class K8sTaskLauncher(TaskLauncherSpec):
         environment: dict = None,
     ):
         super().__init__()
-        self.namespace = _dns_name("namespace", namespace)
-        self.workspace_pvc = _dns_name("workspace_pvc", workspace_pvc)
-        self.worker_service_account = _dns_name("worker_service_account", worker_service_account)
+        self.namespace = validate_dns_name("namespace", namespace)
+        self.workspace_pvc = validate_dns_name("workspace_pvc", workspace_pvc)
+        self.worker_service_account = validate_dns_name("worker_service_account", worker_service_account)
         if not isinstance(image, str) or not image.strip():
             raise ValueError("image must be site configured")
         if not isinstance(python_path, str) or not os.path.isabs(python_path):
@@ -268,7 +268,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
             raise ValueError("Kubernetes CP requires an explicit dedicated mount of the existing task PVC")
         if task_security_context(args.get("run_as_user"), args.get("run_as_group")) != self.security_context:
             raise ValueError("Kubernetes CP/CJ/task numeric UID/GID must match")
-        cj_account = _dns_name("task_cj_service_account", args.get("task_cj_service_account"))
+        cj_account = validate_dns_name("task_cj_service_account", args.get("task_cj_service_account"))
         if cj_account == self.worker_service_account:
             raise ValueError("Kubernetes CJ and task workers require distinct service accounts")
 
@@ -568,7 +568,7 @@ class K8sTaskHandle(TaskHandleSpec):
                     for condition in pod.status.conditions or []:
                         if condition.type == "PodScheduled" and condition.status == "False":
                             detail = f"{condition.reason or ''} {condition.message or ''}"
-                            if condition.reason == "Unschedulable" and not _is_cpu_memory_gpu_shortage(detail):
+                            if condition.reason == "Unschedulable" and not is_cpu_memory_gpu_shortage(detail):
                                 failure = detail
                     if time.monotonic() - self._started >= self.launcher.pending_timeout:
                         failure = failure or "task pod pending timeout"

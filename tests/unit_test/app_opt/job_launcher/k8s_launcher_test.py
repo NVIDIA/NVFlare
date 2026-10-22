@@ -3811,6 +3811,7 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
         handle = launcher.launch_job(meta, fl_ctx)
     manifest = api.create_namespaced_pod.call_args.kwargs["body"]
     assert handle.get_manifest() == manifest
+    assert handle.task_cj == (lifetime == "task")
     spec = manifest["spec"]
     container = spec["containers"][0]
     workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
@@ -3920,3 +3921,75 @@ def test_client_task_settings_must_be_complete(missing):
     settings.pop(missing)
     with pytest.raises(ValueError, match="together"):
         ClientK8sJobLauncher(config_file_path=None, **settings)
+
+
+@pytest.mark.parametrize("failure", ["abort-send", "pod-observation"])
+def test_task_cj_abort_transport_failure_retains_owner_and_retries(failure):
+    transfer = Mock()
+    transfer.cell.get_fqcn.return_value = "site-1"
+    api = Mock()
+    pod = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    api.read_namespaced_pod.return_value = pod
+    handle = _make_handle(
+        api=api, workspace_transfer=transfer, workspace_job_id="job-1", credential_secret_name="creds"
+    )
+    handle.task_cj = True
+    if failure == "abort-send":
+        transfer.cell.fire_and_forget.side_effect = OSError("transport unavailable")
+    else:
+        api.read_namespaced_pod.side_effect = OSError("API unavailable")
+    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time.monotonic", side_effect=[0, 2]):
+        handle.terminate()
+        assert handle.poll() == JobReturnCode.UNKNOWN
+    assert transfer.cell.fire_and_forget.call_count == 2
+    assert transfer.cell.fire_and_forget.call_args.kwargs["targets"] == "site-1.job-1"
+    api.delete_namespaced_pod.assert_not_called()
+    api.delete_namespaced_secret.assert_not_called()
+    transfer.remove_job.assert_not_called()
+    transfer.cell.fire_and_forget.side_effect = None
+    api.read_namespaced_pod.side_effect = None
+    pod.status.phase = "Succeeded"
+    handle.wait()
+    assert handle.poll() == JobReturnCode.ABORTED
+    transfer.remove_job.assert_called_once_with("job-1")
+
+
+@pytest.mark.parametrize("phase", ["Unknown", "Pending"])
+def test_task_cj_startup_failure_does_not_finish_wait_before_owner_exits(phase):
+    transfer = Mock()
+    transfer.cell.get_fqcn.return_value = "site-1"
+    api = Mock()
+    pod = SimpleNamespace(
+        status=SimpleNamespace(
+            phase=phase,
+            conditions=[SimpleNamespace(type="PodScheduled", status="True")],
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(waiting=SimpleNamespace(reason="ImagePullBackOff", message="pull failed"))
+                )
+            ],
+        )
+    )
+    api.read_namespaced_pod.return_value = pod
+    handle = _make_handle(
+        api=api, workspace_transfer=transfer, workspace_job_id="job-1", credential_secret_name="creds"
+    )
+    handle.task_cj = True
+    now = [0.0]
+
+    def sleep(delay):
+        now[0] += delay
+        api.delete_namespaced_pod.assert_not_called()
+        transfer.remove_job.assert_not_called()
+        if now[0] >= 3:
+            pod.status.phase = "Succeeded"
+
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep", side_effect=sleep),
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.time.monotonic", side_effect=lambda: now[0]),
+    ):
+        handle.wait()
+    assert now[0] >= 3
+    assert handle.poll() == JobReturnCode.EXCEPTION
+    api.delete_namespaced_pod.assert_not_called()
+    transfer.remove_job.assert_called_once_with("job-1")

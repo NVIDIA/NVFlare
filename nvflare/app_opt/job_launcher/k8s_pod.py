@@ -27,7 +27,7 @@ _PENDING_FAILURE_WAITING_REASONS = {
 }
 
 
-def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
+def normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
     if image_pull_secrets is None:
         return []
     if not isinstance(image_pull_secrets, list):
@@ -38,7 +38,7 @@ def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
     return list(image_pull_secrets)
 
 
-def _ensure_manifest_mapping(parent: dict, key: str, label: str) -> dict:
+def ensure_manifest_mapping(parent: dict, key: str, label: str) -> dict:
     value = parent.get(key)
     if value is None:
         value = {}
@@ -72,8 +72,8 @@ def _prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
     pod_manifest = copy.deepcopy(pod_manifest_template)
     pod_manifest.setdefault("apiVersion", "v1")
     pod_manifest["kind"] = "Pod"
-    _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
-    spec = _ensure_manifest_mapping(pod_manifest, "spec", "pod manifest spec")
+    ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
+    spec = ensure_manifest_mapping(pod_manifest, "spec", "pod manifest spec")
     _ensure_manifest_containers(spec)
     return pod_manifest
 
@@ -157,7 +157,7 @@ def build_pod_manifest(job_config, python_path, pod_manifest_template=None, *, p
     spec["volumes"] = (
         _merge_named_items(spec.get("volumes"), volumes, "pod spec volumes") if uses_template else list(volumes)
     )
-    image_pull_secrets = _normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
+    image_pull_secrets = normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
     if image_pull_secrets:
         refs = [{"name": name} for name in image_pull_secrets]
         spec["imagePullSecrets"] = (

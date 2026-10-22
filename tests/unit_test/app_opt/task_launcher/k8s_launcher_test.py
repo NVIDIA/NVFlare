@@ -22,7 +22,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, TaskResultReceipt
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, TaskResultReceipt
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
@@ -33,7 +34,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskResourceRequest,
     TaskSettlementError,
 )
-from nvflare.app_opt.job_launcher.k8s_launcher import task_workspace_subpath
+from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, task_workspace_subpath
 from nvflare.app_opt.task_launcher.k8s_launcher import (
     SETTLEMENT_FINALIZER,
     WORKER_MODULE,
@@ -41,6 +42,8 @@ from nvflare.app_opt.task_launcher.k8s_launcher import (
     check_posix_storage,
     task_pod_resources,
 )
+from nvflare.private.fed.client.client_executor import JobExecutor
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
@@ -959,3 +962,152 @@ def test_native_checkpoint_survives_pod_removal_and_attempt_payload_release(setu
     isolated = Path(store.checkpoint_paths(later)["input"])
     assert isolated.read_bytes() == committed.read_bytes()
     assert isolated.stat().st_ino != committed.stat().st_ino
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin-abort", "heartbeat-cleanup"])
+@pytest.mark.parametrize("state", [ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED])
+def test_parent_abort_retains_cj_until_slow_native_cleanup_finishes(setup, monkeypatch, heartbeat_cleanup, state):
+    launcher, worker_api, request, _, _ = setup
+    worker = launcher.launch_task(request)
+    worker_api.running()
+    clock = NS(now=0.0, finishing=False)
+    parent_api = Mock()
+    parent_pod = NS(status=NS(phase="Running"))
+    parent_api.read_namespaced_pod.side_effect = lambda **_: parent_pod
+    transfer = Mock()
+    transfer.cell.get_fqcn.return_value = "site-1"
+    transfer.remove_job.side_effect = lambda _: worker.poll().settled or pytest.fail("CJ released before worker")
+    cj = K8sJobHandle(
+        "cj",
+        parent_api,
+        {
+            "name": "cj",
+            "image": "site/image",
+            "command": "worker",
+            "module_args": {},
+            "volume_mount_list": [],
+            "volume_list": [],
+        },
+        workspace_transfer=transfer,
+        workspace_job_id=request.job_id,
+        credential_secret_name="cj-credentials",
+    )
+    cj.task_cj = True
+    executor = JobExecutor(client=NS(cell=transfer.cell), startup="startup")
+    from nvflare.private.fed.client.client_executor import _PendingJobHandle
+
+    pending = _PendingJobHandle()
+    pending.attach(cj)
+    executor.run_processes[request.job_id] = {RunProcessKey.JOB_HANDLE: pending, RunProcessKey.STATUS: state}
+
+    def sleep(delay):
+        clock.now += delay
+        if clock.now >= 35 and not clock.finishing:
+            clock.finishing = True
+            worker_api.finish(exit_code=143)
+            assert worker.cancel().settled
+            parent_pod.status.phase = "Succeeded"
+
+    local_time = NS(time=lambda: clock.now, monotonic=lambda: clock.now, sleep=sleep)
+    for module in (
+        "nvflare.private.fed.client.client_executor",
+        "nvflare.app_opt.job_launcher.k8s_launcher",
+        "nvflare.app_opt.task_launcher.k8s_launcher",
+    ):
+        monkeypatch.setattr(module + ".time", local_time)
+    executor.abort_app(request.job_id, heartbeat_cleanup=heartbeat_cleanup)
+    # The parent's ten-second fallback must not kill the owner of a task that
+    # needs the native 30-second termination grace period.
+    parent_api.delete_namespaced_pod.assert_not_called()
+    transfer.remove_job.assert_not_called()
+    parent_api.delete_namespaced_secret.assert_not_called()
+    assert worker.poll().phase == TaskExecutionPhase.RUNNING
+    assert cj.poll() == JobReturnCode.UNKNOWN
+    assert cj.terminal_state is None
+    cj.wait()
+    assert clock.now >= 35
+    assert worker.poll().settled
+    assert cj.poll() == JobReturnCode.ABORTED
+    parent_api.delete_namespaced_pod.assert_not_called()
+    transfer.remove_job.assert_called_once_with(request.job_id)
+    parent_api.delete_namespaced_secret.assert_called_once()
+
+
+@pytest.mark.parametrize("pending_launch", [False, True], ids=["api-outage", "late-handle"])
+def test_cj_end_run_waits_for_native_settlement_after_cleanup_or_readiness_timeout(setup, monkeypatch, pending_launch):
+    import threading
+
+    from nvflare.apis.fl_constant import ReservedKey
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.utils.event import fire_event_to_components
+    from nvflare.private.fed.client.client_runner import ClientRunner
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+    from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
+    from nvflare.private.fed.task_worker.supervisor import _Attempt
+    from nvflare.private.fed.tbi import TBI
+
+    launcher, api, request, store, bootstrap = setup
+    launcher.cleanup_timeout = 60
+    launcher.poll_interval = 1
+    worker = launcher.launch_task(request)
+    api.running()
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher, poll_interval=0.5, settlement_timeout=0.01))
+    adapter.system_panic = Mock()
+    attempt = _Attempt(bootstrap.identity, store, store.root_dir, handle=None if pending_launch else worker)
+    adapter.supervisor._active = attempt
+    adapter.supervisor._attempts[bootstrap.identity] = attempt
+    if pending_launch:
+        adapter._done.clear()
+        api.on_delete = lambda: api.finish(exit_code=143)
+    else:
+        api.read_error = ApiError(503)
+
+    context = FLContext()
+    engine = NS(
+        new_context=lambda: context,
+        get_cell=lambda: NS(decode_pass_through_topics=set()),
+        fire_event=lambda event, ctx: fire_event_to_components(event, [adapter], ctx),
+    )
+    context.set_prop(ReservedKey.ENGINE, engine)
+    runner = ClientRunner.__new__(ClientRunner)
+    TBI.__init__(runner)
+    runner.engine = engine
+    runner.task_lock = threading.Lock()
+    runner.running_tasks = {}
+    runner._run_abort_requested = True
+    clock = NS(now=0.0, recovered=False)
+    recovery_time = 10 if pending_launch else 240
+
+    def sleep(delay):
+        clock.now += delay
+        assert clock.now < 400, "CJ shutdown did not complete after API recovery"
+        if clock.now >= recovery_time and not clock.recovered:
+            assert adapter.supervisor.owns_execution
+            assert not api.deleted
+            assert api.pod.status.phase == "Running"
+            clock.recovered = True
+            if pending_launch:
+                attempt.handle = worker
+                adapter._done.set()
+            else:
+                assert adapter.supervisor.settlement_unconfirmed
+                api.read_error = None
+                api.finish(exit_code=143)
+
+    local_time = NS(time=lambda: clock.now, monotonic=lambda: clock.now, sleep=sleep)
+    for module in ("nvflare.private.fed.tbi", "nvflare.app_opt.task_launcher.k8s_launcher"):
+        monkeypatch.setattr(module + ".time", local_time)
+    # The executor did not previously use a clock; raising=False also permits
+    # reproducing the regression against that version.
+    monkeypatch.setattr("nvflare.private.fed.client.task_worker_executor.time", local_time, raising=False)
+    runner.end_run_events_sequence()
+    assert clock.recovered
+    assert api.deleted
+    assert worker.poll().settled
+    assert not adapter.supervisor.owns_execution
+    assert adapter._done.is_set()
+    assert adapter._ending
+    if not pending_launch:
+        assert adapter.supervisor.settlement_unconfirmed  # Recovery cannot reopen admission or publish a result.
+        adapter.system_panic.assert_called_once()
+        assert Path(store.root_dir, "diagnostics.jsonl").exists()
