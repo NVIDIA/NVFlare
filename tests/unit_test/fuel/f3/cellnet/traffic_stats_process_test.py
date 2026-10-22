@@ -15,7 +15,9 @@
 """Real TCP exchanges: server, relay and sender run in separate processes."""
 
 import multiprocessing
+import threading
 import traceback
+from unittest.mock import Mock
 
 import pytest
 
@@ -23,7 +25,9 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import wait_for
 from tests.unit_test.fuel.f3.cellnet.server_transit_e2e_test import (
     _mark_server_transit,
     _queue_result,
@@ -36,18 +40,76 @@ _TOPIC = "echo"
 _REPEATS = 3
 
 
-def _traffic_server(root_url, streaming, status_queue, capture_event, stop_event):
+def _watch_stream_frames(cell):
+    observed = {kind: threading.Event() for kind in (StreamDataType.CHUNK, StreamDataType.FINAL)}
+
+    def observe(message):
+        if message.get_header(MessageHeaderKey.CHANNEL) != STREAM_CHANNEL:
+            return
+        event = observed.get(message.get_header(StreamHeaderKey.DATA_TYPE))
+        if event is not None:
+            event.set()
+
+    core_cell = cell.core_cell if isinstance(cell, Cell) else cell
+    core_cell.add_outgoing_request_filter("*", "*", observe)
+    return observed
+
+
+def _wait_for_traffic(cell, expected_bytes, timeout=10.0):
+    def ready_snapshot():
+        snapshot = cell.get_traffic_stats()
+        counters = snapshot["peers"].get("relay-1", {})
+        if all(counters.get(direction, 0) >= expected_bytes for direction in ("sent_bytes", "received_bytes")):
+            return snapshot
+
+    # A reply can arrive before the sending thread credits its last chunk.
+    return wait_for(
+        ready_snapshot,
+        timeout=timeout,
+        message=f"{cell.get_fqcn()} did not record {expected_bytes} bytes in both directions",
+    )
+
+
+def test_snapshot_waits_for_final_send_credit():
+    cell = Mock()
+    pending = {"peers": {"relay-1": {"sent_bytes": 0, "received_bytes": 4096}}}
+    complete = {"peers": {"relay-1": {"sent_bytes": 4096, "received_bytes": 4096}}}
+    cell.get_traffic_stats.side_effect = [pending, complete]
+
+    assert _wait_for_traffic(cell, 4096) == complete
+    assert cell.get_traffic_stats.call_count == 2
+
+
+def test_snapshot_wait_has_a_deadline():
+    cell = Mock()
+    cell.get_traffic_stats.return_value = {"peers": {}}
+
+    with pytest.raises(AssertionError, match="did not record 4096 bytes"):
+        _wait_for_traffic(cell, 4096, timeout=0)
+
+
+def _traffic_server(root_url, streaming, payload_size, status_queue, capture_event, stop_event):
     cell = None
     try:
         cell_type = Cell if streaming else CoreCell
         cell = cell_type("server", root_url, secure=False, credentials={})
+        stream_frames = _watch_stream_frames(cell)
         cell.add_outgoing_reply_filter("*", "*", _mark_server_transit)
-        cell.register_request_cb(_CHANNEL, _TOPIC, lambda request: Message(payload=request.payload))
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC,
+            cb=lambda request: Message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload=request.payload),
+        )
         cell.start()
         status_queue.put({"ready": True})
         if not capture_event.wait(30):
             raise TimeoutError("No request to capture server traffic")
-        status_queue.put(cell.get_traffic_stats())
+        status_queue.put(
+            {
+                "snapshot": _wait_for_traffic(cell, _REPEATS * payload_size),
+                "stream_frames": [event.is_set() for event in stream_frames.values()],
+            }
+        )
         stop_event.wait(30)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
@@ -62,17 +124,22 @@ def _traffic_sender(parent_url, streaming, payload_size, result_queue):
     try:
         cell_type = Cell if streaming else CoreCell
         cell = cell_type("relay-1.site-a", None, secure=False, credentials={}, parent_url=parent_url)
+        stream_frames = _watch_stream_frames(cell)
         cell.add_outgoing_request_filter("*", "*", _mark_server_transit)
         cell.start()
         _wait_for_connection(cell, "relay-1")
         payload = b"x" * payload_size
         snapshots = []
-        for _ in range(_REPEATS):
-            reply = cell.send_request(_CHANNEL, _TOPIC, "server", Message(payload=payload), timeout=10.0)
+        for index in range(1, _REPEATS + 1):
+            reply = cell.send_request(
+                channel=_CHANNEL, topic=_TOPIC, target="server", request=Message(payload=payload), timeout=10.0
+            )
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
             assert reply.payload == payload
-            snapshots.append(cell.get_traffic_stats())
-        result_queue.put({"snapshots": snapshots})
+            snapshots.append(_wait_for_traffic(cell, index * payload_size))
+        result_queue.put(
+            {"snapshots": snapshots, "stream_frames": [event.is_set() for event in stream_frames.values()]}
+        )
     except Exception:
         result_queue.put({"error": traceback.format_exc()})
         raise
@@ -91,7 +158,7 @@ def test_real_tcp_repeated_request_reply_counts_actual_adjacent_peers(streaming,
     processes = []
     try:
         server = context.Process(
-            target=_traffic_server, args=(root_url, streaming, server_status, capture_event, stop_event)
+            target=_traffic_server, args=(root_url, streaming, payload_size, server_status, capture_event, stop_event)
         )
         server.start()
         processes.append(server)
@@ -107,7 +174,12 @@ def test_real_tcp_repeated_request_reply_counts_actual_adjacent_peers(streaming,
         processes.append(sender)
         result = _queue_result(sender_result)
         capture_event.set()
-        server_snapshot = _queue_result(server_status)
+        server_result = _queue_result(server_status)
+        server_snapshot = server_result["snapshot"]
+
+        # Prove the streamed case sends multiple frames, not an ordinary message.
+        assert result["stream_frames"] == [streaming, streaming]
+        assert server_result["stream_frames"] == [streaming, streaming]
 
         for index, snapshot in enumerate(result["snapshots"], start=1):
             assert snapshot["cell"] == "relay-1.site-a"
