@@ -367,7 +367,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
-        self._traffic_stats = PeerTrafficCounters()
+        self.traffic_stats = PeerTrafficCounters()
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
@@ -601,26 +601,21 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def get_traffic_stats(self) -> dict:
         """Snapshot cumulative remote payload bytes for each adjacent peer."""
-        return {"cell": self.my_info.fqcn, **self._traffic_stats.snapshot()}
+        return self.traffic_stats.snapshot()
 
-    def _traffic_payload_size(self, message):
-        if getattr(self, "_traffic_stats", None) is None:
-            return None
-        try:
-            return buffer_len(message.payload)
-        except Exception:
-            return None
+    def pop_traffic_stats(self, peer: str):
+        """Return and remove one peer's counters without changing other peers."""
+        return self.traffic_stats.pop(peer)
 
-    def _record_traffic(self, peer, payload_bytes, sent):
-        if payload_bytes is None or peer == self.my_info.fqcn:
+    def _record_traffic(self, peer, message, sent):
+        if peer == self.my_info.fqcn:
             return
         try:
-            counters = getattr(self, "_traffic_stats", None)
-            if counters is not None:
-                if sent:
-                    counters.record_sent(peer, payload_bytes)
-                else:
-                    counters.record_received(peer, payload_bytes)
+            payload_bytes = buffer_len(message.payload)
+            if sent:
+                self.traffic_stats.record_sent(peer, payload_bytes)
+            else:
+                self.traffic_stats.record_received(peer, payload_bytes)
         except Exception:
             # Observing bytes must not change message delivery or its result.
             pass
@@ -1376,10 +1371,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     self._send_direct_message(direct_cell, message)
 
                 else:
-                    # Drivers may consume or replace payload buffers after send.
-                    traffic_bytes = self._traffic_payload_size(message)
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
-                    self._record_traffic(to_endpoint.name, traffic_bytes, sent=True)
+                    self._record_traffic(to_endpoint.name, message, sent=True)
                 self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
@@ -2072,7 +2065,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
     def _process_received_msg(self, endpoint: Endpoint, connection: Connection, message: Message):
         # Direct in-process delivery has no transport connection.
         if connection is not None:
-            self._record_traffic(endpoint.name, self._traffic_payload_size(message), sent=False)
+            self._record_traffic(endpoint.name, message, sent=False)
         route = message.get_header(MessageHeaderKey.ROUTE)
         if route:
             origin_name = route[0][0]

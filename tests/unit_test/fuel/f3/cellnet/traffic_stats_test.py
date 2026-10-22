@@ -46,7 +46,7 @@ def _cell():
     cell._add_to_route = MagicMock()
     cell._process_reply = MagicMock()
     cell._forward = MagicMock()
-    cell._traffic_stats = PeerTrafficCounters()
+    cell.traffic_stats = PeerTrafficCounters()
     return cell
 
 
@@ -73,17 +73,15 @@ def _receive(cell, message, peer="site-1.job", connection=None):
     cell._process_received_msg(Endpoint(peer), connection, message)
 
 
-def test_snapshot_identifies_cell_and_does_not_reset_counters():
+def test_snapshot_contains_peer_totals_and_does_not_reset_counters():
     cell = _cell()
-    cell._traffic_stats.record_sent("site-1.job", 4)
+    cell.traffic_stats.record_sent("site-1.job", 4)
 
     snapshot = cell.get_traffic_stats()
-    snapshot["peers"]["site-1.job"]["sent_bytes"] = 99
+    snapshot["site-1.job"]["sent"] = 99
 
     assert cell.get_traffic_stats() == {
-        "cell": "server.job",
-        "peers": {"site-1.job": {"sent_bytes": 4, "received_bytes": 0}},
-        "unattributed": {"sent_bytes": 0, "received_bytes": 0},
+        "site-1.job": {"sent": 4, "received": 0},
     }
 
 
@@ -91,9 +89,28 @@ def test_high_level_cell_exposes_the_core_snapshot_without_a_new_wrapper():
     cell = Cell.__new__(Cell)
     cell.core_cell = _cell()
     cell.logger = MagicMock()
-    cell.core_cell._traffic_stats.record_sent("site-1.job", 4)
+    cell.core_cell.traffic_stats.record_sent("site-1.job", 4)
 
     assert cell.get_traffic_stats() == cell.core_cell.get_traffic_stats()
+
+
+def test_high_level_cell_can_remove_completed_peer_without_changing_another_job():
+    cell = Cell.__new__(Cell)
+    cell.core_cell = _cell()
+    cell.logger = MagicMock()
+    cell.core_cell.traffic_stats.record_sent("site-1.job", 4)
+    cell.core_cell.traffic_stats.record_received("site-1.other-job", 7)
+
+    assert cell.pop_traffic_stats("site-1.job") == {"sent": 4, "received": 0}
+    assert cell.pop_traffic_stats("site-1.job") is None
+    assert cell.get_traffic_stats() == {"site-1.other-job": {"sent": 0, "received": 7}}
+
+
+def test_cells_do_not_share_counters():
+    first, second = _cell(), _cell()
+    first.traffic_stats.record_sent("site-1.job", 4)
+
+    assert second.get_traffic_stats() == {}
 
 
 def test_send_counts_actual_adjacent_peer_and_includes_retries_and_control_messages():
@@ -104,19 +121,23 @@ def test_send_counts_actual_adjacent_peer_and_includes_retries_and_control_messa
     assert cell._send_to_endpoint(endpoint, message) == ""
     assert cell._send_to_endpoint(endpoint, message) == ""
 
-    assert cell.get_traffic_stats()["peers"] == {"relay": {"sent_bytes": 8, "received_bytes": 0}}
+    assert cell.get_traffic_stats() == {"relay": {"sent": 8, "received": 0}}
     assert cell.communicator.send.call_count == 2
 
 
-def test_send_samples_encrypted_payload_before_asynchronous_transport_can_consume_it():
+def test_send_counts_encrypted_payload_after_transport_returns():
     cell = _cell()
     message = _message()
     cell.encrypt_payload.side_effect = lambda msg: setattr(msg, "payload", b"encrypted-payload")
-    cell.communicator.send.side_effect = lambda *args: setattr(message, "payload", b"")
+
+    def send(*_args):
+        assert cell.get_traffic_stats() == {}
+
+    cell.communicator.send.side_effect = send
 
     assert cell._send_to_endpoint(Endpoint("site-1.job"), message) == ""
 
-    assert cell.get_traffic_stats()["peers"]["site-1.job"]["sent_bytes"] == len(b"encrypted-payload")
+    assert cell.get_traffic_stats()["site-1.job"]["sent"] == len(b"encrypted-payload")
 
 
 def test_send_counts_buffer_bytes_not_buffer_list_entries():
@@ -126,7 +147,7 @@ def test_send_counts_buffer_bytes_not_buffer_list_entries():
 
     assert cell._send_to_endpoint(Endpoint("site-1.job"), message) == ""
 
-    assert cell.get_traffic_stats()["peers"]["site-1.job"]["sent_bytes"] == 8
+    assert cell.get_traffic_stats()["site-1.job"]["sent"] == 8
 
 
 @pytest.mark.parametrize("payload", [None, b"", bytearray(b"123"), memoryview(b"12345")])
@@ -137,7 +158,7 @@ def test_byte_buffers_and_empty_payloads_have_their_actual_size(payload):
     _receive(cell, _message(payload=payload))
 
     size = 0 if payload is None else len(payload)
-    assert cell.get_traffic_stats()["peers"] == {"site-1.job": {"sent_bytes": size, "received_bytes": size}}
+    assert cell.get_traffic_stats() == {"site-1.job": {"sent": size, "received": size}}
 
 
 @pytest.mark.parametrize("failure", ["encoding", "encryption", "transport", "oversized"])
@@ -156,7 +177,7 @@ def test_failed_sends_do_not_increment_bytes(monkeypatch, failure):
 
     expected = ReturnCode.MSG_TOO_BIG if failure == "oversized" else ReturnCode.COMM_ERROR
     assert cell._send_to_endpoint(Endpoint("site-1.job"), _message()) == expected
-    assert cell.get_traffic_stats()["peers"] == {}
+    assert cell.get_traffic_stats() == {}
 
 
 def test_direct_in_process_send_is_delivered_without_remote_bytes():
@@ -168,7 +189,7 @@ def test_direct_in_process_send_is_delivered_without_remote_bytes():
 
     receiver.process_message.assert_called_once()
     cell.communicator.send.assert_not_called()
-    assert cell.get_traffic_stats()["peers"] == {}
+    assert cell.get_traffic_stats() == {}
 
 
 def test_self_loopback_send_is_not_remote_traffic():
@@ -177,7 +198,7 @@ def test_self_loopback_send_is_not_remote_traffic():
     assert cell._send_to_endpoint(Endpoint("server.job"), _message()) == ""
 
     cell.communicator.send.assert_called_once()
-    assert cell.get_traffic_stats()["peers"] == {}
+    assert cell.get_traffic_stats() == {}
 
 
 def test_receive_counts_actual_peer_and_actual_payload_before_dispatch():
@@ -186,14 +207,14 @@ def test_receive_counts_actual_peer_and_actual_payload_before_dispatch():
     observed_at_dispatch = []
 
     def dispatch(*_args):
-        observed_at_dispatch.append(cell.get_traffic_stats()["peers"]["site-1.job"]["received_bytes"])
+        observed_at_dispatch.append(cell.get_traffic_stats()["site-1.job"]["received"])
         message.payload = b""
 
     cell._process_reply.side_effect = dispatch
     _receive(cell, message)
 
     assert observed_at_dispatch == [8]
-    assert cell.get_traffic_stats()["peers"] == {"site-1.job": {"sent_bytes": 0, "received_bytes": 8}}
+    assert cell.get_traffic_stats() == {"site-1.job": {"sent": 0, "received": 8}}
 
 
 def test_forwarded_receive_counts_incoming_hop_only():
@@ -203,7 +224,7 @@ def test_forwarded_receive_counts_incoming_hop_only():
     _receive(cell, message, peer="relay")
 
     cell._forward.assert_called_once()
-    assert cell.get_traffic_stats()["peers"] == {"relay": {"sent_bytes": 0, "received_bytes": 4}}
+    assert cell.get_traffic_stats() == {"relay": {"sent": 0, "received": 4}}
 
 
 def test_receive_is_counted_even_when_rejected_by_an_incoming_filter():
@@ -216,7 +237,7 @@ def test_receive_is_counted_even_when_rejected_by_an_incoming_filter():
     _receive(cell, _message())
 
     cell._process_reply.assert_not_called()
-    assert cell.get_traffic_stats()["peers"]["site-1.job"]["received_bytes"] == 4
+    assert cell.get_traffic_stats()["site-1.job"]["received"] == 4
 
 
 @pytest.mark.parametrize("peer", ["site-1.job", "server.job"])
@@ -229,13 +250,13 @@ def test_direct_or_self_loopback_receive_does_not_count_remote_bytes(peer):
     cell._process_received_msg(Endpoint(peer), connection, _message())
 
     cell._process_reply.assert_called_once()
-    assert cell.get_traffic_stats()["peers"] == {}
+    assert cell.get_traffic_stats() == {}
 
 
 @pytest.mark.parametrize("direction", ["sent", "received"])
 def test_counter_failure_does_not_change_delivery(direction):
     cell = _cell()
-    setattr(cell._traffic_stats, f"record_{direction}", MagicMock(side_effect=RuntimeError("counter")))
+    setattr(cell.traffic_stats, f"record_{direction}", MagicMock(side_effect=RuntimeError("counter")))
 
     if direction == "sent":
         assert cell._send_to_endpoint(Endpoint("site-1.job"), _message()) == ""
@@ -256,12 +277,12 @@ def test_byte_sampling_failure_does_not_change_delivery(monkeypatch, direction):
     else:
         _receive(cell, _message())
         cell._process_reply.assert_called_once()
-    assert cell.get_traffic_stats()["peers"] == {}
+    assert cell.get_traffic_stats() == {}
 
 
 def test_old_minimal_corecell_fixture_without_counters_still_delivers():
     cell = _cell()
-    del cell._traffic_stats
+    del cell.traffic_stats
 
     assert cell._send_to_endpoint(Endpoint("site-1.job"), _message()) == ""
     _receive(cell, _message())

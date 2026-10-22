@@ -16,6 +16,7 @@
 
 import multiprocessing
 import threading
+import time
 import traceback
 from unittest.mock import Mock
 
@@ -27,7 +28,6 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.timing_utils import wait_for
 from tests.unit_test.fuel.f3.cellnet.server_transit_e2e_test import (
     _mark_server_transit,
     _queue_result,
@@ -56,24 +56,23 @@ def _watch_stream_frames(cell):
 
 
 def _wait_for_traffic(cell, expected_bytes, timeout=10.0):
-    def ready_snapshot():
+    deadline = time.monotonic() + timeout
+    while True:
         snapshot = cell.get_traffic_stats()
-        counters = snapshot["peers"].get("relay-1", {})
-        if all(counters.get(direction, 0) >= expected_bytes for direction in ("sent_bytes", "received_bytes")):
+        counters = snapshot.get("relay-1", {})
+        if all(counters.get(direction, 0) >= expected_bytes for direction in ("sent", "received")):
             return snapshot
-
-    # A reply can arrive before the sending thread credits its last chunk.
-    return wait_for(
-        ready_snapshot,
-        timeout=timeout,
-        message=f"{cell.get_fqcn()} did not record {expected_bytes} bytes in both directions",
-    )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError(f"{cell.get_fqcn()} did not record {expected_bytes} bytes in both directions")
+        # A reply can arrive before the sending thread credits its last chunk.
+        time.sleep(min(0.01, remaining))
 
 
 def test_snapshot_waits_for_final_send_credit():
     cell = Mock()
-    pending = {"peers": {"relay-1": {"sent_bytes": 0, "received_bytes": 4096}}}
-    complete = {"peers": {"relay-1": {"sent_bytes": 4096, "received_bytes": 4096}}}
+    pending = {"relay-1": {"sent": 0, "received": 4096}}
+    complete = {"relay-1": {"sent": 4096, "received": 4096}}
     cell.get_traffic_stats.side_effect = [pending, complete]
 
     assert _wait_for_traffic(cell, 4096) == complete
@@ -82,7 +81,7 @@ def test_snapshot_waits_for_final_send_credit():
 
 def test_snapshot_wait_has_a_deadline():
     cell = Mock()
-    cell.get_traffic_stats.return_value = {"peers": {}}
+    cell.get_traffic_stats.return_value = {}
 
     with pytest.raises(AssertionError, match="did not record 4096 bytes"):
         _wait_for_traffic(cell, 4096, timeout=0)
@@ -182,23 +181,21 @@ def test_real_tcp_repeated_request_reply_counts_actual_adjacent_peers(streaming,
         assert server_result["stream_frames"] == [streaming, streaming]
 
         for index, snapshot in enumerate(result["snapshots"], start=1):
-            assert snapshot["cell"] == "relay-1.site-a"
             # The final destination is server, but this sender's actual peer is its relay.
-            assert set(snapshot["peers"]) == {"relay-1"}
-            counters = snapshot["peers"]["relay-1"]
-            assert counters["sent_bytes"] >= index * payload_size
-            assert counters["received_bytes"] >= index * payload_size
+            assert set(snapshot) == {"relay-1"}
+            counters = snapshot["relay-1"]
+            assert counters["sent"] >= index * payload_size
+            assert counters["received"] >= index * payload_size
 
-        assert server_snapshot["cell"] == "server"
-        assert set(server_snapshot["peers"]) == {"relay-1"}
-        server_counters = server_snapshot["peers"]["relay-1"]
-        assert server_counters["sent_bytes"] >= _REPEATS * payload_size
-        assert server_counters["received_bytes"] >= _REPEATS * payload_size
+        assert set(server_snapshot) == {"relay-1"}
+        server_counters = server_snapshot["relay-1"]
+        assert server_counters["sent"] >= _REPEATS * payload_size
+        assert server_counters["received"] >= _REPEATS * payload_size
         if streaming:
             # Allow stream-control overhead, but not an extra count of the reconstructed blob.
             upper_bound = _REPEATS * payload_size * 1.25 + 65536
             for snapshot in (result["snapshots"][-1], server_snapshot):
-                assert all(value < upper_bound for value in snapshot["peers"]["relay-1"].values())
+                assert all(value < upper_bound for value in snapshot["relay-1"].values())
     finally:
         capture_event.set()
         stop_event.set()

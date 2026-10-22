@@ -213,23 +213,20 @@ Payload bytes by peer
 ^^^^^^^^^^^^^^^^^^^^^
 
 ``cell.get_traffic_stats()`` returns cumulative sent and received payload bytes for
-the cell's lifetime. Each peer is the cell at the other end of a transport hop,
+each peer. Each peer is the cell at the other end of a transport hop,
 which may be a relay rather than the message's final destination. For example:
 
 .. code-block:: python
 
    {
-       "cell": "server.job-123",
-       "peers": {
-           "site-1.job-123": {"sent_bytes": 1024, "received_bytes": 256}
-       },
-       "unattributed": {"sent_bytes": 0, "received_bytes": 0},
+       "site-1.job-123": {"sent": 1024, "received": 256},
+       "site-2.job-123": {"sent": 1234, "received": 5678},
    }
 
-* ``sent_bytes`` counts the encoded payload passed to the communicator when its
+* ``sent`` counts the encoded payload passed to the communicator when its
   send call returns without an error. A later transport failure is still possible;
   this value does not prove delivery.
-* ``received_bytes`` counts payload bytes delivered to CoreCell, before filtering,
+* ``received`` counts payload bytes delivered to CoreCell, before filtering,
   forwarding, or decoding. It does not prove that an application accepted them.
 * Application data, control-message payloads, stream chunks, and repeated transfers
   all contribute. When message encryption is enabled, the encrypted payload size
@@ -239,9 +236,15 @@ which may be a relay rather than the message's final destination. For example:
   cells in one process and a cell's sends to itself do not count.
 
 Snapshots are independent copies and do not reset the counters. Reading one does
-not wait for in-flight transfers, start a worker, or write a report. The counters
-retain at most 4,096 peer names of up to 512 characters each. Bytes without retained
-peer detail accumulate in ``unattributed`` rather than being discarded.
+not wait for in-flight transfers, start a worker, or write a report. There is no
+limit on the number of peers retained and no combined overflow entry.
+
+``cell.pop_traffic_stats(peer)`` atomically returns and removes one peer's counters,
+or returns ``None`` when no entry exists. Other peers are unchanged. New traffic
+from a removed peer starts fresh counters. The caller can use this after collecting
+the final statistics for a completed peer; CellNet does not infer job completion
+or remove history on a temporary disconnect. Long-lived callers must retire entries
+they no longer need to avoid retaining every historical peer indefinitely.
 
 The counters require no additional configuration or dependencies. Aggregation and
 report storage belong to the component reading them, not CellNet. A job can use

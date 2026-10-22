@@ -12,53 +12,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cumulative CellNet payload bytes, grouped by adjacent transport peer."""
+"""CellNet payload bytes, grouped by adjacent transport peer."""
 
 import threading
 
-MAX_TRAFFIC_PEERS = 4096
-MAX_TRAFFIC_PEER_NAME_LENGTH = 512
-
 
 class PeerTrafficCounters:
-    """Keep bounded peer detail without dropping bytes when detail fills up.
+    """Keep byte totals for each peer until its owner explicitly removes them.
 
-    Existing peers remain individually visible. Bytes for additional,
-    missing, or oversized peer names accumulate in ``unattributed`` instead.
-    Snapshots are independent copies and do not reset collection.
+    Snapshots are independent copies and do not reset collection. After
+    ``pop(peer)``, subsequent traffic starts a new entry for that peer.
     """
 
-    def __init__(self, max_peers=MAX_TRAFFIC_PEERS):
-        if type(max_peers) is not int or max_peers < 0:
-            raise ValueError("max_peers must be a nonnegative integer")
-        self._max_peers = max_peers
+    def __init__(self):
         self._lock = threading.Lock()
         self._peers = {}
-        self._unattributed = {"sent_bytes": 0, "received_bytes": 0}
 
     def record_sent(self, peer, payload_bytes):
-        self._record(peer, payload_bytes, "sent_bytes")
+        self._record(peer, payload_bytes, "sent")
 
     def record_received(self, peer, payload_bytes):
-        self._record(peer, payload_bytes, "received_bytes")
+        self._record(peer, payload_bytes, "received")
 
     def _record(self, peer, payload_bytes, direction):
+        if not isinstance(peer, str) or not peer:
+            raise ValueError("peer must be a nonempty string")
         if not isinstance(payload_bytes, int) or isinstance(payload_bytes, bool) or payload_bytes < 0:
             return
-        valid_peer = isinstance(peer, str) and 0 < len(peer) <= MAX_TRAFFIC_PEER_NAME_LENGTH
         with self._lock:
-            counters = self._peers.get(peer) if valid_peer else None
-            if counters is None and valid_peer and len(self._peers) < self._max_peers:
-                counters = {"sent_bytes": 0, "received_bytes": 0}
-                self._peers[peer] = counters
+            counters = self._peers.get(peer)
             if counters is None:
-                counters = self._unattributed
+                counters = {"sent": 0, "received": 0}
+                self._peers[peer] = counters
             counters[direction] += payload_bytes
 
     def snapshot(self):
-        """Return an atomic copy of all byte totals collected so far."""
+        """Return an atomic copy of the retained per-peer byte totals."""
         with self._lock:
-            return {
-                "peers": {peer: counters.copy() for peer, counters in self._peers.items()},
-                "unattributed": self._unattributed.copy(),
-            }
+            return {peer: counters.copy() for peer, counters in self._peers.items()}
+
+    def pop(self, peer):
+        """Remove and return one peer's totals, or ``None`` if it is absent.
+
+        Concurrent updates are either included in the returned totals or
+        retained in a new entry. Other peers are unchanged.
+        """
+        if not isinstance(peer, str) or not peer:
+            raise ValueError("peer must be a nonempty string")
+        with self._lock:
+            counters = self._peers.pop(peer, None)
+            return counters.copy() if counters is not None else None
