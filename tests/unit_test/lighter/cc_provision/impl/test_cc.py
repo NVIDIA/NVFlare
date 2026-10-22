@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+import yaml
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReservedKey
@@ -26,10 +27,15 @@ from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
 from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
-from nvflare.lighter.constants import PropKey, ProvFileName
+from nvflare.lighter.cc_provision.impl.onprem_packager import OnPremPackager
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Project
+from nvflare.lighter.impl.cert import CertBuilder
+from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
+from nvflare.lighter.provisioner import Provisioner
 
 LEGACY_COMPUTE_ENVS = [
     CCConfigValue.MOCK,
@@ -85,6 +91,7 @@ def test_cc_builder_accepts_legacy_cwd_relative_config(tmp_path, monkeypatch, co
     server = project.get_server()
     assert server.get_prop(PropKey.CC_ENABLED) is True
     assert server.get_prop(PropKey.CC_CONFIG_DICT) == config
+    assert server.get_prop(PropKey.CC_CONFIG) == str(tmp_path / "cc.yml")
 
 
 @pytest.mark.parametrize("compute_env", LEGACY_COMPUTE_ENVS)
@@ -104,6 +111,66 @@ def test_cc_builder_resolves_legacy_config_from_project_source(tmp_path, monkeyp
     CCBuilder().initialize(project, ctx)
 
     assert project.get_server().get_prop(PropKey.CC_CONFIG_DICT) == config
+    assert project.get_server().get_prop(PropKey.CC_CONFIG) == str(source_dir / "cc.yml")
+
+
+@pytest.mark.parametrize("compute_env", LEGACY_COMPUTE_ENVS)
+@pytest.mark.parametrize("project_api", ["project", "prepare_project"])
+@pytest.mark.parametrize("shadow_config", [False, True])
+def test_legacy_packaging_uses_project_source_config(tmp_path, monkeypatch, compute_env, project_api, shadow_config):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    config_path = source_dir / "cc.yml"
+    config = {
+        CCConfigKey.COMPUTE_ENV: compute_env,
+        CCConfigKey.CLASS_ALLOW_LIST: ["project_source."],
+        "user_config": {"config_origin": "project"},
+    }
+    config_path.write_text(json.dumps(config))
+    foreign_dir = tmp_path / "foreign"
+    foreign_dir.mkdir()
+    if shadow_config:
+        shadow = {**config, "user_config": {"config_origin": "cwd"}}
+        (foreign_dir / "cc.yml").write_text(json.dumps(shadow))
+    monkeypatch.chdir(foreign_dir)
+    project = _legacy_project_with_relative_cc_config(project_api, source_dir / "project.yml")
+    build_command = source_dir / "build_image.sh"
+    build_command.write_text("#!/bin/sh\nexit 99\n")
+    build_command.chmod(0o700)
+    archive = source_dir / "server.tgz"
+    archive.write_bytes(b"built-image")
+    copied_configs = []
+
+    def build_image(command):
+        assert command[0] == str(build_command)
+        copied_config = Path(command[1])
+        copied_configs.append(copied_config)
+        packaged_config = yaml.safe_load(copied_config.read_text())
+        assert packaged_config["user_config"]["config_origin"] == "project"
+        site_dir = Path(packaged_config["user_config"]["nvflare"])
+        resources = json.loads((site_dir / "local" / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
+        assert "project_source." in resources["class_allow_list"]
+        return f"CVM Bundle {archive} is ready\n"
+
+    packager = OnPremPackager(build_image_cmd=str(build_command))
+    provisioner = Provisioner(
+        str(tmp_path / "workspace"),
+        [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder()],
+        packager,
+    )
+    with patch("nvflare.lighter.cc_provision.impl.onprem_packager.run_command", side_effect=build_image) as build:
+        ctx = provisioner.provision(project)
+
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    build.assert_called_once()
+    server = project.get_server()
+    assert server.get_prop(PropKey.CC_CONFIG_DICT) == config
+    assert server.get_prop(PropKey.CC_CONFIG) == str(config_path)
+    assert (Path(ctx.get_result_location()) / "server/server.tgz").read_bytes() == b"built-image"
+    assert json.loads(config_path.read_text()) == config
+    if shadow_config:
+        assert json.loads((foreign_dir / "cc.yml").read_text()) == shadow
+    assert all(not path.exists() for path in copied_configs)
 
 
 def test_cc_builder_loads_class_allow_list_from_cc_config_file(tmp_path):

@@ -129,6 +129,9 @@ class CCBuilder(Builder):
                         # Legacy Python callers resolve relative paths from cwd.
                         # CoCo requires an explicit, stable project-file origin.
                         resolve_cc_config(project, config_path)
+                    else:
+                        # Legacy packaging must reuse the file selected for generation.
+                        participant.set_prop(PropKey.CC_CONFIG, os.path.abspath(config_path))
                     self._enable_participant_for_cc(participant, cc_config, ctx)
                     self._create_builder_for_env(cc_config)
                 except Exception as e:
