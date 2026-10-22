@@ -99,12 +99,12 @@ def _check_common(num_sites: int, alpha: Optional[float], min_size: int, max_att
         raise ValueError(f"num_sites must be a positive integer but got {num_sites!r}")
     if alpha is not None and alpha <= 0:
         raise ValueError(f"alpha must be larger than 0 but got {alpha}")
-    if min_size < 0:
-        raise ValueError(f"min_size must not be negative but got {min_size}")
+    if not isinstance(min_size, (int, np.integer)) or min_size < 0:
+        raise ValueError(f"min_size must be a non-negative integer but got {min_size!r}")
     if min_size * num_sites > num_samples:
         raise ValueError(f"cannot give {num_sites} sites at least {min_size} samples each from {num_samples} samples")
-    if max_attempts < 1:
-        raise ValueError(f"max_attempts must be at least 1 but got {max_attempts}")
+    if not isinstance(max_attempts, (int, np.integer)) or max_attempts < 1:
+        raise ValueError(f"max_attempts must be a positive integer but got {max_attempts!r}")
 
 
 def _as_labels(labels: Sequence, num_samples: Optional[int] = None) -> np.ndarray:
