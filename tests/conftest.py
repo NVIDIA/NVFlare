@@ -14,16 +14,18 @@
 
 import pytest
 
-from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.decomposers import common_decomposers
-from nvflare.fuel.utils.fobs import fobs as fobs_registry
-from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_TYPES
-from nvflare.private.fed.utils.decomposers import private_decomposers
-from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
-
 
 @pytest.fixture
 def isolated_fobs():
+    # Lightweight suites also load this conftest; import runtime dependencies
+    # only when a worker/artifact test requests FOBS isolation.
+    from nvflare.apis.utils.decomposers import flare_decomposers
+    from nvflare.app_common.decomposers import common_decomposers
+    from nvflare.fuel.utils.fobs import fobs as fobs_registry
+    from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_TYPES
+    from nvflare.private.fed.utils.decomposers import private_decomposers
+    from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+
     # Earlier tests may reset FOBS and auto-register a generic Shareable
     # decomposer. register() will not replace it, so it can disagree with the
     # DictDecomposer used by a fresh worker process. Isolate the registry and

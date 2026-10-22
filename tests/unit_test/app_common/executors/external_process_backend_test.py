@@ -66,7 +66,15 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import SOURCE_FAILURE_TOPIC
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
-from tests.timing_utils import CheckedThread, ManualClock, isolate_time, join_thread
+from tests.timing_utils import (
+    WAIT_TIMEOUT,
+    CheckedThread,
+    ManualClock,
+    ThreadGroup,
+    isolate_time,
+    join_thread,
+    wait_for,
+)
 
 # A policy regression must fail even when its explicitly controlled clock is frozen.
 pytestmark = pytest.mark.timeout(60)
@@ -2349,24 +2357,36 @@ class TestExecute:
 
     def test_task_ready_send_does_not_hang_past_abort(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        request_entered = threading.Event()
+        cancellation_started = []
         try:
             abort_signal = Signal()
 
             def wedged_handler(topic, target, request):
                 cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                request_entered.set()
+                wait_for(lambda: cancel.triggered, message="in-flight request was not cancelled")
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
-            threading.Timer(0.3, abort_signal.trigger, args=["stop"]).start()
 
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
-            elapsed = time.monotonic() - start
+            def abort_request():
+                assert request_entered.wait(WAIT_TIMEOUT), "TASK_READY was not sent"
+                cancellation_started.append(time.monotonic())
+                abort_signal.trigger("stop")
 
+            with ThreadGroup(request_entered) as workers:
+                workers.start(abort_request)
+                result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
+                execution_finished = time.monotonic()
+
+            assert (
+                cancellation_started and cancellation_started[0] <= execution_finished
+            ), "execute completed before the test triggered cancellation"
+            assert (
+                execution_finished - cancellation_started[0] < 5
+            ), "in-flight cancellation exceeded its response budget"
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
-            assert elapsed < 5.0, "abort must end the TASK_READY wait, not the cell max_timeout"
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
             # the request itself was cancelled through the streaming path's native
             # abort_signal — the cell waiter is released, not abandoned until timeout
@@ -2377,23 +2397,35 @@ class TestExecute:
 
     def test_task_ready_send_detects_process_death(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        request_entered = threading.Event()
+        cancellation_started = []
         try:
 
             def wedged_handler(topic, target, request):
                 cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                request_entered.set()
+                wait_for(lambda: cancel.triggered, message="dead trainer did not cancel TASK_READY")
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
-            threading.Timer(0.3, env.harness.processes[0].exit, args=[1]).start()
 
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            def exit_during_request():
+                assert request_entered.wait(WAIT_TIMEOUT), "TASK_READY was not sent"
+                cancellation_started.append(time.monotonic())
+                env.harness.processes[0].exit(1)
 
+            with ThreadGroup(request_entered) as workers:
+                workers.start(exit_during_request)
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                execution_finished = time.monotonic()
+
+            assert (
+                cancellation_started and cancellation_started[0] <= execution_finished
+            ), "execute completed before the test triggered cancellation"
+            assert (
+                execution_finished - cancellation_started[0] < 5
+            ), "in-flight cancellation exceeded its response budget"
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 5.0, "a dead trainer must end the TASK_READY wait"
             assert "TASK_READY was pending" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
@@ -2450,24 +2482,35 @@ class TestExecute:
     def test_task_ready_send_detects_backend_close(self, env):
         """Backend closure must cancel an in-flight TASK_READY send."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        request_entered = threading.Event()
+        cancellation_started = []
         try:
 
             def wedged_handler(topic, target, request):
                 cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                request_entered.set()
+                wait_for(lambda: cancel.triggered, message="backend close did not cancel TASK_READY")
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
-            # END_RUN teardown flips _closed on another thread while the send is parked
-            threading.Timer(0.3, lambda: setattr(backend, "_closed", True)).start()
 
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            def close_during_request():
+                assert request_entered.wait(WAIT_TIMEOUT), "TASK_READY was not sent"
+                cancellation_started.append(time.monotonic())
+                backend._closed = True
 
+            with ThreadGroup(request_entered) as workers:
+                workers.start(close_during_request)
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                execution_finished = time.monotonic()
+
+            assert (
+                cancellation_started and cancellation_started[0] <= execution_finished
+            ), "execute completed before the test triggered cancellation"
+            assert (
+                execution_finished - cancellation_started[0] < 5
+            ), "in-flight cancellation exceeded its response budget"
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 5.0, "backend close must end the TASK_READY wait"
             # the parked request was cancelled through the streaming path's native signal
             cancel = env.cell.sent_kwargs[0].get("abort_signal")
             assert cancel is not None and cancel.triggered
@@ -3664,16 +3707,36 @@ class TestLaunchPerTask:
         """Abort is the only bound when launch_timeout is unset and HELLO never arrives."""
         env.harness.auto_hello = False
         backend, fl_ctx = _initialized_backend(env, launch_once=False, launch_timeout=None)
+        process_started = threading.Event()
+        cancellation_started = []
+        original_popen = env.harness.popen
+
+        def observe_launch(*args, **kwargs):
+            process = original_popen(*args, **kwargs)
+            process_started.set()
+            return process
+
+        env.harness.popen = observe_launch
         try:
             abort_signal = Signal()
-            threading.Timer(0.3, abort_signal.trigger, args=["stop"]).start()
 
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
-            elapsed = time.monotonic() - start
+            def abort_launch():
+                assert process_started.wait(WAIT_TIMEOUT), "per-task trainer was not launched"
+                cancellation_started.append(time.monotonic())
+                abort_signal.trigger("stop")
 
+            with ThreadGroup(process_started) as workers:
+                workers.start(abort_launch)
+                result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
+                execution_finished = time.monotonic()
+
+            assert (
+                cancellation_started and cancellation_started[0] <= execution_finished
+            ), "execute completed before the test triggered cancellation"
+            assert (
+                execution_finished - cancellation_started[0] < 5
+            ), "in-flight cancellation exceeded its response budget"
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
-            assert elapsed < 10.0, "abort must end the HELLO wait"
             assert env.harness.processes[0].returncode is not None, "the aborted launch was unwound"
         finally:
             backend.finalize(FLContext())
