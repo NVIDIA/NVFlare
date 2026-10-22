@@ -164,9 +164,11 @@ class StreamFuture:
 
         # TxTask.cancel() completes this same StreamFuture. Calling it while
         # holding the future's non-reentrant lock deadlocks in set_exception().
-        if task_handle:
-            task_handle.cancel()
-        self._invoke_callbacks()
+        try:
+            if task_handle:
+                task_handle.cancel()
+        finally:
+            self._invoke_callbacks()
         return True
 
     def cancelled(self):
