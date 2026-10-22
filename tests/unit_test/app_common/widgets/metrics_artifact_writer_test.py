@@ -30,6 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
+from tests.timing_utils import isolate_time
 
 _METRICS_AGGREGATION_INFO = "metrics_aggregation_info"
 _METRICS_DIR = "metrics"
@@ -1221,3 +1222,11 @@ def test_progress_display_ignores_malformed_metric_entries(caplog):
     )
     assert "accuracy" in output
     assert "0.8" in output
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+    )

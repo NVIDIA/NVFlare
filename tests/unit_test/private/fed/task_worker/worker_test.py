@@ -15,7 +15,6 @@
 import json
 import os
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -28,17 +27,20 @@ import psutil
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskLaunchRequest
+from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
+from nvflare.fuel.utils import fobs
 from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
@@ -57,16 +59,10 @@ _PROBE_MODULE = """
 import json
 import os
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.shareable import Shareable
-
-
-class ValueComponent(FLComponent):
-    def __init__(self, value):
-        super().__init__()
-        self.value = value
+from nvflare.app_common.abstract.statistics_spec import Statistics
 
 
 class ProbeExecutor(Executor):
@@ -74,10 +70,13 @@ class ProbeExecutor(Executor):
         super().__init__()
         self.marker_path = marker_path
 
-    def handle_event(self, event_type, fl_ctx):
-        if event_type in (EventType.START_RUN, EventType.END_RUN):
-            with open(self.marker_path, "a") as stream:
-                stream.write(event_type + "\\n")
+    def initialize(self, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write("initialize\\n")
+
+    def finalize(self, fl_ctx):
+        with open(self.marker_path, "a") as stream:
+            stream.write("finalize\\n")
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         try:
@@ -87,7 +86,7 @@ class ProbeExecutor(Executor):
         else:
             unsupported = "missing explicit failure"
         return Shareable({
-            "value": shareable["value"] + fl_ctx.get_engine().get_component("value").value,
+            "value": shareable["value"] + 4,
             "pid": os.getpid(),
             "site": fl_ctx.get_identity_name(),
             "job_id": fl_ctx.get_job_id(),
@@ -103,47 +102,25 @@ class RaiseExecutor(ProbeExecutor):
         raise ValueError("deliberate worker failure")
 
 
+class FailingFinalizeStatistics(Statistics):
+    def features(self):
+        return {}
+
+    def count(self, dataset_name, feature_name):
+        return 8
+
+    def finalize(self, fl_ctx):
+        raise ValueError("statistics cleanup failed")
+
+
 class ReferenceExecutor(Executor):
-    def __init__(self, source_model, options):
+    def __init__(self, value, options):
         super().__init__()
-        self.source_model = source_model
+        self.value = value
         self.options = options
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
-        component = fl_ctx.get_engine().get_component(self.source_model)
-        return Shareable({"value": component.value + shareable["value"], "options": self.options})
-
-
-class LifecycleHelper(FLComponent):
-    def __init__(self, marker_path, label, helper=None, fail_at=None):
-        super().__init__()
-        self.marker_path = marker_path
-        self.label = label
-        self.helper = helper
-        self.fail_at = fail_at
-        self.started = False
-
-    def handle_event(self, event_type, fl_ctx):
-        with open(self.marker_path, "a") as stream:
-            stream.write(json.dumps([self.label, event_type]) + "\\n")
-        if event_type == EventType.START_RUN:
-            if self.helper is not None and not self.helper.started:
-                raise RuntimeError("nested helper must start before its parent")
-            self.started = True
-        if event_type == self.fail_at:
-            raise ValueError("nested helper lifecycle failure")
-
-
-class NestedExecutor(Executor):
-    def __init__(self, helper=None):
-        super().__init__()
-        self.helper = helper
-
-    def execute(self, task_name, shareable, fl_ctx, abort_signal):
-        helper = self.helper or fl_ctx.get_engine().get_component("parent").helper
-        if not helper.started or not helper.helper.started:
-            raise RuntimeError("nested helpers were not initialized")
-        return Shareable({"initialized": True})
+        return Shareable({"value": self.value + shareable["value"], "options": self.options})
 """ % (
     JobProcessEnv.ALL,
 )
@@ -173,6 +150,8 @@ def _identity(attempt_id, task_id="task-1", task_name="train"):
 
 
 def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None):
+    if not executor:
+        executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer"}
     store.create_attempt(identity)
     store.write_input(identity, data)
     bootstrap = WorkerBootstrap(
@@ -246,7 +225,6 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
         identity,
         workspace_root,
         executor={"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(marker)}},
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
         context_properties={"explicit_value": ContextProperty("transported", private=True, sticky=False)},
         data=Shareable({"value": 3}),
     )
@@ -265,7 +243,7 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert result["context"] == "transported"
     assert "does not provide a federation Cell" in result["unsupported"]
     assert result["credentials"] == []
-    assert marker.read_text().splitlines() == ["_start_run", "_end_run"]
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
     assert completion.completed_at >= completion.started_at
     assert completion.diagnostics["user_cpu_seconds"] >= 0
     assert store.read_input(identity)["value"] == 3
@@ -288,70 +266,12 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
 
     assert process.returncode != 0
     assert "deliberate worker failure" in process.stderr
-    assert marker.read_text().splitlines() == ["_start_run", "_end_run"]
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
     failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
     assert failure["identity"] == identity.to_dict()
     assert failure["error_type"] == "ValueError"
-
-
-@pytest.mark.parametrize("location", ["executor", "component"])
-@pytest.mark.parametrize("fail_at", [None, EventType.START_RUN, EventType.END_RUN])
-def test_nested_compute_graph_receives_lifecycle_events(tmp_path, location, fail_at):
-    workspace_root = _workspace(tmp_path)
-    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("nested-lifecycle")
-    marker = tmp_path / "nested-events.jsonl"
-
-    def helper_config(label, helper=None, fail_at=None):
-        return {
-            "path": "worker_components.LifecycleHelper",
-            "args": {"marker_path": str(marker), "label": label, "helper": helper, "fail_at": fail_at},
-        }
-
-    helper = helper_config("helper", helper_config("leaf", fail_at=fail_at))
-    executor = {"path": "worker_components.NestedExecutor", "args": {}}
-    components = ()
-    labels = ["leaf", "helper"]
-    if location == "executor":
-        executor["args"]["helper"] = helper
-    else:
-        components = ({"id": "parent", **helper_config("parent", helper)},)
-        labels.append("parent")
-    path = _stage(store, identity, workspace_root, executor, Shareable(), components=components)
-
-    process = _run_process(path)
-
-    if fail_at is None:
-        assert process.returncode == 0, process.stderr
-        result, _completion = store.read_result(identity)
-        assert result["initialized"] is True
-    else:
-        assert process.returncode != 0
-        failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
-        assert "nested helper lifecycle failure" in failure["message"]
-        with pytest.raises(IncompleteTaskArtifactError):
-            store.read_result(identity)
-
-    events = [EventType.ABOUT_TO_START_RUN, EventType.START_RUN]
-    if fail_at != EventType.START_RUN:
-        events.extend([EventType.BEFORE_TASK_EXECUTION, EventType.AFTER_TASK_EXECUTION])
-    events.extend([EventType.ABOUT_TO_END_RUN, EventType.END_RUN])
-    observed = [json.loads(line) for line in marker.read_text().splitlines()]
-    assert observed == [[label, event] for event in events for label in labels]
-
-
-def test_task_runtime_dispatches_each_component_instance_once():
-    runtime = TaskRuntime(None, "endpoint", "job")
-    calls = []
-    component = FLComponent()
-    component.handle_event = lambda event, _ctx: calls.append(event)
-    runtime.set_compute_graph({"first": component, "alias": component}, component)
-
-    runtime.fire_event(EventType.START_RUN, runtime.new_context())
-
-    assert calls == [EventType.START_RUN]
 
 
 def test_component_authorization_rejects_custom_executor_before_import(tmp_path):
@@ -386,7 +306,7 @@ def test_component_authorization_rejects_custom_executor_before_import(tmp_path)
         store.read_result(identity)
 
 
-def test_nested_component_is_authorized_before_any_component_import(tmp_path):
+def test_nested_component_is_rejected_before_any_component_import(tmp_path):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
     (workspace_root / "local" / "resources.json.default").write_text(
@@ -422,8 +342,7 @@ def test_nested_component_is_authorized_before_any_component_import(tmp_path):
     process = _run_process(store.bootstrap_path(identity))
 
     assert process.returncode != 0
-    assert "forbidden_nested.ForbiddenNested" in process.stderr
-    assert "not in allow_list" in process.stderr
+    assert "nested components are not supported" in process.stderr
     assert not import_marker.exists()
 
 
@@ -472,11 +391,14 @@ def test_bootstrap_cannot_override_authoritative_runtime_properties(tmp_path, pr
     assert not import_marker.exists()
 
 
-def test_unmodified_np_trainer_keeps_workspace_model_state_across_fresh_workers(tmp_path):
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_unmodified_np_trainer_keeps_workspace_model_state_across_fresh_workers(tmp_path, wrapped):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text(json.dumps({"byoc": False}))
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer", "args": {"delta": 2}}
+    if wrapped:
+        executor["args"] = {"class_attributes": executor["args"]}
     train_identity = _identity("attempt-train", task_id="task-train", task_name=AppConstants.TASK_TRAIN)
     train_data = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: np.asarray([1.0, 2.0])}).to_shareable()
     _stage(store, train_identity, workspace_root, executor, train_data)
@@ -519,6 +441,8 @@ def test_unmodified_np_validator_runs_in_worker(tmp_path):
 @pytest.mark.parametrize(
     "service",
     [
+        "get_component",
+        "get_all_components",
         "get_cell",
         "register_aux_message_handler",
         "send_aux_request",
@@ -540,31 +464,21 @@ def test_task_runtime_explicitly_rejects_job_based_services(service):
         getattr(runtime, service)()
 
 
-def test_task_runtime_owns_local_context_and_component_views():
-    workspace, component = object(), object()
+def test_task_runtime_owns_local_context():
+    workspace = object()
     runtime = TaskRuntime(workspace, "endpoint", "job")
-    runtime.set_compute_graph({"helper": component}, FLComponent())
     assert runtime.get_workspace() is workspace
-    assert runtime.get_component("helper") is component
-    view = runtime.get_all_components()
-    view.clear()
-    assert runtime.get_component("helper") is component
     fl_ctx = runtime.new_context()
     assert fl_ctx.get_identity_name() == "endpoint"
     assert fl_ctx.get_job_id() == "job"
     assert fl_ctx.get_run_abort_signal() is runtime.abort_signal
     assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) is None
     assert fl_ctx.get_process_type() is None
-    runtime.fire_event("local", fl_ctx)
-    fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, EventScope.FEDERATION, private=True, sticky=False)
-    with pytest.raises(UnsupportedTaskRuntimeService, match="federated events"):
-        runtime.fire_event("federated", fl_ctx)
 
 
 def test_task_runtime_panic_latches_first_failure_and_triggers_abort():
     runtime = TaskRuntime(None, "endpoint", "job")
     component = FLComponent()
-    runtime.set_compute_graph({}, component)
     fl_ctx = runtime.new_context()
     component.system_panic("first failure", fl_ctx)
     component.system_panic("later failure", fl_ctx)
@@ -583,55 +497,84 @@ def test_resetting_abort_signal_cannot_restore_success():
         pytest.fail("an aborted attempt must not publish completion")
 
 
-@pytest.mark.parametrize("callback_kind", ["handler", "observer"])
-def test_background_event_failure_is_latched(callback_kind):
+@pytest.mark.parametrize("federated", [False, True])
+def test_task_runtime_rejects_general_events_and_cannot_ignore_the_failure(federated):
     runtime = TaskRuntime(None, "endpoint", "job")
-
-    def fail(*args):
-        raise ValueError("background callback failed")
-
-    if callback_kind == "observer":
-        runtime.add_event_observer(fail)
-    else:
-        component = FLComponent()
-        component.handle_event = fail
-        runtime.set_compute_graph({}, component)
-
-    def dispatch():
-        if callback_kind == "observer":
-            with pytest.raises(ValueError, match="background callback failed"):
-                runtime.fire_event("background", runtime.new_context())
+    component = FLComponent()
+    component.handle_event = Mock()
+    ctx = runtime.new_context()
+    with pytest.raises(UnsupportedTaskRuntimeService, match="event dispatch"):
+        if federated:
+            component.fire_fed_event("custom", Shareable(), ctx)
         else:
-            runtime.fire_event("background", runtime.new_context())
-
-    callback = threading.Thread(target=dispatch, daemon=True)
-    callback.start()
-    callback.join(timeout=5)
-    assert not callback.is_alive()
-    with pytest.raises(RuntimeError, match="event handler failed"), runtime.completion_guard():
-        pytest.fail("a failed background callback must prevent completion")
+            component.fire_event("custom", ctx)
+    component.handle_event.assert_not_called()
+    with pytest.raises(UnsupportedTaskRuntimeService), runtime.completion_guard():
+        pytest.fail("catching an unsupported event request must not permit completion")
 
 
-def test_completion_rejects_an_event_still_running(tmp_path):
+@pytest.mark.parametrize("first", ["operation", "panic", "abort"])
+def test_task_runtime_preserves_first_failure_across_categories(first):
     runtime = TaskRuntime(None, "endpoint", "job")
-    started = threading.Event()
-    release = threading.Event()
+    ctx = runtime.new_context()
+    component = FLComponent()
+    if first == "panic":
+        component.system_panic("FIRST_PANIC_FAILURE", ctx)
+    elif first == "abort":
+        runtime.abort_signal.trigger(True)
+    with pytest.raises(ValueError, match="FIRST_OPERATION_FAILURE"):
+        with runtime.operation():
+            raise ValueError("FIRST_OPERATION_FAILURE")
+    if first == "operation":
+        component.system_panic("LATER_PANIC_FAILURE", ctx)
+        runtime.abort_signal.trigger(True)
+    expected = {"operation": "FIRST_OPERATION_FAILURE", "panic": "FIRST_PANIC_FAILURE", "abort": "was aborted"}
+    with pytest.raises((ValueError, RuntimeError), match=expected[first]), runtime.completion_guard():
+        pytest.fail("a later failure must not replace the first failure")
 
-    def observe(*args):
-        started.set()
-        assert release.wait(timeout=5)
-        raise ValueError("event failed after the completion attempt")
 
-    def dispatch():
-        with pytest.raises(ValueError, match="event failed"):
-            runtime.fire_event("background", runtime.new_context())
+def test_direct_failure_does_not_depend_on_shared_context_diagnostics(tmp_path, monkeypatch):
+    class FailingExecutor(Executor):
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            raise ValueError("compute failure")
 
-    runtime.add_event_observer(observe)
+        def finalize(self, fl_ctx):
+            fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, Shareable({"computed": True}), private=True, sticky=False)
+
+    def build_executor(_config):
+        executor = FailingExecutor()
+        return executor
+
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("active-event")
+    identity = _identity("context-diagnostics")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    with pytest.raises(ValueError, match="compute failure"):
+        worker.run_worker(path)
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert failure["error_type"] == "ValueError"
+    assert "compute failure" in failure["message"]
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_result(identity)
+
+
+def test_completion_rejects_a_direct_operation_still_running(tmp_path):
+    runtime = TaskRuntime(None, "endpoint", "job")
+    started, release = threading.Event(), threading.Event()
+
+    def compute():
+        with pytest.raises(ValueError, match="operation failed"):
+            with runtime.operation():
+                started.set()
+                assert release.wait(timeout=5)
+                raise ValueError("operation failed")
+
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("active-operation")
     store.create_attempt(identity)
     reference = store.stage_result(identity, Shareable())
-    callback = threading.Thread(target=dispatch, daemon=True)
+    callback = threading.Thread(target=compute, daemon=True)
     callback.start()
     try:
         assert started.wait(timeout=5)
@@ -643,7 +586,7 @@ def test_completion_rejects_an_event_still_running(tmp_path):
         release.set()
         callback.join(timeout=5)
     assert not callback.is_alive()
-    with pytest.raises(RuntimeError, match="event handler failed"):
+    with pytest.raises(ValueError, match="operation failed"):
         runtime.raise_if_failed()
 
 
@@ -710,17 +653,14 @@ def test_failed_completion_publication_releases_runtime_guard(tmp_path, monkeypa
         runtime.raise_if_failed()
 
 
-def test_nested_event_can_abort_without_holding_publication_lock():
+def test_direct_operation_can_abort_without_holding_publication_lock():
     runtime = TaskRuntime(None, "endpoint", "job")
 
-    def observe(event_type, ctx):
-        if event_type == "outer":
-            runtime.fire_event("inner", ctx)
-        else:
+    def compute():
+        with runtime.operation():
             runtime.abort_signal.trigger(True)
 
-    runtime.add_event_observer(observe)
-    callback = threading.Thread(target=runtime.fire_event, args=("outer", runtime.new_context()), daemon=True)
+    callback = threading.Thread(target=compute, daemon=True)
     callback.start()
     callback.join(timeout=5)
     assert not callback.is_alive()
@@ -728,37 +668,41 @@ def test_nested_event_can_abort_without_holding_publication_lock():
         runtime.raise_if_failed()
 
 
-@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.AFTER_TASK_EXECUTION, EventType.END_RUN])
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 def test_worker_panic_never_commits_completion_and_still_finalizes(tmp_path, monkeypatch, phase):
-    events = []
+    calls = []
 
     class PanicExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def initialize(self, fl_ctx):
+            calls.append("initialize")
+            if phase == "initialize":
                 self.system_panic("compute panic", fl_ctx)
 
-        def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            calls.append("execute")
             if phase == "execute":
                 self.system_panic("compute panic", fl_ctx)
             return Shareable({"done": True})
 
-    def build_graph(_bootstrap, _workspace, _fl_ctx, runtime):
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            if phase == "finalize":
+                self.system_panic("compute panic", fl_ctx)
+
+    def build_executor(_config):
         executor = PanicExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", build_graph)
-    workspace = _workspace(tmp_path)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("panic")
-    path = _stage(store, identity, workspace, {"path": "worker_components.RaiseExecutor"}, Shareable())
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     with pytest.raises(RuntimeError, match="FATAL_SYSTEM_ERROR: compute panic"):
         worker.run_worker(path)
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_completion(identity)
-    failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
     assert "compute panic" in failure["message"]
 
 
@@ -770,19 +714,6 @@ def test_job_metadata_must_be_mapping_or_absent(monkeypatch):
         worker._read_job_meta(None, "job")
 
 
-def test_checked_event_surfaces_component_failure_and_clears_exception_state():
-    fl_ctx = FLContext()
-    error = ValueError("initializer failed")
-    engine = SimpleNamespace(
-        fire_event=lambda *_args: fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"helper": error}),
-        raise_if_failed=lambda: None,
-    )
-    with pytest.raises(RuntimeError, match="helper.*initializer failed") as raised:
-        worker._fire_checked(engine, EventType.START_RUN, fl_ctx)
-    assert raised.value.__cause__ is error
-    assert fl_ctx.get_prop(FLContextKey.EXCEPTIONS) is None
-
-
 def test_peer_context_is_restored_from_staged_shareable():
     data, fl_ctx = Shareable(), FLContext()
     data.set_peer_props({"origin": "server"})
@@ -790,32 +721,25 @@ def test_peer_context_is_restored_from_staged_shareable():
     assert fl_ctx.get_peer_context().get_prop("origin") == "server"
 
 
-def test_worker_rejects_non_executor_component(tmp_path, monkeypatch):
-    workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
-    bootstrap = WorkerBootstrap(_identity("invalid-executor"), str(tmp_path), workspace.get_root_dir(), {})
-    engine, fl_ctx = worker._new_context(bootstrap, workspace)
-    builder = Mock(build_component=lambda *_args: object())
-    monkeypatch.setattr(worker, "WorkerComponentBuilder", lambda **_kwargs: builder)
+def test_worker_rejects_non_executor_component(monkeypatch):
+    monkeypatch.setattr(worker, "instantiate_class", lambda *_args: object())
     with pytest.raises(TypeError, match="instead of Executor"):
-        worker._build_compute_graph(bootstrap, workspace, fl_ctx, engine)
+        worker._build_executor({"path": "nvflare.app_common.np.np_trainer.NPTrainer"})
 
 
-def test_invalid_executor_result_still_finalizes_compute_graph(tmp_path, monkeypatch):
+def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch):
     workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
     bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
-    executor = SimpleNamespace(execute=lambda *_args: {})
-    monkeypatch.setattr(worker, "_build_compute_graph", lambda *_args: executor)
-    events = []
-    monkeypatch.setattr(worker, "_fire_checked", lambda _engine, event, _ctx: events.append(event))
+    finalized = Mock()
+    executor = SimpleNamespace(execute=lambda *_args: {}, finalize=finalized)
+
+    def build_executor(_config):
+        return executor
+
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
         worker._execute(bootstrap, Shareable(), workspace, None)
-    assert events == [
-        EventType.ABOUT_TO_START_RUN,
-        EventType.START_RUN,
-        EventType.BEFORE_TASK_EXECUTION,
-        EventType.ABOUT_TO_END_RUN,
-        EventType.END_RUN,
-    ]
+    finalized.assert_called_once()
 
 
 def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(tmp_path, monkeypatch):
@@ -831,86 +755,76 @@ def test_worker_preserves_original_failure_if_failure_record_cannot_be_written(t
     assert sys.path == previous_path
 
 
-@pytest.mark.parametrize(
-    "phase",
-    [
-        EventType.ABOUT_TO_START_RUN,
-        EventType.START_RUN,
-        EventType.BEFORE_TASK_EXECUTION,
-        EventType.AFTER_TASK_EXECUTION,
-        EventType.ABOUT_TO_END_RUN,
-        EventType.END_RUN,
-    ],
-)
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 @pytest.mark.parametrize("fault", ["exception", "abort"])
 def test_lifecycle_failure_or_abort_never_publishes_completion(tmp_path, monkeypatch, phase, fault):
-    events = []
+    calls = []
 
     class FailingExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def check(self, action, fl_ctx):
+            calls.append(action)
+            if action == phase:
                 if fault == "exception":
                     raise RuntimeError("lifecycle failure")
                 fl_ctx.get_run_abort_signal().trigger(True)
 
-        def execute(self, *args):
-            events.append("execute")
+        def initialize(self, fl_ctx):
+            self.check("initialize", fl_ctx)
+
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            self.check("execute", fl_ctx)
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+        def finalize(self, fl_ctx):
+            self.check("finalize", fl_ctx)
+
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("lifecycle")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     with pytest.raises(RuntimeError):
         worker.run_worker(path)
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     assert not Path(store.attempt_dir(identity), "completion.json").exists()
     assert not Path(store.attempt_dir(identity), "result.fobs").exists()
 
 
-def test_hook_replacement_is_committed_after_end_run_and_attempt_cannot_rerun(tmp_path, monkeypatch):
-    events = []
+def test_direct_finalization_precedes_completion_and_attempt_cannot_rerun(tmp_path, monkeypatch):
+    calls = []
 
-    class HookExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == EventType.AFTER_TASK_EXECUTION:
-                fl_ctx.set_prop(FLContextKey.TASK_RESULT, Shareable({"hooked": True}), private=True, sticky=False)
-            if event_type == EventType.END_RUN:
-                assert not Path(store.attempt_dir(identity), "completion.json").exists()
-                fl_ctx.get_prop(FLContextKey.TASK_RESULT)["finalized"] = True
-
+    class FinalizingExecutor(Executor):
         def execute(self, *args):
-            events.append("execute")
+            calls.append("execute")
             return Shareable({"original": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
-        executor = HookExecutor()
-        runtime.set_compute_graph({}, executor)
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            assert not Path(store.attempt_dir(identity), "completion.json").exists()
+            fl_ctx.get_prop(FLContextKey.TASK_RESULT)["finalized"] = True
+
+    def build_executor(_config):
+        executor = FinalizingExecutor()
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("hooks")
+    identity = _identity("finalize")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
     worker.run_worker(path)
     result, completion = store.read_result(identity)
-    assert result["hooked"] and result["finalized"]
-    assert "original" not in result
+    assert result["original"] and result["finalized"]
     with pytest.raises(FileExistsError):
         worker.run_worker(path)
-    assert events.count("execute") == 1
+    assert calls == ["execute", "finalize"]
     assert store.read_completion(identity) == completion
     assert not Path(store.attempt_dir(identity), "failure.json").exists()
 
 
-def test_entire_graph_is_authorized_before_import_logging_or_decoding(tmp_path, monkeypatch):
+def test_executor_is_authorized_before_import_logging_or_decoding(tmp_path, monkeypatch):
     workspace_root = _workspace(tmp_path)
     (workspace_root / "job-1" / "meta.json").write_text('{"byoc":false}')
     (workspace_root / "local" / "resources.json.default").write_text('{"class_allow_list":["allowed.First"]}')
@@ -922,13 +836,12 @@ def test_entire_graph_is_authorized_before_import_logging_or_decoding(tmp_path, 
         workspace_root,
         {"path": "forbidden.Executor"},
         Shareable(),
-        components=({"id": "first", "path": "allowed.First"},),
     )
     imported = Mock(side_effect=AssertionError("import before authorization"))
     monkeypatch.setattr(worker, "configure_logging", imported)
     monkeypatch.setattr(worker, "fobs_initialize", imported)
     monkeypatch.setattr(FileTaskArtifactStore, "read_input", imported)
-    monkeypatch.setattr(worker, "_build_compute_graph", imported)
+    monkeypatch.setattr(worker, "_build_executor", imported)
     with pytest.raises(Exception, match="not in allow_list"):
         worker.run_worker(path)
     imported.assert_not_called()
@@ -960,12 +873,11 @@ def test_failure_during_result_serialization_leaves_only_a_staged_result(tmp_pat
             runtime_context.append(ctx)
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     stage = FileTaskArtifactStore.stage_result
 
     def stage_then_panic(store, identity, data):
@@ -994,9 +906,8 @@ def test_background_failure_before_completion_publication(tmp_path, monkeypatch,
             runtime_context.append(ctx)
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
     def background_callback():
@@ -1032,7 +943,7 @@ def test_background_failure_before_completion_publication(tmp_path, monkeypatch,
 
         return publish(directory, name, staged_writer if name == "completion.json" else writer, **kwargs)
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("background-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1071,89 +982,8 @@ def _live(process):
         return False
 
 
-@pytest.mark.parametrize("reap_owner", [False, True])
-@pytest.mark.parametrize("worker_exits", [False, True])
-def test_real_guardian_stops_worker_and_descendant_after_owner_loss(tmp_path, reap_owner, worker_exits):
-    if not hasattr(os, "waitid"):
-        pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
-    workspace_root = _workspace(tmp_path)
-    marker = tmp_path / "members.json"
-    leader_exited = tmp_path / "leader-exited"
-    custom = workspace_root / "job-1" / "app_site-1" / "custom" / "hanging.py"
-    custom.write_text(
-        "import json,os,subprocess,sys,time\n"
-        "from pathlib import Path\n"
-        "from nvflare.apis.executor import Executor\n"
-        "from nvflare.apis.shareable import Shareable\n"
-        "class HangingExecutor(Executor):\n"
-        " def execute(self,*args):\n"
-        "  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])\n"
-        f"  Path({str(marker.with_suffix('.tmp'))!r}).write_text(json.dumps([os.getpid(),child.pid]))\n"
-        f"  os.replace({str(marker.with_suffix('.tmp'))!r}, {str(marker)!r})\n"
-        + ("  return Shareable()\n" if worker_exits else "  time.sleep(30)\n")
-    )
-    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
-    identity = _identity("parent-loss")
-    path = _stage(store, identity, workspace_root, {"path": "hanging.HangingExecutor"}, Shareable())
-    repo_root = str(Path(__file__).resolve().parents[5])
-    env = {key: value for key, value in os.environ.items() if key not in JobProcessEnv.ALL}
-    env["PYTHONPATH"] = repo_root
-    code = (
-        "import os,sys\n"
-        "from pathlib import Path\n"
-        "import time\n"
-        "from nvflare.apis.task_launcher_spec import TaskLaunchRequest,TaskLaunchError,TaskExecutionPhase\n"
-        "from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher\n"
-        f"request=TaskLaunchRequest('job-1','site-1','task-1','parent-loss',"
-        f"(sys.executable,'-m','nvflare.private.fed.app.client.task_worker_process','--bootstrap',{path!r}),"
-        f"environment=dict(os.environ),cwd={repo_root!r})\n"
-        "try:\n"
-        " handle=ProcessTaskLauncher(descendant_settle_timeout=20).launch_task(request)\n"
-        "except TaskLaunchError as error:\n"
-        " error.handle.cancel()\n"
-        " raise\n"
-        "try:\n"
-        f" if {worker_exits!r}:\n"
-        "  while handle.poll().phase != TaskExecutionPhase.TERMINAL: time.sleep(0.01)\n"
-        f"  Path({str(leader_exited)!r}).touch()\n"
-        " handle.wait_for_settlement(timeout=25)\n"
-        "finally:\n"
-        " if not handle.poll().settled: handle.cancel()\n"
-    )
-    members = []
-    with (tmp_path / "owner.log").open("w") as log:
-        owner = subprocess.Popen([sys.executable, "-c", code], cwd=repo_root, env=env, stdout=log, stderr=log)
-        try:
-            _wait_until(marker.exists)
-            pids = json.loads(marker.read_text())
-            members = [psutil.Process(pid) for pid in pids]
-            if worker_exits:
-                _wait_until(leader_exited.exists)
-                assert not _live(members[0])
-                assert _live(members[1])
-            else:
-                assert all(_live(p) for p in members)
-            assert os.getpgid(members[1].pid) == pids[0]
-            owner.kill()
-            if reap_owner:
-                owner.wait(timeout=5)
-            # In the other case the owner remains an unreaped zombie; no wait,
-            # poll or external reaping of the task leader is used by this test.
-            _wait_until(lambda: not any(_live(p) for p in members))
-            assert Path(store.attempt_dir(identity), "completion.json").exists() == worker_exits
-        finally:
-            if owner.poll() is None:
-                owner.kill()
-            owner.wait(timeout=5)
-            # Identity-checked fallback only for a failed regression, never reap
-            # the task leader, whose launcher lived in the terminated owner.
-            for member in members:
-                if _live(member):
-                    member.kill()
-
-
 @pytest.mark.parametrize("shutdown", ["cancel", "normal", "stubborn"])
-def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutdown):
+def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
     if not hasattr(os, "waitid"):
         pytest.skip("requires ProcessTaskLauncher waitid/WNOWAIT support")
     workspace_root = _workspace(tmp_path)
@@ -1171,7 +1001,10 @@ def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutd
         f"Path({str(ready.with_suffix('.tmp'))!r}).write_text(str(os.getpid()))\n"
         f"os.replace({str(ready.with_suffix('.tmp'))!r}, {str(ready)!r})\n"
         + (
-            "while owner.is_running() and owner.status() not in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD):\n"
+            "while True:\n"
+            " try:\n"
+            "  if not owner.is_running() or owner.status() in (psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD): break\n"
+            " except psutil.NoSuchProcess: break\n"
             " time.sleep(0.01)\n"
             "cleanup()\n"
             if shutdown == "normal"
@@ -1237,41 +1070,44 @@ def test_guardian_preserves_launcher_descendant_shutdown_windows(tmp_path, shutd
             handle.cancel()
 
 
-@pytest.mark.parametrize("phase", [EventType.START_RUN, "execute", EventType.ABOUT_TO_END_RUN])
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_failure_record_keeps_first_exception_through_cleanup(tmp_path, monkeypatch, phase, cleanup_fails):
-    events = []
+    calls = []
 
     class FailingExecutor(Executor):
-        def handle_event(self, event_type, fl_ctx):
-            events.append(event_type)
-            if event_type == phase:
+        def initialize(self, fl_ctx):
+            calls.append("initialize")
+            if phase == "initialize":
                 raise ValueError("ROOT CAUSE from first failure")
-            if cleanup_fails and event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
-                raise RuntimeError("secondary cleanup failure")
 
         def execute(self, *args):
             if phase == "execute":
                 raise ValueError("ROOT CAUSE from first failure")
             return Shareable()
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+        def finalize(self, fl_ctx):
+            calls.append("finalize")
+            if phase == "finalize":
+                raise ValueError("ROOT CAUSE from first failure")
+            if cleanup_fails:
+                raise RuntimeError("secondary cleanup failure")
+
+    def build_executor(_config):
         executor = FailingExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("first-failure")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
-    with pytest.raises((ValueError, RuntimeError), match="ROOT CAUSE"):
+    with pytest.raises(ValueError, match="ROOT CAUSE"):
         worker.run_worker(path)
     failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert failure["error_type"] == "ValueError"
     assert "ROOT CAUSE" in failure["message"]
-    assert "ValueError" in failure["message"]
     assert "secondary cleanup failure" not in failure["message"]
-    assert events.count(EventType.ABOUT_TO_END_RUN) == 1
-    assert events.count(EventType.END_RUN) == 1
+    assert calls.count("finalize") == 1
     assert not Path(store.attempt_dir(identity), "completion.json").exists()
 
 
@@ -1297,9 +1133,8 @@ def test_fresh_worker_preserves_component_authorization_audit(tmp_path, policy, 
         store,
         identity,
         workspace_root,
-        {"path": "worker_components.ReferenceExecutor", "args": {"source_model": "value", "options": {}}},
+        {"path": "worker_components.ReferenceExecutor", "args": {"value": 4, "options": {}}},
         Shareable({"value": 3}),
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
     )
     process = _run_process(path)
     assert process.returncode == 0, process.stderr
@@ -1310,7 +1145,6 @@ def test_fresh_worker_preserves_component_authorization_audit(tmp_path, policy, 
     assert identity.job_id in text
     if policy.get("class_list_enforcement_mode") == "warn":
         assert "worker_components.ReferenceExecutor" in text
-        assert "worker_components.ValueComponent" in text
 
 
 def test_worker_applies_payload_policy_from_bootstrap(tmp_path):
@@ -1323,10 +1157,9 @@ def test_worker_applies_payload_policy_from_bootstrap(tmp_path):
         workspace_root,
         {
             "path": "worker_components.ReferenceExecutor",
-            "args": {"source_model": "value", "options": {"large": "x" * 1024}},
+            "args": {"value": 4, "options": {"large": "x" * 1024}},
         },
         Shareable({"value": 3}),
-        components=({"id": "value", "path": "worker_components.ValueComponent", "args": {"value": 4}},),
     )
     assert read_bootstrap(path).max_payload_bytes == 512
     process = _run_process(path)
@@ -1342,12 +1175,11 @@ def test_completion_remains_readable_after_directory_fsync_failure(tmp_path, mon
         def execute(self, *args):
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("post-publication-error")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1378,12 +1210,11 @@ def test_backward_wall_clock_does_not_discard_completed_compute(tmp_path, monkey
         def execute(self, *args):
             return Shareable({"produced": True})
 
-    def graph(_bootstrap, _workspace, _ctx, runtime):
+    def build_executor(_config):
         executor = SuccessfulExecutor()
-        runtime.set_compute_graph({}, executor)
         return executor
 
-    monkeypatch.setattr(worker, "_build_compute_graph", graph)
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("backward-clock")
     path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
@@ -1429,3 +1260,88 @@ def test_worker_matches_cj_custom_module_precedence(tmp_path, monkeypatch):
     finally:
         sys.modules.pop(dependency_name, None)
         sys.modules.pop(executor_name, None)
+
+
+def test_flcomponent_logging_does_not_dispatch_handlers():
+    runtime = TaskRuntime(None, "endpoint", "job")
+    component = FLComponent()
+    component.handle_event = Mock()
+    ctx = runtime.new_context()
+    component.log_info(ctx, "message already logged")
+    component.log_warning(ctx, "message already logged")
+    component.log_error(ctx, "message already logged")
+    component.handle_event.assert_not_called()
+    runtime.raise_if_failed()
+
+
+@pytest.mark.parametrize("phase", ["initialize", "execute", "finalize"])
+@pytest.mark.parametrize("first", ["panic", "abort"])
+def test_direct_exception_cannot_replace_an_earlier_panic_or_abort(tmp_path, monkeypatch, phase, first):
+    calls = []
+
+    class FailingExecutor(Executor):
+        def check(self, action, fl_ctx):
+            calls.append(action)
+            if action == phase:
+                if first == "panic":
+                    self.system_panic("FIRST_PANIC", fl_ctx)
+                else:
+                    fl_ctx.get_run_abort_signal().trigger(True)
+                raise ValueError("SECONDARY_DIRECT_ERROR")
+
+        def initialize(self, fl_ctx):
+            self.check("initialize", fl_ctx)
+
+        def execute(self, task_name, data, fl_ctx, abort_signal):
+            self.check("execute", fl_ctx)
+            return Shareable()
+
+        def finalize(self, fl_ctx):
+            self.check("finalize", fl_ctx)
+
+    def build_executor(_config):
+        executor = FailingExecutor()
+        return executor
+
+    monkeypatch.setattr(worker, "_build_executor", build_executor)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("first-direct-failure")
+    path = _stage(store, identity, _workspace(tmp_path), {}, Shareable())
+    with pytest.raises(RuntimeError, match="FIRST_PANIC" if first == "panic" else "aborted"):
+        worker.run_worker(path)
+    failure = json.loads(Path(store.attempt_dir(identity), "failure.json").read_text())
+    assert "SECONDARY_DIRECT_ERROR" not in failure["message"]
+    assert calls.count("finalize") == 1
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_completion(identity)
+
+
+def test_statistics_finalize_failure_prevents_worker_completion(tmp_path):
+    root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("stats-finalize-failure", task_name=StC.FED_STATS_TASK)
+    fobs_registration()
+    bootstrap_path = _stage(
+        store,
+        identity,
+        root,
+        executor={
+            "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+            "args": {"generator_id": "statistics"},
+        },
+        components=({"id": "statistics", "path": "worker_components.FailingFinalizeStatistics"},),
+        data=Shareable(
+            {
+                StC.STATISTICS_TASK_KEY: StC.STATS_1st_STATISTICS,
+                StC.STATS_TARGET_STATISTICS: fobs.dumps([StatisticConfig("count", {})]),
+            }
+        ),
+    )
+    process = _run_process(bootstrap_path)
+    assert process.returncode != 0, process.stderr
+    failure = store.read_failure(identity)
+    assert failure["error_type"] == "ValueError"
+    assert "statistics cleanup failed" in failure["message"]
+    assert not Path(store.attempt_dir(identity), "completion.json").exists()
+    with pytest.raises(IncompleteTaskArtifactError):
+        store.read_result(identity)

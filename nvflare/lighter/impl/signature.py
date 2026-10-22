@@ -37,9 +37,6 @@ class SignatureBuilder(Builder):
 
     def build(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
-        if not root_pri_key:
-            raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
-
         for p in project.get_all_participants():
             kit_dir = ctx.get_kit_dir(p)
             he_present = os.path.exists(os.path.join(kit_dir, ProvFileName.SERVER_CONTEXT_TENSEAL)) or os.path.exists(
@@ -48,12 +45,16 @@ class SignatureBuilder(Builder):
             if p.get_prop(PropKey.EXTERNAL_CERT) and (p.get_prop(PropKey.CC_ENABLED) or he_present):
                 raise ValueError("external_cert is not supported with signed HE/CC startup kits")
             if p.get_prop(PropKey.CC_ENABLED):
+                if not root_pri_key:
+                    raise RuntimeError("CC content signing requires a supported local root-key configuration")
                 # CC mode: sign from the root so the full startup kit can be verified
                 # before CVM launch
                 dest_dir = ctx.get_ws_dir(p)
                 sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
             else:
                 if he_present:
+                    if not root_pri_key:
+                        raise RuntimeError("HE content signing requires a supported local root-key configuration")
                     # HE mode: sign startup and local to protect the shared TenSEAL context.
                     # load_tenseal_context_from_workspace requires LoadResult.OK in secure mode.
                     sign_folders(kit_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)

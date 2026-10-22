@@ -112,7 +112,7 @@ def test_application_recipe_is_independent_of_environment(monkeypatch, environme
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -138,7 +138,7 @@ def test_advanced_recipe_controls_are_explicit(monkeypatch):
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -323,6 +323,21 @@ def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch)
     client_config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
     executor_args = client_config["executors"][0]["executor"]["args"]
     assert executor_args["task_script_path"] == "client.py"
+
+
+def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
+        args = job_module.parse_args(["--execution_lifetime", "task", "--seed", "731", "--no-resume_training"])
+        recipe = job_module.create_recipe(args)
+        monkeypatch.chdir(ADVANCED_DIR)
+        recipe.export(job_dir=str(tmp_path), env=job_module.create_environment(args))
+    job_dir = tmp_path / "hello-pt"
+    custom = job_dir / "app" / "custom"
+    assert all((custom / name).is_file() for name in ("client.py", "model.py", "prepare_data.py"))
+    config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+    executor_args = config["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_path"] == "client.py"
+    assert executor_args["task_script_args"] == ["--dataset", "synthetic", "--seed", "731", "--no-resume_training"]
 
 
 @pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, GeneratorExit, pytest.fail.Exception])

@@ -14,7 +14,7 @@
 from enum import Enum
 from typing import List
 
-from nvflare.fuel.utils.validation_utils import check_non_negative_int
+from nvflare.fuel.utils.validation_utils import check_positive_int
 
 
 class EvalInclusionRC(Enum):
@@ -48,7 +48,7 @@ def parallel_eval_generator(evaluators: List[str], evaluatees: List[str], max_pa
     """
     _check_names("evaluators", evaluators)
     _check_names("evaluatees", evaluatees)
-    check_non_negative_int("max_parallel_actions", max_parallel_actions)
+    check_positive_int("max_parallel_actions", max_parallel_actions)
 
     evaluatee_states = [(e, list(evaluators)) for e in evaluatees]
     while evaluatee_states:
@@ -118,11 +118,13 @@ def _can_be_included(evals, target, max_parallel_actions) -> EvalInclusionRC:
             # the evaluatee of the target is already an evaluatee of another evaluation
             evaluatee_actions += 1
 
-    if evaluatee_actions > max_parallel_actions:
+    # the counts above are what the sites already do; including the target adds one more to each,
+    # so a site that has already reached the limit cannot take it
+    if evaluatee_actions >= max_parallel_actions:
         # if the target is included, its evaluatee_actions would be too much
         return EvalInclusionRC.ENOUGH_ACTIONS_FOR_EVALUATEE
 
-    if evaluator_actions > max_parallel_actions:
+    if evaluator_actions >= max_parallel_actions:
         # if the target is included, its evaluator_actions would be too much
         return EvalInclusionRC.ENOUGH_ACTIONS_FOR_EVALUATOR
 

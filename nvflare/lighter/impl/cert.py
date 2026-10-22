@@ -15,8 +15,11 @@
 import datetime
 import json
 import os
+import re
+from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
@@ -108,7 +111,7 @@ class _CertState:
 
 
 class CertBuilder(Builder):
-    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS, enable_job_ca=True):
+    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS, enable_job_ca=True, public_root_cert=None):
         """Build certificate chain for every participant.
 
         Handles building (creating and self-signing) the root CA certificates, creating server, client and
@@ -122,6 +125,9 @@ class CertBuilder(Builder):
                 startup kit. The server uses it at job deploy time to issue short-lived per-job certificates;
                 without it, secure-mode jobs refuse to deploy. A server with external_job_ca skips generation
                 independently of this setting and requires deployment-installed job-CA credentials.
+            public_root_cert: path to an enterprise public root PEM file. Distribute this root and require
+                externally managed credentials for all participants. Relative paths use the current directory
+                for Python API callers; the CLI resolves them relative to project.yml.
         """
         if isinstance(root_valid_days, bool) or not isinstance(root_valid_days, int) or root_valid_days <= 0:
             raise ValueError(
@@ -131,6 +137,9 @@ class CertBuilder(Builder):
         if not isinstance(enable_job_ca, bool):
             raise ValueError(f"enable_job_ca must be a bool, got {enable_job_ca!r} ({type(enable_job_ca).__name__})")
 
+        if public_root_cert is not None and (not isinstance(public_root_cert, str) or not public_root_cert.strip()):
+            raise ValueError("public_root_cert must be a non-empty certificate file path")
+        self.public_root_cert = public_root_cert
         self.root_valid_days = root_valid_days
         self.enable_job_ca = enable_job_ca
         self.root_cert = None
@@ -182,6 +191,9 @@ class CertBuilder(Builder):
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         self._fix_server_name(project.get_server())
+        if self.public_root_cert is not None:
+            self._initialize_public_root(project)
+            return
 
         state_dir = ctx.get_state_dir()
         self.persistent_state = _CertState(state_dir)
@@ -210,6 +222,57 @@ class CertBuilder(Builder):
             self.subject = self.root_cert.subject
             self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
             self._validate_existing_root_validity()
+
+    def _initialize_public_root(self, project):
+        if project.root_private_key or project.serialized_root_cert:
+            raise ValueError("do not combine public-root-only provisioning with legacy project root/key arguments")
+        for p in project.get_all_participants():
+            if p.type == ParticipantType.ADMIN:
+                if not get_admin_cert_provider_config(p) and p.get_prop(PropKey.EXTERNAL_CERT) is not True:
+                    raise ValueError(
+                        f"{p.name}: public-root-only provisioning requires admin_cert_provider or external_cert: true"
+                    )
+            elif p.type in (ParticipantType.SERVER, ParticipantType.CLIENT, ParticipantType.RELAY):
+                if p.get_prop(PropKey.EXTERNAL_CERT) is not True:
+                    raise ValueError(f"{p.name}: public-root-only provisioning requires external_cert: true")
+            else:
+                raise ValueError(f"public-root-only provisioning does not support participant type {p.type}")
+            if p.type == ParticipantType.SERVER and p.get_prop(PropKey.EXTERNAL_JOB_CA) is not True:
+                raise ValueError(f"{p.name}: public-root-only provisioning requires external_job_ca: true")
+            if p.get_prop(PropKey.CC_ENABLED):
+                raise ValueError("public-root-only provisioning cannot sign CC content")
+
+        pem = Path(self.public_root_cert).read_bytes()
+        remainder = re.sub(b"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", b"", pem, flags=re.DOTALL)
+        if remainder.strip():
+            raise ValueError(
+                "public_root_cert must contain only PEM certificate data; remove annotations or private keys"
+            )
+        try:
+            roots = x509.load_pem_x509_certificates(pem)
+        except ValueError as ex:
+            raise ValueError("public_root_cert is not a valid PEM certificate") from ex
+        if len(roots) != 1:
+            raise ValueError("public_root_cert must contain exactly one public trust root")
+        root = roots[0]
+        try:
+            bc = root.extensions.get_extension_for_class(x509.BasicConstraints)
+            ku = root.extensions.get_extension_for_class(x509.KeyUsage)
+        except x509.ExtensionNotFound as ex:
+            raise ValueError("public trust root requires CA BasicConstraints and KeyUsage with keyCertSign") from ex
+        if not bc.critical or not bc.value.ca or not ku.value.key_cert_sign:
+            raise ValueError("public trust root must be a CA with keyCertSign")
+        if bc.value.path_length == 0:
+            raise ValueError("public root path_length=0 cannot support the required subordinate job CA")
+        try:
+            root.verify_directly_issued_by(root)
+        except (InvalidSignature, ValueError) as ex:
+            raise ValueError("public trust root must have a valid self-signature") from ex
+        if not root.not_valid_before_utc <= datetime.datetime.now(datetime.timezone.utc) < root.not_valid_after_utc:
+            raise ValueError("public trust root is not currently valid")
+        self.root_cert = root
+        self.serialized_cert = serialize_cert(root)
+        self.pri_key = None
 
     def _validate_existing_root_validity(self):
         actual_validity = self.root_cert.not_valid_after_utc - self.root_cert.not_valid_before_utc
@@ -334,6 +397,11 @@ class CertBuilder(Builder):
         write_pri_key_file(os.path.join(dest_dir, f"{bn}.key"), serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
+        if self.public_root_cert is not None:
+            ctx[CtxKey.ROOT_CERT] = self.root_cert
+            for participant in project.get_all_participants():
+                self._write_root_ca(participant, ctx)
+            return
         self._build_root(project.name, subject_org=None)
         ctx[CtxKey.ROOT_CERT] = self.root_cert
         ctx[CtxKey.ROOT_PRI_KEY] = self.pri_key
@@ -481,5 +549,7 @@ class CertBuilder(Builder):
         )
 
     def finalize(self, project: Project, ctx: ProvisionContext):
+        if self.public_root_cert is not None:
+            return
         assert isinstance(self.persistent_state, _CertState)
         self.persistent_state.persist()

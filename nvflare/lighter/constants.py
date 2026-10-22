@@ -85,6 +85,7 @@ class PropKey:
 
 
 class CtxKey(WorkDir, PropKey):
+    PUBLIC_ROOT_ONLY = "public_root_only"
     PROJECT = "__project__"
     TEMPLATE = "__template__"
     TEMP_FILES_LOADED = "__temp_files_loaded__"
@@ -143,6 +144,7 @@ class TemplateSectionKey:
     CC_AUTHZ = "cc_authz"
     SERVER_README = "readme_fs"
     CLIENT_README = "readme_fc"
+    RELAY_README = "readme_relay"
     ADMIN_README = "readme_am"
     FL_ADMIN_SH = "fl_admin_sh"
     FED_ADMIN = "fed_admin"

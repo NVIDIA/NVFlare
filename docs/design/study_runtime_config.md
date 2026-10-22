@@ -39,7 +39,7 @@ The unreleased `study_job_spec_file_path` pod-template mechanism (PR #4804) is r
 
 ## v2 Schema: `local/study_runtime.yaml`
 
-- Auto-discovered at a fixed workspace-relative path by the Docker, Kubernetes, and Slurm launchers. No launcher
+- Auto-discovered at a fixed workspace-relative path by the process, Docker, Kubernetes, and Slurm launchers. No launcher
   argument or deploy-config key selects the file.
 - Filename = format: `study_runtime.yaml` is v2 strict, `study_data.yaml` is v1 frozen. No content sniffing.
 - Job side unchanged: the job still submits only `{"study": "..."}`.
@@ -143,6 +143,33 @@ discriminator is the single `type` field; provider-specific fields are validated
 
 ## Runtime Interpretation
 
+Process:
+
+- `env` overlays the inherited parent environment for the selected study, including empty values.
+  Booleans become `true` or `false`, numbers become strings, and values are literal with no shell expansion.
+- `secret_env.*.source` names a parent environment variable; `key` is optional and ignored. Missing sources
+  fail launch. Values are resolved before applying study overrides, and the parent environment is unchanged.
+- Only `env` and `secret_env` are supported. Container, dataset, secret-mount, and other launcher-specific
+  settings are rejected. Applications can read existing host paths supplied through `env`.
+- The full parent environment remains inherited, including secrets for other studies. This is configuration
+  convenience, not process isolation.
+
+The shared `ProcessJobLauncher` loads the file at each server or client job launch, using the existing parser
+and resolver. `get_job_meta_study` selects `default` when study metadata is absent. Missing files or study
+entries add no settings. Invalid entries anywhere in the file fail launch, but only the selected study's
+secret sources are resolved. The legacy `study_data.yaml` is ignored in process mode, even if both files exist.
+
+Each launch starts from a fresh parent environment snapshot. Resolve secret references before overlaying
+study settings, then apply the existing custom Python path and bootstrap credentials. Do not mutate the
+parent environment. Destination and secret source names must be valid POSIX names and cannot use the shared
+launcher-owned names. Reject duplicate destinations across `env` and `secret_env`; configured literal values
+must be UTF-8 text without NUL. Other launchers retain their existing validation.
+
+Running jobs retain their environment when the file changes. Changing secret source values normally requires
+restarting the parent. An existing runtime file becomes active after upgrading to this support; operators
+must review its settings first. Tests cover selection, precedence, inherited variables, failures before spawn,
+reloads, concurrent launches, and real-child environment delivery.
+
 Kubernetes:
 
 - `type: mount` dataset: `source` is a PVC claim name.
@@ -239,7 +266,7 @@ Slurm requires the v2 file; a legacy-only file or coexistence of both files is a
 - Hard errors: unknown top-level keys, unknown per-study keys, unknown dataset `type`, a key in both `env` and
   `secret_env`, an `env` or `secret_env` name that is launcher-owned (`PYTHONPATH`, the workspace-transfer
   variables), launcher-owned keys in `docker_kwargs`, launcher-mismatched keys (`pod_template` on Docker/Slurm,
-  `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), v1/v2 coexistence.
+  `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), v1/v2 coexistence outside process mode.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
 - Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any

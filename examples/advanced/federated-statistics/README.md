@@ -341,3 +341,12 @@ sequenceDiagram
 
 We provide federated statistics operators that can easily aggregate and visualize the local statistics for
 different data site and features. We hope this feature will make it easier to perform federated data analysis.
+
+
+### Task execution lifetime
+
+The dataframe and image recipe examples accept `--execution_lifetime task`.
+This runs `StatisticsExecutor` and its named statistics generator in a fresh CPU
+Process worker for each assignment. Privacy filters and cleansers stay in the
+Client Job. Generators must load their data during initialization and cannot depend
+on in-memory state from previous statistics tasks. The default is `job` lifetime.
