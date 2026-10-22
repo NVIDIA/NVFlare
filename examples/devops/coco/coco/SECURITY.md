@@ -1,6 +1,6 @@
 # CoCo adversary model
 
-Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html)
 for the complete adversary model, enforcement flow and threat matrix. This page
 summarizes the CoCo IT operating boundary; the architecture does not rely on a
 hostile operator following these instructions.
@@ -35,7 +35,7 @@ request. Another image signed by the accepted key in the permitted repository
 is not shown to be rejected solely because its digest differs. The other
 signature, decryption and guest-policy checks still apply; do not claim that
 every image substitution fails. See the architecture's
-[image authorization analysis](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
+[image authorization analysis](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
 
 Cluster-side `Running`/`Ready` reports do not prove secure application execution.
 The trusted federation operator performs

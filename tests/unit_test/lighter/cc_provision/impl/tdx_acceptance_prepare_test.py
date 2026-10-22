@@ -191,7 +191,7 @@ def test_baked_application_preserves_explicit_policy_and_is_idempotent(tmp_path)
 @pytest.mark.usefixtures("require_source_git_commit")
 def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkeypatch, topology):
     """Exercise real provision parsing/finalization; no image build or trust-service request."""
-    from nvflare.lighter.constants import CtxKey, ProvFileName
+    from nvflare.lighter.constants import ProvFileName
     from nvflare.lighter.prov_utils import prepare_builders
     from nvflare.lighter.provision import prepare_project
     from nvflare.lighter.provisioner import Provisioner
@@ -206,8 +206,9 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
     # Leave CoCoPackager disabled: this proves signed private-kit generation,
     # not encrypted image packaging or release readiness.
     ctx = Provisioner(str(output / topology / "offline-workspace"), pipeline).provision(project)
-    assert ctx.get(CtxKey.PROVISION_SUCCESS) is True, ctx.get_errors()
-    result = Path(ctx[CtxKey.CURRENT_PROD_DIR])
+    assert not ctx.get_errors()
+    result = Path(ctx.get_result_location())
+    assert result.is_dir()
     protected = {"site-1", "site-2"} | ({"server"} if topology == "b" else set())
     expected_map = {site: ["coco_authorizer"] for site in protected}
     for identity in (inputs["server"], "site-1", "site-2", "site-observer"):

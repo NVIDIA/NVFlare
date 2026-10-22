@@ -58,32 +58,29 @@ class CoCoPackager(Packager):
 
     def package(self, project, ctx):
         result = Path(ctx.get_result_location()).resolve()
-        selected = []
-        for participant in project.get_all_participants():
-            cc_path = participant.get_prop(PropKey.CC_CONFIG)
-            if not cc_path:
-                continue
-            config_path = Path(resolve_cc_config(project, cc_path))
-            config = load_yaml(config_path)
-            validate_coco_config(config)
-            if participant.type not in ("client", "server") or config["role"] != participant.type:
-                raise ValueError("CoCo role must match participant type (client or server)")
-            if not participant.get_prop(PropKey.CC_ENABLED) or participant.get_prop(PropKey.CC_CONFIG_DICT) != config:
-                raise ValueError("CoCo participant was not configured by CCBuilder, or configuration changed")
-            selected.append((participant, config_path, config))
-        if not selected:
+        participants = [
+            participant
+            for participant in project.get_all_participants()
+            if participant.get_prop(PropKey.CC_CONFIG) or participant.get_prop(PropKey.CC_ENABLED)
+        ]
+        if not participants:
             raise ValueError("CoCoPackager requires at least one CoCo participant")
 
         # Keep every selected plaintext kit outside prod before any external
-        # build starts. On failure no selected participant's directory can be
-        # mistaken for a handoff. Never delete a kit as the CVM packager does.
+        # build or configuration preflight starts. Even a missing CCBuilder or
+        # changed configuration must not leave a kit that looks like a handoff.
+        # Never delete a kit as the CVM packager does.
         private_root = Path(ctx.get_state_dir()) / "coco-private"
         private_root.mkdir(mode=0o700, exist_ok=True)
         private_root.chmod(0o700)
         private = private_root / result.name
+        stage_error = None
         if private.is_symlink() or (private.exists() and not private.is_dir()):
-            raise ValueError(f"Expected a regular private stage directory: {private}")
-        if private.exists():
+            stage_error = ValueError(f"Expected a regular private stage directory: {private}")
+            # Preserve invalid stage evidence and still quarantine the new kits
+            # before reporting the collision.
+            private = Path(tempfile.mkdtemp(prefix=f"{result.name}.failed-", dir=private_root))
+        elif private.exists():
             # Stage numbers can be reused after prod cleanup, including retries
             # after a failed build. Reserve a unique private archive directory
             # atomically; never overwrite or delete an earlier recovery tree.
@@ -91,19 +88,47 @@ class CoCoPackager(Packager):
             retained = archive / result.name
             private.rename(retained)
             ctx.info(f"Previous CoCo private stage retained at {retained}. Do not distribute state/.")
-        private.mkdir(mode=0o700)
+        if stage_error is None:
+            private.mkdir(mode=0o700)
         # The aggregate launcher assumes every participant is a plaintext kit.
         aggregate = result / ProvFileName.START_ALL_SH
         if aggregate.exists():
             aggregate.rename(private / ProvFileName.START_ALL_SH)
-        for participant, _, _ in selected:
+        for participant in participants:
             owner = private / participant.name
             owner.mkdir(mode=0o700)
             source = result / participant.name
             if source.is_symlink() or not source.is_dir():
-                raise ValueError("Expected a generated participant startup kit")
+                if source.exists() or source.is_symlink():
+                    source.rename(owner / "rejected-startup-kit")
+                stage_error = stage_error or ValueError("Expected a generated participant startup kit")
+                continue
             source.rename(owner / "startup-kit")
             (owner / "startup-kit").chmod(0o700)
+
+        if stage_error:
+            ctx.error(f"CoCo staging failed; private recovery inputs retained at {private}. Do not distribute state/.")
+            raise stage_error
+
+        selected = []
+        try:
+            for participant in participants:
+                config_path = Path(resolve_cc_config(project, participant.get_prop(PropKey.CC_CONFIG)))
+                config = load_yaml(config_path)
+                validate_coco_config(config)
+                if participant.type not in ("client", "server") or config["role"] != participant.type:
+                    raise ValueError("CoCo role must match participant type (client or server)")
+                if (
+                    not participant.get_prop(PropKey.CC_ENABLED)
+                    or participant.get_prop(PropKey.CC_CONFIG_DICT) != config
+                ):
+                    raise ValueError("CoCo participant was not configured by CCBuilder, or configuration changed")
+                selected.append((participant, config_path, config))
+        except Exception:
+            ctx.error(
+                f"CoCo preflight failed; private recovery inputs retained at {private}. Do not distribute state/."
+            )
+            raise
 
         for participant, config_path, config in selected:
             owner = private / participant.name

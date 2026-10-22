@@ -1,15 +1,15 @@
 # CoCo client and server attestation
 
-The [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+The [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html)
 is the authoritative explanation of the trust model, threats, guarantees and
 limitations. This runbook keeps the provisioning options, protocol contract,
 API examples and scoped verification records together. KBS workload-key release
 and NVFlare participant verification are separate enforcement points; neither
 replaces the other.
 
-This runbook documents the 2.9 integration for AMD SEV-SNP or Intel TDX, with or
-without an NVIDIA confidential GPU, including the typed verifier constraints
-described below. Select and approve each target using the
+This runbook documents the CoCo integration on `main` for AMD SEV-SNP or Intel
+TDX, with or without an NVIDIA confidential GPU, including the typed verifier
+constraints described below. Select and approve each target using the
 [runtime-variant guide](../RUNTIME-VARIANTS.md).
 
 The server can run as a protected CoCo participant or verify CoCo client proofs
@@ -345,6 +345,14 @@ into every generated manager. All CoCo participants in the project must
 share the manager timeouts; their authorizer backoff settings may differ.
 The same names are constructor arguments when configuring components directly.
 
+For a CoCo-protected server, provisioning sets each client's
+`client.maint_msg_timeout` to at least the server's `registration_token_timeout`
+plus 30 seconds for transport and processing (330 seconds by default), retaining
+a larger configured value. This existing maintenance RPC timeout also lengthens
+some other maintenance waits. Deployments with an ordinary server retain their
+existing client timeout settings. The periodic `refresh_token_timeout` and
+`get_token_request_timeout` budgets remain separate.
+
 Delays must satisfy `0 < retry_initial_delay <= retry_max_delay`; the multiplier
 must be at least 1, and the jitter ratio must be between 0 and 1. Each delay is
 sampled uniformly from `delay * (1 - retry_jitter_ratio)` through `delay`, then
@@ -452,7 +460,7 @@ raw EAR alone does not satisfy `verify()`.
 
 The following is the implementation contract for the examples and options in
 this runbook. For the wider protocol threat model and lifecycle, see the
-[security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+[security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html).
 
 1. The guest fetches the token response without environment proxies or redirects.
    It validates the EAR signature with the pinned AS public key and checks its
@@ -626,7 +634,7 @@ Verification is local: reference or policy changes do not immediately revoke
 issued EARs, a new proof can contain a cached EAR, and the replay cache is
 process-local. A still-valid proof may be accepted by another verifier or after
 restart; it is not a fresh response to a verifier-issued challenge. Consult the
-[security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+[security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html)
 for the resulting revocation, cross-verifier replay and application-trust limits.
 
 ## Verification status

@@ -15,6 +15,7 @@
 """Server/client CoCo configuration; attestation is performed by Kata/Trustee."""
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from nvflare.lighter.spec import Builder
 AUTHOR_PATH = "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer"
 MANAGER_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
 COCO_STARTUP_PROLOGUE = "#!/usr/bin/env bash\nexec >/dev/null 2>&1\n"
+COCO_REGISTRATION_NETWORK_CUSHION = 30.0
 RETRY_ARGUMENTS = {
     "retry_max_attempts",
     "retry_initial_delay",
@@ -221,6 +223,10 @@ class CoCoBuilder(Builder):
             resources = Path(ctx.get_local_dir(participant)) / ProvFileName.RESOURCES_JSON_DEFAULT
             if not resources.is_file():
                 raise RuntimeError("CoCoBuilder requires StaticFileBuilder before CCBuilder")
+            if protected_server and participant.type == SiteType.CLIENT:
+                self._set_client_registration_timeout(
+                    resources, self.settings[server.name][3]["registration_token_timeout"]
+                )
             if protected:
                 self._silence_startup(ctx, participant)
                 args, url, frequency, timeouts = self.settings[participant.name]
@@ -246,6 +252,24 @@ class CoCoBuilder(Builder):
                     **timeouts,
                 },
             )
+
+    @staticmethod
+    def _set_client_registration_timeout(resources, generation_timeout):
+        config = json.loads(resources.read_text())
+        client = config.setdefault("client", {})
+        current = client.get("maint_msg_timeout", 30.0)
+        try:
+            if isinstance(current, bool):
+                raise ValueError
+            current = float(current)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("CoCo client maint_msg_timeout must be finite and positive") from None
+        if not math.isfinite(current) or current <= 0:
+            raise ValueError("CoCo client maint_msg_timeout must be finite and positive")
+        # Server token generation runs inside the registration RPC. This shared
+        # maintenance timeout must cover its complete budget plus network transit.
+        client["maint_msg_timeout"] = max(current, generation_timeout + COCO_REGISTRATION_NETWORK_CUSHION)
+        resources.write_text(json.dumps(config, indent=2) + "\n")
 
     @staticmethod
     def _silence_startup(ctx, participant):

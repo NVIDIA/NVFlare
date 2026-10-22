@@ -39,7 +39,7 @@ limitation: another image signed by the accepted key in the permitted repository
 has not been shown to be rejected solely because its digest differs while
 InitData remains unchanged. Do not assume that every image substitution is
 denied. See the architecture's
-[image authorization analysis](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
+[image authorization analysis](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
 
 `70-verify-running-workload.sh` re-checks the live Pod against the same
 authenticated manifest: runtime class, image digest, command, and init-data

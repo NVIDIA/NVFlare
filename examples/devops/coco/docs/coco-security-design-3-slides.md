@@ -2,7 +2,7 @@
 
 # Four roles, two security decisions
 
-Presentation summary of the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html),
+Presentation summary of the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html),
 which defines the full guarantees, assumptions and residual risks. The deployment
 steps cover the four explicit SNP/TDX CPU-only/GPU profiles. TDX support remains
 experimental pending successful hardware acceptance; see [runtime status](../RUNTIME-VARIANTS.md#support-status-and-hardware-validation).

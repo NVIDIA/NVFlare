@@ -122,8 +122,13 @@ class CCBuilder(Builder):
             config_path = participant.get_prop(PropKey.CC_CONFIG)
             if config_path:
                 try:
-                    config_path = resolve_cc_config(project, config_path)
+                    if project.get_prop(PropKey.PROJECT_FILE) or os.path.isabs(config_path):
+                        config_path = resolve_cc_config(project, config_path)
                     cc_config = self._load_and_validate_cc_config(config_path)
+                    if cc_config[CCConfigKey.COMPUTE_ENV] == CCConfigValue.CONFIDENTIAL_CONTAINERS:
+                        # Legacy Python callers resolve relative paths from cwd.
+                        # CoCo requires an explicit, stable project-file origin.
+                        resolve_cc_config(project, config_path)
                     self._enable_participant_for_cc(participant, cc_config, ctx)
                     self._create_builder_for_env(cc_config)
                 except Exception as e:

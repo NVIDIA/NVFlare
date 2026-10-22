@@ -5,7 +5,7 @@ Select the target using the [runtime-variant guide](../RUNTIME-VARIANTS.md).
 Use [the SNP procedure](SEC-SYS-LAUNCH-PROFILE.md) or
 [the TDX procedure](TDX-LAUNCH-PROFILE.md); TDX does not reuse SNP's five fields.
 
-Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html)
 for the trusted platform authority's role, evidence-versus-approval distinction,
 measurement coverage, TCB requirements and validation limits. This kit implements
 the SNP collection and handoff procedure; valid evidence is not an automatic

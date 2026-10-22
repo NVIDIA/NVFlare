@@ -15,17 +15,23 @@ policies, with the implementation scope below. It is not a security proof,
 certification, or assurance that every supported hardware configuration has
 passed end-to-end testing. Reassess these assumptions when changing versions,
 policies, applications, or deployment topology. The separate
-:ref:`CVM Builder architecture <cc_architecture>` uses a different guest and
+:ref:`on-premises CVM architecture <cc_architecture>` uses a different guest and
 storage design; its guarantees must not be imported into this CoCo deployment.
 
 .. important::
 
-   **Implementation scope:** ``2.9`` revision
+   **Implementation scope:** This guide describes the CoCo implementation in
+   this ``main`` source tree. Its runtime support originated on ``2.9``:
+   revision
    `0b2d5dd39 <https://github.com/NVIDIA/NVFlare/commit/0b2d5dd39>`_ includes
    `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_, extending the
    SNP-plus-GPU framework to all four explicit SNP/TDX CPU-only/GPU targets.
-   This architecture change documents that implementation; it adds no runtime
-   support itself. **TDX remains experimental pending full security qualification.**
+   The current source also includes the subsequent mixed-participant workflow
+   and runtime-handoff updates. **TDX remains experimental pending full security
+   qualification.**
+
+   **Historical hardware evidence from** ``2.9``: The results below predate
+   this port to ``main``; hardware validation has not been rerun for the port.
    The September 29, 2026 real-quote test was rejected because both launch and
    current TCB were ``OutOfDate``; that failure remains part of the record.
    On October 4, 2026, a separate mixed functional deployment passed with an
@@ -90,22 +96,22 @@ Target profiles and implementation scope
      - ``kata-qemu-snp``
      - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: none``
      - CPU only
-     - Implemented in ``2.9``
+     - Implemented
    * - SNP with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-snp``
      - ``cc_cpu_mechanism: amd_sev_snp``; ``cc_gpu: nvidia``
      - CPU and GPU
-     - Implemented in ``2.9``
+     - Implemented
    * - TDX, CPU-only
      - ``kata-qemu-tdx``
      - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: none``
      - CPU only
-     - Implemented in ``2.9``; experimental
+     - Implemented; experimental
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
      - ``cc_cpu_mechanism: intel_tdx``; ``cc_gpu: nvidia``
      - CPU and GPU
-     - Implemented in ``2.9``; experimental
+     - Implemented; experimental
 
 CPU-only is an intentional deployment mode,
 not a fallback after GPU attestation fails. CPU-only profiles need no NVIDIA GPU
@@ -892,9 +898,10 @@ the platform under test.
 TDX approval
 ------------
 
-The collection/export and RVPS/AS policy implementation is included in
-``2.9``. Its TDX end-to-end hardware acceptance remains outstanding as described
-in the implementation-scope note above.
+The collection/export and RVPS/AS policy implementation is included in this
+source tree. Full TDX security qualification remains outstanding; the historical
+mixed functional deployment described above does not cover all targets or the
+complete acceptance matrix.
 
 A TDX guest obtains a TD report; a Quote Generation Service on the same physical
 platform uses Intel's quoting infrastructure to produce a remotely verifiable
@@ -1437,11 +1444,13 @@ Default peer verification **does not require GPU evidence for a
 particular site**, nor directly compare its image digest or command. It trusts
 the configured AS signer and its accepted claims. Workload-specific key
 authorization remains KBS's job. A deployment requiring GPU attestation at the
-FL participant boundary needs an additional independently reviewed requirement;
-token-driven CPU/GPU selection alone does not establish it.
+FL participant boundary must configure ``gpu_required: true`` for that site in
+the shared ``workload_constraints`` map; token-driven CPU/GPU selection alone
+does not establish this requirement.
 
 ``workload_constraints`` can pin each protected site's InitData digest,
-SNP measurement, CPU TEE and TDX MRTD/RTMR values. With constraints enabled,
+SNP measurement, CPU TEE, TDX MRTD/RTMR values, and required GPU-evidence mode.
+With constraints enabled,
 unlisted sites or missing/mismatched required claims fail. The legacy
 ``measurement`` key means SNP, never TDX. The canonical InitData constraint is
 SHA-256, with strict TDX padding normalization. These restrictions narrow

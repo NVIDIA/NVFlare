@@ -234,7 +234,7 @@ all image substitutions are blocked, close the exact-image binding gap and test
 an actual accepted-key/same-repository replacement with unchanged InitData.
 Changing only policy claims, checking the handoff hash, or passing stage 70 does
 not establish that binding. See the canonical
-[image authorization analysis](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
+[image authorization analysis](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html#image-changes-and-the-current-authorization-limitation).
 
 The service administrator, not CoCo IT, confirms CPU/GPU appraisal and KBS
 resource release. The workload owner confirms application success over its own

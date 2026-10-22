@@ -132,9 +132,9 @@ Confidential Containers on Kubernetes
 
 The CoCo integration runs protected NVFlare clients and, optionally, the server inside Kata confidential VMs. The
 CoCo implementation includes all four targets: AMD SEV-SNP or Intel TDX, each with or without an NVIDIA confidential GPU.
-**TDX remains experimental pending hardware acceptance:** encrypted NVFlare execution, attestation-gated key release,
-and peer-proof generation/verification remain unverified end to end on TDX. See :ref:`coco_security_architecture`
-for implementation scope and validation status.
+**TDX remains experimental pending full security qualification.** The architecture guide records historical
+mixed-deployment functional validation; hardware validation has not been rerun for this port to ``main``.
+See :ref:`coco_security_architecture` for implementation scope and validation status.
 Trusted provisioning builds, signs, and encrypts workload images; independently
 administered Trustee services authorize their decryption using approved platform references and workload policy.
 

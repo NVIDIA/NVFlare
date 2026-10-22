@@ -121,6 +121,19 @@ def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
     assert resolve_cc_config(project, "cc_site.yml") == str(source.parent / "cc_site.yml")
 
 
+def test_coco_builder_rejects_cwd_relative_config_without_project_source(tmp_path, monkeypatch):
+    project, _ = setup_project(tmp_path)
+    project.set_prop(PropKey.PROJECT_FILE, None)
+    monkeypatch.chdir(tmp_path)
+
+    ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    assert "project_file" in " ".join(ctx.get_errors())
+    assert not project.get_clients()[0].get_prop(PropKey.CC_ENABLED)
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
 def coco_pod(runtime, gpu, image):
     pytest.importorskip("tomllib", reason="full CoCo Pod packaging requires a Python 3.11+ deployment host")
     from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import context, policy, policy_data
@@ -899,6 +912,83 @@ def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):
     assert (root / "state/coco-private/prod_00/site-1/startup-kit/startup/client.key").is_file()
 
 
+@pytest.mark.parametrize(
+    "failure,error_type,error_message",
+    [
+        ("missing_builder", ValueError, "not configured by CCBuilder"),
+        ("changed_config", ValueError, "configuration changed"),
+        ("missing_config", FileNotFoundError, "cc_server.yml"),
+        ("malformed_config", yaml.YAMLError, None),
+        ("missing_origin", ValueError, "project_file"),
+        ("missing_path", ValueError, "cc_config"),
+    ],
+)
+def test_preflight_failure_keeps_all_selected_kits_private(tmp_path, failure, error_type, error_message):
+    project, configs = setup_server_project(tmp_path)
+    pipeline = builders()
+    if failure == "missing_builder":
+        pipeline = [builder for builder in pipeline if not isinstance(builder, CCBuilder)]
+    ctx = Provisioner(str(tmp_path / "workspace"), pipeline).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    server = project.get_server()
+    config_path = tmp_path / server.get_prop(PropKey.CC_CONFIG)
+    if failure == "changed_config":
+        configs[server.name]["release_name"] = "changed-release"
+        config_path.write_text(yaml.safe_dump(configs[server.name]))
+    elif failure == "missing_config":
+        config_path.unlink()
+    elif failure == "malformed_config":
+        config_path.write_text("invalid: [\n")
+    elif failure == "missing_origin":
+        project.set_prop(PropKey.PROJECT_FILE, None)
+    elif failure == "missing_path":
+        server.set_prop(PropKey.CC_CONFIG, None)
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        with pytest.raises(error_type, match=error_message):
+            CoCoPackager("build.sh").package(project, ctx)
+
+    runner.assert_not_called()
+    result = Path(ctx.get_result_location())
+    private = Path(ctx.get_state_dir()) / "coco-private" / result.name
+    assert not (result / ProvFileName.START_ALL_SH).exists()
+    assert private.stat().st_mode & 0o777 == 0o700
+    for participant in (server, project.get_clients()[0]):
+        assert not (result / participant.name).exists()
+        owner = private / participant.name
+        kit = owner / "startup-kit"
+        assert owner.stat().st_mode & 0o777 == 0o700
+        assert kit.stat().st_mode & 0o777 == 0o700
+        assert (kit / "startup" / f"{participant.type}.key").is_file()
+    assert "private recovery inputs retained" in " ".join(ctx.get_errors())
+
+
+@pytest.mark.parametrize("kind", ["missing", "symlink"])
+def test_invalid_first_kit_does_not_leave_later_kit_public(tmp_path, kind):
+    project, _ = setup_server_project(tmp_path)
+    ctx = Provisioner(str(tmp_path / "workspace"), builders()).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    result = Path(ctx.get_result_location())
+    first_kit = result / project.get_server().name
+    retained = tmp_path / "original-server-kit"
+    first_kit.rename(retained)
+    if kind == "symlink":
+        first_kit.symlink_to(retained, target_is_directory=True)
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        with pytest.raises(ValueError, match="Expected a generated participant startup kit"):
+            CoCoPackager("build.sh").package(project, ctx)
+
+    runner.assert_not_called()
+    assert not first_kit.exists()
+    assert not first_kit.is_symlink()
+    assert not (result / "site-1").exists()
+    private = Path(ctx.get_state_dir()) / "coco-private" / result.name
+    assert (private / "site-1/startup-kit/startup/client.key").is_file()
+    if kind == "symlink":
+        assert (private / project.get_server().name / "rejected-startup-kit").is_symlink()
+
+
 @pytest.mark.parametrize("failure_stage", ["prepare", "build"])
 def test_server_and_client_kits_are_private_before_first_build_failure(tmp_path, failure_stage):
     project, configs = setup_server_project(tmp_path)
@@ -966,6 +1056,11 @@ def test_reused_private_stage_must_be_a_regular_directory(tmp_path, kind):
         assert private.read_text() == "retain this file"
     else:
         assert private.is_symlink()
+    assert not (tmp_path / "workspace/test_project/prod_00/site-1").exists()
+    recovery = list(private.parent.glob("prod_00.failed-*"))
+    assert len(recovery) == 1
+    assert recovery[0].stat().st_mode & 0o777 == 0o700
+    assert (recovery[0] / "site-1/startup-kit/startup/client.key").is_file()
 
 
 def test_context_symlink_rejected(tmp_path):

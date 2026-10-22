@@ -7,7 +7,7 @@ evidence and generated handoffs are not.
 
 For security guarantees, trust boundaries, threats, residual risks and the
 attestation/key-release protocol, start with the comprehensive
-[CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+[CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html).
 The role guides below provide operational procedures, not separate security
 models. Follow the architecture's implementation-scope and validation notes.
 
@@ -39,7 +39,7 @@ installed and reviewed. For the implementation/security contract, see
 must be completed on the intended platform; offline tests are not that proof.
 
 For a worked deployment with one model owner and two data owners, follow the
-[two-site FL example](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#coco-security-two-site-example).
+[two-site FL example](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html#coco-security-two-site-example).
 It explains responsibilities, machine prerequisites and setup order, including
 the application-specific dataset and persistence integration you must supply.
 

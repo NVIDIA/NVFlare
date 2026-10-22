@@ -1,6 +1,6 @@
 # Service security boundary
 
-Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+Read the [CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/coco_security_architecture.html)
 for the complete trust model, attestation/key-release protocol, threat matrix and
 limitations. This page lists the secure-services administrator's responsibilities
 for SNP or TDX releases, with or without an NVIDIA confidential GPU.

@@ -29,12 +29,36 @@ from nvflare.lighter.cc_provision.impl.cc import CCBuilder
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Project
+from nvflare.lighter.provision import prepare_project
+
+LEGACY_COMPUTE_ENVS = [
+    CCConfigValue.MOCK,
+    CCConfigValue.ONPREM_CVM,
+    CCConfigValue.AZURE_CVM,
+    CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
+]
 
 
 def _project_with_server(props=None):
     project = Project("test_project", "A testing project")
     project.set_server("server", "org", props or {})
     return project
+
+
+def _legacy_project_with_relative_cc_config(project_api, project_file=None):
+    if project_api == "project":
+        project = _project_with_server({PropKey.CC_CONFIG: "cc.yml"})
+        if project_file is not None:
+            project.set_prop(PropKey.PROJECT_FILE, str(project_file))
+        return project
+    return prepare_project(
+        {
+            "api_version": 3,
+            "name": "test_project",
+            "participants": [{"type": "server", "name": "server", "org": "org", "cc_config": "cc.yml"}],
+        },
+        project_file=project_file,
+    )
 
 
 def _write_resources(ctx, participant, resources):
@@ -44,6 +68,42 @@ def _write_resources(ctx, participant, resources):
     with open(resources_file, "w") as f:
         json.dump(resources, f)
     return resources_file
+
+
+@pytest.mark.parametrize("compute_env", LEGACY_COMPUTE_ENVS)
+@pytest.mark.parametrize("project_api", ["project", "prepare_project"])
+def test_cc_builder_accepts_legacy_cwd_relative_config(tmp_path, monkeypatch, compute_env, project_api):
+    config = {CCConfigKey.COMPUTE_ENV: compute_env, CCConfigKey.CLASS_ALLOW_LIST: ["legacy."]}
+    (tmp_path / "cc.yml").write_text(json.dumps(config))
+    monkeypatch.chdir(tmp_path)
+    project = _legacy_project_with_relative_cc_config(project_api)
+    assert project.get_prop(PropKey.PROJECT_FILE) is None
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+
+    CCBuilder().initialize(project, ctx)
+
+    server = project.get_server()
+    assert server.get_prop(PropKey.CC_ENABLED) is True
+    assert server.get_prop(PropKey.CC_CONFIG_DICT) == config
+
+
+@pytest.mark.parametrize("compute_env", LEGACY_COMPUTE_ENVS)
+@pytest.mark.parametrize("project_api", ["project", "prepare_project"])
+def test_cc_builder_resolves_legacy_config_from_project_source(tmp_path, monkeypatch, compute_env, project_api):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    config = {CCConfigKey.COMPUTE_ENV: compute_env, CCConfigKey.CLASS_ALLOW_LIST: ["project_source."]}
+    (source_dir / "cc.yml").write_text(json.dumps(config))
+    (tmp_path / "cc.yml").write_text(
+        json.dumps({CCConfigKey.COMPUTE_ENV: compute_env, CCConfigKey.CLASS_ALLOW_LIST: ["cwd."]})
+    )
+    monkeypatch.chdir(tmp_path)
+    project = _legacy_project_with_relative_cc_config(project_api, source_dir / "project.yml")
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+
+    CCBuilder().initialize(project, ctx)
+
+    assert project.get_server().get_prop(PropKey.CC_CONFIG_DICT) == config
 
 
 def test_cc_builder_loads_class_allow_list_from_cc_config_file(tmp_path):

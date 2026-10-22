@@ -25,7 +25,7 @@ import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from nvflare.lighter.constants import CtxKey, ProvFileName
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
@@ -55,8 +55,9 @@ def test_real_builders_sign_normal_mixed_kits(tmp_path, monkeypatch):
     project = prepare_project(definition, project_file=str(source))
     # Disable packaging only in this offline test; real provisioning uses CoCoPackager.
     ctx = Provisioner(str(tmp_path / "workspace"), prepare_builders(definition)).provision(project)
-    assert ctx.get(CtxKey.PROVISION_SUCCESS) is True, ctx.get_errors()
-    result = Path(ctx[CtxKey.CURRENT_PROD_DIR])
+    assert not ctx.get_errors()
+    result = Path(ctx.get_result_location())
+    assert result.is_dir()
     assert {p.name for p in result.iterdir() if p.is_dir()} == {
         "server.example.com",
         "site-1",
