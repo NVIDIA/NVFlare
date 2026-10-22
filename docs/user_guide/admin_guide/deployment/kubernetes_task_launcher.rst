@@ -160,8 +160,29 @@ preserved. Explicit ``num_of_gpus=0`` overrides a GPU site default. Nonzero GPU
 counts become equal ``nvidia.com/gpu`` requests and limits; manual GPU visibility
 settings remain forbidden. Namespace quotas/admission enforce site policy.
 Private-image pull access belongs to the existing worker service account.
-Use a finite worker timeout and settlement bounds appropriate to the configured
-termination grace period and storage driver.
+Queue waiting and startup use separate site-owned limits. ``queue_timeout``
+defaults to ``null``: an unassigned task Pod may wait for CPU, memory or GPU
+capacity while its CJ remains alive. A finite nonnegative value bounds that
+queue wait; ``0`` fails immediately if the Pod is still unassigned. After a node
+assignment is first observed, ``startup_timeout`` defaults to 120 seconds and
+bounds startup until the Pod runs. Queue time does not consume that startup
+budget. Invalid scheduling constraints and known image/container failures still
+fail promptly. A timeout follows the existing cancellation and confirmed
+settlement rules; it never authorizes bypassing the finalizer.
+
+The common ``worker_timeout`` remains an overall physical-attempt budget,
+including queue waiting, startup and execution. Give it enough time for expected
+contention, or set it to ``null`` and rely on the job/task deadlines. Explicit
+abort remains effective in every phase. Configure settlement bounds appropriate
+to the termination grace period and storage driver. These task settings do not
+change the job launcher's existing ``pending_timeout`` policy.
+
+For example, two CPU CJs can keep their jobs alive while their task Pods request
+one GPU each from a cluster with one allocatable GPU. One worker runs and the
+other queues; the GPU becomes reusable between task attempts, before CJ result
+upload finishes. Kubernetes selects the next eligible Pod; this launcher does
+not enforce alternating jobs. CPU/memory requests must also fit the CJs, parent
+and worker. The two-job GPU-contention scenario requires cluster qualification.
 
 Use native ``launcher_spec`` GPU requests. Positive portable or legacy
 ``resource_spec`` CP GPU reservations are rejected by this task profile: they
@@ -207,10 +228,12 @@ override after preparation, then stage both local files::
            "run_as_user": 1000,
            "run_as_group": 1000,
            "cpu_cores": 1,
-           "memory_mb": 512
+           "memory_mb": 512,
+           "queue_timeout": null,
+           "startup_timeout": 120
          }
        },
-       "worker_timeout": 120,
+       "worker_timeout": 1800,
        "settlement_timeout": 60
      }
    }

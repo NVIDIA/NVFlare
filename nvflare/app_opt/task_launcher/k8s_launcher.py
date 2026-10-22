@@ -193,7 +193,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
         config_file_path: str = None,
         cleanup_timeout: float = 60,
         poll_interval: float = 0.5,
-        pending_timeout: float = 120,
+        startup_timeout: float = 120,
         request_timeout: float = 5,
         termination_grace_seconds: int = 30,
         run_as_user: int = 1000,
@@ -202,6 +202,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
         memory_mb: int = None,
         gpu_count: int = 0,
         environment: dict = None,
+        queue_timeout: float = None,
     ):
         super().__init__()
         self.namespace = validate_dns_name("namespace", namespace)
@@ -219,7 +220,8 @@ class K8sTaskLauncher(TaskLauncherSpec):
         self.config_file_path = config_file_path
         self.cleanup_timeout = _seconds("cleanup_timeout", cleanup_timeout)
         self.poll_interval = _seconds("poll_interval", poll_interval)
-        self.pending_timeout = _seconds("pending_timeout", pending_timeout)
+        self.startup_timeout = _seconds("startup_timeout", startup_timeout)
+        self.queue_timeout = None if queue_timeout is None else _seconds("queue_timeout", queue_timeout, positive=False)
         self.request_timeout = _seconds("request_timeout", request_timeout)
         self.security_context = task_security_context(run_as_user, run_as_group)
         self.resources = TaskResourceRequest(cpu_cores=cpu_cores, memory_mb=memory_mb, gpu_count=gpu_count)
@@ -433,7 +435,8 @@ class K8sTaskHandle(TaskHandleSpec):
         self._owner = owner
         self._uid = None
         self._lock = threading.RLock()
-        self._started = time.monotonic()
+        self._created_at = time.monotonic()
+        self._scheduled_at = None
         self._cancel_requested = False
         self._delete_sent = False
         self._release_authorized = False
@@ -465,6 +468,8 @@ class K8sTaskHandle(TaskHandleSpec):
         ):
             raise _PodOwnershipError("pod ownership or UID differs from launched execution")
         self._uid = metadata.uid
+        if getattr(getattr(pod, "spec", None), "node_name", None) and self._scheduled_at is None:
+            self._scheduled_at = time.monotonic()
 
     def _status(self):
         return TaskExecutionStatus(
@@ -570,8 +575,13 @@ class K8sTaskHandle(TaskHandleSpec):
                             detail = f"{condition.reason or ''} {condition.message or ''}"
                             if condition.reason == "Unschedulable" and not is_cpu_memory_gpu_shortage(detail):
                                 failure = detail
-                    if time.monotonic() - self._started >= self.launcher.pending_timeout:
-                        failure = failure or "task pod pending timeout"
+                    now = time.monotonic()
+                    if self._scheduled_at is not None:
+                        if now - self._scheduled_at >= self.launcher.startup_timeout:
+                            failure = failure or "task pod startup timeout"
+                    elif self.launcher.queue_timeout is not None:
+                        if now - self._created_at >= self.launcher.queue_timeout:
+                            failure = failure or "task pod queue timeout"
                     self._failure = self._failure or failure or None
                 else:
                     self._phase = TaskExecutionPhase.TERMINAL

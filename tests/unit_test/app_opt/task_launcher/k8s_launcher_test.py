@@ -741,13 +741,19 @@ def test_scheduled_image_pull_failure_requires_confirmed_shutdown(setup, reason,
     assert api.calls.index("delete") < api.calls.index("patch")
 
 
-def test_pending_timeout_cleans_up_without_admitting_another_attempt(setup):
+def test_startup_timeout_cleans_up_without_admitting_another_attempt(setup, monkeypatch):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.time", clock)
     launcher, api, request, _, _ = setup
+    api.on_create = lambda: setattr(api.pod.spec, "node_name", "node-1")
     handle = launcher.launch_task(request)
-    handle._started -= launcher.pending_timeout + 1
+    clock.advance(launcher.startup_timeout + 1)
     assert not handle.poll().settled
+    assert handle.poll().failure_reason == "task pod startup timeout"
+    api.finish(exit_code=143)
     assert handle.wait_for_settlement(1).settled
-    assert handle.poll().failure_reason == "task pod pending timeout"
     with pytest.raises(TaskLauncherError, match="already owned"):
         launcher.launch_task(request)
 
@@ -1111,3 +1117,104 @@ def test_cj_end_run_waits_for_native_settlement_after_cleanup_or_readiness_timeo
         assert adapter.supervisor.settlement_unconfirmed  # Recovery cannot reopen admission or publish a result.
         adapter.system_panic.assert_called_once()
         assert Path(store.root_dir, "diagnostics.jsonl").exists()
+
+
+def test_gpu_queue_wait_does_not_consume_startup_budget(setup, monkeypatch):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.time", clock)
+    launcher, api, request, _, _ = setup
+    handle = launcher.launch_task(request)
+    api.pod.status.conditions = [
+        NS(type="PodScheduled", status="False", reason="Unschedulable", message="Insufficient nvidia.com/gpu")
+    ]
+    clock.advance(600)  # Another job legitimately keeps the GPU for ten minutes.
+    status = handle.poll()
+    assert status.phase == TaskExecutionPhase.QUEUED
+    assert status.failure_reason is None
+    assert "delete" not in api.calls
+
+    api.pod.spec.node_name = "node-1"
+    api.pod.status.conditions = [NS(type="PodScheduled", status="True")]
+    assert handle.poll().failure_reason is None
+    clock.advance(119)
+    assert handle.poll().failure_reason is None
+    assert "delete" not in api.calls
+    clock.advance(1)
+    assert handle.poll().failure_reason == "task pod startup timeout"
+    assert "delete" in api.calls
+    assert not handle.poll().settled
+    api.finish(exit_code=143)
+    assert handle.wait_for_settlement(1).settled
+    with pytest.raises(TaskLauncherError, match="already owned"):
+        launcher.launch_task(request)
+
+
+@pytest.mark.parametrize("resource", ["cpu", "memory", "nvidia.com/gpu"])
+@pytest.mark.parametrize("queue_timeout", [0, 10])
+def test_explicit_queue_timeout_settles_unscheduled_task(setup, monkeypatch, resource, queue_timeout):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.time", clock)
+    launcher, api, request, _, _ = setup
+    launcher.queue_timeout = queue_timeout
+    handle = launcher.launch_task(request)
+    api.pod.status.conditions = [
+        NS(type="PodScheduled", status="False", reason="Unschedulable", message=f"Insufficient {resource}")
+    ]
+    if queue_timeout:
+        clock.advance(queue_timeout - 1)
+        assert handle.poll().failure_reason is None
+        assert "delete" not in api.calls
+        clock.advance(1)
+    assert handle.poll().failure_reason == "task pod queue timeout"
+    assert handle.wait_for_settlement(1).settled
+    assert api.deleted
+    with pytest.raises(TaskLauncherError, match="already owned"):
+        launcher.launch_task(request)
+
+
+def test_queue_limit_stops_applying_after_node_assignment(setup, monkeypatch):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.time", clock)
+    launcher, api, request, _, _ = setup
+    launcher.queue_timeout = 5
+    api.on_create = lambda: setattr(api.pod.spec, "node_name", "node-1")
+    handle = launcher.launch_task(request)
+    clock.advance(10)
+    assert handle.poll().failure_reason is None  # Startup has its own 120-second budget.
+    assert "delete" not in api.calls
+    api.running()
+    clock.advance(600)
+    assert handle.poll().phase == TaskExecutionPhase.RUNNING
+    assert handle.poll().failure_reason is None
+    api.on_delete = api.finish
+    assert handle.cancel().settled
+
+
+def test_long_queued_task_remains_cancellable(setup, monkeypatch):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_launcher.time", clock)
+    launcher, api, request, _, _ = setup
+    handle = launcher.launch_task(request)
+    clock.advance(3600)
+    assert handle.poll().failure_reason is None
+    status = handle.cancel()
+    assert status.settled and status.cancel_requested
+    assert api.deleted
+
+
+@pytest.mark.parametrize(
+    "setting,value",
+    [("queue_timeout", value) for value in (-1, True, "5", float("nan"), float("inf"))]
+    + [("startup_timeout", value) for value in (None, 0, -1, True, "5", float("nan"), float("inf"))],
+)
+def test_queue_and_startup_timeouts_reject_invalid_values(tmp_path, setting, value):
+    with pytest.raises(ValueError, match=setting):
+        K8sTaskLauncher("site", "image", str(tmp_path), "pvc", "worker", **{setting: value})
