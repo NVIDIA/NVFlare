@@ -35,7 +35,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.utils.task_utils import apply_filters, get_filters, materialize_lazy_download_refs
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
@@ -335,6 +335,36 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_UNKNOWN}",
             )
 
+        release_task_data = None
+        try:
+            resolve = getattr(executor, "resolve_task_data", None)
+            if callable(resolve) and contains_lazy_download_ref(task.data):
+                try:
+                    if get_filters(
+                        Scope.TASK_DATA_FILTERS_NAME, fl_ctx, self.task_data_filters, task.name, FilterKey.IN
+                    ):
+                        task.data = materialize_lazy_download_refs(
+                            task.data, fl_ctx.get_engine().get_cell(), abort_signal
+                        )
+                    else:
+                        task.data, release_task_data = resolve(task.data, fl_ctx, abort_signal=abort_signal)
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+                except Exception as e:
+                    self.log_exception(fl_ctx, f"task data resolution failed: {secure_format_exception(e)}")
+                    return self._reply_and_audit(
+                        reply=make_reply(
+                            ReturnCode.TASK_ABORTED if abort_signal.triggered else ReturnCode.BAD_TASK_DATA
+                        ),
+                        ref=server_audit_event_id,
+                        fl_ctx=fl_ctx,
+                        msg="task data resolution failed",
+                    )
+            return self._execute_task(task, fl_ctx, abort_signal, executor, server_audit_event_id)
+        finally:
+            if release_task_data is not None:
+                release_task_data()
+
+    def _execute_task(self, task, fl_ctx, abort_signal, executor, server_audit_event_id):
         executor_name = executor.__class__.__name__
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")

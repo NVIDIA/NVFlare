@@ -81,7 +81,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         config_data = {}
         for f in config_files:
-            data = ConfigService.load_config_dict(f)
+            data = ConfigService.load_config_dict(f, prefer_exact_file=True)
             try:
                 augment(to_dict=config_data, from_dict=data, from_override_to=False)
             except Exception as e:

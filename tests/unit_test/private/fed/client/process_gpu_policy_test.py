@@ -12,18 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 from types import SimpleNamespace
 
 import pytest
+from omegaconf import OmegaConf
+from pyhocon import ConfigFactory as HoconFactory
+from pyhocon import HOCONConverter
 
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+from nvflare.app_common.logging.constants import is_log_streaming_allowed
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
+from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+from nvflare.private.fed.task_worker.worker import ComponentNotAuthorized, _authorize_bootstrap
 
 GPU = "GPU-00000000-0000-0000-0000-000000000001"
 
@@ -53,6 +62,16 @@ def _config(tmp_path):
             }
         },
     }
+
+
+def _write_site_config(path, config):
+    if ".conf" in path.name:
+        text = HOCONConverter.to_hocon(HoconFactory.from_dict(config))
+    elif ".yml" in path.name or ".yaml" in path.name:
+        text = OmegaConf.to_yaml(OmegaConf.create(config))
+    else:
+        text = json.dumps(config)
+    path.write_text(text)
 
 
 def _workspace(tmp_path, config):
@@ -143,7 +162,7 @@ def test_cpu_only_process_policy_still_rejects_gpu_tasks():
 def test_cp_and_cj_use_same_gpu_allocator_from_supported_site_formats(tmp_path, extension):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
-    (tmp_path / "local" / ("resources" + extension)).write_text(json.dumps(_config(tmp_path)))
+    _write_site_config(tmp_path / "local" / ("resources" + extension), _config(tmp_path))
     workspace = Workspace(str(tmp_path), "site")
     policy = TaskExecutionPolicy.from_workspace(workspace)
     assert policy.launcher.gpu_allocator is not None
@@ -158,7 +177,7 @@ def test_cp_and_cj_use_same_gpu_allocator_from_supported_site_formats(tmp_path, 
 
 def test_nominal_json_path_is_resolved_by_config_service_before_assuming_no_policy(tmp_path):
     nominal = tmp_path / "resources.json"
-    nominal.with_suffix(".conf").write_text(json.dumps(_config(tmp_path)))
+    _write_site_config(nominal.with_suffix(".conf"), _config(tmp_path))
     workspace = SimpleNamespace(get_resources_file_path=lambda: str(nominal))
     assert TaskExecutionPolicy.from_workspace(workspace).launcher.gpu_allocator is not None
 
@@ -167,7 +186,7 @@ def test_canonical_conf_is_not_shadowed_by_nested_json_in_cp_or_cj(tmp_path):
     (tmp_path / "startup").mkdir()
     custom = tmp_path / "local" / "custom"
     custom.mkdir(parents=True)
-    (tmp_path / "local" / "resources.conf").write_text(json.dumps(_config(tmp_path)))
+    _write_site_config(tmp_path / "local" / "resources.conf", _config(tmp_path))
     (custom / "resources.json").write_text("{}")
     workspace = Workspace(str(tmp_path), "site")
     assert TaskExecutionPolicy.from_workspace(workspace).launcher.gpu_allocator is not None
@@ -177,3 +196,64 @@ def test_canonical_conf_is_not_shadowed_by_nested_json_in_cp_or_cj(tmp_path):
     environment = {"CUDA_VISIBLE_DEVICES": "all"}
     ClientProcessJobLauncher().prepare_environment({}, context, environment)
     assert environment["CUDA_VISIBLE_DEVICES"] == ""
+
+
+@pytest.mark.parametrize("extension", [".conf", ".yaml"])
+@pytest.mark.parametrize("relative_workspace", [False, True], ids=["absolute-root", "relative-root"])
+def test_actual_cp_startup_and_config_sections_keep_the_selected_site_file(
+    tmp_path, monkeypatch, extension, relative_workspace
+):
+    monkeypatch.setattr(DataBus(), "data_store", {})
+    (tmp_path / "startup").mkdir()
+    custom = tmp_path / "local" / "custom"
+    custom.mkdir(parents=True)
+    (tmp_path / "startup" / "fed_client.json").write_text(json.dumps({"client": {}, "servers": []}))
+    canonical = _config(tmp_path)
+    canonical["task_execution"]["worker_timeout"] = 33
+    _write_site_config(tmp_path / "local" / ("resources" + extension), canonical)
+    (custom / "resources.json").write_text(json.dumps({"task_execution": {"worker_timeout": 99}}))
+    monkeypatch.setattr(
+        "nvflare.private.fed.app.fl_conf.BaseClientDeployer", lambda: SimpleNamespace(build=lambda _: None)
+    )
+    if relative_workspace:
+        monkeypatch.chdir(tmp_path)
+    workspace_root = "." if relative_workspace else str(tmp_path)
+    workspace = Workspace(workspace_root, "site")
+    args = argparse.Namespace(job_id=None, workspace=workspace_root)
+    ConfigService.reset()
+    try:
+        starter = FLClientStarterConfiger(workspace, args, ["uid=site"])
+        starter.configure()
+        assert starter.components["resource_manager"].get_gpu_capacity() == 0
+        assert starter.config_data["task_execution"]["worker_timeout"] == 33
+        assert ConfigService.get_section(SystemConfigs.RESOURCES_CONF)["task_execution"]["worker_timeout"] == 33
+        assert TaskExecutionPolicy.from_workspace(workspace).worker_timeout == 33
+    finally:
+        ConfigService.reset()
+
+
+@pytest.mark.parametrize("extension", [".conf", ".yaml", ".conf.default", ".yaml.default"])
+def test_worker_authorization_and_log_opt_out_use_canonical_site_formats(tmp_path, extension):
+    (tmp_path / "startup").mkdir()
+    custom = tmp_path / "local" / "custom"
+    custom.mkdir(parents=True)
+    resources = tmp_path / "local" / ("resources" + extension)
+    _write_site_config(resources, {"class_allow_list": ["nvflare."], "allow_log_streaming": False})
+    (custom / "resources.json").write_text(json.dumps({"class_allow_list": ["*"], "allow_log_streaming": True}))
+    workspace = Workspace(str(tmp_path), "site")
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site")
+    context.set_prop(FLContextKey.WORKSPACE_ROOT, str(tmp_path))
+    context.set_prop(FLContextKey.JOB_META, {"byoc": False})
+    ConfigService.reset()
+    try:
+        bootstrap = SimpleNamespace(
+            to_dict=lambda: {"executor": {"path": "nvflare.app_common.np.np_trainer.NPTrainer"}, "components": []}
+        )
+        _authorize_bootstrap(bootstrap, workspace, context)
+        denied = SimpleNamespace(to_dict=lambda: {"executor": {"path": "custom.Component"}, "components": []})
+        with pytest.raises(ComponentNotAuthorized, match="not in allow_list"):
+            _authorize_bootstrap(denied, workspace, context)
+        assert is_log_streaming_allowed(context) is False
+    finally:
+        ConfigService.reset()

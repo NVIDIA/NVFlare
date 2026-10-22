@@ -99,6 +99,7 @@ def test_native_end_run_retains_owner_past_readiness_until_scope_and_executor_se
     context = FLContext()
     engine = SimpleNamespace(
         new_context=lambda: context,
+        get_cell=lambda: SimpleNamespace(decode_pass_through_topics=set()),
         fire_event=lambda event, ctx: fire_event_to_components(event, [adapter], ctx),
     )
     context.set_prop(ReservedKey.ENGINE, engine)

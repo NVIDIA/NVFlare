@@ -66,7 +66,7 @@ class ConfigService:
     1. Config info is preloaded into predefined sections. Callers can get the config data by a section name.
     2. Manages config path (a list of directories) and loads file from the path.
 
-    Only JSON file loading is supported.
+    JSON, HOCON, and YAML file loading are supported.
     """
 
     logger = get_module_logger(__module__, __qualname__)
@@ -80,8 +80,9 @@ class ConfigService:
     def initialize(cls, section_files: Dict[str, str], config_path: List[str], parsed_args=None, var_dict=None):
         """
         Initialize the ConfigService.
-        Configuration is divided into sections, and each section must have a JSON config file.
-        Only specify the base name of the config file.
+        Configuration is divided into sections, and each section must have a supported config file.
+        Specify a base name for format lookup, or an absolute selected file path
+        to retain that exact file when it exists.
         Config path is provided to locate config files. Files are searched in the order of provided
         config_dirs. If multiple directories contain the same file name, then the first one is used.
 
@@ -121,7 +122,9 @@ class ConfigService:
                 cls._config_path.append(d)
 
         for section, file_basename in section_files.items():
-            cls._sections[section] = cls.load_config_dict(file_basename, cls._config_path)
+            cls._sections[section] = cls.load_config_dict(
+                file_basename, cls._config_path, prefer_exact_file=os.path.isabs(file_basename)
+            )
 
         cls._var_dict = var_dict
         if parsed_args:
