@@ -1,0 +1,184 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""CJ proxy for a site-owned Docker task service. Never connects to Docker."""
+
+import math
+import os
+import threading
+import time
+
+from nvflare.apis.event_type import EventType
+from nvflare.apis.task_launcher_spec import (
+    TaskExecutionPhase,
+    TaskExecutionStatus,
+    TaskHandleSpec,
+    TaskLaunchError,
+    TaskLauncherSpec,
+    TaskSettlementError,
+    UnsupportedTaskResourceError,
+)
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.message import Message
+
+CHANNEL = "nvflare_docker_task"
+SESSION_ENV = "NVFLARE_DOCKER_TASK_SESSION"
+
+
+def _timeout(value, *, allow_none=False):
+    if value is None and allow_none:
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError("timeout must be finite and nonnegative")
+
+
+class DockerTaskHandle(TaskHandleSpec):
+    def __init__(self, launcher, request):
+        self._launcher = launcher
+        self._request = request
+        self._execution_id = "docker:unresolved:" + request.attempt_id
+        self._settled = None
+
+    @property
+    def request(self):
+        return self._request
+
+    @property
+    def execution_id(self):
+        return self._execution_id
+
+    def _call(self, operation):
+        if self._settled is not None:
+            return self._settled
+        response = self._launcher._call(operation, self.request)
+        self._execution_id = response["execution_id"]
+        values = dict(response["status"])
+        values["phase"] = TaskExecutionPhase(values["phase"])
+        status = TaskExecutionStatus(**values)
+        if status.settled:
+            self._settled = status
+        if operation == "launch" and response.get("launch_failed"):
+            raise RuntimeError(status.failure_reason or "Docker task failed during resource admission or launch")
+        return status
+
+    def poll(self):
+        return self._call("poll")
+
+    def cancel(self):
+        try:
+            status = self._call("cancel")
+        except Exception as error:
+            raise TaskSettlementError(
+                "Docker task cancellation could not be confirmed",
+                TaskExecutionStatus(TaskExecutionPhase.TERMINAL, cancel_requested=True, failure_reason=str(error)),
+            ) from error
+        if not status.settled:
+            raise TaskSettlementError("Docker task settlement is unconfirmed", status)
+        return status
+
+    def wait_for_settlement(self, timeout=None):
+        _timeout(timeout, allow_none=True)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            status = self._call("settle")
+            if status.settled:
+                return status
+            if status.phase == TaskExecutionPhase.TERMINAL and status.failure_reason:
+                raise TaskSettlementError(status.failure_reason, status)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("Docker task settlement timed out")
+            time.sleep(0.05)
+
+
+class DockerTaskLauncher(TaskLauncherSpec):
+    """Only staged identity crosses the CP boundary; commands remain site-owned."""
+
+    launch_mode = "docker"
+
+    def __init__(self, rpc_timeout=30.0):
+        super().__init__()
+        _timeout(rpc_timeout)
+        if rpc_timeout == 0:
+            raise ValueError("rpc_timeout must be positive")
+        self.rpc_timeout = rpc_timeout
+        self._cell = None
+        self._session = None
+        self._identities = set()
+        self._lock = threading.Lock()
+
+    def validate_site_config(self, site_config):
+        """Require the matching CP authority in the canonical site file."""
+        launchers = []
+        for item in site_config.get("components", []):
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path", item.get("class_path", item.get("name", "")))
+            if isinstance(path, str) and path.endswith("JobLauncher"):
+                launchers.append((path, item))
+        expected = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
+        if len(launchers) != 1 or launchers[0][0] != expected:
+            raise ValueError("Docker task execution requires exactly one matching Docker client JobLauncher")
+        if not launchers[0][1].get("args", {}).get("task_worker_config"):
+            raise ValueError("Docker task execution requires CP-owned task_worker_config")
+
+    def handle_event(self, event_type, fl_ctx):
+        if event_type == EventType.START_RUN:
+            cell = fl_ctx.get_engine().get_cell()
+            if self._cell is not None:
+                if self._cell is not cell:
+                    raise RuntimeError("Docker task launcher cannot move to a different CJ runtime")
+                return
+            session = os.environ.pop(SESSION_ENV, None)
+            if cell is None or not session:
+                raise RuntimeError("Docker task execution requires a CP-issued launch session and a CJ Cell")
+            self._cell, self._session = cell, session
+
+    def _call(self, operation, request):
+        if self._cell is None:
+            raise RuntimeError("Docker task launcher has not bound its CJ runtime")
+        reply = self._cell.send_request(
+            target=FQCN.get_parent(self._cell.get_fqcn()),
+            channel=CHANNEL,
+            topic=operation,
+            request=Message(
+                payload={
+                    "session": self._session,
+                    "identity": list(request.identity),
+                    "gpu_count": request.resources.gpu_count,
+                }
+            ),
+            timeout=self.rpc_timeout,
+        )
+        if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+            raise RuntimeError("Docker task authority did not acknowledge the request")
+        return reply.payload
+
+    def launch_task(self, request):
+        if request.resources.cpu_cores is not None or request.resources.memory_mb is not None:
+            raise UnsupportedTaskResourceError(
+                "Docker CPU/memory limits belong to site policy; per-request reservation is unavailable"
+            )
+        with self._lock:
+            if request.identity in self._identities:
+                raise RuntimeError("task attempt already launched; resubmit its saved result")
+            self._identities.add(request.identity)
+        handle = DockerTaskHandle(self, request)
+        try:
+            handle._call("launch")
+        except BaseException as error:
+            # A timed-out RPC can still have created a container. Return ownership
+            # through the error so the supervisor cancels/reconciles this identity.
+            raise TaskLaunchError(f"Docker task launch failed or was not acknowledged: {error}", handle) from error
+        return handle

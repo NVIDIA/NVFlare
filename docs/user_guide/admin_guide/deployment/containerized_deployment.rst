@@ -31,6 +31,10 @@ The current Docker runtime workflow is:
 For a runnable end-to-end workflow, see the
 :github_nvflare_link:`Docker job launcher example <examples/docker>`.
 
+For disposable CPU/GPU task workers, follow :ref:`docker_task_execution` in
+addition to the resident Docker workflow below. That candidate profile has
+separate worker admission and prepared-kit requirements.
+
 Prerequisites
 -------------
 Before starting with containerized deployment, ensure you have:

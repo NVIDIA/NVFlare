@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
 import sys
@@ -91,6 +92,16 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
     _safe_workspace_child_path,
     _sanitize_container_name,
 )
+
+
+@pytest.fixture(autouse=True)
+def _bind_test_sdk(monkeypatch):
+    # The backend may already have been imported by task-launcher tests with a
+    # real SDK. Keep this module's daemon double scoped to its own tests.
+    from nvflare.app_opt.job_launcher import docker_launcher
+
+    monkeypatch.setattr(docker_launcher, "docker", _docker_mock, raising=False)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1749,3 +1760,241 @@ class TestDockerJobLauncherStudyRuntime:
         with pytest.raises(ValueError, match="Kubernetes-only"):
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("num_gpus", [0, 1])
+def test_task_cj_is_cpu_only_and_worker_mounts_preserve_job_storage(monkeypatch, num_gpus):
+    from nvflare.app_opt.task_launcher.docker_launcher import SESSION_ENV
+    from nvflare.app_opt.task_launcher.docker_service import TaskDockerJobHandle
+
+    launcher = _make_launcher(
+        default_job_container_kwargs={"device_requests": [{"Count": -1, "Capabilities": [["gpu"]]}]},
+        default_job_env={"NVIDIA_VISIBLE_DEVICES": "all", "CUDA_VISIBLE_DEVICES": "0"},
+    )
+    monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
+    session = MagicMock()
+    session.token = "job-scoped-capability"
+    monkeypatch.setattr(launcher, "_task_session", MagicMock(return_value=session))
+    container = _make_container("running")
+    container.id = "cj-id"
+    launcher._docker_client.containers.run.return_value = container
+    launcher._docker_client.containers.get.return_value = container
+    context, _ = _make_fl_ctx()
+    handle = launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image", "num_of_gpus": num_gpus}), context)
+    assert isinstance(handle, TaskDockerJobHandle)
+    kwargs = launcher._docker_client.containers.run.call_args.kwargs
+    assert "device_requests" not in kwargs
+    assert kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == "none"
+    assert kwargs["environment"]["CUDA_VISIBLE_DEVICES"] == ""
+    assert kwargs["environment"][SESSION_ENV] == session.token
+    worker_mounts = launcher._task_session.call_args.args[2]
+    by_target = _mounts_by_target(worker_mounts)
+    job_mount = by_target["/var/tmp/nvflare/workspace/job-1"]
+    assert job_mount["Source"] == "/ws/job-1" and not job_mount["ReadOnly"]
+    assert by_target["/var/tmp/nvflare/workspace/local"]["ReadOnly"]
+    assert all("docker.sock" not in str(mount) for mount in worker_mounts)
+    handle.terminate()
+    session.close.assert_called_once()
+
+
+@pytest.mark.parametrize("device,lifetime", [("cpu", "job"), ("cuda", "job"), ("cpu", "task"), ("cuda", "task")])
+def test_serial_qualification_matrix_uses_supported_site_gpu_policy(tmp_path, monkeypatch, device, lifetime):
+    from tests.integration_test.data.docker_task_execution.export_probe import export_probe
+    from tests.integration_test.data.docker_task_execution.serial_matrix import (
+        CP_PATH,
+        apply_site_policy,
+        phase_policies,
+    )
+
+    devices = {
+        "site-1": "GPU-12345678-1234-1234-1234-123456789abc",
+        "site-2": "GPU-22345678-1234-1234-1234-123456789abc",
+    }
+    image = "qualified-worker"
+    export_probe(image, device, 1, 2, lifetime, str(tmp_path))
+    job_dir = tmp_path / f"docker-probe-{device}-{lifetime}"
+    meta = json.loads((job_dir / "meta.json").read_text())
+    meta[JobConstants.JOB_ID] = "job-1"
+    assert meta.get("resource_spec", {}) == {}
+    assert meta["launcher_spec"]["server"]["docker"]["num_of_gpus"] == 0
+    config_path = next(job_dir.rglob("config_fed_client.json"))
+    assert json.loads(config_path.read_text()).get("execution_lifetime", "job") == lifetime
+    policies = phase_policies(image, devices)
+    phase = "task" if lifetime == "task" else "resident"
+    for site, uuid in devices.items():
+        previous_phase = "resident" if phase == "task" else "task"
+        previous = apply_site_policy({"components": [{"path": CP_PATH, "args": {}}]}, policies[previous_phase][site])
+        config = apply_site_policy(previous, policies[phase][site])
+        launcher = _make_launcher(**config["components"][0]["args"])
+        session = MagicMock(token="matrix-capability")
+        monkeypatch.setattr(launcher, "_task_session", MagicMock(return_value=session))
+        workspace = _make_workspace_obj()
+        workspace.get_client_app_config_file_path.return_value = str(config_path)
+        context, _ = _make_fl_ctx(identity_name=site, workspace_obj=workspace)
+        container = _make_container("running")
+        launcher._docker_client.containers.run.return_value = container
+        launcher._docker_client.containers.get.return_value = container
+        launcher.launch_job(meta, context)
+        kwargs = launcher._docker_client.containers.run.call_args.kwargs
+        if lifetime == "job" and device == "cuda":
+            assert "num_of_gpus" not in meta["launcher_spec"]["default"]["docker"]
+            assert kwargs["device_requests"] == [{"Driver": "nvidia", "DeviceIDs": [uuid], "Capabilities": [["gpu"]]}]
+            assert kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == uuid
+            assert "gpu_partition" not in launcher.task_worker_config
+        else:
+            assert "device_requests" not in kwargs
+            assert kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == "none"
+        if lifetime == "task":
+            assert launcher.task_worker_config["gpu_partition"]["devices"] == sorted(devices.values())
+            launcher._task_session.assert_called_once()
+        else:
+            launcher._task_session.assert_not_called()
+
+
+def test_serial_fixture_does_not_admit_count_based_resident_jobs_in_task_partition():
+    from tests.integration_test.data.docker_task_execution.serial_matrix import (
+        CP_PATH,
+        apply_site_policy,
+        phase_policies,
+    )
+
+    devices = {
+        "site-1": "GPU-12345678-1234-1234-1234-123456789abc",
+        "site-2": "GPU-22345678-1234-1234-1234-123456789abc",
+    }
+    task = phase_policies("worker", devices)["task"]["site-1"]
+    config = apply_site_policy({"components": [{"path": CP_PATH, "args": {}}]}, task)
+    launcher = _make_launcher(**config["components"][0]["args"])
+    context, _ = _make_fl_ctx()
+    with pytest.raises(ValueError, match="requires explicit UUIDs"):
+        launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), context)
+    launcher._docker_client.containers.run.assert_not_called()
+
+
+def test_serial_policy_switch_preserves_other_components_limits_and_security():
+    from tests.integration_test.data.docker_task_execution.serial_matrix import (
+        CP_PATH,
+        apply_site_policy,
+        phase_policies,
+    )
+
+    devices = {
+        "site-1": "GPU-12345678-1234-1234-1234-123456789abc",
+        "site-2": "GPU-22345678-1234-1234-1234-123456789abc",
+    }
+    original = {
+        "components": [
+            {"path": "site.OtherComponent", "args": {"preserve": True}},
+            {
+                "path": CP_PATH,
+                "args": {
+                    "network": "existing-network",
+                    "default_job_container_kwargs": {"ipc_mode": "host", "security_opt": ["no-new-privileges:true"]},
+                    "default_job_env": {"KEEP": "existing"},
+                    "task_worker_config": {"image": "old", "mem_limit": 123456, "environment": {"DATA_ROOT": "/data"}},
+                },
+            },
+        ],
+        "task_execution": {"settlement_timeout": 45},
+    }
+    policies = phase_policies("new", devices)
+    resident = apply_site_policy(original, policies["resident"]["site-1"])
+    task = apply_site_policy(resident, policies["task"]["site-1"])
+    assert original["components"][1]["args"]["task_worker_config"]["image"] == "old"
+    assert task["components"][0] == original["components"][0]
+    args = task["components"][1]["args"]
+    assert args["network"] == "existing-network"
+    assert args["default_job_container_kwargs"] == original["components"][1]["args"]["default_job_container_kwargs"]
+    assert args["default_job_env"] == {"KEEP": "existing"}
+    assert args["task_worker_config"]["mem_limit"] == 123456
+    assert args["task_worker_config"]["environment"] == {"DATA_ROOT": "/data", "OMP_NUM_THREADS": "1"}
+    assert task["task_execution"]["settlement_timeout"] == 45
+
+
+@pytest.mark.parametrize(
+    "devices",
+    [
+        {"site-1": "GPU-12345678-1234-1234-1234-123456789abc"},
+        {"site-1": "GPU-12345678-1234-1234-1234-123456789abc", "site-2": "GPU-12345678-1234-1234-1234-123456789abc"},
+        {"site-1": "0", "site-2": "1"},
+    ],
+)
+def test_serial_matrix_rejects_missing_shared_or_ordinal_gpu_assignments(devices):
+    from tests.integration_test.data.docker_task_execution.serial_matrix import phase_policies
+
+    with pytest.raises(ValueError):
+        phase_policies("worker", devices)
+
+
+def test_task_cj_gpu_request_requires_an_enabled_site_worker_profile(monkeypatch):
+    launcher = _make_launcher()
+    monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
+    context, _ = _make_fl_ctx()
+    with pytest.raises(ValueError, match="task_worker_config"):
+        launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image", "num_of_gpus": 1}), context)
+    launcher._docker_client.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("field", ["devices", "device_cgroup_rules", "privileged", "volumes_from", "use_api_socket"])
+def test_task_cj_cannot_inherit_device_or_daemon_authority(monkeypatch, field):
+    launcher = _make_launcher(default_job_container_kwargs={field: True})
+    monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
+    context, _ = _make_fl_ctx()
+    with pytest.raises(ValueError, match="cannot inherit"):
+        launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image"}), context)
+    launcher._docker_client.containers.run.assert_not_called()
+
+
+def test_task_job_detection_uses_exported_flag_with_config_extension_fallback(tmp_path):
+    launcher = _make_launcher()
+    path = tmp_path / "config_fed_client.json"
+    path.with_suffix(".conf").write_text('execution_lifetime = "task"')
+    workspace = MagicMock()
+    workspace.get_client_app_config_file_path.return_value = str(path)
+    assert launcher._is_task_job("job", workspace)
+
+
+@pytest.mark.parametrize("num_gpus", [0, 1])
+def test_task_session_uses_the_canonical_site_config_and_cp_cell(tmp_path, monkeypatch, num_gpus):
+    from nvflare.app_opt.task_launcher.docker_launcher import CHANNEL
+
+    worker_config = {"image": "trusted-worker"}
+    if num_gpus:
+        worker_config["gpu_partition"] = {
+            "id": "approved",
+            "exclusive": True,
+            "devices": ["GPU-12345678-1234-1234-1234-123456789abc"],
+        }
+    launcher = _make_launcher(task_worker_config=worker_config)
+    resources = tmp_path / "resources.json"
+    resources.write_text(
+        json.dumps(
+            {
+                "components": [
+                    {
+                        "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
+                        "args": {"task_worker_config": worker_config},
+                    }
+                ],
+                "task_execution": {
+                    "launcher": {"path": "nvflare.app_opt.task_launcher.docker_launcher.DockerTaskLauncher"},
+                },
+            }
+        )
+    )
+    workspace = _make_workspace_obj()
+    workspace.get_resources_file_path.return_value = str(resources)
+    context, _ = _make_fl_ctx(workspace_obj=workspace)
+    cell = context.get_engine.return_value.get_cell.return_value
+    cell.get_fqcn.return_value = "site-1"
+    original_isfile = os.path.isfile
+    monkeypatch.setattr(os.path, "isfile", lambda path: path == "/.dockerenv" or original_isfile(path))
+    monkeypatch.setattr(os, "getuid", lambda: 501)
+    monkeypatch.setattr(os, "getgid", lambda: 20)
+    session = launcher._task_session(
+        "job-1", "site-1", [], context, {"launcher_spec": {"site-1": {"docker": {"num_of_gpus": num_gpus}}}}
+    )
+    assert session.workspace == "/var/tmp/nvflare/workspace" and session.uid_gid == "501:20"
+    assert session.client is launcher._docker_client
+    assert session.gpu_count == num_gpus
+    assert cell.register_request_cb.call_args.kwargs["channel"] == CHANNEL

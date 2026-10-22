@@ -35,7 +35,6 @@ from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
 from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
@@ -91,6 +90,7 @@ class TaskWorkerExecutor(Executor):
                         raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                self.policy.launcher.handle_event(event_type, fl_ctx)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
@@ -178,7 +178,7 @@ class TaskWorkerExecutor(Executor):
                 with self._checkpoint_commit_guard(abort_signal):
                     fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
                     return result
-            validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
+            resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = self._runtime_root(workspace, identity.job_id)
             store = FileTaskArtifactStore(
@@ -215,6 +215,7 @@ class TaskWorkerExecutor(Executor):
                     ),
                     environment=self.policy.worker_environment(),
                     cwd=workspace.get_run_dir(attempt.job_id),
+                    resources=resources,
                 )
 
             outcome = self.supervisor.run(
