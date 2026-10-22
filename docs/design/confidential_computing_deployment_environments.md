@@ -1,14 +1,14 @@
 # Unified Confidential Computing Provisioning
 
-Status: implemented on branch `cc_ui_redesign`
+Status: implemented
 
-Created: 2026-09-28  
-Updated: 2026-10-05  
-Baseline: `upstream/2.9` at `6690fd4e3564d360bc86eaae0916d7b8c0cb3a6e`
+- Created: 2026-09-28
+- Updated: 2026-10-22
+- Reviewed against commit: `64a58c928b6397081f8a12e0dc3c418bfd8168cb`
 
 ## Purpose
 
-NVFlare 2.9 has three confidential-computing deployment modes:
+NVIDIA FLARE has three confidential-computing deployment modes:
 
 - `bare_metal_cvm`: a complete Intel TDX or AMD SEV-SNP VM produced by CVM
   Builder, with an application-specific encrypted vault;
@@ -17,9 +17,8 @@ NVFlare 2.9 has three confidential-computing deployment modes:
 - `azure_cc`: an Azure confidential VM or confidential Azure Container
   Instance, using Microsoft Azure Attestation (MAA).
 
-They currently use different provisioning entry points, configuration names,
-packaging hooks, and documentation. This design gives them one provisioning
-contract while preserving their different trust boundaries and deliverables.
+They use one provisioning contract while preserving their different trust
+boundaries and deliverables.
 
 ## Decisions
 
@@ -47,23 +46,25 @@ contract while preserving their different trust boundaries and deliverables.
 10. One user guide contains the common workflow once and then the three
     mode-specific sections.
 
-## Current 2.9 state
+## Current implementation
 
 | Concern | Bare-metal CVM | CoCo | Azure CC |
 |---|---|---|---|
-| Selection | Top-level `cvm_vault.participants` | Participant `cc_config` | Participant `cc_config` |
-| Discriminator | Implied by `cvm_vault` | `compute_env: confidential_containers` | `compute_env: azure_cvm` or `azure_confidential_container` |
-| Entry point | Special `VaultAdapter` branch in `provision()` | `CCBuilder` and exclusive `CoCoPackager` | `CCBuilder` |
-| CPU TEE | CVM image contract and optional `platforms` | `cc_cpu_mechanism` | `cc_cpu_mechanism` |
-| GPU | `requires_gpu` | `cc_gpu` | Not in current examples |
-| Role | Derived | Repeated in `role` | Repeated in `role` |
-| Trustee | Separate `cvm_project.yml` | Repeated in participant/operator files | Not applicable |
-| Public result | CVM OCI delivery | Pod YAML | Signed startup kit |
+| Selection | Participant `cc_config` | Participant `cc_config` | Participant `cc_config` |
+| Discriminator | `cc_deployment_mode: bare_metal_cvm` | `cc_deployment_mode: coco` | `cc_deployment_mode: azure_cc` |
+| Entry point | `CCBuilder` and `CCPackager` | `CCBuilder` and `CCPackager` | `CCBuilder` and `CCPackager` |
+| CPU TEE | `cpu_tee` | `cpu_tee` | `cpu_tee` (AMD SEV-SNP only) |
+| GPU | `gpu_tee` | `gpu_tee` | `gpu_tee: none` only |
+| Role | Derived from `participant.type` | Derived from `participant.type` | Derived from `participant.type` |
+| Attestation service | Named Trustee object | Same named Trustee object | Named Azure MAA object |
+| Public result | Complete CVM OCI artifact | Pod YAML and image metadata | Signed startup kit and Azure metadata |
 
-At the baseline revision, CoCo supports AMD SEV-SNP and Intel TDX, with or
-without an NVIDIA confidential GPU. Bare-metal CVM supports TDX and SEV-SNP;
-the approved CVM image contract determines GPU support. Azure has two targets
-under one mode: confidential VM and confidential container.
+CoCo supports AMD SEV-SNP and Intel TDX, with or without an NVIDIA
+confidential GPU. Bare-metal CVM supports TDX and SEV-SNP; the approved CVM
+image contract determines GPU support. Azure has confidential VM and
+confidential container targets and currently supports AMD SEV-SNP without a
+confidential GPU. The legacy selection and field names shown in the migration
+table are rejected rather than accepted as aliases.
 
 ## Unified files
 
@@ -413,7 +414,7 @@ azure_cc:
 execution unit. Azure settings must not be represented as Trustee settings
 because MAA and Trustee have different trust and key-release semantics.
 
-The first unified implementation deliberately matches the NVFlare 2.9 Azure
+The unified implementation deliberately matches the currently supported Azure
 integration rather than every workload that the Azure platform can host. It
 accepts only `cpu_tee: amd_sev_snp` and `gpu_tee: none` for `azure_cc`.
 `AzureCCDeployment` rejects Intel TDX and NVIDIA confidential GPU requests
@@ -438,8 +439,8 @@ protected participants. Each participant receives:
   peer's required verifier.
 
 For example, a bare-metal server can accept a CoCo client and an Azure client
-when its startup kit contains the CoCo and Azure verifier components. This
-design also requires `BareMetalCVMDeployment` to install a Trustee-backed
+when its startup kit contains the CoCo and Azure verifier components.
+`BareMetalCVMDeployment` installs a Trustee-backed
 NVFlare peer authorizer that turns a fresh, authenticated CVM appraisal into
 an identity-bound peer proof; vault-key release by itself is not a peer proof.
 CoCo and Azure participants then receive its verifier. Provisioning fails
@@ -480,7 +481,7 @@ must not share a misleading name.
 
 ## Provisioning interface
 
-### Proposed package layout
+### Core package layout
 
 ```text
 nvflare/lighter/cc_provision/
@@ -491,7 +492,9 @@ nvflare/lighter/cc_provision/
     cc_packager.py                  # common post-signing packager
     bare_metal_cvm.py               # BareMetalCVMDeployment
     coco.py                         # CoCoDeployment
-    coco_release.py                 # private adapter for the trusted release worker
+    coco_packager.py                # private CoCo plan packager
+    coco_release.py                 # trusted CoCo release worker adapter
+    trustee.py                      # shared Trustee authorizer settings
     azure_cc.py                     # AzureCCDeployment
 ```
 
@@ -511,7 +514,7 @@ class CCDeploymentPlan:
     cpu_tee: CPUTEE
     gpu_tee: GPUTEE
     attestation_service: ResolvedAttestationService
-    class_allow_list: tuple[str, ...]
+    class_allow_list: Tuple[str, ...]
     workload_source: WorkloadSource
     mode_config: Mapping[str, Any]
     internal: Mapping[str, Any] = field(default_factory=dict, repr=False)
@@ -521,15 +524,15 @@ class CCDeployment(ABC):
     mode: CCDeploymentMode
 
     @abstractmethod
-    def validate_project_config(self, project_config: dict) -> None:
+    def validate_project_config(self, project_config: Mapping[str, Any]) -> None:
         pass
 
     @abstractmethod
     def create_plan(
         self,
         participant: Participant,
-        cc_config: dict,
-        project_config: dict,
+        cc_config: Mapping[str, Any],
+        project_config: Mapping[str, Any],
     ) -> CCDeploymentPlan:
         pass
 
@@ -588,12 +591,15 @@ Configuration cannot supply arbitrary deployment class paths.
 5. determines the set of modes used by participants;
 6. calls `validate_project_config()` for every used mode and for every
    mode-specific project block that is present, even when unused;
-7. selects the class and creates an immutable plan;
-8. builds the project-wide peer-verification matrix;
-9. marks the participant CC-enabled so the complete kit is signed;
-10. installs common `CCManager` settings where the mode uses peer
-    attestation; and
-11. calls `configure_startup_kit()`.
+7. selects the class, creates an immutable plan, and marks the participant
+   CC-enabled;
+8. binds the existing CVM Builder adapter for bare-metal plans so it can use
+   the common plan during packaging;
+9. calls `configure_startup_kit()` and applies reviewed class allow-list
+   additions;
+10. builds the project-wide peer-verification matrix and installs common
+    `CCManager` settings; and
+11. leaves the completed startup kit for the following `SignatureBuilder`.
 
 An omitted block for an unused mode is valid. A used mode must have all of its
 required project settings. Any supplied mode-specific block is validated even
@@ -610,18 +616,19 @@ configuration from being accepted.
 5. publishes only approved artifacts and a common manifest; and
 6. succeeds only when every selected participant validates.
 
-This removes the special top-level `cvm_vault` branch, the separate
-`VaultAdapter` activation path, and the exclusive CoCo packager. Different
-modes can coexist in one project because the common packager owns the private
-and public handoff for each participant.
+This removes the special top-level `cvm_vault` branch and exclusive CoCo
+packager entry point. The bare-metal implementation keeps `VaultAdapter` as an
+internal bridge to CVM Builder. Different modes can coexist in one project
+because the common packager owns the private and public handoff for each
+participant.
 
 ### Class responsibilities
 
 | Class | Pre-signing work | Packaging work | Public artifact |
 |---|---|---|---|
-| `BareMetalCVMDeployment` | Install the Trustee-backed peer authorizer/manager and derive runtime/network settings | Validate CVM contract, build vault, install KBS resource, validate OCI | Complete CVM OCI artifact |
-| `CoCoDeployment` | Install authorizer/manager; redirect startup-process stdout and stderr to `/dev/null` before signing so an untrusted host cannot collect sensitive console output, while retaining guest-local NVFlare file logs | Build/encrypt image, create Trustee handoff, validate measured Pod | Pod YAML and image metadata |
-| `AzureCCDeployment` | Install Azure authorizer and manager; reject non-SNP or GPU targets in the initial 2.9 implementation | Validate/publish signed kit and sanitized deployment references | Startup kit and Azure metadata |
+| `BareMetalCVMDeployment` | Provide the Trustee authorizer specification, bind CVM Builder, and derive runtime/network settings | Validate CVM contract, build vault, install KBS resource, validate OCI | Complete CVM OCI artifact |
+| `CoCoDeployment` | Provide the Trustee authorizer specification; redirect startup-process stdout and stderr to `/dev/null` before signing so an untrusted host cannot collect sensitive console output, while retaining guest-local NVFlare file logs | Build/encrypt image, create Trustee handoff, validate measured Pod | Pod YAML and image metadata |
+| `AzureCCDeployment` | Provide the Azure authorizer specification and reject unsupported CPU or GPU targets | Validate/publish signed kit and sanitized deployment references | Startup kit and Azure metadata |
 
 The interface standardizes provisioning; it does not make the artifacts or
 attestation services interchangeable.
@@ -652,8 +659,8 @@ Secrets, private receipts, and operator paths are forbidden.
 
 ## Documentation
 
-Create one canonical guide, for example
-`docs/user_guide/confidential_computing/deployment.rst`, containing:
+The canonical guide is
+`docs/user_guide/confidential_computing/deployment.rst`. It contains:
 
 1. concepts, trust boundaries, and mode selection;
 2. common `project.yml`, `cc_project.yml`, and `cc_config` usage;
@@ -664,35 +671,21 @@ Create one canonical guide, for example
 7. Azure settings, artifacts, and launch; and
 8. common results, troubleshooting, and migration.
 
-Mode sections contain only their differences. Example runbooks may retain
-detailed commands, but they link to the canonical Trustee/KBS section instead
-of duplicating endpoints, certificates, tokens, retry policy, or timeouts.
+Mode sections contain only their differences. The shipped configuration
+examples are under `examples/advanced/cvm_builder`,
+`examples/devops/coco/provision`, and `examples/advanced/azure_cc`. Example
+runbooks may retain detailed commands, but they link to the canonical
+Trustee/KBS section instead of duplicating endpoints, certificates, tokens,
+retry policy, or timeouts.
 
-## Migration plan
+## Migration and compatibility
 
-1. Add common schema types, exact validation, service resolution, the interface,
-   and plan/result types with unit tests.
-2. Put Azure behavior behind `AzureCCDeployment`.
-3. Put CoCo builder/packager behavior behind `CoCoDeployment`, preserving all
-   private staging and fail-closed checks.
-4. Adapt `VaultAdapter` into `BareMetalCVMDeployment`, then remove the
-   `cvm_vault` branch from `provision()`.
-5. Add `CCPackager`, common signing, mixed-mode integration tests, and common
-   result manifests.
-6. Convert all examples to participant `cc_config` plus one
-   `cc_project.yml`.
-7. Consolidate user documentation and replace duplicate common sections with
-   links.
-8. Remove old field names after all in-repository callers and tests use the
-   unified schema.
-
-The unified schema is intentionally a breaking CC configuration change.
-Runtime backward compatibility is out of scope: `cvm_vault`, `compute_env`,
-and the old field names are rejected with an error that points to this
-migration table. All in-repository examples and tests move in the same change.
-A standalone conversion tool can be proposed separately, but the
-implementation does not depend on one and deployment classes contain no
-legacy aliases.
+The unified schema is an intentional breaking CC configuration change.
+Top-level `cvm_vault`, `compute_env`, and the old field names are rejected
+with errors that point to the standard-names table. In-repository examples
+and tests use participant `cc_config`, one `cc_project.yml`, `CCBuilder`, and
+`CCPackager`. There is no runtime compatibility mode or automatic conversion
+tool, and deployment classes contain no legacy aliases.
 
 ## Validation
 

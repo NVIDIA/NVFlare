@@ -126,8 +126,9 @@ GPU evidence and ``none`` requires CPU-only evidence.
 ``token_expiration_seconds`` is the maximum accepted EAR age. For a bare-metal
 CVM, provisioning also places this limit in the measured guest so renewal uses
 the earlier of signed ``exp`` and ``iat + token_expiration_seconds``. It must be
-greater than 75 seconds for a CPU-only CVM or 255 seconds for a GPU CVM, leaving
-one complete bounded appraisal plus the 15-second publication margin.
+at least 90 seconds for a CPU-only CVM or 270 seconds for a GPU CVM, covering
+one complete bounded appraisal, the 15-second expiry margin, and the 15-second
+issuance, retrieval, and publication margin.
 
 Common participant fields
 -------------------------
