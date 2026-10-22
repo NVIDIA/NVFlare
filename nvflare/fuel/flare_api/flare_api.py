@@ -1041,7 +1041,8 @@ class Session(SessionSpec):
         parts = [cmd, target]
         if options:
             options = validate_options_string(options)
-            parts.append(options)
+            # each option must reach the server as its own token; join_args would quote "-l -a" as one
+            parts.extend(options.split())
 
         if pattern_required:
             if not pattern:
