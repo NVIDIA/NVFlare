@@ -40,6 +40,9 @@ class DummyWorkspace:
     def get_root_dir(self):
         return self.root_dir
 
+    def get_resources_file_path(self):
+        return None
+
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
         return self.custom_path

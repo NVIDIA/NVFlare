@@ -29,12 +29,14 @@ Both paths use GPU utilities for discovery and CUDA visibility; their accounting
 lifetimes remain distinct. Job admission expires unallocated reservation tokens;
 the task ledger retains admitted claims until process settlement is proved.
 
-The live CP resource manager must declare zero job GPU capacity through
-`ResourceManagerSpec.get_gpu_capacity()`. An empty `ListResourceManager`, an empty
-`GPUResourceManager`, or a custom manager explicitly declaring zero is supported.
-Unknown or positive capacity rejects CJ launch. The check uses the live manager,
-so editing a site file cannot conceal a stale running CP. Sharing devices between
-job and task allocators would require a common authority and is outside this profile.
+Existing job resource managers retain their site-declared scheduling semantics.
+This profile does not inspect their inventories or require a new resource-manager
+API. The empty `ListResourceManager` below is a minimal fixture configuration;
+sites may retain their existing generic resource inventories and job admission.
+The task ledger coordinates only its participating task launchers. Administrators
+must keep other GPU allocators and workloads off the task devices; job-manager
+inventory does not prove physical device availability or separation. Unified
+job/task GPU accounting is outside this profile.
 
 Configure each site's canonical `local/resources.json`, retaining its other
 settings and components. CONF/YAML variants and default files use the same
@@ -94,8 +96,9 @@ GPU counts are declared in job metadata, for example:
 
 Positive portable `resource_spec.num_of_gpus` is rejected because it would
 reserve GPUs for the standing job. The site rejects mismatched launcher modes;
-the client JobLauncher checks the live CP's declared job GPU capacity before
-spawning CJs.
+the client JobLauncher rejects the receiving site's job-level GPU requests before
+spawning a CJ under this profile. This checks the request, not the site's declared
+resource inventory or other processes' GPU use.
 ProcessJobLauncher applies the trusted CPU environment
 after study environment overrides, before spawning the CJ. GPU workers receive
 only their assigned full UUIDs in CUDA_VISIBLE_DEVICES. CPU task workers receive

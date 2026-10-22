@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from .fl_context import FLContext
 
@@ -25,16 +24,6 @@ class ResourceConsumerSpec(ABC):
 
 
 class ResourceManagerSpec(ABC):
-    def get_gpu_capacity(self) -> Optional[int]:
-        """Return the configured job GPU device count, or None when unknown.
-
-        Zero explicitly declares that this manager cannot assign GPUs to jobs.
-        Capacity includes devices currently reserved or allocated; it is not a
-        free-device count. Callers may use this declaration to keep job and task
-        allocators separate. It does not describe external GPU users.
-        """
-        return None
-
     @abstractmethod
     def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> tuple[bool, str]:
         """Checks whether the specified resource requirement can be satisfied.

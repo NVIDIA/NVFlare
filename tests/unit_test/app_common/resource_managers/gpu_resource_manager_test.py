@@ -74,17 +74,6 @@ def mock_get_host_gpu_ids():
 
 
 class TestGPUResourceManager:
-    def test_gpu_capacity_includes_devices_with_all_memory_allocated(self):
-        manager = GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16, ignore_host=True)
-        context = FLContext()
-        enough, token = manager.check_resources(_gen_requirement(2, 16), context)
-        assert enough
-        allocated = manager.allocate_resources(_gen_requirement(2, 16), token, context)
-        assert all(resource.memory == 0 for resource in manager.resources.values())
-        assert manager.get_gpu_capacity() == 2
-        manager.free_resources(allocated, token, context)
-        assert manager.get_gpu_capacity() == 2
-
     def test_init_respects_cuda_visible_devices_for_memory_check(self, monkeypatch):
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
         with (

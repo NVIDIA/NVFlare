@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import FLContextKey, SystemComponents
-from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment
-from nvflare.utils.job_launcher_utils import generate_client_command
+from nvflare.utils.job_launcher_utils import generate_client_command, get_resource_manager_spec
 
 
 class ClientProcessJobLauncher(ProcessJobLauncher):
@@ -33,11 +32,9 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
         policy = TaskExecutionPolicy.from_workspace(workspace)
         if policy.launcher.launch_mode != "process" or getattr(policy.launcher, "gpu_allocator", None) is None:
             raise ValueError("Process task GPU profile requires the site-owned ProcessTaskLauncher")
-        manager = fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER)
-        capacity = manager.get_gpu_capacity() if isinstance(manager, ResourceManagerSpec) else None
-        if type(capacity) is not int or capacity != 0:
+        if get_resource_manager_spec(job_meta, fl_ctx.get_identity_name()).get("num_of_gpus", 0):
             raise ValueError(
-                "Process task GPU profile requires the live CP resource manager to declare zero job GPU capacity"
+                "Process task GPU profile rejects job-level GPU requests; use process launcher_spec for task GPUs"
             )
         # GPU claims belong to disposable workers; resident CJs receive no CUDA devices.
         # Existing job-mode deployments without the opt-in keep their behavior.
