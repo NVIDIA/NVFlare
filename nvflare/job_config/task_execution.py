@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validate the CPU task profile without importing or constructing application code."""
+"""Validate task contracts without importing or constructing application code."""
 
 import copy
 import math
@@ -36,12 +36,20 @@ SUPPORTED_TASK_EXECUTORS = {
 DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister"
 
 
-def validate_task_resources(meta, site_name):
-    """Use the same receiving-site resource resolution as job launchers."""
+def validate_task_resources(meta, site_name, *, allow_gpu=False):
+    """Validate counts; require GPU capability only at trusted site admission.
+
+    Export uses allow_gpu=True because it cannot select the receiving site's
+    backend. The default preserves the initial Process runtime's GPU guard.
+    """
     specs = [get_resource_manager_spec(meta, site_name)]
     specs.extend(get_job_launcher_spec(meta, site_name, mode) for mode in ("process", "docker", "k8s", "slurm"))
     for spec in specs:
-        if spec.get("num_of_gpus", 0) or spec.get("gpus_per_node", 0):
+        for name in ("num_of_gpus", "gpus_per_node"):
+            value = spec.get(name, 0)
+            if type(value) is not int or value < 0:
+                raise ValueError("task GPUs must be nonnegative integer counts")
+        if not allow_gpu and (spec.get("num_of_gpus", 0) or spec.get("gpus_per_node", 0)):
             raise ValueError("task lifetime currently supports CPU Process execution; this site requests GPUs")
 
 
