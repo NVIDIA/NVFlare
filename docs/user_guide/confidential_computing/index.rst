@@ -92,8 +92,9 @@ without claiming that its own environment is confidential.
      - Trustee authorizes vault-key release. Start with :ref:`cvm_builder` and
        the :ref:`CVM security architecture <cc_architecture>`.
    * - ``coco``
-     - Kubernetes workloads inside Kata confidential VMs, using encrypted
-       workload images and InitData-bound guest policy.
+     - Confidential Containers (CoCo) runs Kubernetes workloads inside Kata
+       confidential VMs, using encrypted workload images and InitData-bound
+       guest policy.
      - Trustee authorizes release resources. See :ref:`coco_security_architecture`
        for the security model, role-specific procedures, and remaining gaps.
    * - ``azure_cc``
