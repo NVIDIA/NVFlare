@@ -33,7 +33,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskResourceRequest,
     TaskSettlementError,
 )
-from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, task_workspace_subpath
+from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, job_workspace_subpath
 from nvflare.app_opt.task_launcher.k8s_launcher import (
     SETTLEMENT_FINALIZER,
     WORKER_MODULE,
@@ -215,7 +215,7 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
     assert container["volumeMounts"][0] == {
         "name": "workspace",
         "mountPath": launcher.workspace_root,
-        "subPath": task_workspace_subpath(request.job_id, request.site_name),
+        "subPath": job_workspace_subpath(request.job_id, request.site_name),
     }
     assert container["volumeMounts"][1]["readOnly"]
     assert container["volumeMounts"][2]["readOnly"]
@@ -654,7 +654,15 @@ def test_lost_create_response_recovers_only_nonce_owned_pod(setup):
     assert "@uid-1" in handle.execution_id
 
 
-def test_ambiguous_create_stays_fenced_through_404_until_delayed_admission(setup):
+def test_ambiguous_create_stays_fenced_through_404_until_delayed_admission(setup, monkeypatch):
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock()
+    # The deliberately tiny timeout tests policy, not host scheduling latency.
+    monkeypatch.setattr(
+        "nvflare.app_opt.task_launcher.k8s_launcher.time",
+        NS(monotonic=clock.monotonic, sleep=clock.advance),
+    )
     launcher, api, request, _, _ = setup
     create = api.create_namespaced_pod
     pending = {}

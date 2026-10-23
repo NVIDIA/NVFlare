@@ -920,6 +920,17 @@ service exposure, resources, and persistence.
      - Server and client
      - ``parent.workspace_mount_path``
      - In-container workspace mount path.
+   * - ``persistence.jobs.claimName``
+     - Client
+     - ``null``
+     - Optional pre-provisioned jobs PVC, distinct from the private CP workspace
+       claim. Configure the matching ``ClientK8sJobLauncher`` storage profile to
+       mount per-job directories into resident and task CJs.
+   * - ``persistence.jobs.mountPath``
+     - Client
+     - ``/mnt/nvflare-jobs``
+     - CP mount of the shared jobs PVC. Must not overlap the private workspace
+       mount; match launcher ``job_workspace_pvc_root``.
    * - ``fedLearnPort``
      - Server
      - Server ``fed_learn_port`` from provisioning, or ``8002``

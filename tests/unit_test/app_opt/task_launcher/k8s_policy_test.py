@@ -39,8 +39,8 @@ def profile(tmp_path):
     args = {
         "config_file_path": None,
         "namespace": "site",
-        "task_workspace_pvc": "existing-pvc",
-        "task_workspace_pvc_root": "/cp/explicit-pvc-mount",
+        "job_workspace_pvc": "existing-pvc",
+        "job_workspace_pvc_root": "/cp/explicit-pvc-mount",
         "workspace_mount_path": str(tmp_path),
         "run_as_user": 1000,
         "run_as_group": 1000,
@@ -176,13 +176,13 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
     elif fault == "namespace":
         cp["args"]["namespace"] = "other"
     elif fault == "pvc":
-        cp["args"]["task_workspace_pvc"] = "other"
+        cp["args"]["job_workspace_pvc"] = "other"
     elif fault == "workspace":
         cp["args"]["workspace_mount_path"] = "/other"
     elif fault in ("uid", "gid"):
         cp["args"]["run_as_user" if fault == "uid" else "run_as_group"] = 2000
     elif fault == "cp-mount":
-        cp["args"].pop("task_workspace_pvc_root")
+        cp["args"].pop("job_workspace_pvc_root")
     elif fault == "environment":
         config["task_execution"]["environment_variables"] = ["PYTHONPATH"]
     (tmp_path / "local").mkdir()

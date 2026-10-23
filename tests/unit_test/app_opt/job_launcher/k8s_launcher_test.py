@@ -22,6 +22,11 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+try:
+    import kubernetes.utils.quantity as _k8s_quantity
+except ImportError:
+    _k8s_quantity = None
+
 _k8s_mock = ModuleType("kubernetes")
 _k8s_client = ModuleType("kubernetes.client")
 _k8s_config = ModuleType("kubernetes.config")
@@ -54,6 +59,9 @@ _K8S_MODULES = {
     "kubernetes.client.api.core_v1_api": _k8s_core,
 }
 
+if _k8s_quantity is not None:
+    _K8S_MODULES["kubernetes.utils.quantity"] = _k8s_quantity
+
 
 @pytest.fixture(autouse=True)
 def _isolate_kubernetes_modules():
@@ -79,10 +87,10 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     PodPhase,
     _job_args_dict,
     job_pod_name,
+    job_workspace_subpath,
     site_name_to_rfc1123,
     study_dataset_volume_name,
     task_security_context,
-    task_workspace_subpath,
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
@@ -3756,8 +3764,8 @@ def _task_profile(pvc_root):
     return ClientK8sJobLauncher(
         config_file_path=None,
         namespace="site",
-        task_workspace_pvc="existing-pvc",
-        task_workspace_pvc_root=str(pvc_root),
+        job_workspace_pvc="existing-pvc",
+        job_workspace_pvc_root=str(pvc_root),
         run_as_user=max(os.getuid(), 1),
         run_as_group=max(os.getgid(), 1),
     )
@@ -3765,7 +3773,9 @@ def _task_profile(pvc_root):
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yml"])
-def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, lifetime, extension):
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension):
+    if lifetime == "task" and _k8s_quantity is None:
+        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
@@ -3802,8 +3812,8 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
                         "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
                         "args": {
                             "namespace": "site",
-                            "task_workspace_pvc": "existing-pvc",
-                            "task_workspace_pvc_root": str(pvc_root),
+                            "job_workspace_pvc": "existing-pvc",
+                            "job_workspace_pvc_root": str(pvc_root),
                             "run_as_user": max(os.getuid(), 1),
                             "run_as_group": max(os.getgid(), 1),
                         },
@@ -3826,7 +3836,7 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
             }
         )
     )
-    launcher._prepare_workspace_subpath = Mock(return_value=task_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
+    launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
     api = launcher.core_v1 = Mock()
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
     launcher._ensure_startup_secret = Mock(return_value="existing-startup-secret")
@@ -3851,29 +3861,34 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
     container = spec["containers"][0]
     workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
     workspace_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job")
+    assert workspace_volume == {"name": "workspace-job", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
+    assert workspace_mount["subPath"] == job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert spec["automountServiceAccountToken"] is False
+    assert spec["securityContext"] == task_security_context(max(os.getuid(), 1), max(os.getgid(), 1))
+    assert container["securityContext"]["allowPrivilegeEscalation"] is False
     if lifetime == "job":
-        assert "emptyDir" in workspace_volume
         assert container["resources"]["requests"]["nvidia.com/gpu"] == "2"
         assert "serviceAccountName" not in spec
     else:
-        assert workspace_volume == {"name": "workspace-job", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
-        assert workspace_mount["subPath"] == task_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
         assert "nvidia.com/gpu" not in container["resources"]["requests"]
         assert "nvidia.com/gpu" not in container["resources"]["limits"]
         assert spec["serviceAccountName"] == "task-no-api"
-        assert spec["automountServiceAccountToken"] is False
-        assert spec["securityContext"] == task_security_context(max(os.getuid(), 1), max(os.getgid(), 1))
-        assert container["securityContext"]["allowPrivilegeEscalation"] is False
         environment = {item["name"]: item.get("value") for item in container["env"]}
         assert environment["CUDA_VISIBLE_DEVICES"] == ""
         assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
     # Existing credential ownership and workspace-transfer mechanisms are retained.
     launcher._own_credential_secret.assert_called_once()
     transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))
-    if lifetime == "task":
-        launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE)
-    else:
-        launcher._prepare_workspace_subpath.assert_not_called()
+    launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE)
+    job_dir = pvc_root / workspace_mount["subPath"]
+    (job_dir / "committed-checkpoint").write_bytes(b"persist across CJ deletion")
+    (tmp_path / "cp-private-state").write_bytes(b"private")
+    assert not (job_dir / "cp-private-state").exists()
+    handle.terminate()
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    with pytest.raises(ValueError, match="already exists"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
 
 
 @pytest.mark.parametrize("fault", ["sidecar", "host", "missing-volume", "wrong-mount", "unknown-lifetime"])
@@ -3909,7 +3924,7 @@ def test_unsupported_cj_profiles_fail_before_submission(tmp_path, fault):
 
 def test_subpaths_are_site_and_job_scoped_without_raw_path_components():
     paths = {
-        task_workspace_subpath(job, site) for job in (_TASK_JOB_ID, "../other") for site in (_TASK_SITE, "site/other")
+        job_workspace_subpath(job, site) for job in (_TASK_JOB_ID, "../other") for site in (_TASK_SITE, "site/other")
     }
     assert len(paths) == 4
     assert all(path.startswith("nvflare-tasks/") and ".." not in path for path in paths)
@@ -3949,12 +3964,12 @@ def test_cp_rejects_unmounted_pvc_or_replaced_parent(tmp_path):
 
 @pytest.mark.parametrize(
     "missing",
-    ["task_workspace_pvc", "task_workspace_pvc_root", "run_as_user", "run_as_group"],
+    ["job_workspace_pvc", "job_workspace_pvc_root", "run_as_user", "run_as_group"],
 )
 def test_client_task_settings_must_be_complete(missing):
     settings = {
-        "task_workspace_pvc": "existing-pvc",
-        "task_workspace_pvc_root": "/cp/task-pvc",
+        "job_workspace_pvc": "existing-pvc",
+        "job_workspace_pvc_root": "/cp/task-pvc",
         "run_as_user": 1000,
         "run_as_group": 1000,
     }

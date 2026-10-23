@@ -78,7 +78,7 @@ def validate_dns_name(name, value):
     return value
 
 
-def task_workspace_subpath(job_id, site_name):
+def job_workspace_subpath(job_id, site_name):
     """Separate each site's job workspace without embedding untrusted path components."""
     digest = hashlib.sha256(json.dumps([job_id, site_name]).encode()).hexdigest()
     return f"nvflare-tasks/{digest}"
@@ -1130,36 +1130,36 @@ def _job_args_dict(job_args: dict, arg_names: list) -> dict:
 
 
 class ClientK8sJobLauncher(K8sJobLauncher):
-    """Launch client jobs, optionally preparing CPU CJs for disposable task workers."""
+    """Launch resident or task CJs with an optional shared persistent jobs workspace."""
 
     def __init__(
         self,
         *args,
-        task_workspace_pvc: str = None,
-        task_workspace_pvc_root: str = None,
+        job_workspace_pvc: str = None,
+        job_workspace_pvc_root: str = None,
         run_as_user: int = None,
         run_as_group: int = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.task_workspace_pvc = None
-        self.task_workspace_pvc_root = None
-        self.task_security_context = None
-        self._task_storage_lock = threading.Lock()
-        self._task_storage_checked = False
-        settings = (task_workspace_pvc, task_workspace_pvc_root, run_as_user, run_as_group)
+        self.job_workspace_pvc = None
+        self.job_workspace_pvc_root = None
+        self.job_security_context = None
+        self._job_storage_lock = threading.Lock()
+        self._job_storage_checked = False
+        settings = (job_workspace_pvc, job_workspace_pvc_root, run_as_user, run_as_group)
         if all(value is None for value in settings):
             return
         if any(value is None for value in settings):
-            raise ValueError("task execution requires PVC, CP mount and numeric UID/GID together")
-        self.task_workspace_pvc = validate_dns_name("task_workspace_pvc", task_workspace_pvc)
-        if not isinstance(task_workspace_pvc_root, str) or not os.path.isabs(task_workspace_pvc_root):
-            raise ValueError("task_workspace_pvc_root must name the CP's explicit mount of the existing PVC")
-        self.task_workspace_pvc_root = os.path.realpath(task_workspace_pvc_root)
-        self.task_security_context = task_security_context(run_as_user, run_as_group)
+            raise ValueError("persistent job workspaces require PVC, CP mount and numeric UID/GID together")
+        self.job_workspace_pvc = validate_dns_name("job_workspace_pvc", job_workspace_pvc)
+        if not isinstance(job_workspace_pvc_root, str) or not os.path.isabs(job_workspace_pvc_root):
+            raise ValueError("job_workspace_pvc_root must name the CP's explicit mount of the existing jobs PVC")
+        self.job_workspace_pvc_root = os.path.realpath(job_workspace_pvc_root)
+        self.job_security_context = task_security_context(run_as_user, run_as_group)
 
     def get_execution_lifetime(self, job_meta, fl_ctx):
-        if self.task_workspace_pvc is None:
+        if self.job_workspace_pvc is None:
             return "job"
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace is None:
@@ -1186,11 +1186,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         fl_ctx=None,
         transfer_token=None,
     ):
-        if execution_lifetime != "task":
+        if self.job_workspace_pvc is None:
             return
-        from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
-        from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskService
-        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
 
         spec = manifest["spec"]
         if (
@@ -1199,20 +1196,36 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             or spec.get("ephemeralContainers")
             or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
         ):
-            raise ValueError("the Kubernetes task CJ profile requires one isolated container")
+            raise ValueError("the persistent Kubernetes CJ profile requires one isolated container")
         volumes = [volume for volume in spec["volumes"] if volume["name"] == "workspace-job"]
         if len(volumes) != 1:
-            raise ValueError("task CJ requires the resident workspace-job volume")
+            raise ValueError("persistent CJ requires the resident workspace-job volume")
         volumes[0].clear()
-        volumes[0].update(name="workspace-job", persistentVolumeClaim={"claimName": self.task_workspace_pvc})
+        volumes[0].update(name="workspace-job", persistentVolumeClaim={"claimName": self.job_workspace_pvc})
         container = spec["containers"][0]
         mounts = [mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]
         if len(mounts) != 1 or mounts[0]["mountPath"] != self.workspace_mount_path:
-            raise ValueError("task CJ workspace mount differs from the configured durable workspace")
-        policy = TaskExecutionPolicy.from_workspace(workspace)
-        if type(policy.launcher) is not K8sTaskLauncher:
-            raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
+            raise ValueError("CJ workspace mount differs from the configured durable workspace")
+        if execution_lifetime == "task":
+            from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+            from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskService
+            from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
+
+            policy = TaskExecutionPolicy.from_workspace(workspace)
+            if type(policy.launcher) is not K8sTaskLauncher:
+                raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
         mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
+        container["securityContext"] = {
+            "runAsUser": self.job_security_context["runAsUser"],
+            "runAsGroup": self.job_security_context["runAsGroup"],
+            "runAsNonRoot": True,
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+        }
+        spec["securityContext"] = dict(self.job_security_context)
+        spec["automountServiceAccountToken"] = False
+        if execution_lifetime != "task":
+            return
         for amounts in container.get("resources", {}).values():
             for resource in list(amounts):
                 if "gpu" in resource.lower():
@@ -1223,19 +1236,10 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             for name in sorted(GPU_ENVIRONMENT_NAMES)
         )
         container["env"] = env
-        container["securityContext"] = {
-            "runAsUser": self.task_security_context["runAsUser"],
-            "runAsGroup": self.task_security_context["runAsGroup"],
-            "runAsNonRoot": True,
-            "allowPrivilegeEscalation": False,
-            "capabilities": {"drop": ["ALL"]},
-        }
-        spec["securityContext"] = dict(self.task_security_context)
         spec["serviceAccountName"] = policy.launcher.worker_service_account
-        spec["automountServiceAccountToken"] = False
         backend = policy.launcher.create_backend(
             self.core_v1,
-            os.path.join(self.task_workspace_pvc_root, mounts[0]["subPath"]),
+            os.path.join(self.job_workspace_pvc_root, mounts[0]["subPath"]),
             job_meta,
             job_id,
             site_name,
@@ -1244,31 +1248,31 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
 
     def _prepare_workspace_subpath(self, job_id, site_name):
-        subpath = task_workspace_subpath(job_id, site_name)
+        subpath = job_workspace_subpath(job_id, site_name)
         # CP explicitly mounts the same PVC. Create a fresh, owned job subtree
         # instead of relying on kubelet-created subPath directory permissions.
         # Never reuse retained data after a CJ/CP restart or failed launch.
         from nvflare.app_opt.task_launcher.k8s_launcher import check_posix_storage
 
-        root = self.task_workspace_pvc_root
+        root = self.job_workspace_pvc_root
         if not os.path.isdir(root):
-            raise ValueError("the task workspace PVC must already be mounted in CP")
-        with self._task_storage_lock:
-            if not self._task_storage_checked:
+            raise ValueError("the jobs workspace PVC must already be mounted in CP")
+        with self._job_storage_lock:
+            if not self._job_storage_checked:
                 check_posix_storage(root)
-                self._task_storage_checked = True
+                self._job_storage_checked = True
         parent = os.path.join(root, "nvflare-tasks")
         os.makedirs(parent, mode=0o700, exist_ok=True)
         if os.path.islink(parent) or os.path.realpath(parent) != parent:
-            raise ValueError("task workspace parent must be a real directory on the configured PVC")
+            raise ValueError("job workspace parent must be a real directory on the configured PVC")
         directory = os.path.join(root, subpath)
         try:
             os.mkdir(directory, mode=0o700)
         except FileExistsError as error:
-            raise ValueError("task workspace already exists; retained job/site data cannot be reused") from error
+            raise ValueError("job workspace already exists; retained job/site data cannot be reused") from error
         info = os.stat(directory)
-        if info.st_uid != self.task_security_context["runAsUser"]:
-            raise ValueError("CP, CJ and task workers must use the same nonroot numeric UID")
+        if info.st_uid != self.job_security_context["runAsUser"]:
+            raise ValueError("CP, CJ and workers must use the same nonroot numeric UID")
         return subpath
 
     def get_module_args(self, _job_id, fl_ctx: FLContext):

@@ -12,9 +12,11 @@ Backend contract
 * Identity: every physical attempt has a unique namespace/name/UID, labels for
   job/site/task/attempt, and full identities in annotations. Deletes use UID
   preconditions; replacement pods are never adopted or deleted.
-* Storage: an existing durable POSIX PVC is explicitly mounted at the same
-  absolute workspace root in CJ and task pods. That root contains bootstrap,
-  application code, input, immutable output and checkpoints. Pod-local
+* Storage: CP's private workspace uses its own PVC. A second, shared jobs PVC
+  holds per-job workspaces for both resident and task CJs. CJ and its task pods
+  mount only their job/site subtree at the same absolute workspace root. That
+  root contains bootstrap, application code, input, immutable output and
+  checkpoints. Pod-local
   ``emptyDir`` is insufficient. CP explicitly mounts that PVC and creates an
   owned per-job/site subtree. Paths outside the configured root are rejected.
 * Resources: both CPU and GPU task workers are required. Kubernetes admits
@@ -90,13 +92,16 @@ Credential/workspace-transfer cleanup stays with the job handle. CP retains
 physical task ownership independently of those job credentials.
 
 The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
-optional task storage and numeric identity settings enable CJ
-preparation for task mode. It replaces the generated ``workspace-job`` emptyDir
-only when the application selects ``execution_lifetime="task"``. Job-lifetime
-manifests retain resident behavior.
+optional ``job_workspace_pvc``, ``job_workspace_pvc_root`` and numeric identity
+settings enable persistent workspaces for both CJ lifetimes. With this profile,
+it replaces the generated ``workspace-job`` emptyDir with the job's subtree on
+the shared jobs PVC for resident and task CJs. Resident CJs retain their native
+GPU resources; only task-mode CJs have their GPU resources removed. Deployments
+without this optional storage profile retain the existing resident emptyDir
+behavior.
 The task profile removes CJ GPU requests/limits and visibility, selects the
-unprivileged worker account with API token mounting disabled, and uses the durable workspace. It preserves the existing
-workspace download and credential-Secret lifecycle. A pod-template PVC override
+unprivileged worker account with API token mounting disabled, and uses the
+durable workspace. It preserves the existing workspace download and credential-Secret lifecycle. A pod-template PVC override
 alone is insufficient because generated workspace volumes take precedence.
 
 CP seals task admission before terminating CJ. A Pending CJ that never starts
@@ -117,12 +122,18 @@ Never remove a finalizer solely to clear a stuck Pod.
 Site prerequisites
 ------------------
 
-Use an existing namespace, preapproved worker image and durable PVC. For pods on
-different nodes the selected volume must support the required concurrent access
+The recommended site profile uses two pre-provisioned claims: a private CP
+workspace PVC and a separate jobs PVC shared by this site's CJs and task workers.
+CP mounts the jobs PVC once at ``job_workspace_pvc_root``; each CJ/worker mounts
+only its own job/site subtree. Never mount CP's private workspace claim in CJ or
+worker Pods. This keeps the PVC count fixed as jobs and attempts increase.
+
+Use an existing namespace and preapproved worker image. For pods on
+different nodes the jobs volume must support the required concurrent access
 (commonly RWX); an access-mode declaration alone does not establish filesystem
 semantics. All bootstrap paths are absolute paths in the same explicitly
-configured mount in both pods. Configure CP's ``task_workspace_pvc_root`` as its
-explicit mount of ``task_workspace_pvc``. CP creates
+configured mount in both pods. Configure CP's ``job_workspace_pvc_root`` as its
+explicit mount of ``job_workspace_pvc``. CP creates
 ``nvflare-tasks/<sha256(job,site)>`` with mode 0700 and verifies its numeric owner;
 CJ and workers mount that subtree at the CJ's ``workspace_mount_path`` / worker's
 ``workspace_root``. Existing subtrees fail rather than being reset or adopted.
@@ -195,15 +206,44 @@ CPU/memory mapping remains supported, subject to the existing native/portable
 conflict rules. Correct task delegation of whole-job GPU reservations is a
 separate prerequisite for portable GPU support.
 
-Keep the existing ``ClientK8sJobLauncher`` component and add the task storage,
+Configure the generated client chart's existing ``persistence.workspace`` claim
+for private CP state, then enable its optional ``persistence.jobs`` mount before
+installing/upgrading the CP Deployment. For site-1, merge these settings into
+``helm_chart/values.yaml`` after ``nvflare deploy prepare``::
+
+   persistence:
+     workspace:
+       claimName: site-1-cp
+     jobs:
+       claimName: site-1-jobs
+       mountPath: /mnt/nvflare-jobs
+   securityContext:
+     runAsUser: 1000
+     runAsGroup: 1000
+     runAsNonRoot: true
+     fsGroup: 1000
+
+Keep the generated workspace ``volumeName`` and ``mountPath`` entries. Both
+claims must already exist and permit the configured nonroot identity. The chart
+rejects identical CP/jobs claim names and overlapping CP/jobs mount paths. It
+does not create PVCs. Leave ``persistence.jobs.claimName`` null for deployments
+without this optional storage profile. Give each client site its own pair of
+claims. A PVC is namespaced: CP and its CJs/workers must be able to reference the
+same jobs claim in the same namespace; a cross-namespace layout requires a
+separately configured shared-filesystem arrangement.
+
+Keep the existing ``ClientK8sJobLauncher`` component and add the job storage and
 identity arguments shown below. Configure ``K8sTaskLauncher``
 under ``task_execution.launcher`` and preserve the site's other components.
 After ``nvflare deploy prepare``, put this task profile in the canonical
 ``local/resources.json`` override. Keep the generated
 ``local/resources.json.default`` when using the existing ``deploy k8 stage``
 command, which identifies the prepared kit through that generated default.
-Task-profile settings are not additional ``prepare`` YAML keys. Apply the
-override after preparation, then stage both local files::
+These site-resource and chart-value settings are not additional ``prepare``
+YAML keys. The launcher ``job_workspace_pvc`` and worker ``workspace_pvc`` must
+both match ``persistence.jobs.claimName``; ``job_workspace_pvc_root`` must match
+``persistence.jobs.mountPath``. Apply the override after preparation, then stage
+both local files::
 
    {
      "components": [{
@@ -212,8 +252,8 @@ override after preparation, then stage both local files::
        "args": {
          "config_file_path": null,
          "namespace": "site",
-         "task_workspace_pvc": "task-storage",
-         "task_workspace_pvc_root": "/mnt/task-storage",
+         "job_workspace_pvc": "site-1-jobs",
+         "job_workspace_pvc_root": "/mnt/nvflare-jobs",
          "workspace_mount_path": "/var/tmp/nvflare/workspace",
          "run_as_user": 1000,
          "run_as_group": 1000
@@ -226,7 +266,7 @@ override after preparation, then stage both local files::
            "namespace": "site",
            "image": "site-approved-worker:reviewed-source",
            "workspace_root": "/var/tmp/nvflare/workspace",
-           "workspace_pvc": "task-storage",
+           "workspace_pvc": "site-1-jobs",
            "worker_service_account": "task-no-api",
            "run_as_user": 1000,
            "run_as_group": 1000,
@@ -501,6 +541,29 @@ unresolved-settlement evidence. Re-launching the same job/site while its subtree
 exists raises ``ValueError`` and preserves the files; use a new job identity or
 complete operator cleanup before reusing that identity.
 
+Persistent files and CJ resume
+------------------------------
+
+The shared jobs PVC preserves workspace files, committed checkpoints and task
+artifacts after either kind of CJ Pod is removed. Scratch files and container
+logs outside that mount remain ephemeral. The existing CJ ephemeral-storage
+request/limit (default 1Gi) continues to cover Pod-local storage; it does not
+limit files on the PVC. Task workers currently set no explicit ephemeral-storage
+request/limit, so namespace defaults and node eviction policy apply.
+
+Persistence does not itself implement CJ resume. Applications must write their
+required recovery state, and a future restart path must restore committed state,
+coordinate with SJ and fence every earlier CJ/worker attempt. This PR continues
+to reject an existing job/site directory rather than overwrite or automatically
+adopt it. The current shutdown upload also remains in place for CP's result
+archive. Abrupt CJ loss preserves the jobs-PVC files without depending on that
+upload running.
+
+For profiles from earlier unreleased revisions, rename ``task_workspace_pvc`` /
+``task_workspace_pvc_root`` to ``job_workspace_pvc`` /
+``job_workspace_pvc_root``. The existing hashed ``nvflare-tasks`` directory format
+is retained so this configuration change cannot bypass the retained-data fence.
+
 Local reproduction and deployment qualification
 --------------------------------------------------
 
@@ -512,7 +575,11 @@ client installed::
    python -m pytest -q tests/unit_test/private/fed/task_worker
    ./runtest.sh -s --skip-install
 
-The adapter tests use a deterministic API model and real on-disk artifacts. The
+The adapter tests use a deterministic API model and real on-disk artifacts.
+Helm-rendering tests verify separate CP/jobs claims, reject private-claim reuse
+and overlapping mount paths, and preserve the default chart without a jobs
+claim. Both client lifetimes test the shared per-job mount, with resident GPU
+resources preserved and task-mode GPU admission delegated to workers. The
 worker tests also run the unmodified NPTrainer in a real CPU interpreter and
 check authorization before custom imports. They do not launch Kubernetes pods.
 
@@ -523,7 +590,9 @@ its own explicit site profile and qualification.
 
 With separately authorized infrastructure, qualify matching Kubernetes CP ->
 CPU CJ -> disposable task pods using that
-simple application. Record exact source/image digests and rendered manifests;
+simple application and the separate CP/jobs PVC profile. Inspect actual mounts
+and verify that deleting CJ preserves its committed checkpoint on the jobs PVC
+while CJ/workers cannot see the private CP workspace. Record exact source/image digests and rendered manifests;
 confirm each pod UID and native allocation. Exercise success, pending/running
 cancellation, CJ death, lost Cell replies, cross-job capability rejection,
 image/admission failure, eviction, API outage, missing shutdown

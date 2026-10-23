@@ -40,9 +40,9 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
     WORKSPACE_MOUNT_PATH,
     is_cpu_memory_gpu_shortage,
+    job_workspace_subpath,
     site_name_to_rfc1123,
     task_security_context,
-    task_workspace_subpath,
     validate_dns_name,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
@@ -257,14 +257,14 @@ class _K8sTaskProfile(TaskLauncherSpec):
             raise ValueError("Kubernetes task CJ launcher args must be a dict")
         if args.get("namespace", DEFAULT_NAMESPACE) != self.namespace:
             raise ValueError("Kubernetes CJ/task namespaces must match")
-        if args.get("task_workspace_pvc") != self.workspace_pvc:
-            raise ValueError("Kubernetes CP/CJ/task workspace PVCs must match")
+        if args.get("job_workspace_pvc") != self.workspace_pvc:
+            raise ValueError("Kubernetes CJ/task workers must use the same jobs workspace PVC")
         mount = args.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
         if not isinstance(mount, str) or not os.path.isabs(mount) or os.path.realpath(mount) != self.workspace_root:
             raise ValueError("Kubernetes CJ/task workspace mount paths must match")
-        cp_mount = args.get("task_workspace_pvc_root")
+        cp_mount = args.get("job_workspace_pvc_root")
         if not isinstance(cp_mount, str) or not os.path.isabs(cp_mount) or os.path.realpath(cp_mount) == "/":
-            raise ValueError("Kubernetes CP requires an explicit dedicated mount of the existing task PVC")
+            raise ValueError("Kubernetes CP requires an explicit dedicated mount of the existing jobs PVC")
         if task_security_context(args.get("run_as_user"), args.get("run_as_group")) != self.security_context:
             raise ValueError("Kubernetes CP/CJ/task numeric UID/GID must match")
 
@@ -375,7 +375,7 @@ class K8sTaskBackend(_K8sTaskProfile):
                     {
                         "name": "workspace",
                         "mountPath": self.workspace_root,
-                        "subPath": task_workspace_subpath(request.job_id, request.site_name),
+                        "subPath": job_workspace_subpath(request.job_id, request.site_name),
                     },
                     {
                         "name": "startup-kit",
@@ -386,7 +386,7 @@ class K8sTaskBackend(_K8sTaskProfile):
                         "name": "workspace",
                         "mountPath": os.path.join(self.workspace_root, "local"),
                         "readOnly": True,
-                        "subPath": task_workspace_subpath(request.job_id, request.site_name) + "/local",
+                        "subPath": job_workspace_subpath(request.job_id, request.site_name) + "/local",
                     },
                 ],
             },
