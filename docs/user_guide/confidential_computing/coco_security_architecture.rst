@@ -171,13 +171,17 @@ may consume sensitive inputs and what outputs it may emit.
 Architecture
 ------------
 
-.. figure:: ../../resources/coco-nvflare-security-architecture.svg
-   :alt: Four-party architecture: the trusted platform authority supplies approved references and launch constraints through the provisioning node; independent secure services authorize resources to the confidential guest inside the adversarial CoCo cluster; NVFlare peers separately verify guest proofs over authenticated connections.
-   :width: 100%
+.. figure:: ../../resources/cc-federation-architecture.svg
+   :alt: Trusted preparation supplies approved artifacts and policies. Trustee authorizes resources for the confidential guest inside an untrusted host, while NVFlare peers separately verify identity-bound proofs over TLS.
+   :width: 640px
    :align: center
 
    Four deployment roles and two separate security decisions: workload resource
    release by secure services, and participant verification by NVFlare peers.
+
+For the complete role and service interactions, open the
+:download:`detailed CoCo architecture diagram <../../resources/coco-nvflare-security-architecture.svg>`.
+In this CoCo deployment, the protected guest is a Kata confidential VM.
 
 Registry storage and network transport are not where image plaintext should
 appear on the hostile side. Decryption occurs inside the confidential guest.
@@ -258,14 +262,18 @@ for other target choices.
 It is an architectural deployment recipe, not a supplied end-to-end training
 application or a claim that this exact two-site deployment has been tested.
 
-.. figure:: ../../resources/coco-two-site-fl-example.svg
+.. figure:: ../../resources/coco-two-site-summary.svg
    :alt: Model owner M supplies reviewed client code to a mutually trusted provisioner. Separate encrypted releases run in hostile clusters for site-1 and site-2, with independent secure services. Each data owner authorizes a user-supplied TLS dataset connector into its guest. Approved model updates go to M's ordinary trusted server.
-   :width: 100%
+   :width: 640px
    :align: center
 
    Solid paths use the CoCo/NVFlare deployment model. Dashed dataset paths
    require application-specific implementation and authorization; they are
    not supplied by the CoCo packaging scripts.
+
+Open the :download:`detailed two-site architecture diagram
+<../../resources/coco-two-site-fl-example.svg>` for the full handoffs and trust
+boundaries.
 
 Agree on authority before preparing machines
 --------------------------------------------
@@ -1108,20 +1116,19 @@ it is not a separate service and its name is not a hardware-attested identity.
 The host-side API, admission, launch-script and checksum checks are bypassable
 by CoCo IT and are not the security boundary against that operator.
 
-.. figure:: ../../resources/coco-pod-launch-sequence.svg
-   :alt: Vertically stacked Pod launch phases among CoCo IT, Kubernetes, the Kata runtime, confidential guest services, registry, KBS, AS, RVPS and workload, showing startup failure, key-release denial, guest-request denial and allowed-change outcomes. Repeated guest headings refer to the same confidential VM.
-   :width: 100%
+.. figure:: ../../resources/coco-launch-summary.svg
+   :alt: Five conceptual checkpoints: guest launch, policy and encrypted artifacts, hardware appraisal, resource authorization, and guest checks before workload startup. Failed checkpoints stop that launch path; exact image-digest binding remains a documented limitation.
+   :width: 640px
    :align: center
 
-   Read the stacked phases from top to bottom; repeated participant headings
-   refer to the same actors, not new VMs or services. These are conceptual
-   launch dependencies and enforcement checkpoints, not a literal packet
-   trace. Guest policy checks and image handling can interleave, and resource
-   requests can repeat. A failure path terminates that launch attempt; later
-   steps describe the continuing successful path.
+   Read the checkpoints from top to bottom. These are conceptual dependencies,
+   not a literal packet trace. Guest checks, image handling, and resource
+   requests can interleave or repeat. The table below distinguishes startup
+   failure, key-release denial, guest-request denial, and an allowed launch.
 
 Open the :download:`full-size vector diagram <../../resources/coco-pod-launch-sequence.svg>`
-to zoom into its labels. The :download:`editable Mermaid source <../../resources/coco-pod-launch-sequence.mmd>`
+for the detailed actor-by-actor interactions. The
+:download:`editable Mermaid source <../../resources/coco-pod-launch-sequence.mmd>`
 retains the full logical trace of the same actors, checkpoints, outcomes and
 coverage limitation; the SVG groups it into narrower phases for readability.
 
