@@ -5,3 +5,4 @@ datasets
 peft
 trl
 safetensors
+huggingface_hub
