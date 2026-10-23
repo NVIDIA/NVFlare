@@ -27,6 +27,7 @@ signalling are separate syscalls and cannot be atomic against another reaper.
 import logging
 import math
 import os
+import re
 import signal
 import threading
 import time
@@ -35,7 +36,6 @@ from typing import Optional
 
 import psutil
 
-from nvflare.apis.gpu_allocator_spec import GpuAllocatorSpec
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
     TaskExecutionStatus,
@@ -437,64 +437,13 @@ class ProcessTaskHandle(TaskHandleSpec):
         return self._terminate_group(deadline=deadline)
 
 
-class _GpuTaskHandle(TaskHandleSpec):
-    """Settlement includes durable release, independently from result receipt."""
-
-    def __init__(self, request, reservation, process=None):
-        self._request = request
-        self.reservation = reservation
-        self.process = process
-        self._lock = threading.RLock()
-        self._release_failure = None
-
-    @property
-    def request(self):
-        return self._request
-
-    @property
-    def execution_id(self):
-        return self.process.execution_id if self.process else "process:unstarted:" + self.request.attempt_id
-
-    @property
-    def process_group_id(self):
-        return self.process.process_group_id if self.process else None
-
-    def _release(self, status):
-        with self._lock:
-            if self._release_failure:
-                return replace(status, settled=False, failure_reason=self._release_failure)
-            if status.settled:
-                try:
-                    self.reservation.release()
-                except Exception as error:
-                    self._release_failure = f"Process GPU reservation release is unconfirmed: {error}"
-                    return replace(status, settled=False, failure_reason=self._release_failure)
-            return status
-
-    def poll(self):
-        status = self.process.poll() if self.process else TaskExecutionStatus(TaskExecutionPhase.TERMINAL, settled=True)
-        return self._release(status)
-
-    def cancel(self):
-        status = self._release(self.process.cancel()) if self.process else self.poll()
-        if not status.settled:
-            raise TaskSettlementError("Process GPU settlement is unconfirmed", status)
-        return status
-
-    def wait_for_settlement(self, timeout=None):
-        status = self._release(self.process.wait_for_settlement(timeout)) if self.process else self.poll()
-        if not status.settled:
-            raise TaskSettlementError("Process GPU settlement is unconfirmed", status)
-        return status
-
-
 class ProcessTaskLauncher(TaskLauncherSpec):
     """Launch trusted task workers as isolated local POSIX process groups.
 
-    CPU/memory admission is unsupported. An optional site-configured GPU allocator
-    coordinates device claims. This launcher applies the resulting CUDA visibility;
-    it does not partition compute/memory or enforce device access. The allocator's
-    inventory must be excluded from other allocators by site administration.
+    CPU/memory admission is unsupported. Optional site-configured GPU device IDs
+    provide a static CUDA visibility assignment. A request for N GPUs uses the
+    first N configured IDs; concurrent launches may use the same devices.
+    There is no scheduling, reservation, memory quota or device-access enforcement.
     Multi-process applications are supported only when every
     descendant remains in the owned process group. Changing group or session
     is unsupported, including a different group in the same POSIX session.
@@ -518,7 +467,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         descendant_settle_timeout: float = 0.25,
         poll_interval: float = 0.05,
         max_attempt_identities: int = 10000,
-        gpu_allocator: Optional[GpuAllocatorSpec] = None,
+        gpu_devices: Optional[list[str]] = None,
     ):
         super().__init__()
         self.stop_grace_period = _positive_number(stop_grace_period, "stop_grace_period")
@@ -533,9 +482,15 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         self._max_attempt_identities = max_attempt_identities
         self._attempt_identities = set()
         self._lock = threading.Lock()
-        if gpu_allocator is not None and not isinstance(gpu_allocator, GpuAllocatorSpec):
-            raise TypeError("gpu_allocator must implement GpuAllocatorSpec")
-        self.gpu_allocator = gpu_allocator
+        if gpu_devices is not None:
+            pattern = r"(?:0|[1-9][0-9]*|(?:GPU-|MIG-(?:GPU-)?)[0-9a-fA-F-]+(?:/[0-9]+/[0-9]+)?)"
+            if not isinstance(gpu_devices, list) or any(
+                not isinstance(device, str) or not re.fullmatch(pattern, device) for device in gpu_devices
+            ):
+                raise ValueError("gpu_devices must be a list of CUDA device IDs (ordinals, GPU UUIDs or MIG IDs)")
+            if len({device.lower() for device in gpu_devices}) != len(gpu_devices):
+                raise ValueError("gpu_devices must contain distinct device IDs")
+        self.gpu_devices = None if gpu_devices is None else tuple(gpu_devices)
 
     def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
         if not isinstance(request, TaskLaunchRequest):
@@ -547,10 +502,10 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         if (
             request.resources.cpu_cores is not None
             or request.resources.memory_mb is not None
-            or (request.resources.gpu_count and self.gpu_allocator is None)
+            or request.resources.gpu_count > len(self.gpu_devices or ())
         ):
             raise UnsupportedTaskResourceError(
-                "ProcessTaskLauncher has no CPU, memory, or GPU admission/reservation mechanism"
+                "ProcessTaskLauncher cannot enforce CPU/memory requests or supply more GPUs than its static visibility assignment"
             )
 
         with self._lock:
@@ -560,22 +515,9 @@ class ProcessTaskLauncher(TaskLauncherSpec):
                 raise TaskLauncherError("task attempt identity capacity exhausted; use a new launcher for a new scope")
             self._attempt_identities.add(request.identity)
 
-        reservation = None
         environment = dict(request.environment)
-        if self.gpu_allocator is not None:
-            environment.update(get_cuda_device_environment(()))
-            environment.update(HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none")
-        if request.resources.gpu_count:
-            try:
-                self.gpu_allocator.validate_host()
-                reservation = self.gpu_allocator.acquire(request.identity, request.resources.gpu_count)
-            except BaseException as error:
-                with self._lock:
-                    self._attempt_identities.remove(request.identity)
-                if isinstance(error, Exception):
-                    raise TaskLauncherError(f"GPU admission failed: {error}") from error
-                raise
-            environment.update(get_cuda_device_environment(reservation.devices))
+        environment.update(get_cuda_device_environment((self.gpu_devices or ())[: request.resources.gpu_count]))
+        environment.update(HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none")
 
         request = replace(request, environment=environment)
         launch_error = None
@@ -586,17 +528,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
             # responsibility for cleanup rather than retrying its spawn.
             adapter = e.adapter
             launch_error = e
-        except Exception as error:
-            if reservation is not None:
-                handle = _GpuTaskHandle(request, reservation)
-                try:
-                    handle.cancel()
-                except Exception as cleanup_error:
-                    raise TaskLaunchError(
-                        f"Process launch failed; GPU release unconfirmed: {cleanup_error}", handle
-                    ) from error
-                # Admission is durable even when spawn failed: retain its identity.
-                raise TaskLaunchError("Process launch failed before spawn; GPU reservation released", handle) from error
+        except Exception:
             # spawn_process reports post-acquisition failures separately, so
             # only a failure before process creation releases the identity.
             with self._lock:
@@ -610,11 +542,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
             descendant_settle_timeout=self.descendant_settle_timeout,
             poll_interval=self.poll_interval,
         )
-        if reservation is not None:
-            handle = _GpuTaskHandle(request, reservation, handle)
         try:
-            if reservation is not None:
-                reservation.record_execution(handle.execution_id)
             if launch_error is not None:
                 raise launch_error
             self.logger.info("launched task attempt %r as %s", request.identity, handle.execution_id)

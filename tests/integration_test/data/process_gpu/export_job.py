@@ -29,19 +29,22 @@ def main():
     parser.add_argument("--lifetime", choices=("job", "task"), required=True)
     parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--gpu-oom", action="store_true", help="fail site-1 task training with a real CUDA OOM")
     args = parser.parse_args()
+    if args.gpu_oom and (args.device != "cuda" or args.lifetime != "task"):
+        parser.error("--gpu-oom requires --device cuda --lifetime task")
     model = torch.nn.Linear(2, 1)
     with torch.no_grad():
         model.weight.zero_()
         model.bias.zero_()
-    name = f"process-{args.device}-{args.lifetime}"
+    name = f"process-{args.device}-{args.lifetime}" + ("-oom" if args.gpu_oom else "")
     recipe = FedAvgRecipe(
         name=name,
         model=model,
         min_clients=2,
         num_rounds=2,
         train_script=str(Path(__file__).with_name("train.py")),
-        train_args=["--device", args.device],
+        train_args=["--device", args.device] + (["--gpu-oom"] if args.gpu_oom else []),
         execution_lifetime=args.lifetime,
     )
     add_final_global_evaluation(recipe, participating_clients=["site-1", "site-2"])

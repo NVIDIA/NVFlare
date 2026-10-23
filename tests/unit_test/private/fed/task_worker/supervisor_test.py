@@ -156,7 +156,10 @@ def test_saved_result_requires_the_original_retained_validated_completion(tmp_pa
     assert attempt["launcher"].launch_task.call_count == 1
 
 
-def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
+@pytest.mark.parametrize(
+    "error_type,message", [("ValueError", "trainer rejected its input"), ("OutOfMemoryError", "CUDA out of memory")]
+)
+def test_worker_failure_reports_diagnostics_and_allows_a_fresh_attempt(tmp_path, error_type, message):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
 
@@ -168,15 +171,19 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
             worker_ppid=os.getppid(),
             started_at=1,
             failed_at=2,
-            error_type="ValueError",
-            message="trainer rejected its input",
+            error_type=error_type,
+            message=message,
         )
         return handle
 
     attempt["launcher"].launch_task.side_effect = fail
-    with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
+    with pytest.raises(RuntimeError, match=f"{error_type}: {message}.*diagnostics:"):
         supervisor.run(**attempt)
     assert (_payload(attempt).parent / "failure.json").exists()
+    assert not supervisor.owns_execution
+    assert not supervisor.settlement_unconfirmed
+    healthy, _ = _attempt(tmp_path, attempt_id="after-failure")
+    assert supervisor.run(**healthy).result["value"] == 2
 
 
 def test_launch_error_without_handle_preserves_original_exception(tmp_path):

@@ -16,18 +16,18 @@
 
 import argparse
 import json
-import sqlite3
 import time
 from pathlib import Path
 
-from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from tests.integration_test.slow.process_task_gpu_test import _launch, _ready
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--allocator-config", required=True)
+    parser.add_argument("--devices-config", required=True)
+    parser.add_argument("--runtime-root", required=True, help="paused CJ run/.nvflare/task-execution directory")
+    parser.add_argument("--compute-root", required=True, help="original job/process-gpu-models directory")
     parser.add_argument("--pause-root", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -41,25 +41,42 @@ def main():
     if len(markers) != 1:
         raise RuntimeError("use a fresh pause directory for exactly one scheduled CJ case")
     paused = json.loads(markers[0].read_text())
-    identity = json.dumps(paused["identity"], separators=(",", ":"))
-    partition = json.loads(Path(args.allocator_config).read_text())
-    ledger = Path(partition["reservation_root"]) / "process-gpu.sqlite3"
-    with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as connection:
-        row = connection.execute(
-            "SELECT devices,released,released_at,execution_id FROM attempts WHERE identity=?", (identity,)
-        ).fetchone()
-    if row is None or row[1] != 1 or len(json.loads(row[0])) != 1:
-        raise RuntimeError("the paused CJ's exact GPU reservation is not confirmed released")
-    partition["devices"] = json.loads(row[0])
+    attempt_id = paused["identity"][3]
+    runtime = Path(args.runtime_root).resolve()
+    completion = json.loads((runtime / "attempts" / attempt_id / "completion.json").read_text())
+    identity = completion["identity"]
+    if [identity[k] for k in ("job_id", "site_name", "task_id", "attempt_id")] != paused["identity"]:
+        raise RuntimeError("completion does not match the paused CJ task")
+    settled = [
+        record
+        for line in (runtime / "diagnostics.jsonl").read_text().splitlines()
+        if (record := json.loads(line)).get("event") == "settled"
+        and all(record.get(k) == identity[k] for k in ("job_id", "site_name", "task_id", "attempt_id"))
+    ]
+    if len(settled) != 1:
+        raise RuntimeError("the paused CJ task has no unique confirmed settlement record")
+    devices = json.loads(Path(args.devices_config).read_text())["gpu_devices"]
+    if len(devices) != 1:
+        raise ValueError("the scheduled reuse probe requires the original task's one assigned device")
+    original_records = list(Path(args.compute_root).glob(f"{completion['worker_pid']}-*.json"))
+    if len(original_records) != 1:
+        raise RuntimeError("the settled worker must have exactly one compute record")
+    original_compute = json.loads(original_records[0].read_text())
+    if (
+        original_compute["pid"] != completion["worker_pid"]
+        or original_compute["cuda_visible_devices"] != devices[0]
+        or original_compute["allocated_bytes"] <= 0
+    ):
+        raise RuntimeError("compute evidence does not match the original worker's assigned device")
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**partition))
+    launcher = ProcessTaskLauncher(gpu_devices=devices)
     probe = _launch(launcher, output / "reuse.json")
     try:
         if not probe.wait_for_settlement(60).succeeded:
             raise RuntimeError("independent real-CUDA reuse worker failed")
         facts = _ready(output / "reuse.json")
-        if facts["visible"] != partition["devices"][0]:
+        if facts["visible"] != devices[0]:
             raise RuntimeError("reuse worker did not receive the prior task's exact UUID")
     finally:
         probe.cancel()
@@ -88,12 +105,14 @@ def main():
             time.sleep(0.05)
     if not (finished["success"] and finished["receipt"] == "RECEIVED" and dropped):
         raise RuntimeError("the real CJ did not recover the deliberately lost receipt observation")
-    if not row[2] < paused["time"] < facts["computed_at"] < finished["time"]:
-        raise RuntimeError("GPU release/reuse/publication timeline did not establish required ordering")
+    if not settled[0]["timestamp"] < paused["time"] < facts["computed_at"] < finished["time"]:
+        raise RuntimeError("worker settlement/reuse/publication timeline did not establish required ordering")
     evidence = {
         "paused": paused,
-        "original_execution_id": row[3],
-        "original_released_at": row[2],
+        "original_execution_id": settled[0]["execution_id"],
+        "original_settled_at": settled[0]["timestamp"],
+        "original_worker_pid": completion["worker_pid"],
+        "original_compute": original_compute,
         "reuse_execution_id": probe.execution_id,
         "reuse": facts,
         "publication": finished,

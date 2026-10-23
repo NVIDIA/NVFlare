@@ -1,13 +1,22 @@
 # Process GPU qualification fixture
 
-These commands prepare tests; they do not claim any Colossus result. Use the
-exact frozen candidate, approved existing capacity and a verified Process
-CP → Process CJ → Process worker topology. Revalidate lease ownership, idle
-capacity, live imports, and device ownership before changing the fixture.
+Use an exact frozen candidate and existing administrator-approved capacity.
+Check lease ownership, active workloads, duplicate jobs and imported source before
+running. These tests do not schedule or reserve GPUs and do not exclude other
+processes. Keep unrelated workloads untouched and retain earlier evidence.
 
-## Normal controls
+## Site setup and normal controls
 
-From the candidate repository, export four two-site, two-round jobs:
+Use the static gpu_devices configuration from the
+[profile](../../../../docs/design/process_task_gpu_profile.md). Give each site its
+explicit one-device assignment. Existing ResourceManager components need no new
+API. The standard empty ListResourceManager fixture remains sufficient for these
+task controls. Set a finite task worker_timeout so hung workers have a bounded
+execution budget. Use real YAML for one task control and HOCON for another to
+exercise actual CP startup and CJ policy, authorization and logging readers.
+
+Export and submit these two-client, two-round jobs serially through the existing
+provisioned admin connection:
 
 ```bash
 python tests/integration_test/data/process_gpu/export_job.py --device cpu --lifetime job --output /tmp/process-gpu-jobs
@@ -16,102 +25,80 @@ python tests/integration_test/data/process_gpu/export_job.py --device cuda --lif
 python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime job --output /tmp/process-gpu-jobs
 ```
 
-Run the first three serially on a task-allocation site configuration from
-[the profile](../../../../docs/design/process_task_gpu_profile.md). Each site's
-GPU pool must contain sufficient approved devices. Sites sharing devices must
-use the same canonical ledger. Both CPU rows assert zero CUDA devices; the GPU
-task row asserts one and executes actual CUDA training and evaluation.
+Run the first three with the task visibility profile. CPU controls require zero
+visible CUDA devices; CUDA controls require actual allocated CUDA bytes and
+kernels. For the resident CUDA/job control, after owned tasks settle, stop only
+owned idle participants, remove gpu_devices and restore the normal job resource
+manager/consumer configuration with the administrator-approved per-site assignment.
+Run this control serially; an empty job GPU inventory is not a passing control.
 
-For the GPU job row, after all task workers and reservations are settled, use
-the supported serial job-mode configuration described in the profile. Each site
-must have its own approved GPU capacity. Remove the task allocator and enable
-the ordinary CP GPUResourceManager/GPUResourceConsumer; do not submit this row
-to the task-only empty job pool. Submit each exported directory through the
-existing provisioned admin connection and retain job IDs and terminal states.
+Each normal job must finish successfully, produce FL_global_model.pt with weight
+approximately [[2, -3]] (absolute tolerance 0.001), and cross_val_results.json with
+both sites' final MSE below 0.0001. Preserve job IDs, terminal states, both rounds,
+actual imports/configuration, process_gpu_compute records and final models.
 
-Each passing job must produce `FL_global_model.pt` with weight approximately
-`[[2, -3]]` (absolute tolerance 0.001), and `cross_val_results.json` with site-1
-and site-2 results and final MSE below 0.0001. Capture both clients' two training
-rounds and evaluation logs. `process_gpu_compute` records contain PID/PPID,
-site, round, CUDA visibility, device name, allocated CUDA bytes and loss.
-GPU rows require actual CUDA bytes and kernels, not visibility alone.
+## OOM and cleanup recovery
 
-For task rows, correlate each completion/diagnostic identity with the ledger's
-physical execution ID, UUIDs and released record. Confirm no live worker,
-descendant or GPU compute context remains. CPU CJs must not own GPU contexts.
-
-## Real GPU failure and reuse scope tests
-
-On the approved host, save the site's `gpu_allocator.args` object as a test
-configuration JSON file. It must name the SAME persistent ledger used by its
-participating CJs, not a new directory. Schedule these tests serially after the
-normal task jobs; arrange for other GPU workloads to avoid the tested devices.
-These checks validate coordinated claims and worker visibility, not device
-access enforcement or GPU compute/memory shares.
+Export the real CJ/worker fault case:
 
 ```bash
-NVFLARE_PROCESS_GPU_ALLOCATOR=/approved/path/allocator.json python -m pytest -v \
+python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --gpu-oom --output /tmp/process-gpu-jobs
+```
+
+Site-1 training requests one tensor larger than the device's total VRAM. This
+forces a real CUDA OOM without filling the GPU with repeated allocations. Confirm
+an OutOfMemoryError failure artifact, no successful completion for that attempt,
+a bounded terminal job outcome with the site failure reported according to controller policy, and no surviving owned worker/descendant or
+CUDA context. Then submit a normal CUDA/task job on the same devices and confirm
+successful training/evaluation. Do not reset the GPU or restart the whole site to
+make recovery pass. Preserve failure and subsequent success evidence.
+
+For focused real-CUDA process-scope tests, save an approved one-device assignment
+as JSON, for example {"gpu_devices": ["GPU-<approved-UUID>"]}:
+
+```bash
+NVFLARE_PROCESS_GPU_DEVICES=/approved/path/devices.json python -m pytest -v \
   --basetemp=/approved/path/process-gpu-evidence \
   tests/integration_test/slow/process_task_gpu_test.py
 ```
 
-The tests run CUDA, train and save a model, check contention without overcommit,
-cancel a process group containing a descendant, and exercise worker exception
-and abrupt exit. A controlled unavailable scope observation tests reservation
-retention; CUDA itself remains real. These are launcher scope tests, separate
-from the two-site federation controls.
+The suite covers successful reuse before publication finishes; descendant cleanup
+on cancellation and wait timeout; and exception, abrupt exit and actual CUDA OOM,
+each followed by a successful fresh CUDA worker. Framework supervision tests also
+verify that settled OOM failure clears active ownership and an uncertain cleanup
+retains the handle and rejects new work. A controlled observation fault in unit
+tests is not evidence of a real CUDA/driver fault.
 
-The scope reuse case holds a synthetic publisher blocked after first-worker settlement
-and runs another CUDA worker on the same UUID before releasing that publisher.
-It verifies saved model bytes remain readable. This is a deterministic local
-publication-stage harness; it does not by itself qualify a delayed upload
-through the resident CJ. Use the additional case below for that boundary.
+## Actual CJ publication and receipt retry
 
-## Real CJ delayed publication and receipt retry
+Run another CUDA/task job with the explicit test-only hook on owned idle site-1:
+set NVFLARE_PROCESS_GPU_DELAY_ROOT to a fresh evidence directory,
+NVFLARE_PROCESS_GPU_DELAY_SITE=site-1 and NVFLARE_PROCESS_GPU_RETRY_ONCE=1, and add
+only this fixture's cj_hooks directory to that fixture's PYTHONPATH. Other sites
+run normally. Never install the hook globally or copy a private kit.
 
-After the normal matrix, schedule an additional CUDA task job on the task-only
-profile. Restart only the owned, idle site-1 fixture with these explicit test
-environment settings; do not install the hook globally or copy a private kit:
-
-```bash
-NVFLARE_PROCESS_GPU_DELAY_ROOT=/approved/path/fresh-cj-traces \
-NVFLARE_PROCESS_GPU_DELAY_SITE=site-1 \
-NVFLARE_PROCESS_GPU_RETRY_ONCE=1 \
-PYTHONPATH="$CANDIDATE/tests/integration_test/data/process_gpu/cj_hooks:$CANDIDATE:$PYTHONPATH" \
-  bash /owned/site-1/startup/start.sh
-```
-
-Use an absolute verified candidate path and a fresh, test-owned trace directory.
-Both sites and the server must import the frozen candidate. The test-only
-`sitecustomize.py` wraps the existing CJ publication methods. It pauses the first
-publication for site-1 for at most 180 seconds, asserts empty CJ CUDA visibility,
-then uses the original transport and readiness/receipt code. Once the server
-owns the result, it deliberately drops one receipt observation to exercise the
-real retry path. Record the hook's hash and environment along with source identity.
-No authentication, resource, class policy or server receipt check is disabled.
-
-While the CUDA task job starts, run:
+The real CJ pauses its first send after its supervisor returns a settled result.
+The hook requires an empty CJ CUDA environment, records the task identity and
+waits for a resume marker; it also drops one receipt observation to force a real
+saved-result retry. While it waits, run:
 
 ```bash
 python tests/integration_test/data/process_gpu/reuse_during_upload.py \
-  --allocator-config /approved/path/allocator.json \
-  --pause-root /approved/path/fresh-cj-traces \
-  --output /approved/path/fresh-reuse-evidence
+  --devices-config /approved/path/devices.json \
+  --runtime-root /owned/site/job/.nvflare/task-execution \
+  --compute-root /owned/site/job/process-gpu-models \
+  --pause-root /approved/path/cj-pause \
+  --output /approved/path/reuse-evidence
 ```
 
-This waits for the real CJ pause, finds that exact assignment in the shared
-ledger, and requires its reservation already released. It starts an independent
-real-CUDA worker on the same UUID and ledger, trains/saves a model, confirms
-whole-scope settlement, and only then resumes the CJ. It requires a successful
-real `RECEIVED` receipt after the injected loss and writes `timeline.json` proving
-release < CJ pause < new CUDA compute < prior CJ publication finished. Preserve
-the original job's completions and ledger rows to prove the receipt retry did
-not rerun its physical attempt. Complete the job and verify its final artifacts
-and residue just as for the normal matrix. Remove the test environment from
-owned participants before other work resumes. A missing hook marker, timeout,
-failed receipt, or missing final artifact is a failed/incomplete case.
+Use the original task's assigned device. The helper correlates the original worker's CUDA compute record, completion and
+supervisor settlement diagnostics, runs another real CUDA worker on that device,
+then resumes publication. It verifies settlement < CJ pause < new CUDA compute <
+original publication finished and that receipt retry reaches RECEIVED. Confirm
+the original worker did not rerun, and saved payload bytes remain intact.
 
-Keep logs, models, JSON facts, exact source/tree/config hashes, ledger snapshots
-and initial failed attempts. Test collection without the explicit allocator
-environment skips GPU cases; a skip is not a GPU pass. Never export private kits
-or credentials as evidence. An acknowledgment or active chat is not a running job.
+Remove the test hook environment from owned idle participants afterward. Capture
+cleanup showing no campaign workers, descendants, tested listeners or GPU compute
+contexts remain. Retain old ledgers as historical evidence; the revised product
+never opens them. Do not delete records, alter driver/security settings, reset a
+GPU, interrupt unrelated work or create new leases to complete the campaign.

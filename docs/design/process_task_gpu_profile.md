@@ -1,90 +1,44 @@
-# Process task GPU profile
+# Process task GPU visibility
 
-This profile keeps Process CP and resident CJs on CPU and assigns
-whole NVIDIA GPU identifiers to disposable workers through a configured allocator.
-It uses the existing TaskLauncherSpec, TaskHandleSpec, TaskLaunchRequest, task supervisor,
-artifact completion and result-receipt contracts. No additional federation or
-CP-to-CJ task protocol is introduced.
+Process task execution accepts an explicit site-owned GPU assignment and applies
+it to disposable workers through CUDA_VISIBLE_DEVICES. The launcher does not
+schedule GPUs, reserve capacity, track memory budgets, exclude other processes,
+or guarantee free memory or a compute share. Device placement and contention
+policy belong to the site administrator or an external scheduler.
 
-## Authority and configuration
+## Configuration and responsibility
 
-The administrator supplies a device inventory for Process tasks. All job
-allocators and external workloads must exclude those devices by site administration.
-Participating CJs on the same host use the same persistent local reservation directory and
-site UID. Disjoint hosts or device partitions may use separate directories.
-Different directories must never account for overlapping devices.
-
-The Process launcher accepts a `GpuAllocatorSpec` component and applies its
-assigned devices to the worker environment. The supplied `GpuReservationLedger`
-implementation records device claims in a persistent SQLite ledger shared by
-CJs. It coordinates participating launchers; it does not partition GPU compute
-or memory, guarantee available capacity, detect outside users, or enforce device
-access. Workers are trusted to obey their CUDA visibility assignment. There is
-no `exclusive` switch: configuration alone cannot establish hardware exclusivity.
-
-The existing CP ResourceManager continues to own job-lifetime reservations.
-GPUResourceManager accounts GPU memory within one CP process. It is not used
-as the task allocator or instantiated in each CJ to create independent inventories.
-Both paths use GPU utilities for discovery and CUDA visibility; their accounting
-lifetimes remain distinct. Job admission expires unallocated reservation tokens;
-the task ledger retains admitted claims until process settlement is proved.
-
-Existing job resource managers retain their site-declared scheduling semantics.
-This profile does not inspect their inventories or require a new resource-manager
-API. The empty `ListResourceManager` below is a minimal fixture configuration;
-sites may retain their existing generic resource inventories and job admission.
-The task ledger coordinates only its participating task launchers. Administrators
-must keep other GPU allocators and workloads off the task devices; job-manager
-inventory does not prove physical device availability or separation. Unified
-job/task GPU accounting is outside this profile.
-
-Configure each site's canonical `local/resources.json`, retaining its other
-settings and components. CONF/YAML variants and default files use the same
-configuration resolution in the CP and CJ:
+Configure the canonical site local/resources.json (or a supported HOCON/YAML or
+default variant), retaining existing components and scheduling configuration:
 
 ```json
 {
-  "components": [
-    {
-      "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
-      "args": {"resources": {}}
-    }
-  ],
   "task_execution": {
     "launcher": {
       "path": "nvflare.app_common.task_launcher.process_launcher.ProcessTaskLauncher",
       "args": {
-        "gpu_allocator": {
-          "path": "nvflare.app_common.resource_managers.gpu_reservation_ledger.GpuReservationLedger",
-          "args": {
-            "pool_id": "site-task-pool",
-            "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
-            "reservation_root": "/var/lib/nvflare/process-task-gpus"
-          }
-        }
+        "gpu_devices": ["GPU-00000000-0000-0000-0000-000000000001"]
       }
-    }
+    },
+    "worker_timeout": 300,
+    "settlement_timeout": 10
   }
 }
 ```
 
-Replace the illustrative UUID with the administrator-approved UUID from
-`nvidia-smi --query-gpu=uuid,mig.mode.current --format=csv,noheader`. The directory
-must be owned by the site UID with mode 0700. Use a persistent local filesystem
-with SQLite atomic transactions and locking. Network filesystems, deleting or
-replacing the ledger, disk corruption and transparent storage recovery are
-unsupported. Keep this authority outside job workspace cleanup.
+The ordered list accepts CUDA device ordinals, GPU UUIDs or MIG device IDs. Prefer
+UUIDs for stable identification. A task requesting N GPUs receives the first N
+configured IDs. CPU tasks receive an empty CUDA visibility list. Requests larger
+than the configured list are rejected before spawn. The launcher does not probe
+utilization, choose an idle device or validate actual CUDA availability; the
+workload reports CUDA initialization or execution failures normally.
 
-The ledger retains its original `process-gpu.sqlite3` filename and schema.
-When upgrading the previous `gpu_partition` configuration, configure
-the allocator with the same `reservation_root` and device inventory, rename `id`
-to `pool_id`, and remove `exclusive`. Never change the directory or delete the
-ledger to bypass existing claims. The Process launcher no longer accepts
-`gpu_partition` or constructs a hidden allocator from that dictionary.
+This is a static assignment. Two simultaneous CJs with the same configuration
+can use the same GPU. Administrators must assign devices or accept sharing;
+NVFlare supplies no local queue or GPU inventory accounting. A MIG identifier
+selects an existing platform-configured instance; NVFlare does not create one.
 
-Application client configuration still selects `execution_lifetime: "task"`.
-GPU counts are declared in job metadata, for example:
+Applications select execution_lifetime: "task". Task counts use job metadata:
 
 ```json
 {
@@ -94,79 +48,61 @@ GPU counts are declared in job metadata, for example:
 }
 ```
 
-Positive portable `resource_spec.num_of_gpus` is rejected because it would
-reserve GPUs for the standing job. The site rejects mismatched launcher modes;
-the client JobLauncher rejects the receiving site's job-level GPU requests before
-spawning a CJ under this profile. This checks the request, not the site's declared
-resource inventory or other processes' GPU use.
-ProcessJobLauncher applies the trusted CPU environment
-after study environment overrides, before spawning the CJ. GPU workers receive
-only their assigned full UUIDs in CUDA_VISIBLE_DEVICES. CPU task workers receive
-an empty list. Job-controlled environment forwarding cannot select GPUs.
+The Process task profile rejects job-level resource_spec GPU requests, which
+would use the existing job admission path, and rejects other backend GPU requests.
+The opted-in client JobLauncher hides GPUs from resident CJs after study
+configuration overrides. Only task workers receive the configured assignment.
+Existing ResourceManager implementations and generic site inventories are
+unchanged. Job and task launch backends must match.
 
-## Admission, settlement and result lifetime
+Omitting gpu_devices preserves the CPU-only default task policy and ordinary
+job-mode configuration. An explicit empty list enables an empty task assignment.
+The earlier unreleased gpu_allocator/gpu_partition settings are removed. Stop and
+settle owned workers before changing configuration; preserve any old ledger and
+failure artifacts as historical evidence. There is no replacement ledger or
+automatic modification of existing files.
 
-SQLite serializes whole-attempt admission across CJs. An attempt identity is
-recorded permanently, including after release, to prevent a restarted launcher
-from executing it again. Allocations never expire on a timeout or owner death.
-Insufficient capacity rejects launch without starting a worker or reserving a
-partial allocation. This profile does not implement a task admission queue.
+## Failure handling and recovery
 
-One handle owns the existing POSIX process-group handle and its GPU reservation.
-It reports settled only after the whole owned group settles and the reservation
-release commits. A durable admission fence precedes that transaction; lost commit
-confirmation retains the fence even if allocation deletion took effect. Other
-CJs cannot treat those absent rows as free capacity. Leader exit alone does not free a GPU. Failed release prevents
-successful settlement, retains ownership/evidence, and fences that handle. The
-supervisor retains its existing permanent fence on uncertain settlement.
+Each task executes in a fresh POSIX process group. Its handle retains ownership
+of the leader until all owned descendants have settled. Leader exit by itself is
+insufficient. Every descendant must remain in that group; detached processes,
+external reaping and hostile code are outside the Process contract.
 
-Resource release precedes returning the result to the CJ. It does not wait for
-result filtering, upload, receipt or artifact cleanup. Re-reading a saved result
-does not reacquire resources or launch a worker. The independent shared reader
-fix retains payloads while saved-result readers are active.
+An uncaught CUDA OOM or other executor exception records a failed attempt and
+runs executor finalization. The supervisor waits for or cancels the owned group
+before returning the failure. Abrupt exit without a failure record still produces
+a failed attempt when no valid completion exists. Timeout and cancellation also
+clean up the whole owned group. Error and diagnostic artifacts remain available.
 
-The ledger retains attempt identity, partition, device UUIDs, allocation/release
-times, owner PID and physical execution ID. The existing task diagnostics and
-completion records retain the application result and process facts separately.
+After confirmed cleanup, the supervisor can accept a fresh task with a new
+attempt identity. A failed attempt is not silently rerun. Saved successful results
+can be retransmitted without starting another worker. Worker execution and cleanup
+finish before result filtering, publication or receipt handling, so a slow upload
+does not keep a CUDA worker alive.
 
-## Supported boundaries
+If process settlement cannot be confirmed, the supervisor retains its handle,
+reports the uncertainty and rejects new work. It must not claim recovery while an
+owned process may still be running. This fence is execution ownership protection,
+not a GPU reservation. Operator investigation is required for unresolved cleanup.
+A task that hangs should have a finite worker_timeout; cleanup timing still
+assumes the OS can terminate and observe the owned process group.
 
-GPU execution requires Linux, NVIDIA CUDA, `nvidia-smi`, and whole physical GPU
-UUIDs with MIG disabled. Counts from one through the partition size are admitted
-atomically; CPU and memory requests remain unsupported. Device accounting and
-visibility do not make an application use multiple GPUs or implement DDP. The
-provided GPU qualification fixture uses one GPU per worker; multi-GPU accounting
-unit coverage does not qualify multi-GPU training.
+Ordinary application OOM recovery comes from ending the worker and running the
+next task in a fresh process. There is no GPU reset, driver repair, unrelated
+process termination or device reconfiguration. Driver faults, unkillable processes
+and abrupt CJ death can require operator intervention. A launcher cannot guarantee
+that a shared host GPU is healthy or uncontended after its own worker exits.
 
-Every descendant must stay in the worker's POSIX process group. The handle must
-be the leader's sole reaper. Process mode shares the site UID and filesystem and
-is not a hostile-code sandbox or device-access enforcement boundary. Workers
-must obey their CUDA assignment and may not detach processes or change groups.
-This profile does not extend to a container CP or a separately managed scheduler.
-GPU simulator scheduling is not integrated with this provisioned-site profile.
-The shared worker entry requires an explicit owning `--parent_pid` greater than
-one for Process execution and rejects a changed parent before compute. Native
-launchers select `--execution_scope native` and do not use a local CJ PID.
+## Qualification
 
-The ledger rejects an admission request when the configured inventory is fully
-claimed. It does not implement a resource queue. Native queue/startup timeout
-settings do not apply to this Process profile. The common `worker_timeout`
-remains the overall attempt budget.
+The supported Process topology is a host CP, host CJ and disposable host worker
+running trusted code. GPU simulator scheduling is not integrated. CPU/memory
+resource enforcement and multi-GPU/DDP training qualification remain outside this
+profile. The shared worker entry requires an explicit parent PID for Process
+execution; native launchers use their own execution scope.
 
-Abrupt CJ death may leave workers or descendants running. Durable reservations
-remain held, so another participating CJ cannot reuse those devices. There is
-no automatic orphan cleanup, adoption, reservation expiry or replay after restart.
-An administrator must confirm whole execution settlement before repairing stale
-records. Retain the ledger and diagnostics; never erase the directory to unblock
-a pending workload.
-
-Opting out preserves existing job-mode and CPU task behavior. This task-allocation
-profile cannot run a GPU resident job concurrently. To run a GPU job control,
-first confirm all owned workers and allocations are settled, stop only owned
-idle participants, remove the opt-in task allocator, and configure the normal
-job GPU manager/consumer with disjoint per-site device capacity. Restart those
-participants and run the resident control serially. Merely submitting it to an
-empty job GPU pool is a failed control, not a compatibility pass.
-
-Qualification setup and evidence requirements are in
-[the Process GPU test fixture](../../tests/integration_test/data/process_gpu/README.md).
+Follow the [qualification fixture](../../tests/integration_test/data/process_gpu/README.md)
+for CPU/GPU job/task controls, real CUDA OOM and healthy follow-up work, descendant
+cleanup, and delayed CJ publication with receipt retry. Tests of visibility alone
+do not establish actual CUDA execution or hardware isolation.

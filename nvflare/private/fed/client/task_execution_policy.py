@@ -222,10 +222,10 @@ class TaskExecutionPolicy:
 
     def task_resources(self, meta, site_name):
         native_mode = _supported_native_launcher(self.launcher)
-        process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_allocator is not None
+        process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_devices is not None
         validate_task_resources(meta, site_name, allow_gpu=native_mode or process_gpu)
         if (native_mode or process_gpu) and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
-            raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
+            raise ValueError("task GPU settings require launcher_spec; portable GPUs reserve the whole job")
         if process_gpu:
             for mode, field in (("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")):
                 if get_job_launcher_spec(meta, site_name, mode).get(field, 0):

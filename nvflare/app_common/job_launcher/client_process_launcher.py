@@ -25,18 +25,18 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
         path = workspace.get_resources_file_path()
         data = ConfigService.load_config_dict(path, prefer_exact_file=True) if path else {}
         launcher = data.get("task_execution", {}).get("launcher", {})
-        if launcher.get("args", {}).get("gpu_allocator") is None:
+        if launcher.get("args", {}).get("gpu_devices") is None:
             return
         from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
         policy = TaskExecutionPolicy.from_workspace(workspace)
-        if policy.launcher.launch_mode != "process" or getattr(policy.launcher, "gpu_allocator", None) is None:
+        if policy.launcher.launch_mode != "process" or getattr(policy.launcher, "gpu_devices", None) is None:
             raise ValueError("Process task GPU profile requires the site-owned ProcessTaskLauncher")
         if get_resource_manager_spec(job_meta, fl_ctx.get_identity_name()).get("num_of_gpus", 0):
             raise ValueError(
                 "Process task GPU profile rejects job-level GPU requests; use process launcher_spec for task GPUs"
             )
-        # GPU claims belong to disposable workers; resident CJs receive no CUDA devices.
+        # GPU visibility belongs to disposable workers; resident CJs receive no CUDA devices.
         # Existing job-mode deployments without the opt-in keep their behavior.
         environment.update(get_cuda_device_environment(()))
         environment.update(HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none")

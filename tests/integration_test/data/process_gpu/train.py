@@ -26,6 +26,7 @@ import nvflare.client as flare
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
+parser.add_argument("--gpu-oom", action="store_true")
 args = parser.parse_args()
 torch.set_num_threads(1)
 expected_gpus = 1 if args.device == "cuda" else 0
@@ -45,6 +46,10 @@ while flare.is_running():
     targets = inputs @ torch.tensor([[2.0], [-3.0]], device=args.device)
     initial_loss = torch.nn.functional.mse_loss(model(inputs), targets).item()
     if flare.is_train():
+        if args.gpu_oom and flare.get_site_name() == "site-1":
+            print(json.dumps({"event": "process_gpu_oom_probe", "pid": os.getpid(), "ppid": os.getppid()}), flush=True)
+            torch.empty(torch.cuda.get_device_properties(0).total_memory + 1, dtype=torch.uint8, device="cuda")
+            raise AssertionError("oversized CUDA allocation unexpectedly succeeded")
         optimizer = torch.optim.SGD(model.parameters(), lr=0.2)
         for _ in range(100):
             optimizer.zero_grad()
@@ -60,28 +65,24 @@ while flare.is_running():
     output_dir = Path("process-gpu-models")
     output_dir.mkdir(exist_ok=True)
     torch.save(params, output_dir / f"{os.getpid()}-{received.current_round}.pt")
-    print(
-        json.dumps(
-            {
-                "event": "process_gpu_compute",
-                "pid": os.getpid(),
-                "ppid": os.getppid(),
-                "site": flare.get_site_name(),
-                "round": received.current_round,
-                "task": "train" if flare.is_train() else "validate",
-                "device": args.device,
-                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-                "gpu_count": torch.cuda.device_count(),
-                "mse_before": initial_loss,
-                "mse": final_loss,
-                "gpu_name": torch.cuda.get_device_name(0) if expected_gpus else None,
-                "allocated_bytes": torch.cuda.max_memory_allocated() if expected_gpus else 0,
-                "finished_at": time.time(),
-            },
-            sort_keys=True,
-        ),
-        flush=True,
-    )
+    facts = {
+        "event": "process_gpu_compute",
+        "pid": os.getpid(),
+        "ppid": os.getppid(),
+        "site": flare.get_site_name(),
+        "round": received.current_round,
+        "task": "train" if flare.is_train() else "validate",
+        "device": args.device,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "gpu_count": torch.cuda.device_count(),
+        "mse_before": initial_loss,
+        "mse": final_loss,
+        "gpu_name": torch.cuda.get_device_name(0) if expected_gpus else None,
+        "allocated_bytes": torch.cuda.max_memory_allocated() if expected_gpus else 0,
+        "finished_at": time.time(),
+    }
+    (output_dir / f"{os.getpid()}-{received.current_round}.json").write_text(json.dumps(facts, sort_keys=True))
+    print(json.dumps(facts, sort_keys=True), flush=True)
     # Model selection scores the received global model, before local updates.
     metrics = {"mse": initial_loss, "accuracy": max(0.0, 100.0 * (1.0 - initial_loss))}
     if flare.is_train():

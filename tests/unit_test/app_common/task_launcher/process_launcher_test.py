@@ -368,7 +368,7 @@ def test_resource_requests_are_rejected_without_admission(resources, tmp_path):
         resources=resources,
     )
 
-    with pytest.raises(UnsupportedTaskResourceError, match="admission/reservation"):
+    with pytest.raises(UnsupportedTaskResourceError, match="cannot enforce CPU/memory requests"):
         ProcessTaskLauncher().launch_task(request)
 
 

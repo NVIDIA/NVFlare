@@ -150,8 +150,8 @@ applications can explicitly checkpoint the state they need.
 
 The default profile supports CPU Process workers on Linux and on macOS with Python
 3.13+ providing waitid/WNOWAIT. The opt-in
-[Process GPU profile](process_task_gpu_profile.md) adds task-exclusive NVIDIA GPU
-admission on provisioned Linux sites. External/attach Client API sessions,
+[Process GPU profile](process_task_gpu_profile.md) adds static NVIDIA GPU
+visibility on provisioned Linux sites, without local GPU scheduling or reservation. External/attach Client API sessions,
 remote task launchers, and moving task orchestration to the Client Process are not
 part of this profile. No server capability negotiation is added.
 The Collab API's resident RPC service continues to use job lifetime.
@@ -197,7 +197,7 @@ settlement.
 Workers receive only the framework's standard runtime environment allow-list plus
 site-approved variable names. Federation credentials, Client API bootstrap and GPU
 visibility cannot be forwarded; the default disables GPU visibility. The opt-in
-Process GPU launcher binds only its admitted UUIDs. Process workers share
+Process GPU launcher applies its site-configured device IDs to worker visibility. Process workers share
 the site UID and filesystem, so this is process lifetime isolation, not a security
 sandbox. The site policy is excluded from client registration metadata.
 

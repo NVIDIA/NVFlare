@@ -44,7 +44,7 @@ class TaskLaunchError(TaskLauncherError):
 
 
 class UnsupportedTaskResourceError(TaskLauncherError):
-    """A launcher cannot provide admission and reservation for requested resources."""
+    """A launcher cannot satisfy the requested resources through its backend."""
 
 
 class TaskSettlementError(TaskLauncherError):
@@ -57,9 +57,11 @@ class TaskSettlementError(TaskLauncherError):
 
 @dataclass(frozen=True)
 class TaskResourceRequest:
-    """Resources that must be admitted and reserved for one task attempt.
+    """Resources requested for one task attempt.
 
-    ``None`` means that the caller did not request admission for that resource.
+    Backends enforce or apply requests according to their documented capabilities.
+    Process GPU counts select a static visibility assignment, without reservation.
+    ``None`` means that the caller did not request that resource.
     A zero GPU count explicitly requests no GPUs and is therefore also empty.
     """
 

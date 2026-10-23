@@ -685,20 +685,14 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
         adapter.handle_event(EventType.END_RUN, context)
 
 
-def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_path, monkeypatch):
+def test_gpu_worker_is_settled_before_saved_result_retry(native_task, tmp_path):
     from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
-    from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
     from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 
-    # Accounting regression with synthetic UUIDs. CUDA qualification is separate.
+    # Static visibility regression; CUDA execution is qualified separately.
     _, custom, context, policy = native_task
-    monkeypatch.setattr(GpuReservationLedger, "validate_host", lambda self: None)
-    config = {
-        "pool_id": "task-only",
-        "devices": ["GPU-00000000-0000-0000-0000-000000000001"],
-        "reservation_root": str(tmp_path / "gpu-pool"),
-    }
-    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
+    devices = ["GPU-00000000-0000-0000-0000-000000000001"]
+    launcher = ProcessTaskLauncher(gpu_devices=devices)
     policy = replace(policy, launcher=launcher)
     context.set_prop(FLContextKey.JOB_META, {"launcher_spec": {"site-1": {"process": {"num_of_gpus": 1}}}})
     adapter, data = _adapter(custom, context, policy)
@@ -707,7 +701,7 @@ def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_
         first = adapter.execute("train", data, context, Signal())
         # The prior CJ result has no server receipt and is still retained.
         # A different CJ can nevertheless run on the exact same GPU now.
-        second_launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
+        second_launcher = ProcessTaskLauncher(gpu_devices=devices)
         second = second_launcher.launch_task(
             TaskLaunchRequest(
                 "other-job",
@@ -725,6 +719,35 @@ def test_gpu_reservation_is_released_before_saved_result_retry(native_task, tmp_
         repeated = adapter.execute("train", data, context, Signal())
         np.testing.assert_array_equal(from_shareable(repeated).data["w"], from_shareable(first).data["w"])
         assert launch.call_count == 1
+    finally:
+        adapter.handle_event(EventType.END_RUN, context)
+
+
+def test_client_api_oom_failure_clears_execution_and_accepts_a_fresh_task(native_task):
+    root, custom, context, policy = native_task
+    script = """
+import torch
+import nvflare.client as flare
+flare.init()
+flare.receive()
+raise torch.cuda.OutOfMemoryError("CUDA out of memory (injected without GPU allocation)")
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    try:
+        with pytest.raises(RuntimeError, match="OutOfMemoryError.*CUDA out of memory"):
+            adapter.execute("train", data, context, Signal())
+        assert adapter._done.is_set()
+        assert not adapter._gate.locked()
+        assert not adapter.supervisor.owns_execution
+        assert not adapter.supervisor.settlement_unconfirmed
+        artifacts = root / "job-1" / ".nvflare" / "task-execution" / "attempts" / "attempt-1"
+        assert json.loads((artifacts / "failure.json").read_text())["error_type"] == "OutOfMemoryError"
+        assert not (artifacts / "completion.json").exists()
+        (custom / "train.py").write_text(SCRIPT)
+        context.set_prop(FLContextKey.TASK_ID, "task-after-oom", private=True, sticky=True)
+        context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "attempt-after-oom", private=True, sticky=True)
+        result = adapter.execute("train", data, context, Signal())
+        np.testing.assert_array_equal(from_shareable(result).data["w"], [2, 3])
     finally:
         adapter.handle_event(EventType.END_RUN, context)
 

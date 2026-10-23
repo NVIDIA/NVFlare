@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Explicitly scheduled real-GPU scope checks; federation controls run separately.
+"""Real-CUDA visibility, cleanup and reuse on explicitly assigned devices.
 
-NVFLARE_PROCESS_GPU_ALLOCATOR names a JSON file containing the approved allocator arguments, including its canonical persistent ledger directory. Never substitute
-a fresh ledger to bypass an existing reservation.
+NVFLARE_PROCESS_GPU_DEVICES names a JSON file with the approved gpu_devices list.
+The fixture does not reserve GPUs; schedule it only on administrator-assigned idle devices.
 """
 
 import json
 import os
-import sqlite3
 import sys
 import threading
 import time
@@ -32,11 +31,10 @@ import psutil
 import pytest
 
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
-from nvflare.app_common.resource_managers.gpu_reservation_ledger import GpuReservationLedger
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("NVFLARE_PROCESS_GPU_ALLOCATOR"), reason="requires explicitly scheduled real GPU capacity"
+    not os.environ.get("NVFLARE_PROCESS_GPU_DEVICES"), reason="requires explicitly scheduled real GPU capacity"
 )
 
 COMPUTE = """
@@ -67,15 +65,20 @@ if mode == 'exception':
     raise RuntimeError('deliberate post-CUDA worker exception')
 if mode == 'abrupt':
     os._exit(17)
+if mode == 'oom':
+    try:
+        torch.empty(torch.cuda.get_device_properties(0).total_memory + 1, dtype=torch.uint8, device='cuda')
+    except torch.cuda.OutOfMemoryError as error:
+        output.with_suffix('.failure.json').write_text(json.dumps(dict(error_type=type(error).__name__, message=str(error))))
+        raise
+    raise AssertionError('oversized CUDA allocation unexpectedly succeeded')
 """
 
 
 @pytest.fixture
 def gpu_launcher():
-    config = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
-    launcher = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**config))
-    launcher.gpu_allocator.validate_host()
-    return launcher
+    config = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_DEVICES"]).read_text())
+    return ProcessTaskLauncher(gpu_devices=config["gpu_devices"])
 
 
 def _launch(launcher, output, mode="normal"):
@@ -145,21 +148,18 @@ def test_real_cuda_reuse_while_previous_result_publication_is_blocked(gpu_launch
 
 
 @pytest.mark.timeout(120)
-def test_real_cuda_contention_and_descendant_cancellation(gpu_launcher, tmp_path):
+@pytest.mark.parametrize("timeout_first", [False, True], ids=["cancel", "wait-timeout"])
+def test_real_cuda_descendant_cleanup_allows_a_fresh_worker(gpu_launcher, tmp_path, timeout_first):
     handle = _launch(gpu_launcher, tmp_path / "held.json", "child")
     try:
         facts = _ready(tmp_path / "held.json")
-        # Use a one-device view of the SAME ledger to test that assigned device.
-        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
-        selected["devices"] = [facts["visible"]]
-        other = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**selected))
-        with pytest.raises(RuntimeError, match="capacity"):
-            _launch(other, tmp_path / "must-not-start.json")
-        assert not (tmp_path / "must-not-start.json").exists()
+        if timeout_first:
+            with pytest.raises(TimeoutError):
+                handle.wait_for_settlement(0.1)
         assert handle.cancel().settled
         _no_live_pid(facts["pid"])
         _no_live_pid(facts["descendant_pid"])
-        replacement = _launch(other, tmp_path / "replacement.json")
+        replacement = _launch(gpu_launcher, tmp_path / "replacement.json")
         try:
             assert replacement.wait_for_settlement(60).succeeded
         finally:
@@ -169,44 +169,21 @@ def test_real_cuda_contention_and_descendant_cancellation(gpu_launcher, tmp_path
 
 
 @pytest.mark.timeout(120)
-@pytest.mark.parametrize("mode", ["exception", "abrupt"])
-def test_real_cuda_worker_failure_releases_only_after_settlement(gpu_launcher, tmp_path, mode):
+@pytest.mark.parametrize("mode", ["exception", "abrupt", "oom"])
+def test_real_cuda_failure_settles_and_a_fresh_worker_succeeds(gpu_launcher, tmp_path, mode):
     handle = _launch(gpu_launcher, tmp_path / "failure.json", mode)
     try:
         status = handle.wait_for_settlement(60)
         assert status.settled and not status.succeeded
         facts = _ready(tmp_path / "failure.json")
         _no_live_pid(facts["pid"])
-        with sqlite3.connect(gpu_launcher.gpu_allocator.path) as connection:
-            record = connection.execute(
-                "SELECT released,execution_id FROM attempts WHERE identity=?", (handle.reservation.identity,)
-            ).fetchone()
-        assert record == (1, handle.execution_id)
+        if mode == "oom":
+            error = json.loads((tmp_path / "failure.failure.json").read_text())
+            assert error["error_type"] == "OutOfMemoryError"
+        healthy = _launch(gpu_launcher, tmp_path / "after-failure.json")
+        try:
+            assert healthy.wait_for_settlement(60).succeeded
+        finally:
+            healthy.cancel()
     finally:
-        handle.cancel()
-
-
-@pytest.mark.timeout(120)
-def test_real_cuda_uncertain_scope_retains_reservation(gpu_launcher, tmp_path, monkeypatch):
-    handle = _launch(gpu_launcher, tmp_path / "uncertain.json")
-    original = handle.process._group_exists
-    try:
-        facts = _ready(tmp_path / "uncertain.json")
-        # Controlled loss of settlement evidence. CUDA and the execution remain
-        # real; only the scope observation is injected as unavailable.
-        monkeypatch.setattr(handle.process, "_group_exists", lambda: True)
-        with pytest.raises(TimeoutError):
-            handle.wait_for_settlement(0.2)
-        selected = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_ALLOCATOR"]).read_text())
-        selected["devices"] = [facts["visible"]]
-        other = ProcessTaskLauncher(gpu_allocator=GpuReservationLedger(**selected))
-        with pytest.raises(RuntimeError, match="capacity"):
-            _launch(other, tmp_path / "must-not-start.json")
-        with sqlite3.connect(gpu_launcher.gpu_allocator.path) as connection:
-            released = connection.execute(
-                "SELECT released FROM attempts WHERE identity=?", (handle.reservation.identity,)
-            ).fetchone()[0]
-        assert released == 0
-    finally:
-        monkeypatch.setattr(handle.process, "_group_exists", original)
         handle.cancel()
