@@ -70,6 +70,19 @@ jobs:
             echo "::warning::CI selector returned an invalid result; running full CI."
             selection=true
           fi
+
+          # Example catalog tests depend on README presence, not just content.
+          # Ordinary edits stay lightweight; additions/deletions (including
+          # renames) must validate catalog membership. Diff failures fail closed.
+          if [ "$selection" = "false" ]; then
+            if ! catalog_changes="$(git diff --name-only --diff-filter=AD --no-renames "$BASE_SHA" "$HEAD_SHA" -- \
+                ':(glob)examples/**/README.md' ':(glob)examples/**/README.rst')"; then
+              echo "::warning::Example catalog diff failed; running full CI."
+              selection=true
+            elif [ -n "$catalog_changes" ]; then
+              selection=true
+            fi
+          fi
           echo "run-full-ci=${selection}" >> "$GITHUB_OUTPUT"
 
   skill-validation-selection:

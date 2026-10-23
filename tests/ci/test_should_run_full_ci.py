@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import os
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,6 +24,13 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SELECTOR = REPO_ROOT / "ci" / "should_run_full_ci.sh"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "premerge.yml"
+TEST_READ_DOCS = (
+    "integration/nemo/examples/peft/README.md",
+    "docs/user_guide/data_scientist_guide/available_recipes.rst",
+    "examples/hello-world/agent-skills/pytorch-conversion/README.md",
+    "examples/hello-world/agent-skills/lightning-conversion/README.md",
+    "examples/hello-world/agent-skills/huggingface-conversion/README.md",
+)
 
 
 @pytest.mark.parametrize(
@@ -47,6 +56,7 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "premerge.yml"
         (["skills/nvflare-fed-stats/SKILL.md"], "true"),
         (["tests/unit_test/tool/agent_skill_checks/fixtures/valid/nvflare-example-skill/SKILL.md"], "true"),
         (["tests/fixtures/input.rst"], "true"),
+        *[([path], "true") for path in TEST_READ_DOCS],
         (["docs/quickstart.rst", "tests/unit_test/apis/fl_context_test.py"], "true"),
         ([], "true"),
     ],
@@ -94,11 +104,27 @@ def selection_repository(tmp_path):
     git("commit", "-qm", "Base")
     base_sha = git("rev-parse", "HEAD")
 
-    def run_selection(changed_path="README.md", selector=None, missing_selector=False, **event):
+    def run_selection(
+        changed_path="README.md", change_type="add", renamed_path=None, selector=None, missing_selector=False, **event
+    ):
         changed_file = repo / changed_path
         changed_file.parent.mkdir(parents=True, exist_ok=True)
-        changed_file.write_text("changed\n")
-        git("add", ".")
+        base_revision = base_sha
+        if change_type != "add":
+            changed_file.write_text("original\n")
+            git("add", ".")
+            git("commit", "-qm", "Existing file")
+            base_revision = git("rev-parse", "HEAD")
+        if change_type == "delete":
+            changed_file.unlink()
+        elif change_type == "rename":
+            destination = repo / renamed_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            changed_file.rename(destination)
+        else:
+            assert change_type in {"add", "modify"}
+            changed_file.write_text("changed\n")
+        git("add", "-A")
         git("commit", "-qm", "Change")
         if missing_selector:
             (repo / "ci" / SELECTOR.name).unlink()
@@ -111,7 +137,7 @@ def selection_repository(tmp_path):
         env = {
             **os.environ,
             "EVENT_NAME": "pull_request",
-            "BASE_SHA": base_sha,
+            "BASE_SHA": base_revision,
             "HEAD_SHA": git("rev-parse", "HEAD"),
             "GITHUB_OUTPUT": str(output),
             **event,
@@ -140,12 +166,68 @@ def selection_repository(tmp_path):
         ("nvflare/example.py", "true"),
         ("docs/resources/step_ca_admin.tpl", "true"),
         ("tests/unit_test/tool/agent_skill_checks/fixtures/valid/nvflare-example-skill/SKILL.md", "true"),
+        *[(path, "true") for path in TEST_READ_DOCS],
     ],
 )
 @pytest.mark.parametrize("event_name", ["pull_request", "merge_group"])
 def test_workflow_selects_full_ci(selection_repository, changed_path, expected, event_name):
-    output, _ = selection_repository(changed_path=changed_path, EVENT_NAME=event_name)
+    output, _ = selection_repository(changed_path=changed_path, change_type="modify", EVENT_NAME=event_name)
     assert output == f"run-full-ci={expected}\n"
+
+
+@pytest.mark.parametrize("readme_name", ["README.md", "README.rst"])
+@pytest.mark.parametrize(("change_type", "expected"), [("add", "true"), ("delete", "true"), ("modify", "false")])
+@pytest.mark.parametrize("event_name", ["pull_request", "merge_group"])
+def test_workflow_checks_example_readme_membership(
+    selection_repository, readme_name, change_type, expected, event_name
+):
+    output, _ = selection_repository(
+        changed_path=f"examples/hello-world/example/{readme_name}", change_type=change_type, EVENT_NAME=event_name
+    )
+    assert output == f"run-full-ci={expected}\n"
+
+
+@pytest.mark.parametrize(
+    ("changed_path", "renamed_path"),
+    [
+        ("examples/hello-world/example/README.md", "examples/hello-world/example/guide.md"),
+        ("examples/hello-world/example/guide.md", "examples/hello-world/example/README.rst"),
+        ("examples/devops/aws/nested/README.rst", "examples/devops/aws/other/README.rst"),
+        ("nvflare/example.py", "docs/example.md"),
+    ],
+)
+@pytest.mark.parametrize("event_name", ["pull_request", "merge_group"])
+def test_workflow_runs_full_ci_for_renames(selection_repository, changed_path, renamed_path, event_name):
+    output, _ = selection_repository(
+        changed_path=changed_path, change_type="rename", renamed_path=renamed_path, EVENT_NAME=event_name
+    )
+    assert output == "run-full-ci=true\n"
+
+
+@pytest.mark.parametrize("changed_path", ["docs/README.md", "examples/hello-world/example/guide.rst"])
+@pytest.mark.parametrize("change_type", ["add", "delete"])
+def test_workflow_keeps_unrelated_documentation_lightweight(selection_repository, changed_path, change_type):
+    output, _ = selection_repository(changed_path=changed_path, change_type=change_type)
+    assert output == "run-full-ci=false\n"
+
+
+def test_workflow_runs_full_ci_when_catalog_diff_fails(selection_repository, tmp_path):
+    git_path = shutil.which("git")
+    assert git_path
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git_wrapper = bin_dir / "git"
+    git_wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        'for arg in "$@"; do\n'
+        '    if [ "$arg" = "--diff-filter=AD" ]; then exit 1; fi\n'
+        "done\n"
+        f'exec {shlex.quote(git_path)} "$@"\n'
+    )
+    git_wrapper.chmod(0o755)
+    output, log = selection_repository(PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    assert output == "run-full-ci=true\n"
+    assert "::warning::" in log
 
 
 @pytest.mark.parametrize(

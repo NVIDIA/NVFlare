@@ -28,6 +28,15 @@ while IFS= read -r changed_path || [ -n "$changed_path" ]; do
             echo true
             exit 0
             ;;
+        # Docs read by unit tests; keep this list in sync with their inputs.
+        integration/nemo/examples/peft/README.md | \
+            docs/user_guide/data_scientist_guide/available_recipes.rst | \
+            examples/hello-world/agent-skills/pytorch-conversion/README.md | \
+            examples/hello-world/agent-skills/lightning-conversion/README.md | \
+            examples/hello-world/agent-skills/huggingface-conversion/README.md)
+            echo true
+            exit 0
+            ;;
         *.md | *.rst)
             ;;
         docs/*.css | docs/*.gif | docs/*.html | docs/*.ico | docs/*.in | \
