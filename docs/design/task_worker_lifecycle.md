@@ -50,12 +50,11 @@ lifetime; unqualified executors fail validation before export or application imp
 these controls at the Job API level. The unified and PyTorch FedAvg and PyTorch
 FedProx recipes accept `execution_lifetime="task"` in their constructors. Existing
 recipes can use `recipe.add_client_config({"execution_lifetime": "task"}, clients=...)`
-to configure existing client apps. Export validates the receiving sites' GPU
-resource/launcher settings; unrelated job-lifetime
-GPU apps in the same deployment remain valid. Resource defaults and receiving-site
-overrides use the normal launcher resource resolvers. The resource manager and all
-four launcher modes (Process, Docker, Kubernetes and Slurm) are checked; nonzero
-`num_of_gpus` or `gpus_per_node` requests are rejected for task clients. An `@ALL` client app
+to configure existing client apps. Export validates GPU counts and preserves
+resource/launcher settings for trusted receiving-site admission; unrelated
+job-lifetime GPU apps in the same deployment remain valid. Resource defaults and
+receiving-site overrides use the normal launcher resource resolvers. The default
+CPU Process runtime rejects GPU requests. An `@ALL` client app
 cannot be combined with a site-specific lifetime; use named client apps for
 per-site lifetimes. Temporary execution-parameter overrides apply only to declared
 apps and restore their original parameters after use.
@@ -149,8 +148,10 @@ Global-only CrossSiteModelEval remains supported. Controllers have no task-lifet
 markers or validation hooks. Persistent state alone does not require job lifetime;
 applications can explicitly checkpoint the state they need.
 
-The initial profile supports CPU Process workers on Linux and on macOS with Python
-3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,
+The default profile supports CPU Process workers on Linux and on macOS with Python
+3.13+ providing waitid/WNOWAIT. The opt-in
+[Process GPU profile](process_task_gpu_profile.md) adds static NVIDIA GPU
+visibility on provisioned Linux sites, without local GPU scheduling or reservation. External/attach Client API sessions,
 remote task launchers, and moving task orchestration to the Client Process are not
 part of this profile. No server capability negotiation is added.
 The Collab API's resident RPC service continues to use job lifetime.
@@ -162,8 +163,9 @@ and restore native framework checkpoints explicitly.
 
 ## Site policy
 
-Only the site's canonical `local/resources.json` or its default fallback supplies
-`task_execution`. Job application and job resource overrides cannot select it.
+Only the site's canonical `local/resources` configuration, including JSON,
+CONF/YAML and default variants, supplies `task_execution`. Job application and
+job resource overrides cannot select it.
 The default launcher is ProcessTaskLauncher, environment forwarding is explicit,
 and successful payloads are released after terminal receipt. An optional site configuration is:
 
@@ -194,7 +196,8 @@ settlement.
 
 Workers receive only the framework's standard runtime environment allow-list plus
 site-approved variable names. Federation credentials, Client API bootstrap and GPU
-visibility cannot be forwarded; GPU visibility is disabled. Process workers share
+visibility cannot be forwarded; the default disables GPU visibility. The opt-in
+Process GPU launcher applies its site-configured device IDs to worker visibility. Process workers share
 the site UID and filesystem, so this is process lifetime isolation, not a security
 sandbox. The site policy is excluded from client registration metadata.
 
@@ -310,11 +313,21 @@ the late handle. There is no reset or automatic physical retry.
 For publication, the caller validates the reply's workflow, task, and attempt
 before calling record_receipt. RETRY or unknown receipt retains the saved result.
 Default cleanup requires confirmed settlement, a decoded successful result and
-RECEIVED or TASK_CLOSED. Uploads use that in-memory snapshot, so no disk-reader
-leases are required. Cleanup is independent of admission of the next assignment.
+RECEIVED or TASK_CLOSED. Uploads use the decoded result snapshot. Saved-result replays
+pin disk payloads until their readers finish, independently of compute admission.
+Cleanup is independent of admission of the next assignment.
 Explicit retention, failed cleanup and failed attempts keep their evidence. Completion and diagnostic
 records remain after successful payload release. Closure says nothing about an
 earlier upload's receipt or aggregation use.
+
+The shared worker entry requires an explicit owning parent PID for Process
+execution. Native Docker/Kubernetes/Slurm workers select native execution scope
+and do not rely on a local CJ parent or Process PID/group assumptions.
+
+Native task cleanup holds `END_RUN` until the supervisor no longer owns physical
+execution and the executor call has finished, including late launch handles.
+Bounded cleanup failures are retried after backend recovery. A readiness timeout
+is not settlement; the settlement-unconfirmed fence remains sticky after recovery.
 
 A local completion never overrides Client Job/task cancellation or authorizes
 network publication by itself. The adapter must drain pending launches during job

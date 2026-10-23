@@ -97,6 +97,27 @@ class TestWorkspace:
             assert ws.get_study_registry_file_path() == root_copy
 
     @pytest.mark.parametrize(
+        "extension", [".json", ".conf", ".yml", ".yaml", ".json.default", ".conf.default", ".yml.default"]
+    )
+    def test_resources_path_resolves_canonical_supported_formats(self, tmp_path, extension):
+        workspace = self._make_workspace(str(tmp_path))
+        path = tmp_path / "local" / ("resources" + extension)
+        path.write_text("{}")
+        assert workspace.get_resources_file_path() == str(path)
+
+    def test_resources_path_prefers_explicit_config_over_default_and_ignores_nested_files(self, tmp_path):
+        workspace = self._make_workspace(str(tmp_path))
+        nested = tmp_path / "local" / "custom"
+        nested.mkdir()
+        (nested / "resources.json").write_text("{}")
+        assert workspace.get_resources_file_path() is None
+        default = tmp_path / "local" / "resources.json.default"
+        default.write_text("{}")
+        configured = tmp_path / "local" / "resources.conf"
+        configured.write_text("{}")
+        assert workspace.get_resources_file_path() == str(configured)
+
+    @pytest.mark.parametrize(
         "job_id",
         [
             "../outside",

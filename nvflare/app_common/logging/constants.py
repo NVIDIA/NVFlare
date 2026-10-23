@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 
@@ -24,8 +23,8 @@ from nvflare.fuel.utils.config_service import ConfigService
 LOG_STREAM_EVENT_TYPE = "stream_log"
 LIVE_LOG_TOPIC = "live_log"
 
-# Resources.json var name. Default is True (streaming is allowed). To disable
-# live log streaming at a site, set this to False in the site's resources.json:
+# Site resources variable. Default is True (streaming is allowed). To disable
+# live log streaming at a site, set this to False in the site's resources file:
 # JobLogStreamer will no-op, SiteLogStreamer will skip injection and strip
 # any pre-declared JobLogStreamer, and the server-side JobLogReceiver will log
 # an error if a stream still arrives from this site.
@@ -37,10 +36,10 @@ _logger = logging.getLogger(__name__)
 def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
     """Check whether the site permits live log streaming.
 
-    Default-allow: returns True unless resources.json explicitly sets
+    Default-allow: returns True unless site resources explicitly set
     ``allow_log_streaming`` to False. Tries ConfigService first (fast path,
     populated in production via FLClientStarterConfiger); falls back to
-    reading resources.json directly via the workspace from fl_ctx, which is
+    reading site resources directly via the workspace from fl_ctx, which is
     required in the simulator path where the section is not registered.
     """
     val = ConfigService.get_bool_var(name=ALLOW_LOG_STREAMING_VAR, conf=SystemConfigs.RESOURCES_CONF, default=None)
@@ -60,10 +59,9 @@ def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
         path = ws.get_resources_file_path()
         if not path or not os.path.exists(path):
             return True
-        with open(path) as f:
-            data = json.load(f)
+        data = ConfigService.load_config_dict(path, prefer_exact_file=True)
     except Exception as ex:
-        _logger.debug(f"failed to read resources.json for {ALLOW_LOG_STREAMING_VAR} check: {ex}")
+        _logger.debug(f"failed to read site resources for {ALLOW_LOG_STREAMING_VAR} check: {ex}")
         return True
 
     return bool(data.get(ALLOW_LOG_STREAMING_VAR, True))

@@ -27,6 +27,7 @@ signalling are separate syscalls and cannot be atomic against another reaper.
 import logging
 import math
 import os
+import re
 import signal
 import threading
 import time
@@ -46,6 +47,7 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
     UnsupportedTaskResourceError,
 )
+from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment
 from nvflare.utils.process_utils import ProcessAdapter, ProcessSpawnError, spawn_process
 
 
@@ -438,9 +440,11 @@ class ProcessTaskHandle(TaskHandleSpec):
 class ProcessTaskLauncher(TaskLauncherSpec):
     """Launch trusted task workers as isolated local POSIX process groups.
 
-    This backend has no CPU, memory, or GPU admission authority. It rejects
-    non-empty resource requests rather than treating environment visibility as
-    a reservation. Multi-process applications are supported only when every
+    CPU/memory admission is unsupported. Optional site-configured GPU device IDs
+    provide a static CUDA visibility assignment. A request for N GPUs uses the
+    first N configured IDs; concurrent launches may use the same devices.
+    There is no scheduling, reservation, memory quota or device-access enforcement.
+    Multi-process applications are supported only when every
     descendant remains in the owned process group. Changing group or session
     is unsupported, including a different group in the same POSIX session.
     Requires Linux, or macOS with Python >= 3.13, and waitid/WNOWAIT support.
@@ -463,6 +467,7 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         descendant_settle_timeout: float = 0.25,
         poll_interval: float = 0.05,
         max_attempt_identities: int = 10000,
+        gpu_devices: Optional[list[str]] = None,
     ):
         super().__init__()
         self.stop_grace_period = _positive_number(stop_grace_period, "stop_grace_period")
@@ -477,17 +482,30 @@ class ProcessTaskLauncher(TaskLauncherSpec):
         self._max_attempt_identities = max_attempt_identities
         self._attempt_identities = set()
         self._lock = threading.Lock()
+        if gpu_devices is not None:
+            pattern = r"(?:0|[1-9][0-9]*|(?:GPU-|MIG-(?:GPU-)?)[0-9a-fA-F-]+(?:/[0-9]+/[0-9]+)?)"
+            if not isinstance(gpu_devices, list) or any(
+                not isinstance(device, str) or not re.fullmatch(pattern, device) for device in gpu_devices
+            ):
+                raise ValueError("gpu_devices must be a list of CUDA device IDs (ordinals, GPU UUIDs or MIG IDs)")
+            if len({device.lower() for device in gpu_devices}) != len(gpu_devices):
+                raise ValueError("gpu_devices must contain distinct device IDs")
+        self.gpu_devices = None if gpu_devices is None else tuple(gpu_devices)
 
-    def launch_task(self, request: TaskLaunchRequest) -> ProcessTaskHandle:
+    def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
         if not isinstance(request, TaskLaunchRequest):
             raise TypeError("request must be a TaskLaunchRequest")
         if os.name != "posix" or not all(
             hasattr(os, name) for name in ("killpg", "waitid", "WNOWAIT", "P_PID", "WEXITED", "WNOHANG")
         ):
             raise TaskLauncherError("ProcessTaskLauncher requires POSIX process groups and waitid/WNOWAIT support")
-        if not request.resources.is_empty():
+        if (
+            request.resources.cpu_cores is not None
+            or request.resources.memory_mb is not None
+            or request.resources.gpu_count > len(self.gpu_devices or ())
+        ):
             raise UnsupportedTaskResourceError(
-                "ProcessTaskLauncher has no CPU, memory, or GPU admission/reservation mechanism"
+                "ProcessTaskLauncher cannot enforce CPU/memory requests or supply more GPUs than its static visibility assignment"
             )
 
         with self._lock:
@@ -497,9 +515,14 @@ class ProcessTaskLauncher(TaskLauncherSpec):
                 raise TaskLauncherError("task attempt identity capacity exhausted; use a new launcher for a new scope")
             self._attempt_identities.add(request.identity)
 
+        environment = dict(request.environment)
+        environment.update(get_cuda_device_environment((self.gpu_devices or ())[: request.resources.gpu_count]))
+        environment.update(HIP_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="", NVIDIA_VISIBLE_DEVICES="none")
+
+        request = replace(request, environment=environment)
         launch_error = None
         try:
-            adapter = spawn_process(list(request.argv), dict(request.environment), cwd=request.cwd)
+            adapter = spawn_process(list(request.argv), environment, cwd=request.cwd)
         except ProcessSpawnError as e:
             # The execution already exists. Keep its attempt fenced and take
             # responsibility for cleanup rather than retrying its spawn.

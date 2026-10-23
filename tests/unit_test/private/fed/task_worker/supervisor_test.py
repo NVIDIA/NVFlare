@@ -156,7 +156,10 @@ def test_saved_result_requires_the_original_retained_validated_completion(tmp_pa
     assert attempt["launcher"].launch_task.call_count == 1
 
 
-def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
+@pytest.mark.parametrize(
+    "error_type,message", [("ValueError", "trainer rejected its input"), ("OutOfMemoryError", "CUDA out of memory")]
+)
+def test_worker_failure_reports_diagnostics_and_allows_a_fresh_attempt(tmp_path, error_type, message):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
 
@@ -168,15 +171,19 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
             worker_ppid=os.getppid(),
             started_at=1,
             failed_at=2,
-            error_type="ValueError",
-            message="trainer rejected its input",
+            error_type=error_type,
+            message=message,
         )
         return handle
 
     attempt["launcher"].launch_task.side_effect = fail
-    with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
+    with pytest.raises(RuntimeError, match=f"{error_type}: {message}.*diagnostics:"):
         supervisor.run(**attempt)
     assert (_payload(attempt).parent / "failure.json").exists()
+    assert not supervisor.owns_execution
+    assert not supervisor.settlement_unconfirmed
+    healthy, _ = _attempt(tmp_path, attempt_id="after-failure")
+    assert supervisor.run(**healthy).result["value"] == 2
 
 
 def test_launch_error_without_handle_preserves_original_exception(tmp_path):
@@ -273,6 +280,47 @@ def test_cleanup_does_not_block_next_assignment_or_another_receipt(tmp_path):
         receipting.result(timeout=5)
     assert not _payload(first).exists()
     first["store"].release_payloads.assert_called_once()
+
+
+@pytest.mark.parametrize("receipt", [TaskResultReceipt.RECEIVED, TaskResultReceipt.TASK_CLOSED])
+@pytest.mark.parametrize("readers", [1, 2])
+@pytest.mark.parametrize("read_failure", [False, True])
+def test_saved_result_readers_hold_payloads_without_holding_compute(tmp_path, receipt, readers, read_failure):
+    supervisor = TaskSupervisor()
+    first, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**first)
+    reading, proceed = threading.Barrier(readers + 1), threading.Event()
+    read_result = first["store"].read_result
+
+    def blocked_read(identity):
+        reading.wait(timeout=5)
+        assert proceed.wait(5)
+        if read_failure:
+            raise OSError("saved result read failed")
+        return read_result(identity)
+
+    first["store"].read_result = Mock(side_effect=blocked_read)
+    with ThreadPoolExecutor(max_workers=readers) as pool:
+        replays = [pool.submit(supervisor.read_saved_result, outcome.identity) for _ in range(readers)]
+        try:
+            reading.wait(timeout=5)
+            assert supervisor.record_receipt(outcome.identity, receipt)
+            supervisor.cleanup_job_payloads()
+            assert _payload(first).exists()
+            second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+            next_outcome = supervisor.run(**second)
+            supervisor.record_receipt(next_outcome.identity, TaskResultReceipt.RECEIVED)
+            assert not _payload(second).exists()
+            assert _payload(first).exists()
+        finally:
+            proceed.set()
+        for replay in replays:
+            if read_failure:
+                with pytest.raises(OSError, match="saved result read failed"):
+                    replay.result(timeout=5)
+            else:
+                assert replay.result(timeout=5)["value"] == 2
+    assert _payload(first).exists() is read_failure
 
 
 def test_cleanup_failure_retains_diagnostics_and_does_not_block_new_work(tmp_path):
@@ -750,7 +798,7 @@ main()
             identity.site_name,
             identity.task_id,
             identity.attempt_id,
-            (*argv, "--bootstrap", bootstrap_path),
+            (*argv, "--bootstrap", bootstrap_path, "--parent_pid", str(os.getpid())),
             environment={"PYTHONPATH": str(repo_root)},
             cwd=str(repo_root),
         )

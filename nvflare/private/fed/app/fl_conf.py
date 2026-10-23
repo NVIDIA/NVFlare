@@ -200,8 +200,8 @@ class FLServerStarterConfiger(JsonConfigurator):
 
         ConfigService.initialize(
             section_files={
-                SystemConfigs.STARTUP_CONF: os.path.basename(self.server_config_file_names[0]),
-                SystemConfigs.RESOURCES_CONF: os.path.basename(self.server_config_file_names[1]),
+                SystemConfigs.STARTUP_CONF: os.path.abspath(self.server_config_file_names[0]),
+                SystemConfigs.RESOURCES_CONF: os.path.abspath(self.server_config_file_names[1]),
             },
             config_path=[self.args.workspace],
             parsed_args=self.args,
@@ -452,8 +452,8 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         ConfigService.initialize(
             section_files={
-                SystemConfigs.STARTUP_CONF: os.path.basename(self.client_config_file_names[0]),
-                SystemConfigs.RESOURCES_CONF: os.path.basename(self.client_config_file_names[1]),
+                SystemConfigs.STARTUP_CONF: os.path.abspath(self.client_config_file_names[0]),
+                SystemConfigs.RESOURCES_CONF: os.path.abspath(self.client_config_file_names[1]),
             },
             config_path=[self.args.workspace],
             parsed_args=self.args,

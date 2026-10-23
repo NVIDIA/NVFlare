@@ -21,12 +21,13 @@ def has_nvidia_smi() -> bool:
     return which("nvidia-smi") is not None
 
 
-def use_nvidia_smi(query: str, report_format: str = "csv"):
+def use_nvidia_smi(query: str, report_format: str = "csv", timeout=None):
     if has_nvidia_smi():
         result = subprocess.run(
             ["nvidia-smi", f"--query-gpu={query}", f"--format={report_format}"],
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
         rc = result.returncode
         if rc > 0:
@@ -34,6 +35,11 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
         else:
             return result.stdout.splitlines()
     return None
+
+
+def get_cuda_device_environment(devices) -> dict[str, str]:
+    """Build CUDA visibility settings; these do not enforce device access."""
+    return {"CUDA_DEVICE_ORDER": "PCI_BUS_ID", "CUDA_VISIBLE_DEVICES": ",".join(str(device) for device in devices)}
 
 
 def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:

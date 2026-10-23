@@ -102,6 +102,12 @@ class RaiseExecutor(ProbeExecutor):
         raise ValueError("deliberate worker failure")
 
 
+class OomExecutor(ProbeExecutor):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        import torch
+        raise torch.cuda.OutOfMemoryError("CUDA out of memory (injected without a GPU)")
+
+
 class FailingFinalizeStatistics(Statistics):
     def features(self):
         return {}
@@ -183,7 +189,7 @@ def _run_process(bootstrap_path, extra_env=None):
         "import os,sys;"
         f"log=open({str(log_path)!r},'w');"
         "os.dup2(log.fileno(),1);os.dup2(log.fileno(),2);"
-        f"sys.argv=['worker','--bootstrap',{bootstrap_path!r}];"
+        f"sys.argv=['worker','--bootstrap',{bootstrap_path!r},'--parent_pid',{str(os.getpid())!r}];"
         "from nvflare.private.fed.app.client.task_worker_process import main;main()"
     )
     request = TaskLaunchRequest(
@@ -249,7 +255,14 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert store.read_input(identity)["value"] == 3
 
 
-def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_path):
+@pytest.mark.parametrize(
+    "executor,error_type,message",
+    [
+        ("RaiseExecutor", "ValueError", "deliberate worker failure"),
+        ("OomExecutor", "OutOfMemoryError", "CUDA out of memory"),
+    ],
+)
+def test_executor_exception_finalizes_and_a_fresh_worker_succeeds(tmp_path, executor, error_type, message):
     workspace_root = _workspace(tmp_path)
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     identity = _identity("attempt-failure")
@@ -258,20 +271,30 @@ def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_pa
         store,
         identity,
         workspace_root,
-        executor={"path": "worker_components.RaiseExecutor", "args": {"marker_path": str(marker)}},
+        executor={"path": "worker_components." + executor, "args": {"marker_path": str(marker)}},
         data=Shareable(),
     )
 
     process = _run_process(bootstrap_path)
 
     assert process.returncode != 0
-    assert "deliberate worker failure" in process.stderr
+    assert message in process.stderr
     assert marker.read_text().splitlines() == ["initialize", "finalize"]
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
     failure = json.loads((Path(store.attempt_dir(identity)) / "failure.json").read_text())
     assert failure["identity"] == identity.to_dict()
-    assert failure["error_type"] == "ValueError"
+    assert failure["error_type"] == error_type
+    healthy_identity = _identity("after-failure")
+    healthy = _stage(
+        store,
+        healthy_identity,
+        workspace_root,
+        executor={"path": "worker_components.ProbeExecutor", "args": {"marker_path": str(marker)}},
+        data=Shareable({"value": 1}),
+    )
+    assert _run_process(healthy).returncode == 0
+    assert store.read_result(healthy_identity)[0]["value"] == 5
 
 
 def test_component_authorization_rejects_custom_executor_before_import(tmp_path):
@@ -1034,7 +1057,15 @@ def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
         identity.site_name,
         identity.task_id,
         identity.attempt_id,
-        (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap", path),
+        (
+            sys.executable,
+            "-m",
+            "nvflare.private.fed.app.client.task_worker_process",
+            "--bootstrap",
+            path,
+            "--parent_pid",
+            str(os.getpid()),
+        ),
         environment=env,
         cwd=repo_root,
     )

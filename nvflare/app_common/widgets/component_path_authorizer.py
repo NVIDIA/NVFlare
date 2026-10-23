@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import re
 import threading
@@ -185,9 +184,8 @@ class ComponentPathAuthorizer(Widget):
             if cached and cached[0] == cache_signature:
                 return cached[1], cached[2], cached[3]
 
-            with open(cache_key, "rt") as f:
-                resources = json.load(f)
-                cache_signature = self._make_file_signature(os.fstat(f.fileno()))
+            # Keep the pre-load signature so a replacement during loading forces a refresh.
+            resources = ConfigService.load_config_dict(cache_key, prefer_exact_file=True)
             allow_list, enforcement_mode, uses_default = self._get_policy_from_resources(resources)
 
             self._allow_list_cache[cache_key] = (cache_signature, allow_list, enforcement_mode, uses_default)
@@ -232,7 +230,7 @@ class ComponentPathAuthorizer(Widget):
         audit_scope = self._get_audit_scope(fl_ctx=fl_ctx, workspace=workspace)
         audit_key = (_DEFAULT_ALLOW_LIST_AUDIT_ACTION, audit_scope, policy_source)
         message = (
-            f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default; "
+            f"{CLASS_ALLOW_LIST} is not configured in site resources; "
             f"using the built-in default list of {len(DEFAULT_CLASS_ALLOW_LIST)} NVFLARE component classes. "
             f"Configure a top-level {CLASS_ALLOW_LIST} in site resources to replace the default; "
             f"policy source: {policy_source}"

@@ -66,7 +66,7 @@ class ConfigService:
     1. Config info is preloaded into predefined sections. Callers can get the config data by a section name.
     2. Manages config path (a list of directories) and loads file from the path.
 
-    Only JSON file loading is supported.
+    JSON, HOCON, and YAML file loading are supported.
     """
 
     logger = get_module_logger(__module__, __qualname__)
@@ -80,8 +80,9 @@ class ConfigService:
     def initialize(cls, section_files: Dict[str, str], config_path: List[str], parsed_args=None, var_dict=None):
         """
         Initialize the ConfigService.
-        Configuration is divided into sections, and each section must have a JSON config file.
-        Only specify the base name of the config file.
+        Configuration is divided into sections, and each section must have a supported config file.
+        Specify a base name for format lookup, or an absolute selected file path
+        to retain that exact file when it exists.
         Config path is provided to locate config files. Files are searched in the order of provided
         config_dirs. If multiple directories contain the same file name, then the first one is used.
 
@@ -121,7 +122,9 @@ class ConfigService:
                 cls._config_path.append(d)
 
         for section, file_basename in section_files.items():
-            cls._sections[section] = cls.load_config_dict(file_basename, cls._config_path)
+            cls._sections[section] = cls.load_config_dict(
+                file_basename, cls._config_path, prefer_exact_file=os.path.isabs(file_basename)
+            )
 
         cls._var_dict = var_dict
         if parsed_args:
@@ -192,7 +195,12 @@ class ConfigService:
 
     @classmethod
     def load_config_dict(
-        cls, file_basename: str, search_dirs: Optional[List] = None, raise_exception: bool = True
+        cls,
+        file_basename: str,
+        search_dirs: Optional[List] = None,
+        raise_exception: bool = True,
+        *,
+        prefer_exact_file: bool = False,
     ) -> Optional[Dict]:
         """
         Load a specified config file ( ignore extension)
@@ -208,11 +216,23 @@ class ConfigService:
             then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
             to YAML files. We use OmegaConf to load YAML
             search_dirs: which directories to search.
+            prefer_exact_file: if the supplied file exists, load it directly using its format.
+                Otherwise retain the normal format/default lookup. This lets callers that
+                resolved a canonical site file avoid a recursive search selecting another file.
 
         Returns: Dictionary from the configuration
                 if not found, exception will be raised.
         """
-        conf = ConfigFactory.load_config(file_basename, search_dirs)
+        if prefer_exact_file and os.path.isfile(file_basename):
+            fmt = next(
+                (fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if file_basename.endswith(ext)), None
+            )
+            loader = ConfigFactory.get_config_loader(fmt)
+            if loader is None:
+                raise ValueError(f"no configuration loader for selected file {file_basename}")
+            conf = loader.load_config(file_path=file_basename)
+        else:
+            conf = ConfigFactory.load_config(file_basename, search_dirs)
         if conf:
             return conf.to_dict()
         else:
