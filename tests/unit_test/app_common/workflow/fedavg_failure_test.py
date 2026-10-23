@@ -32,6 +32,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows import fedavg as fedavg_module
 from nvflare.app_common.workflows.fedavg import FedAvg
+from tests.timing_utils import isolate_time
 
 
 def deliver(controller, task, params, name="site"):
@@ -250,3 +251,11 @@ def test_custom_callback_failure_through_communicator_prevents_publication(monke
     controller.aggregator.aggregate_model.assert_not_called()
     update.assert_not_called()
     save.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.workflows.fedavg",
+    )

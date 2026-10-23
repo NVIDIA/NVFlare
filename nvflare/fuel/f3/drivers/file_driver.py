@@ -632,8 +632,9 @@ class FileDriver(BaseDriver):
         os.rename(tmp_dir, conn_dir)
 
         conn = FileConnection(conn_dir, connector, cfg)
-        self.add_connection(conn)
         try:
+            if not self.add_connection(conn):
+                return
             conn.read_loop(self.stop_event)
         finally:
             conn.close()
@@ -644,6 +645,7 @@ class FileDriver(BaseDriver):
                 shutil.rmtree(conn_dir, ignore_errors=True)
 
     def shutdown(self):
+        self.stop_connection_admission()
         self.stop_event.set()
         self.close_all()
 
@@ -688,7 +690,10 @@ class FileDriver(BaseDriver):
             with self.dir_lock:
                 self.handled_dirs.add(entry)
             conn = FileConnection(conn_dir, connector, cfg)
-            self.add_connection(conn)
+            if not self.add_connection(conn):
+                with self.dir_lock:
+                    self.done_dirs[entry] = time.monotonic()
+                continue
             t = threading.Thread(target=self._conn_loop, args=(conn, entry), name=f"file_conn_{entry}", daemon=True)
             t.start()
             new_conns += 1

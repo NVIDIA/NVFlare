@@ -42,6 +42,7 @@ from nvflare.app_common.task_launcher.process_launcher import (
     _OwnedProcessAdapter,
 )
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from tests.timing_utils import ManualClock
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="ProcessTaskLauncher requires POSIX process groups")
 requires_waitid = pytest.mark.skipif(
@@ -93,6 +94,42 @@ def _assert_pid_not_running(pid):
     except psutil.NoSuchProcess:
         return
     pytest.fail(f"process {pid} is still running after confirmed process-group settlement")
+
+
+def _process_running(process):
+    try:
+        # The retained Process checks identity; the process may still disappear
+        # between that check and status(), especially after deliberate SIGTERM.
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+    except psutil.NoSuchProcess:
+        return False
+
+
+def test_process_exit_probe_accepts_disappearance_between_identity_and_status():
+    process = Mock(pid=1234)
+    process.is_running.return_value = True
+    process.status.side_effect = psutil.NoSuchProcess(process.pid)
+
+    assert not _process_running(process)
+    process.status.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [psutil.STATUS_RUNNING, psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD])
+def test_process_exit_probe_distinguishes_live_and_terminal_processes(status):
+    process = Mock()
+    process.is_running.return_value = True
+    process.status.return_value = status
+
+    assert _process_running(process) == (status == psutil.STATUS_RUNNING)
+
+
+def test_process_exit_probe_does_not_treat_access_denied_as_exit():
+    process = Mock(pid=1234)
+    process.is_running.return_value = True
+    process.status.side_effect = psutil.AccessDenied(process.pid)
+
+    with pytest.raises(psutil.AccessDenied):
+        _process_running(process)
 
 
 @pytest.mark.parametrize("field", ["stop_grace_period", "descendant_settle_timeout", "poll_interval"])
@@ -504,10 +541,14 @@ def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path
         if sys.platform == "linux":
             # Darwin removes a zombie's PGID before its parent reaps it.
             assert os.getpgid(sibling_pid) == leader_pid
-        assert all(call.args[1] == 0 for call in probe.call_args_list)
+        # A scan can be inconclusive while unrelated processes churn. Cancel
+        # may signal terminal members before settlement, but once settled the
+        # handle must not probe or signal the released process-group ID again.
+        calls_at_settlement = probe.call_count
         assert handle.poll() == status
         assert handle.wait_for_settlement(timeout=0) == status
         assert handle.cancel() == status
+        assert probe.call_count == calls_at_settlement
         with pytest.raises(ChildProcessError):
             os.waitpid(leader_pid, os.WNOHANG)
     finally:
@@ -821,7 +862,7 @@ def test_real_process_creation_failure_releases_attempt_fence(tmp_path, backend)
 
 @pytest.mark.parametrize("bounded_wait", [False, True])
 @requires_waitid
-def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait):
+def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_path, bounded_wait, monkeypatch):
     child_pid_path = tmp_path / "retained-child.pid"
     child_code = (
         "import os, pathlib, signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -846,14 +887,19 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
     assert observed.si_pid == handle.process_group_id
     assert observed.si_status == 0
     if bounded_wait:
-        started = time.monotonic()
-        try:
-            status = handle.wait_for_settlement(timeout=0.12)
-        except TimeoutError:
-            # The caller can finish observing cleanup after its wait expires.
-            # The launcher must retain the leader until that proof is complete.
-            status = handle.poll()
-        assert time.monotonic() - started < 0.5
+        import nvflare.app_common.task_launcher.process_launcher as process_launcher
+
+        clock = ManualClock()
+        started = clock.monotonic()
+        with monkeypatch.context() as clock_patch:
+            clock.sleep = clock.advance
+            clock_patch.setattr(process_launcher, "time", clock)
+            try:
+                status = handle.wait_for_settlement(timeout=0.12)
+            except TimeoutError:
+                # Retain the leader until the remaining descendant is cleaned up.
+                status = handle.poll()
+        assert clock.monotonic() - started <= 0.12 + 1e-9
         assert not status.succeeded
         if status.settled:
             _assert_pid_not_running(int(child_pid_path.read_text()))
@@ -1015,7 +1061,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
         with pytest.raises(TaskSettlementError, match="ownership is lost"):
             handle._signal_group(signal.SIGKILL)
         assert emitted == [signal.SIGTERM]
-        while child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+        while _process_running(child):
             assert time.monotonic() < deadline
             time.sleep(0.01)
     finally:
@@ -1028,7 +1074,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
         process.wait()
         if child is not None:
             try:
-                if child.is_running() and child.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                if _process_running(child):
                     child.kill()
             except psutil.NoSuchProcess:
                 pass
@@ -1273,12 +1319,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             fork_now.write_text("fork")
             _wait_for_file(child_pid_path)
             deadline = time.monotonic() + 5
-            while True:
-                try:
-                    if not forker.is_running() or forker.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                        break
-                except psutil.NoSuchProcess:
-                    break
+            while _process_running(forker):
                 assert time.monotonic() < deadline
                 time.sleep(0.01)
             return snapshot

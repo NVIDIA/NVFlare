@@ -272,10 +272,10 @@ class NVFTestDriver:
         return run_data
 
     def ensure_clients_started(self, num_clients: int, timeout: int):
-        start_time = time.time()
+        start_time = time.monotonic()
         clients_up = False
         while not clients_up:
-            if time.time() - start_time > timeout:
+            if time.monotonic() - start_time > timeout:
                 raise NVFTestError(f"Clients could not be started in {timeout} seconds.")
 
             time.sleep(0.5)
@@ -405,7 +405,7 @@ class NVFTestDriver:
 
     def run_event_sequence(self, event_sequence):
         run_state = {"job_status": None, "job_terminal": None, "run_finished": None, "workflows": None}
-        start_time = time.time()
+        start_time = time.monotonic()
 
         event_idx = 0
         # whether event has been successfully triggered
@@ -483,7 +483,7 @@ class NVFTestDriver:
                             raise NVFTestError(f"Job submission failed with: {self.admin_api_response}")
                         event_idx += 1
 
-            elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
             if self.event_sequence_timeout and elapsed > self.event_sequence_timeout:
                 raise NVFTestError(
                     self._build_event_sequence_error(
@@ -553,4 +553,3 @@ class NVFTestDriver:
                         self.super_admin_api.close()
                     except Exception:
                         pass
-        time.sleep(1)

@@ -272,12 +272,16 @@ def _replace_lazy_download_refs(value, replacements: dict, memo: dict, excluded_
     return value
 
 
-def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None, excluded_dict_keys=None):
+def materialize_lazy_download_refs(
+    value, cell: Cell, abort_signal=None, excluded_dict_keys=None, *, download_props=None, owners=None
+):
     """Resolve pass-through references for a consumer in the current process.
 
     Each original source batch is downloaded once, and only its matching
     :class:`LazyDownloadRef` leaves are replaced. Concrete values already in the
     graph are not reserialized or copied through a new local download transaction.
+    Disk-offload callers supply download properties and an owners list, and must
+    clean that list on both success and failure.
     """
     excluded_dict_keys = frozenset(excluded_dict_keys or ())
     refs = []
@@ -290,6 +294,7 @@ def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None, exclude
     download_props = {
         fobs.FOBSContextKey.PASS_THROUGH: False,
         fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
+        **(download_props or {}),
     }
     if abort_signal is not None:
         download_props[fobs.FOBSContextKey.ABORT_SIGNAL] = abort_signal
@@ -309,7 +314,10 @@ def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None, exclude
             download_ctx,
             {_RefKey.FQCN: fqcn, _RefKey.REF_ID: ref_id},
         )
-        get_item = getattr(items, "get", None)
+        if owners is not None and callable(getattr(items, "cleanup", None)):
+            owners.append(items)
+        make_ref = getattr(items, "make_lazy_ref", None)
+        get_item = make_ref if callable(make_ref) else getattr(items, "get", None)
         if not callable(get_item):
             raise RuntimeError(f"downloaded data for dot={dot!r} has invalid type {type(items)}")
 
