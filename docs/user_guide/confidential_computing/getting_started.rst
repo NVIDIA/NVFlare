@@ -55,7 +55,8 @@ its ability to start a VM or container.
 
 The 2.9 configuration supports AMD SEV-SNP and Intel TDX targets for standalone
 CVM and CoCo deployments, with CPU-only or NVIDIA confidential-GPU profiles.
-**CoCo TDX remains experimental pending end-to-end hardware acceptance.**
+For CoCo, **full security qualification is incomplete**; the recorded mixed
+run does not qualify **TDX+GPU or a protected-server topology**.
 The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
 
 * For standalone CVMs, review the :github_nvflare_link:`revision-specific
@@ -64,9 +65,12 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   <nvflare/lighter/cc/image_builder/CONFORMANCE.md>`. Prepare the trusted build
   worker, approved generic CVM, and Trustee service described in
   :ref:`cvm_builder`.
-* For CoCo, check the :github_nvflare_link:`runtime variants and hardware
-  validation status <examples/devops/coco/RUNTIME-VARIANTS.md>` and the machine
-  prerequisites and role-separated handoffs in the
+* For CoCo, the :github_nvflare_link:`hardware validation record
+  <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`
+  reports a mixed TDX CPU-only and SNP+NVIDIA GPU functional run on
+  **2026-10-04**, with an ordinary trusted server. The workload performed CPU
+  arithmetic, not GPU training. Review the machine prerequisites and
+  role-separated handoffs in the
   :github_nvflare_link:`deployment walkthrough
   <examples/devops/coco/FL-DEPLOYMENT.md>`.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`

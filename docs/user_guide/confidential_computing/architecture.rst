@@ -237,9 +237,11 @@ binding requirement in a mixed federation that includes Azure.
 Peer checks are point-in-time and periodic, not continuous hardware monitoring
 or a fresh appraisal before every operation. A valid peer proof is not a dataset
 access-control policy or, by itself, proof of an exact running application image.
-An invalid registration is rejected. A required-peer failure during cross-site
-validation shuts down the server or exits the detecting client; it does not
-selectively quarantine only the offending participant. See
+A server rejects a client registration whose CC evidence fails validation.
+If a client rejects the server's CC evidence after registration, the client
+process exits. A required-peer failure during cross-site validation shuts down
+the server or exits the detecting client; it does not selectively quarantine
+only the offending participant. See
 :ref:`confidential_computing_attestation` for the runtime behavior.
 
 Network architecture and access controls
@@ -472,6 +474,14 @@ acceptance records.
 * `NVIDIA Confidential Computing
   <https://docs.nvidia.com/confidential-computing/index.html>`_: NVIDIA
   platform trust boundaries, deployment modalities, and attestation resources.
+* `NVIDIA Confidential Containers Reference Architecture
+  <https://docs.nvidia.com/confidential-computing/containers/overview>`_:
+  GPU-enabled CoCo architecture, components, and security considerations.
+* `NVIDIA Confidential VM Reference Architecture
+  <https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/scope.html>`_:
+  GPU-accelerated inference on self-hosted CVMs. Its scope excludes training
+  and fine-tuning; use it as platform background, not qualification of a
+  federated workload.
 * `AMD Secure Encrypted Virtualization (SEV)
   <https://www.amd.com/en/developer/sev.html>`_: AMD SEV-SNP platform and
   attestation documentation.
