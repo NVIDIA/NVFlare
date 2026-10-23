@@ -22,9 +22,9 @@ saw_path=false
 while IFS= read -r changed_path || [ -n "$changed_path" ]; do
     saw_path=true
     case "$changed_path" in
-        # Skill Markdown is executable agent instruction content and must keep
-        # the full validation path, including the Tier 1 security scanners.
-        skills/*)
+        # Skill instructions and test inputs (including Markdown fixtures) are
+        # not documentation-only: their consumers need full validation.
+        skills/* | tests/*)
             echo true
             exit 0
             ;;
