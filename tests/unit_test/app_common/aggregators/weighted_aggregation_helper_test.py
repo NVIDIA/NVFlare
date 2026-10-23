@@ -244,6 +244,43 @@ class TestWeightedAggregationHelper:
         expected = torch.tensor([7.0, 14.0, 21.0])
         assert torch.allclose(result["count"], expected)
 
+    @pytest.mark.parametrize("dtype", [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64, torch.bool])
+    @pytest.mark.parametrize("weights", [(2, 3), (2, 3.0)])
+    @pytest.mark.parametrize("weigh_by_local_iter", [True, False])
+    def test_pytorch_integral_accumulator(self, dtype, weights, weigh_by_local_iter):
+        helper = WeightedAggregationHelper(weigh_by_local_iter=weigh_by_local_iter)
+        values = ([True, False], [False, True]) if dtype == torch.bool else ([100, 120], [80, 60])
+        inputs = [torch.tensor(value, dtype=dtype) for value in values]
+        originals = [value.clone() for value in inputs]
+        expected = torch.zeros(2)
+        for i, (value, weight) in enumerate(zip(inputs, weights)):
+            helper.add({"count": value}, weight=weight, contributor_name=f"site-{i}", contribution_round=0)
+            expected += originals[i].float() * (weight if weigh_by_local_iter else 1)
+        expected /= sum(weights)
+
+        result = helper.get_result()
+
+        torch.testing.assert_close(result["count"], expected)
+        for value, original in zip(inputs, originals):
+            assert torch.equal(value, original)
+        assert helper.get_len() == 0
+
+    def test_pytorch_batchnorm_state_with_integer_weights(self):
+        first = torch.nn.BatchNorm1d(2).state_dict()
+        second = torch.nn.BatchNorm1d(2).state_dict()
+        first["num_batches_tracked"].fill_(2)
+        second["num_batches_tracked"].fill_(4)
+        helper = WeightedAggregationHelper()
+        helper.add(first, weight=2, contributor_name="site-1", contribution_round=0)
+        helper.add(second, weight=3, contributor_name="site-2", contribution_round=0)
+
+        result = helper.get_result()
+
+        for key in first:
+            torch.testing.assert_close(result[key], (first[key] * 2.0 + second[key] * 3.0) / 5)
+        assert first["num_batches_tracked"].item() == 2
+        assert second["num_batches_tracked"].item() == 4
+
     def test_pytorch_mixed_float_int_tensors(self):
         """Test mixed float and integer tensors."""
         helper = WeightedAggregationHelper()
