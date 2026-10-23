@@ -1,0 +1,31 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: @@NODE_IP@@
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: @@NODE_IP@@
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: @@K8S_SEMVER@@
+controlPlaneEndpoint: @@NODE_IP@@:6443
+networking:
+  dnsDomain: cluster.local
+  podSubnet: @@POD_CIDR@@
+  serviceSubnet: @@SERVICE_CIDR@@
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+clusterDNS:
+  - @@CLUSTER_DNS@@
+clusterDomain: cluster.local
+featureGates:
+  KubeletPodResourcesGet: true
+  RuntimeClassInImageCriApi: true
+resolvConf: /run/systemd/resolve/resolv.conf
+runtimeRequestTimeout: 20m

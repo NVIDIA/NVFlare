@@ -75,6 +75,9 @@ def test_catalog_covers_every_maintained_example_collection():
         Path("examples/advanced/finance"),
         Path("examples/advanced/finance-end-to-end"),
         Path("examples/advanced/nlp-ner"),
+        # CoCo validates Git-tracked sources and assembles SDK helpers from a
+        # clean full checkout; downloading its example directory is insufficient.
+        Path("examples/devops/coco"),
     }
     assert excluded <= tracked_readme_dirs
     expected_source_paths = set()
@@ -92,15 +95,17 @@ def test_catalog_covers_every_maintained_example_collection():
         Path(*path.parts[:3]) for path in tracked_files if len(path.parts) > 3 and path.parts[:2] == devops.parts
     }
     for collection in sorted(devops_collections):
+        if collection in excluded:
+            continue
         if collection.name in {"aws", "azure", "gcp"}:
             expected_source_paths.update(path for path in tracked_readme_dirs if path.parent == collection)
         elif collection in tracked_readme_dirs:
             expected_source_paths.add(collection)
     expected_source_paths.add(Path("examples/docker"))
 
-    # This exact comparison checks both membership and count. A new maintained
-    # example must be cataloged, and a stale catalog entry cannot linger after
-    # its source is removed.
+    # This exact comparison checks both membership and count. Downloadable
+    # maintained examples must be cataloged, and a stale catalog entry cannot
+    # linger after its source is removed.
     assert source_paths == expected_source_paths
     assert len(catalog) == len(expected_source_paths)
 

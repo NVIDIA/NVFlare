@@ -1,0 +1,6 @@
+FROM ubuntu@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
+
+RUN apt-get update && apt-get install --no-install-recommends -y python3
+COPY collect-tdx-evidence.py /usr/local/bin/collect-tdx-evidence.py
+USER 65532:65532
+ENTRYPOINT ["python3", "/usr/local/bin/collect-tdx-evidence.py"]
