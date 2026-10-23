@@ -1410,6 +1410,46 @@ def test_task_adapter_requires_a_cell_before_starting():
     assert not adapter._started
 
 
+def test_task_adapter_binding_failure_cannot_leave_execution_enabled(monkeypatch):
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    adapter = TaskWorkerExecutor({}, (), policy)
+
+    def reject_binding(*_):
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(policy.launcher, "handle_event", reject_binding)
+    panic = Mock()
+    monkeypatch.setattr(adapter, "system_panic", panic)
+    with pytest.raises(RuntimeError, match="bind failed"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started and not cell.decode_pass_through_topics
+    assert panic.call_count == 1
+    with pytest.raises(RuntimeError, match="bind failed"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+def test_parent_owned_cleanup_allows_bounded_cj_end_run(monkeypatch):
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    adapter = TaskWorkerExecutor({}, (), policy)
+    monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", True, raising=False)
+    parent_event = Mock()
+    monkeypatch.setattr(policy.launcher, "handle_event", parent_event)
+    adapter._done.clear()
+    adapter.supervisor = SimpleNamespace(
+        owns_execution=True, settlement_unconfirmed=False, end_run=Mock(), take_issues=lambda: []
+    )
+    adapter.handle_event(EventType.END_RUN, context)
+    parent_event.assert_called_once_with(EventType.END_RUN, context)
+    adapter.supervisor.end_run.assert_called_once()
+    assert adapter._ending and not adapter._done.is_set()
+
+
 def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_path, monkeypatch):
     import torch
     from safetensors.torch import save_file

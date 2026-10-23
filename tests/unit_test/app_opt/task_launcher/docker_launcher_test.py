@@ -36,7 +36,13 @@ from nvflare.apis.task_launcher_spec import (
     UnsupportedTaskResourceError,
 )
 from nvflare.app_opt.job_launcher import docker_launcher as backend
-from nvflare.app_opt.task_launcher.docker_launcher import CHANNEL, SESSION_ENV, DockerTaskLauncher
+from nvflare.app_opt.task_launcher.docker_launcher import (
+    CHANNEL,
+    SESSION_ENV,
+    DockerTaskLauncher,
+    decode_control,
+    encode_control,
+)
 from nvflare.app_opt.task_launcher.docker_service import OWNER_LABEL, DockerTaskService, validate_worker_config
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload
@@ -222,8 +228,9 @@ def test_cpu_gpu_lifecycle_crosses_cell_wire_without_enum_registration(profile, 
         reply = p.send_request(**kwargs)
         encode_payload(reply)
         decode_payload(reply)
-        assert type(reply.payload["status"]["phase"]) is str
-        phases.append(reply.payload["status"]["phase"])
+        values = decode_control(reply.payload)
+        assert type(values["status"]["phase"]) is str
+        phases.append(values["status"]["phase"])
         return reply
 
     p.cj.send_request.side_effect = through_cell_wire
@@ -378,6 +385,7 @@ def test_authority_rejects_forged_or_expanded_requests(profile, mutation):
         message.payload["identity"][3] = "../../other-attempt"
     else:
         message.payload["command"] = ["malicious"]
+    message.payload = encode_control(message.payload)
     assert p.service.dispatch(message).get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK
     assert not p.daemon.creates
 

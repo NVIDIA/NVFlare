@@ -14,6 +14,7 @@
 
 """CJ proxy for a site-owned Docker task service. Never connects to Docker."""
 
+import json
 import math
 import os
 import threading
@@ -32,9 +33,28 @@ from nvflare.apis.task_launcher_spec import (
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
+from nvflare.private.fed.task_worker.protocol import _load_json
 
 CHANNEL = "nvflare_docker_task"
 SESSION_ENV = "NVFLARE_DOCKER_TASK_SESSION"
+MAX_CONTROL_BYTES = 16384
+
+
+def encode_control(value):
+    payload = json.dumps(value, allow_nan=False, separators=(",", ":"))
+    if len(payload) > MAX_CONTROL_BYTES:
+        raise ValueError("Docker task control message is too large")
+    return payload
+
+
+def decode_control(payload):
+    if type(payload) is not str or len(payload) > MAX_CONTROL_BYTES or len(payload.encode("utf-8")) > MAX_CONTROL_BYTES:
+        raise ValueError("Docker task control requires bounded JSON")
+
+    value = _load_json(payload)
+    if not isinstance(value, dict):
+        raise ValueError("Docker task control requires a JSON object")
+    return value
 
 
 def _timeout(value, *, allow_none=False):
@@ -106,6 +126,7 @@ class DockerTaskLauncher(TaskLauncherSpec):
     """Only staged identity crosses the CP boundary; commands remain site-owned."""
 
     launch_mode = "docker"
+    cleanup_owned_by_parent = True
 
     def __init__(self, rpc_timeout=30.0):
         super().__init__()
@@ -120,13 +141,9 @@ class DockerTaskLauncher(TaskLauncherSpec):
 
     def validate_site_config(self, site_config):
         """Require the matching CP authority in the canonical site file."""
-        launchers = []
-        for item in site_config.get("components", []):
-            if not isinstance(item, dict):
-                continue
-            path = item.get("path", item.get("class_path", item.get("name", "")))
-            if isinstance(path, str) and path.endswith("JobLauncher"):
-                launchers.append((path, item))
+        from nvflare.private.fed.client.task_execution_policy import site_job_launchers
+
+        launchers = site_job_launchers(site_config)
         expected = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
         if len(launchers) != 1 or launchers[0][0] != expected:
             raise ValueError("Docker task execution requires exactly one matching Docker client JobLauncher")
@@ -153,17 +170,19 @@ class DockerTaskLauncher(TaskLauncherSpec):
             channel=CHANNEL,
             topic=operation,
             request=Message(
-                payload={
-                    "session": self._session,
-                    "identity": list(request.identity),
-                    "gpu_count": request.resources.gpu_count,
-                }
+                payload=encode_control(
+                    {
+                        "session": self._session,
+                        "identity": list(request.identity),
+                        "gpu_count": request.resources.gpu_count,
+                    }
+                )
             ),
             timeout=self.rpc_timeout,
         )
         if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
             raise RuntimeError("Docker task authority did not acknowledge the request")
-        return reply.payload
+        return decode_control(reply.payload)
 
     def launch_task(self, request):
         if request.resources.cpu_cores is not None or request.resources.memory_mb is not None:

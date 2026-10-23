@@ -99,8 +99,13 @@ def _bind_test_sdk(monkeypatch):
     # The backend may already have been imported by task-launcher tests with a
     # real SDK. Keep this module's daemon double scoped to its own tests.
     from nvflare.app_opt.job_launcher import docker_launcher
+    from nvflare.app_opt.task_launcher.docker_service import TaskDockerJobHandle
 
     monkeypatch.setattr(docker_launcher, "docker", _docker_mock, raising=False)
+    # These tests inspect the CP launch configuration. The task service tests
+    # exercise the real cleanup monitor against a stateful daemon double.
+    monkeypatch.setattr(TaskDockerJobHandle, "_start_cleanup_monitor", lambda self: None)
+    monkeypatch.setattr(TaskDockerJobHandle, "enter_states", lambda *args: True)
 
 
 # ---------------------------------------------------------------------------
@@ -1774,19 +1779,26 @@ def test_task_cj_is_cpu_only_and_worker_mounts_preserve_job_storage(monkeypatch,
     monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
     session = MagicMock()
     session.token = "job-scoped-capability"
+    session.owner = "cp-issued-owner"
+    session.closed = False
     monkeypatch.setattr(launcher, "_task_session", MagicMock(return_value=session))
     container = _make_container("running")
     container.id = "cj-id"
-    launcher._docker_client.containers.run.return_value = container
+    launcher._docker_client.containers.create.return_value = container
     launcher._docker_client.containers.get.return_value = container
     context, _ = _make_fl_ctx()
     handle = launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image", "num_of_gpus": num_gpus}), context)
     assert isinstance(handle, TaskDockerJobHandle)
-    kwargs = launcher._docker_client.containers.run.call_args.kwargs
+    kwargs = launcher._docker_client.containers.create.call_args.kwargs
     assert "device_requests" not in kwargs
     assert kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == "none"
     assert kwargs["environment"]["CUDA_VISIBLE_DEVICES"] == ""
     assert kwargs["environment"][SESSION_ENV] == session.token
+    assert kwargs["auto_remove"] is False
+    assert kwargs["cap_drop"] == ["ALL"]
+    assert kwargs["security_opt"] == ["no-new-privileges:true"]
+    assert kwargs["labels"]["nvflare.task.owner"] == session.owner
+    launcher._docker_client.containers.run.assert_not_called()
     worker_mounts = launcher._task_session.call_args.args[2]
     by_target = _mounts_by_target(worker_mounts)
     job_mount = by_target["/var/tmp/nvflare/workspace/job-1"]
@@ -1794,7 +1806,7 @@ def test_task_cj_is_cpu_only_and_worker_mounts_preserve_job_storage(monkeypatch,
     assert by_target["/var/tmp/nvflare/workspace/local"]["ReadOnly"]
     assert all("docker.sock" not in str(mount) for mount in worker_mounts)
     handle.terminate()
-    session.close.assert_called_once()
+    session.request_close.assert_called_once()
 
 
 @pytest.mark.parametrize("device,lifetime", [("cpu", "job"), ("cuda", "job"), ("cpu", "task"), ("cuda", "task")])
@@ -1826,16 +1838,20 @@ def test_serial_qualification_matrix_uses_supported_site_gpu_policy(tmp_path, mo
         previous = apply_site_policy({"components": [{"path": CP_PATH, "args": {}}]}, policies[previous_phase][site])
         config = apply_site_policy(previous, policies[phase][site])
         launcher = _make_launcher(**config["components"][0]["args"])
-        session = MagicMock(token="matrix-capability")
+        session = MagicMock(token="matrix-capability", owner="matrix-owner", closed=False)
         monkeypatch.setattr(launcher, "_task_session", MagicMock(return_value=session))
         workspace = _make_workspace_obj()
         workspace.get_client_app_config_file_path.return_value = str(config_path)
         context, _ = _make_fl_ctx(identity_name=site, workspace_obj=workspace)
         container = _make_container("running")
         launcher._docker_client.containers.run.return_value = container
+        launcher._docker_client.containers.create.return_value = container
         launcher._docker_client.containers.get.return_value = container
         launcher.launch_job(meta, context)
-        kwargs = launcher._docker_client.containers.run.call_args.kwargs
+        call = (
+            launcher._docker_client.containers.create if lifetime == "task" else launcher._docker_client.containers.run
+        )
+        kwargs = call.call_args.kwargs
         if lifetime == "job" and device == "cuda":
             assert "num_of_gpus" not in meta["launcher_spec"]["default"]["docker"]
             assert kwargs["device_requests"] == [{"Driver": "nvidia", "DeviceIDs": [uuid], "Capabilities": [["gpu"]]}]
@@ -1935,13 +1951,41 @@ def test_task_cj_gpu_request_requires_an_enabled_site_worker_profile(monkeypatch
     launcher._docker_client.containers.run.assert_not_called()
 
 
-@pytest.mark.parametrize("field", ["devices", "device_cgroup_rules", "privileged", "volumes_from", "use_api_socket"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "devices",
+        "device_cgroup_rules",
+        "privileged",
+        "volumes_from",
+        "use_api_socket",
+        "pid_mode",
+        "ipc_mode",
+        "network_mode",
+        "userns_mode",
+        "uts_mode",
+        "cgroupns",
+        "cap_add",
+        "group_add",
+    ],
+)
 def test_task_cj_cannot_inherit_device_or_daemon_authority(monkeypatch, field):
     launcher = _make_launcher(default_job_container_kwargs={field: True})
     monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
     context, _ = _make_fl_ctx()
     with pytest.raises(ValueError, match="cannot inherit"):
         launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image"}), context)
+    launcher._docker_client.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["DOCKER_HOST", "DOCKER_CERT_PATH", "DOCKER_CONFIG", "DOCKER_CONTEXT"])
+def test_task_cj_rejects_site_daemon_credentials_before_native_create(monkeypatch, name):
+    launcher = _make_launcher(default_job_env={name: "cp-daemon-setting"})
+    monkeypatch.setattr(launcher, "_is_task_job", lambda *_: True)
+    context, _ = _make_fl_ctx()
+    with pytest.raises(ValueError, match="Docker control"):
+        launcher.launch_job(_make_job_meta(docker_spec={"image": "cj-image"}), context)
+    launcher._docker_client.containers.create.assert_not_called()
     launcher._docker_client.containers.run.assert_not_called()
 
 

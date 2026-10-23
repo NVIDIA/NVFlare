@@ -740,7 +740,7 @@ class DockerJobLauncher(JobLauncherSpec):
             # NVIDIA_VISIBLE_DEVICES=all would otherwise expose host GPUs.
             environment.update(CPU_ENVIRONMENT)
         if task_job:
-            from nvflare.app_opt.task_launcher.docker_service import CPU_ENVIRONMENT
+            from nvflare.app_opt.task_launcher.docker_service import CPU_ENVIRONMENT, restrict_task_cj
             from nvflare.job_config.task_execution import validate_task_resources
 
             validate_task_resources(job_meta, site_name, allow_gpu=True)
@@ -748,11 +748,7 @@ class DockerJobLauncher(JobLauncherSpec):
             # defaults must never reserve GPUs for the resident task-mode CJ.
             merged_container_kwargs.pop("device_requests", None)
             environment.update(CPU_ENVIRONMENT)
-            if any(
-                merged_container_kwargs.get(name)
-                for name in ("devices", "device_cgroup_rules", "privileged", "volumes_from", "use_api_socket")
-            ):
-                raise ValueError("Docker task CJ cannot inherit devices, privileges or additional container volumes")
+            merged_container_kwargs = restrict_task_cj(merged_container_kwargs, environment)
         if "num_of_cpus" in portable_spec:
             merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
         if "memory" in portable_spec:
@@ -846,6 +842,13 @@ class DockerJobLauncher(JobLauncherSpec):
 
                 task_session = self._task_session(job_id, site_name, list(mounts), fl_ctx, job_meta)
                 environment[SESSION_ENV] = task_session.token
+                from nvflare.app_opt.task_launcher.docker_service import OWNER_LABEL
+
+                merged_container_kwargs["labels"] = {
+                    **merged_container_kwargs.get("labels", {}),
+                    OWNER_LABEL: task_session.owner,
+                    "nvflare.task.resource": "client-job",
+                }
             if file_parent_dir:
                 # The job cell must update leases and append its log, so read-write
                 mounts.append(
@@ -861,13 +864,12 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
-            container = docker_client.containers.run(
-                job_image,
+            container_kwargs = dict(
                 command=command,
                 name=container_name,
                 network=self.network,
                 detach=True,
-                auto_remove=True,
+                auto_remove=task_session is None,
                 environment=environment if environment else None,
                 mounts=mounts,
                 working_dir=container_job_workspace,
@@ -877,6 +879,21 @@ class DockerJobLauncher(JobLauncherSpec):
                 user=f"{os.getuid()}:{os.getgid()}",
                 **merged_container_kwargs,
             )
+            if task_session is not None:
+                from nvflare.app_opt.task_launcher.docker_service import TaskDockerJobHandle
+
+                # Retain a CP owner before Docker can create anything. A lost
+                # create/start reply leaves the same session under reconciliation.
+                job_handle = TaskDockerJobHandle(
+                    container_id=None,
+                    container_name=container_name,
+                    docker_client=docker_client,
+                    timeout=self.timeout,
+                    task_session=task_session,
+                )
+                job_handle.launch(lambda: docker_client.containers.create(job_image, **container_kwargs))
+            else:
+                container = docker_client.containers.run(job_image, **container_kwargs)
         except docker.errors.ImageNotFound:
             if task_session is not None:
                 task_session.close()
@@ -886,21 +903,15 @@ class DockerJobLauncher(JobLauncherSpec):
                 task_session.close()
             raise RuntimeError(f"error creating container for job {job_id}: {e}")
 
-        handle_type = DockerJobHandle
-        if task_session is not None:
-            from nvflare.app_opt.task_launcher.docker_service import TaskDockerJobHandle
-
-            handle_type = TaskDockerJobHandle
-        job_handle = handle_type(
-            container_id=container.id,
-            container_name=container_name,
-            docker_client=docker_client,
-            timeout=self.timeout,
-            container=container,
-            watch_exit=True,
-        )
-        if task_session is not None:
-            job_handle.task_session = task_session
+        if task_session is None:
+            job_handle = DockerJobHandle(
+                container_id=container.id,
+                container_name=container_name,
+                docker_client=docker_client,
+                timeout=self.timeout,
+                container=container,
+                watch_exit=True,
+            )
 
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):
@@ -915,6 +926,8 @@ class DockerJobLauncher(JobLauncherSpec):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             add_launcher(self, fl_ctx)
+        elif event_type == EventType.SYSTEM_END and self._task_service is not None:
+            self._task_service.close()
 
     @abstractmethod
     def get_module_args(self, job_args: dict) -> dict:

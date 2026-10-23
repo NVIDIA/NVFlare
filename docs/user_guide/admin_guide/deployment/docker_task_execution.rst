@@ -166,6 +166,20 @@ The task CJ receives neither GPU devices nor a Docker socket. Keep parent
 daemon access confined to CP; no additional socket mount belongs in CJ or worker
 configuration.
 
+Task CJs reject Docker control environment variables, host or other-container
+PID/IPC namespaces, extra capabilities, and privileged/device/socket inheritance.
+Keep CP daemon credentials out of approved datasets and study-secret mounts.
+The task profile fixes ``cap_drop=ALL`` and ``no-new-privileges`` for CJ.
+
+CP retains the task job before native creation and monitors cleanup after CJ
+exit. A termination request can return while Docker is unavailable; the job
+remains pending cleanup until CP confirms owned CJ/worker removal and GPU
+reservation release. Keep CP running during recovery and preserve the job
+workspace. An unexpected missing container or lost API reply requires
+reconciliation rather than manual capacity release. The earlier four-row
+compute evidence predates these authority/lifecycle changes; qualify the new
+source and images again.
+
 Run the Application, Then Lifecycle Checks
 ------------------------------------------
 

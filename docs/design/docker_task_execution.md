@@ -3,7 +3,7 @@
 For the setup sequence, image checks, and reuse of an existing host after a
 source fix, see [Docker task worker setup and test procedure](../user_guide/admin_guide/deployment/docker_task_execution.rst).
 
-Base: upstream `1b5e7f9832e6a777c54e22c72e6631bbd344babe`, including
+Original v5 deployment qualification base: upstream `1b5e7f9832e6a777c54e22c72e6631bbd344babe`, including
 P4 merge `94c5b0aebd3de9a6733926d5fc285144bfd335da`.
 
 * **Authority:** Docker CP retains the daemon connection already used by
@@ -47,6 +47,41 @@ P4 merge `94c5b0aebd3de9a6733926d5fc285144bfd335da`.
   supervisor receipt/reader/retention rules remain authoritative; failed or
   unresolved attempts retain diagnostics. No remote exactly-once guarantee,
   automatic physical retry or CP restart adoption is introduced.
+
+## CP authority and cleanup
+
+The task control channel accepts bounded JSON objects, a per-job capability,
+and the exact CJ Cell origin. Its four operations address an attempt within
+that job; there is no API for caller-selected container IDs, images, commands,
+mounts, environment or Docker endpoints. CP reads the staged JSON bootstrap
+with `read_bootstrap(..., resolve_parent=False)`. Directory-descriptor traversal
+rejects symlinks in every job-controlled parent and the bootstrap file itself;
+CP does not canonicalize those paths into another job's directory.
+
+Task CJs reject Docker control environment settings, host/other-container
+namespace sharing, extra capabilities and device/socket inheritance. They use
+the fixed `cap_drop=ALL` and `no-new-privileges` policy, including overrides of
+Docker endpoint settings baked into images. Site administrators must keep
+approved dataset and study-secret bindings free of CP runtime credentials.
+
+CP registers a retained owner before CJ creation and an execution record before
+each worker/reservation create. Native API calls run outside the session's
+admission lock, so cancellation can close admission while a create/start reply
+is delayed. An in-flight call remains unsettled; its eventual return observes
+the cancellation request and cleans up the owned native objects.
+
+A CP monitor owns each task job's CJ and worker cleanup independently of CJ
+RPCs. CJ containers use `auto_remove=False` so CP can observe their identity and
+exit, remove only an owned container, and confirm absence. On CJ exit or abort,
+the monitor closes admission and retries task/GPU cleanup after API recovery.
+Job `poll()` stays UNKNOWN and `wait()` retains job files and credentials until
+both CJ and task cleanup are confirmed. Returning from `terminate()` only
+acknowledges a cleanup request. CJ exit with unfinished tasks cannot become a
+successful job outcome merely because cleanup later succeeds.
+
+This ownership allows bounded CJ END_RUN handling without an infinite CJ
+retention loop. CP process death/restart adoption remains outside this profile;
+uncertain native objects and reservation records require operator reconciliation.
 
 ## Shared integration boundary
 
@@ -229,6 +264,7 @@ Run the focused tests from a checkout with development dependencies installed:
 python -m pytest -q \
   tests/unit_test/app_opt/job_launcher/docker_launcher_test.py \
   tests/unit_test/app_opt/task_launcher/docker_launcher_test.py \
+  tests/unit_test/app_opt/task_launcher/docker_authority_test.py \
   tests/unit_test/private/fed/app/client/task_worker_container_test.py \
   tests/unit_test/private/fed/client/task_execution_test.py \
   tests/unit_test/private/fed/task_worker
