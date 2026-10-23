@@ -4,10 +4,11 @@ Kubernetes task launcher
 Backend contract
 ----------------
 
-* Launch authority: the CPU Client Job (CJ) uses a site-owned service account
-  confined to one namespace. Task pods have a separate service account with no
-  API permissions and automatic token mounting disabled. Applications select
-  only ``execution_lifetime="task"``; they cannot choose these accounts or storage.
+* Launch authority: the Client Parent (CP) creates, observes and cancels task
+  Pods through its existing Kubernetes client. The CPU Client Job (CJ) uses a
+  job-scoped Cell command interface. CJ and task Pods use the configured
+  unprivileged worker service account with automatic token mounting disabled.
+  Applications cannot choose Pod manifests, accounts, namespace or storage.
 * Identity: every physical attempt has a unique namespace/name/UID, labels for
   job/site/task/attempt, and full identities in annotations. Deletes use UID
   preconditions; replacement pods are never adopted or deleted.
@@ -43,19 +44,23 @@ Trusted site selection
 The current profile uses one backend for the full CP/CJ/task-worker chain:
 Process launches all three as processes; Kubernetes runs all three in Pods.
 Mixed chains are unsupported. CPU versus GPU is a resource choice within that
-backend, so the CPU CJ can launch either CPU or GPU task Pods.
+backend, so the CPU CJ can request either CPU or GPU task Pods from CP.
 
 The shared task policy selects the exact site-configured task launcher and
 validates its canonical ``local/resources.json`` configuration. Kubernetes
 requires one matching ``ClientK8sJobLauncher`` / ``K8sTaskLauncher`` pair,
-matching namespace, PVC, workspace path and numeric filesystem identity, and
-distinct CJ/worker service accounts. Mixed modes fail before task launch.
+matching CJ/worker namespace, PVC, workspace path and numeric filesystem identity. Mixed modes fail before task launch.
 Job configuration cannot choose the backend or launch authority. Resource
 export checks shape; CPU/GPU capability is checked at the trusted site boundary.
 
-The CJ forwards its existing ``START_RUN`` event to the selected launcher. The
-Kubernetes hook binds its owning job/site and resolves that site's job metadata
-before launch; missing or changed bindings fail closed. Native workers receive
+Before starting CJ, CP loads canonical site policy and binds the task backend to
+its admitted job/site metadata. CJ's ``START_RUN`` binds a tokenless proxy to the
+existing CP Cell endpoint using the per-job workspace-transfer capability. CP
+checks both that capability and the authenticated CJ origin on every request.
+Only bounded JSON commands and staged paths are accepted; job-controlled data
+cannot supply a Pod manifest or override the site's runtime authority. CP fences
+attempt identities, admits one unsettled task per job, and owns a launch even
+when its reply is lost. CJ cannot launch or inspect another job's attempts. Native workers receive
 only the site-configured worker environment. Process-style environment
 passthrough is rejected for native backends. These shared selection and resource
 rules delegate to an installed native backend's site validator. A backend whose
@@ -80,37 +85,34 @@ PID 1 without Process parent/group checks. ``TaskLaunchRequest``,
 ``TaskSupervisor`` and artifact formats are unchanged.
 
 Job and task launchers share stateless Pod construction and startup diagnostics.
-The task path creates only a ``K8sTaskHandle``. Credential/workspace-transfer
-cleanup stays with the job handle, and task Pod settlement stays with the task
-handle.
+The CP task backend creates ``K8sTaskHandle``; CJ receives a remote task handle.
+Credential/workspace-transfer cleanup stays with the job handle. CP retains
+physical task ownership independently of those job credentials.
 
 The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
-optional task storage, service-account and numeric identity settings enable CJ
+optional task storage and numeric identity settings enable CJ
 preparation for task mode. It replaces the generated ``workspace-job`` emptyDir
 only when the application selects ``execution_lifetime="task"``. Job-lifetime
 manifests retain resident behavior.
 The task profile removes CJ GPU requests/limits and visibility, selects the
-site-owned CJ account, and uses the durable workspace. It preserves the existing
+unprivileged worker account with API token mounting disabled, and uses the durable workspace. It preserves the existing
 workspace download and credential-Secret lifecycle. A pod-template PVC override
 alone is insufficient because generated workspace volumes take precedence.
 
-For task lifetime, the parent client's abort fallback requests cooperative CJ
-shutdown over its existing command channel. It keeps CJ, its credential Secret
-and workspace transfer alive until the CJ Pod actually exits. Polling retries
-an abort request lost during startup or a transport outage. The normal
-10-second parent abort wait does not force-delete the owner of a task Pod whose
-termination grace or shutdown confirmation takes longer. CJ's end-run handler
-also waits for pending launches and confirmed native settlement, retrying bounded
-cleanup calls after API recovery even if the readiness timeout has elapsed. A
-settlement failure still fences the job and retains its evidence; later cleanup
-does not reopen task admission or publish a result. An unresponsive CJ
-remains owned for operator reconciliation; an elapsed timeout or an observation
-error is not permission to destroy its cleanup owner. Ordinary job-lifetime
-termination retains the existing behavior.
+CP seals task admission before terminating CJ. A Pending CJ that never starts
+can be deleted using the normal job launcher path. CP continues observing and
+cancelling workers after CJ exits, including a create still in flight when CJ
+was terminated. The CJ end-run handler makes bounded cleanup attempts; it does
+not have to remain alive indefinitely to preserve Kubernetes cleanup authority.
+An independent CP monitor also detects a terminal, deleting, replaced or missing
+CJ and closes its task admission. API observation errors preserve ownership.
 
-Independent cleanup after abrupt CJ death remains outside this profile; the
-site operator owns reconciliation of stranded pods/finalizers after verifying
-node/runtime shutdown. Never remove a finalizer solely to clear a stuck pod.
+Missing/replaced task Pods and lost settlement evidence remain explicitly fenced
+in CP, even after CJ exits. Retained ownership does not authorize a replacement
+attempt or result publication. CP must remain available to perform this cleanup;
+a CP crash/restart or permanently lost node evidence requires operator
+reconciliation of stranded Pods/finalizers after verifying runtime shutdown.
+Never remove a finalizer solely to clear a stuck Pod.
 
 Site prerequisites
 ------------------
@@ -138,17 +140,19 @@ Authorized workers still share the job's filesystem identity and can read files
 already present there; this profile does not create a separate filesystem trust
 boundary for job credentials. Do not distribute a cluster-admin kubeconfig.
 
-The existing CP JobLauncher needs its documented pod/event/Secret permissions
-for CJ bootstrap and credential lifecycle. The CJ launch account needs only
-``create``, ``get``, ``delete`` and ``patch`` on ``pods``, plus ``get`` on
-``pods/log`` in the selected namespace. It needs no node, Secret, Role, PVC or
-cluster-role writes. The site operator must preconfigure an appropriate
-namespace boundary and admission policy: pod creation can otherwise select any
-service account or mount any Secret in that namespace. Kubernetes RBAC alone
-cannot restrict create to particular pod labels or service accounts. Do not
-give the task account any API permissions. No Roles, bindings, accounts,
-namespaces or claims are created. The task adapter creates no Secrets; the CP
-profile retains the resident launcher's existing startup/bootstrap Secrets.
+The CP JobLauncher needs its documented Pod/event/Secret permissions plus
+``patch`` on ``pods`` and ``get`` on ``pods/log`` in the configured CJ/worker
+namespace. The client Helm Role includes these permissions. CP may run in a
+different namespace if the operator grants its account access to the target
+namespace and supplies connectivity and storage. This does not create a new
+namespace per job; all CJs and workers use the launcher's configured namespace.
+
+CJ and worker service accounts need no Kubernetes API permissions. No CJ launch
+Role or RoleBinding is needed. The task path creates no namespaces, claims,
+accounts or Secrets; CP retains the resident launcher's existing startup and
+per-job bootstrap Secrets. Pod construction is enforced by trusted CP code,
+independently of admission policy. Do not mount a kubeconfig or an explicit
+service-account token into CJ or worker Pods.
 
 Configure worker ``image``, ``python_path``, ``environment``, ``run_as_user`` and
 ``run_as_group`` in trusted site policy. Worker resources default to the site's
@@ -192,7 +196,7 @@ conflict rules. Correct task delegation of whole-job GPU reservations is a
 separate prerequisite for portable GPU support.
 
 Keep the existing ``ClientK8sJobLauncher`` component and add the task storage,
-service-account and identity arguments shown below. Configure ``K8sTaskLauncher``
+identity arguments shown below. Configure ``K8sTaskLauncher``
 under ``task_execution.launcher`` and preserve the site's other components.
 After ``nvflare deploy prepare``, put this task profile in the canonical
 ``local/resources.json`` override. Keep the generated
@@ -211,7 +215,6 @@ override after preparation, then stage both local files::
          "task_workspace_pvc": "task-storage",
          "task_workspace_pvc_root": "/mnt/task-storage",
          "workspace_mount_path": "/var/tmp/nvflare/workspace",
-         "task_cj_service_account": "cj-launch-authority",
          "run_as_user": 1000,
          "run_as_group": 1000
        }
@@ -276,7 +279,7 @@ one setup record. A running parent Pod alone does not establish readiness for
 launching CJ and task Pods. These checks establish setup readiness; the full
 application and resource-release qualification below remains separate.
 Set the examples' ``NVFLARE_TEST_*`` variables to the actual namespace, parent
-Pod, CJ service account, workspace root, site name and worker image digest for
+Pod, CP service account, workspace root, site name and worker image digest for
 the participant being checked. Use the intended Kubernetes context throughout.
 
 1. **Record the environment and exact source.** Confirm the node is ready and
@@ -402,14 +405,15 @@ the participant being checked. Use the intended Kubernetes context throughout.
    Verify the existing service accounts' required access, including::
 
       kubectl -n "$NVFLARE_TEST_NAMESPACE" auth can-i create pods \
-        --as="system:serviceaccount:$NVFLARE_TEST_NAMESPACE:$NVFLARE_TEST_CJ_ACCOUNT"
+        --as="system:serviceaccount:$NVFLARE_TEST_NAMESPACE:$NVFLARE_TEST_CP_ACCOUNT"
       kubectl -n "$NVFLARE_TEST_NAMESPACE" auth can-i get pods/log \
-        --as="system:serviceaccount:$NVFLARE_TEST_NAMESPACE:$NVFLARE_TEST_CJ_ACCOUNT"
+        --as="system:serviceaccount:$NVFLARE_TEST_NAMESPACE:$NVFLARE_TEST_CP_ACCOUNT"
 
    These diagnostics require appropriate impersonation permission; otherwise
    have the operator verify access using the intended account. Check the full
-   get/delete/patch permissions described above, plus CP's existing bootstrap
-   permissions. An RBAC answer alone does not establish admission-policy or
+   CP get/delete/patch permissions described above, plus its existing bootstrap
+   permissions. Verify that CJ and worker accounts cannot create Pods and that
+   their admitted manifests have no token mounts. An RBAC answer alone does not establish admission-policy or
    volume access.
 
 6. **Run the CPU and GPU application baselines.** Inspect fresh smoke Pods for
@@ -459,8 +463,9 @@ Storage and retention verification
 
 ``check_posix_storage`` checks local hard links, rename publication, file fsync,
 directory fsync and reading an inode after unlinking its other name. The task
-launcher caches a successful probe for its bound CJ; failed probes are retried
-on the next launch. Per-attempt workspace, filesystem and identity checks still
+CP job launcher caches a successful probe of its trusted PVC root before CJ
+starts; failed probes are retried on the next launch. CP does not run a storage
+write probe inside a live job-controlled subtree. Per-attempt workspace, filesystem and identity checks still
 run on every launch. The probe is a preflight, not certification of a storage
 driver. Before deployment qualification, run it in both CJ and task images on
 the chosen volume, and exercise cross-pod
@@ -471,7 +476,7 @@ when any required operation is unsupported.
 
 The backend deletes only its Pod. Immutable results, native checkpoint candidates
 and worker file logs live on the PVC after removal. API logs are a bounded,
-best-effort tail cached in the handle; they do not replace durable worker logs.
+best-effort tail cached in the CP handle; they do not replace durable worker logs.
 The existing result reader decodes the FOBS record and closes that record's
 source file before returning to CJ. PyTorch tensor payloads may remain mapped
 from adjacent files; the existing sender serializes those tensors individually.
@@ -520,7 +525,8 @@ With separately authorized infrastructure, qualify matching Kubernetes CP ->
 CPU CJ -> disposable task pods using that
 simple application. Record exact source/image digests and rendered manifests;
 confirm each pod UID and native allocation. Exercise success, pending/running
-cancellation, image/admission failure, eviction, API outage, missing shutdown
+cancellation, CJ death, lost Cell replies, cross-job capability rejection,
+image/admission failure, eviction, API outage, missing shutdown
 evidence and incomplete/corrupt artifacts. Verify validated output after removal,
 checkpoint continuity, lost-receipt resubmission without compute, active-reader
 retention and ordinary resident JobLauncher behavior. For GPU qualification,

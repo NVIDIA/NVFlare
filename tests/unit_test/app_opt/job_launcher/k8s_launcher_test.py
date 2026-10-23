@@ -3758,7 +3758,6 @@ def _task_profile(pvc_root):
         namespace="site",
         task_workspace_pvc="existing-pvc",
         task_workspace_pvc_root=str(pvc_root),
-        task_cj_service_account="cj-task-authority",
         run_as_user=max(os.getuid(), 1),
         run_as_group=max(os.getgid(), 1),
     )
@@ -3795,6 +3794,38 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
     pvc_root = tmp_path / "mounted-pvc"
     pvc_root.mkdir()
     launcher = _task_profile(pvc_root)
+    (tmp_path / "local" / "resources.json").write_text(
+        json.dumps(
+            {
+                "components": [
+                    {
+                        "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "task_workspace_pvc": "existing-pvc",
+                            "task_workspace_pvc_root": str(pvc_root),
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                ],
+                "task_execution": {
+                    "launcher": {
+                        "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "image": "site/worker",
+                            "workspace_root": "/var/tmp/nvflare/workspace",
+                            "workspace_pvc": "existing-pvc",
+                            "worker_service_account": "task-no-api",
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                },
+            }
+        )
+    )
     launcher._prepare_workspace_subpath = Mock(return_value=task_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
     api = launcher.core_v1 = Mock()
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
@@ -3805,13 +3836,17 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
         JobConstants.JOB_ID: _TASK_JOB_ID,
         "launcher_spec": {_TASK_SITE: {"k8s": {"image": "site/image", "num_of_gpus": 2}}},
     }
-    with patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer:
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
+        patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService") as service,
+    ):
         transfer.get_or_create.return_value.owner_fqcn = "site-parent"
         transfer.get_or_create.return_value.add_job.return_value = "transfer-token"
+        service.get_or_create.return_value.add_job.return_value.lock = __import__("threading").Lock()
         handle = launcher.launch_job(meta, fl_ctx)
     manifest = api.create_namespaced_pod.call_args.kwargs["body"]
     assert handle.get_manifest() == manifest
-    assert handle.task_cj == (lifetime == "task")
+    assert (handle.task_owner is not None) == (lifetime == "task")
     spec = manifest["spec"]
     container = spec["containers"][0]
     workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
@@ -3825,8 +3860,8 @@ def test_cp_submission_preserves_resident_or_selects_cpu_durable_cj(tmp_path, li
         assert workspace_mount["subPath"] == task_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
         assert "nvidia.com/gpu" not in container["resources"]["requests"]
         assert "nvidia.com/gpu" not in container["resources"]["limits"]
-        assert spec["serviceAccountName"] == "cj-task-authority"
-        assert spec["automountServiceAccountToken"] is True
+        assert spec["serviceAccountName"] == "task-no-api"
+        assert spec["automountServiceAccountToken"] is False
         assert spec["securityContext"] == task_security_context(max(os.getuid(), 1), max(os.getgid(), 1))
         assert container["securityContext"]["allowPrivilegeEscalation"] is False
         environment = {item["name"]: item.get("value") for item in container["env"]}
@@ -3863,7 +3898,13 @@ def test_unsupported_cj_profiles_fail_before_submission(tmp_path, fault):
     elif fault == "wrong-mount":
         manifest["spec"]["containers"][0]["volumeMounts"][0]["mountPath"] = "/other"
     with pytest.raises(ValueError):
-        _task_profile(tmp_path).prepare_job_manifest(copy.deepcopy(manifest), _TASK_JOB_ID, _TASK_SITE, workspace)
+        launcher = _task_profile(tmp_path)
+        context = Mock()
+        context.get_prop.return_value = workspace
+        lifetime = launcher.get_execution_lifetime({JobConstants.JOB_ID: _TASK_JOB_ID}, context)
+        launcher.prepare_job_manifest(
+            copy.deepcopy(manifest), _TASK_JOB_ID, _TASK_SITE, workspace, execution_lifetime=lifetime
+        )
 
 
 def test_subpaths_are_site_and_job_scoped_without_raw_path_components():
@@ -3908,13 +3949,12 @@ def test_cp_rejects_unmounted_pvc_or_replaced_parent(tmp_path):
 
 @pytest.mark.parametrize(
     "missing",
-    ["task_workspace_pvc", "task_workspace_pvc_root", "task_cj_service_account", "run_as_user", "run_as_group"],
+    ["task_workspace_pvc", "task_workspace_pvc_root", "run_as_user", "run_as_group"],
 )
 def test_client_task_settings_must_be_complete(missing):
     settings = {
         "task_workspace_pvc": "existing-pvc",
         "task_workspace_pvc_root": "/cp/task-pvc",
-        "task_cj_service_account": "cj-task-authority",
         "run_as_user": 1000,
         "run_as_group": 1000,
     }
@@ -3923,43 +3963,10 @@ def test_client_task_settings_must_be_complete(missing):
         ClientK8sJobLauncher(config_file_path=None, **settings)
 
 
-@pytest.mark.parametrize("failure", ["abort-send", "pod-observation"])
-def test_task_cj_abort_transport_failure_retains_owner_and_retries(failure):
-    transfer = Mock()
-    transfer.cell.get_fqcn.return_value = "site-1"
-    api = Mock()
-    pod = SimpleNamespace(status=SimpleNamespace(phase="Running"))
-    api.read_namespaced_pod.return_value = pod
-    handle = _make_handle(
-        api=api, workspace_transfer=transfer, workspace_job_id="job-1", credential_secret_name="creds"
-    )
-    handle.task_cj = True
-    if failure == "abort-send":
-        transfer.cell.fire_and_forget.side_effect = OSError("transport unavailable")
-    else:
-        api.read_namespaced_pod.side_effect = OSError("API unavailable")
-    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time.monotonic", side_effect=[0, 2]):
-        handle.terminate()
-        assert handle.poll() == JobReturnCode.UNKNOWN
-    assert transfer.cell.fire_and_forget.call_count == 2
-    assert transfer.cell.fire_and_forget.call_args.kwargs["targets"] == "site-1.job-1"
-    api.delete_namespaced_pod.assert_not_called()
-    api.delete_namespaced_secret.assert_not_called()
-    transfer.remove_job.assert_not_called()
-    transfer.cell.fire_and_forget.side_effect = None
-    api.read_namespaced_pod.side_effect = None
-    pod.status.phase = "Succeeded"
-    handle.wait()
-    assert handle.poll() == JobReturnCode.ABORTED
-    transfer.remove_job.assert_called_once_with("job-1")
-
-
 @pytest.mark.parametrize("phase", ["Unknown", "Pending"])
-def test_task_cj_startup_failure_does_not_finish_wait_before_owner_exits(phase):
-    transfer = Mock()
-    transfer.cell.get_fqcn.return_value = "site-1"
+def test_never_started_task_cj_is_terminated_and_cp_owner_retains_cleanup(phase):
     api = Mock()
-    pod = SimpleNamespace(
+    api.read_namespaced_pod.return_value = SimpleNamespace(
         status=SimpleNamespace(
             phase=phase,
             conditions=[SimpleNamespace(type="PodScheduled", status="True")],
@@ -3970,26 +3977,10 @@ def test_task_cj_startup_failure_does_not_finish_wait_before_owner_exits(phase):
             ],
         )
     )
-    api.read_namespaced_pod.return_value = pod
-    handle = _make_handle(
-        api=api, workspace_transfer=transfer, workspace_job_id="job-1", credential_secret_name="creds"
-    )
-    handle.task_cj = True
-    now = [0.0]
-
-    def sleep(delay):
-        now[0] += delay
-        api.delete_namespaced_pod.assert_not_called()
-        transfer.remove_job.assert_not_called()
-        if now[0] >= 3:
-            pod.status.phase = "Succeeded"
-
-    with (
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep", side_effect=sleep),
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.time.monotonic", side_effect=lambda: now[0]),
-    ):
-        handle.wait()
-    assert now[0] >= 3
+    handle = _make_handle(api=api)
+    owner = handle.task_owner = Mock()
+    handle.wait()
     assert handle.poll() == JobReturnCode.EXCEPTION
-    api.delete_namespaced_pod.assert_not_called()
-    transfer.remove_job.assert_called_once_with("job-1")
+    owner.close.assert_called()
+    owner.release.assert_called()
+    api.delete_namespaced_pod.assert_called_once()

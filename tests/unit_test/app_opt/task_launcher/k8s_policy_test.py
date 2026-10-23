@@ -26,7 +26,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskBackend, K8sTaskLauncher
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
@@ -42,7 +42,6 @@ def profile(tmp_path):
         "task_workspace_pvc": "existing-pvc",
         "task_workspace_pvc_root": "/cp/explicit-pvc-mount",
         "workspace_mount_path": str(tmp_path),
-        "task_cj_service_account": "cj-launch-authority",
         "run_as_user": 1000,
         "run_as_group": 1000,
     }
@@ -83,7 +82,7 @@ def test_matching_site_profile_validates_without_backend_access(profile):
 
 @pytest.mark.parametrize("gpu_count", [0, 1])
 def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_without_compute(
-    profile, tmp_path, isolated_fobs, gpu_count
+    profile, tmp_path, isolated_fobs, gpu_count, monkeypatch
 ):
     _, config = profile
     (tmp_path / "local").mkdir()
@@ -94,7 +93,10 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     assert type(policy.launcher) is K8sTaskLauncher
     assert policy.worker_environment() == {}
     context = FLContext()
-    cell = SimpleNamespace(decode_pass_through_topics=set())
+    from tests.unit_test.app_opt.task_launcher.k8s_task_service_test import wire_client
+
+    cell, service = wire_client(monkeypatch)
+    cell.decode_pass_through_topics = set()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell), private=True, sticky=True)
     for key, value in (
         (ReservedKey.RUN_NUM, "job"),
@@ -109,7 +111,12 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         ),
     ):
         context.set_prop(key, value, private=True, sticky=True)
-    api = policy.launcher.core_v1 = PodApi()
+    api = PodApi()
+    backend = policy.launcher.create_backend(
+        api, str(tmp_path), context.get_prop(FLContextKey.JOB_META), "job", "site-1"
+    )
+    backend.poll_interval = 0.001
+    owner = service.add_job(backend, "job", "site-1", "job-token")
     adapter = TaskWorkerExecutor({"path": "nvflare.app_common.np.np_trainer.NPTrainer"}, (), policy)
 
     def complete():
@@ -135,6 +142,7 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
     finally:
         adapter.handle_event(EventType.END_RUN, context)
+        owner.release()
 
 
 @pytest.mark.parametrize(
@@ -149,7 +157,6 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         "workspace",
         "uid",
         "gid",
-        "accounts",
         "cp-mount",
         "environment",
     ],
@@ -174,8 +181,6 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
         cp["args"]["workspace_mount_path"] = "/other"
     elif fault in ("uid", "gid"):
         cp["args"]["run_as_user" if fault == "uid" else "run_as_group"] = 2000
-    elif fault == "accounts":
-        cp["args"]["task_cj_service_account"] = launcher.worker_service_account
     elif fault == "cp-mount":
         cp["args"].pop("task_workspace_pvc_root")
     elif fault == "environment":
@@ -184,7 +189,7 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
     (tmp_path / "startup").mkdir()
     (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
     api = Mock(side_effect=AssertionError("invalid site profile must fail before Kubernetes access"))
-    monkeypatch.setattr(K8sTaskLauncher, "_api", api)
+    monkeypatch.setattr(K8sTaskBackend, "_api", api)
     with pytest.raises(ValueError):
         TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
     api.assert_not_called()
@@ -207,7 +212,7 @@ def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch
     context.get_identity_name.return_value = "site-1"
     context.get_job_id.return_value = "job"
     context.get_prop.return_value = meta
-    with pytest.raises(ValueError, match="whole-job CP GPU reservations"):
+    with pytest.raises(ValueError, match="portable GPUs reserve the whole job"):
         launcher.handle_event(EventType.START_RUN, context)
     assert launcher._job_binding is None
     assert launcher.core_v1 is None
@@ -216,6 +221,6 @@ def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch
     path.write_text(json.dumps({"execution_lifetime": "task"}))
     context.get_prop.return_value = SimpleNamespace(get_client_app_config_file_path=lambda _: str(path))
     cp_launcher = ClientK8sJobLauncher(**config["components"][0]["args"])
-    with pytest.raises(ValueError, match="whole-job CP GPU reservations"):
+    with pytest.raises(ValueError, match="portable GPUs reserve the whole job"):
         cp_launcher.launch_job(meta, context)
     assert cp_launcher.core_v1 is None

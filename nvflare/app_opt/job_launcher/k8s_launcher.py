@@ -20,13 +20,14 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from abc import abstractmethod
 from datetime import datetime
 from enum import Enum
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import (
@@ -59,16 +60,14 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
-    get_resource_manager_spec,
     get_server_job_args,
 )
 
@@ -90,14 +89,6 @@ def task_security_context(uid, gid):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ValueError(f"{name} must be an explicit positive numeric ID shared by CJ and workers")
     return {"runAsUser": uid, "runAsGroup": gid, "runAsNonRoot": True, "fsGroup": gid}
-
-
-def reject_job_gpu_reservation(meta, site_name):
-    if get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
-        raise ValueError(
-            "Kubernetes task GPUs require native launcher_spec k8s num_of_gpus; "
-            "whole-job CP GPU reservations are not supported by this task profile"
-        )
 
 
 class JobState(Enum):
@@ -302,9 +293,7 @@ class K8sJobHandle(JobHandleSpec):
         self.timeout = timeout
         self.terminal_state = None
         self.terminal_return_code = None
-        self.task_cj = False
-        self._abort_requested = False
-        self._last_abort_request = None
+        self.task_owner = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -353,6 +342,8 @@ class K8sJobHandle(JobHandleSpec):
             time.sleep(POLL_INTERVAL)
 
     def _release_job_resources(self) -> None:
+        if self.task_owner is not None:
+            self.task_owner.release()
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
             self.workspace_job_id = ""
@@ -378,31 +369,10 @@ class K8sJobHandle(JobHandleSpec):
             self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
         self.credential_secret_name = None
 
-    def _request_cj_abort(self):
-        now = time.monotonic()
-        if self._last_abort_request is not None and now - self._last_abort_request < POLL_INTERVAL:
-            return
-        self._last_abort_request = now
-        try:
-            cell = self.workspace_transfer.cell
-            cell.fire_and_forget(
-                targets=FQCN.join([cell.get_fqcn(), self.workspace_job_id]),
-                channel=CellChannel.CLIENT_COMMAND,
-                topic=AdminCommandNames.ABORT,
-                message=new_cell_message({}, {}),
-                optional=True,
-            )
-        except Exception as error:
-            self.logger.warning(f"failed to request CJ shutdown for {self.job_id}; retaining owner: {error}")
-
     def terminate(self):
-        if self.task_cj:
-            if self.terminal_state is None:
-                # The CJ owns independent task Pods. CP's ten-second abort
-                # fallback must retain that cleanup owner until it exits.
-                self._abort_requested = True
-                self._request_cj_abort()
-            return
+        # Fence task admission before deleting CJ. CP retains worker cleanup.
+        if self.task_owner is not None:
+            self.task_owner.close()
         from kubernetes.client.rest import ApiException
 
         try:
@@ -437,10 +407,6 @@ class K8sJobHandle(JobHandleSpec):
         self.terminal_return_code = JobReturnCode.EXCEPTION
 
     def _get_return_code(self, job_state):
-        if self.task_cj and self.terminal_state is None:
-            # A startup/observation failure may request cooperative shutdown,
-            # but is not proof that CJ has exited or released native workers.
-            return JOB_RETURN_CODE_MAPPING.get(job_state)
         if self.terminal_return_code is not None:
             return self.terminal_return_code
         return JOB_RETURN_CODE_MAPPING.get(job_state)
@@ -464,8 +430,6 @@ class K8sJobHandle(JobHandleSpec):
                 ):
                     self.terminal_return_code = exit_code
                 break
-        if self._abort_requested and self.terminal_return_code is None:
-            self.terminal_return_code = JobReturnCode.ABORTED
         self._release_job_resources()
 
     def poll(self):
@@ -485,8 +449,6 @@ class K8sJobHandle(JobHandleSpec):
     def _query_pod(self):
         from kubernetes.client.rest import ApiException
 
-        if self._abort_requested:
-            self._request_cj_abort()
         try:
             return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
@@ -701,10 +663,7 @@ class K8sJobHandle(JobHandleSpec):
                 return
             pod_phase = self._get_pod_phase(pod)
             if self._handle_starting_pod(pod, pod_phase):
-                if self.terminal_state is not None:
-                    return
-                time.sleep(POLL_INTERVAL)
-                continue
+                return
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self._record_terminal_state(pod, pod_phase)
@@ -866,6 +825,7 @@ class K8sJobLauncher(JobLauncherSpec):
         )
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        execution_lifetime = self.get_execution_lifetime(job_meta, fl_ctx)
         if self.core_v1 is None:
             from kubernetes import config
             from kubernetes.client import Configuration
@@ -1088,7 +1048,16 @@ class K8sJobLauncher(JobLauncherSpec):
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
                 self._replace_pod_manifest_template_namespace(pod_manifest)
-            job_handle.task_cj = self.prepare_job_manifest(pod_manifest, raw_job_id, site_name, workspace_obj) is True
+            job_handle.task_owner = self.prepare_job_manifest(
+                pod_manifest,
+                raw_job_id,
+                site_name,
+                workspace_obj,
+                execution_lifetime=execution_lifetime,
+                job_meta=job_meta,
+                fl_ctx=fl_ctx,
+                transfer_token=workspace_transfer_token,
+            )
             job_handle.pod_manifest = pod_manifest
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
@@ -1097,6 +1066,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 job_image,
             )
             created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            if job_handle.task_owner is not None:
+                job_handle.task_owner.attach_cj(pod_name, created_pod.metadata.uid)
             if credential_secret_name:
                 self._own_credential_secret(credential_secret_name, pod_name, created_pod)
         except Exception as e:
@@ -1105,6 +1076,9 @@ class K8sJobLauncher(JobLauncherSpec):
                 # No pod means no ownerReference, so GC would never collect the Secret.
                 self._delete_secret(credential_secret_name)
             if "job_handle" in locals():
+                if job_handle.task_owner is not None:
+                    job_handle.task_owner.release()
+                job_handle.workspace_job_id = ""
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED
                 job_handle.terminal_return_code = JobReturnCode.EXCEPTION
@@ -1119,8 +1093,11 @@ class K8sJobLauncher(JobLauncherSpec):
             self.logger.warning(f"unable to enter running phase {job_id}")
         return job_handle
 
-    def prepare_job_manifest(self, manifest, job_id, site_name, workspace):
-        """Prepare the manifest; return True when CJ must own native-task cleanup."""
+    def get_execution_lifetime(self, job_meta, fl_ctx):
+        return "job"
+
+    def prepare_job_manifest(self, manifest, job_id, site_name, workspace, **kwargs):
+        """Prepare a job Pod, optionally returning its CP-owned task service record."""
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
@@ -1160,7 +1137,6 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         *args,
         task_workspace_pvc: str = None,
         task_workspace_pvc_root: str = None,
-        task_cj_service_account: str = None,
         run_as_user: int = None,
         run_as_group: int = None,
         **kwargs,
@@ -1168,41 +1144,54 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         super().__init__(*args, **kwargs)
         self.task_workspace_pvc = None
         self.task_workspace_pvc_root = None
-        self.task_cj_service_account = None
         self.task_security_context = None
-        settings = (task_workspace_pvc, task_workspace_pvc_root, task_cj_service_account, run_as_user, run_as_group)
+        self._task_storage_lock = threading.Lock()
+        self._task_storage_checked = False
+        settings = (task_workspace_pvc, task_workspace_pvc_root, run_as_user, run_as_group)
         if all(value is None for value in settings):
             return
         if any(value is None for value in settings):
-            raise ValueError("task execution requires PVC, CP mount, CJ service account and numeric UID/GID together")
+            raise ValueError("task execution requires PVC, CP mount and numeric UID/GID together")
         self.task_workspace_pvc = validate_dns_name("task_workspace_pvc", task_workspace_pvc)
         if not isinstance(task_workspace_pvc_root, str) or not os.path.isabs(task_workspace_pvc_root):
             raise ValueError("task_workspace_pvc_root must name the CP's explicit mount of the existing PVC")
         self.task_workspace_pvc_root = os.path.realpath(task_workspace_pvc_root)
-        self.task_cj_service_account = validate_dns_name("task_cj_service_account", task_cj_service_account)
         self.task_security_context = task_security_context(run_as_user, run_as_group)
 
-    def launch_job(self, job_meta, fl_ctx):
-        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        if self.task_workspace_pvc is not None and workspace is not None:
-            job_id = job_meta.get(JobConstants.JOB_ID)
-            client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
-            lifetime = client_config.get("execution_lifetime", "job")
-            if lifetime == "task":
-                reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
-        return super().launch_job(job_meta, fl_ctx)
-
-    def prepare_job_manifest(self, manifest, job_id, site_name, workspace):
+    def get_execution_lifetime(self, job_meta, fl_ctx):
         if self.task_workspace_pvc is None:
-            return
-        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
-
-        client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
-        lifetime = client_config.get("execution_lifetime", "job")
-        if lifetime == "job":
-            return
-        if lifetime != "task":
+            return "job"
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace is None:
+            return "job"
+        config = ConfigService.load_config_dict(
+            workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID])
+        )
+        lifetime = config.get("execution_lifetime", "job")
+        if lifetime not in ("job", "task"):
             raise ValueError("execution_lifetime must be 'job' or 'task'")
+        if lifetime == "task":
+            reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
+        return lifetime
+
+    def prepare_job_manifest(
+        self,
+        manifest,
+        job_id,
+        site_name,
+        workspace,
+        *,
+        execution_lifetime="job",
+        job_meta=None,
+        fl_ctx=None,
+        transfer_token=None,
+    ):
+        if execution_lifetime != "task":
+            return
+        from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+        from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskService
+        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
+
         spec = manifest["spec"]
         if (
             len(spec["containers"]) != 1
@@ -1220,6 +1209,9 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         mounts = [mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]
         if len(mounts) != 1 or mounts[0]["mountPath"] != self.workspace_mount_path:
             raise ValueError("task CJ workspace mount differs from the configured durable workspace")
+        policy = TaskExecutionPolicy.from_workspace(workspace)
+        if type(policy.launcher) is not K8sTaskLauncher:
+            raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
         mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
         for amounts in container.get("resources", {}).values():
             for resource in list(amounts):
@@ -1239,9 +1231,17 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             "capabilities": {"drop": ["ALL"]},
         }
         spec["securityContext"] = dict(self.task_security_context)
-        spec["serviceAccountName"] = self.task_cj_service_account
-        spec["automountServiceAccountToken"] = True
-        return True
+        spec["serviceAccountName"] = policy.launcher.worker_service_account
+        spec["automountServiceAccountToken"] = False
+        backend = policy.launcher.create_backend(
+            self.core_v1,
+            os.path.join(self.task_workspace_pvc_root, mounts[0]["subPath"]),
+            job_meta,
+            job_id,
+            site_name,
+        )
+        cell = fl_ctx.get_engine().cell
+        return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
 
     def _prepare_workspace_subpath(self, job_id, site_name):
         subpath = task_workspace_subpath(job_id, site_name)
@@ -1253,7 +1253,10 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         root = self.task_workspace_pvc_root
         if not os.path.isdir(root):
             raise ValueError("the task workspace PVC must already be mounted in CP")
-        check_posix_storage(root)
+        with self._task_storage_lock:
+            if not self._task_storage_checked:
+                check_posix_storage(root)
+                self._task_storage_checked = True
         parent = os.path.join(root, "nvflare-tasks")
         os.makedirs(parent, mode=0o700, exist_ok=True)
         if os.path.islink(parent) or os.path.realpath(parent) != parent:

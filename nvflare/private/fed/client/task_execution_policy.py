@@ -27,10 +27,10 @@ from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.job_config.task_execution import _timeout, validate_task_resources
+from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource_manager_spec
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -97,6 +97,22 @@ def _supported_native_launcher(launcher):
     return type(launcher) is getattr(module, class_name, None)
 
 
+def is_native_task_launcher(launcher):
+    return launcher.launch_mode in _NATIVE_TASK_LAUNCHERS
+
+
+def site_job_launchers(site_config):
+    """Find launcher components using the supported component field spellings."""
+    result = []
+    for item in site_config.get("components", []):
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path", item.get("class_path", item.get("name", "")))
+        if isinstance(path, str) and path.endswith("JobLauncher"):
+            result.append((path, item))
+    return result
+
+
 class _SiteBuilder(ComponentBuilder):
     def get_module_scanner(self):
         return ModuleScanner(["nvflare"], ["apis", "app_common"], True)
@@ -125,13 +141,7 @@ class TaskExecutionPolicy:
         if _supported_native_launcher(policy.launcher):
             policy.launcher.validate_site_config(data)
             return policy
-        launchers = []
-        for item in data.get("components", []):
-            if not isinstance(item, dict):
-                continue
-            path = item.get("path", item.get("class_path", item.get("name", "")))
-            if isinstance(path, str) and path.endswith("JobLauncher"):
-                launchers.append((path, item))
+        launchers = site_job_launchers(data)
         if launchers and (
             len(launchers) != 1
             or launchers[0][0]
@@ -222,8 +232,8 @@ class TaskExecutionPolicy:
     def task_resources(self, meta, site_name):
         native_mode = _supported_native_launcher(self.launcher)
         validate_task_resources(meta, site_name, allow_gpu=native_mode)
-        if native_mode and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
-            raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
+        if native_mode:
+            reject_job_gpu_reservation(meta, site_name)
         if not native_mode or self.launcher.launch_mode != "docker":
             return TaskResourceRequest()
         spec = get_job_launcher_spec(meta, site_name, "docker")

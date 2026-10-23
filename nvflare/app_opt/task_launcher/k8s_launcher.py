@@ -40,15 +40,15 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
     WORKSPACE_MOUNT_PATH,
     is_cpu_memory_gpu_shortage,
-    reject_job_gpu_reservation,
     site_name_to_rfc1123,
     task_security_context,
     task_workspace_subpath,
     validate_dns_name,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
+from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
-from nvflare.private.fed.task_worker.protocol import read_bootstrap
+from nvflare.private.fed.task_worker.protocol import _open_directory, read_bootstrap
 from nvflare.utils.job_launcher_utils import (
     get_job_launcher_spec,
     get_portable_resource_spec,
@@ -79,7 +79,7 @@ def _within(root, path):
     if (
         not isinstance(path, str)
         or not os.path.isabs(path)
-        or os.path.commonpath([root, os.path.realpath(path)]) != root
+        or os.path.commonpath([root, os.path.normpath(path)]) != root
     ):
         raise ValueError("task paths must be absolute paths within the configured durable workspace")
     return path
@@ -171,7 +171,7 @@ class _PodOwnershipError(RuntimeError):
     """An observed Pod no longer preserves the launcher's ownership fence."""
 
 
-class K8sTaskLauncher(TaskLauncherSpec):
+class _K8sTaskProfile(TaskLauncherSpec):
     """Site-owned image and existing POSIX PVC; one bare Pod per physical attempt.
 
     No Kubernetes resources are created until launch_task. No kubeconfig or
@@ -238,19 +238,16 @@ class K8sTaskLauncher(TaskLauncherSpec):
         self._identities = set()
         self._job_binding = None
         self._storage_checked = False
+        self.storage_root = self.workspace_root
 
     def validate_site_config(self, site_config):
         """Check the canonical CP/CJ/task profile without creating any resources."""
         expected = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
-        launchers = []
-        for item in site_config.get("components", []):
-            if not isinstance(item, dict):
-                continue
-            path = item.get("path", item.get("class_path", item.get("name", "")))
-            if path == "ClientK8sJobLauncher":
-                raise ValueError(f"Kubernetes CJ launcher is not registered by short name; specify path={expected!r}")
-            if isinstance(path, str) and path.endswith("JobLauncher"):
-                launchers.append((path, item))
+        from nvflare.private.fed.client.task_execution_policy import site_job_launchers
+
+        launchers = site_job_launchers(site_config)
+        if any(path == "ClientK8sJobLauncher" for path, _ in launchers):
+            raise ValueError(f"Kubernetes CJ launcher is not registered by short name; specify path={expected!r}")
         if len(launchers) != 1 or launchers[0][0] != expected:
             raise ValueError("Kubernetes task execution requires exactly one matching Kubernetes task CJ JobLauncher")
         if site_config.get("task_execution", {}).get("environment_variables"):
@@ -259,7 +256,7 @@ class K8sTaskLauncher(TaskLauncherSpec):
         if not isinstance(args, dict):
             raise ValueError("Kubernetes task CJ launcher args must be a dict")
         if args.get("namespace", DEFAULT_NAMESPACE) != self.namespace:
-            raise ValueError("Kubernetes CP/CJ/task namespaces must match")
+            raise ValueError("Kubernetes CJ/task namespaces must match")
         if args.get("task_workspace_pvc") != self.workspace_pvc:
             raise ValueError("Kubernetes CP/CJ/task workspace PVCs must match")
         mount = args.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
@@ -270,9 +267,10 @@ class K8sTaskLauncher(TaskLauncherSpec):
             raise ValueError("Kubernetes CP requires an explicit dedicated mount of the existing task PVC")
         if task_security_context(args.get("run_as_user"), args.get("run_as_group")) != self.security_context:
             raise ValueError("Kubernetes CP/CJ/task numeric UID/GID must match")
-        cj_account = validate_dns_name("task_cj_service_account", args.get("task_cj_service_account"))
-        if cj_account == self.worker_service_account:
-            raise ValueError("Kubernetes CJ and task workers require distinct service accounts")
+
+
+class K8sTaskBackend(_K8sTaskProfile):
+    """CP-only Kubernetes authority. Never construct this from a CJ request."""
 
     def handle_event(self, event_type, fl_ctx):
         if event_type != EventType.START_RUN:
@@ -288,6 +286,10 @@ class K8sTaskLauncher(TaskLauncherSpec):
             if self._job_binding is not None and self._job_binding != binding:
                 raise ValueError("Kubernetes task launcher is already bound to a different CJ or resource request")
             self._job_binding = binding
+
+    def _storage_path(self, path):
+        _within(self.workspace_root, path)
+        return os.path.join(self.storage_root, os.path.relpath(path, self.workspace_root))
 
     def _api(self):
         if self.core_v1 is None:
@@ -330,18 +332,21 @@ class K8sTaskLauncher(TaskLauncherSpec):
             )
         path = _within(self.workspace_root, request.argv[4])
         _within(self.workspace_root, request.cwd)
-        bootstrap = read_bootstrap(path)
-        _within(self.workspace_root, bootstrap.artifact_root)
-        if os.stat(self.workspace_root).st_dev != os.stat(bootstrap.artifact_root).st_dev:
-            raise ValueError("task artifacts and checkpoints must share the durable workspace filesystem")
-        if os.path.realpath(bootstrap.workspace_root) != self.workspace_root:
+        bootstrap = read_bootstrap(self._storage_path(path), resolve_parent=False)
+        artifact_fd = _open_directory(self._storage_path(bootstrap.artifact_root))
+        try:
+            if os.stat(self.storage_root).st_dev != os.fstat(artifact_fd).st_dev:
+                raise ValueError("task artifacts and checkpoints must share the durable workspace filesystem")
+        finally:
+            os.close(artifact_fd)
+        if os.path.normpath(bootstrap.workspace_root) != self.workspace_root:
             raise ValueError("bootstrap workspace must match the explicit durable PVC mount")
         identity = bootstrap.identity
         if request.identity != (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id):
             raise ValueError("request and bootstrap identities differ")
         with self._lock:
             if not self._storage_checked:
-                check_posix_storage(self.workspace_root)
+                check_posix_storage(self.storage_root)
                 self._storage_checked = True
             if request.identity in self._identities:
                 raise TaskLauncherError("task attempt already owned; resubmit its saved result")
@@ -587,7 +592,17 @@ class K8sTaskHandle(TaskHandleSpec):
                     self._phase = TaskExecutionPhase.TERMINAL
                     self._failure = self._failure or f"pod phase {phase!r} has no confirmed runtime state"
                 if self._cancel_requested or self._failure or phase in ("Succeeded", "Failed"):
+                    was_deleted = self._delete_sent
                     self._delete()
+                    if not was_deleted:
+                        # DELETE changes resourceVersion. Observe its result before
+                        # the finalizer test-and-replace, including admission changes.
+                        pod = self.launcher.core_v1.read_namespaced_pod(
+                            name=self.pod_name,
+                            namespace=self.launcher.namespace,
+                            _request_timeout=self.launcher.request_timeout,
+                        )
+                        self._identify(pod)
                 if self._shutdown_confirmed(pod):
                     self._release_authorized = True
                     self.read_logs()
@@ -628,6 +643,13 @@ class K8sTaskHandle(TaskHandleSpec):
                 elif isinstance(error, _PodOwnershipError):
                     self._phase = TaskExecutionPhase.TERMINAL
                     self._failure = self._failure or str(error)
+                    if self._uid is not None:
+                        try:
+                            self._delete()
+                        except Exception:
+                            # UID preconditions prevent deleting a replacement.
+                            # CP retains this handle and retries observation/cleanup.
+                            pass
                 else:
                     # Observation errors cannot authorize settlement. Keep the
                     # error separate so a transient API outage can recover.
@@ -651,12 +673,74 @@ class K8sTaskHandle(TaskHandleSpec):
                 delay = min(delay, max(0, deadline - time.monotonic()))
             time.sleep(delay)
 
-    def cancel(self):
+    def request_cancel(self):
+        """Latch cancellation without blocking the CP service on settlement."""
         with self._lock:
-            if self._settled:
-                return self._status()
-            self._cancel_requested = True
+            if not self._settled:
+                self._cancel_requested = True
+
+    def cancel(self):
+        self.request_cancel()
         try:
             return self.wait_for_settlement(self.launcher.cleanup_timeout)
         except TimeoutError as error:
             raise TaskSettlementError(str(error), self._status()) from error
+
+
+class K8sTaskLauncher(_K8sTaskProfile):
+    """Tokenless CJ proxy; CP owns Pod creation, observation and cleanup."""
+
+    cleanup_owned_by_parent = True
+
+    def handle_event(self, event_type, fl_ctx):
+        from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient
+
+        if event_type == EventType.START_RUN:
+            reject_job_gpu_reservation(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, fl_ctx.get_identity_name())
+            self._client = K8sTaskClient(
+                fl_ctx.get_engine().get_cell(),
+                fl_ctx.get_job_id(),
+                fl_ctx.get_identity_name(),
+                self.request_timeout,
+                self.poll_interval,
+                self.cleanup_timeout,
+            )
+        elif event_type == EventType.END_RUN:
+            self._client.close()
+
+    def launch_task(self, request):
+        client = getattr(self, "_client", None)
+        if client is None:
+            raise RuntimeError("Kubernetes task proxy has no START_RUN binding")
+        return client.launch(request)
+
+    def create_backend(self, api, storage_root, job_meta, job_id, site_name):
+        """Called only by CP with canonical site policy and admitted job metadata."""
+        backend = K8sTaskBackend(
+            namespace=self.namespace,
+            image=self.image,
+            workspace_root=self.workspace_root,
+            workspace_pvc=self.workspace_pvc,
+            worker_service_account=self.worker_service_account,
+            python_path=self.python_path,
+            cleanup_timeout=self.cleanup_timeout,
+            poll_interval=self.poll_interval,
+            startup_timeout=self.startup_timeout,
+            request_timeout=self.request_timeout,
+            termination_grace_seconds=self.termination_grace_seconds,
+            run_as_user=self.security_context["runAsUser"],
+            run_as_group=self.security_context["runAsGroup"],
+            cpu_cores=self.resources.cpu_cores,
+            memory_mb=self.resources.memory_mb,
+            gpu_count=self.resources.gpu_count,
+            environment=self.environment,
+            queue_timeout=self.queue_timeout,
+        )
+        reject_job_gpu_reservation(job_meta, site_name)
+        backend._job_binding = (job_id, site_name, task_pod_resources(job_meta, site_name, self.resources))
+        backend.core_v1 = api
+        backend.storage_root = storage_root
+        # CP probes the trusted PVC root before starting CJ. Never run the
+        # write/link/rename probe inside a live job-controlled subtree in CP.
+        backend._storage_checked = True
+        return backend

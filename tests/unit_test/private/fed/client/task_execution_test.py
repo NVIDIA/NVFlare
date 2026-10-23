@@ -1480,3 +1480,23 @@ def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_pa
         adapter.resolve_task_data(value, context, abort_signal=Signal())
     assert calls == ["a", "b"]
     assert not scratch.exists()
+
+
+def test_start_run_binding_failure_panics_and_preserves_the_actual_error():
+    context = FLContext()
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    policy.launcher.handle_event = Mock(side_effect=ValueError("owning job resource binding differs"))
+    adapter = TaskWorkerExecutor({}, (), policy)
+    adapter.system_panic = Mock()
+    with pytest.raises(ValueError, match="resource binding differs"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started
+    assert adapter._start_error == "owning job resource binding differs"
+    assert not cell.decode_pass_through_topics
+    adapter.system_panic.assert_called_once_with(
+        "task launcher START_RUN failed: owning job resource binding differs", context
+    )
+    with pytest.raises(RuntimeError, match="resource binding differs"):
+        adapter.execute("train", Shareable(), context, Signal())

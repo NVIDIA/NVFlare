@@ -22,8 +22,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, TaskResultReceipt
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.fl_constant import FLContextKey, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
@@ -38,12 +37,10 @@ from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, task_workspa
 from nvflare.app_opt.task_launcher.k8s_launcher import (
     SETTLEMENT_FINALIZER,
     WORKER_MODULE,
-    K8sTaskLauncher,
+    K8sTaskBackend,
     check_posix_storage,
     task_pod_resources,
 )
-from nvflare.private.fed.client.client_executor import JobExecutor
-from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
@@ -101,6 +98,7 @@ class PodApi:
         assert body["gracePeriodSeconds"] > 0
         self.calls.append("delete")
         self.pod.metadata.deletion_timestamp = "deleting"
+        self.pod.metadata.resource_version = str(int(self.pod.metadata.resource_version) + 1)
         if self.on_delete:
             self.on_delete()
         return NS(status="Success")
@@ -166,7 +164,7 @@ def setup(tmp_path, isolated_fobs):
         ("/cj/python", "-m", WORKER_MODULE, "--bootstrap", path, "--parent_pid", "456"),
         cwd=str(tmp_path),
     )
-    launcher = K8sTaskLauncher(
+    launcher = K8sTaskBackend(
         namespace="site",
         image="site/image@sha256:trusted",
         workspace_root=str(tmp_path),
@@ -279,7 +277,7 @@ def test_identity_fenced_and_distinct_across_sites_and_attempts(setup):
         )
         owner = launcher
         if identity.site_name != request.site_name:
-            owner = K8sTaskLauncher("site", launcher.image, launcher.workspace_root, "existing-pvc", "task-no-api")
+            owner = K8sTaskBackend("site", launcher.image, launcher.workspace_root, "existing-pvc", "task-no-api")
             _bind_to_cj(owner, other_request)
             owner.core_v1 = api
         handle = owner.launch_task(other_request)
@@ -599,7 +597,7 @@ def test_unexplained_missing_or_changed_pod_remains_unresolved(setup, kind):
         api.read_error = ApiError(403)
     with pytest.raises(TaskSettlementError):
         handle.cancel()
-    assert "delete" not in api.calls
+    assert ("delete" in api.calls) == (kind == "removed-finalizer")
     assert "patch" not in api.calls
 
 
@@ -970,19 +968,13 @@ def test_native_checkpoint_survives_pod_removal_and_attempt_payload_release(setu
     assert isolated.stat().st_ino != committed.stat().st_ino
 
 
-@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin-abort", "heartbeat-cleanup"])
-@pytest.mark.parametrize("state", [ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED])
-def test_parent_abort_retains_cj_until_slow_native_cleanup_finishes(setup, monkeypatch, heartbeat_cleanup, state):
-    launcher, worker_api, request, _, _ = setup
+@pytest.mark.parametrize("state", ["Pending", "Running"])
+def test_parent_abort_seals_cp_task_owner_before_deleting_cj(setup, state):
+    launcher, api, request, _, _ = setup
     worker = launcher.launch_task(request)
-    worker_api.running()
-    clock = NS(now=0.0, finishing=False)
+    api.running()
     parent_api = Mock()
-    parent_pod = NS(status=NS(phase="Running"))
-    parent_api.read_namespaced_pod.side_effect = lambda **_: parent_pod
-    transfer = Mock()
-    transfer.cell.get_fqcn.return_value = "site-1"
-    transfer.remove_job.side_effect = lambda _: worker.poll().settled or pytest.fail("CJ released before worker")
+    parent_api.read_namespaced_pod.return_value = NS(status=NS(phase=state))
     cj = K8sJobHandle(
         "cj",
         parent_api,
@@ -994,49 +986,17 @@ def test_parent_abort_retains_cj_until_slow_native_cleanup_finishes(setup, monke
             "volume_mount_list": [],
             "volume_list": [],
         },
-        workspace_transfer=transfer,
-        workspace_job_id=request.job_id,
-        credential_secret_name="cj-credentials",
     )
-    cj.task_cj = True
-    executor = JobExecutor(client=NS(cell=transfer.cell), startup="startup")
-    from nvflare.private.fed.client.client_executor import _PendingJobHandle
-
-    pending = _PendingJobHandle()
-    pending.attach(cj)
-    executor.run_processes[request.job_id] = {RunProcessKey.JOB_HANDLE: pending, RunProcessKey.STATUS: state}
-
-    def sleep(delay):
-        clock.now += delay
-        if clock.now >= 35 and not clock.finishing:
-            clock.finishing = True
-            worker_api.finish(exit_code=143)
-            assert worker.cancel().settled
-            parent_pod.status.phase = "Succeeded"
-
-    local_time = NS(time=lambda: clock.now, monotonic=lambda: clock.now, sleep=sleep)
-    for module in (
-        "nvflare.private.fed.client.client_executor",
-        "nvflare.app_opt.job_launcher.k8s_launcher",
-        "nvflare.app_opt.task_launcher.k8s_launcher",
-    ):
-        monkeypatch.setattr(module + ".time", local_time)
-    executor.abort_app(request.job_id, heartbeat_cleanup=heartbeat_cleanup)
-    # The parent's ten-second fallback must not kill the owner of a task that
-    # needs the native 30-second termination grace period.
-    parent_api.delete_namespaced_pod.assert_not_called()
-    transfer.remove_job.assert_not_called()
-    parent_api.delete_namespaced_secret.assert_not_called()
-    assert worker.poll().phase == TaskExecutionPhase.RUNNING
-    assert cj.poll() == JobReturnCode.UNKNOWN
-    assert cj.terminal_state is None
-    cj.wait()
-    assert clock.now >= 35
-    assert worker.poll().settled
-    assert cj.poll() == JobReturnCode.ABORTED
-    parent_api.delete_namespaced_pod.assert_not_called()
-    transfer.remove_job.assert_called_once_with(request.job_id)
-    parent_api.delete_namespaced_secret.assert_called_once()
+    owner = cj.task_owner = Mock()
+    owner.close.side_effect = worker.request_cancel
+    owner.release.side_effect = worker.request_cancel
+    parent_api.delete_namespaced_pod.side_effect = lambda **_: owner.release.assert_not_called()
+    cj.terminate()
+    parent_api.delete_namespaced_pod.assert_called_once()
+    assert worker.poll().cancel_requested
+    assert not worker.poll().settled
+    api.finish(exit_code=143)
+    assert worker.wait_for_settlement(1).settled
 
 
 @pytest.mark.parametrize("pending_launch", [False, True], ids=["api-outage", "late-handle"])
@@ -1217,4 +1177,4 @@ def test_long_queued_task_remains_cancellable(setup, monkeypatch):
 )
 def test_queue_and_startup_timeouts_reject_invalid_values(tmp_path, setting, value):
     with pytest.raises(ValueError, match=setting):
-        K8sTaskLauncher("site", "image", str(tmp_path), "pvc", "worker", **{setting: value})
+        K8sTaskBackend("site", "image", str(tmp_path), "pvc", "worker", **{setting: value})

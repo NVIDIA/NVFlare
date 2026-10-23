@@ -211,3 +211,11 @@ def prepare_task_execution(client_config):
             )
         )
     return TaskExecutionConfig(tuple(plans), frozenset(compute_ids))
+
+
+def reject_job_gpu_reservation(meta, site_name):
+    """Task GPU admission must not reserve a GPU for the whole client job."""
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    if get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
+        raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
