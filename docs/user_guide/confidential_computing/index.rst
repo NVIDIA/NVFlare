@@ -1,15 +1,15 @@
 .. _confidential_computing:
 
-###############################
-FLARE Confidential Federated AI
-###############################
+##################################################
+Federated Confidential Computing with NVIDIA FLARE
+##################################################
 
 .. admonition:: Technical Preview
 
-   FLARE Confidential Federated AI is a **technical preview**. Supported
-   configuration targets do not imply hardware acceptance for every platform,
-   software revision, or workload. Consult the selected deployment's validation
-   status before approving it for use.
+   Federated Confidential Computing with NVIDIA FLARE is a **technical preview**.
+   Supported configuration targets do not imply hardware acceptance for every
+   platform, software revision, or workload. Consult the selected deployment's
+   validation status before approving it for use.
 
 Federated learning keeps training data at participating sites, but models and
 updates still cross organizational boundaries. Model owners, data owners, and
