@@ -36,10 +36,12 @@ Backend contract
   requests explicitly submit ``--gres=none``. The trusted site owns account,
   partition, QoS, reservation, constraints, time limit and runtime setup.
   GPU visibility comes from the new allocation, never the CJ environment.
-* **Storage:** code, interpreter, data, bootstrap, inputs, results and opaque
-  checkpoints must be accessible under identical absolute paths. The same
-  numeric UID owns the private site workspace on every host. No copying of
-  host-private paths, remote staging or container path mapping is implemented.
+* **Storage:** the current bare adapter requires code, interpreter, data,
+  bootstrap, inputs, results and opaque checkpoints at identical absolute
+  paths. The same numeric UID owns the site workspace on every host. This
+  does not enforce the private-CP/shared-jobs boundary described below.
+  No copying of host-private paths, remote staging or container path mapping
+  is implemented in this revision.
 * **Settlement:** successful ``scancel`` and batch-leader exit do not settle
   an attempt. Healthy controller queries must report the allocation absent
   before and after identity-checked accounting. The allocation and every
@@ -67,6 +69,50 @@ allocator. The existing CPU-only Process implementation is a base-revision
 limitation, not the target resource scope for either backend. Process GPU work
 is separate from this Slurm implementation. Supporting a GPU resource request
 does not add multi-machine execution or a torchrun/DDP contract.
+
+Storage layout, persistence and CJ resume
+-----------------------------------------
+
+The accepted default site profile has two stores: one private CP workspace
+store and one shared jobs-state store. CP retains access to both. Each CJ and
+its workers receive only that job's directory from the jobs-state store;
+other jobs and CP's private workspace must remain inaccessible. These are
+per-site stores with per-job directories, not a new store per attempt.
+Site launch policy, scheduler credentials and private launch controls belong
+to CP. Sharing job files does not authorize a CJ to submit, inspect or cancel
+native allocations, or to receive broad runtime credentials.
+
+Both resident and task lifetimes must preserve required checkpoints,
+application recovery metadata and committed task artifacts in the job's
+persistent directory. Applications must explicitly write their required
+recovery state there; allocation-local scratch and files outside that store
+are not preserved by this contract. Checkpoint and completion publication
+continue to use the existing immutable payload and atomic manifest rules.
+Retention must not depend on a CJ completing its shutdown upload. CP still
+needs access to job state for result collection and cleanup after CJ loss.
+
+Persistent files do not implement automatic CJ resume or adoption. Restoring
+a CJ also requires restoring committed application state, coordinating with
+the server job and fencing every earlier CJ and task allocation. This
+adapter provides no automatic restart/adoption path. Preserve unresolved
+launch evidence and verify physical settlement before operator cleanup;
+neither a surviving directory nor a missing process proves that an earlier
+allocation can safely be replaced. Receipt-driven payload cleanup remains
+separate from retention of required checkpoints and recovery metadata.
+
+The current bare adapter and its qualification fixture share the site
+workspace under one UID. They do **not** enforce the accepted storage split,
+per-job filesystem exposure or CP-only scheduler authority. Completing that
+boundary requires the CP-owned launch and isolation revision; the layout
+above is its required contract, not a capability established by this
+revision's passing CPU/GPU tests. Do not expose the CP store to job code as
+a shortcut to making paths visible.
+
+Qualification of that revision must check the actual mounts and permissions
+for CP, CJ and workers, verify that CP-private and other-job paths are
+inaccessible, and confirm that committed checkpoints and metadata survive CJ
+loss in both lifetimes without relying on shutdown upload. Existing normal
+CPU/GPU results do not establish those storage or resume properties.
 
 Shared filesystem and scheduler prerequisites
 ---------------------------------------------
