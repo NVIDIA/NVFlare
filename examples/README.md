@@ -190,3 +190,27 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [OpenShift Deployment](./devops/openshift/README.md)        | NA        | OpenShift-specific deployment guide and helper scripts using the Kubernetes runtime support. |
 | [DevOps Deployment Examples](./devops/README.md)            | NA        | Test-only helper scripts for trying NVFlare deployment flows on Kubernetes and managed cloud clusters; not production deployment guidance. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |
+
+## 15. External NVFlare Code Examples
+
+These external repositories contain public examples and integrations that use NVFlare.
+Entries are listed alphabetically within each group, with links to official organization websites or project pages.
+
+### ISV integrations
+
+| Organization | Code examples | Contents |
+|--------------|---------------|----------|
+| [Apheris](https://www.apheris.com/) | [Training quickstart](https://github.com/apheris/quickstart-training); [simulator instructions](https://github.com/apheris/quickstart-training/blob/main/docs/simulator.md) | NVFlare executor and simulator scaffold for Apheris data access and runtime integration. Model fitting is a placeholder; the documented data setup requires an Apheris account. |
+| [Rhino Health](https://www.rhinofcp.com/) | [NVFlare examples for Rhino FCP](https://github.com/RhinoHealth/user-resources/tree/main/examples/nvflare); [CIFAR-10 example](https://github.com/RhinoHealth/user-resources/tree/main/examples/nvflare/hello-pt) | NVFlare application code and platform integration instructions, including a PyTorch CIFAR-10 trainer, imaging, regression, XGBoost, and split learning examples. |
+
+### Community projects
+
+| Project | Code examples | Contents |
+|---------|---------------|----------|
+| [FedGen](https://github.com/collaborativebioinformatics/FedGen) | [Federated GWAS](https://github.com/collaborativebioinformatics/FedGen/tree/main/jobs/fed_gwas) | NVFlare Client and Recipe API code for genome-wide association analyses, with a custom aggregator for meta-analysis. Requires site-specific data and configuration. |
+| [FLIP / London AI Centre](https://www.aicentre.co.uk/) | [Chest X-ray classification](https://github.com/londonaicentre/FLIP/tree/develop/fl-tutorials/nvflare/image_classification/xray_classification); [tutorial collection](https://github.com/londonaicentre/FLIP/blob/develop/fl-tutorials/README.md) | NVFlare Client API and FLIP recipe code for DenseNet121 training, with job export and local simulator instructions. |
+| [NORMENT](https://github.com/norment) | [Hello Regression](https://github.com/norment/federated_architecture/tree/main/examples/hello_regression) | Synthetic-data regression example with an NVFlare recipe and custom aggregator that combines sufficient statistics across sites. |
+| [OpenFHE SHARE](https://github.com/openfheorg/openfhe-share) | [NVFlare jobs](https://github.com/openfheorg/openfhe-share/tree/main/backend/app/core/job_runner/nvflare_jobs) | Collaborative research prototype with contributions from [Duality](https://dualitytech.com/) and others: NVFlare executors, aggregation, and simulator workflows for federated statistics using homomorphic encryption. |
+
+These resources are maintained by their respective authors. Consult each repository for setup instructions,
+required platform access, and supported NVFlare versions.
