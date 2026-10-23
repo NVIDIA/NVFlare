@@ -1,0 +1,6 @@
+{
+  "manifest_root": "private_data/manifests",
+  "feature_path_prefix_map": {
+    "features_as_stored_in_manifests": "private_data/features"
+  }
+}
