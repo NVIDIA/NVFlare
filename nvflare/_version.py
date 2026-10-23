@@ -74,7 +74,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=
     assert isinstance(commands, list)
     # A zero-byte file named HEAD in the working tree confuses git commands that
     # reference the HEAD revision (git treats it as both a revision and a path).
-    # Remove it silently — git's own .git/HEAD is never empty, so an empty HEAD
+    # Remove it silently -- git's own .git/HEAD is never empty, so an empty HEAD
     # in the working tree is always spurious.
     if cwd:
         stale_head = os.path.join(cwd, "HEAD")
