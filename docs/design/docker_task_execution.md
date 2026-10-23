@@ -25,6 +25,8 @@ P4 merge `94c5b0aebd3de9a6733926d5fc285144bfd335da`.
   same numeric UID/GID as CP preserves mode-0600 artifacts. Different worker
   workspace paths, remote artifact transfer and ephemeral-only storage are
   outside this first profile. Host source paths are never inferred from CJ paths.
+  The accepted site layout separates private CP storage from shared job state;
+  Docker's current single workspace-root configuration still needs that alignment.
 * **Resources:** CPU or GPU workers, with Docker CPU/memory limits supplied by site policy.
   Each job session admits at most one unsettled execution. These limits do not
   reserve an exclusive share of the host CPU pool. Worker containers have no
@@ -82,6 +84,40 @@ successful job outcome merely because cleanup later succeeds.
 This ownership allows bounded CJ END_RUN handling without an infinite CJ
 retention loop. CP process death/restart adoption remains outside this profile;
 uncertain native objects and reservation records require operator reconciliation.
+
+## Persistent storage and resume
+
+The accepted default site layout has two stores, shared across that site's jobs:
+
+* A private CP workspace holds site credentials, runtime configuration and
+  parent state. CJ and worker containers must not receive this workspace mount
+  or broad runtime credentials.
+* A separate jobs-state store holds per-job directories and is also mounted by
+  CP. Each CJ and its workers receive only that job's directory, alongside the
+  approved read-only startup/configuration files and dataset bindings. A new
+  store is not required for every job or attempt.
+
+Docker currently derives both its private files and per-job bind sources from
+the launcher's single daemon-host `workspace` root. CJ and workers receive the
+individual job bind, not that whole root, but there is no separate jobs-state
+root setting yet. The two-store default remains deployment/launcher alignment
+work before readiness; these docs do not introduce a new configuration option.
+Do not mount the full CP workspace into a job to emulate shared storage.
+
+For both resident (`execution_lifetime="job"`) and task lifetimes, applications
+must persist required checkpoints and recovery metadata inside the job bind.
+Task bootstrap, immutable outputs, receipts and committed checkpoints remain
+subject to their existing artifact retention rules. Container removal preserves
+these bind-mounted files; it does not preserve the container's writable layer
+or the workspace-root tmpfs. In particular, root-level `snapshot-storage` or
+`jobs-storage` directories created outside the job bind are ephemeral.
+
+Keeping files is separate from automatically resuming CJ or adopting native
+workers after CP restart. A restart design must restore committed application
+state, coordinate with the server and fence earlier CJ/worker attempts. This
+profile adds no automatic CJ resume or CP restart adoption. Preserve required
+job state and unresolved-settlement evidence until operator reconciliation and
+the existing reader/retention rules permit cleanup.
 
 ## Shared integration boundary
 

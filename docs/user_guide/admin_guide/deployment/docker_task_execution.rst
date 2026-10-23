@@ -180,6 +180,39 @@ reconciliation rather than manual capacity release. The earlier four-row
 compute evidence predates these authority/lifecycle changes; qualify the new
 source and images again.
 
+Persistent Job State and Restart Boundaries
+-------------------------------------------
+
+The accepted default site layout uses one private CP workspace store and one
+separate jobs-state store. CP accesses both. Each resident or task CJ, and its
+task workers, receives only its own job directory from the jobs-state store,
+plus approved startup/configuration and dataset bindings. Keep site private
+keys and broad Docker authority in CP. The number of stores does not grow with
+the number of jobs or task attempts.
+
+The current Docker launcher has a single daemon-host ``workspace`` root and
+derives each job's bind source from it. Containers already receive individual
+job binds, but a separate jobs-state root is not configurable yet. Implementing
+the two-store default remains alignment work before readiness; do not add
+unsupported storage settings or expose CP's full workspace to a CJ/worker.
+
+For both ``execution_lifetime="job"`` and ``execution_lifetime="task"``, write
+required checkpoints and recovery metadata under the persistent job path
+``/var/tmp/nvflare/workspace/<job_id>``. Container removal keeps that bind's
+files, including retained task artifacts. The container's writable layer and
+workspace-root tmpfs remain ephemeral; root-level ``snapshot-storage`` or
+``jobs-storage`` directories outside the job bind do not provide persistence.
+Verify the application's actual save paths for both lifetimes during deployment
+qualification.
+
+Retained files do not automatically resume CJ or adopt workers after CP restart.
+That requires a separate restart path to restore committed state, coordinate
+with the server, and fence earlier attempts. This Docker profile provides
+neither automatic CJ resume nor CP restart adoption. Preserve required state
+and unresolved cleanup evidence until reconciliation and the existing
+artifact/reader retention rules allow removal. The job bind still has the
+job-credential exposure described under qualification below.
+
 Run the Application, Then Lifecycle Checks
 ------------------------------------------
 
