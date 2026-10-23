@@ -42,7 +42,19 @@ installed package revision and run it with focused progress output:
 
    nvflare examples get hello-pt
    cd hello-pt
+   python -m pip install -r requirements.txt
    python job.py --log_config progress
+
+The same pattern applies to other examples: install NVFLARE with the extras the
+example needs, retrieve it with ``nvflare examples get``, install its
+``requirements.txt``, then follow its README. If a ``requirements.txt`` line
+installs ``nvflare`` or ``nvflare-nightly``, skip it so the installed NVFLARE
+version is preserved.
+
+The installed NVFLARE version selects the example version: ``nvflare examples
+get`` downloads the example from the source revision recorded in your
+installation. To reproduce a specific release, pin it, for example
+``"nvflare[PT]==2.10.0"``.
 
 The default run uses two simulated clients and three federated rounds. It runs
 on CPU, downloads no dataset, and uses deterministic synthetic images generated
