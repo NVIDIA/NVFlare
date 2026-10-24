@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from functools import partial
 
@@ -35,7 +36,6 @@ from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
 from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
@@ -47,7 +47,7 @@ from nvflare.private.fed.task_worker.protocol import (
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
-from .task_execution_policy import TaskExecutionPolicy
+from .task_execution_policy import TaskExecutionPolicy, is_native_task_launcher
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 _TASK_ROUTE = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
@@ -76,6 +76,7 @@ class TaskWorkerExecutor(Executor):
         self._done = threading.Event()
         self._done.set()
         self._started = False
+        self._start_error = None
         self._ending = False
         self._panic_reported = False
         self._completed_attempts = set()
@@ -89,7 +90,16 @@ class TaskWorkerExecutor(Executor):
                     cell = fl_ctx.get_engine().get_cell()
                     if cell is None:
                         raise RuntimeError("task lifetime requires a Cell from the engine")
+                    self._started = False
+                try:
+                    self.policy.launcher.handle_event(event_type, fl_ctx)
+                except Exception as error:
+                    self._start_error = str(error)
+                    self.system_panic(f"task launcher START_RUN failed: {error}", fl_ctx)
+                    raise
+                with self._state_lock:
                     self._started = True
+                    self._start_error = None
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
@@ -98,13 +108,24 @@ class TaskWorkerExecutor(Executor):
                     fl_ctx.get_engine().get_cell().decode_pass_through_topics.discard(_TASK_ROUTE)
                 with self._state_lock:
                     self._ending = True
-                self.supervisor.end_run()
-                if (
-                    event_type == EventType.END_RUN
-                    and not self._done.wait(self.policy.settlement_timeout)
-                    and self.supervisor.owns_execution
-                ):
-                    self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
+                parent_owned = getattr(self.policy.launcher, "cleanup_owned_by_parent", False) is True
+                if event_type == EventType.END_RUN and parent_owned:
+                    # CP already owns every accepted request, including lost replies
+                    # and in-flight creates. CJ exit cannot discard that owner.
+                    try:
+                        self.policy.launcher.handle_event(event_type, fl_ctx)
+                    finally:
+                        self.supervisor.end_run()
+                elif event_type == EventType.END_RUN and is_native_task_launcher(self.policy.launcher):
+                    self._end_native_run(fl_ctx)
+                else:
+                    self.supervisor.end_run()
+                    if (
+                        event_type == EventType.END_RUN
+                        and not self._done.wait(self.policy.settlement_timeout)
+                        and self.supervisor.owns_execution
+                    ):
+                        self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
                     fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
@@ -112,6 +133,20 @@ class TaskWorkerExecutor(Executor):
                 self._record_receipt(fl_ctx)
         finally:
             self._report_issues(fl_ctx)
+
+    def _end_native_run(self, fl_ctx):
+        # Readiness has a finite budget and event dispatch catches exceptions.
+        # The native cleanup owner must therefore hold END_RUN itself until a
+        # late launch returns and physical settlement has actually been proved.
+        while True:
+            try:
+                self.supervisor.end_run()
+            except Exception as error:
+                self.log_warning(fl_ctx, f"native task cleanup failed; retaining CJ and retrying: {error}")
+            self._report_issues(fl_ctx)
+            if not self.supervisor.owns_execution and self._done.is_set():
+                return
+            time.sleep(self.policy.poll_interval)
 
     def _report_issues(self, fl_ctx):
         for level, message in self.supervisor.take_issues():
@@ -169,7 +204,7 @@ class TaskWorkerExecutor(Executor):
         try:
             with self._state_lock:
                 if not self._started or self._ending:
-                    raise RuntimeError("task worker executor is not running")
+                    raise RuntimeError(self._start_error or "task worker executor is not running")
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             identity = self._identity(task_name, fl_ctx)
@@ -178,7 +213,7 @@ class TaskWorkerExecutor(Executor):
                 with self._checkpoint_commit_guard(abort_signal):
                     fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
                     return result
-            validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
+            resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = self._runtime_root(workspace, identity.job_id)
             store = FileTaskArtifactStore(
@@ -215,6 +250,7 @@ class TaskWorkerExecutor(Executor):
                     ),
                     environment=self.policy.worker_environment(),
                     cwd=workspace.get_run_dir(attempt.job_id),
+                    resources=resources,
                 )
 
             outcome = self.supervisor.run(

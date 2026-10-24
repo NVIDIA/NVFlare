@@ -12,12 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import json
 import logging
+import os
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+
+try:
+    import kubernetes.utils.quantity as _k8s_quantity
+except ImportError:
+    _k8s_quantity = None
 
 _k8s_mock = ModuleType("kubernetes")
 _k8s_client = ModuleType("kubernetes.client")
@@ -42,32 +50,47 @@ _k8s_api.core_v1_api = _k8s_core
 _k8s_mock.config = _k8s_config
 _k8s_mock.client = _k8s_client
 
-for _mod_name, _mod_obj in [
-    ("kubernetes", _k8s_mock),
-    ("kubernetes.config", _k8s_config),
-    ("kubernetes.client", _k8s_client),
-    ("kubernetes.client.rest", _k8s_rest),
-    ("kubernetes.client.api", _k8s_api),
-    ("kubernetes.client.api.core_v1_api", _k8s_core),
-]:
-    sys.modules[_mod_name] = _mod_obj
+_K8S_MODULES = {
+    "kubernetes": _k8s_mock,
+    "kubernetes.config": _k8s_config,
+    "kubernetes.client": _k8s_client,
+    "kubernetes.client.rest": _k8s_rest,
+    "kubernetes.client.api": _k8s_api,
+    "kubernetes.client.api.core_v1_api": _k8s_core,
+}
+
+if _k8s_quantity is not None:
+    _K8S_MODULES["kubernetes.utils.quantity"] = _k8s_quantity
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kubernetes_modules():
+    # The SDK is imported lazily by the resident launcher. Keep these stubs
+    # local to its tests so other backends can use the real SDK utilities.
+    with patch.dict(sys.modules, _K8S_MODULES):
+        yield
+
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
     WORKSPACE_MOUNT_PATH,
+    ClientK8sJobLauncher,
     JobState,
     K8sJobHandle,
     PodPhase,
     _job_args_dict,
     job_pod_name,
+    job_workspace_subpath,
     site_name_to_rfc1123,
     study_dataset_volume_name,
+    task_security_context,
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
@@ -467,7 +490,13 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         cfg["module_args"] = None
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        assert handle.container_args_module_args_dict_as_list == []
+        assert handle.get_manifest()["spec"]["containers"][0]["args"] == [
+            "-u",
+            "-m",
+            cfg["command"],
+            "--set",
+            *cfg["set_list"],
+        ]
 
     def test_manifest_gpu_resources(self):
         cfg = _make_job_config()
@@ -1399,7 +1428,7 @@ class TestJobArgsDict:
 # ---------------------------------------------------------------------------
 def _make_k8s_launcher_patches(patch_open=True):
     # kubernetes is imported inside launch_job (not at module level), so we rely
-    # on the sys.modules stubs injected at the top of this file.  The only
+    # on the sys.modules stubs scoped by this module's fixture. The only
     # YAML dependency we need to intercept is in the shared study_data helper,
     # plus builtins.open for reading the study-data file. CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
@@ -3023,7 +3052,7 @@ spec:
         try:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3036,7 +3065,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3066,7 +3095,7 @@ spec:
             }
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3079,7 +3108,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 3
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "3"
         finally:
             _exit_patches(patches)
 
@@ -3153,7 +3182,7 @@ spec:
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             limits = manifest["spec"]["containers"][0]["resources"]["limits"]
-            assert limits["nvidia.com/gpu"] == 2
+            assert limits["nvidia.com/gpu"] == "2"
             assert limits["cpu"] == "1000m"
             assert limits["memory"] == "4Gi"
         finally:
@@ -3205,8 +3234,8 @@ spec:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             resources = manifest["spec"]["containers"][0]["resources"]
-            assert resources["requests"]["nvidia.com/gpu"] == 2
-            assert resources["limits"]["nvidia.com/gpu"] == 2
+            assert resources["requests"]["nvidia.com/gpu"] == "2"
+            assert resources["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3725,3 +3754,248 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.app_opt.job_launcher.k8s_launcher",
     )
+
+
+_TASK_JOB_ID = "4df684c0-d73d-4e7e-83d6-e4e8d0171532"
+_TASK_SITE = "site-1"
+
+
+def _task_profile(pvc_root):
+    return ClientK8sJobLauncher(
+        config_file_path=None,
+        namespace="site",
+        job_workspace_pvc="existing-pvc",
+        job_workspace_pvc_root=str(pvc_root),
+        run_as_user=max(os.getuid(), 1),
+        run_as_group=max(os.getgid(), 1),
+    )
+
+
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension):
+    if lifetime == "task" and _k8s_quantity is None:
+        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
+    config.mkdir(parents=True)
+    content = (
+        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
+    )
+    (config / f"config_fed_client.{extension}").write_text(content)
+    workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)
+    fl_ctx.set_prop(ReservedKey.ENGINE, SimpleNamespace(cell=Mock()), private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.SECURE_MODE, False, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.ARGS, SimpleNamespace(workspace=str(tmp_path), set=[]), private=True, sticky=False)
+    fl_ctx.set_prop(
+        FLContextKey.JOB_PROCESS_ARGS,
+        {
+            JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.client.worker_process"),
+            JobProcessArgs.WORKSPACE: ("-w", "/var/tmp/nvflare/workspace"),
+            JobProcessArgs.JOB_ID: ("-n", _TASK_JOB_ID),
+        },
+        private=True,
+        sticky=False,
+    )
+    pvc_root = tmp_path / "mounted-pvc"
+    pvc_root.mkdir()
+    launcher = _task_profile(pvc_root)
+    (tmp_path / "local" / "resources.json").write_text(
+        json.dumps(
+            {
+                "components": [
+                    {
+                        "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "job_workspace_pvc": "existing-pvc",
+                            "job_workspace_pvc_root": str(pvc_root),
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                ],
+                "task_execution": {
+                    "launcher": {
+                        "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "image": "site/worker",
+                            "workspace_root": "/var/tmp/nvflare/workspace",
+                            "workspace_pvc": "existing-pvc",
+                            "worker_service_account": "task-no-api",
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                },
+            }
+        )
+    )
+    launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
+    api = launcher.core_v1 = Mock()
+    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    launcher._ensure_startup_secret = Mock(return_value="existing-startup-secret")
+    launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
+    launcher._own_credential_secret = Mock()
+    meta = {
+        JobConstants.JOB_ID: _TASK_JOB_ID,
+        "launcher_spec": {_TASK_SITE: {"k8s": {"image": "site/image", "num_of_gpus": 2}}},
+    }
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
+        patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService") as service,
+    ):
+        transfer.get_or_create.return_value.owner_fqcn = "site-parent"
+        transfer.get_or_create.return_value.add_job.return_value = "transfer-token"
+        service.get_or_create.return_value.add_job.return_value.lock = __import__("threading").Lock()
+        handle = launcher.launch_job(meta, fl_ctx)
+    manifest = api.create_namespaced_pod.call_args.kwargs["body"]
+    assert handle.get_manifest() == manifest
+    assert (handle.task_owner is not None) == (lifetime == "task")
+    spec = manifest["spec"]
+    container = spec["containers"][0]
+    workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
+    workspace_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job")
+    assert workspace_volume == {"name": "workspace-job", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
+    assert workspace_mount["subPath"] == job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert spec["automountServiceAccountToken"] is False
+    assert spec["securityContext"] == task_security_context(max(os.getuid(), 1), max(os.getgid(), 1))
+    assert container["securityContext"]["allowPrivilegeEscalation"] is False
+    if lifetime == "job":
+        assert container["resources"]["requests"]["nvidia.com/gpu"] == "2"
+        assert "serviceAccountName" not in spec
+    else:
+        assert "nvidia.com/gpu" not in container["resources"]["requests"]
+        assert "nvidia.com/gpu" not in container["resources"]["limits"]
+        assert spec["serviceAccountName"] == "task-no-api"
+        environment = {item["name"]: item.get("value") for item in container["env"]}
+        assert environment["CUDA_VISIBLE_DEVICES"] == ""
+        assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
+    # Existing credential ownership and workspace-transfer mechanisms are retained.
+    launcher._own_credential_secret.assert_called_once()
+    transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))
+    launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE)
+    job_dir = pvc_root / workspace_mount["subPath"]
+    (job_dir / "committed-checkpoint").write_bytes(b"persist across CJ deletion")
+    (tmp_path / "cp-private-state").write_bytes(b"private")
+    assert not (job_dir / "cp-private-state").exists()
+    handle.terminate()
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    with pytest.raises(ValueError, match="already exists"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+
+
+@pytest.mark.parametrize("fault", ["sidecar", "host", "missing-volume", "wrong-mount", "unknown-lifetime"])
+def test_unsupported_cj_profiles_fail_before_submission(tmp_path, fault):
+    path = tmp_path / "client.json"
+    path.write_text(json.dumps({"execution_lifetime": "other" if fault == "unknown-lifetime" else "task"}))
+    workspace = SimpleNamespace(get_client_app_config_file_path=lambda _: str(path))
+    manifest = {
+        "spec": {
+            "volumes": [{"name": "workspace-job", "emptyDir": {}}],
+            "containers": [
+                {"name": "cj", "volumeMounts": [{"name": "workspace-job", "mountPath": "/var/tmp/nvflare/workspace"}]}
+            ],
+        }
+    }
+    if fault == "sidecar":
+        manifest["spec"]["containers"].append({"name": "sidecar"})
+    elif fault == "host":
+        manifest["spec"]["hostPID"] = True
+    elif fault == "missing-volume":
+        manifest["spec"]["volumes"] = []
+    elif fault == "wrong-mount":
+        manifest["spec"]["containers"][0]["volumeMounts"][0]["mountPath"] = "/other"
+    with pytest.raises(ValueError):
+        launcher = _task_profile(tmp_path)
+        context = Mock()
+        context.get_prop.return_value = workspace
+        lifetime = launcher.get_execution_lifetime({JobConstants.JOB_ID: _TASK_JOB_ID}, context)
+        launcher.prepare_job_manifest(
+            copy.deepcopy(manifest), _TASK_JOB_ID, _TASK_SITE, workspace, execution_lifetime=lifetime
+        )
+
+
+def test_subpaths_are_site_and_job_scoped_without_raw_path_components():
+    paths = {
+        job_workspace_subpath(job, site) for job in (_TASK_JOB_ID, "../other") for site in (_TASK_SITE, "site/other")
+    }
+    assert len(paths) == 4
+    assert all(path.startswith("nvflare-tasks/") and ".." not in path for path in paths)
+
+
+@pytest.mark.parametrize("uid,gid", [(0, 1000), (1000, 0), (True, 1000), (1000, "1000")])
+def test_profile_requires_numeric_nonroot_filesystem_identity(uid, gid):
+    with pytest.raises(ValueError, match="explicit positive numeric ID"):
+        task_security_context(uid, gid)
+
+
+def test_cp_creates_fresh_owned_subpath_without_reusing_retained_workspace(tmp_path):
+    launcher = _task_profile(tmp_path)
+    if os.getuid() == 0:
+        with pytest.raises(ValueError, match="same nonroot numeric UID"):
+            launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        return
+    subpath = launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    directory = tmp_path / subpath
+    assert directory.is_dir()
+    assert directory.stat().st_uid == os.getuid()
+    (directory / "retained-result").write_bytes(b"do not discard")
+    with pytest.raises(ValueError, match="retained job/site data cannot be reused"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert (directory / "retained-result").read_bytes() == b"do not discard"
+
+
+def test_cp_rejects_unmounted_pvc_or_replaced_parent(tmp_path):
+    launcher = _task_profile(tmp_path / "unmounted")
+    with pytest.raises(ValueError, match="already be mounted"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "nvflare-tasks").symlink_to(tmp_path / "outside")
+    with pytest.raises(ValueError, match="real directory"):
+        _task_profile(tmp_path)._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["job_workspace_pvc", "job_workspace_pvc_root", "run_as_user", "run_as_group"],
+)
+def test_client_task_settings_must_be_complete(missing):
+    settings = {
+        "job_workspace_pvc": "existing-pvc",
+        "job_workspace_pvc_root": "/cp/task-pvc",
+        "run_as_user": 1000,
+        "run_as_group": 1000,
+    }
+    settings.pop(missing)
+    with pytest.raises(ValueError, match="together"):
+        ClientK8sJobLauncher(config_file_path=None, **settings)
+
+
+@pytest.mark.parametrize("phase", ["Unknown", "Pending"])
+def test_never_started_task_cj_is_terminated_and_cp_owner_retains_cleanup(phase):
+    api = Mock()
+    api.read_namespaced_pod.return_value = SimpleNamespace(
+        status=SimpleNamespace(
+            phase=phase,
+            conditions=[SimpleNamespace(type="PodScheduled", status="True")],
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(waiting=SimpleNamespace(reason="ImagePullBackOff", message="pull failed"))
+                )
+            ],
+        )
+    )
+    handle = _make_handle(api=api)
+    owner = handle.task_owner = Mock()
+    handle.wait()
+    assert handle.poll() == JobReturnCode.EXCEPTION
+    owner.close.assert_called()
+    owner.release.assert_called()
+    api.delete_namespaced_pod.assert_called_once()
