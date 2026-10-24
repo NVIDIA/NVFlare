@@ -114,6 +114,9 @@ class TestDirichletLabelPartition:
             {"num_sites": 2, "alpha": 0.5, "max_attempts": float("nan")},
             {"num_sites": 2, "alpha": 0.5, "min_size": 1.5},
             {"num_sites": 2, "alpha": 0.5, "min_size": float("nan")},
+            {"num_sites": 2, "alpha": float("nan")},
+            {"num_sites": 2, "alpha": float("inf")},
+            {"num_sites": 2, "alpha": "0.5"},
         ],
     )
     def test_invalid_arguments(self, labels, kwargs):
@@ -216,6 +219,12 @@ class TestQuantitySkewPartition:
     def test_non_integer_min_size_and_max_attempts(self, kwargs):
         with pytest.raises(ValueError):
             quantity_skew_partition(100, num_sites=2, seed=0, **kwargs)
+
+    @pytest.mark.parametrize("num_samples", ["100", 100.0, -1, float("nan")])
+    @pytest.mark.parametrize("partition", [iid_partition, quantity_skew_partition])
+    def test_invalid_num_samples(self, partition, num_samples):
+        with pytest.raises(ValueError, match="num_samples"):
+            partition(num_samples, num_sites=2, seed=0)
 
 
 class TestPartitionResultJson:

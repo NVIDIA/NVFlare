@@ -97,8 +97,10 @@ class PartitionResult:
 def _check_common(num_sites: int, alpha: Optional[float], min_size: int, max_attempts: int, num_samples: int) -> None:
     if not isinstance(num_sites, (int, np.integer)) or num_sites < 1:
         raise ValueError(f"num_sites must be a positive integer but got {num_sites!r}")
-    if alpha is not None and alpha <= 0:
-        raise ValueError(f"alpha must be larger than 0 but got {alpha}")
+    if not isinstance(num_samples, (int, np.integer)) or num_samples < 0:
+        raise ValueError(f"num_samples must be a non-negative integer but got {num_samples!r}")
+    if alpha is not None and (not isinstance(alpha, (int, float, np.number)) or not np.isfinite(alpha) or alpha <= 0):
+        raise ValueError(f"alpha must be a finite number larger than 0 but got {alpha!r}")
     if not isinstance(min_size, (int, np.integer)) or min_size < 0:
         raise ValueError(f"min_size must be a non-negative integer but got {min_size!r}")
     if min_size * num_sites > num_samples:
