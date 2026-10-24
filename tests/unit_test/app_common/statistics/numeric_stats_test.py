@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from nvflare.app_common.app_constant import StatisticsConstants as StC
@@ -22,6 +24,7 @@ from nvflare.app_common.statistics.numeric_stats import (
     get_global_stats,
     get_min_or_max_values,
 )
+from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 TEST_CASE_1 = [
     (
@@ -133,6 +136,45 @@ class TestWithheldFeatures:
         assert result[StC.STATS_COUNT]["train"]["x"] == 100
         assert result[StC.STATS_SUM]["train"]["x"] == 1020.0
         assert result[StC.STATS_MEAN]["train"]["x"] == 10.2
+
+    def test_second_round_variance_and_stddev_use_only_contributing_sites(self):
+        values = {
+            "site-1": [11.0],
+            "site-2": list(9.0 + np.linspace(-1.0, 1.0, 40)),
+            "site-3": list(11.0 + np.linspace(-2.0, 2.0, 60)),
+        }
+        first_round = {name: _client_first_round(v) for name, v in values.items()}
+        global_stats = _aggregate(first_round)
+        global_count = global_stats[StC.STATS_COUNT]["train"]["x"]
+        global_mean = global_stats[StC.STATS_MEAN]["train"]["x"]
+        assert global_count == 100
+
+        # Second round as a client computes it from the global count and mean, then the privacy filter.
+        cleanser = MinCountCleanser(min_count=10)
+        second_round, withheld = {}, {}
+        for name, v in values.items():
+            core = DFStatisticsCore()
+            core.data = {"train": pd.DataFrame({"x": v})}
+            statistics = {
+                StC.STATS_COUNT: {"train": {"x": len(v)}},
+                StC.STATS_FAILURE_COUNT: {"train": {"x": 0}},
+                StC.STATS_VAR: {"train": {"x": core.variance_with_mean("train", "x", global_mean, global_count)}},
+                StC.STATS_STDDEV: {"train": {"x": core.stddev("train", "x")}},
+            }
+            marker = cleanser.withheld_features(statistics, name)
+            if marker:
+                withheld[name] = {ds: set(features) for ds, features in marker.items()}
+            second_round[name], _ = cleanser.apply(statistics, name)
+        assert withheld == {"site-1": {"train": {"x"}}}
+        client_metrics = {m: {name: stats[m] for name, stats in second_round.items()} for m in second_round["site-1"]}
+
+        result = get_global_stats(
+            global_stats, client_metrics, StC.STATS_2nd_STATISTICS, {}, withheld_features=withheld
+        )
+
+        contributing = np.array(values["site-2"] + values["site-3"])
+        assert result[StC.STATS_VAR]["train"]["x"] == pytest.approx(contributing.var(ddof=1), abs=1e-3)
+        assert result[StC.STATS_STDDEV]["train"]["x"] == pytest.approx(contributing.std(ddof=1), abs=1e-3)
 
     def test_failure_count_ignores_withheld_site_too(self):
         clients = {"site-1": _client_first_round([11.0]), "site-2": _client_first_round([9.0] * 40)}
