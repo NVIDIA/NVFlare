@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from math import sqrt
-from typing import Dict, List, TypeVar
+from typing import Dict, List, Optional, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
@@ -55,7 +55,14 @@ def get_global_stats(
             global_metrics[metric] = {}
 
         stats = client_metrics[metric]
-        if metric == StC.STATS_COUNT or metric == StC.STATS_FAILURE_COUNT or metric == StC.STATS_SUM:
+        if metric == StC.STATS_COUNT:
+            client_sums = client_metrics.get(StC.STATS_SUM)
+            for client_name in stats:
+                counts = exclude_withheld_counts(
+                    stats[client_name], None if client_sums is None else client_sums.get(client_name, {})
+                )
+                global_metrics[metric] = accumulate_metrics(counts, global_metrics[metric], precision)
+        elif metric == StC.STATS_FAILURE_COUNT or metric == StC.STATS_SUM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric], precision)
         elif metric == StC.STATS_MEAN:
@@ -110,6 +117,31 @@ def accumulate_metrics(metrics: dict, global_metrics: dict, precision: int) -> d
                     )
 
     return global_metrics
+
+
+def exclude_withheld_counts(counts: dict, sums: Optional[dict]) -> dict:
+    """Return a client's counts without the features for which the client supplied no sum.
+
+    A privacy cleanser such as ``MinCountCleanser`` removes every statistic except the count of a feature that
+    falls below its threshold. Adding that count to the global count while its sum is missing makes the global
+    mean (and the variance, which divides by the global count) describe different populations.
+
+    Args:
+        counts: the client's counts, ``{dataset: {feature: count}}``
+        sums: the client's sums in the same layout, or None when the sum was not requested, in which case
+            every count is kept
+
+    Returns:
+        the counts of the features that have a sum, in the same layout as ``counts``
+    """
+    if sums is None:
+        return counts
+
+    contributing = {}
+    for ds_name, feature_counts in counts.items():
+        feature_sums = sums.get(ds_name, {})
+        contributing[ds_name] = {f: c for f, c in feature_counts.items() if feature_sums.get(f) is not None}
+    return contributing
 
 
 def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision: int = 4) -> dict:
