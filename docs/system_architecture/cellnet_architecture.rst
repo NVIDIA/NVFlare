@@ -209,4 +209,52 @@ Performance and Statistics
 CellNet includes comprehensive statistics collection for monitoring and debugging.
 Statistics are collected via ``StatsPoolManager`` with categories for different operation types and cell FQCNs.
 
+Payload bytes by peer
+^^^^^^^^^^^^^^^^^^^^^
+
+``cell.get_traffic_stats()`` returns cumulative sent and received payload bytes for
+each peer. Each peer is the cell at the other end of a transport hop,
+which may be a relay rather than the message's final destination. For example:
+
+.. code-block:: python
+
+   {
+       "site-1.job-123": {"sent": 1024, "received": 256},
+       "site-2.job-123": {"sent": 1234, "received": 5678},
+   }
+
+* ``sent`` counts the encoded payload passed to the communicator when its
+  send call returns without an error. A later transport failure is still possible;
+  this value does not prove delivery.
+* ``received`` counts payload bytes delivered to CoreCell, before filtering,
+  forwarding, or decoding. It does not prove that an application accepted them.
+* Application data, control-message payloads, stream chunks, and repeated transfers
+  all contribute. When message encryption is enabled, the encrypted payload size
+  is counted. CellNet headers, transport framing, and TLS overhead are excluded;
+  a message without a payload contributes zero bytes.
+* Cross-process traffic counts even on the same machine. Direct delivery between
+  cells in one process and a cell's sends to itself do not count.
+
+Snapshots are independent copies and do not reset the counters. Reading one does
+not wait for in-flight transfers, start a worker, or write a report. There is no
+limit on the number of peers retained and no combined overflow entry.
+
+``cell.pop_traffic_stats(peer)`` atomically returns and removes one peer's counters,
+or returns ``None`` when no entry exists. Other peers are unchanged. New traffic
+from a removed peer starts fresh counters. The caller can use this after collecting
+the final statistics for a completed peer; CellNet does not infer job completion
+or remove history on a temporary disconnect. Long-lived callers must retire entries
+they no longer need to avoid retaining every historical peer indefinitely.
+
+The counters require no additional configuration or dependencies. Aggregation and
+report storage belong to the component reading them, not CellNet. A job can use
+its job-cell counters, but cannot assign a shared parent cell's traffic to itself
+from these pair totals alone. Parent traffic can include deployment and relayed
+model transfers.
+
+For a chosen set of cells, summing sent bytes counts each observed outgoing hop,
+including relay hops. Do not add matching received bytes to that sum: that would
+count the same transfers twice. Sent and received totals can differ because they
+observe different boundaries and may be read at different times.
+
 

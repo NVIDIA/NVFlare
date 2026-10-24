@@ -48,7 +48,7 @@ from nvflare.fuel.f3.cellnet.identity import (
     is_mtls_config,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
-from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply
+from nvflare.fuel.f3.cellnet.utils import buffer_len, decode_payload, encode_payload, format_log_message, make_reply
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
@@ -58,6 +58,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.traffic_stats import PeerTrafficCounters
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
@@ -366,6 +367,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
+        self.traffic_stats = PeerTrafficCounters()
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
@@ -596,6 +598,27 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
+
+    def get_traffic_stats(self) -> dict:
+        """Snapshot cumulative remote payload bytes for each adjacent peer."""
+        return self.traffic_stats.snapshot()
+
+    def pop_traffic_stats(self, peer: str):
+        """Return and remove one peer's counters without changing other peers."""
+        return self.traffic_stats.pop(peer)
+
+    def _record_traffic(self, peer, message, sent):
+        if peer == self.my_info.fqcn:
+            return
+        try:
+            payload_bytes = buffer_len(message.payload)
+            if sent:
+                self.traffic_stats.record_sent(peer, payload_bytes)
+            else:
+                self.traffic_stats.record_received(peer, payload_bytes)
+        except Exception:
+            # Observing bytes must not change message delivery or its result.
+            pass
 
     def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
         if target_fqcn in self.ALL_CELLS:
@@ -1349,6 +1372,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
                 else:
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
+                    self._record_traffic(to_endpoint.name, message, sent=True)
                 self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
@@ -2039,6 +2063,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return msg_size / _ONE_MB
 
     def _process_received_msg(self, endpoint: Endpoint, connection: Connection, message: Message):
+        # Direct in-process delivery has no transport connection.
+        if connection is not None:
+            self._record_traffic(endpoint.name, message, sent=False)
         route = message.get_header(MessageHeaderKey.ROUTE)
         if route:
             origin_name = route[0][0]
