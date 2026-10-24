@@ -67,6 +67,19 @@ analysis covers its deployment-specific security model and remaining gaps.
    architecture
    Confidential Containers (CoCo) security architecture <coco_security_architecture>
 
+Azure Confidential Computing Deployment
+=======================================
+
+FLARE integrates with Azure confidential virtual machines and confidential
+Azure Container Instances (ACI), using Microsoft Azure Attestation for
+participant evidence. Azure image and resource preparation is separate from
+NVFlare's ``azure_cc`` provisioning configuration.
+
+* :ref:`Confidential ACI deployment <confidential_azure_container_instances_deployment>`:
+  run an NVFlare server and its aggregation workload inside confidential ACI.
+* :ref:`Azure confidential VM deployment <azure_confidential_virtual_machine_deployment>`:
+  create and attest a confidential VM, then install NVFlare and its startup kit.
+
 Deployment guides and configuration reference
 ==============================================
 
