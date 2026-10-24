@@ -102,6 +102,13 @@ class RaiseExecutor(ProbeExecutor):
         raise ValueError("deliberate worker failure")
 
 
+class FailLargeValueExecutor(ProbeExecutor):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        if shareable["value"] > 5:
+            raise ValueError("deliberate worker failure")
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
+
+
 class FailingFinalizeStatistics(Statistics):
     def features(self):
         return {}
@@ -149,7 +156,7 @@ def _identity(attempt_id, task_id="task-1", task_name="train"):
     )
 
 
-def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None):
+def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None, session_dir=None):
     if not executor:
         executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer"}
     store.create_attempt(identity)
@@ -162,6 +169,7 @@ def _stage(store, identity, workspace_root, executor, data, components=(), conte
         components=components,
         context_properties=context_properties or {},
         max_payload_bytes=store.max_payload_bytes,
+        session_dir=session_dir,
     )
     path = store.bootstrap_path(identity)
     write_bootstrap(path, bootstrap)
@@ -247,6 +255,68 @@ def test_real_worker_process_commits_after_finalization_and_exposes_only_support
     assert completion.completed_at >= completion.started_at
     assert completion.diagnostics["user_cpu_seconds"] >= 0
     assert store.read_input(identity)["value"] == 3
+
+
+def _stage_session(tmp_path, executor_path, marker):
+    workspace_root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    first, second = _identity("attempt-1"), _identity("attempt-2", task_id="task-2", task_name="validate")
+    bootstrap_path = _stage(
+        store,
+        first,
+        workspace_root,
+        executor={"path": executor_path, "args": {"marker_path": str(marker)}},
+        data=Shareable({"value": 3}),
+        session_dir=str(session_dir),
+    )
+    store.create_attempt(second)
+    store.write_input(second, Shareable({"value": 10}))
+    artifacts._write_json_exclusive(str(session_dir), "000002.json", second.to_dict())
+    artifacts._write_json_exclusive(str(session_dir), protocol.SESSION_END_MARKER, {})
+    return store, first, second, bootstrap_path
+
+
+def test_session_worker_serves_staged_attempts_on_one_executor_until_the_end_marker(tmp_path):
+    marker = tmp_path / "events.txt"
+    store, first, second, bootstrap_path = _stage_session(tmp_path, "worker_components.ProbeExecutor", marker)
+
+    process = _run_process(bootstrap_path)
+
+    assert process.returncode == 0, process.stderr
+    result_1, completion_1 = store.read_result(first)
+    result_2, completion_2 = store.read_result(second)
+    assert (result_1["value"], result_2["value"]) == (7, 14)
+    assert result_1["pid"] == result_2["pid"] == completion_1.worker_pid == completion_2.worker_pid
+    assert (result_1["task_id"], result_2["task_id"]) == ("task-1", "task-2")
+    assert completion_2.started_at >= completion_1.completed_at
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
+
+
+def test_session_worker_stops_waiting_when_its_client_job_is_gone(tmp_path, monkeypatch):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    bootstrap = WorkerBootstrap(_identity("attempt-1"), str(tmp_path), str(tmp_path), {}, session_dir=str(session_dir))
+    parents = iter([4242, 4242, 1])
+    monkeypatch.setattr(worker.os, "getppid", lambda: next(parents))
+    monkeypatch.setattr(worker.time, "sleep", lambda _interval: None)
+
+    assert list(worker._attempt_identities(bootstrap)) == [bootstrap.identity]
+
+
+def test_session_worker_failure_keeps_the_earlier_completion_and_ends_the_session(tmp_path):
+    marker = tmp_path / "events.txt"
+    store, first, second, bootstrap_path = _stage_session(tmp_path, "worker_components.FailLargeValueExecutor", marker)
+
+    process = _run_process(bootstrap_path)
+
+    assert process.returncode != 0
+    assert store.read_result(first)[0]["value"] == 7
+    assert not Path(store.attempt_dir(first), "failure.json").exists()
+    assert store.read_failure(second)["error_type"] == "ValueError"
+    assert not Path(store.attempt_dir(second), "completion.json").exists()
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
 
 
 def test_executor_exception_runs_finalization_but_does_not_commit_success(tmp_path):
@@ -729,7 +799,11 @@ def test_worker_rejects_non_executor_component(monkeypatch):
 
 def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch):
     workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
-    bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("invalid-result")
+    store.create_attempt(identity)
+    store.write_input(identity, Shareable())
+    bootstrap = WorkerBootstrap(identity, store.root_dir, workspace.get_root_dir(), {})
     finalized = Mock()
     executor = SimpleNamespace(execute=lambda *_args: {}, finalize=finalized)
 
@@ -738,7 +812,7 @@ def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch)
 
     monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
-        worker._execute(bootstrap, Shareable(), workspace, None)
+        worker._execute(bootstrap, workspace, store, worker.AttemptBinding(identity))
     finalized.assert_called_once()
 
 

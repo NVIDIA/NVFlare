@@ -25,6 +25,7 @@ import math
 import os
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -41,8 +42,8 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
 )
 
-from .artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError, TaskCompletion
-from .protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
+from .artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError, TaskCompletion, _write_json_exclusive
+from .protocol import SESSION_END_MARKER, TaskAttemptIdentity, WorkerBootstrap, session_entry_name, write_bootstrap
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,8 @@ class _Attempt:
     runtime_root: str
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     handle: Optional[TaskHandleSpec] = None
-    settled: bool = False
+    settled: bool = False  # physical: the process that owned this record has exited and been reaped
+    published: bool = False  # the attempt's artifacts are final; the worker never touches them again
     validated: bool = False
     completion: Optional[TaskCompletion] = None
     failed: bool = False
@@ -93,8 +95,19 @@ class _Attempt:
     released: bool = False
 
 
+@dataclass
+class _Session(_Attempt):
+    """One worker process; ``identity`` is its first attempt. Without a group it serves that attempt only."""
+
+    group_id: Optional[str] = None
+    session_dir: Optional[str] = None
+    launcher: Optional[TaskLauncherSpec] = None
+    request_factory: Optional[Callable] = None
+    staged: int = 0
+
+
 class TaskSupervisor:
-    """Own one active physical attempt; retain failed or unresolved evidence.
+    """Own one active worker session and its attempts; retain failed or unresolved evidence.
 
     Instances have one job lifetime. ``end_run`` permanently closes admission.
     Unconfirmed settlement permanently fences this instance, even if a later
@@ -138,7 +151,8 @@ class TaskSupervisor:
         return issues
 
     def _diagnostic(self, attempt, event, **facts):
-        record = {**attempt.identity.to_dict(), "event": event, "timestamp": time.time(), **facts}
+        identity = attempt.identity.to_dict() if attempt.identity is not None else {}
+        record = {**identity, "event": event, "timestamp": time.time(), **facts}
         try:
             os.makedirs(attempt.runtime_root, mode=0o700, exist_ok=True)
             with self._diagnostic_lock:
@@ -215,28 +229,74 @@ class TaskSupervisor:
         request_factory: Callable[[TaskAttemptIdentity, str], TaskLaunchRequest],
         options: TaskSupervisorOptions = TaskSupervisorOptions(),
         deadline_provider: Optional[Callable[[], Optional[float]]] = None,
+        stage_hook: Optional[Callable[[TaskAttemptIdentity], None]] = None,
     ) -> TaskSupervisorOutcome:
-        if not isinstance(bootstrap, WorkerBootstrap) or not isinstance(options, TaskSupervisorOptions):
-            raise TypeError("bootstrap and options must be worker bootstrap and supervisor options")
-        if not isinstance(input_payload, Shareable) or not isinstance(abort_signal, Signal):
-            raise TypeError("input_payload and abort_signal must be Shareable and Signal")
+        """Run one attempt in a worker of its own: a session of one that ends when the worker exits."""
+        if not isinstance(bootstrap, WorkerBootstrap):
+            raise TypeError("bootstrap must be a WorkerBootstrap")
+        if bootstrap.session_dir is not None:
+            raise ValueError("a one-shot worker bootstrap cannot name a session directory")
+        session = self.open_session(None, store, runtime_root, launcher, request_factory)
+        return self.run_attempt(session, bootstrap, input_payload, abort_signal, options, deadline_provider, stage_hook)
+
+    def open_session(self, group_id, store, runtime_root, launcher, request_factory) -> _Session:
+        """Record a session; its worker is launched by the first ``run_attempt``.
+
+        Without a group the session has no directory: its worker serves one attempt and exits.
+        """
         if not isinstance(launcher, TaskLauncherSpec):
             raise TypeError("launcher must be a TaskLauncherSpec")
         if not isinstance(store, FileTaskArtifactStore):
             raise TypeError("store must be a FileTaskArtifactStore")
+        session_dir = None
+        if group_id is not None:
+            session_dir = os.path.join(runtime_root, "sessions", str(uuid.uuid4()))
+            os.makedirs(session_dir, mode=0o700)
+        return _Session(
+            identity=None,
+            store=store,
+            runtime_root=runtime_root,
+            group_id=group_id,
+            session_dir=session_dir,
+            launcher=launcher,
+            request_factory=request_factory,
+        )
+
+    def run_attempt(
+        self,
+        session: _Session,
+        bootstrap: WorkerBootstrap,
+        input_payload: Shareable,
+        abort_signal: Signal,
+        options: TaskSupervisorOptions = TaskSupervisorOptions(),
+        deadline_provider: Optional[Callable[[], Optional[float]]] = None,
+        stage_hook: Optional[Callable[[TaskAttemptIdentity], None]] = None,
+    ) -> TaskSupervisorOutcome:
+        """Stage one attempt for the session's worker, launching it first if needed, and wait for its completion."""
+        if not isinstance(bootstrap, WorkerBootstrap) or not isinstance(options, TaskSupervisorOptions):
+            raise TypeError("bootstrap and options must be worker bootstrap and supervisor options")
+        if not isinstance(input_payload, Shareable) or not isinstance(abort_signal, Signal):
+            raise TypeError("input_payload and abort_signal must be Shareable and Signal")
+        if not isinstance(session, _Session):
+            raise TypeError("session must come from open_session")
+        store = session.store
+        if bootstrap.session_dir != session.session_dir:
+            raise ValueError("bootstrap does not name the session's directory")
         if os.path.realpath(bootstrap.artifact_root) != store.root_dir:
             raise ValueError("bootstrap artifact root does not match the owned store")
         if bootstrap.max_payload_bytes != store.max_payload_bytes:
             raise ValueError("bootstrap and owned store must use the same payload policy")
         if not self._execution_lock.acquire(blocking=False):
             raise RuntimeError("this task supervisor already has an active attempt")
+        identity = bootstrap.identity
         attempt = None
         try:
-            identity = bootstrap.identity
             launch_identity = (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id)
             with self._state_lock:
                 if self._stopping:
                     raise RuntimeError("task supervisor is stopping and rejects new attempts")
+                if session.settled:
+                    raise RuntimeError("task worker session has ended")
                 if abort_signal.triggered:
                     return TaskSupervisorOutcome(identity=identity, aborted=True)
                 if options.worker_timeout == 0:
@@ -244,51 +304,44 @@ class TaskSupervisor:
                 if launch_identity in self._launch_identities:
                     raise RuntimeError("task attempt identity was already owned; resubmit its saved result")
                 self._launch_identities.add(launch_identity)
-                attempt = _Attempt(identity, store, runtime_root)
+                attempt = _Attempt(identity, store, session.runtime_root)
                 self._attempts[identity] = attempt
-                self._active = attempt
+                if session.identity is None:
+                    session.identity = identity
+                self._active = session
             store.create_attempt(identity)
             store.write_input(identity, input_payload)
-            bootstrap_path = store.bootstrap_path(identity)
-            write_bootstrap(bootstrap_path, bootstrap)
-            request = request_factory(identity, bootstrap_path)
-            if not isinstance(request, TaskLaunchRequest) or request.identity != launch_identity:
-                raise ValueError("launch request does not match staged task attempt identity")
-            if self._aborted(attempt, abort_signal):
+            if stage_hook is not None:
+                stage_hook(identity)
+            if self._aborted(session, abort_signal):
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True)
-            try:
-                handle = launcher.launch_task(request)
-            except TaskLaunchError as e:
-                # Acquiring a handle is ownership, including post-spawn errors.
-                with self._state_lock:
-                    attempt.handle = e.handle
-                self._diagnostic(attempt, "launch_failed", execution_id=getattr(e.handle, "execution_id", None))
-                raise
-            with self._state_lock:
-                attempt.handle = handle
-            self._diagnostic(attempt, "launched", execution_id=handle.execution_id, supervisor_pid=os.getpid())
-            if handle.request.identity != launch_identity:
-                raise ValueError("launcher handle does not match owned task attempt identity")
-            status = self._wait(attempt, abort_signal, options, deadline_provider)
-            self._diagnostic(
-                attempt,
-                "settled",
-                execution_id=handle.execution_id,
-                exit_code=status.exit_code,
-                termination_signal=status.termination_signal,
-                failure_reason=status.failure_reason,
-                cancel_requested=status.cancel_requested,
-            )
-            if self._aborted(attempt, abort_signal):
+            session.staged += 1
+            if session.handle is None:
+                self._launch(session, attempt, bootstrap, launch_identity)
+            else:
+                _write_json_exclusive(session.session_dir, session_entry_name(session.staged), identity.to_dict())
+                self._diagnostic(attempt, "staged", session=session.session_dir, sequence=session.staged)
+            # A one-shot worker reports completion by exiting; a session worker publishes it and lives on.
+            done_path = store.completion_path(identity) if session.session_dir is not None else None
+            status = self._wait(session, abort_signal, options, deadline_provider, done_path=done_path)
+            if status is not None:
+                self._diagnostic(
+                    attempt,
+                    "settled",
+                    execution_id=session.handle.execution_id,
+                    exit_code=status.exit_code,
+                    termination_signal=status.termination_signal,
+                    failure_reason=status.failure_reason,
+                    cancel_requested=status.cancel_requested,
+                )
+            if self._aborted(session, abort_signal):
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
-            # Only a settled execution can authorize reading its completion.
-            # A later process failure cannot erase a fully verified completion.
+            # Only a settled execution or a published completion authorizes reading a
+            # result. A later process failure cannot erase a fully verified completion.
             # Keep abnormal-exit and post-publication failure artifacts anyway.
-            attempt.failed |= not status.succeeded or os.path.lexists(
-                os.path.join(store.attempt_dir(identity), "failure.json")
-            )
+            attempt.failed |= (status is not None and not status.succeeded) or store.has_failure(identity)
             try:
                 result, completion = store.read_result(identity)
             except IncompleteTaskArtifactError as e:
@@ -301,14 +354,17 @@ class TaskSupervisor:
                 raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
-            worker_pid = getattr(handle, "process_group_id", None)
+            worker_pid = getattr(session.handle, "process_group_id", None)
             if worker_pid is not None and completion.worker_pid != worker_pid:
                 raise ValueError("task completion worker PID does not match launched process")
             analytics = tuple(store.read_analytics(identity, completion))
             with self._state_lock:
-                if self._aborted(attempt, abort_signal):
+                if self._aborted(session, abort_signal):
                     attempt.failed = True
                     return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
+                # The worker never touches a published attempt again, so its artifacts are final
+                # even while the session's process lives on; physical settlement is the session's.
+                attempt.published = True
                 attempt.validated = True
                 attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
@@ -318,58 +374,137 @@ class TaskSupervisor:
             if attempt is not None:
                 attempt.failed = True
                 self._diagnostic(attempt, "failed", error_type=type(e).__name__, message=str(e))
-                if attempt.handle is not None and not attempt.settled and not self.settlement_unconfirmed:
-                    self._cancel(attempt)
+            if session.handle is not None and not session.settled and not self.settlement_unconfirmed:
+                self._cancel(session)
             raise
         finally:
             with self._state_lock:
-                if attempt is not None and (attempt.handle is None or attempt.settled):
-                    if not self._settlement_unconfirmed:
-                        self._active = None
+                if (session.handle is None or session.settled) and not self._settlement_unconfirmed:
+                    self._active = None
             self._execution_lock.release()
             self.cleanup_job_payloads()
 
-    def _aborted(self, attempt, abort_signal):
+    def _launch(self, session, attempt, bootstrap, launch_identity):
+        store = session.store
+        bootstrap_path = store.bootstrap_path(attempt.identity)
+        write_bootstrap(bootstrap_path, bootstrap)
+        request = session.request_factory(attempt.identity, bootstrap_path)
+        if not isinstance(request, TaskLaunchRequest) or request.identity != launch_identity:
+            raise ValueError("launch request does not match staged task attempt identity")
+        try:
+            handle = session.launcher.launch_task(request)
+        except TaskLaunchError as e:
+            # Acquiring a handle is ownership, including post-spawn errors.
+            with self._state_lock:
+                session.handle = e.handle
+            self._diagnostic(attempt, "launch_failed", execution_id=getattr(e.handle, "execution_id", None))
+            raise
         with self._state_lock:
-            return self._stopping or attempt.cancel_requested.is_set() or abort_signal.triggered
+            session.handle = handle
+        self._diagnostic(
+            attempt,
+            "launched",
+            execution_id=handle.execution_id,
+            supervisor_pid=os.getpid(),
+            session=session.session_dir,
+        )
+        if handle.request.identity != launch_identity:
+            raise ValueError("launcher handle does not match owned task attempt identity")
 
-    def _wait(self, attempt, abort_signal, options, deadline_provider=None):
-        deadline = None if options.worker_timeout is None else time.monotonic() + options.worker_timeout
-        while True:
-            if self._aborted(attempt, abort_signal):
-                return self._cancel(attempt)
-            remaining = None if deadline is None else deadline - time.monotonic()
-            if deadline_provider is not None:
-                caller_deadline = deadline_provider()
-                if caller_deadline is not None:
-                    if (
-                        isinstance(caller_deadline, bool)
-                        or not isinstance(caller_deadline, (int, float))
-                        or not math.isfinite(caller_deadline)
-                    ):
-                        raise ValueError("caller execution deadline must be finite or None")
-                    caller_remaining = caller_deadline - time.monotonic()
-                    remaining = caller_remaining if remaining is None else min(remaining, caller_remaining)
-            if remaining is not None and remaining <= 0:
-                self._cancel(attempt)
-                raise TimeoutError("task worker timed out")
-            status = attempt.handle.poll()
-            if status.phase == TaskExecutionPhase.TERMINAL:
-                timeout = (
-                    options.settlement_timeout if remaining is None else min(options.settlement_timeout, remaining)
-                )
+    def close_session(
+        self, session: _Session, timeout: float, options: TaskSupervisorOptions = TaskSupervisorOptions()
+    ):
+        """Ask the worker to finalize and exit, then confirm settlement; cancel if it does not exit in time."""
+        if not isinstance(session, _Session):
+            raise TypeError("session must come from open_session")
+        if not self._execution_lock.acquire(blocking=False):
+            raise RuntimeError("this task supervisor already has an active attempt")
+        try:
+            with self._state_lock:
+                if session.handle is None or session.settled:
+                    return None
+            if session.session_dir is not None:
                 try:
-                    status = attempt.handle.wait_for_settlement(timeout=timeout)
-                except TimeoutError:
-                    self._cancel(attempt)
-                    raise
-                except TaskSettlementError:
-                    self._fence(attempt)
-                    raise
-                return self._confirm_settlement(attempt, status)
-            attempt.cancel_requested.wait(
+                    _write_json_exclusive(session.session_dir, SESSION_END_MARKER, {})
+                except FileExistsError:
+                    pass
+            try:
+                status = self._wait(session, None, options, timeout=timeout)
+            except TimeoutError:
+                with self._state_lock:
+                    self._issues.append(("warning", "task worker did not exit after its group ended; cancelled"))
+                status = session.handle.poll()
+            self._diagnostic(
+                session,
+                "session_closed",
+                execution_id=session.handle.execution_id,
+                exit_code=status.exit_code,
+                termination_signal=status.termination_signal,
+                failure_reason=status.failure_reason,
+            )
+            return status
+        finally:
+            with self._state_lock:
+                if session.settled and not self._settlement_unconfirmed:
+                    self._active = None
+            self._execution_lock.release()
+            self.cleanup_job_payloads()
+
+    def _aborted(self, owner, abort_signal):
+        with self._state_lock:
+            return (
+                self._stopping
+                or owner.cancel_requested.is_set()
+                or (abort_signal is not None and abort_signal.triggered)
+            )
+
+    def _wait(self, owner, abort_signal, options, deadline_provider=None, *, done_path=None, timeout=None):
+        """Wait until the worker exits (returning its settled status) or, with ``done_path``, publishes it (None)."""
+        limit = options.worker_timeout if timeout is None else timeout
+        deadline = None if limit is None else time.monotonic() + limit
+        while True:
+            if done_path is not None and os.path.lexists(done_path):
+                return None
+            if self._aborted(owner, abort_signal):
+                return self._cancel(owner)
+            remaining = self._remaining(deadline, deadline_provider)
+            if remaining is not None and remaining <= 0:
+                self._cancel(owner)
+                raise TimeoutError("task worker timed out")
+            status = owner.handle.poll()
+            if status.phase == TaskExecutionPhase.TERMINAL:
+                return self._settle(owner, options, remaining)
+            owner.cancel_requested.wait(
                 options.poll_interval if remaining is None else min(options.poll_interval, remaining)
             )
+
+    def _settle(self, owner, options, remaining):
+        timeout = options.settlement_timeout if remaining is None else min(options.settlement_timeout, remaining)
+        try:
+            status = owner.handle.wait_for_settlement(timeout=timeout)
+        except TimeoutError:
+            self._cancel(owner)
+            raise
+        except TaskSettlementError:
+            self._fence(owner)
+            raise
+        return self._confirm_settlement(owner, status)
+
+    @staticmethod
+    def _remaining(deadline, deadline_provider):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if deadline_provider is not None:
+            caller_deadline = deadline_provider()
+            if caller_deadline is not None:
+                if (
+                    isinstance(caller_deadline, bool)
+                    or not isinstance(caller_deadline, (int, float))
+                    or not math.isfinite(caller_deadline)
+                ):
+                    raise ValueError("caller execution deadline must be finite or None")
+                caller_remaining = caller_deadline - time.monotonic()
+                remaining = caller_remaining if remaining is None else min(remaining, caller_remaining)
+        return remaining
 
     def record_receipt(self, identity: TaskAttemptIdentity, receipt: Optional[str]) -> bool:
         """Record an already identity-validated P1 receipt; never aggregation admission.
@@ -398,12 +533,12 @@ class TaskSupervisor:
                 self._stopping
                 or self._settlement_unconfirmed
                 or attempt is None
-                or not attempt.settled
+                or not attempt.published
                 or not attempt.validated
                 or attempt.releasing
                 or attempt.released
             ):
-                raise RuntimeError("task attempt has no retained, settled result to resubmit")
+                raise RuntimeError("task attempt has no retained, published result to resubmit")
         result, completion = attempt.store.read_result(identity)
         if completion != attempt.completion:
             raise ValueError("saved task completion changed after validation")
@@ -428,7 +563,7 @@ class TaskSupervisor:
             with self._state_lock:
                 if (
                     self._settlement_unconfirmed
-                    or not attempt.settled
+                    or not attempt.published
                     or not attempt.validated
                     or attempt.failed
                     or attempt.receipt is None

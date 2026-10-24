@@ -28,6 +28,7 @@ class EventType:
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"
+    TASK_GROUP_CLOSED = "_task_group_closed"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
     JOB_DEPLOYED = "_job_deployed"
     JOB_STARTED = "_job_started"

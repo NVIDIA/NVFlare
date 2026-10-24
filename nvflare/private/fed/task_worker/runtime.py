@@ -149,6 +149,14 @@ class TaskRuntime:
             yield
             self._completed = True
 
+    @contextmanager
+    def attempt_guard(self):
+        """Order one attempt's completion publication against failure; the runtime stays open."""
+        with self._state_lock:
+            self._require_open()
+            self._raise_if_failed_locked()
+            yield
+
     @staticmethod
     def _unsupported(service: str):
         raise UnsupportedTaskRuntimeService(f"task worker runtime does not provide {service}")

@@ -26,6 +26,14 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 1
+SESSION_END_MARKER = "end"
+
+
+def session_entry_name(sequence: int) -> str:
+    """File in a session directory that hands attempt number ``sequence`` to the live worker."""
+    return f"{sequence:06d}.json"
+
+
 _MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 _MAX_IDENTITY_VALUE_LENGTH = 4096
 _LOGGER = logging.getLogger(__name__)
@@ -248,6 +256,7 @@ class WorkerBootstrap:
     context_properties: Mapping[str, ContextProperty] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
     max_payload_bytes: int | None = None
+    session_dir: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.identity, TaskAttemptIdentity):
@@ -256,6 +265,8 @@ class WorkerBootstrap:
             raise ValueError(f"unsupported worker bootstrap schema version {self.schema_version}")
         _require_absolute_directory_name("artifact_root", self.artifact_root)
         _require_absolute_directory_name("workspace_root", self.workspace_root)
+        if self.session_dir is not None:
+            _require_absolute_directory_name("session_dir", self.session_dir)
         _require_payload_limit(self.max_payload_bytes)
         if not isinstance(self.executor, Mapping):
             raise TypeError("executor must be a JSON component mapping")
@@ -291,6 +302,7 @@ class WorkerBootstrap:
             "components": _thaw_json(self.components),
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
             "max_payload_bytes": self.max_payload_bytes,
+            "session_dir": self.session_dir,
         }
 
     @classmethod
@@ -298,7 +310,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties", "max_payload_bytes"}
+        optional = {"components", "context_properties", "max_payload_bytes", "session_dir"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -313,6 +325,7 @@ class WorkerBootstrap:
             components=tuple(value.get("components", ())),
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
             max_payload_bytes=value.get("max_payload_bytes"),
+            session_dir=value.get("session_dir"),
         )
 
 

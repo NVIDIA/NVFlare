@@ -262,6 +262,15 @@ class ServerRunner(TBI):
         return SpecialTaskName.TRY_AGAIN, "", task_data
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
+        task_name, task_id, task_data = self._process_task_request(client, fl_ctx)
+        closed_groups = fl_ctx.get_prop(FLContextKey.TASK_GROUPS_CLOSED)
+        if closed_groups:
+            if not isinstance(task_data, Shareable):
+                task_data = Shareable()
+            task_data.set_header(ReservedHeaderKey.TASK_GROUPS_CLOSED, closed_groups)
+        return task_name, task_id, task_data
+
+    def _process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
         """Process task request from a client.
 
         NOTE: the Engine will create a new fl_ctx and call this method:

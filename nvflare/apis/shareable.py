@@ -29,6 +29,8 @@ class ReservedHeaderKey:
     TASK_ID = ReservedKey.TASK_ID
     TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
+    TASK_GROUP_ID = ReservedKey.TASK_GROUP_ID
+    TASK_GROUPS_CLOSED = ReservedKey.TASK_GROUPS_CLOSED
     TASK_RESULT_RECEIPT = "__task_result_receipt__"
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID

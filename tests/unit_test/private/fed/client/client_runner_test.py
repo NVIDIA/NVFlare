@@ -319,6 +319,22 @@ def test_fetch_and_run_handles_no_work_and_control_tasks(assignment, expected):
     assert runner.fetch_and_run_one_task(FLContext()) == expected
 
 
+def test_fetch_and_run_fires_one_closed_event_per_announced_task_group():
+    runner = _runner()
+    task = _task(SpecialTaskName.TRY_AGAIN)
+    task.data.set_header(ReservedHeaderKey.TASK_GROUPS_CLOSED, ["group-1", "group-2"])
+    runner.engine.get_task_assignment.return_value = task
+    observed = []
+    runner.fire_event = lambda event_type, fl_ctx: observed.append(
+        (event_type, fl_ctx.get_prop(FLContextKey.TASK_GROUP_ID))
+    )
+    fl_ctx = FLContext()
+
+    assert runner.fetch_and_run_one_task(fl_ctx) == (0.5, False)
+    assert observed == [(EventType.TASK_GROUP_CLOSED, "group-1"), (EventType.TASK_GROUP_CLOSED, "group-2")]
+    assert fl_ctx.get_prop(FLContextKey.TASK_GROUP_ID) is None
+
+
 @pytest.mark.parametrize("send_success", [True, False])
 def test_fetch_and_run_processes_task_and_exposes_publication_outcome(send_success):
     runner = _runner()

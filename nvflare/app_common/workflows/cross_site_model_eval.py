@@ -222,23 +222,25 @@ class CrossSiteModelEval(Controller):
                 self.log_info(fl_ctx, "Abort signal triggered. Finishing model validation.")
                 return
 
-            # Load server models and assign those tasks
-            if self._model_locator:
-                success = self._locate_server_models(fl_ctx)
-                if not success:
-                    return
+            # One client worker may serve every validation task of this phase.
+            with self.task_group(fl_ctx):
+                # Load server models and assign those tasks
+                if self._model_locator:
+                    success = self._locate_server_models(fl_ctx)
+                    if not success:
+                        return
 
-                for server_model in self._server_models:
-                    self._send_validation_task(server_model, fl_ctx)
-            else:
-                self.log_info(fl_ctx, "ModelLocator not present. No server models will be included.")
+                    for server_model in self._server_models:
+                        self._send_validation_task(server_model, fl_ctx)
+                else:
+                    self.log_info(fl_ctx, "ModelLocator not present. No server models will be included.")
 
-            while self.get_num_standing_tasks():
-                if abort_signal.triggered:
-                    self.log_info(fl_ctx, "Abort signal triggered. Finishing cross site validation.")
-                    return
-                self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
-                time.sleep(self._task_check_period)
+                while self.get_num_standing_tasks():
+                    if abort_signal.triggered:
+                        self.log_info(fl_ctx, "Abort signal triggered. Finishing cross site validation.")
+                        return
+                    self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
+                    time.sleep(self._task_check_period)
         except Exception as e:
             error_msg = f"Exception in cross site validator control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
