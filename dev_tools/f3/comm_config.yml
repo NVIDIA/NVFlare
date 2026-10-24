@@ -45,6 +45,7 @@ streaming_retry_max_pending_bytes: 128M
 # sfm_send_stall_timeout: 0.0
 # sfm_close_stalled_connection: false
 # sfm_send_stall_consecutive_checks: 3
+# sfm_receive_idle_timeout: 180.0 # defaults to 3x heartbeat_interval
 #
 # Nested driver and connection settings are passed through unchanged as well:
 #
