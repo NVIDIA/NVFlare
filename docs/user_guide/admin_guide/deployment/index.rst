@@ -12,6 +12,7 @@ Deployment Guide
    overview
    operation
    containerized_deployment
+   docker_task_execution
    slurm_job_launcher
    helm_chart
    openshift

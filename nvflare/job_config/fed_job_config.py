@@ -161,7 +161,9 @@ class FedJobConfig:
                     sites.update(meta_json.get("launcher_spec", {}))
                     sites.difference_update({"server", "@default", "default"})
                 for receiving_site in sites:
-                    validate_task_resources(meta_json, receiving_site)
+                    # Export cannot know the receiving site's trusted backend
+                    # or admission policy. Enforce resource capability there.
+                    validate_task_resources(meta_json, receiving_site, allow_gpu=True)
 
         return json.dumps(meta_json, indent=4)
 
