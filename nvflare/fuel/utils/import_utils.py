@@ -33,6 +33,7 @@
 """
 Part of code is Adapted from from https://github.com/Project-MONAI/MONAI/blob/dev/monai/utils/module.py#L282
 """
+import re
 from importlib import import_module
 from typing import Any, Tuple
 
@@ -42,8 +43,11 @@ OPTIONAL_IMPORT_MSG_FMT = "{}"
 OPS = ["==", ">=", ">", "<", "<="]
 
 
+_RELEASE_PATTERN = re.compile(r"v?(\d+(?:\.\d+)*)")
+
+
 def get_module_version(this_pkg):
-    return this_pkg.__version__.split(".")[:2]
+    return str(this_pkg.__version__).split(".")
 
 
 def get_module_version_str(the_module):
@@ -55,15 +59,31 @@ def get_module_version_str(the_module):
     return module_version
 
 
+def _release_tuple(version: str) -> Tuple[int, ...]:
+    """
+    Numeric release part of a version string, e.g. "2.4.6rc1" -> (2, 4, 6) and "2.1.0+cu121" -> (2, 1, 0).
+    """
+    match = _RELEASE_PATTERN.match(str(version).strip())
+    if not match:
+        raise ValueError(f"cannot parse version '{version}'")
+    return tuple(int(x) for x in match.group(1).split("."))
+
+
 def check_version(that_pkg, version: str = "", op: str = "==") -> bool:
     """
     compare module version with provided version
+
+    Only the numeric release parts are compared, padded with zeros to the same length,
+    so "2.4" == "2.4.0". Pre-release, post-release, dev and local suffixes are ignored.
     """
     if not version or not hasattr(that_pkg, "__version__"):
         return True  # always valid version
 
-    mod_version = tuple(int(x) for x in get_module_version(that_pkg))
-    required = tuple(int(x) for x in version.split("."))
+    mod_version = _release_tuple(that_pkg.__version__)
+    required = _release_tuple(version)
+    length = max(len(mod_version), len(required))
+    mod_version += (0,) * (length - len(mod_version))
+    required += (0,) * (length - len(required))
     result = True
     if op == "==":
         result = mod_version == required
@@ -112,7 +132,7 @@ def optional_import(
         >>> print(torch, flag)
         <module 'torch' from '/..../lib/python3.8/site-packages/torch/__init__.py'> True
 
-        >>> torch, flag = optional_import('torch', '1.1')
+        >>> torch, flag = optional_import('torch', '>=', '1.1')
         >>> print(torch, flag)
         <module 'torch' from 'python/lib/python3.6/site-packages/torch/__init__.py'> True
         >>> the_module, flag = optional_import('unknown_module')
@@ -120,7 +140,7 @@ def optional_import(
         False
         >>> the_module.method  # trying to access a module which is not imported
         OptionalImportError: import unknown_module (No module named 'unknown_module').
-        >>> torch, flag = optional_import('torch', '42')
+        >>> torch, flag = optional_import('torch', '==', '42')
         >>> torch.nn  # trying to access a module for which there isn't a proper version imported
         OptionalImportError: import torch (requires version=='42').
         >>> conv, flag = optional_import('torch.nn.functional', ">=", '1.0', name='conv1d')
@@ -164,7 +184,7 @@ def optional_import(
         msg += f": requires '{module}{op}{version}'"
         if pkg:
             module_version = get_module_version_str(pkg)
-            msg += f", current '{module}=={module_version}' "
+            msg += f", current '{module}=={module_version}'"
     if exception_str:
         msg += f" ({exception_str})"
 
