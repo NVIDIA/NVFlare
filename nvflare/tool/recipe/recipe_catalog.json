@@ -1416,6 +1416,13 @@
             "required": false,
             "default": false,
             "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
+            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [],
@@ -1867,6 +1874,13 @@
             "type": "float",
             "required": false,
             "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
             "kind": "keyword_only"
           }
         ],
@@ -2654,6 +2668,13 @@
             "required": false,
             "default": false,
             "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
+            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [
@@ -3357,6 +3378,13 @@
             "required": false,
             "default": "max",
             "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
+            "kind": "keyword_only"
           }
         ],
         "optional_dependencies": [
@@ -3916,6 +3944,13 @@
             "type": "Literal['min', 'max']",
             "required": false,
             "default": "max",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "execution_lifetime",
+            "type": "str",
+            "required": false,
+            "default": "job",
             "kind": "keyword_only"
           }
         ],

@@ -58,6 +58,12 @@ def validate_task_workflows(workflows):
         reason = None
         if isinstance(controller, (Scaffold, ScatterAndGatherScaffold)):
             reason = "client SCAFFOLD control variates are not restored between workers"
+        elif any(
+            base.__module__ == "nvflare.app_opt.pt.fedce" and base.__name__ == "FedCEModelAggregator"
+            for base in type(getattr(controller, "aggregator", None)).__mro__
+        ):
+            # Inspect class ancestry without importing the optional PyTorch dependency.
+            reason = "client FedCE previous-model and score-history state is not restored between workers"
         elif isinstance(controller, CrossSiteEval) or (
             isinstance(controller, CrossSiteModelEval) and controller._submit_model_task_name
         ):

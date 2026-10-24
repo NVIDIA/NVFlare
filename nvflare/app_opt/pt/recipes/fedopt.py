@@ -100,6 +100,9 @@ class FedOptRecipe(Recipe):
             Set to 0 to disable. Defaults to 1 (every round).
         enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
             FOBS deserialization instead of keeping all incoming client tensors in memory. Defaults to False.
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime supports CPU in-process clients. Scripts retaining local optimizer or RNG state
+            must save and restore it through the native ``task_checkpoint`` file contract.
 
     Example:
         ```python
@@ -149,6 +152,7 @@ class FedOptRecipe(Recipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         enable_tensor_disk_offload: bool = False,
+        execution_lifetime: str = "job",
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -194,6 +198,7 @@ class FedOptRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
+        self.framework = FrameworkType.PYTORCH
         self.device = device
         self.source_model = source_model
         # Ensure config_type "dict" so the component builder does not try to instantiate
@@ -275,7 +280,8 @@ class FedOptRecipe(Recipe):
         persistor_id = job.to_server(persistor, id="persistor")
 
         locator = PTFileModelLocator(pt_persistor_id=persistor_id)
-        job.to_server(locator, id="locator")
+        locator_id = job.to_server(locator, id="locator")
+        job.comp_ids.update(persistor_id=persistor_id, locator_id=locator_id)
 
         # Define the controller and send to server
         if self.aggregator is None:
@@ -324,3 +330,4 @@ class FedOptRecipe(Recipe):
         job.to_clients(executor)
 
         Recipe.__init__(self, job)
+        job.set_execution_lifetime(execution_lifetime)
