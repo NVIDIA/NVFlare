@@ -1,4 +1,3 @@
-nvflare~=2.7.0rc
 ipywidgets
 numpy
 pandas~=2.3

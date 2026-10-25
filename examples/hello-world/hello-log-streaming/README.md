@@ -17,6 +17,8 @@ Clone the repository and navigate to this directory:
 git clone https://github.com/NVIDIA/NVFlare.git
 cd NVFlare
 cd examples/hello-world/hello-log-streaming
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

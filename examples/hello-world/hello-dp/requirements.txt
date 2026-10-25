@@ -1,6 +1,6 @@
-nvflare[PT]~=2.7.2rc
 torch
 tensorboard
 scikit-learn
 opacus
 pandas~=2.3
+torchvision

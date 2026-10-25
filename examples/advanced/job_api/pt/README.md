@@ -9,6 +9,8 @@ Furthermore, we support [PyTorch Lightning](https://lightning.ai).
 ## Setup environment
 First, install NVFlare and its dependencies:
 ```commandline
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

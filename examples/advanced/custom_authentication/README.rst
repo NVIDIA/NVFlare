@@ -24,6 +24,8 @@ System Requirements
 
 2. Install NVFlare.
 ::
+    # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+    pip install nvflare
     pip install -r requirements.txt
 
 3. The example is part of the NVFlare source code. The source code can be obtained like this,

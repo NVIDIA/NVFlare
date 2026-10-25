@@ -1,5 +1,6 @@
-nvflare[HE]~=2.7.2rc
 torch
 torchvision
 tensorboard
 mlflow
+tenseal==0.3.15; python_version < "3.13"
+tenseal==0.3.16; python_version >= "3.13" and python_version < "3.14"

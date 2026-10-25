@@ -1,2 +1,1 @@
-nvflare~=2.7.2rc
 tensorboard

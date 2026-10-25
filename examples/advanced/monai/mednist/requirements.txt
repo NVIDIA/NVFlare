@@ -1,5 +1,6 @@
-nvflare[PT]>=2.7.2rc
 monai[ignite,tqdm]
 tensorboard
 mlflow
 jupyterlab
+torch
+torchvision

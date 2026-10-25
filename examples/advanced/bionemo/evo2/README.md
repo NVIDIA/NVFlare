@@ -51,11 +51,13 @@ checkout at `/workspace/nvflare`, installs it in editable mode, exposes one GPU,
 causal-convolution extension before opening a shell. Override its defaults with `NVFLARE_EVO2_GPU`,
 `NVFLARE_EVO2_IMAGE`, `NVFLARE_EVO2_CACHE`, or `NVFLARE_EVO2_WORKSPACE`.
 
-If you use an equivalent environment, install `requirements.txt`, which supports NVFlare 2.9.0 and newer and
+If you use an equivalent environment, install NVFlare 2.9.0 or newer first, then `requirements.txt`, which
 includes the runtime packages above. The container already supplies PyTorch, Transformer Engine, BioNeMo Evo2,
 and Megatron Bridge.
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python3 -m pip install nvflare
 python3 -m pip install -r requirements.txt
 ```
 

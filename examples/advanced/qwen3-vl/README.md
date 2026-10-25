@@ -30,7 +30,10 @@ Create and activate a virtual environment, then install NVFlare and this example
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# Install NVFlare and Qwen3-VL requirements
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python3 -m pip install nvflare
+
+# Install the Qwen3-VL requirements (PyTorch, flash_attn, and the other dependencies)
 ./install_requirements.sh
 ```
 
@@ -216,7 +219,7 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 
 | Step | Action |
 |------|--------|
-| 1 | Create venv and run `./install_requirements.sh` |
+| 1 | Create venv, install NVFlare, and run `./install_requirements.sh` |
 | 2 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | Run `python job.py` (optionally `--wandb`, `--lora`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |

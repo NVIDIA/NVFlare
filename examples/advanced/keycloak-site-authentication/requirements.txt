@@ -1,1 +1,1 @@
-nvflare~=2.5.0rc
+# This example needs no packages beyond NVFlare. Install NVFlare first (see the README).

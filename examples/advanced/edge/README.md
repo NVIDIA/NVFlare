@@ -20,6 +20,8 @@ This guide supports two distinct workflows:
 ### Install prerequisites
 Install NVFlare and the required packages for this example:
 ```commandline
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

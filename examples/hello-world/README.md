@@ -127,6 +127,8 @@ small synthetic PyTorch model.
 **Run it:**
 ```bash
 cd hello-collab
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 python job.py
 ```
@@ -159,6 +161,8 @@ Train a fraud detection model with differential privacy guarantees using PyTorch
 **Run it:**
 ```bash
 cd hello-dp
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 python job.py
 ```

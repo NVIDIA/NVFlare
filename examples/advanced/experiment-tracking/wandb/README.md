@@ -53,6 +53,8 @@ run = recipe.execute(env)
 
 ```bash
 cd examples/advanced/experiment-tracking/wandb
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python -m pip install nvflare
 python -m pip install -r requirements.txt
 ```
 

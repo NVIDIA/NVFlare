@@ -45,6 +45,8 @@ Install additional requirements:
 
 ```bash
 cd examples/advanced/experiment-tracking/tensorboard
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python -m pip install nvflare
 python -m pip install -r requirements.txt
 ```
 
