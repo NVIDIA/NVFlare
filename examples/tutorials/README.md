@@ -9,7 +9,9 @@ Looking for something else?
 - **First run:** the [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html)
   runs a meaningful federated job in the simulator and explains the result.
 - **Introductory applications:** the [hello-world examples](../hello-world)
-  run a complete federated job per framework with a single `python job.py`.
+  demonstrate complete federated applications across frameworks. Follow each
+  example's README for dependencies, data or model preparation, and the exact
+  run command; some examples require arguments to `job.py`.
 - **Example catalog:** browse all runnable examples on the
   [NVFLARE website](https://nvidia.github.io/NVFlare/catalog/).
 - **Structured training:** the [self-paced course](./self-paced-training)
@@ -19,8 +21,9 @@ Looking for something else?
 
 1. Create a virtual environment and install NVFLARE following the
    [example root README](../README.md). Supported Python: 3.10 or later.
-2. Install and start JupyterLab from this directory, then open a notebook and
-   run the cells in order.
+2. Install and start JupyterLab from this directory, then open a notebook in
+   a fresh kernel. Follow each section's prerequisites before running it;
+   optional Docker, HE, and production sections need additional setup.
 
 Notebooks that exercise the simulator run jobs under `/tmp/nvflare` by
 default; notebooks that exercise POC mode require a provisioned POC system
@@ -39,9 +42,9 @@ default; notebooks that exercise POC mode require a provisioned POC system
 
 | Notebook | Outcome | Prerequisites | Expected completion signal | Owning area |
 |---|---|---|---|---|
-| [NVFLARE in POC Mode](./setup_poc.ipynb) | Configure and operate POC mode: workspace, prepare, start/stop, and inspect a full local FL system | `nvflare` CLI; `tree` command optional (Linux) | A two-client POC system is prepared, started, and inspected from the notebook | POC mode |
+| [NVFLARE in POC Mode](./setup_poc.ipynb) | Configure and operate POC mode: workspace, prepare, start/stop, and inspect a full local FL system | `nvflare` CLI; `tree` command optional | A two-client POC system is prepared, started, and inspected using the documented commands | POC mode |
 | [NVFlare CLI](./nvflare_cli.ipynb) | End-to-end CLI workflow against a running POC system: recipes, job export and submit, studies, monitoring, result download | POC system started from a terminal first (commands in the notebook); `torch` for the hello-pt job | Submitted job completes and results download to the notebook's `RESULT_DIR` | NVFlare CLI |
-| [Hello FLARE API](./flare_api.ipynb) | Connect an admin session with the FLARE API and drive a running FL system programmatically | A running POC system with the admin startup kit | `new_secure_session()` connects and `get_system_info()` reports server, clients, and jobs | FLARE API |
+| [Hello FLARE API](./flare_api.ipynb) | Connect an admin session with the FLARE API and drive a running FL system programmatically | A running POC system with the admin startup kit; `tensorboard` for the hello-numpy job | `new_secure_session()` connects and `get_system_info()` reports server, clients, and jobs | FLARE API |
 
 ### Observe and troubleshoot runs
 
@@ -51,8 +54,10 @@ default; notebooks that exercise POC mode require a provisioned POC system
 
 ## Verification
 
-Verification records a maintainer executing the notebook's flow end to end in
-the stated environment.
+Verification is scoped to the workflows explicitly listed below, not every
+cell or optional deployment section. Development-checkout results do not
+establish compatibility with a published release; use notebooks and examples
+from the revision matching your installed NVFLARE version.
 
 - **2026-10-24 — simulator-based notebooks** (FL Simulator, Job Recipe,
   Logging): core flows re-verified on `main` (2.10.0.dev0, commit
@@ -64,6 +69,22 @@ the stated environment.
   API admin session (`new_secure_session` + `get_system_info`), and job
   export, submit, completion (`FINISHED:COMPLETED`), and result download
   for a hello-pt job.
+- **2026-10-24 — notebook refresh during review:** Python 3.13.15 on macOS,
+  using this PR's development checkout based on `b329c8113`. The revised
+  Job Recipe cells completed three rounds with two clients in both simulation
+  and native POC mode. hello-numpy simulations completed with default and
+  custom JSON logging. All FLARE API code cells ran against a temporary
+  two-client POC deployment, substituting only its admin-kit path: connect,
+  export, submit, monitor, download, resubmit, abort, delete, and close.
+  The CLI helper exported a job; all six notebooks passed schema validation,
+  77 code cells compiled, and 46 runnable CLI invocations parsed. The
+  notebook regression tests and related POC/export/hello-pt tests passed
+  (36 tests).
+
+The review-time checks did not execute every POC/CLI cell, optional Docker,
+HE, checkpoint-loading, or production-deployment sections, and did not run
+against released wheels. Those sections still require their stated
+environment and assets.
 
 Report problems as [GitHub issues](https://github.com/NVIDIA/NVFlare/issues).
 

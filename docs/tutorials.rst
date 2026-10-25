@@ -11,14 +11,15 @@ structured training resources.
 Current Onboarding
 ------------------
 
-This short sequence is tested against the current release.
+Start with the Quick Start and examples for the NVFLARE version you are using.
 
 #. :ref:`quickstart` — run your first federated learning job in the simulator,
    inspect the result, and choose your next step.
 #. :github_nvflare_link:`Hello World examples <examples/hello-world>` —
    introductory federated applications across frameworks (PyTorch, PyTorch
-   Lightning, TensorFlow, JAX, NumPy, Hugging Face, Flower). Each example runs
-   with a single ``python job.py``.
+   Lightning, TensorFlow, JAX, NumPy, Hugging Face, Flower). Follow each
+   example's README for dependencies, data or model preparation, and the
+   exact run command; some examples require arguments to ``job.py``.
 
 Feature Tutorials
 -----------------
@@ -79,7 +80,7 @@ Structured Training
    newer versions.
 
 - :ref:`self_paced_training` — a five-part, 12-chapter course with over 100
-  notebooks and videos covering federated learning with NVFLARE, from
+  notebooks and 80 videos covering federated learning with NVFLARE, from
   fundamentals to system architecture, privacy and security, advanced topics,
   and industry applications.
 - Hosted NVIDIA DLI courses for guided, hands-on FLARE training
