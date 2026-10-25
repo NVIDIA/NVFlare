@@ -54,10 +54,10 @@ The example below runs this workflow on your computer, with two simulated client
 
 Create and activate a Python virtual environment as described in the
 [installation guide](https://nvflare.readthedocs.io/en/stable/installation.html), then install NVFLARE 2.10.0 or
-later with its PyTorch integration, retrieve the matching Hello PyTorch example, and run it:
+later, retrieve the matching Hello PyTorch example, install its dependencies, and run it:
 
 ```bash
-python -m pip install "nvflare[PT]>=2.10.0"
+python -m pip install "nvflare>=2.10.0"
 nvflare examples get hello-pt
 cd hello-pt
 python -m pip install -r requirements.txt
@@ -65,13 +65,14 @@ python job.py --log_config progress
 ```
 
 This runs a two-client simulation on CPU using synthetic data; no dataset download is required. The same pattern
-applies to other examples: install NVFLARE with the extras the example needs, retrieve it with `nvflare examples get`,
-install its `requirements.txt`, then follow its README. If a `requirements.txt` line installs `nvflare` or
-`nvflare-nightly`, skip it so the installed NVFLARE version is preserved.
+applies to other examples: install NVFLARE (add the extras the example's README names, such as `HE`), retrieve the
+example with `nvflare examples get`, install its `requirements.txt`, then follow its README. If an older
+`requirements.txt` still has a line that installs `nvflare` or `nvflare-nightly`, skip it so the installed NVFLARE
+version is preserved.
 
 The installed NVFLARE version selects the example version: `nvflare examples get` downloads the example from the
 source revision recorded in your installation. To reproduce a specific release, pin it, for example
-`"nvflare[PT]==2.10.0"`.
+`"nvflare==2.10.0"`.
 
 Continue with the [Quick Start for the stable release](https://nvflare.readthedocs.io/en/stable/quickstart.html) to
 understand the run and inspect its results. If you use an older release, select its version in the documentation.

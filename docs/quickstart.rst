@@ -15,13 +15,13 @@ Run Your First Federation
 The ``nvflare examples`` command used below is available in NVFLARE 2.10.0 and
 later, or in development builds from ``main``. Create and activate a fresh Python
 virtual environment as described in :doc:`Installation <installation>`, then
-choose **one** installation option with the PyTorch integration:
+choose **one** installation option:
 
 **Released package (NVFLARE 2.10.0 or later):**
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]>=2.10.0"
+   python -m pip install "nvflare>=2.10.0"
 
 **Development only (unstable main branch):** To develop or test unreleased
 features, install from source instead. This option requires Git:
@@ -29,7 +29,7 @@ features, install from source instead. This option requires Git:
 .. code-block:: bash
 
    git clone --branch main https://github.com/NVIDIA/NVFlare.git
-   python -m pip install -e "./NVFlare[PT]"
+   python -m pip install -e ./NVFlare
 
 Keep the checkout unchanged while retrieving examples: the CLI uses its Git
 revision to select matching source and rejects uncommitted tracked changes.
@@ -45,16 +45,16 @@ installed package revision and run it with focused progress output:
    python -m pip install -r requirements.txt
    python job.py --log_config progress
 
-The same pattern applies to other examples: install NVFLARE with the extras the
-example needs, retrieve it with ``nvflare examples get``, install its
-``requirements.txt``, then follow its README. If a ``requirements.txt`` line
-installs ``nvflare`` or ``nvflare-nightly``, skip it so the installed NVFLARE
-version is preserved.
+The same pattern applies to other examples: install NVFLARE (add the extras the
+example's README names, such as ``HE``), retrieve it with ``nvflare examples
+get``, install its ``requirements.txt``, then follow its README. If an older
+``requirements.txt`` still has a line that installs ``nvflare`` or
+``nvflare-nightly``, skip it so the installed NVFLARE version is preserved.
 
 The installed NVFLARE version selects the example version: ``nvflare examples
 get`` downloads the example from the source revision recorded in your
 installation. To reproduce a specific release, pin it, for example
-``"nvflare[PT]==2.10.0"``.
+``"nvflare==2.10.0"``.
 
 The default run uses two simulated clients and three federated rounds. It runs
 on CPU, downloads no dataset, and uses deterministic synthetic images generated
