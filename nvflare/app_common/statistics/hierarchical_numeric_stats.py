@@ -190,6 +190,9 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
                 global_metrics = accumulate_hierarchical_metrics(
                     metric, client_name, stats[client_name], global_metrics, hierarchy_config
                 )
+            # The clients' var results are taken around the top level mean and count, so their sum is
+            # only the var of the top level. Recompute every other level from the sites' own stddev.
+            global_metrics = get_hierarchical_vars(global_metrics, client_metrics)
         elif metric == StC.STATS_STDDEV:
             global_metrics = get_hierarchical_stddevs(global_metrics)
 
@@ -480,6 +483,76 @@ def get_hierarchical_histograms(
             recursively_accumulate_org_histograms(
                 metric, client_name, metrics, global_metrics, dataset, feature, client_org, histogram
             )
+
+    return global_metrics
+
+
+def get_hierarchical_vars(global_metrics: dict, client_metrics: dict) -> dict:
+    """Calculate vars at each hierarchical level below the top level.
+
+    The top level var is left as accumulated from the clients' 'variance_with_mean' results. Every other level
+    is pooled from the count n_i and mean m_i (from the 1st statistics round) and the stddev s_i of each site
+    under it::
+
+        var = sum((n_i - 1) * s_i^2 + n_i * (m_i - m)^2) / (n - 1)
+
+    where n and m are the count and mean of the level. A site's Local var is s_i^2. A site with a single record
+    adds nothing to the first term (its stddev is NaN) and a site without records is skipped.
+
+    Args:
+        global_metrics: The current global metrics.
+        client_metrics: Local stats for each client, which must include the clients' stddev.
+
+    Returns:
+        A dict containing updated hierarchical global statistics with
+        pooled vars.
+    """
+
+    def get_site_stddev(site: str, dataset: str, feature: str) -> float:
+        stddev = client_metrics.get(StC.STATS_STDDEV, {}).get(site, {}).get(dataset, {}).get(feature)
+        if stddev is None:
+            raise ValueError(
+                f"Missing stddev of feature '{feature}' in dataset '{dataset}' from site '{site}'. "
+                "Hierarchical var is computed from each site's stddev, so every site must return it "
+                "in the 2nd statistics round and the Statistics generator must implement stddev()."
+            )
+        return stddev
+
+    def recursively_update_org_vars(global_metrics: dict, dataset: str, feature: str) -> list:
+        # Returns (count, mean, sum of squared deviations from its own mean) for each site under this level.
+        sites = []
+        if isinstance(global_metrics, dict):
+            if StC.LOCAL in global_metrics:
+                local_metrics = global_metrics[StC.LOCAL]
+                count = local_metrics[StC.STATS_COUNT][dataset][feature]
+                if not count:
+                    local_metrics[StC.STATS_VAR][dataset][feature] = float("nan")
+                    return sites
+                stddev = get_site_stddev(global_metrics[StC.NAME], dataset, feature)
+                local_metrics[StC.STATS_VAR][dataset][feature] = stddev * stddev
+                squares = (count - 1) * stddev * stddev if count > 1 else 0.0
+                sites.append((count, local_metrics[StC.STATS_MEAN][dataset][feature], squares))
+                return sites
+
+            for value in global_metrics.values():
+                if isinstance(value, list):
+                    for item in value:
+                        sites.extend(recursively_update_org_vars(item, dataset, feature))
+
+            if StC.NAME in global_metrics and StC.GLOBAL in global_metrics:
+                level_metrics = global_metrics[StC.GLOBAL]
+                count = level_metrics[StC.STATS_COUNT][dataset][feature]
+                mean = level_metrics[StC.STATS_MEAN][dataset][feature]
+                if count > 1:
+                    squares = sum(s + n * (m - mean) * (m - mean) for n, m, s in sites)
+                    level_metrics[StC.STATS_VAR][dataset][feature] = squares / (count - 1)
+                else:
+                    level_metrics[StC.STATS_VAR][dataset][feature] = float("nan")
+        return sites
+
+    for dataset in global_metrics[StC.GLOBAL][StC.STATS_VAR]:
+        for feature in global_metrics[StC.GLOBAL][StC.STATS_VAR][dataset]:
+            recursively_update_org_vars(global_metrics, dataset, feature)
 
     return global_metrics
 
