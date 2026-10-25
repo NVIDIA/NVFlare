@@ -33,7 +33,7 @@ default; notebooks that exercise POC mode require a provisioned POC system
 | Notebook | Outcome | Prerequisites | Expected completion signal | Owning area |
 |---|---|---|---|---|
 | [Intro to the FL Simulator](./flare_simulator.ipynb) | Run NVFLARE jobs locally with the simulator-managed server and simulated clients; know when to use Recipe-style `job.py` runs vs. `nvflare simulator` | `nvflare`, `tensorboard`; this repository checkout (uses `../hello-world/hello-numpy`) | hello-numpy finishes `FINISHED:COMPLETED`; results under `/tmp/nvflare/simulation/hello-numpy` | Simulator |
-| [Job Recipe](./job_recipe.ipynb) | Build and run federated jobs with the high-level Recipe API (FedAvg with PyTorch) | `torch`, `tensorboard`; this repository checkout (uses `../hello-world/hello-pt`) | A multi-round FedAvg simulation completes with the run summary (models, metrics, evaluation paths) | Recipe API |
+| [Job Recipe](./job_recipe.ipynb) | Build and run federated jobs with the high-level Recipe API (FedAvg with PyTorch) | `torch`, `tensorboard`; this repository checkout (uses `../hello-world/hello-pt`) | A multi-round FedAvg simulation completes with the run summary (models and metrics) | Recipe API |
 
 ### Operate and deploy systems
 
