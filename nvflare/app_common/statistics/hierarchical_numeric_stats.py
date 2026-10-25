@@ -18,6 +18,7 @@ from typing import Dict, List, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.numeric_stats import _merge_matching_histogram_infinity_edges
 
 T = TypeVar("T")
 
@@ -356,133 +357,77 @@ def get_hierarchical_means(metric: str, global_metrics: dict) -> dict:
     return global_metrics
 
 
+def _accumulate_hierarchical_histogram(existing: Histogram, incoming: Histogram) -> Histogram:
+    """Merge matching histogram grids, allowing only infinite outer-edge extensions.
+
+    Unlike standard aggregation, hierarchical statistics preserve raw finite
+    bin boundaries without rounding. Incompatible grids must not silently lose
+    client counts.
+    """
+    if existing.hist_type != incoming.hist_type or len(existing.bins) != len(incoming.bins):
+        raise ValueError("incompatible histogram bin grids")
+
+    reconciled = _merge_matching_histogram_infinity_edges(existing, incoming, precision=None)
+    if reconciled is not None:
+        return reconciled
+
+    if any(
+        old.low_value != new.low_value or old.high_value != new.high_value
+        for old, new in zip(existing.bins, incoming.bins)
+    ):
+        raise ValueError("incompatible histogram bin grids")
+    bins = [
+        Bin(old.low_value, old.high_value, old.sample_count + new.sample_count)
+        for old, new in zip(existing.bins, incoming.bins)
+    ]
+    return Histogram(existing.hist_type, bins, existing.hist_name)
+
+
 def get_hierarchical_histograms(
     metric: str, client_name: str, metrics: dict, global_metrics: dict, hierarchy_config: dict
 ) -> dict:
-    """Calculate histograms at each hierarchical level.
+    """Calculate histograms at each hierarchical level, preserving all client counts."""
 
-    Args:
-        metric: Metric to accumulate.
-        client_name: Client name.
-        metrics: Client metrics.
-        global_metrics: The current global metrics.
-        hierarchy_config:  Hierarchy configuration for the global stats.
-
-    Returns:
-        A dict containing updated hierarchical global statistics with
-        accumulated histograms.
-    """
+    def update_histogram(node: dict, level: str, dataset: str, feature: str, histogram: Histogram) -> None:
+        destination = node[level][metric][dataset]
+        previous = destination.get(feature)
+        if previous:
+            destination[feature] = _accumulate_hierarchical_histogram(previous, histogram)
+        else:
+            bins = [Bin(bucket.low_value, bucket.high_value, bucket.sample_count) for bucket in histogram.bins]
+            destination[feature] = Histogram(HistogramType.STANDARD, bins)
 
     def recursively_accumulate_org_histograms(
-        metric: str,
         client_name: str,
-        metrics: dict,
         global_metrics: dict,
         dataset: str,
         feature: str,
         org: list,
-        histogram: dict,
-    ) -> dict:
+        histogram: Histogram,
+    ) -> None:
         if isinstance(global_metrics, dict):
             for key, value in global_metrics.items():
                 if key == StC.GLOBAL and StC.NAME not in global_metrics:
-                    if (
-                        feature not in global_metrics[StC.GLOBAL][metric][dataset]
-                        or not global_metrics[StC.GLOBAL][metric][dataset][feature]
-                    ):
-                        g_bins = []
-                        for bucket in histogram.bins:
-                            g_bins.append(Bin(bucket.low_value, bucket.high_value, bucket.sample_count))
-                        g_hist = Histogram(HistogramType.STANDARD, g_bins)
-                        global_metrics[StC.GLOBAL][metric][dataset][feature] = g_hist
-                    else:
-                        g_hist = global_metrics[StC.GLOBAL][metric][dataset][feature]
-                        g_buckets = bins_to_dict(g_hist.bins)
-                        for bucket in histogram.bins:
-                            bin_range = BinRange(bucket.low_value, bucket.high_value)
-                            if bin_range in g_buckets:
-                                g_buckets[bin_range] += bucket.sample_count
-                            else:
-                                g_buckets[bin_range] = bucket.sample_count
-                        # update ordered bins
-                        updated_bins = []
-                        for gb in g_hist.bins:
-                            bin_range = BinRange(gb.low_value, gb.high_value)
-                            updated_bins.append(Bin(gb.low_value, gb.high_value, g_buckets[bin_range]))
-                        global_metrics[StC.GLOBAL][metric][dataset][feature] = Histogram(g_hist.hist_type, updated_bins)
+                    update_histogram(global_metrics, StC.GLOBAL, dataset, feature, histogram)
                     continue
                 if key == StC.NAME:
                     if org and value in org:
-                        # The client belongs to this org so update current global metrics before sending it further
-                        if (
-                            feature not in global_metrics[StC.GLOBAL][metric][dataset]
-                            or not global_metrics[StC.GLOBAL][metric][dataset][feature]
-                        ):
-                            g_bins = []
-                            for bucket in histogram.bins:
-                                g_bins.append(Bin(bucket.low_value, bucket.high_value, bucket.sample_count))
-                            g_hist = Histogram(HistogramType.STANDARD, g_bins)
-                            global_metrics[StC.GLOBAL][metric][dataset][feature] = g_hist
-                        else:
-                            g_hist = global_metrics[StC.GLOBAL][metric][dataset][feature]
-                            g_buckets = bins_to_dict(g_hist.bins)
-                            for bucket in histogram.bins:
-                                bin_range = BinRange(bucket.low_value, bucket.high_value)
-                                if bin_range in g_buckets:
-                                    g_buckets[bin_range] += bucket.sample_count
-                                else:
-                                    g_buckets[bin_range] = bucket.sample_count
-                            # update ordered bins
-                            updated_bins = []
-                            for gb in g_hist.bins:
-                                bin_range = BinRange(gb.low_value, gb.high_value)
-                                updated_bins.append(Bin(gb.low_value, gb.high_value, g_buckets[bin_range]))
-                            global_metrics[StC.GLOBAL][metric][dataset][feature] = Histogram(
-                                g_hist.hist_type, updated_bins
-                            )
+                        # Update an ancestor's aggregate for this client.
+                        update_histogram(global_metrics, StC.GLOBAL, dataset, feature, histogram)
                     elif value == client_name:
-                        # This is a client local metrics update
-                        if (
-                            feature not in global_metrics[StC.LOCAL][metric][dataset]
-                            or not global_metrics[StC.LOCAL][metric][dataset][feature]
-                        ):
-                            g_bins = []
-                            for bucket in histogram.bins:
-                                g_bins.append(Bin(bucket.low_value, bucket.high_value, bucket.sample_count))
-                            g_hist = Histogram(HistogramType.STANDARD, g_bins)
-                            global_metrics[StC.LOCAL][metric][dataset][feature] = g_hist
-                        else:
-                            g_hist = global_metrics[StC.LOCAL][metric][dataset][feature]
-                            g_buckets = bins_to_dict(g_hist.bins)
-                            for bucket in histogram.bins:
-                                bin_range = BinRange(bucket.low_value, bucket.high_value)
-                                if bin_range in g_buckets:
-                                    g_buckets[bin_range] += bucket.sample_count
-                                else:
-                                    g_buckets[bin_range] = bucket.sample_count
-                            # update ordered bins
-                            updated_bins = []
-                            for gb in g_hist.bins:
-                                bin_range = BinRange(gb.low_value, gb.high_value)
-                                updated_bins.append(Bin(gb.low_value, gb.high_value, g_buckets[bin_range]))
-                            global_metrics[StC.LOCAL][metric][dataset][feature] = Histogram(
-                                g_hist.hist_type, updated_bins
-                            )
+                        # Keep each client's local histogram independent.
+                        update_histogram(global_metrics, StC.LOCAL, dataset, feature, histogram)
                     else:
                         break
                 if isinstance(value, list):
                     for item in value:
-                        recursively_accumulate_org_histograms(
-                            metric, client_name, metrics, item, dataset, feature, org, histogram
-                        )
+                        recursively_accumulate_org_histograms(client_name, item, dataset, feature, org, histogram)
 
     client_org = get_client_hierarchy(copy.deepcopy(hierarchy_config), client_name)
     for dataset in metrics:
         for feature in metrics[dataset]:
             histogram = metrics[dataset][feature]
-            recursively_accumulate_org_histograms(
-                metric, client_name, metrics, global_metrics, dataset, feature, client_org, histogram
-            )
+            recursively_accumulate_org_histograms(client_name, global_metrics, dataset, feature, client_org, histogram)
 
     return global_metrics
 
