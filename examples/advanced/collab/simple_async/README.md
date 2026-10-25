@@ -26,8 +26,9 @@ python job.py
 Alternatively, from the NVFlare repository root:
 
 ```bash
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 cd examples/advanced/collab/simple_async
+python -m pip install -r requirements.txt
 python job.py
 ```
 

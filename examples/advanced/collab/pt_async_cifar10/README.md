@@ -16,21 +16,22 @@ From an NVFlare source checkout, use
 
 ## NVIDIA FLARE Installation
 
-Add the PT extra to the same stable or nightly NVFlare distribution that
-provided the example, then install its remaining dependencies:
+Install NVFlare first, using the same stable or nightly distribution that
+provided the example, then install the example dependencies:
 
 ```bash
 # Stable installation
-python -m pip install "nvflare[PT]"
+python -m pip install nvflare
 
 # Nightly installation
-python -m pip install "nvflare-nightly[PT]"
+python -m pip install nvflare-nightly
 
 python -m pip install -r requirements.txt
 ```
 
 For a source checkout, install that checkout from its repository root with
-`python -m pip install -e ".[PT]"` before returning to this directory.
+`python -m pip install -e .` before returning to this directory to run
+`python -m pip install -r requirements.txt`.
 
 ## Code Structure
 

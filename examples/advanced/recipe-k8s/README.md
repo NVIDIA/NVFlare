@@ -91,17 +91,12 @@ independent Kubernetes environments.
 
 ## Install
 
-From the repository root, install the current source while NVFlare 2.9 is not
-yet published:
+Install NVFlare first, then the example dependencies (PyTorch and torchvision;
+`requirements.txt` does not install NVFlare). From the repository root:
 
 ```bash
-python3 -m pip install -e ".[PT]"
-```
-
-After the pinned release is available, the example dependencies can instead be
-installed normally:
-
-```bash
+# Stable release; use nvflare-nightly for a nightly build, or `-e .` for this checkout
+python3 -m pip install nvflare
 python3 -m pip install -r examples/advanced/recipe-k8s/requirements.txt
 ```
 

@@ -19,20 +19,12 @@ Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/main/r
 
 ## Setup
 
-> **Development branch note:** `FedCERecipe` requires NVFlare 2.9. Until that package is published, install
-> NVFlare from this repository and install the remaining example dependencies separately:
->
-> ```bash
-> python -m pip install --upgrade pip
-> python -m pip install -e "../..[PT]"
-> python -m pip install monai tensorboard tqdm nibabel
-> ```
-
-The `nvflare[PT]~=2.9.0rc` entry in `requirements.txt` records the first compatible release. After NVFlare 2.9
-is published, install the complete environment directly:
+`FedCERecipe` requires NVFlare 2.9 or later. Install NVFlare first, then the example dependencies
+(`requirements.txt` does not install NVFlare):
 
 ```bash
 python -m pip install --upgrade pip
+python -m pip install nvflare            # or: python -m pip install -e "../.." from this repository
 python -m pip install -r ./requirements.txt
 ```
 

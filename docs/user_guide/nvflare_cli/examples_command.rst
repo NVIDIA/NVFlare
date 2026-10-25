@@ -34,38 +34,38 @@ same source revision.
 Get an example
 ==============
 
-Install the optional dependency group required by the example on the same
-NVFlare distribution already in use. For example, use one of these forms for
-PyTorch support:
+Install NVFlare first, as the stable, nightly or editable distribution that
+matches the revision you want. The example's own dependencies, such as PyTorch,
+come from its ``requirements.txt`` after you download it, so you do not need an
+NVFlare extra for them:
 
 .. code-block:: bash
 
    # Stable installation
-   python -m pip install "nvflare[PT]"
+   python -m pip install nvflare
 
    # Nightly installation
-   python -m pip install "nvflare-nightly[PT]"
+   python -m pip install nvflare-nightly
 
    # Editable source installation, run from the NVFlare checkout
-   python -m pip install -e ".[PT]"
+   python -m pip install -e .
 
-Replace or combine optional groups according to the example. For example,
-experiment tracking with PyTorch requires both groups:
+Add an NVFlare extra only when the example's README names one. For example,
+homomorphic encryption uses the ``HE`` group:
 
 .. code-block:: bash
 
    # Stable installation
-   python -m pip install "nvflare[PT,TRACKING]"
+   python -m pip install "nvflare[HE]"
 
    # Nightly installation
-   python -m pip install "nvflare-nightly[PT,TRACKING]"
+   python -m pip install "nvflare-nightly[HE]"
 
    # Editable source installation, run from the NVFlare checkout
-   python -m pip install -e ".[PT,TRACKING]"
+   python -m pip install -e ".[HE]"
 
-Other examples may use groups such as ``HE`` or ``SKLEARN``. Download the
-example, then follow its README for remaining dependencies, data download,
-preparation, and run steps:
+Download the example, then follow its README for remaining dependencies, data
+download, preparation, and run steps:
 
 .. code-block:: bash
 
