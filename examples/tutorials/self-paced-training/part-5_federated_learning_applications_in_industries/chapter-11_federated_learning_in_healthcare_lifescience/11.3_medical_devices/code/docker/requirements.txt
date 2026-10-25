@@ -1,3 +1,2 @@
-nvflare
 pandas~=2.3
 numpy

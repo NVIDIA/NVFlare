@@ -1,4 +1,3 @@
-nvflare~=2.7.2rc
 pandas~=2.3
 kagglehub
 torch==2.12.0
