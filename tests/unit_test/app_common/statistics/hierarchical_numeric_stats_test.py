@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from math import isnan, sqrt
+
+import numpy as np
+import pandas as pd
 import pytest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType
@@ -152,8 +156,8 @@ global_stats_0 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.1}},
-                "stddev": {"data_set1": {"Feature1": 0.32}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -172,8 +176,8 @@ global_stats_0 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.1}},
-                "stddev": {"data_set1": {"Feature1": 0.32}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -192,8 +196,8 @@ global_stats_0 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.1}},
-                "stddev": {"data_set1": {"Feature1": 0.32}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -212,8 +216,8 @@ global_stats_0 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.1}},
-                "stddev": {"data_set1": {"Feature1": 0.32}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
     ],
@@ -256,8 +260,8 @@ global_stats_1 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
                 {
@@ -276,8 +280,8 @@ global_stats_1 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
             ],
@@ -295,8 +299,8 @@ global_stats_1 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -318,8 +322,8 @@ global_stats_1 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
                 {
@@ -338,8 +342,8 @@ global_stats_1 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
             ],
@@ -357,8 +361,8 @@ global_stats_1 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
     ],
@@ -404,8 +408,8 @@ global_stats_2 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         }
                     ],
@@ -423,8 +427,8 @@ global_stats_2 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
                 {
@@ -446,8 +450,8 @@ global_stats_2 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         }
                     ],
@@ -465,8 +469,8 @@ global_stats_2 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
             ],
@@ -484,8 +488,8 @@ global_stats_2 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -510,8 +514,8 @@ global_stats_2 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         },
                         {
@@ -530,8 +534,8 @@ global_stats_2 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         },
                     ],
@@ -549,8 +553,8 @@ global_stats_2 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.2}},
-                        "stddev": {"data_set1": {"Feature1": 0.45}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 }
             ],
@@ -568,8 +572,8 @@ global_stats_2 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
     ],
@@ -618,8 +622,8 @@ global_stats_3 = {
                                                 ]
                                             }
                                         },
-                                        "var": {"data_set1": {"Feature1": 0.1}},
-                                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                                        "var": {"data_set1": {"Feature1": 0.01}},
+                                        "stddev": {"data_set1": {"Feature1": 0.1}},
                                     },
                                 }
                             ],
@@ -637,8 +641,8 @@ global_stats_3 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         }
                     ],
@@ -656,8 +660,8 @@ global_stats_3 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
                 {
@@ -682,8 +686,8 @@ global_stats_3 = {
                                                 ]
                                             }
                                         },
-                                        "var": {"data_set1": {"Feature1": 0.1}},
-                                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                                        "var": {"data_set1": {"Feature1": 0.01}},
+                                        "stddev": {"data_set1": {"Feature1": 0.1}},
                                     },
                                 }
                             ],
@@ -701,8 +705,8 @@ global_stats_3 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         }
                     ],
@@ -720,8 +724,8 @@ global_stats_3 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.1}},
-                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 },
             ],
@@ -739,8 +743,8 @@ global_stats_3 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
         {
@@ -768,8 +772,8 @@ global_stats_3 = {
                                                 ]
                                             }
                                         },
-                                        "var": {"data_set1": {"Feature1": 0.1}},
-                                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                                        "var": {"data_set1": {"Feature1": 0.01}},
+                                        "stddev": {"data_set1": {"Feature1": 0.1}},
                                     },
                                 }
                             ],
@@ -787,8 +791,8 @@ global_stats_3 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         },
                         {
@@ -810,8 +814,8 @@ global_stats_3 = {
                                                 ]
                                             }
                                         },
-                                        "var": {"data_set1": {"Feature1": 0.1}},
-                                        "stddev": {"data_set1": {"Feature1": 0.32}},
+                                        "var": {"data_set1": {"Feature1": 0.01}},
+                                        "stddev": {"data_set1": {"Feature1": 0.1}},
                                     },
                                 }
                             ],
@@ -829,8 +833,8 @@ global_stats_3 = {
                                         ]
                                     }
                                 },
-                                "var": {"data_set1": {"Feature1": 0.1}},
-                                "stddev": {"data_set1": {"Feature1": 0.32}},
+                                "var": {"data_set1": {"Feature1": 0.01}},
+                                "stddev": {"data_set1": {"Feature1": 0.1}},
                             },
                         },
                     ],
@@ -848,8 +852,8 @@ global_stats_3 = {
                                 ]
                             }
                         },
-                        "var": {"data_set1": {"Feature1": 0.2}},
-                        "stddev": {"data_set1": {"Feature1": 0.45}},
+                        "var": {"data_set1": {"Feature1": 0.01}},
+                        "stddev": {"data_set1": {"Feature1": 0.1}},
                     },
                 }
             ],
@@ -867,8 +871,8 @@ global_stats_3 = {
                         ]
                     }
                 },
-                "var": {"data_set1": {"Feature1": 0.2}},
-                "stddev": {"data_set1": {"Feature1": 0.45}},
+                "var": {"data_set1": {"Feature1": 0.01}},
+                "stddev": {"data_set1": {"Feature1": 0.1}},
             },
         },
     ],
@@ -880,6 +884,42 @@ PARAMS = [
     (CLIENT_STATS, global_stats_2, HIERARCHY_CONFIGS[2]),
     (CLIENT_STATS, global_stats_3, HIERARCHY_CONFIGS[3]),
 ]
+
+STATES_CONFIG = {
+    "States": [{"Name": "State-A", "Sites": ["Site-1", "Site-2"]}, {"Name": "State-B", "Sites": ["Site-3"]}]
+}
+
+
+def _two_round_stats(site_data: dict, hierarchy_config: dict, precision: int = 4) -> dict:
+    """Run both statistics rounds the way the controller does, with client values computed like DFStatisticsCore."""
+    from nvflare.app_common.statistics.hierarchical_numeric_stats import get_global_stats
+
+    series = {site: pd.Series(values, dtype=float) for site, values in site_data.items()}
+    client_stats = {StC.STATS_COUNT: {}, StC.STATS_SUM: {}, StC.STATS_MEAN: {}}
+    for site, s in series.items():
+        client_stats[StC.STATS_COUNT][site] = {"ds": {"f": s.count()}}
+        client_stats[StC.STATS_SUM][site] = {"ds": {"f": round(s.sum(), precision)}}
+        client_stats[StC.STATS_MEAN][site] = {"ds": {"f": round(s.mean(), precision)}}
+    global_stats = get_global_stats({}, client_stats, StC.STATS_1st_STATISTICS, hierarchy_config)
+
+    global_mean = global_stats[StC.GLOBAL][StC.STATS_MEAN]["ds"]["f"]
+    global_count = global_stats[StC.GLOBAL][StC.STATS_COUNT]["ds"]["f"]
+    client_stats[StC.STATS_VAR] = {}
+    client_stats[StC.STATS_STDDEV] = {}
+    for site, s in series.items():
+        var = ((s - global_mean) * (s - global_mean)).sum() / (global_count - 1)
+        client_stats[StC.STATS_VAR][site] = {"ds": {"f": round(var, precision)}}
+        client_stats[StC.STATS_STDDEV][site] = {"ds": {"f": round(s.std(), precision)}}
+    return get_global_stats(global_stats, client_stats, StC.STATS_2nd_STATISTICS, hierarchy_config)
+
+
+def _vars_and_stddevs(global_stats: dict) -> dict:
+    result = {StC.GLOBAL: global_stats[StC.GLOBAL]}
+    for state in global_stats["States"]:
+        result[state[StC.NAME]] = state[StC.GLOBAL]
+        for site in state["Sites"]:
+            result[site[StC.NAME]] = site[StC.LOCAL]
+    return {k: (v[StC.STATS_VAR]["ds"]["f"], v[StC.STATS_STDDEV]["ds"]["f"]) for k, v in result.items()}
 
 
 class TestHierarchicalNumericStats:
@@ -916,3 +956,71 @@ class TestHierarchicalNumericStats:
         result = self._round_global_stats(global_stats)
 
         assert expected_global_stats == result
+
+    def test_var_and_stddev_of_every_level(self):
+        data = {"Site-1": [1, 2, 3, 4], "Site-2": [10, 11, 12, 13], "Site-3": [100, 101, 102, 103]}
+        result = _vars_and_stddevs(_two_round_stats(data, STATES_CONFIG))
+
+        expected = {
+            StC.GLOBAL: 2181.0,
+            "State-A": 24.5714,
+            "State-B": 1.6667,
+            "Site-1": 1.6667,
+            "Site-2": 1.6667,
+            "Site-3": 1.6667,
+        }
+        assert result.keys() == expected.keys()
+        for level, var in expected.items():
+            assert result[level][0] == pytest.approx(var, abs=5e-4), level
+            assert result[level][1] == pytest.approx(sqrt(var), abs=5e-4), level
+
+    def test_var_matches_numpy_with_uneven_sites(self):
+        rng = np.random.default_rng(0)
+        data = {
+            "Site-1": rng.normal(10, 2, 50).tolist(),
+            "Site-2": rng.normal(-5, 7, 3000).tolist(),
+            "Site-3": rng.uniform(0, 1, 30).tolist(),
+        }
+        result = _vars_and_stddevs(_two_round_stats(data, STATES_CONFIG))
+
+        records = {
+            StC.GLOBAL: data["Site-1"] + data["Site-2"] + data["Site-3"],
+            "State-A": data["Site-1"] + data["Site-2"],
+            "State-B": data["Site-3"],
+            **data,
+        }
+        for level, values in records.items():
+            # Clients round their stddev to 4 digits, which moves the var by about 2 * stddev * 5e-5 at most
+            var = np.var(values, ddof=1)
+            assert result[level][0] == pytest.approx(var, abs=1e-3), level
+            assert result[level][1] == pytest.approx(sqrt(var), abs=1e-4), level
+
+    def test_single_record_site(self):
+        # pandas returns NaN for the stddev of a single record, so the site adds nothing to the within-site term
+        data = {"Site-1": [1, 2, 3, 4], "Site-2": [10], "Site-3": [100]}
+        result = _vars_and_stddevs(_two_round_stats(data, STATES_CONFIG))
+
+        assert result[StC.GLOBAL][0] == pytest.approx(np.var([1, 2, 3, 4, 10, 100], ddof=1), abs=1e-4)
+        assert result["State-A"][0] == pytest.approx(np.var([1, 2, 3, 4, 10], ddof=1), abs=1e-4)
+        assert result["Site-1"][0] == pytest.approx(np.var([1, 2, 3, 4], ddof=1), abs=1e-4)
+        assert isnan(result["Site-2"][0]) and isnan(result["Site-2"][1])
+        assert isnan(result["State-B"][0]) and isnan(result["State-B"][1])
+
+    def test_empty_site(self):
+        data = {"Site-1": [1, 2, 3, 4], "Site-2": [], "Site-3": [100, 101, 102, 103]}
+        with np.errstate(invalid="ignore"):
+            result = _vars_and_stddevs(_two_round_stats(data, STATES_CONFIG))
+
+        assert result[StC.GLOBAL][0] == pytest.approx(np.var([1, 2, 3, 4, 100, 101, 102, 103], ddof=1), abs=1e-4)
+        assert result["State-A"][0] == pytest.approx(np.var([1, 2, 3, 4], ddof=1), abs=1e-4)
+        assert result["Site-1"][0] == pytest.approx(np.var([1, 2, 3, 4], ddof=1), abs=1e-4)
+        assert isnan(result["Site-2"][0])
+        assert result["State-B"][0] == pytest.approx(np.var([100, 101, 102, 103], ddof=1), abs=1e-4)
+
+    def test_var_without_client_stddev_fails(self):
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import get_global_stats
+
+        client_stats = {k: v for k, v in CLIENT_STATS.items() if k != StC.STATS_STDDEV}
+        global_stats = get_global_stats({}, client_stats, StC.STATS_1st_STATISTICS, HIERARCHY_CONFIGS[1])
+        with pytest.raises(ValueError, match="stddev"):
+            get_global_stats(global_stats, client_stats, StC.STATS_2nd_STATISTICS, HIERARCHY_CONFIGS[1])
