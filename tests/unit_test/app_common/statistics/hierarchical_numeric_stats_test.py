@@ -1193,3 +1193,60 @@ class TestRemoveWithheldFromOutput:
 
         assert set(tree[StC.GLOBAL]["count"]["ds"]) == {"g"}
         assert set(tree["Regions"][0][StC.GLOBAL]["count"]["ds"]) == {"g"}
+
+
+class TestHierarchicalWithheldInSecondRound:
+    HIERARCHY = {"States": [{"Name": "State-A", "Sites": ["Site-1", "Site-2"]}]}
+
+    def _rounds(self, failures_in_second_round):
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import get_global_stats
+        from nvflare.app_common.statistics.min_count_cleanser import MinCountCleanser
+
+        cleanser = MinCountCleanser(min_count=10)
+        withheld = {}
+
+        def collect(site, statistics):
+            for ds_name, features in cleanser.withheld_features(statistics, site).items():
+                withheld.setdefault(site, {}).setdefault(ds_name, set()).update(features)
+            return cleanser.apply(statistics, site)[0]
+
+        values = {"Site-1": 1.0, "Site-2": 3.0}
+        first = {
+            site: collect(
+                site,
+                {
+                    StC.STATS_COUNT: {"ds": {"f": 10.0}},
+                    StC.STATS_FAILURE_COUNT: {"ds": {"f": 0.0}},
+                    StC.STATS_SUM: {"ds": {"f": 10 * v}},
+                    StC.STATS_MEAN: {"ds": {"f": v}},
+                },
+            )
+            for site, v in values.items()
+        }
+        metrics = {m: {site: first[site][m] for site in values} for m in first["Site-1"]}
+        global_stats = get_global_stats({}, metrics, StC.STATS_1st_STATISTICS, self.HIERARCHY, withheld)
+
+        histogram = Histogram(HistogramType.STANDARD, [Bin(0.0, 5.0, 10)])
+        second = {
+            site: collect(
+                site,
+                {
+                    StC.STATS_COUNT: {"ds": {"f": 10.0}},
+                    StC.STATS_FAILURE_COUNT: {"ds": {"f": failures_in_second_round.get(site, 0.0)}},
+                    StC.STATS_HISTOGRAM: {"ds": {"f": histogram}},
+                },
+            )
+            for site in values
+        }
+        metrics = {m: {site: second[site][m] for site in values} for m in second["Site-1"]}
+        return get_global_stats(global_stats, metrics, StC.STATS_2nd_STATISTICS, self.HIERARCHY, withheld)
+
+    def test_site_withheld_only_in_the_second_round_is_rejected(self):
+        with pytest.raises(ValueError, match="Site-2.*2nd statistics round"):
+            self._rounds({"Site-2": 1.0})
+
+    def test_no_error_when_no_site_changes_between_rounds(self):
+        result = self._rounds({})
+
+        assert result[StC.GLOBAL][StC.STATS_COUNT]["ds"]["f"] == 20
+        assert result[StC.GLOBAL][StC.STATS_HISTOGRAM]["ds"]["f"].bins[0].sample_count == 20

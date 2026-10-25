@@ -179,6 +179,7 @@ def get_global_stats(
         global_metrics = get_output_structure(client_metrics, metric_task, ordered_metrics, hierarchy_config)
     else:
         update_output_strcture(client_metrics, metric_task, ordered_metrics, global_metrics)
+        check_not_withheld_after_contributing(global_metrics, withheld_features)
     remove_withheld_from_output(global_metrics, withheld_features)
 
     for metric in ordered_metrics:
@@ -260,6 +261,36 @@ def remove_withheld_from_output(global_metrics, withheld_features: Dict[str, Dic
                     everywhere.setdefault(ds_name, set()).add(feature)
         _remove_features(global_metrics[StC.GLOBAL], everywhere)
     return sites
+
+
+def check_not_withheld_after_contributing(global_metrics, withheld_features: Dict[str, Dict[str, Set[str]]]) -> None:
+    """Reject a site whose statistics were withheld only after it contributed to the 1st round aggregates.
+
+    The privacy filter judges the count minus the failure count, which can change between the rounds (for
+    example when records fail to load while the 2nd round runs). The 1st round aggregates already include such
+    a site and cannot be undone, while the 2nd round results cannot include it, so the global statistics of the
+    feature would no longer describe the same records. A site withheld in the 1st round has no Local count.
+    """
+    if isinstance(global_metrics, list):
+        for item in global_metrics:
+            check_not_withheld_after_contributing(item, withheld_features)
+    elif isinstance(global_metrics, dict):
+        if StC.LOCAL in global_metrics:
+            site = global_metrics.get(StC.NAME)
+            local_counts = global_metrics[StC.LOCAL].get(StC.STATS_COUNT, {})
+            for ds_name, features in withheld_features.get(site, {}).items():
+                for feature in sorted(features):
+                    if feature in local_counts.get(ds_name, {}):
+                        raise ValueError(
+                            f"The statistics of feature '{feature}' in dataset '{ds_name}' from site '{site}' were "
+                            "withheld by its privacy filter in the 2nd statistics round, after the site contributed "
+                            "to the 1st round. The count minus the failure count dropped below the minimum count, "
+                            "for example because records failed to load, so the global statistics of the feature "
+                            "would be inconsistent."
+                        )
+        for value in global_metrics.values():
+            if isinstance(value, list):
+                check_not_withheld_after_contributing(value, withheld_features)
 
 
 def _remove_features(node_metrics: dict, features_by_dataset: Dict[str, Set[str]]) -> None:
