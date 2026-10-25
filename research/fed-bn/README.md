@@ -14,6 +14,8 @@ This project is open-sourced under the Apache-2.0 License. The codebase builds u
 To set up the environment for training, execute the following commands:
 ```
 pip install --upgrade pip
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r ./requirements.txt
 ```
 

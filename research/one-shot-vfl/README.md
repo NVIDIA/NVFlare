@@ -22,6 +22,8 @@ This examples uses [JupyterLab](https://jupyter.org).
 
 We recommend creating a [virtual environment](../../examples/README.md#set-up-a-virtual-environment) and installing the requirements.
 ```
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

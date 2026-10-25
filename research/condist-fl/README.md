@@ -38,6 +38,8 @@ python prepare_data.py --task spleen   --src Task09_Spleen   --dst data/Spleen
 
 Install all dependencies using
 ```
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

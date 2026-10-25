@@ -22,6 +22,8 @@ Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/main/r
 Install required packages for training
 ```
 pip install --upgrade pip
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r ./requirements.txt
 ```
 

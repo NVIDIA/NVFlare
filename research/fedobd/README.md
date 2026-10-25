@@ -20,6 +20,8 @@ A quantization scheme called "ADAQUANT" has been added to NVFLARE under **nvflar
 
 ```bash
 # Install NVFLARE and related packages
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

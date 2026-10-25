@@ -4,7 +4,6 @@
 torch>=2.0
 
 # Federated execution
-nvflare==2.9.0
 
 # Numerical computing and plotting
 numpy>=1.23

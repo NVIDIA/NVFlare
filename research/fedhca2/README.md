@@ -47,6 +47,8 @@ conda create -n fedhca2 python=3.10
 conda activate fedhca2
 
 # Install PyTorch and related packages
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 
