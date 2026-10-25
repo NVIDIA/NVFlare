@@ -162,7 +162,14 @@ Activate the virtualenv by running the following command:
 
 Installing required packages
 ----------------------------
-In each example folder, install required packages for training:
+Install NVFlare first (stable shown; use ``nvflare-nightly`` or an editable install if you work with those):
+
+.. code-block:: bash
+
+    pip install nvflare
+
+Then, in each example folder, install required packages for training (an example's
+``requirements.txt`` does not install NVFlare):
 
 .. code-block:: bash
 

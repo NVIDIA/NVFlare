@@ -20,9 +20,11 @@ python3 -m pip install --upgrade pip && \
 python3 -m pip install --editable AMPLIFY[dev]
 ```
 
-Install the example dependencies:
+Install NVFlare first, then the example dependencies:
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 export PYTHONPATH="${PWD}/src"
 ```
