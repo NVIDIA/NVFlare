@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 from math import isnan, sqrt
 
 import numpy as np
@@ -1024,3 +1025,171 @@ class TestHierarchicalNumericStats:
         global_stats = get_global_stats({}, client_stats, StC.STATS_1st_STATISTICS, HIERARCHY_CONFIGS[1])
         with pytest.raises(ValueError, match="stddev"):
             get_global_stats(global_stats, client_stats, StC.STATS_2nd_STATISTICS, HIERARCHY_CONFIGS[1])
+
+
+class TestHierarchicalWithheldSites:
+    HIERARCHY = {
+        "States": [
+            {"Name": "State-A", "Sites": ["Site-1", "Site-2"]},
+            {"Name": "State-B", "Sites": ["Site-3"]},
+            {"Name": "State-C", "Sites": ["Site-4"]},
+        ]
+    }
+    # Site-1 and Site-4 are below the privacy filter's min_count, so their statistics are withheld.
+    DATA = {
+        "Site-1": [11.0, 12.0, 15.0],
+        "Site-2": list(9.0 + np.linspace(-1.0, 1.0, 40)),
+        "Site-3": list(11.0 + np.linspace(-2.0, 2.0, 60)),
+        "Site-4": [4.0, 5.0],
+    }
+
+    def _run(self, order):
+        """Run both rounds through the real MinCountCleanser, as the privacy filter and controller do."""
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import get_global_stats
+        from nvflare.app_common.statistics.min_count_cleanser import MinCountCleanser
+
+        cleanser = MinCountCleanser(min_count=10)
+        withheld = {}
+
+        def collect(site, statistics):
+            for ds_name, features in cleanser.withheld_features(statistics, site).items():
+                withheld.setdefault(site, {}).setdefault(ds_name, set()).update(features)
+            return cleanser.apply(statistics, site)[0]
+
+        series = {site: pd.Series(self.DATA[site], dtype=float) for site in order}
+        first = {}
+        for site, s in series.items():
+            first[site] = collect(
+                site,
+                {
+                    StC.STATS_COUNT: {"ds": {"f": float(s.count())}},
+                    StC.STATS_FAILURE_COUNT: {"ds": {"f": 0.0}},
+                    StC.STATS_SUM: {"ds": {"f": float(s.sum())}},
+                    StC.STATS_MEAN: {"ds": {"f": float(s.mean())}},
+                },
+            )
+        metrics = {m: {site: first[site][m] for site in order} for m in first[order[0]]}
+        global_stats = get_global_stats({}, metrics, StC.STATS_1st_STATISTICS, self.HIERARCHY, withheld)
+
+        global_mean = global_stats[StC.GLOBAL][StC.STATS_MEAN]["ds"]["f"]
+        global_count = global_stats[StC.GLOBAL][StC.STATS_COUNT]["ds"]["f"]
+        second = {}
+        for site, s in series.items():
+            bins = [Bin(0.0, 10.0, int((s < 10).sum())), Bin(10.0, 20.0, int((s >= 10).sum()))]
+            second[site] = collect(
+                site,
+                {
+                    StC.STATS_COUNT: {"ds": {"f": float(s.count())}},
+                    StC.STATS_FAILURE_COUNT: {"ds": {"f": 0.0}},
+                    StC.STATS_HISTOGRAM: {"ds": {"f": Histogram(HistogramType.STANDARD, bins)}},
+                    StC.STATS_VAR: {"ds": {"f": float(((s - global_mean) ** 2).sum() / (global_count - 1))}},
+                    StC.STATS_STDDEV: {"ds": {"f": float(s.std())}},
+                },
+            )
+        metrics = {m: {site: second[site][m] for site in order} for m in second[order[0]]}
+        return get_global_stats(global_stats, metrics, StC.STATS_2nd_STATISTICS, self.HIERARCHY, withheld)
+
+    @staticmethod
+    def _levels(result):
+        levels = {"Global": result[StC.GLOBAL]}
+        for state in result["States"]:
+            levels[state[StC.NAME]] = state[StC.GLOBAL]
+            for site in state["Sites"]:
+                levels[site[StC.NAME]] = site[StC.LOCAL]
+        return levels
+
+    @pytest.mark.parametrize("order", list(itertools.permutations(["Site-1", "Site-2", "Site-3", "Site-4"])))
+    def test_withheld_sites_do_not_affect_the_aggregate_levels(self, order):
+        levels = self._levels(self._run(list(order)))
+        contributing = np.array(self.DATA["Site-2"] + self.DATA["Site-3"])
+
+        assert levels["Global"][StC.STATS_COUNT]["ds"]["f"] == 100
+        assert levels["Global"][StC.STATS_MEAN]["ds"]["f"] == pytest.approx(contributing.mean())
+        assert levels["Global"][StC.STATS_VAR]["ds"]["f"] == pytest.approx(contributing.var(ddof=1), abs=1e-6)
+        for state, site in (("State-A", "Site-2"), ("State-B", "Site-3")):
+            values = np.array(self.DATA[site])
+            assert levels[state][StC.STATS_COUNT]["ds"]["f"] == len(values)
+            assert levels[state][StC.STATS_MEAN]["ds"]["f"] == pytest.approx(values.mean())
+            assert levels[state][StC.STATS_VAR]["ds"]["f"] == pytest.approx(values.var(ddof=1), abs=1e-6)
+            assert levels[site][StC.STATS_VAR]["ds"]["f"] == pytest.approx(values.var(ddof=1), abs=1e-6)
+
+    def test_level_without_contributing_sites_has_no_entry_for_the_feature(self):
+        state_c = self._levels(self._run(["Site-1", "Site-2", "Site-3", "Site-4"]))["State-C"]
+
+        assert all("f" not in values["ds"] for values in state_c.values())
+
+    def test_withheld_site_has_no_local_entry_for_the_feature(self):
+        levels = self._levels(self._run(["Site-1", "Site-2", "Site-3", "Site-4"]))
+
+        for site in ("Site-1", "Site-4"):
+            assert all("f" not in values["ds"] for values in levels[site].values())
+        assert levels["Site-2"][StC.STATS_COUNT]["ds"]["f"] == 40
+
+    def test_result_can_be_rounded_by_the_controller(self):
+        from nvflare.app_common.workflows.hierarchical_statistics_controller import HierarchicalStatisticsController
+
+        result = self._run(["Site-4", "Site-2", "Site-1", "Site-3"])
+        controller = HierarchicalStatisticsController(
+            statistic_configs={StC.STATS_COUNT: {}}, writer_id="stats_writer", hierarchy_config="hierarchy_config.json"
+        )
+
+        controller._recursively_round_global_stats(result)
+
+        # The controller replaces each Histogram with its list of rounded bins.
+        global_bins = result[StC.GLOBAL][StC.STATS_HISTOGRAM]["ds"]["f"]
+        assert sum(b.sample_count for b in global_bins) == 100
+
+
+class TestRemoveWithheldFromOutput:
+    @staticmethod
+    def _entry(features=("f", "g")):
+        return {StC.STATS_COUNT: {"ds": {name: 0 for name in features}}}
+
+    def _tree(self):
+        def site(name):
+            return {StC.NAME: name, StC.LOCAL: self._entry()}
+
+        def level(name, key, children):
+            return {StC.NAME: name, StC.GLOBAL: self._entry(), key: children}
+
+        return {
+            StC.GLOBAL: self._entry(),
+            "Regions": [
+                level(
+                    "R1",
+                    "States",
+                    [level("S1", "Sites", [site("a"), site("b")]), level("S2", "Sites", [site("c")])],
+                )
+            ],
+        }
+
+    def test_nested_levels_keep_features_that_some_site_reported(self):
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import remove_withheld_from_output
+
+        tree = self._tree()
+        withheld = {"a": {"ds": {"f"}}, "b": {"ds": {"g"}}, "c": {"ds": {"f", "g"}}}
+
+        sites = remove_withheld_from_output(tree, withheld)
+
+        assert sites == ["a", "b", "c"]
+        region = tree["Regions"][0]
+        state_1, state_2 = region["States"]
+        features = lambda node: set(node["count"]["ds"])  # noqa: E731
+        assert features(tree[StC.GLOBAL]) == {"f", "g"}
+        assert features(region[StC.GLOBAL]) == {"f", "g"}
+        assert features(state_1[StC.GLOBAL]) == {"f", "g"}  # a reported g, b reported f
+        assert features(state_2[StC.GLOBAL]) == set()  # its only site withheld both
+        assert features(state_1["Sites"][0][StC.LOCAL]) == {"g"}
+        assert features(state_1["Sites"][1][StC.LOCAL]) == {"f"}
+        assert features(state_2["Sites"][0][StC.LOCAL]) == set()
+
+    def test_top_level_loses_a_feature_only_when_every_site_withheld_it(self):
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import remove_withheld_from_output
+
+        tree = self._tree()
+        withheld = {name: {"ds": {"f"}} for name in ("a", "b", "c")}
+
+        remove_withheld_from_output(tree, withheld)
+
+        assert set(tree[StC.GLOBAL]["count"]["ds"]) == {"g"}
+        assert set(tree["Regions"][0][StC.GLOBAL]["count"]["ds"]) == {"g"}

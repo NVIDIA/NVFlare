@@ -14,10 +14,11 @@
 
 import copy
 from math import sqrt
-from typing import Dict, List, TypeVar
+from typing import Dict, List, Optional, Set, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.numeric_stats import exclude_withheld_features
 
 T = TypeVar("T")
 
@@ -38,7 +39,9 @@ def get_initial_structure(client_metrics: dict, ordered_metrics: dict) -> dict:
         for stat in client_metrics:
             for site in client_metrics[stat]:
                 for ds in client_metrics[stat][site]:
-                    stats[metric][ds] = {}
+                    # Union over the sites: a site that reports no features for a dataset must not erase the
+                    # features the other sites report.
+                    stats[metric].setdefault(ds, {})
                     for feature in client_metrics[stat][site][ds]:
                         stats[metric][ds][feature] = 0
     return stats
@@ -143,7 +146,13 @@ def update_output_strcture(
             update_output_strcture(client_metrics, metric_task, ordered_metrics, item)
 
 
-def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str, hierarchy_config: dict) -> dict:
+def get_global_stats(
+    global_metrics: dict,
+    client_metrics: dict,
+    metric_task: str,
+    hierarchy_config: dict,
+    withheld_features: Optional[Dict[str, Dict[str, Set[str]]]] = None,
+) -> dict:
     """Get global hierarchical statistics for the given hierarchy config.
 
     Args:
@@ -151,11 +160,16 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
         client_metrics: Local stats for each client.
         metric_task: Statistics task.
         hierarchy_config: Hierarchy configuration for the global stats.
-
+        withheld_features: The features whose statistics a client's privacy filter withheld, as
+            ``{client: {dataset: {feature, ...}}}``. Such a client contributes nothing to those features at any
+            level and has no Local entry for them.
 
     Returns:
         A dict containing global hierarchical statistics.
     """
+    withheld_features = withheld_features or {}
+    client_metrics = remove_withheld_features(client_metrics, withheld_features)
+
     # create stats structure
     ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
@@ -165,6 +179,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
         global_metrics = get_output_structure(client_metrics, metric_task, ordered_metrics, hierarchy_config)
     else:
         update_output_strcture(client_metrics, metric_task, ordered_metrics, global_metrics)
+    remove_withheld_from_output(global_metrics, withheld_features)
 
     for metric in ordered_metrics:
         stats = client_metrics[metric]
@@ -197,6 +212,61 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
             global_metrics = get_hierarchical_stddevs(global_metrics)
 
     return global_metrics
+
+
+def remove_withheld_features(client_metrics: dict, withheld_features: Dict[str, Dict[str, Set[str]]]) -> dict:
+    """Return the client metrics without the features their privacy filter withheld."""
+    if not withheld_features:
+        return client_metrics
+
+    return {
+        metric: {
+            client: exclude_withheld_features(values, withheld_features.get(client))
+            for client, values in clients.items()
+        }
+        for metric, clients in client_metrics.items()
+    }
+
+
+def remove_withheld_from_output(global_metrics, withheld_features: Dict[str, Dict[str, Set[str]]]) -> List[str]:
+    """Drop the withheld features from the output structure and return the names of the sites under the node.
+
+    The output structure holds every feature at every node, so it is seeded with placeholder values for features
+    a site never reported. A site has no Local entry for a feature it withheld, and a level has no entry for a
+    feature that every site under it withheld.
+    """
+    sites = []
+    if isinstance(global_metrics, list):
+        for item in global_metrics:
+            sites.extend(remove_withheld_from_output(item, withheld_features))
+        return sites
+    if not isinstance(global_metrics, dict):
+        return sites
+
+    for value in global_metrics.values():
+        if isinstance(value, list):
+            sites.extend(remove_withheld_from_output(value, withheld_features))
+
+    if StC.LOCAL in global_metrics:  # a site
+        name = global_metrics.get(StC.NAME)
+        _remove_features(global_metrics[StC.LOCAL], withheld_features.get(name, {}))
+        return [name]
+
+    if StC.GLOBAL in global_metrics and sites:  # a level, or the top level
+        everywhere = {}
+        for ds_name, features in withheld_features.get(sites[0], {}).items():
+            for feature in features:
+                if all(feature in withheld_features.get(site, {}).get(ds_name, ()) for site in sites):
+                    everywhere.setdefault(ds_name, set()).add(feature)
+        _remove_features(global_metrics[StC.GLOBAL], everywhere)
+    return sites
+
+
+def _remove_features(node_metrics: dict, features_by_dataset: Dict[str, Set[str]]) -> None:
+    for values in node_metrics.values():
+        for ds_name, features in features_by_dataset.items():
+            for feature in features:
+                values.get(ds_name, {}).pop(feature, None)
 
 
 def accumulate_hierarchical_metrics(
@@ -334,12 +404,12 @@ def get_hierarchical_means(metric: str, global_metrics: dict) -> dict:
     def recursively_update_org_means(metrics: dict, global_metrics: dict, dataset: str, feature: str) -> dict:
         if isinstance(global_metrics, dict):
             for key, value in global_metrics.items():
-                if key == StC.GLOBAL:
+                if key == StC.GLOBAL and feature in global_metrics[StC.GLOBAL][StC.STATS_COUNT][dataset]:
                     global_metrics[StC.GLOBAL][metric][dataset][feature] = (
                         global_metrics[StC.GLOBAL][StC.STATS_SUM][dataset][feature]
                         / global_metrics[StC.GLOBAL][StC.STATS_COUNT][dataset][feature]
                     )
-                if key == StC.LOCAL:
+                if key == StC.LOCAL and feature in global_metrics[StC.LOCAL][StC.STATS_COUNT][dataset]:
                     global_metrics[StC.LOCAL][metric][dataset][feature] = (
                         global_metrics[StC.LOCAL][StC.STATS_SUM][dataset][feature]
                         / global_metrics[StC.LOCAL][StC.STATS_COUNT][dataset][feature]
@@ -524,6 +594,8 @@ def get_hierarchical_vars(global_metrics: dict, client_metrics: dict) -> dict:
         if isinstance(global_metrics, dict):
             if StC.LOCAL in global_metrics:
                 local_metrics = global_metrics[StC.LOCAL]
+                if feature not in local_metrics[StC.STATS_COUNT][dataset]:
+                    return sites  # the site's statistics for this feature were withheld
                 count = local_metrics[StC.STATS_COUNT][dataset][feature]
                 if not count:
                     local_metrics[StC.STATS_VAR][dataset][feature] = float("nan")
@@ -539,7 +611,11 @@ def get_hierarchical_vars(global_metrics: dict, client_metrics: dict) -> dict:
                     for item in value:
                         sites.extend(recursively_update_org_vars(item, dataset, feature))
 
-            if StC.NAME in global_metrics and StC.GLOBAL in global_metrics:
+            if (
+                StC.NAME in global_metrics
+                and StC.GLOBAL in global_metrics
+                and feature in global_metrics[StC.GLOBAL][StC.STATS_COUNT][dataset]
+            ):
                 level_metrics = global_metrics[StC.GLOBAL]
                 count = level_metrics[StC.STATS_COUNT][dataset][feature]
                 mean = level_metrics[StC.STATS_MEAN][dataset][feature]
@@ -571,11 +647,11 @@ def get_hierarchical_stddevs(global_metrics: dict) -> dict:
     def recursively_update_org_stddevs(global_metrics: dict, dataset: str, feature: str) -> dict:
         if isinstance(global_metrics, dict):
             for key, value in global_metrics.items():
-                if key == StC.GLOBAL:
+                if key == StC.GLOBAL and feature in global_metrics[StC.GLOBAL][StC.STATS_VAR][dataset]:
                     global_metrics[StC.GLOBAL][StC.STATS_STDDEV][dataset][feature] = sqrt(
                         global_metrics[StC.GLOBAL][StC.STATS_VAR][dataset][feature]
                     )
-                if key == StC.LOCAL:
+                if key == StC.LOCAL and feature in global_metrics[StC.LOCAL][StC.STATS_VAR][dataset]:
                     global_metrics[StC.LOCAL][StC.STATS_STDDEV][dataset][feature] = sqrt(
                         global_metrics[StC.LOCAL][StC.STATS_VAR][dataset][feature]
                     )
