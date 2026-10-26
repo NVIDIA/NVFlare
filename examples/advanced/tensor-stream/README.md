@@ -47,16 +47,16 @@ tensor-stream/
 
 ## Installation
 
-1. Install the required dependencies:
+1. Install NVFlare first (this example needs 2.7.1 or later; use `nvflare-nightly`, or `pip install -e .` from a source checkout, if you work with those):
+
+```bash
+pip install "nvflare>=2.7.1"
+```
+
+2. Install the example dependencies, which do not include NVFlare:
 
 ```bash
 pip install -r requirements.txt
-```
-
-2. Ensure NVFlare is installed:
-
-```bash
-pip install nvflare==2.7.1
 ```
 
 ## Files Description
