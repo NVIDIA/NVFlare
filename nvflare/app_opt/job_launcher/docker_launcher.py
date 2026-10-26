@@ -17,6 +17,7 @@ import posixpath
 import re
 import threading
 import time
+import uuid
 from abc import abstractmethod
 from urllib.parse import urlsplit, urlunsplit
 
@@ -212,6 +213,7 @@ class DockerJobHandle(JobHandleSpec):
         self._exit_watch_done = threading.Event()
         self._exit_watcher = None
         self._terminating = False
+        self._exit_confirmed = False
         if watch_exit and container is not None:
             self._start_exit_watcher(container)
 
@@ -258,6 +260,7 @@ class DockerJobHandle(JobHandleSpec):
                 self.logger.warning(f"invalid exit code for container {self.container_name}: {exit_code}")
                 return
             return_code = JobReturnCode.ABORTED if self._is_terminating() else _exit_code_to_return_code(exit_code)
+            self._exit_confirmed = True
             self._set_terminal_state(return_code)
         except docker.errors.NotFound:
             self.logger.info(
@@ -296,8 +299,12 @@ class DockerJobHandle(JobHandleSpec):
         if container.status == DockerStatus.DEAD:
             return JobReturnCode.ABORTED
         # EXITED: read actual exit code from container attrs
+        self._exit_confirmed = True
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
         return _exit_code_to_return_code(exit_code)
+
+    def can_restart(self):
+        return self._exit_confirmed and not self._is_terminating()
 
     def _remove_container(self):
         """Remove the container after it has reached a terminal state."""
@@ -586,7 +593,8 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"job Docker spec for site '{site_name}' contains entrypoint but lacks locally authorized BYOC"
             )
         portable_spec = get_portable_resource_spec(job_meta, site_name)
-        container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+        # A replacement can start before Docker auto-removes the exited container.
+        container_name = _sanitize_container_name(f"{site_name}-{job_id}-{uuid.uuid4().hex}")
         study = job_meta.get(JobMetaKey.STUDY.value)
         study_runtime = self._resolve_study_runtime(study)
         if not job_image and study_runtime is not None:

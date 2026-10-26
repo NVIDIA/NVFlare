@@ -16,7 +16,7 @@ import logging
 import os
 import sys
 import threading
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -221,6 +221,19 @@ class TestSafeWorkspaceChildPath:
 
 
 class TestDockerJobHandleTerminalState:
+    @pytest.mark.parametrize("observation", ["exited", "missing", "unavailable"])
+    def test_restart_requires_confirmed_container_exit(self, observation):
+        dc = _make_docker_client()
+        if observation == "exited":
+            dc.containers.get.return_value = _make_container("exited", exit_code=137)
+        else:
+            dc.containers.get.side_effect = _NotFound() if observation == "missing" else _APIError()
+        handle = _make_handle(docker_client=dc)
+        handle.poll()
+        assert handle.can_restart() is (observation == "exited")
+        handle._set_terminating()
+        assert not handle.can_restart()
+
     def test_poll_returns_unknown_while_running(self):
         dc = _make_docker_client()
         dc.containers.get.return_value = _make_container("running")
@@ -567,7 +580,7 @@ def _make_fl_ctx(
     fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {
         FLContextKey.JOB_PROCESS_ARGS: job_args,
         FLContextKey.WORKSPACE_OBJECT: workspace_obj,
-        FLContextKey.ARGS: None,
+        FLContextKey.ARGS: SimpleNamespace(set=set_list) if set_list is not None else None,
         FLContextKey.SECURE_MODE: secure_mode,
     }.get(key)
 
@@ -641,12 +654,21 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        fl_ctx, _ = _make_fl_ctx()
+        set_list = ["label=two words", "cj_launch_id=physical-1"]
+        fl_ctx, _ = _make_fl_ctx(set_list=set_list)
         handle = launcher.launch_job(_make_job_meta(), fl_ctx)
 
         assert handle is not None
         assert isinstance(handle, DockerJobHandle)
         assert dc.containers.run.call_args[1]["auto_remove"] is True
+        command = dc.containers.run.call_args.kwargs["command"]
+        assert command[command.index("--set") + 1 :] == set_list
+        set_list[-1] = "cj_launch_id=physical-2"
+        replacement = launcher.launch_job(_make_job_meta(), fl_ctx)
+        assert replacement.container_name != handle.container_name
+        assert replacement.container_name.startswith("site-1-job-1-")
+        command = dc.containers.run.call_args.kwargs["command"]
+        assert command[command.index("--set") + 1 :] == set_list
 
     def test_launch_overrides_parent_url(self):
         """Launcher must derive parent_url from site name + port; localhost must not reach job container."""
