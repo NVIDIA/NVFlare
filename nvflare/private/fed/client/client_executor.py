@@ -406,7 +406,8 @@ class JobExecutor(ClientExecutor):
                 return
             restart = run_process.get(_RESTART_KEY)
             if restart:
-                if launch_id != restart.launch_id:
+                # Older CJs and custom launchers may omit the launch ID.
+                if launch_id is not None and launch_id != restart.launch_id:
                     return  # delayed notification from an earlier physical execution
                 if job_status == ClientStatus.READY:
                     restart.attempts = 0

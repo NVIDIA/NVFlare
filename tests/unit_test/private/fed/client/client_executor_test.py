@@ -197,31 +197,53 @@ def test_task_abort_does_not_permanently_disable_recovery(tmp_path, ready):
     assert launcher.launch_job.call_count == 2
 
 
-def test_command_start_does_not_reset_budget_and_preserves_graceful_abort(tmp_path):
+@pytest.mark.parametrize("limit, legacy", [(3, False), (3, True), (0, True)])
+def test_command_start_does_not_reset_budget_and_preserves_graceful_abort(tmp_path, limit, legacy):
     def started(executor, index, handle):
         restart = executor.run_processes["job-1"][_RESTART_KEY]
-        executor.notify_job_status("job-1", ClientStatus.STARTED, restart.launch_id)
+        executor.notify_job_status("job-1", ClientStatus.STARTED, None if legacy else restart.launch_id)
+        assert executor.get_status("job-1") == ClientStatus.STARTED
         assert restart.attempts == index
-        if index == 3:
+        if index == 0:
+            handle.can_restart.return_value = False  # The task abort arrives while CJ is alive.
+            executor.abort_task("job-1")
+            assert executor.client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT_TASK
+            assert not executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
+            handle.terminate.assert_not_called()
+            handle.can_restart.return_value = True
+        if index == limit:
             with patch.object(executor, "_terminate_job") as terminate:
                 executor.abort_app("job-1")
             terminate.assert_called_once()
             handle.terminate.assert_not_called()
             assert executor.client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT
 
-    launcher, _, _ = _run_recovery(tmp_path, [(False, 1)] * 4, on_wait=started)
-    assert launcher.launch_job.call_count == 4
+    launcher, _, _ = _run_recovery(tmp_path, [(False, 1)] * (limit + 1), on_wait=started, limit=limit)
+    assert launcher.launch_job.call_count == limit + 1
 
 
-def test_stopped_runner_teardown_failure_does_not_restart(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_stopped_runner_teardown_failure_does_not_restart(tmp_path, legacy):
     def stopped(executor, *_):
         restart = executor.run_processes["job-1"][_RESTART_KEY]
-        executor.notify_job_status("job-1", ClientStatus.STOPPED, restart.launch_id)
+        executor.notify_job_status("job-1", ClientStatus.STOPPED, None if legacy else restart.launch_id)
         executor.notify_job_status("job-1", ClientStatus.READY, restart.launch_id)  # Delayed delivery.
         assert executor.get_status("job-1") == ClientStatus.STOPPED
 
     launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=stopped)
     assert launcher.launch_job.call_count == 1
+
+
+def test_legacy_started_crash_is_reported_as_execution_failure(tmp_path):
+    def started(executor, *_):
+        executor.notify_job_status("job-1", ClientStatus.STARTED)
+
+    launcher, client, _ = _run_recovery(tmp_path, [(False, 1)], on_wait=started, limit=0)
+    assert launcher.launch_job.call_count == 1
+    assert (
+        client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE]
+        == ProcessExitCode.EXCEPTION
+    )
 
 
 def test_ambiguous_replacement_submission_is_not_retried(tmp_path):

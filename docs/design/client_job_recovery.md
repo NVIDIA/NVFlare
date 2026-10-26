@@ -42,8 +42,10 @@ checkpoint compatibility and progress remain the application's responsibility.
   graceful aborts during startup. READY resets the restart counter after
   `ClientRunner.init_run`; CP continues exposing STARTED as the job status.
   Notifications retry within the existing timeout without failing the CJ.
-  A private CP/CJ launch ID rejects delayed notifications from old executions;
-  both launcher option representations carry it, including Docker and Kubernetes.
+  A private CP/CJ launch ID rejects mismatched notifications from old executions
+  when provided. Notifications without an ID remain accepted for compatibility
+  with older CJs and custom launchers. Both launcher option representations carry
+  it, including Docker and Kubernetes.
   STOPPED cannot regress. There is no new server protocol.
 - Job abort cancels pending/in-flight replacement through the existing pending
   handle. A task abort during replacement or after confirmed death aborts the job.

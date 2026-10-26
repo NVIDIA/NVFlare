@@ -113,7 +113,8 @@ def test_runner_notifies_readiness_only_after_successful_initialization(initiali
         runner.engine.shutdown_streamer.assert_called_once()
         download_shutdown.assert_called_once()
     if initialization == "notification-failed":
-        runner._try_run.assert_not_called()
+        runner._try_run.assert_called_once()
+        runner.log_exception.assert_called_once()
 
 
 def test_cj_status_notifications_preserve_startup_abort_and_retry_without_crashing(monkeypatch):

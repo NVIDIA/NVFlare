@@ -791,7 +791,13 @@ class ClientRunner(TBI):
 
         try:
             if on_ready and not self.run_abort_signal.triggered:
-                on_ready()
+                try:
+                    on_ready()
+                except Exception as e:
+                    with self.engine.new_context() as fl_ctx:
+                        self.log_exception(
+                            fl_ctx, f"could not notify CP of runner readiness: {secure_format_exception(e)}"
+                        )
             self._try_run()
         except Exception as e:
             with self.engine.new_context() as fl_ctx:
