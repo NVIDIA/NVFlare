@@ -44,7 +44,7 @@ default; notebooks that exercise POC mode require a provisioned POC system
 |---|---|---|---|---|
 | [NVFLARE in POC Mode](./setup_poc.ipynb) | Configure and operate POC mode: workspace, prepare, start/stop, and inspect a full local FL system | `nvflare` CLI; `tree` command optional | A two-client POC system is prepared, started, and inspected using the documented commands | POC mode |
 | [NVFlare CLI](./nvflare_cli.ipynb) | End-to-end CLI workflow against a running POC system: recipes, job export and submit, studies, monitoring, result download | POC system started from a terminal first (commands in the notebook); `torch` for the hello-pt job | Submitted job completes and results download to the notebook's `RESULT_DIR` | NVFlare CLI |
-| [Hello FLARE API](./flare_api.ipynb) | Connect an admin session with the FLARE API and drive a running FL system programmatically | A running POC system with the admin startup kit; `tensorboard` for the hello-numpy job | `new_secure_session()` connects and `get_system_info()` reports server, clients, and jobs | FLARE API |
+| [Hello FLARE API](./flare_api.ipynb) | Connect an admin session with the FLARE API and drive a running FL system programmatically | A running POC system with the admin startup kit | `new_secure_session()` connects and `get_system_info()` reports server, clients, and jobs | FLARE API |
 
 ### Observe and troubleshoot runs
 

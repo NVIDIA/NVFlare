@@ -19,16 +19,10 @@ import shlex
 import sys
 import textwrap
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock, call
 from urllib.parse import urlsplit
 
 import pytest
-
-from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError
-from nvflare.fuel.flare_api.flare_api import Session
-from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.proto import MetaStatusValue
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TUTORIALS = _REPO_ROOT / "examples/tutorials"
@@ -112,12 +106,8 @@ def test_recipe_production_kit_matches_provision_workspace():
     assert Path(admin_kit).is_relative_to(workspace)
 
 
-@pytest.mark.parametrize("starting_first", [False, True])
-def test_api_notebook_resubmits_and_cleans_up_both_jobs(monkeypatch, tmp_path, starting_first):
-    import subprocess
-    import tempfile
-    import time
-
+def test_api_notebook_resubmits_and_cleans_up_both_jobs(monkeypatch):
+    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
     from nvflare.fuel.flare_api import flare_api
 
     monkeypatch.chdir(_TUTORIALS)
@@ -125,111 +115,26 @@ def test_api_notebook_resubmits_and_cleans_up_both_jobs(monkeypatch, tmp_path, s
     session.submit_job.side_effect = ["first-job", "repeat-job"]
     session.list_jobs.return_value = []
     session.abort_job.return_value = "Abort signal sent"
-    if starting_first:
-        session.abort_job.side_effect = [
-            InternalError("error: Job repeat-job is starting; retry abort."),
-            "Abort signal sent",
-        ]
-    sleep = Mock()
-    monkeypatch.setattr(time, "sleep", sleep)
-    monkeypatch.setattr(flare_api, "new_secure_session", Mock(return_value=session))
-    monkeypatch.setattr(tempfile, "mkdtemp", lambda **kwargs: str(tmp_path))
     export = Mock()
-    monkeypatch.setattr(subprocess, "run", export)
+    monkeypatch.setattr(NumpyFedAvgRecipe, "export", export)
+    monkeypatch.setattr(flare_api, "new_secure_session", Mock(return_value=session))
     scope = {}
     for cell in _cells("flare_api"):
         if cell["cell_type"] == "code":
             exec(_source(cell), scope)
 
-    assert export.call_args.kwargs["check"] is True
-    assert export.call_args.args[0][0] == sys.executable
-    assert export.call_args.kwargs["cwd"] == _REPO_ROOT / "examples/hello-world/hello-numpy"
+    job_dir = "/tmp/nvflare/flare_api_tutorial"
+    export.assert_called_once_with(job_dir)
+    assert scope["recipe"].name == "hello-numpy"
+    assert (_REPO_ROOT / "examples/hello-world/hello-numpy/client.py").is_file()
     assert session.submit_job.call_count == 2
-    assert all(call.args == (str(tmp_path / "hello-numpy"),) for call in session.submit_job.call_args_list)
+    assert all(call.args == (f"{job_dir}/hello-numpy",) for call in session.submit_job.call_args_list)
     session.clone_job.assert_not_called()
-    assert session.abort_job.call_args_list == [call("repeat-job")] * (2 if starting_first else 1)
-    assert sleep.call_args_list == ([call(0.5)] if starting_first else [])
+    # The tutorial calls abort_job() once; any startup retry is handled inside the FLARE API.
+    assert session.abort_job.call_args_list == [call("repeat-job")]
     assert [call.args[0] for call in session.monitor_job.call_args_list] == ["first-job", "repeat-job"]
     assert [call.args[0] for call in session.delete_job.call_args_list] == ["repeat-job", "first-job"]
     session.close.assert_called_once()
-
-
-@pytest.fixture
-def abort_cell_session(monkeypatch):
-    import time
-
-    clock = SimpleNamespace(now=0.0)
-
-    def advance(delay):
-        clock.now += delay
-
-    sleep = Mock(side_effect=advance)
-    monkeypatch.setattr(time, "monotonic", lambda: clock.now)
-    monkeypatch.setattr(time, "sleep", sleep)
-    # Keep the real API's server-response-to-exception mapping; mock only the
-    # transport and subsequent monitoring so no deployment is required.
-    session = Session.__new__(Session)
-    session.username = "admin@nvidia.com"
-    session.api = Mock(closed=False)
-    session.monitor_job = Mock()
-    job_id = "12345678-1234-5678-1234-567812345678"
-    return session, job_id, clock, sleep
-
-
-def _abort_reply(status, info):
-    return {"status": APIStatus.SUCCESS, "meta": {"status": status, "info": info}}
-
-
-@pytest.mark.parametrize("already_completed", [False, True])
-def test_api_notebook_retries_startup_abort(abort_cell_session, already_completed, capsys):
-    session, job_id, clock, sleep = abort_cell_session
-    message = f"Job for {job_id} is already completed." if already_completed else "Abort signal has been sent."
-    session.api.do_command.side_effect = [
-        _abort_reply(MetaStatusValue.ERROR, f"Job {job_id} is starting; retry abort."),
-        _abort_reply(MetaStatusValue.OK, message),
-    ]
-
-    exec(_cell("flare_api", "187cb413"), {"sess": session, "repeat_job_id": job_id})
-
-    assert session.api.do_command.call_args_list == [call(f"abort_job {job_id}", props=None)] * 2
-    sleep.assert_called_once_with(0.5)
-    session.monitor_job.assert_called_once_with(job_id)
-    assert message in capsys.readouterr().out
-
-
-def test_api_notebook_abort_startup_retries_have_deadline(abort_cell_session):
-    session, job_id, clock, sleep = abort_cell_session
-    message = f"Job {job_id} is starting; retry abort."
-    session.api.do_command.return_value = _abort_reply(MetaStatusValue.ERROR, message)
-
-    with pytest.raises(InternalError, match=re.escape(message)):
-        exec(_cell("flare_api", "187cb413"), {"sess": session, "repeat_job_id": job_id})
-
-    assert clock.now == 30.0
-    assert session.api.do_command.call_count == 60
-    assert sleep.call_args_list == [call(0.5)] * 60
-    session.monitor_job.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "status,info,exception",
-    [
-        (MetaStatusValue.ERROR, "Job another-job is starting; retry abort.", InternalError),
-        (MetaStatusValue.ERROR, "unrelated abort failure", InternalError),
-        (MetaStatusValue.INTERNAL_ERROR, "Job {job_id} is starting; retry abort.", InternalError),
-        (MetaStatusValue.NOT_AUTHORIZED, "not allowed", AuthorizationError),
-    ],
-)
-def test_api_notebook_does_not_retry_other_abort_errors(abort_cell_session, status, info, exception):
-    session, job_id, clock, sleep = abort_cell_session
-    session.api.do_command.return_value = _abort_reply(status, info.format(job_id=job_id))
-
-    with pytest.raises(exception):
-        exec(_cell("flare_api", "187cb413"), {"sess": session, "repeat_job_id": job_id})
-
-    session.api.do_command.assert_called_once_with(f"abort_job {job_id}", props=None)
-    sleep.assert_not_called()
-    session.monitor_job.assert_not_called()
 
 
 def test_logging_custom_logger_example_executes():
