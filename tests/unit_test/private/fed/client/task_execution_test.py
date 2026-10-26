@@ -287,6 +287,8 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     cells = []
     try:
         for fqcn in ("server", "site-1.job-1"):
+            # Other tests in the same process may leak a cell under this name without stopping it.
+            CoreCell.ALL_CELLS.pop(fqcn, None)
             cells.append(Cell(fqcn, server_url, secure=False, credentials={}))
             cells[-1].start()
         context = FLContext()
@@ -324,6 +326,8 @@ flare.init()
 while flare.is_running():
     model = flare.receive()
     flare.log("accuracy", 0.75, AnalyticsDataType.SCALAR, global_step=model.current_round)
+    # Larger than the download-reference threshold: must travel inline over the session.
+    flare.log("image", np.zeros((1024, 1024), dtype=np.float32), AnalyticsDataType.IMAGE, global_step=0)
     result = FLModel(params={"w": model.params["w"] + 1},
         metrics={"pid": os.getpid(), "main_thread": threading.current_thread() is threading.main_thread(),
                  "argv": sys.argv[1:], "site": flare.get_site_name(), "job": flare.get_job_id(),
@@ -394,7 +398,7 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     seen_during_attempt = []
     fire_event.side_effect = lambda *_args: seen_during_attempt.append(adapter.supervisor.owns_execution)
     result = adapter.execute("train", data, context, Signal())
-    assert seen_during_attempt == [True], "the metric reaches the job over the cell while the attempt is still owned"
+    assert seen_during_attempt == [True, True], "metrics reach the job over the cell while the attempt is still owned"
     dxo = from_shareable(result)
     np.testing.assert_array_equal(dxo.data["w"], [2, 3] if transfer == "FULL" else [1, 1])
     assert result.get_header(AppConstants.CURRENT_ROUND) == 3
@@ -864,7 +868,9 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     result, completion = store.read_result(identity)
     np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])
     assert "analytics" not in completion.diagnostics, "metrics are messages, never files"
-    assert len(records) == 1 and from_shareable(records[0]).data["track_value"] == 0.75
+    scalar, image = (from_shareable(record).data["track_value"] for record in records)
+    assert scalar == 0.75
+    assert isinstance(image, np.ndarray) and image.shape == (1024, 1024) and not image.any()
     handler.assert_not_called()
 
 

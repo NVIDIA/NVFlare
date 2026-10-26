@@ -57,9 +57,12 @@ The Client Job FQCN is the worker FQCN's parent.
 `CellWorkerTransport` is the worker half. `run_worker` opens it once every codec
 is registered, right before reading the input, and closes it on exit. `open`
 creates a Cell under the Client Job cell, waits for the connection and says
-HELLO. `log(record)` is the only thing it does afterwards. Records are small,
-so they go as one framed message on the parent connection, not through the
-blob-streaming layer the Cell uses for application channels.
+HELLO. `log(record)` is the only thing it does afterwards. Records go as one
+framed message on the parent connection, not through the blob-streaming layer
+the Cell uses for application channels, and are FOBS-encoded natively by the
+worker so array values (images, histograms) travel inline instead of as
+download references. The Client Job fires one record at a time per session,
+since they all share the attempt's `FLContext`.
 
 | Direction | Topic | Payload | Reply |
 | --- | --- | --- | --- |

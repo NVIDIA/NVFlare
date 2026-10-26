@@ -25,6 +25,7 @@ authority on the worker.
 
 import logging
 import secrets
+import threading
 import time
 import uuid
 
@@ -35,6 +36,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils import fobs
 
 CHANNEL = "task_worker"
 
@@ -94,6 +96,8 @@ class CellWorkerSession:
         self.on_analytics = on_analytics
         self.token = secrets.token_urlsafe(32)
         self.worker_fqcn = FQCN.join([cell.get_fqcn(), f"task_worker_{uuid.uuid4().hex[:8]}"])
+        # Requests arrive on the cell's frame pool; metrics share the attempt's FLContext, so fire them one at a time.
+        self._lock = threading.Lock()
         _sessions[self.worker_fqcn] = self
 
     def bootstrap_fields(self):
@@ -108,6 +112,8 @@ class CellWorkerSession:
 
     def handle(self, topic, request):
         payload = request.payload
+        if isinstance(payload, (bytes, bytearray, memoryview)):
+            payload = fobs.loads(bytes(payload))
         if not isinstance(payload, dict):
             return _reject("payload must be a dict")
         proof = payload.get("token")
@@ -115,7 +121,8 @@ class CellWorkerSession:
             return _reject("launch token mismatch")
         if topic == Topic.LOG:
             try:
-                self.on_analytics(payload.get("data"))
+                with self._lock:
+                    self.on_analytics(payload.get("data"))
             except Exception as e:
                 _LOGGER.error("rejecting task worker %s: %s", topic, e)
                 return _reject(f"{type(e).__name__}: {e}")
@@ -151,12 +158,14 @@ class CellWorkerTransport:
         self._request(Topic.HELLO, {}, "HELLO")
 
     def _request(self, topic, payload, what):
-        # Records are small: one framed message on the parent connection, not a blob stream.
+        # One framed message on the parent connection, not a blob stream. Encoded natively here so array
+        # values travel inline rather than as download references, which that receive path cannot resolve.
+        encoded = fobs.dumps({"token": self.config["token"], **payload}, fobs_ctx={"native": True})
         reply = self._cell.core_cell.send_request(
             channel=CHANNEL,
             topic=topic,
             target=self.cj_fqcn,
-            request=new_cell_message({}, {"token": self.config["token"], **payload}),
+            request=new_cell_message({}, encoded),
             timeout=_CONTROL_TIMEOUT,
         )
         return _check_reply(reply, what)
