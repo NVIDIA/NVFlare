@@ -20,7 +20,3 @@ A few sentences describing the changes proposed in this pull request.
 ### Risk
 
 <!-- Describe affected users/components, likely failure modes, and compatibility impact. -->
-
-### How to revert
-
-<!-- Explain rollback steps, including configuration or saved-state constraints. -->
