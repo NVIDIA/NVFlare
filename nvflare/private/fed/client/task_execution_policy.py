@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.apis.task_launcher_spec import TaskLauncherSpec, TaskResourceRequest
+from nvflare.apis.task_launcher_spec import TaskLauncherSpec, TaskResourceRequest, UnsupportedTaskResourceError
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
@@ -30,7 +30,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_portable_resource_spec
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -234,7 +234,13 @@ class TaskExecutionPolicy:
         validate_task_resources(meta, site_name, allow_gpu=native_mode)
         if native_mode:
             reject_job_gpu_reservation(meta, site_name)
-        if not native_mode or self.launcher.launch_mode != "docker":
+        if not native_mode:
+            portable = get_portable_resource_spec(meta, site_name)
+            process = get_job_launcher_spec(meta, site_name, "process")
+            if set(portable) & {"num_of_cpus", "memory"} or set(process) & {"num_of_cpus", "memory"}:
+                raise UnsupportedTaskResourceError("Process task workers cannot enforce CPU/memory limits")
+            return TaskResourceRequest()
+        if self.launcher.launch_mode != "docker":
             return TaskResourceRequest()
         spec = get_job_launcher_spec(meta, site_name, "docker")
         return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))

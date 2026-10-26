@@ -129,7 +129,13 @@ def task_pod_resources(meta, site_name, defaults):
     """
     from kubernetes.utils.quantity import parse_quantity
 
+    from nvflare.utils.job_launcher_utils import get_compute_resource_manager_spec
+
     validate_portable_resource_conflicts(meta)
+    compute_admission = get_compute_resource_manager_spec(meta, site_name)
+    unsupported = set(compute_admission) - {"num_of_gpus", "mem_per_gpu_in_GiB"}
+    if unsupported or compute_admission.get("mem_per_gpu_in_GiB", 0):
+        raise ValueError("Kubernetes task resources cannot enforce custom resource-manager or GPU-memory requirements")
     portable = get_portable_resource_spec(meta, site_name)
     native = get_job_launcher_spec(meta, site_name, "k8s")
     result = _native_resources(defaults)
@@ -158,7 +164,9 @@ def task_pod_resources(meta, site_name, defaults):
             result[kind][key] = str(value)
         if quantities.get("requests", 0) > quantities.get("limits", float("inf")):
             raise ValueError(f"task {key} request exceeds its limit")
-    gpu_count = native.get("num_of_gpus", portable.get("num_of_gpus", defaults.gpu_count))
+    gpu_count = native.get(
+        "num_of_gpus", portable.get("num_of_gpus", compute_admission.get("num_of_gpus", defaults.gpu_count))
+    )
     TaskResourceRequest(gpu_count=gpu_count)
     for kind in result.values():
         kind.pop("nvidia.com/gpu", None)

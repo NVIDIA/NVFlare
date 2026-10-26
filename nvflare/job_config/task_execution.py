@@ -23,7 +23,13 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config
 from nvflare.fuel.utils.component_builder import ConfigType
 from nvflare.job_config.defs import ExecutionLifetime
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource_manager_spec
+from nvflare.utils.job_launcher_utils import (
+    get_compute_resource_manager_spec,
+    get_job_launcher_spec,
+    get_portable_resource_spec,
+    get_resource_manager_spec,
+    has_cj_resource_spec,
+)
 
 CLIENT_API_EXECUTOR_PATH = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 TASK_EXECUTOR_PATH = "nvflare.private.fed.client.task_worker_executor.TaskWorkerExecutor"
@@ -42,7 +48,11 @@ def validate_task_resources(meta, site_name, *, allow_gpu=False):
     Export uses allow_gpu=True because it cannot select the receiving site's
     backend. The default preserves the initial Process runtime's GPU guard.
     """
-    specs = [get_resource_manager_spec(meta, site_name)]
+    specs = [
+        get_compute_resource_manager_spec(meta, site_name),
+        get_resource_manager_spec(meta, site_name),
+        get_portable_resource_spec(meta, site_name),
+    ]
     specs.extend(get_job_launcher_spec(meta, site_name, mode) for mode in ("process", "docker", "k8s", "slurm"))
     for spec in specs:
         for name in ("num_of_gpus", "gpus_per_node"):
@@ -214,8 +224,8 @@ def prepare_task_execution(client_config):
 
 
 def reject_job_gpu_reservation(meta, site_name):
-    """Task GPU admission must not reserve a GPU for the whole client job."""
+    """Reject old, unnormalized task metadata that would reserve compute GPUs for CJ."""
     from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
-    if get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
-        raise ValueError("task GPU admission requires native launcher_spec; portable GPUs reserve the whole job")
+    if not has_cj_resource_spec(meta, site_name) and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
+        raise ValueError("portable GPUs reserve the whole job without derived cj_resource_spec; resubmit the task job")

@@ -3819,7 +3819,8 @@ def _task_profile(pvc_root):
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yml"])
-def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension):
+@pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension, budgets):
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
     (tmp_path / "startup").mkdir()
@@ -3892,6 +3893,20 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
         JobConstants.JOB_ID: _TASK_JOB_ID,
         "launcher_spec": {_TASK_SITE: {"k8s": {"image": "site/image", "num_of_gpus": 2}}},
     }
+    if budgets != "defaults":
+        if budgets == "portable_compute":
+            meta["resource_spec"] = {"@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 2}}
+            del meta["launcher_spec"][_TASK_SITE]["k8s"]["num_of_gpus"]
+        else:
+            meta["launcher_spec"][_TASK_SITE]["k8s"].update(cpu="2", memory="4Gi")
+        if lifetime == "task":
+            from nvflare.utils.job_launcher_utils import normalize_cj_resource_spec
+
+            meta["cj_resource_spec"] = {
+                "@default": {"num_of_cpus": 0.5, "memory": "1Gi", "num_of_gpus": 1 if budgets == "cj_gpu" else 0}
+            }
+            normalize_cj_resource_spec(meta, {_TASK_SITE})
+
     with (
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
         patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService") as service,
@@ -3916,12 +3931,24 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
         assert container["resources"]["requests"]["nvidia.com/gpu"] == "2"
         assert "serviceAccountName" not in spec
     else:
-        assert "nvidia.com/gpu" not in container["resources"]["requests"]
-        assert "nvidia.com/gpu" not in container["resources"]["limits"]
+        cj_requests = container["resources"]["requests"]
+        assert cj_requests["cpu"] == ("0.25" if budgets == "defaults" else "0.5")
+        assert cj_requests["memory"] == ("512Mi" if budgets == "defaults" else "1Gi")
+        if budgets == "cj_gpu":
+            assert cj_requests["nvidia.com/gpu"] == "1"
+        else:
+            assert "nvidia.com/gpu" not in cj_requests
+            assert "nvidia.com/gpu" not in container["resources"]["limits"]
+            environment = {item["name"]: item.get("value") for item in container["env"]}
+            assert environment["CUDA_VISIBLE_DEVICES"] == ""
+            assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
+        backend = service.get_or_create.return_value.add_job.call_args.args[0]
+        compute_requests = backend._job_binding[2]["requests"]
+        assert compute_requests["nvidia.com/gpu"] == "2"
+        if budgets != "defaults":
+            assert compute_requests["cpu"] == "2"
+            assert compute_requests["memory"] == "4Gi"
         assert spec["serviceAccountName"] == "task-no-api"
-        environment = {item["name"]: item.get("value") for item in container["env"]}
-        assert environment["CUDA_VISIBLE_DEVICES"] == ""
-        assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
     # Existing credential ownership and workspace-transfer mechanisms are retained.
     launcher._own_credential_secret.assert_called_once()
     transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))

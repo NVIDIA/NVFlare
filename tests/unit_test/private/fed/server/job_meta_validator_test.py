@@ -58,7 +58,9 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     return zip_data
 
 
-def _zip_minimal_job(folder_name: str, meta: dict, server_config: dict) -> bytes:
+def _zip_minimal_job(
+    folder_name: str, meta: dict, server_config: dict, client_config=None, client_extension="json"
+) -> bytes:
     bio = io.BytesIO()
     with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{folder_name}/app/config/", "")
@@ -68,8 +70,8 @@ def _zip_minimal_job(folder_name: str, meta: dict, server_config: dict) -> bytes
             json.dumps(server_config),
         )
         z.writestr(
-            f"{folder_name}/app/config/{JobConstants.CLIENT_JOB_CONFIG}",
-            json.dumps({"format_version": 2, "executors": []}),
+            f"{folder_name}/app/config/config_fed_client.{client_extension}",
+            json.dumps(client_config if client_config is not None else {"format_version": 2, "executors": []}),
         )
     return bio.getvalue()
 
@@ -392,3 +394,41 @@ class TestJobMetaValidator:
         valid, error, meta = self.validator.validate(job_name, data)
         assert not valid
         assert error
+
+
+@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+def test_submission_derives_task_admission_from_client_config(extension):
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    meta = {
+        "name": "split",
+        "deploy_map": {"app": ["@ALL"]},
+        "min_clients": 1,
+        "resource_spec": {"@default": {"num_of_gpus": 1}},
+    }
+    data = _zip_minimal_job(
+        "split",
+        meta,
+        {"format_version": 2, "workflows": []},
+        {"format_version": 3, "execution_lifetime": "task", "executors": []},
+        extension,
+    )
+    valid, error, submitted = JobMetaValidator().validate("split", data)
+    assert valid, error
+    assert submitted["cj_resource_spec"] == {"@ALL": {}}
+    assert get_resource_manager_spec(submitted, "site-1") == {}
+    assert submitted["resource_spec"] == meta["resource_spec"]
+
+
+def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
+    meta = {
+        "name": "split",
+        "deploy_map": {"app": ["@ALL"]},
+        "min_clients": 1,
+        "resource_spec": {"@default": {"num_of_gpus": 1}},
+        "cj_resource_spec": {"@ALL": {}},
+    }
+    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []})
+    valid, error, _ = JobMetaValidator().validate("split", data)
+    assert not valid
+    assert "task-lifetime" in error

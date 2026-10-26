@@ -1186,3 +1186,20 @@ def test_long_queued_task_remains_cancellable(setup, monkeypatch):
 def test_queue_and_startup_timeouts_reject_invalid_values(tmp_path, setting, value):
     with pytest.raises(ValueError, match=setting):
         K8sTaskBackend("site", "image", str(tmp_path), "pvc", "worker", **{setting: value})
+
+
+@pytest.mark.parametrize("extra", [{"license": 1}, {"mem_per_gpu_in_GiB": 8}])
+def test_task_split_rejects_unenforceable_compute_admission_requirements(extra):
+    meta = {"resource_spec": {"site-1": {"num_of_gpus": 1, **extra}}, "cj_resource_spec": {"site-1": {}}}
+    with pytest.raises(ValueError, match="cannot enforce"):
+        task_pod_resources(meta, "site-1", TaskResourceRequest())
+
+
+def test_legacy_process_gpu_count_still_becomes_worker_admission_after_split():
+    meta = {
+        "resource_spec": {"site-1": {"process": {"num_of_gpus": 2}, "k8s": {"image": "worker"}}},
+        "cj_resource_spec": {"site-1": {}},
+    }
+    resources = task_pod_resources(meta, "site-1", TaskResourceRequest())
+    assert resources["requests"]["nvidia.com/gpu"] == "2"
+    assert resources["limits"]["nvidia.com/gpu"] == "2"

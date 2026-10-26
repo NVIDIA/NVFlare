@@ -20,7 +20,7 @@ Backend contract
   ``emptyDir`` is insufficient. CP explicitly mounts that PVC and creates an
   owned per-job/site subtree. Paths outside the configured root are rejected.
 * Resources: both CPU and GPU task workers are required. Kubernetes admits
-  their native CPU/memory/GPU requests; the CPU CJ has no GPU request. GPU
+  their independent CPU/memory/GPU requests; CJ defaults to CPU with no GPU request. GPU
   workers obtain devices through the cluster's NVIDIA device plugin. CPU
   workers mask GPU visibility even when using a GPU-capable image. No Process
   GPU allocator, physical retry scheduler or distributed trainer is introduced.
@@ -176,6 +176,37 @@ preserved. Explicit ``num_of_gpus=0`` overrides a GPU site default. Nonzero GPU
 counts become equal ``nvidia.com/gpu`` requests and limits; manual GPU visibility
 settings remain forbidden. Namespace quotas/admission enforce site policy.
 Private-image pull access belongs to the existing worker service account.
+
+CJ and compute resources have separate lifetimes. In job mode the existing
+``resource_spec`` and native launcher resource fields describe CJ, which runs
+the computation. In task mode those same fields describe each compute worker;
+``cj_resource_spec`` describes the persistent coordinator independently. A GPU
+worker still needs CPU and memory in addition to its GPU. Native request/limit
+fields keep their existing conflict rules and apply only to compute in task mode.
+
+``cj_resource_spec`` is keyed by client site, with an optional ``@default``
+block. It accepts ``num_of_cpus`` (including positive fractional shares),
+``memory`` (Mi/Gi/Ti), ``num_of_gpus`` and ``mem_per_gpu_in_GiB``. Overrides are
+merged per field. Missing CJ fields use the site's ``ClientK8sJobLauncher``
+``cj_resources`` defaults: 0.25 CPU, 512Mi memory and zero GPUs. Configure these
+for the site's model sizes, filters and result processing. CJ requests and
+limits are equal in this profile. A positive explicit CJ GPU budget remains
+independent of worker GPUs; zero-GPU CJs mask GPU visibility.
+
+Export and submission derive task sites from the actual client configurations,
+including mixed job/task deployments and ``@ALL``. They add an empty CJ entry
+when no override was supplied; that entry selects site defaults. A supplied CJ
+budget cannot mark a resident client as task based. Server admission reserves
+only the CJ budget for those sites, leaving compute GPUs available to workers.
+Kubernetes admits each worker's resource request and releases it only after
+confirmed shutdown; the finalizer settlement rules are unchanged. CPU/memory
+are enforced by Pod requests/limits, rather than by the FLARE GPU manager.
+Kubernetes workers reject custom FLARE resource-manager requirements and
+positive per-GPU memory reservations, which this Pod profile cannot enforce;
+these requirements are never silently dropped when compute leaves CJ.
+The separate Process backend retains its own capability and static GPU-device
+assignment policy; Kubernetes defaults do not impose Process resource limits.
+
 Queue waiting and startup use separate site-owned limits. ``queue_timeout``
 defaults to ``null``: an unassigned task Pod may wait for CPU, memory or GPU
 capacity while its CJ remains alive. A finite nonnegative value bounds that
@@ -202,12 +233,11 @@ upload finishes. Kubernetes selects the next eligible Pod; this launcher does
 not enforce alternating jobs. CPU/memory requests must also fit the CJs, parent
 and worker. The two-job GPU-contention scenario requires cluster qualification.
 
-Use native ``launcher_spec`` GPU requests. Positive portable or legacy
-``resource_spec`` CP GPU reservations are rejected by this task profile: they
-reserve GPUs for the entire job independently of the task Pod. Portable
-CPU/memory mapping remains supported, subject to the existing native/portable
-conflict rules. Correct task delegation of whole-job GPU reservations is a
-separate prerequisite for portable GPU support.
+Both portable ``resource_spec`` GPU requests and native ``launcher_spec`` GPU
+requests are supported for workers. Do not specify both for the same resource.
+Resubmit older persisted task jobs with portable GPUs so submission derives
+their CJ admission entries. Old metadata that would still reserve compute GPUs
+for the whole job is rejected before a CJ/task Pod is launched.
 
 Configure the generated client chart's existing ``persistence.workspace`` claim
 for private CP state, then enable its optional ``persistence.jobs`` mount before
@@ -259,7 +289,8 @@ both local files::
          "job_workspace_pvc_root": "/mnt/nvflare-jobs",
          "workspace_mount_path": "/var/tmp/nvflare/workspace",
          "run_as_user": 1000,
-         "run_as_group": 1000
+         "run_as_group": 1000,
+         "cj_resources": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
        }
      }],
      "task_execution": {
@@ -285,24 +316,29 @@ both local files::
    }
 
 The job retains its existing ``execution_lifetime="task"`` application flag.
-Its normal native metadata supplies the CJ image and task resources, for example::
+Its metadata specifies the CJ image and independent resource budgets, for example::
 
    {
+     "resource_spec": {
+       "@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 1}
+     },
+     "cj_resource_spec": {
+       "@default": {"num_of_cpus": 0.5, "memory": "1Gi", "num_of_gpus": 0}
+     },
      "launcher_spec": {
-       "default": {
-         "k8s": {
-           "image": "site-approved-cj:reviewed-source",
-           "num_of_gpus": 1,
-           "cpu": "1",
-           "memory": "1Gi"
-         }
-       }
+       "default": {"k8s": {"image": "site-approved-cj:reviewed-source"}}
      }
    }
 
-Use ``num_of_gpus=0`` for a CPU worker. The task CJ profile removes GPU resources
-and visibility from CJ's manifest for either worker profile. Images must contain
-the same reviewed framework source and the required application dependencies.
+In task mode this requests 0.5 CPU and 1Gi for CJ, plus 2 CPUs, 4Gi and one GPU
+while a compute worker runs. Use ``num_of_gpus=0`` in ``resource_spec`` for a CPU
+worker. Native ``launcher_spec`` CPU/memory/GPU fields remain an alternative to
+portable compute fields, including distinct native requests and limits. Jobs
+can set the new field through ``meta_props`` or
+``set_recipe_meta(recipe, JobMetaKey.CJ_RESOURCE_SPEC, ...)``. The same metadata
+without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
+its existing resource semantics. Images must contain the same reviewed
+framework source and the required application dependencies.
 
 The cluster must expose kubelet ``PodReadyToStartContainers`` teardown evidence
 and terminal container statuses for this profile. Pods lacking that evidence

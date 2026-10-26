@@ -29,6 +29,7 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import (
+    normalize_cj_resource_spec,
     validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
     validate_portable_resource_spec,
@@ -158,6 +159,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         has_byoc = False
         has_flower_predeployed = False
+        task_sites = set()
         for app, deployments in deploy_map.items():
             deployments = extract_participants(deployments)
 
@@ -183,9 +185,24 @@ class JobMetaValidator(JobMetaValidatorSpec):
             ):
                 raise ValueError(f"App '{app}' will be deployed to client but client config is missing")
 
+            client_sites = [site for site in deployments if site != SERVER_SITE_NAME]
+            if client_sites:
+                client_config = self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG) or {}
+                if not isinstance(client_config, dict):
+                    raise ValueError("client app config must be a dictionary")
+                lifetime = client_config.get("execution_lifetime", "job")
+                if lifetime not in ("job", "task"):
+                    raise ValueError("execution_lifetime must be 'job' or 'task'")
+                if lifetime == "task":
+                    task_sites.update(
+                        ALL_SITES if site.casefold() == ALL_SITES.casefold() else site for site in client_sites
+                    )
+
             custom_folder = job_name + "/" + app + CUSTOM_FOLDER
             if self._entry_exists(zip_file, custom_folder):
                 has_byoc = True
+
+        normalize_cj_resource_spec(meta, task_sites)
 
         # BYOC is derived from the submitted app contents, not trusted from user-provided meta.
         if has_byoc:

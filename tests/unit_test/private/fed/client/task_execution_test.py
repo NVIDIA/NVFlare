@@ -1500,3 +1500,18 @@ def test_start_run_binding_failure_panics_and_preserves_the_actual_error():
     )
     with pytest.raises(RuntimeError, match="resource binding differs"):
         adapter.execute("train", Shareable(), context, Signal())
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 2}, {"memory": "1Gi"}])
+def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="CPU/memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": budget}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )
+
+
+def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
+    policy = TaskExecutionPolicy.from_config({})
+    assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()

@@ -65,11 +65,14 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
+    get_cj_resource_spec,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
+    has_cj_resource_spec,
+    validate_cj_resource_spec,
 )
 
 
@@ -898,7 +901,12 @@ class K8sJobLauncher(JobLauncherSpec):
                 data_mounts = resolve_study_dataset_mounts(
                     self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
                 )
-        job_resource = k8s_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
+        native_resources = k8s_spec
+        if execution_lifetime == "task":
+            # Existing fields describe compute; none leak into the persistent CJ.
+            native_resources = {}
+            portable_spec = self.get_cj_resources(job_meta, site_name)
+        job_resource = native_resources.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -1007,11 +1015,11 @@ class K8sJobLauncher(JobLauncherSpec):
                 "limits": {"ephemeral-storage": job_ephemeral_storage},
             }
             for key in ("cpu", "memory"):
-                limit_val = k8s_spec.get(key)
+                limit_val = native_resources.get(key)
                 # cpu_request / memory_request allow request < limit; when absent,
                 # request mirrors the limit so admission webhooks that require
                 # explicit cpu/memory requests (e.g. AKS deployment safeguards) pass.
-                request_val = k8s_spec.get(f"{key}_request", limit_val)
+                request_val = native_resources.get(f"{key}_request", limit_val)
                 if limit_val:
                     resources["limits"][key] = limit_val
                 if request_val:
@@ -1141,9 +1149,14 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         job_workspace_pvc_root: str = None,
         run_as_user: int = None,
         run_as_group: int = None,
+        cj_resources: dict = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        if cj_resources is not None:
+            validate_cj_resource_spec({"@default": cj_resources})
+        self.cj_resources = {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
+        self.cj_resources.update(cj_resources or {})
         self.job_workspace_pvc = None
         self.job_workspace_pvc_root = None
         self.job_security_context = None
@@ -1160,8 +1173,13 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         self.job_workspace_pvc_root = os.path.realpath(job_workspace_pvc_root)
         self.job_security_context = task_security_context(run_as_user, run_as_group)
 
+    def get_cj_resources(self, job_meta, site_name):
+        return {**self.cj_resources, **get_cj_resource_spec(job_meta, site_name)}
+
     def get_execution_lifetime(self, job_meta, fl_ctx):
         if self.job_workspace_pvc is None:
+            if has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
+                raise ValueError("task CJ resources require the persistent Kubernetes jobs profile")
             return "job"
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace is None:
@@ -1174,6 +1192,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             raise ValueError("execution_lifetime must be 'job' or 'task'")
         if lifetime == "task":
             reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
+        elif has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
+            raise ValueError("cj_resource_spec does not match the deployed client execution_lifetime")
         return lifetime
 
     def prepare_job_manifest(
@@ -1228,16 +1248,13 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         spec["automountServiceAccountToken"] = False
         if execution_lifetime != "task":
             return
-        for amounts in container.get("resources", {}).values():
-            for resource in list(amounts):
-                if "gpu" in resource.lower():
-                    del amounts[resource]
-        env = [item for item in container.get("env", []) if item["name"] not in GPU_ENVIRONMENT_NAMES]
-        env.extend(
-            {"name": name, "value": "none" if name == "NVIDIA_VISIBLE_DEVICES" else ""}
-            for name in sorted(GPU_ENVIRONMENT_NAMES)
-        )
-        container["env"] = env
+        if not self.get_cj_resources(job_meta, site_name).get("num_of_gpus"):
+            env = [item for item in container.get("env", []) if item["name"] not in GPU_ENVIRONMENT_NAMES]
+            env.extend(
+                {"name": name, "value": "none" if name == "NVIDIA_VISIBLE_DEVICES" else ""}
+                for name in sorted(GPU_ENVIRONMENT_NAMES)
+            )
+            container["env"] = env
         spec["serviceAccountName"] = policy.launcher.worker_service_account
         backend = policy.launcher.create_backend(
             self.core_v1,

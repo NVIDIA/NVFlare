@@ -36,6 +36,7 @@ from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.job_launcher_utils import has_cj_resource_spec, validate_cj_execution_lifetime
 
 from .client_status import ClientStatus, get_status_message
 
@@ -238,6 +239,7 @@ class JobExecutor(ClientExecutor):
         for meta_key in (
             JobMetaKey.JOB_ID.value,
             JobMetaKey.RESOURCE_SPEC.value,
+            JobMetaKey.CJ_RESOURCE_SPEC.value,
             JobMetaKey.JOB_LAUNCHER_SPEC.value,
             JobMetaKey.SCOPE.value,
             JobMetaKey.STUDY.value,
@@ -247,6 +249,9 @@ class JobExecutor(ClientExecutor):
                 raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
             if meta_key in deployed_job_meta:
                 job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if has_cj_resource_spec(job_meta, client.client_name):
+            client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
+            validate_cj_execution_lifetime(job_meta, client.client_name, client_config.get("execution_lifetime", "job"))
         if deployed_job_meta.get(AppValidationKey.BYOC, False):
             job_meta[AppValidationKey.BYOC] = True
         else:

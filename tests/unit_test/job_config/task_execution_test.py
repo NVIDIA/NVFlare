@@ -335,3 +335,34 @@ def test_task_export_preserves_gpu_counts_for_backend_admission(tmp_path, mode, 
     meta = json.loads((tmp_path / job.name / "meta.json").read_text())
     assert meta[meta_key]["site-1"][mode][gpu_field] == 1
     assert config_path.read_bytes() == before
+
+
+def test_export_splits_mixed_client_admission_and_keeps_compute_budget(tmp_path):
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    job = _job(
+        meta={
+            "resource_spec": {"@default": {"num_of_gpus": 1}},
+            "cj_resource_spec": {"@default": {"num_of_cpus": 0.5, "memory": "1Gi"}},
+        }
+    )
+    job.to(_executor(), "site-1")
+    job.to(_executor(), "site-2")
+    job.set_execution_lifetime("task", target="site-1")
+    job.export_job(str(tmp_path))
+    meta = json.loads((tmp_path / job.name / "meta.json").read_text())
+    assert meta["cj_resource_spec"]["site-1"] == {}
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    assert get_resource_manager_spec(meta, "site-2") == {"num_of_gpus": 1}
+    assert meta["resource_spec"]["@default"]["num_of_gpus"] == 1
+
+
+def test_export_generates_default_cj_admission_for_all_task_sites(tmp_path):
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    job = _job("task", {"resource_spec": {"@default": {"num_of_gpus": 1}}})
+    job.to_clients(_executor())
+    job.export_job(str(tmp_path))
+    meta = json.loads((tmp_path / job.name / "meta.json").read_text())
+    assert meta["cj_resource_spec"] == {"@ALL": {}}
+    assert get_resource_manager_spec(meta, "site-42") == {}

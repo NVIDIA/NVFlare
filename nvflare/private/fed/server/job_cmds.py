@@ -93,6 +93,7 @@ CLONED_META_KEYS = {
     JobMetaKey.JOB_FOLDER_NAME.value,
     JobMetaKey.DEPLOY_MAP.value,
     JobMetaKey.RESOURCE_SPEC.value,
+    JobMetaKey.CJ_RESOURCE_SPEC.value,
     JobMetaKey.CONTENT_LOCATION.value,
     JobMetaKey.RESULT_LOCATION.value,
     JobMetaKey.APPROVALS.value,
