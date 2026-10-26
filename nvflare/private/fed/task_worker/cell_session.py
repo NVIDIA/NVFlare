@@ -57,6 +57,7 @@ def _check_reply(reply, what):
     if rc != CellReturnCode.OK:
         error = reply.get_header(MessageHeaderKey.ERROR) if reply is not None else None
         raise RuntimeError(f"task worker {what} failed: rc={rc} {error or ''}".rstrip())
+    return reply
 
 
 def _reject(reason):
@@ -70,23 +71,31 @@ def _reject(reason):
 _sessions = {}
 
 
-def _dispatch(request, topic):
+def _dispatch(request, session_topic):
     origin = request.get_header(MessageHeaderKey.ORIGIN)
     session = _sessions.get(origin)
     if session is None:
         return _reject(f"unknown task worker {origin!r}")
-    return session.handle(topic, request)
+    return session.handle(session_topic, request)
 
 
-def listen(cell):
-    """Open the Client Job cell's internal listener as the CP opens its own, and route session requests.
+# The site's internal settings name the CP's own listener address; the Client Job listens elsewhere.
+_CP_ADDRESS = (DriverParams.HOST.value, DriverParams.PORT.value, DriverParams.LISTEN_HOST.value)
 
-    No scheme or resources are passed, so the site's internal connection settings apply, including mTLS
-    when the site configures it. Idempotent: several executors share one Client Job cell.
+
+def listen(cell, host):
+    """Open the Client Job cell's internal listener for its workers, and route session requests.
+
+    The scheme and connection security are the site's internal settings, as for the CP's own listener, mTLS
+    included when the site configures it. The address is not: the worker-reachable ``host`` comes from the task
+    launcher, and the port is the Client Job's own. Idempotent: several executors share one Client Job cell.
     """
-    cell.make_internal_listener()
+    manager = cell.core_cell.connector_manager
+    resources = {key: value for key, value in manager.int_resources.items() if key not in _CP_ADDRESS}
+    resources[DriverParams.HOST.value] = host
+    cell.make_internal_listener(scheme=manager.int_scheme, resources=resources)
     for topic in (Topic.HELLO, Topic.LOG):
-        cell.register_request_cb(CHANNEL, topic, _dispatch, topic)
+        cell.register_request_cb(channel=CHANNEL, topic=topic, cb=_dispatch, session_topic=topic)
 
 
 class CellWorkerSession:
@@ -190,7 +199,7 @@ class CellWorkerTransport:
             request=new_cell_message({}, payload),
             timeout=_CONTROL_TIMEOUT,
         )
-        _check_reply(reply, what)
+        return _check_reply(reply, what)
 
     def log(self, data):
         """Send one metric as a DXO Shareable and wait until the Client Job has fired it.

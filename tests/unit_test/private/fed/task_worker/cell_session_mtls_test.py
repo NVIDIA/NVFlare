@@ -15,11 +15,14 @@
 """Live mTLS: a worker joins its Client Job as the Client Job joins its CP, with the job's own certificate.
 
 Each party runs in its own spawned process, as in production, because comm config and cells are process-wide.
+The credentials have the native mount shape: the site kit beside the CA holds the site's certificate but not its
+private key, and the job credential lives elsewhere. The site's internal settings name the CP's address.
 """
 
 import json
 import multiprocessing as mp
 import os
+import shutil
 import time
 import traceback
 
@@ -36,21 +39,38 @@ pytestmark = pytest.mark.timeout(180)
 
 _CJ_FQCN = f"site-1.{_JOB_B}"
 _ADMIN = ("admin", "abort")
+_CP_PORT = 8102
 
 
-def _run_cj(pki, config_dir, ready_q, stop_ev, record_q):
+def _mount(pki, root):
+    """Native mount shape: the site kit has the CA and the site certificate, never the site private key."""
+    kit, run = os.path.join(root, "startup"), os.path.join(root, "run")
+    os.makedirs(kit), os.makedirs(run)
+    shutil.copy(pki["rootCA.pem"], os.path.join(kit, "rootCA.pem"))
+    shutil.copy(pki["site-1.crt"], os.path.join(kit, "server.crt"))
+    shutil.copy(pki["job_b.crt"], os.path.join(run, "job.crt"))
+    shutil.copy(pki["job_b.key"], os.path.join(run, "job.key"))
+    return {
+        "ca": os.path.join(kit, "rootCA.pem"),
+        "job_crt": os.path.join(run, "job.crt"),
+        "job_key": os.path.join(run, "job.key"),
+    }
+
+
+def _run_cj(mount, config_dir, ready_q, stop_ev, record_q):
     """The Client Job: job B's cell with job B's certificate, the site's internal mTLS, and an admin route."""
     from nvflare.private.fed.task_worker import cell_session
 
     cell = None
     try:
         ConfigService.initialize(section_files={}, config_path=[config_dir])
+        # pinned in both roles, as FederatedClientBase does for a Client Job
         credentials = {
-            DriverParams.CA_CERT.value: pki["rootCA.pem"],
-            DriverParams.CLIENT_CERT.value: pki["job_b.crt"],
-            DriverParams.CLIENT_KEY.value: pki["job_b.key"],
-            DriverParams.SERVER_CERT.value: pki["job_b.crt"],
-            DriverParams.SERVER_KEY.value: pki["job_b.key"],
+            DriverParams.CA_CERT.value: mount["ca"],
+            DriverParams.CLIENT_CERT.value: mount["job_crt"],
+            DriverParams.CLIENT_KEY.value: mount["job_key"],
+            DriverParams.SERVER_CERT.value: mount["job_crt"],
+            DriverParams.SERVER_KEY.value: mount["job_key"],
             DriverParams.CONNECTION_SECURITY.value: "mtls",
         }
         cell = Cell(
@@ -66,7 +86,7 @@ def _run_cj(pki, config_dir, ready_q, stop_ev, record_q):
         )
         cell.register_request_cb(*_ADMIN, lambda request: record_q.put("admin") or Message())
         cell.start()
-        cell_session.listen(cell)
+        cell_session.listen(cell, "localhost")  # what the Process launcher supplies
         session = cell_session.CellWorkerSession(cell, lambda data: record_q.put(dict(data)))
         ready_q.put(session.bootstrap_fields())
         stop_ev.wait(150)
@@ -134,19 +154,19 @@ def _spawn(target, *args):
 def client_job(tmp_path_factory):
     ctx = mp.get_context("spawn")
     pki = _write_pki(str(tmp_path_factory.mktemp("pki")))
+    mount = _mount(pki, str(tmp_path_factory.mktemp("mount")))
     config_dir = str(tmp_path_factory.mktemp("config"))
+    internal = {"host": "cp-1.invalid", "port": _CP_PORT, "connection_security": "mtls"}
     with open(os.path.join(config_dir, "comm_config.json"), "w") as f:
-        json.dump(
-            {"internal": {"scheme": "stcp", "resources": {"host": "localhost", "connection_security": "mtls"}}}, f
-        )
+        json.dump({"internal": {"scheme": "stcp", "resources": internal}}, f)
     stop_ev = ctx.Event()
     ready_q, record_q = ctx.Queue(), ctx.Queue()
-    proc = ctx.Process(target=_run_cj, args=(pki, config_dir, ready_q, stop_ev, record_q))
+    proc = ctx.Process(target=_run_cj, args=(mount, config_dir, ready_q, stop_ev, record_q))
     proc.start()
     try:
         fields = ready_q.get(timeout=60)
         assert isinstance(fields, dict), fields
-        yield fields, pki, record_q
+        yield fields, {**pki, "mount": mount}, record_q
     finally:
         stop_ev.set()
         proc.join(15)
@@ -162,16 +182,20 @@ def _drain(record_q, wait=2.0):
     return records
 
 
-def test_the_listener_follows_the_site_internal_mtls_and_hands_workers_the_job_credential(client_job):
+def test_the_listener_keeps_the_site_security_but_not_the_cps_address_and_hands_over_the_job_credential(client_job):
     fields, pki, _ = client_job
-    assert fields["connect_url"].startswith("stcp://")
+    mount = pki["mount"]
+    assert fields["connect_url"].startswith("stcp://localhost:"), "the launcher's host, not the CP's"
+    assert not fields["connect_url"].endswith(f":{_CP_PORT}"), "a port of its own, not the CP's"
     assert fields["connection_security"] == "mtls"
     assert fields["identity"] == "site-1"
     assert fields["credentials"] == {
-        DriverParams.CA_CERT.value: pki["rootCA.pem"],
-        DriverParams.CLIENT_CERT.value: pki["job_b.crt"],
-        DriverParams.CLIENT_KEY.value: pki["job_b.key"],
-    }
+        DriverParams.CA_CERT.value: mount["ca"],
+        DriverParams.CLIENT_CERT.value: mount["job_crt"],
+        DriverParams.CLIENT_KEY.value: mount["job_key"],
+        DriverParams.SERVER_CERT.value: mount["job_crt"],
+        DriverParams.SERVER_KEY.value: mount["job_key"],
+    }, "both roles pinned to the job credential, so nothing is filled from the site kit"
 
 
 def test_a_worker_with_the_job_credential_delivers_metrics(client_job):

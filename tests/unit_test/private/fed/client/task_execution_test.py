@@ -843,7 +843,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     if write_failure == "analytics":
         on_analytics = Mock(side_effect=ValueError("the Client Job rejected the metric"))
     cj_cell = context.get_engine().get_cell()
-    cell_session.listen(cj_cell)
+    cell_session.listen(cj_cell, "localhost")
     session = cell_session.CellWorkerSession(cj_cell, on_analytics)
     request.addfinalizer(session.close)
     spec = _config()["executors"][0]["executor"]
@@ -1400,16 +1400,25 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
 
     route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
     unrelated = ("aux", "tensor-message")
+    # The site's internal settings, as a provisioned kit writes them, name the CP's own listener.
+    site_internal = {"host": "cp-1", "port": 8102, "listen_host": "0", "connection_security": "mtls"}
+    manager = SimpleNamespace(int_scheme="stcp", int_resources=dict(site_internal))
     cell = SimpleNamespace(
-        decode_pass_through_topics={unrelated}, make_internal_listener=Mock(), register_request_cb=Mock()
+        decode_pass_through_topics={unrelated},
+        make_internal_listener=Mock(),
+        register_request_cb=Mock(),
+        core_cell=SimpleNamespace(connector_manager=manager),
     )
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
     adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
     adapter.handle_event(EventType.START_RUN, context)
     assert cell.decode_pass_through_topics == {route, unrelated}
-    # No scheme or resources: the site's internal listener settings apply, as for the CP's own listener.
-    cell.make_internal_listener.assert_called_once_with()
+    # The site's scheme and security, the Process launcher's host, and no fixed port: never the CP's address.
+    cell.make_internal_listener.assert_called_once_with(
+        scheme="stcp", resources={"host": "localhost", "connection_security": "mtls"}
+    )
+    assert manager.int_resources == site_internal, "the site settings are left alone"
     assert cell.register_request_cb.call_count == 2
     adapter.handle_event(EventType.END_RUN, context)
     assert cell.decode_pass_through_topics == {unrelated}

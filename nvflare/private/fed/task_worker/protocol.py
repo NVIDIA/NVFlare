@@ -80,8 +80,10 @@ def _require_absolute_directory_name(name: str, value: str):
         raise ValueError(f"{name} must be an absolute path")
 
 
-# A worker is a client of its Client Job's listener: it needs the CA and the Client Job's client pair.
-CELL_SESSION_CREDENTIALS = ("ca_cert", "client_cert", "client_key")
+# The CA and both of the Client Job's pairs, which in secure mode are its job credential. A cell holds a server
+# role too (message crypto prefers it), and a cell missing a pair fills it from the CA's folder, i.e. the site's
+# kit; passing both pairs pins both roles to the job credential, exactly as FederatedClientBase pins the Client Job.
+CELL_SESSION_CREDENTIALS = ("ca_cert", "client_cert", "client_key", "server_cert", "server_key")
 # text field -> required
 _CELL_SESSION_TEXT = {"connect_url": True, "worker_fqcn": True, "connection_security": False, "identity": False}
 

@@ -46,6 +46,7 @@ def _cell(fqcn="site-1"):
     cell.running = True
     cell.agents = {}
     cell.ext_listeners = {}
+    cell.int_listener_lock = threading.Lock()
     cell.ALL_CELLS = {}
     return cell
 
@@ -235,6 +236,44 @@ def test_make_internal_listener_forwards_listener_override():
 
     cell.connector_manager.get_internal_listener.assert_called_once_with("tcp", resources)
     assert cell.get_internal_listener_url() == "tcp://localhost:49152"
+
+
+def test_concurrent_callers_create_one_internal_listener():
+    cell = _cell("site-1.job-1")
+    cell.int_listener = None
+    entered, release = threading.Event(), threading.Event()
+    listener = SimpleNamespace(get_connection_url=lambda: "tcp://localhost:49152")
+
+    def slow_listener(scheme, resources):
+        entered.set()
+        release.wait(5)  # hold the first caller inside creation while the others arrive
+        return listener
+
+    cell.connector_manager = MagicMock()
+    cell.connector_manager.get_internal_listener.side_effect = slow_listener
+    results = []
+    callers = [threading.Thread(target=lambda: results.append(cell._create_internal_listener())) for _ in range(8)]
+    for caller in callers:
+        caller.start()
+    assert entered.wait(5)
+    release.set()
+    for caller in callers:
+        caller.join(5)
+
+    cell.connector_manager.get_internal_listener.assert_called_once()
+    assert results == [listener] * 8
+
+
+def test_a_partial_callback_is_named_in_logs_instead_of_failing():
+    from functools import partial
+
+    cell = _cell("site-1.job-1")
+    reply = cell._try_cb(Message(), partial(lambda message, value: Message(payload=value), value=7))
+    assert reply.payload == 7
+    failing = partial(lambda message: 1 / 0)
+    cell.log_error = MagicMock()
+    assert cell._try_cb(Message(), failing).get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert "functools.partial" in cell.log_error.call_args[0][0]
 
 
 def test_internal_listener_host_overrides_default_resources():

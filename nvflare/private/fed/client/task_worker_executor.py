@@ -90,8 +90,9 @@ class TaskWorkerExecutor(Executor):
                         raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
-                # Workers join this cell as the Client Job joins its CP: same listener security, job credential.
-                cell_session.listen(cell)
+                # Workers join this cell as the Client Job joins its CP: same listener security, job credential,
+                # at an address the launcher's workers can reach.
+                cell_session.listen(cell, self.policy.launcher.get_worker_listener_host())
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):

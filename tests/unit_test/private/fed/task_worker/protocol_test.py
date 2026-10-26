@@ -292,7 +292,13 @@ SECURE_CELL_SESSION = {
     "connect_url": "stcp://localhost:1",
     "connection_security": "mtls",
     "identity": "site-1",
-    "credentials": {"ca_cert": "/kit/rootCA.pem", "client_cert": "/run/job.crt", "client_key": "/run/job.key"},
+    "credentials": {
+        "ca_cert": "/kit/rootCA.pem",
+        "client_cert": "/run/job.crt",
+        "client_key": "/run/job.key",
+        "server_cert": "/run/job.crt",
+        "server_key": "/run/job.key",
+    },
 }
 
 
@@ -318,7 +324,7 @@ def test_bootstrap_carries_the_optional_cell_session(tmp_path, bootstrap, cell_s
         "tcp://x",
         {**SECURE_CELL_SESSION, "secure": True},
         {**SECURE_CELL_SESSION, "connection_security": ""},
-        {**SECURE_CELL_SESSION, "credentials": {"server_key": "/run/job.key"}},
+        {**SECURE_CELL_SESSION, "credentials": {"custom_ca_cert": "/kit/customRootCA.pem"}},
         {**SECURE_CELL_SESSION, "credentials": {"client_key": "job.key"}},
     ],
 )

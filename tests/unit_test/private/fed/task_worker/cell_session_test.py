@@ -34,22 +34,59 @@ from nvflare.private.fed.task_worker.cell_session import CellWorkerSession, Cell
 pytestmark = pytest.mark.timeout(60)
 
 
-@pytest.fixture
-def cj():
-    """A Client Job cell that connects nowhere; workers join it through its internal listener."""
-    original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+# The site's internal settings name the CP's own listener, as a provisioned kit does.
+_CP_PORT = 8102
+_SITE_INTERNAL = {"host": "cp-1.invalid", "port": _CP_PORT, "connection_security": "clear"}
+
+
+def _client_job_cell():
+    """A Client Job cell that connects nowhere, with the CP's address in its site internal settings."""
     cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.core_cell.connector_manager.int_resources = dict(_SITE_INTERNAL)
     cell.start()
-    cell_session.listen(cell)
-    transports = []
+    return cell
+
+
+@pytest.fixture
+def cells():
+    original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+    created = []
     try:
-        yield cell, transports
+        yield created
     finally:
-        for transport in transports:
-            transport.close()
-        cell.stop()
+        for item in reversed(created):
+            item.stop() if isinstance(item, Cell) else item.close()
         CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
         StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
+
+
+@pytest.fixture
+def cj(cells):
+    """A Client Job cell whose workers join it through its internal listener."""
+    cell = _client_job_cell()
+    cells.append(cell)
+    cell_session.listen(cell, "localhost")
+    return cell, cells
+
+
+def test_the_listener_is_at_the_launcher_host_on_its_own_port_not_the_cps_address(cj):
+    url = cj[0].get_internal_listener_url()
+    assert url.startswith("tcp://localhost:") and not url.endswith(f":{_CP_PORT}")
+    assert cj[0].core_cell.connector_manager.int_resources == _SITE_INTERNAL, "the site settings are left alone"
+
+
+def test_concurrent_listen_calls_open_one_listener(cells):
+    cell = _client_job_cell()
+    cells.append(cell)
+    calls = Mock(wraps=cell.core_cell.connector_manager.get_internal_listener)
+    cell.core_cell.connector_manager.get_internal_listener = calls
+    listeners = [threading.Thread(target=cell_session.listen, args=(cell, "localhost")) for _ in range(8)]
+    for listener in listeners:
+        listener.start()
+    for listener in listeners:
+        listener.join(10)
+    calls.assert_called_once()
+    assert cell.get_internal_listener_url().startswith("tcp://localhost:")
 
 
 def _worker(cj, on_analytics=None, **overrides):

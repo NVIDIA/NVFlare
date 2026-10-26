@@ -48,15 +48,20 @@ A worker joins its Client Job exactly as the Client Job joins its CP:
 
 | | Client Job joins CP | Worker joins Client Job |
 | --- | --- | --- |
-| Listener | CP cell's internal listener, site internal settings | Client Job cell's internal listener, the same site settings |
+| Listener | CP cell's internal listener, site internal settings | Client Job cell's internal listener: the site's scheme and security, the launcher's host, its own port |
 | Told how to connect | `--parent_url`, `--parent_conn_sec` | bootstrap `connect_url`, `connection_security` |
-| Credential (secure mode) | per-job certificate | the same per-job certificate |
+| Credential (secure mode) | per-job certificate, pinned in both roles | the same per-job certificate, pinned in both roles |
 | Names it may claim | job cell and descendants (certificate scope) | `<job cell>.task_worker_<id>`, inside that scope |
 
-`listen(cell)` runs once per executor at `START_RUN` and calls
-`make_internal_listener()` with no scheme or resources, so the site's internal
-connection settings apply, mTLS included when the site configures it. The
-Client Job cell is created with its own FQCN mapped to its own identity in
+`listen(cell, host)` runs once per executor at `START_RUN`. It takes the
+scheme and connection security from the site's internal settings, mTLS
+included when the site configures it, but not their address: those settings
+name the CP's own host and port. The host comes from the task launcher's
+`get_worker_listener_host()` (`localhost` for the Process launcher; a launcher
+that places workers elsewhere returns a Client Job address they can reach), and
+the port is picked freshly, so each Client Job has its own listener. Creating
+the internal listener is locked in `CoreCell`, so concurrent first callers get
+one listener. The Client Job cell is created with its own FQCN mapped to its own identity in
 `auth_identity_map`, so a cell under it must present the job's identity;
 together with the certificate scope, only holders of this job's credential can
 join, and only under this job's names. In a clear deployment the listener is
@@ -69,8 +74,13 @@ settled. Closing never waits on a stalled receiver longer than the settlement
 timeout, and a record that arrives afterwards is rejected, so a metric only
 fires while its attempt is owned. `bootstrap_fields` is what goes into the
 bootstrap's `cell_session`: `connect_url`, `worker_fqcn`, and the
-Client Job's `connection_security`, `identity` and credential paths
-(CA, client certificate and key) where it has them.
+Client Job's `connection_security`, `identity` and credential paths where it
+has them: the CA and both of its pairs, which in secure mode are the job
+credential. A cell also holds a server role, which message crypto prefers, and
+fills a missing pair from the CA's folder, i.e. the site kit; passing both
+pairs pins both of the worker's roles to the job credential, exactly as
+`FederatedClientBase` pins the Client Job's. The site's private key is never
+needed by a worker.
 
 `CellWorkerTransport` is the worker half. `run_worker` opens it once every codec
 is registered, right before reading the input, and closes it on exit; a close
@@ -124,9 +134,9 @@ executors that never log, but a Client API worker refuses to start without one.
   as for this one.
 - Launchers need a network path from the worker to the Client Job listener and
   the job credential: the Process launcher shares the host and the files. A
-  container launcher adds what it already does for the Client Job: a reachable
-  internal listener host in the site's internal settings, and the job
-  credential mounted where the bootstrap's paths point.
+  container launcher returns the Client Job's reachable address from
+  `get_worker_listener_host()` and mounts the job credential where the
+  bootstrap's paths point, as it already does for the Client Job.
 - Outbound calls from a worker (Collab) are the next thing to carry over this
   session: the worker has a Cell and a proven identity, so a call is one more
   request the Client Job authorises and dispatches, with no second mechanism.
