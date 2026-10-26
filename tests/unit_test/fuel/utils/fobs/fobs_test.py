@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.buffer_list import ConsumableBufferList
 from nvflare.fuel.utils.fobs import Decomposer
@@ -121,6 +122,20 @@ class TestFobs:
         assert restored.data_kind == DataKind.WEIGHTS
         assert restored.data == {"w": 1.0}
         fobs.reset()
+
+    def test_connector_params_enum_allowed_on_receiver(self):
+        fobs.reset()
+        connector_info = {"params": {DriverParams.SECURE: True, DriverParams.URL: "grpc://localhost:8002"}}
+        buf = fobs.dumps(connector_info)
+
+        # Simulate a separate receiver that has not registered DriverParams.
+        fobs.reset()
+        try:
+            restored = fobs.loads(buf)
+            assert restored == connector_info
+            assert all(isinstance(key, DriverParams) for key in restored["params"])
+        finally:
+            fobs.reset()
 
     def test_reset_mutates_whitelist_in_place(self):
         fobs.reset()
