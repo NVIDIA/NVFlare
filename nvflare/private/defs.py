@@ -77,6 +77,7 @@ class RequestHeader(object):
 
     JOB_ID = "job_id"
     JOB_STATUS = "job_status"
+    CJ_LAUNCH_ID = "cj_launch_id"
     TOPIC = "topic"
     JOB_META = "job_meta"
     JOB_CERT = "job_cert"

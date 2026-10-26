@@ -480,6 +480,14 @@ class TestFactory:
 
 
 class TestInitializeAndFinalize:
+    @pytest.mark.parametrize("group_alive", [False, True])
+    def test_cleanup_preserves_bootstrap_until_trainer_group_exit(self, env, monkeypatch, group_alive):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        monkeypatch.setattr(backend, "_process_group_alive", lambda _: group_alive)
+        backend._cleanup_trainer(trainer)
+        assert os.path.exists(trainer.bootstrap_path) is group_alive
+
     def test_initialize_launches_trainer_and_establishes_session(self, env):
         executor = MagicMock()
         backend, _ = _initialized_backend(env, executor=executor)
