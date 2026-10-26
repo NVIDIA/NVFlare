@@ -2733,13 +2733,14 @@ spec:
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
-            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5"])
+            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5", "cj_launch_id=physical-1"])
             launcher.launch_job(_make_launch_job_meta(), fl_ctx)
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             args = manifest["spec"]["containers"][0]["args"]
             assert "--set" in args
             assert "lr=0.01" in args
             assert "epochs=5" in args
+            assert "cj_launch_id=physical-1" in args
         finally:
             _exit_patches(patches)
 
