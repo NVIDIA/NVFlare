@@ -534,3 +534,14 @@ def test_client_hocon_comment_line_endings_cannot_hide_an_include(comment, newli
     with ZipFile(bio) as archive:
         config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
     assert config["execution_lifetime"] == "task"
+
+
+def test_submission_uses_shared_resource_lifetime_classifier(monkeypatch):
+    import nvflare.private.fed.server.job_meta_validator as submission
+
+    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1, "cj_resource_spec": {"@ALL": {}}}
+    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, {"execution_lifetime": "job"})
+    monkeypatch.setattr(submission, "get_client_execution_lifetime", lambda config: "task")
+    valid, error, submitted = JobMetaValidator().validate("split", data)
+    assert valid, error
+    assert submitted["cj_resource_spec"] == {"@ALL": {}}

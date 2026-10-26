@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
@@ -118,7 +119,7 @@ class ClientAppRunner(Runner):
         validate_cj_execution_lifetime(
             get_job_meta_from_workspace(workspace, args.job_id),
             args.client_name,
-            conf.config_data.get("execution_lifetime", "job"),
+            get_client_execution_lifetime(conf.config_data),
         )
         conf.set_component_build_authorizer(
             authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []

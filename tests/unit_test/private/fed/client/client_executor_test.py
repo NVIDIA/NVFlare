@@ -968,3 +968,54 @@ def test_process_resident_compute_admission_keeps_legacy_behavior():
         assert (
             ClientProcessJobLauncher().get_command({"resource_spec": {"@default": {"num_of_cpus": 2}}}, context) == "CJ"
         )
+
+
+def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    with patch(
+        "nvflare.private.fed.client.client_executor.get_client_execution_lifetime", return_value="job"
+    ) as classify:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    classify.assert_called_once_with({"execution_lifetime": "task"})
+
+
+def test_cj_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+
+    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"format_version":3,"execution_lifetime":"task","executors":[]}')
+    args = SimpleNamespace(
+        workspace=str(tmp_path),
+        job_id="job-1",
+        client_name="site-1",
+        client_config="config/config_fed_client.json",
+        set=[],
+        sp_scheme="grpc",
+        sp_target="server:8002",
+    )
+    with (
+        patch(
+            "nvflare.private.fed.client.client_app_runner.get_client_execution_lifetime", return_value="job"
+        ) as classify,
+        patch.object(ClientJsonConfigurator, "configure") as build,
+    ):
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
+    classify.assert_called_once()
+    assert classify.call_args.args[0]["execution_lifetime"] == "task"
+    build.assert_not_called()

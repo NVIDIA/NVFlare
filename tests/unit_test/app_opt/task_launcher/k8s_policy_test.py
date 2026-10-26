@@ -113,7 +113,12 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         context.set_prop(key, value, private=True, sticky=True)
     api = PodApi()
     backend = policy.launcher.create_backend(
-        api, str(tmp_path), context.get_prop(FLContextKey.JOB_META), "job", "site-1"
+        api,
+        str(tmp_path),
+        context.get_prop(FLContextKey.JOB_META),
+        "job",
+        "site-1",
+        startup_secret_name="federation-a.site-1",
     )
     backend.poll_interval = 0.001
     owner = service.add_job(backend, "job", "site-1", "job-token")
@@ -131,6 +136,7 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
         result = adapter.execute("train", Shareable(), context, Signal())
         assert result["gpu"] == gpu_count
         assert api.deleted
+        assert api.manifest["spec"]["volumes"][1]["secret"]["secretName"] == "federation-a.site-1"
         requests = api.manifest["spec"]["containers"][0]["resources"]["requests"]
         assert requests["cpu"] == "500m"
         assert requests["memory"] == "512Mi"
@@ -235,5 +241,5 @@ def test_attempt_history_limit_requires_a_positive_integer(tmp_path, limit):
 def test_cp_backend_keeps_the_site_attempt_history_limit(profile):
     launcher, _ = profile
     launcher.max_attempts = 123
-    backend = launcher.create_backend(Mock(), "/cp/jobs/job", {}, "job", "site-1")
+    backend = launcher.create_backend(Mock(), "/cp/jobs/job", {}, "job", "site-1", startup_secret_name="site-startup")
     assert backend.max_attempts == 123

@@ -26,6 +26,7 @@ from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import (
@@ -192,9 +193,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 )
                 if not isinstance(client_config, dict):
                     raise ValueError("client app config must be a dictionary")
-                lifetime = client_config.get("execution_lifetime", "job")
-                if lifetime not in ("job", "task"):
-                    raise ValueError("execution_lifetime must be 'job' or 'task'")
+                lifetime = get_client_execution_lifetime(client_config)
                 if lifetime == "task":
                     task_sites.update(
                         ALL_SITES if site.casefold() == ALL_SITES.casefold() else site for site in client_sites

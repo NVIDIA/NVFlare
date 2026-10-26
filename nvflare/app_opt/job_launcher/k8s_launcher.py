@@ -62,7 +62,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.job_config.task_execution import reject_job_gpu_reservation
+from nvflare.job_config.task_execution import get_client_execution_lifetime, reject_job_gpu_reservation
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -75,10 +75,34 @@ from nvflare.utils.job_launcher_utils import (
     validate_cj_resource_spec,
 )
 
+_STARTUP_FEDERATION_LABEL = "nvflare.nvidia.com/startup-federation"
+
+
+def _startup_federation_identity(data):
+    """A label-safe SHA-256 CA fingerprint, or payload identity for unsecured kits."""
+    if data.get("rootCA.pem"):
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+
+        certificate = x509.load_pem_x509_certificate(base64.b64decode(data["rootCA.pem"], validate=True))
+        digest = certificate.fingerprint(hashes.SHA256())
+    else:
+        digest = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).digest()
+    return base64.b32encode(digest).decode("ascii").rstrip("=").lower()
+
 
 def validate_dns_name(name, value):
     if not isinstance(value, str) or len(value) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", value):
         raise ValueError(f"{name} must be a DNS label")
+    return value
+
+
+def validate_startup_secret_name(value):
+    # Secret names use DNS subdomains (up to 253 characters), not the shorter
+    # label limit used by namespace and service-account names.
+    label = r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?"
+    if not isinstance(value, str) or len(value) > 253 or not re.fullmatch(rf"{label}(?:\.{label})*", value):
+        raise ValueError("startup_secret_name must be a DNS subdomain of at most 253 characters")
     return value
 
 
@@ -689,6 +713,7 @@ class K8sJobLauncher(JobLauncherSpec):
         default_python_path: str = None,
         workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
         image_pull_secrets: list[str] = None,
+        startup_secret_name: str = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -700,6 +725,9 @@ class K8sJobLauncher(JobLauncherSpec):
         self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
+        self.startup_secret_name = (
+            None if startup_secret_name is None else validate_startup_secret_name(startup_secret_name)
+        )
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
@@ -733,11 +761,8 @@ class K8sJobLauncher(JobLauncherSpec):
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
-    def _create_or_replace_secret(self, secret_name: str, contents: dict) -> str:
-        """Upsert an Opaque Secret; replaces any existing Secret of the same name.
-
-        contents must be the Secret payload mapping only: {"data": ...} or {"stringData": ...}.
-        """
+    def _create_or_replace_secret(self, secret_name: str, contents: dict, *, federation_identity: str = None) -> str:
+        """Upsert a Secret, checking and version-fencing startup kit ownership."""
         from kubernetes.client.rest import ApiException
 
         secret_body = {
@@ -747,12 +772,17 @@ class K8sJobLauncher(JobLauncherSpec):
             "type": "Opaque",
             **contents,
         }
+        if federation_identity is not None:
+            secret_body["metadata"]["labels"] = {_STARTUP_FEDERATION_LABEL: federation_identity}
         try:
             self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
             self.logger.debug("created Secret %s", secret_name)
         except ApiException as e:
             if getattr(e, "status", None) != 409:
                 raise
+            if federation_identity is not None:
+                self._replace_startup_secret(secret_body, federation_identity)
+                return secret_name
             try:
                 self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
                 self.logger.debug("replaced Secret %s", secret_name)
@@ -760,9 +790,46 @@ class K8sJobLauncher(JobLauncherSpec):
                 # 409 -> (GC deletes the old Secret) -> replace 404: recreate.
                 if getattr(e2, "status", None) != 404:
                     raise
+                secret_body["metadata"].pop("resourceVersion", None)
                 self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
                 self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
         return secret_name
+
+    def _replace_startup_secret(self, body, federation_identity):
+        """Retry concurrent same-kit launches while rechecking ownership each time."""
+        from kubernetes.client.rest import ApiException
+
+        name = body["metadata"]["name"]
+        for attempt in range(3):
+            try:
+                try:
+                    existing = self.core_v1.read_namespaced_secret(name=name, namespace=self.namespace)
+                except ApiException as error:
+                    if getattr(error, "status", None) != 404:
+                        raise
+                    body["metadata"].pop("resourceVersion", None)
+                    self.core_v1.create_namespaced_secret(namespace=self.namespace, body=body)
+                    return
+                # Legacy Secrets can be upgraded only after matching their CA
+                # (or unsecured payload). Never trust a name match alone.
+                label = (existing.metadata.labels or {}).get(_STARTUP_FEDERATION_LABEL)
+                identity = label if label is not None else _startup_federation_identity(existing.data or {})
+                if identity != federation_identity:
+                    raise ValueError(
+                        f"startup Secret {name!r} belongs to a different federation; "
+                        "configure a unique startup_secret_name in this namespace"
+                    )
+                if label == federation_identity and existing.data == body["data"]:
+                    return
+                version = existing.metadata.resource_version
+                if not isinstance(version, str) or not version:
+                    raise ValueError("startup Secret ownership cannot be confirmed without resourceVersion")
+                body["metadata"]["resourceVersion"] = version
+                self.core_v1.replace_namespaced_secret(name=name, namespace=self.namespace, body=body)
+                return
+            except ApiException as error:
+                if getattr(error, "status", None) not in (404, 409) or attempt == 2:
+                    raise
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
@@ -777,7 +844,10 @@ class K8sJobLauncher(JobLauncherSpec):
                 with open(os.path.join(startup_dir, fname), "rb") as f:
                     data[fname] = base64.b64encode(f.read()).decode()
 
-        return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
+        name = self.startup_secret_name or f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
+        return self._create_or_replace_secret(
+            name, {"data": data}, federation_identity=_startup_federation_identity(data)
+        )
 
     def _ensure_job_credential_secret(self, pod_name: str, credential_env: dict) -> str:
         """Create (or replace) the per-job Secret carrying bootstrap credentials.
@@ -1069,6 +1139,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 fl_ctx=fl_ctx,
                 transfer_token=workspace_transfer_token,
                 workspace_reservations=workspace_reservations,
+                startup_secret_name=startup_secret_name,
             )
             job_handle.pod_manifest = pod_manifest
             self.logger.debug(
@@ -1218,9 +1289,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         config = ConfigService.load_config_dict(
             workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID])
         )
-        lifetime = config.get("execution_lifetime", "job")
-        if lifetime not in ("job", "task"):
-            raise ValueError("execution_lifetime must be 'job' or 'task'")
+        lifetime = get_client_execution_lifetime(config)
         if lifetime == "task":
             reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
         elif has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
@@ -1239,6 +1308,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         fl_ctx=None,
         transfer_token=None,
         workspace_reservations=None,
+        startup_secret_name=None,
     ):
         if self.job_workspace_pvc is None or (execution_lifetime == "job" and not self.persist_resident_workspaces):
             return
@@ -1309,6 +1379,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             job_meta,
             job_id,
             site_name,
+            startup_secret_name=startup_secret_name,
         )
         cell = fl_ctx.get_engine().cell
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)

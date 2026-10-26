@@ -165,6 +165,7 @@ def setup(tmp_path, isolated_fobs):
         cwd=str(tmp_path),
     )
     launcher = K8sTaskBackend(
+        startup_secret_name="federation-a.site-1",
         namespace="site",
         image="site/image@sha256:trusted",
         workspace_root=str(tmp_path),
@@ -211,7 +212,7 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
     }
     assert {v["name"]: v["value"] for v in container["env"]} == launcher.environment
     assert spec["volumes"][0] == {"name": "workspace", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
-    assert "secret" in spec["volumes"][1]
+    assert spec["volumes"][1]["secret"]["secretName"] == "federation-a.site-1"
     assert container["volumeMounts"][0] == {
         "name": "workspace",
         "mountPath": launcher.workspace_root,
@@ -277,7 +278,14 @@ def test_identity_fenced_and_distinct_across_sites_and_attempts(setup):
         )
         owner = launcher
         if identity.site_name != request.site_name:
-            owner = K8sTaskBackend("site", launcher.image, launcher.workspace_root, "existing-pvc", "task-no-api")
+            owner = K8sTaskBackend(
+                "site",
+                launcher.image,
+                launcher.workspace_root,
+                "existing-pvc",
+                "task-no-api",
+                startup_secret_name=launcher.startup_secret_name,
+            )
             _bind_to_cj(owner, other_request)
             owner.core_v1 = api
         handle = owner.launch_task(other_request)
@@ -1185,7 +1193,9 @@ def test_long_queued_task_remains_cancellable(setup, monkeypatch):
 )
 def test_queue_and_startup_timeouts_reject_invalid_values(tmp_path, setting, value):
     with pytest.raises(ValueError, match=setting):
-        K8sTaskBackend("site", "image", str(tmp_path), "pvc", "worker", **{setting: value})
+        K8sTaskBackend(
+            "site", "image", str(tmp_path), "pvc", "worker", startup_secret_name="startup-kit", **{setting: value}
+        )
 
 
 @pytest.mark.parametrize("extra", [{"license": 1}, {"mem_per_gpu_in_GiB": 8}])

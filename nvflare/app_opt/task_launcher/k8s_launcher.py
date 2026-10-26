@@ -44,6 +44,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     site_name_to_rfc1123,
     task_security_context,
     validate_dns_name,
+    validate_startup_secret_name,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
@@ -288,6 +289,10 @@ class _K8sTaskProfile(TaskLauncherSpec):
 class K8sTaskBackend(_K8sTaskProfile):
     """CP-only Kubernetes authority. Never construct this from a CJ request."""
 
+    def __init__(self, *args, startup_secret_name, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.startup_secret_name = validate_startup_secret_name(startup_secret_name)
+
     def handle_event(self, event_type, fl_ctx):
         if event_type != EventType.START_RUN:
             return
@@ -386,7 +391,7 @@ class K8sTaskBackend(_K8sTaskProfile):
                     {"name": "workspace", "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
                     {
                         "name": "startup-kit",
-                        "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123(request.site_name)}"},
+                        "secret": {"secretName": self.startup_secret_name},
                     },
                 ],
                 "volume_mount_list": [
@@ -734,9 +739,10 @@ class K8sTaskLauncher(_K8sTaskProfile):
             raise RuntimeError("Kubernetes task proxy has no START_RUN binding")
         return client.launch(request)
 
-    def create_backend(self, api, storage_root, job_meta, job_id, site_name):
+    def create_backend(self, api, storage_root, job_meta, job_id, site_name, *, startup_secret_name):
         """Called only by CP with canonical site policy and admitted job metadata."""
         backend = K8sTaskBackend(
+            startup_secret_name=startup_secret_name,
             namespace=self.namespace,
             image=self.image,
             workspace_root=self.workspace_root,

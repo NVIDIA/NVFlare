@@ -3457,13 +3457,17 @@ spec:
         try:
             launcher.core_v1 = mock_api
             mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+            mock_api.read_namespaced_secret.return_value = SimpleNamespace(
+                metadata=SimpleNamespace(labels={}, resource_version="7"), data={}
+            )
 
             secret_name = launcher._ensure_startup_secret("site-1", "/fake/startup")
 
             assert secret_name == f"nvflare-startup-{site_name_to_rfc1123('site-1')}"
             mock_api.create_namespaced_secret.assert_called_once()
             mock_api.replace_namespaced_secret.assert_called_once()
-            mock_api.read_namespaced_secret.assert_not_called()
+            mock_api.read_namespaced_secret.assert_called_once()
+            assert mock_api.replace_namespaced_secret.call_args.kwargs["body"]["metadata"]["resourceVersion"] == "7"
         finally:
             _exit_patches(patches)
 
@@ -3590,13 +3594,14 @@ class TestK8sCredentialTransport:
         return launcher, mock_api
 
     @pytest.mark.parametrize(("cert_name", "key_name"), [("client.crt", "client.key"), ("server.crt", "server.key")])
-    def test_startup_secret_never_ships_private_keys(self, tmp_path, cert_name, key_name):
+    def test_startup_secret_never_ships_private_keys(self, tmp_path, cert_name, key_name, startup_ca):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         startup_dir = tmp_path / "startup"
         startup_dir.mkdir()
         for name in ("rootCA.pem", cert_name, key_name, "job_ca.key", "fed_client.json"):
             (startup_dir / name).write_text(name)
+        (startup_dir / "rootCA.pem").write_bytes(startup_ca)
         launcher = ClientK8sJobLauncher(config_file_path=None)
         launcher.core_v1 = MagicMock()
 
@@ -3783,6 +3788,9 @@ class TestK8sCredentialTransport:
         try:
             mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
             mock_api.patch_namespaced_secret.side_effect = _FakeApiException(status=403, reason="Forbidden")
+            mock_api.read_namespaced_secret.return_value = SimpleNamespace(
+                metadata=SimpleNamespace(labels={}, resource_version="1"), data={}
+            )
 
             handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
 
@@ -3892,7 +3900,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
 
         api.create_namespaced_pod.side_effect = ApiException(status=create_status)
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
-    launcher._ensure_startup_secret = Mock(return_value="existing-startup-secret")
+    launcher.startup_secret_name = "federation-a.site-1"
     launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
     launcher._own_credential_secret = Mock()
     meta = {
@@ -3931,6 +3939,10 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
     assert (handle.task_owner is not None) == (lifetime == "task")
     spec = manifest["spec"]
     container = spec["containers"][0]
+    assert (
+        next(volume for volume in spec["volumes"] if volume["name"] == "startup-kit")["secret"]["secretName"]
+        == "federation-a.site-1"
+    )
     workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
     workspace_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job")
     assert workspace_volume == {"name": "workspace-job", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
@@ -3954,6 +3966,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
             assert environment["CUDA_VISIBLE_DEVICES"] == ""
             assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
         backend = service.get_or_create.return_value.add_job.call_args.args[0]
+        assert backend.startup_secret_name == "federation-a.site-1"
         compute_requests = backend._job_binding[2]["requests"]
         assert compute_requests["nvidia.com/gpu"] == "2"
         if budgets != "defaults":
@@ -4139,3 +4152,237 @@ def test_failed_submission_cleanup_only_removes_the_fresh_empty_directory(tmp_pa
         directory.mkdir()
     launcher._discard_empty_workspace(str(directory), info.st_dev, info.st_ino)
     assert directory.exists() == (replacement != "empty")
+
+
+@pytest.fixture
+def startup_ca():
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-federation")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+    )
+
+
+@pytest.mark.parametrize("name", [None, "federation-a.site-1", "a" * 253])
+@pytest.mark.parametrize("launcher_name", ["ClientK8sJobLauncher", "ServerK8sJobLauncher"])
+def test_startup_secret_name_defaults_or_uses_site_override(tmp_path, startup_ca, name, launcher_name):
+    from nvflare.app_opt.job_launcher.k8s_launcher import _STARTUP_FEDERATION_LABEL
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    import nvflare.app_opt.job_launcher.k8s_launcher as launchers
+
+    launcher = getattr(launchers, launcher_name)(config_file_path=None, startup_secret_name=name)
+    launcher.core_v1 = Mock()
+    actual = launcher._ensure_startup_secret("server", str(tmp_path))
+    assert actual == (name or f"nvflare-startup-{site_name_to_rfc1123('server')}")
+    body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
+    assert body["metadata"]["name"] == actual
+    assert len(body["metadata"]["labels"][_STARTUP_FEDERATION_LABEL]) == 52
+
+
+@pytest.mark.parametrize("name", ["", "Bad", "-bad", "bad-", "a..b", ".bad", "bad.", "a_b", "a/b", "a" * 254, 3])
+def test_startup_secret_name_rejects_invalid_dns_names(name):
+    with pytest.raises(ValueError, match="startup_secret_name"):
+        ClientK8sJobLauncher(config_file_path=None, startup_secret_name=name)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("same_federation", [False, True])
+def test_startup_secret_replacement_checks_federation_and_resource_version(
+    tmp_path, startup_ca, legacy, same_federation
+):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    (startup / "rootCA.pem").write_bytes(startup_ca)
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    launcher._ensure_startup_secret("server", str(startup))
+    first = copy.deepcopy(api.create_namespaced_secret.call_args.kwargs["body"])
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    labels = {} if legacy else first["metadata"]["labels"]
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels=labels, resource_version="42"), data=first["data"]
+    )
+    # A new trust root is a different federation even with identical participant names.
+    if not same_federation:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        original = x509.load_pem_x509_certificate(startup_ca)
+        key = ec.generate_private_key(ec.SECP256R1())
+        import datetime
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        other = (
+            x509.CertificateBuilder()
+            .subject_name(original.subject)
+            .issuer_name(original.issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .sign(key, hashes.SHA256())
+            .public_bytes(serialization.Encoding.PEM)
+        )
+        (startup / "rootCA.pem").write_bytes(other)
+        with pytest.raises(ValueError, match="different federation"):
+            launcher._ensure_startup_secret("server", str(startup))
+        api.replace_namespaced_secret.assert_not_called()
+    else:
+        (startup / "fed_client.json").write_text('{"changed":true}')
+        launcher._ensure_startup_secret("server", str(startup))
+        replacement = api.replace_namespaced_secret.call_args.kwargs["body"]
+        assert replacement["metadata"]["resourceVersion"] == "42"
+        assert replacement["metadata"]["labels"] == first["metadata"]["labels"]
+        assert "fed_client.json" in replacement["data"]
+
+
+@pytest.mark.parametrize("race", ["read_404", "replace_404", "replace_409"])
+def test_startup_secret_conflicts_do_not_bypass_ownership_checks(tmp_path, race):
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = [_FakeApiException(status=409), None]
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version="1"),
+        data={},
+    )
+    if race == "read_404":
+        api.read_namespaced_secret.side_effect = _FakeApiException(status=404)
+    else:
+        api.replace_namespaced_secret.side_effect = _FakeApiException(status=404 if race == "replace_404" else 409)
+        if race == "replace_404":
+            api.read_namespaced_secret.side_effect = [
+                api.read_namespaced_secret.return_value,
+                _FakeApiException(status=404),
+            ]
+    if race == "replace_409":
+        with pytest.raises(_FakeApiException):
+            launcher._ensure_startup_secret("server", str(tmp_path))
+        assert api.create_namespaced_secret.call_count == 1
+    else:
+        launcher._ensure_startup_secret("server", str(tmp_path))
+        assert api.create_namespaced_secret.call_count == 2
+        assert "resourceVersion" not in api.create_namespaced_secret.call_args.kwargs["body"]["metadata"]
+
+
+def test_kubernetes_cj_profile_uses_shared_resource_lifetime_classifier(tmp_path):
+    launcher = _task_profile(tmp_path)
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    workspace = context.get_prop.return_value
+    workspace.get_client_app_config_file_path.return_value = "unused.json"
+    with (
+        patch(
+            "nvflare.app_opt.job_launcher.k8s_launcher.ConfigService.load_config_dict",
+            return_value={"execution_lifetime": "task"},
+        ),
+        patch(
+            "nvflare.app_opt.job_launcher.k8s_launcher.get_client_execution_lifetime", return_value="job"
+        ) as classify,
+    ):
+        assert launcher.get_execution_lifetime({JobConstants.JOB_ID: "job"}, context) == "job"
+    classify.assert_called_once_with({"execution_lifetime": "task"})
+
+
+def test_startup_secret_without_observed_version_cannot_be_overwritten(tmp_path):
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version=None), data={}
+    )
+    with pytest.raises(ValueError, match="resourceVersion"):
+        launcher._ensure_startup_secret("server", str(tmp_path))
+    api.replace_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("profile", ["unchanged", "legacy", "changed"])
+def test_concurrent_same_federation_launches_share_the_startup_secret(tmp_path, startup_ca, profile):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    launcher._ensure_startup_secret("server", str(tmp_path))
+    stored = copy.deepcopy(api.create_namespaced_secret.call_args.kwargs["body"])
+    stored["metadata"]["resourceVersion"] = "1"
+    if profile == "legacy":
+        stored["metadata"]["labels"] = {}
+    elif profile == "changed":
+        (tmp_path / "fed_server.json").write_text('{"updated":true}')
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    barrier = threading.Barrier(2)
+    lock = threading.Lock()
+    reads = 0
+
+    def read(**kwargs):
+        nonlocal reads
+        with lock:
+            snapshot = copy.deepcopy(stored)
+            reads += 1
+            initial = reads <= 2
+        if initial:
+            barrier.wait(timeout=5)
+        return SimpleNamespace(
+            metadata=SimpleNamespace(
+                labels=snapshot["metadata"]["labels"], resource_version=snapshot["metadata"]["resourceVersion"]
+            ),
+            data=snapshot["data"],
+        )
+
+    def replace(*, body, **kwargs):
+        nonlocal stored
+        with lock:
+            if body["metadata"]["resourceVersion"] != stored["metadata"]["resourceVersion"]:
+                raise _FakeApiException(status=409)
+            stored = copy.deepcopy(body)
+            stored["metadata"]["resourceVersion"] = str(int(stored["metadata"]["resourceVersion"]) + 1)
+
+    api.read_namespaced_secret.side_effect = read
+    api.replace_namespaced_secret.side_effect = replace
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(launcher._ensure_startup_secret, "server", str(tmp_path)) for _ in range(2)]
+        names = [future.result(timeout=10) for future in futures]
+    assert names[0] == names[1]
+    assert stored["metadata"]["resourceVersion"] == ("1" if profile == "unchanged" else "2")
+    if profile == "unchanged":
+        api.replace_namespaced_secret.assert_not_called()
+    else:
+        assert api.replace_namespaced_secret.call_count == 2
+
+
+def test_startup_secret_conflict_revalidates_federation_before_retry(tmp_path):
+    from nvflare.app_opt.job_launcher.k8s_launcher import _STARTUP_FEDERATION_LABEL
+
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.side_effect = [
+        SimpleNamespace(metadata=SimpleNamespace(labels={}, resource_version="1"), data={}),
+        SimpleNamespace(
+            metadata=SimpleNamespace(labels={_STARTUP_FEDERATION_LABEL: "another-federation"}, resource_version="2"),
+            data={},
+        ),
+    ]
+    api.replace_namespaced_secret.side_effect = _FakeApiException(status=409)
+    with pytest.raises(ValueError, match="different federation"):
+        launcher._ensure_startup_secret("server", str(tmp_path))
+    api.replace_namespaced_secret.assert_called_once()

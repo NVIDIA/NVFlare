@@ -32,6 +32,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
@@ -251,7 +252,7 @@ class JobExecutor(ClientExecutor):
                 job_meta[meta_key] = copy.deepcopy(deployed_value)
         if has_cj_resource_spec(job_meta, client.client_name):
             client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
-            validate_cj_execution_lifetime(job_meta, client.client_name, client_config.get("execution_lifetime", "job"))
+            validate_cj_execution_lifetime(job_meta, client.client_name, get_client_execution_lifetime(client_config))
         if deployed_job_meta.get(AppValidationKey.BYOC, False):
             job_meta[AppValidationKey.BYOC] = True
         else:

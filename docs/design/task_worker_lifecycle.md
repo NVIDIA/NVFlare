@@ -76,6 +76,13 @@ make the acquired execution unowned.
 | `cj_resource_spec` | Rejected for resident client apps. | Independent resident coordinator budget. |
 | `launcher_spec` | Backend-specific runtime settings. | Backend-specific runtime/compute settings; compute resource fields do not become CJ resources. |
 
+Resource admission uses the configuration-only `get_client_execution_lifetime`
+helper at export, submission, CP/CJ startup and Kubernetes profile selection.
+It currently validates the top-level `execution_lifetime` as `job` or `task`,
+defaulting to `job`. Executors with other lifetime declarations extend this one
+classifier; this does not change `prepare_task_execution`'s executor-wrapping
+rules or enable additional executors by itself.
+
 A GPU task job can use a CPU coordinator. For example, its job metadata can use:
 
 ```json
@@ -330,6 +337,18 @@ All CJs and their task Pods use the launcher's configured jobs namespace. CP can
 use that namespace or a separate control namespace with explicit permissions and
 a compatible storage arrangement. Workers always use their CJ's namespace; the
 launcher does not create a namespace per job or choose one from job metadata.
+
+The job launcher accepts an optional `startup_secret_name` shared by its CJ and
+worker Pods. The default remains `nvflare-startup-<normalized-participant>`.
+Operators sharing a namespace across federations must configure unique Secret
+names per federation and participant. Each startup Secret carries the root CA's
+SHA-256 fingerprint as a label-safe base32 identity. Replacement checks that
+identity and the observed resource version; another federation's Secret causes
+launch to fail. Identical kits are reused without replacement, and concurrent
+updates re-read and revalidate ownership with a bounded retry count. An unlabeled legacy Secret can be upgraded only after matching
+its CA. Unsecured kits without a root CA use a digest of the public kit payload.
+Changing a trust root or unsecured kit requires a fresh Secret name or deliberate
+operator-managed replacement after stopping its consumers.
 
 The usual site layout has a private CP workspace PVC plus a separate shared jobs
 PVC. CP mounts the jobs claim and creates a fresh hashed job/site directory; each

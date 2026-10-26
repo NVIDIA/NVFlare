@@ -43,6 +43,17 @@ SUPPORTED_TASK_EXECUTORS = {
 DECOMPOSER_REGISTER_PATH = "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister"
 
 
+def get_client_execution_lifetime(client_config):
+    """Classify client resource admission without importing application code.
+
+    All admission boundaries use this configuration-only decision. Executor
+    wrapping remains a separate decision in prepare_task_execution.
+    """
+    if not isinstance(client_config, dict):
+        raise TypeError("client config must be a dict")
+    return ExecutionLifetime.validate(client_config.get("execution_lifetime", ExecutionLifetime.JOB))
+
+
 def validate_task_resources(meta, site_name, *, allow_gpu=False):
     """Validate counts; require GPU capability only at trusted site admission.
 

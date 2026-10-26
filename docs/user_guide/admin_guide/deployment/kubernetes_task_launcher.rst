@@ -93,6 +93,26 @@ subtree. The worker mounts ``local/`` read-only from that same subtree, protecti
 canonical site policy against task writes. Both CJ and worker mount the existing
 site startup Secret read-only at ``startup/``; the resident workspace download
 excludes startup. The Secret construction already withholds site private keys.
+Set optional ``startup_secret_name`` on ``ClientK8sJobLauncher`` (and the server
+job launcher when sharing its namespace) to a DNS subdomain of at most 253
+characters. CJ and task workers use that exact Secret; do not configure a second
+name on the task launcher. The default remains
+``nvflare-startup-<normalized-participant>``. Names must be unique per federation
+and participant within a namespace; for example, use ``federation-a-site-1`` and
+``federation-b-site-1`` when two federations both have ``site-1``.
+
+Startup Secrets carry the label ``nvflare.nvidia.com/startup-federation``, a
+base32-encoded SHA-256 fingerprint of ``rootCA.pem``. CP refuses to replace a
+Secret whose federation identity differs, and pins replacement to the version
+it read. Identical kits are reused, and concurrent updates re-read and revalidate
+ownership up to three times. Legacy unlabeled Secrets are upgraded only after
+their existing CA matches. For unsecured kits without a CA, identity is a digest of the public kit
+payload. Trust-root rotation or an unsecured kit change requires a new Secret
+name, or an intentional operator replacement after stopping existing consumers.
+A conflict fails launch with a request to configure a unique name; it never
+automatically deletes another kit. CP needs ``get`` on ``secrets`` to check
+ownership when a name already exists.
+
 Task pods receive no CJ bootstrap environment, Kubernetes API token or kubeconfig.
 Authorized workers still share the job's filesystem identity and can read files
 already present there; this profile does not create a separate filesystem trust
@@ -231,6 +251,7 @@ both local files::
        "args": {
          "config_file_path": null,
          "namespace": "site",
+         "startup_secret_name": "federation-a-site-1",
          "job_workspace_pvc": "site-1-jobs",
          "job_workspace_pvc_root": "/mnt/nvflare-jobs",
          "persist_resident_workspaces": true,

@@ -29,7 +29,12 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
-from nvflare.job_config.task_execution import prepare_task_execution, validate_task_resources, validate_task_workflows
+from nvflare.job_config.task_execution import (
+    get_client_execution_lifetime,
+    prepare_task_execution,
+    validate_task_resources,
+    validate_task_workflows,
+)
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.utils.job_launcher_utils import normalize_cj_resource_spec
@@ -149,7 +154,7 @@ class FedJobConfig:
             for site, app_name in self.deploy_map.items()
             if site != "server"
             and self.fed_apps[app_name].client_app
-            and self.fed_apps[app_name].client_app.additional_params.get("execution_lifetime", "job") == "task"
+            and get_client_execution_lifetime(self.fed_apps[app_name].client_app.additional_params) == "task"
         }
         normalize_cj_resource_spec(meta_json, task_sites)
 
@@ -163,7 +168,7 @@ class FedJobConfig:
 
         for site, app_name in self.deploy_map.items():
             app = self.fed_apps[app_name].client_app
-            if app and app.additional_params.get("execution_lifetime", "job") == "task":
+            if app and get_client_execution_lifetime(app.additional_params) == "task":
                 # ALL_SITES also receives any site-specific overrides in meta.
                 sites = {site}
                 if site == "@ALL":
