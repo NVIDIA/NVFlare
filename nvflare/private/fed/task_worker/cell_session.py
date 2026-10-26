@@ -96,8 +96,10 @@ class CellWorkerSession:
         self.on_analytics = on_analytics
         self.token = secrets.token_urlsafe(32)
         self.worker_fqcn = FQCN.join([cell.get_fqcn(), f"task_worker_{uuid.uuid4().hex[:8]}"])
-        # Requests arrive on the cell's frame pool; metrics share the attempt's FLContext, so fire them one at a time.
+        # Requests arrive on the cell's frame pool; metrics share the attempt's FLContext, so fire them one at a
+        # time, and never after close(): a request already waiting for the lock belongs to a settled attempt.
         self._lock = threading.Lock()
+        self._closed = False
         _sessions[self.worker_fqcn] = self
 
     def bootstrap_fields(self):
@@ -107,6 +109,8 @@ class CellWorkerSession:
         return {"connect_url": connect_url, "worker_fqcn": self.worker_fqcn, "token": self.token}
 
     def close(self):
+        with self._lock:
+            self._closed = True
         if _sessions.get(self.worker_fqcn) is self:
             del _sessions[self.worker_fqcn]
 
@@ -122,6 +126,8 @@ class CellWorkerSession:
         if topic == Topic.LOG:
             try:
                 with self._lock:
+                    if self._closed:
+                        return _reject("session is closed")
                     self.on_analytics(payload.get("data"))
             except Exception as e:
                 _LOGGER.error("rejecting task worker %s: %s", topic, e)

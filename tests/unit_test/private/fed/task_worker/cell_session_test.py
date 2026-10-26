@@ -21,7 +21,7 @@ import pytest
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.utils import make_reply
+from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.cell_session import CellWorkerSession, CellWorkerTransport
 
@@ -128,3 +128,15 @@ def test_rejected_or_unproven_records_fail_the_logging_worker(network):
         transport.log(Shareable())
     cj.close()
     assert cell_session._sessions == {}
+
+
+def test_a_record_that_reaches_a_closed_session_is_rejected(network):
+    """A request past the registry lookup but queued behind the lock must not fire after close()."""
+    fired = []
+    cj, transport = _open_pair(network, fired.append)
+    transport.open()
+    request = new_cell_message({}, {"token": cj.token, "data": Shareable()})
+    cj.close()
+    reply = cj.handle(cell_session.Topic.LOG, request)
+    assert reply.get_header(MessageHeaderKey.ERROR) == "session is closed"
+    assert fired == []
