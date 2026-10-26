@@ -78,3 +78,6 @@ keys and credentials with their intended trusted recipients.
 
 For the security model and peer-proof protocol, see the
 [CoCo security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+
+For upstream platform, service, and tool documentation, see the CC user guide's
+[official component references](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/getting_started.html#cc-official-references).

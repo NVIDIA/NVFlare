@@ -113,3 +113,51 @@ approval, distribution, and launch. Validate the selected platform and workload,
 including the required attestation and denial behavior, before approving the
 deployment for use. Keep configuration support, successful functional runs, and
 security acceptance as separate claims.
+
+.. _cc_official_references:
+
+Official component references
+-----------------------------
+
+Use these official references to review the platform, services, and tools used
+by the workflow. Select documentation matching the installed component versions
+and keep the NVFlare deployment's version, policy, and hardware-acceptance
+requirements. For CPU/GPU hardware and attestation specifications, see
+:ref:`cc_architecture_references`.
+
+.. list-table:: Upstream documentation
+   :header-rows: 1
+   :widths: 22 40 38
+
+   * - Component
+     - Official documentation
+     - Review
+   * - Confidential Containers
+     - `CoCo getting started <https://confidentialcontainers.org/docs/getting-started/>`_
+     - Cluster prerequisites and confidential workloads.
+   * - Trustee
+     - `Attestation with Trustee <https://confidentialcontainers.org/docs/attestation/>`_
+     - Attestation, policies, reference values, and resource release.
+   * - Kata Containers
+     - `Kata 3.29.0 documentation <https://github.com/kata-containers/kata-containers/tree/3.29.0/docs>`_
+     - Runtime and guest behavior for the supported Kata version.
+   * - NVIDIA GPU Operator
+     - `Confidential Containers and Kata integration <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-operator-confidential-containers.html>`_
+     - Confidential-GPU workloads and operator integration.
+   * - Kubernetes
+     - `RuntimeClass <https://kubernetes.io/docs/concepts/containers/runtime-class/>`_
+       and `crictl <https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/>`_
+     - Runtime selection and CRI diagnostics.
+   * - Open Policy Agent / Rego
+     - `Upgrading Rego to v1 <https://www.openpolicyagent.org/docs/v0-upgrade>`_
+     - Rego v1 syntax and migration of existing policies.
+   * - Docker
+     - `Docker Build <https://docs.docker.com/build/>`_
+     - Application-image builds.
+   * - Skopeo
+     - `Skopeo command documentation <https://github.com/podman-container-tools/skopeo/tree/main/docs>`_
+     - Registry login, image copying/inspection, and TLS options.
+   * - Cosign
+     - `Container signing <https://docs.sigstore.dev/cosign/signing/signing_with_containers/>`_
+       and `signature verification <https://docs.sigstore.dev/cosign/verifying/verify/>`_
+     - Image-signing keys and signature checks.
