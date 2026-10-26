@@ -14,7 +14,9 @@
 import logging
 import os
 import shlex
+import signal
 import subprocess
+import time
 from abc import abstractmethod
 from typing import Optional
 
@@ -54,7 +56,16 @@ class ProcessHandle(JobHandleSpec):
             raise ValueError("ProcessHandle requires a process object, a pid, or a ProcessAdapter.")
 
     def terminate(self):
-        self.adapter.terminate()
+        if not self.owns_process_group:
+            self.adapter.terminate()
+            return
+        try:
+            # The leader may already be reaped while its owned group still exists.
+            os.killpg(self.adapter.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except (OSError, AttributeError) as e:
+            logging.getLogger(__name__).warning("Could not terminate process group %s: %s", self.adapter.pid, e)
 
     def poll(self):
         code = self.adapter.poll()
@@ -64,6 +75,20 @@ class ProcessHandle(JobHandleSpec):
 
     def wait(self):
         self.adapter.wait()
+        if self.owns_process_group and self.adapter.poll() not in (None, 0):
+            # Allow children to exit, then bound cleanup of any remaining members.
+            if not self._wait_for_group_exit():
+                self.terminate()
+                self._wait_for_group_exit()
+
+    def _wait_for_group_exit(self):
+        deadline = time.monotonic() + 10.0
+        while not self.can_restart():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.1, remaining))
+        return True
 
     def can_restart(self):
         # The launcher starts a new session. Other supplied processes need not

@@ -29,6 +29,7 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobRet
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, ProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
+from tests.timing_utils import isolate_time
 
 
 @pytest.mark.parametrize("group_state", ["gone", "alive", "unknown"])
@@ -39,6 +40,46 @@ def test_restart_requires_confirmed_empty_owned_group(group_state):
     error = {"gone": ProcessLookupError(), "alive": None, "unknown": PermissionError()}[group_state]
     with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=error):
         assert handle.can_restart() is (group_state == "gone")
+
+
+@pytest.mark.parametrize("cleanup", ["delayed", "forced", "stuck", "unknown", "cancelled"])
+def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
+    adapter = mock.Mock(pid=4321)
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    clock = isolate_time(monkeypatch, "nvflare.app_common.job_launcher.process_launcher")
+    elapsed = [0.0]
+    kills = []
+
+    def killpg(pgid, sig):
+        assert pgid == adapter.pid
+        if cleanup == "unknown":
+            raise PermissionError("group cannot be inspected")
+        if sig == signal.SIGKILL:
+            kills.append(elapsed[0])
+        elif (cleanup == "delayed" and elapsed[0] >= 0.3) or (kills and cleanup != "stuck"):
+            raise ProcessLookupError()
+
+    def sleep(seconds):
+        elapsed[0] += seconds
+        if cleanup == "cancelled" and not kills:
+            handle.terminate()
+
+    clock.monotonic = lambda: elapsed[0]
+    clock.sleep = sleep
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.os.killpg", killpg)
+    handle.wait()
+    adapter.wait.assert_called_once()
+    assert handle.can_restart() is (cleanup not in ("stuck", "unknown"))
+    if cleanup == "delayed":
+        assert elapsed[0] == pytest.approx(0.3)
+        assert not kills
+    elif cleanup == "cancelled":
+        assert kills == [0.1]
+        assert elapsed[0] == pytest.approx(0.1)
+    else:
+        assert elapsed[0] == pytest.approx(10.0 if cleanup == "forced" else 20.0)
+        assert kills == ([] if cleanup == "unknown" else [10.0])
 
 
 class DummyWorkspace:

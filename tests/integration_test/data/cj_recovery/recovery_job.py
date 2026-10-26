@@ -17,6 +17,8 @@
 import json
 import os
 import signal
+import subprocess
+import sys
 from pathlib import Path
 
 from nvflare.apis.controller_spec import Task
@@ -31,6 +33,14 @@ class CheckpointExecutor(Executor):
         run_dir = Path(fl_ctx.get_workspace().get_run_dir(fl_ctx.get_job_id()))
         checkpoint = run_dir / "recovery_checkpoint.json"
         state = json.loads(checkpoint.read_text()) if checkpoint.exists() else {"value": 0, "runs": []}
+        if state["runs"]:
+            with_child = state["runs"][-1]
+            try:
+                os.kill(with_child["child_pid"], 0)
+            except ProcessLookupError:
+                pass
+            else:
+                raise RuntimeError("replacement started before the old child exited")
         state["runs"].append(
             {
                 "pid": os.getpid(),
@@ -40,6 +50,17 @@ class CheckpointExecutor(Executor):
             }
         )
         state["value"] += len(state["runs"])
+        if len(state["runs"]) <= shareable["crashes"]:
+            # A same-group child survives CJ's SIGKILL briefly, as an applet can.
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(2)"],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            assert child.stdout.readline().strip() == "ready"
+            child.stdout.close()
+            assert os.getpgid(child.pid) == os.getpgrp()
+            state["runs"][-1]["child_pid"] = child.pid
         pending = checkpoint.with_suffix(".tmp")
         pending.write_text(json.dumps(state))
         pending.replace(checkpoint)

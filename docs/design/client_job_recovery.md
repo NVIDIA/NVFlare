@@ -75,7 +75,12 @@ Existing scheduler queue/startup timeouts remain in effect.
 
 Local process recovery relies on existing cleanup/watchdogs for trainers launched
 in separate process groups. CP does not independently confirm or kill those
-trainers. No restart-blocker file or new orphan-process manager is introduced.
+trainers. After a failed CJ exits, the Process handle waits up to 10 seconds for
+its owned group to drain, kills remaining members of that group, and waits up to
+10 more seconds to confirm exit. Recovery requires the group to be gone; cleanup
+timeout or uncertain observations end recovery. Job/task cancellation during
+cleanup prevents replacement. No restart-blocker file or new orphan-process
+manager is introduced.
 Slurm/container recovery assumes training remains inside the managed allocation
 or container. CP is the restart owner; independent scheduler/container requeue
 policies must not compete with it.

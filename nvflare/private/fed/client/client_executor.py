@@ -675,7 +675,7 @@ class JobExecutor(ClientExecutor):
             process_status = process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
             restart = process.get(_RESTART_KEY)
             job_handle = process.get(RunProcessKey.JOB_HANDLE)
-        if restart and (restart.attempts or job_handle.can_restart() is True):
+        if restart and (restart.attempts or job_handle.poll() not in (None, JobReturnCode.UNKNOWN)):
             # There is no live task to notify while its CJ is being replaced.
             self.abort_app(job_id)
             return

@@ -183,15 +183,31 @@ def test_task_abort_while_cj_is_dying_prevents_replay(tmp_path):
     assert launcher.launch_job.call_count == 1
 
 
+@pytest.mark.parametrize("task_abort", [False, True])
+def test_abort_while_old_process_group_drains_prevents_recovery(tmp_path, task_abort):
+    def abort(executor, _, handle):
+        handle.can_restart.return_value = False  # CJ exited, but its children have not.
+        with patch.object(executor, "_terminate_job") as terminate:
+            (executor.abort_task if task_abort else executor.abort_app)("job-1")
+        terminate.assert_called_once()
+        handle.can_restart.return_value = True  # The old group finishes before wait returns.
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=abort)
+    assert launcher.launch_job.call_count == 1
+
+
 @pytest.mark.parametrize("ready", [False, True], ids=["initial-startup", "live-cj"])
 def test_task_abort_does_not_permanently_disable_recovery(tmp_path, ready):
     def abort(executor, index, handle):
         if index == 0:
             handle.can_restart.return_value = False  # Still alive when abort_task arrives.
+            code = handle.poll.return_value
+            handle.poll.return_value = JobReturnCode.UNKNOWN
             executor.abort_task("job-1")
             handle.terminate.assert_not_called()
             assert not executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
             handle.can_restart.return_value = True  # Confirmed dead later.
+            handle.poll.return_value = code
 
     launcher, _, _ = _run_recovery(tmp_path, [(ready, 104), (True, 0)], on_wait=abort)
     assert launcher.launch_job.call_count == 2
@@ -206,11 +222,13 @@ def test_command_start_does_not_reset_budget_and_preserves_graceful_abort(tmp_pa
         assert restart.attempts == index
         if index == 0:
             handle.can_restart.return_value = False  # The task abort arrives while CJ is alive.
+            handle.poll.return_value = JobReturnCode.UNKNOWN
             executor.abort_task("job-1")
             assert executor.client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT_TASK
             assert not executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
             handle.terminate.assert_not_called()
             handle.can_restart.return_value = True
+            handle.poll.return_value = JobReturnCode.EXECUTION_ERROR
         if index == limit:
             with patch.object(executor, "_terminate_job") as terminate:
                 executor.abort_app("job-1")
