@@ -18,6 +18,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,17 @@ spec.loader.exec_module(workflow)
 helper_spec = importlib.util.spec_from_file_location("capture_installed", TRUSTED / "lib/installed-platform.py")
 installed = importlib.util.module_from_spec(helper_spec)
 helper_spec.loader.exec_module(installed)
+
+
+@pytest.fixture(autouse=True)
+def preserve_process_umask():
+    # capture() is a command entry point; direct unit calls must not affect later tests.
+    previous = os.umask(0o077)
+    os.umask(previous)
+    try:
+        yield
+    finally:
+        os.umask(previous)
 
 
 def capture_fixture(tmp_path, monkeypatch):

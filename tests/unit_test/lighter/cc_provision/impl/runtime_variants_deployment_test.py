@@ -206,6 +206,7 @@ def test_tdx_target_import_does_not_require_tomllib():
 
 
 def captured_inputs(runtime_class):
+    pytest.importorskip("tomllib", reason="host profile export requires Python 3.11+")
     capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
     target = runtime.runtime_target(runtime_class)
     paths = {name: "/installed/ready-runtime/" + name for name in ("path", "firmware", "kernel", "initrd")}
@@ -248,7 +249,6 @@ def captured_inputs(runtime_class):
 
 @pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
 def test_export_preserves_target_and_installed_launch_hashes(tmp_path, runtime_class):
-    pytest.importorskip("tomllib", reason="host profile exporter requires system Python 3.11+")
     capture, source, actual = captured_inputs(runtime_class)
     contract = load(tmp_path, capture["build_launch_profile"](source, actual, "approved"))
     target = runtime.runtime_target(runtime_class)

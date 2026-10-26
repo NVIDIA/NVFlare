@@ -132,6 +132,7 @@ def _inline_python(path, marker):
 
 
 @pytest.mark.parametrize("endpoint", ["registry.nvflare.local", "registry.nvflare.local:5443"])
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo InitData launch checks require Python 3.11+")
 def test_release_authority_matches_launcher_and_trustee(credential_bash, credential_kit, tmp_path, endpoint):
     kit, _ = credential_kit
     config = kit / "workload.env"

@@ -19,10 +19,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[5]
 SOURCE = ROOT / "examples/devops/coco"
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo package validation requires Python 3.11+")
 def test_working_tree_validation_checks_new_guides_and_pending_deletions(tmp_path):
     repo = tmp_path / "repo"
     source = repo / "examples/devops/coco"
@@ -47,6 +50,7 @@ def test_working_tree_validation_checks_new_guides_and_pending_deletions(tmp_pat
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo package validation requires Python 3.11+")
 def test_working_tree_validation_rejects_untracked_symlinks(tmp_path):
     repo = tmp_path / "repo"
     source = repo / "examples/devops/coco"

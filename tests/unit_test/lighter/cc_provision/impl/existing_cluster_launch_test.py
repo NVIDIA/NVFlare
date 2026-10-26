@@ -118,6 +118,7 @@ def launch(tmp_path):
 
 @pytest.mark.parametrize("runtime", RUNTIMES)
 @pytest.mark.parametrize("hash_mode", ["omitted", "empty", "correct"])
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
 def test_manifest_only_launch_preserves_supported_target_and_existing_context(launch, runtime, hash_mode):
     result, operations, digest, source = launch(runtime, hash_mode)
     assert result.returncode == 0, result.stderr
@@ -154,12 +155,14 @@ def test_explicit_invalid_hash_fails_before_kubernetes_access(launch, hash_mode)
         lambda p: p["spec"].update(automountServiceAccountToken=True),
     ],
 )
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
 def test_received_manifest_security_constraints_remain_enforced_without_hash(launch, mutation):
     result, operations, _, _ = launch(mutate=mutation)
     assert result.returncode != 0
     assert not operations
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
 def test_source_changes_after_validation_cannot_change_applied_snapshot(launch):
     result, operations, digest, source = launch(change_source=True)
     assert result.returncode == 0, result.stderr
@@ -167,6 +170,7 @@ def test_source_changes_after_validation_cannot_change_applied_snapshot(launch):
     assert all(operation["digest"] == digest for operation in operations if "digest" in operation)
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
 def test_server_dry_run_failure_prevents_apply_and_cleans_snapshot(launch):
     result, operations, _, _ = launch(dry_run_status=7)
     assert result.returncode == 7
