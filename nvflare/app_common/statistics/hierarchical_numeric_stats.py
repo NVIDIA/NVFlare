@@ -178,9 +178,9 @@ def get_global_stats(
     if StC.GLOBAL not in global_metrics:
         global_metrics = get_output_structure(client_metrics, metric_task, ordered_metrics, hierarchy_config)
     else:
-        update_output_strcture(client_metrics, metric_task, ordered_metrics, global_metrics)
         check_not_withheld_after_contributing(global_metrics, withheld_features)
-    remove_withheld_from_output(global_metrics, withheld_features)
+        update_output_strcture(client_metrics, metric_task, ordered_metrics, global_metrics)
+    remove_unreported_from_output(global_metrics, client_metrics, ordered_metrics)
 
     for metric in ordered_metrics:
         stats = client_metrics[metric]
@@ -229,37 +229,46 @@ def remove_withheld_features(client_metrics: dict, withheld_features: Dict[str, 
     }
 
 
-def remove_withheld_from_output(global_metrics, withheld_features: Dict[str, Dict[str, Set[str]]]) -> List[str]:
-    """Drop the withheld features from the output structure and return the names of the sites under the node.
+def remove_unreported_from_output(global_metrics, client_metrics: dict, ordered_metrics: List[str]) -> List[str]:
+    """Drop unreported placeholders and return the names of the sites under the node.
 
-    The output structure holds every feature at every node, so it is seeded with placeholder values for features
-    a site never reported. A site has no Local entry for a feature it withheld, and a level has no entry for a
-    feature that every site under it withheld.
+    The initial structure seeds every feature at every node. Keep an entry only if that site's filtered
+    results, or a site's results under that level, contain it. A missing feature/dataset and a privacy-withheld
+    feature both contribute nothing. Only prune the current round's metrics; retain the first-round aggregates
+    when preparing the second round. Empty dataset dictionaries are retained for the derived-statistics loops.
     """
     sites = []
     if isinstance(global_metrics, list):
         for item in global_metrics:
-            sites.extend(remove_withheld_from_output(item, withheld_features))
+            sites.extend(remove_unreported_from_output(item, client_metrics, ordered_metrics))
         return sites
     if not isinstance(global_metrics, dict):
         return sites
 
     for value in global_metrics.values():
         if isinstance(value, list):
-            sites.extend(remove_withheld_from_output(value, withheld_features))
+            sites.extend(remove_unreported_from_output(value, client_metrics, ordered_metrics))
 
     if StC.LOCAL in global_metrics:  # a site
-        name = global_metrics.get(StC.NAME)
-        _remove_features(global_metrics[StC.LOCAL], withheld_features.get(name, {}))
-        return [name]
+        sites = [global_metrics[StC.NAME]]
+        node_metrics = global_metrics[StC.LOCAL]
+    elif StC.GLOBAL in global_metrics:
+        node_metrics = global_metrics[StC.GLOBAL]
+    else:
+        return sites
 
-    if StC.GLOBAL in global_metrics and sites:  # a level, or the top level
-        everywhere = {}
-        for ds_name, features in withheld_features.get(sites[0], {}).items():
-            for feature in features:
-                if all(feature in withheld_features.get(site, {}).get(ds_name, ()) for site in sites):
-                    everywhere.setdefault(ds_name, set()).add(feature)
-        _remove_features(global_metrics[StC.GLOBAL], everywhere)
+    for metric in ordered_metrics:
+        reported = {}
+        clients = client_metrics[metric]
+        # Top-level aggregation includes every reporting client, even clients not listed in the hierarchy.
+        contributing_sites = sites if StC.NAME in global_metrics else clients
+        for site in contributing_sites:
+            for ds_name, features in clients.get(site, {}).items():
+                reported.setdefault(ds_name, set()).update(features)
+        for ds_name, features in node_metrics[metric].items():
+            node_metrics[metric][ds_name] = {
+                feature: value for feature, value in features.items() if feature in reported.get(ds_name, ())
+            }
     return sites
 
 
@@ -291,13 +300,6 @@ def check_not_withheld_after_contributing(global_metrics, withheld_features: Dic
         for value in global_metrics.values():
             if isinstance(value, list):
                 check_not_withheld_after_contributing(value, withheld_features)
-
-
-def _remove_features(node_metrics: dict, features_by_dataset: Dict[str, Set[str]]) -> None:
-    for values in node_metrics.values():
-        for ds_name, features in features_by_dataset.items():
-            for feature in features:
-                values.get(ds_name, {}).pop(feature, None)
 
 
 def accumulate_hierarchical_metrics(
