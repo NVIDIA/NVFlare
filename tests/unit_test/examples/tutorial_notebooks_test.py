@@ -16,7 +16,6 @@ import ast
 import json
 import re
 import shlex
-import sys
 import textwrap
 from pathlib import Path
 from unittest.mock import Mock, call
@@ -52,52 +51,47 @@ def test_notebook_documentation_pages_exist(name):
                 assert (_REPO_ROOT / "docs" / f"{path[:-5]}.rst").is_file(), url
 
 
-def test_recipe_notebook_uses_maintained_hello_pt(monkeypatch, tmp_path):
-    pytest.importorskip("torch")
+def _fenced(name, cell_id, language):
+    return re.findall(rf"```{language}\n(.*?)```", _cell(name, cell_id), re.S)
+
+
+def test_recipe_notebook_exports_maintained_hello_pt(monkeypatch, tmp_path):
     monkeypatch.chdir(_TUTORIALS)
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    # Record the previous entry even when absent, so the imported model is
-    # removed at teardown instead of leaking into unrelated example tests.
-    monkeypatch.setitem(sys.modules, "model", None)
-    monkeypatch.delitem(sys.modules, "model", raising=False)
     scope = {}
     exec(_cell("job_recipe", "basic-example-code"), scope)
     recipe = scope["recipe"]
-    assert Path(sys.modules["model"].__file__).resolve() == _HELLO_PT / "model.py"
     assert Path(recipe.train_script) == _HELLO_PT / "client.py"
     assert "--dataset synthetic" in recipe.train_args
 
-    recipe.export(job_dir=str(tmp_path))
+    scope["JOB_DIR"] = str(tmp_path)
+    exec(_cell("job_recipe", "export-example-code").replace('JOB_DIR = "/tmp/nvflare/job_recipe_tutorial"', ""), scope)
     custom = tmp_path / "hello-pt/app/custom"
-    for filename in ("client.py", "model.py", "prepare_data.py"):
-        assert (custom / filename).read_bytes() == (_HELLO_PT / filename).read_bytes()
+    assert (custom / "model.py").read_bytes() == (_HELLO_PT / "model.py").read_bytes()
+    exported_client = custom / "examples/hello-world/hello-pt/client.py"
+    assert exported_client.read_bytes() == (_HELLO_PT / "client.py").read_bytes()
 
-    # A subprocess starts with its current directory on the import path. Keeping
-    # it at examples/tutorials would shadow the exported Hello PyTorch model.
-    with scope["hello_pt_working_directory"]():
-        assert Path.cwd() == _HELLO_PT
-    assert Path.cwd() == _TUTORIALS
-    with pytest.raises(RuntimeError), scope["hello_pt_working_directory"]():
-        raise RuntimeError("deployment failed")
-    assert Path.cwd() == _TUTORIALS
+
+def test_recipe_notebook_keeps_processes_out_of_the_kernel():
     for cell in _cells("job_recipe"):
+        if cell["cell_type"] != "code":
+            continue
         source = _source(cell)
-        if cell["cell_type"] == "code" and "recipe.execute(" in source:
-            tree = ast.parse(source)
-            assert any(
-                isinstance(node, ast.With) and "recipe.execute(" in ast.unparse(node) for node in ast.walk(tree)
-            ), cell["id"]
+        for forbidden in ("execute(", "os.chdir", "sys.path", "!nvflare", "%env", "SimEnv(", "PocEnv(", "ProdEnv("):
+            assert forbidden not in source, (cell["id"], forbidden)
 
+    sim = _fenced("job_recipe", "simenv-section", "python")[0]
+    ast.parse(sim)
+    assert "recipe.execute(" in sim and 'train_script="client.py"' in sim
     options = _cell("job_recipe", "b7b124e7")
     model_args = json.loads(re.search(r'"args": (\{[^}]*\})', options).group(1))
-    scope["SimpleNetwork"](**model_args)
+    assert model_args == {}
 
 
 def test_recipe_production_kit_matches_provision_workspace():
-    provision = _cell("job_recipe", "d3451070-14ff-4fdd-bd79-e87413f5d30c")
-    argv = shlex.split(provision.removeprefix("!"))
+    provision = _fenced("job_recipe", "d3451070-14ff-4fdd-bd79-e87413f5d30c", "bash")[0]
+    argv = shlex.split(provision.strip())
     workspace = Path(argv[argv.index("-w") + 1])
-    tree = ast.parse(_cell("job_recipe", "67c99d67"))
+    tree = ast.parse(_fenced("job_recipe", "67c99d67", "python")[0])
     admin_kit = next(
         ast.literal_eval(node.value)
         for node in tree.body

@@ -36,7 +36,7 @@ default; notebooks that exercise POC mode require a provisioned POC system
 | Notebook | Outcome | Prerequisites | Expected completion signal | Owning area |
 |---|---|---|---|---|
 | [Intro to the FL Simulator](./flare_simulator.ipynb) | Run NVFLARE jobs locally with the simulator-managed server and simulated clients; know when to use Recipe-style `job.py` runs vs. `nvflare simulator` | `nvflare`, `tensorboard`; this repository checkout (uses `../hello-world/hello-numpy`) | hello-numpy finishes `FINISHED:COMPLETED`; results under `/tmp/nvflare/simulation/hello-numpy` | Simulator |
-| [Job Recipe](./job_recipe.ipynb) | Build and run federated jobs with the high-level Recipe API (FedAvg with PyTorch) | `torch`, `tensorboard`; this repository checkout (uses `../hello-world/hello-pt`) | A multi-round FedAvg simulation completes with the run summary (models and metrics) | Recipe API |
+| [Job Recipe](./job_recipe.ipynb) | Build and export a federated job with the high-level Recipe API (FedAvg with PyTorch); run steps are shown for a terminal | `torch`; this repository checkout (uses `../hello-world/hello-pt`) | The exported job folder lists `client.py`, `model.py` and `prepare_data.py` | Recipe API |
 
 ### Operate and deploy systems
 
@@ -71,8 +71,9 @@ from the revision matching your installed NVFLARE version.
   for a hello-pt job.
 - **2026-10-24 — notebook refresh during review:** Python 3.13.15 on macOS,
   using this PR's development checkout based on `b329c8113`. The revised
-  Job Recipe cells completed three rounds with two clients in both simulation
-  and native POC mode. hello-numpy simulations completed with default and
+  Job Recipe notebook cells (build and export) ran, and the documented
+  `run_recipe.py` terminal script is the supported way to run a Recipe in
+  `SimEnv`, `PocEnv` or `ProdEnv`. hello-numpy simulations completed with default and
   custom JSON logging. All FLARE API code cells ran against a temporary
   two-client POC deployment, substituting only its admin-kit path: connect,
   export, submit, monitor, download, resubmit, abort, delete, and close.
