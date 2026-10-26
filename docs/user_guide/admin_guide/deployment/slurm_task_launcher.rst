@@ -301,17 +301,15 @@ deletes launch evidence or retries the same attempt automatically.
 Shared integration contract
 ---------------------------
 
-The verified base is upstream main ``1b5e7f9832e6a777c54e22c72e6631bbd344babe``,
-which includes the CPU task integration in ``94c5b0aeb``. No code is imported
-from the previous umbrella prototype. The shared dependencies are exported
-separately and agree across Docker, Kubernetes and Slurm:
+The adapter uses the shared task contracts for site admission, resource
+roles, authorization, immutable completion and checkpoint/receipt retention:
 
 * Export validates resource shape while deferring receiving-site capability.
   Default-deny validation remains for unsupported backends; Process GPU work
   is separate.
 * ``TaskExecutionPolicy.from_config`` lazily selects the exact supported
   class. ``from_workspace`` calls ``launcher.validate_site_config(site_config)``
-  with the complete canonical site dictionary. Slurm verifies the exact CPU CJ
+  with the complete canonical site dictionary. Slurm verifies the exact CJ
   adapter and shared bare workspace; mixed profiles fail closed.
 * Non-Process worker environments come from backend site policy. Slurm's
   ``task_resources`` common hook returns an empty request after admission;
@@ -354,6 +352,14 @@ The historical ``docker_task_compute`` log-event name remains unchanged across
 backends. Join these computation records with bootstrap/completion identities,
 supervisor execution IDs and Slurm allocation/step/device evidence; PID or an
 environment value alone does not identify an allocation or prove GPU ownership.
+
+Repeat all four exports with ``--resource-format portable`` to exercise
+``resource_spec["@default"]`` and the independent CJ budget through the actual
+submission path. These jobs have a ``-portable`` name suffix. They deliberately
+request different values from the native fixture and trusted task defaults:
+two CPUs and 3 GiB per compute allocation, one CPU and 2 GiB for the server,
+and, in task lifetime, two CPUs, 1536 MiB and zero GPUs for each CJ. Preserve
+native and portable results as separate rows from the same frozen candidate.
 
 Focused tests exercise CPU and GPU requests through native resource/identity
 mapping, queued/running cancel,
@@ -418,6 +424,12 @@ Verify available CPU slots, actual memory TRES and two free GPUs as well;
 the scheduler can round CPU allocations for the host's topology. Run the
 four rows serially so resident and task GPU requests never overlap.
 
+The portable task-mode profile requests 15 GiB in total, and its job-mode
+profile requests 12 GiB, plus service/host headroom. Check CPU capacity too;
+the portable task CJs and workers each request two CPUs. Keep the native
+profile's resource record separate rather than applying its 12/10 GiB budget
+to these larger portable cases.
+
 Record each row separately as requested, running, blocked, failed or
 verified-passed. Required rows are CPU/job, CPU/task, CUDA/job and CUDA/task,
 all from the same frozen candidate and configuration. All four must pass
@@ -431,6 +443,31 @@ or task reservation remains; retained CPU parent services are expected and
 must be identified separately. Preserve earlier failures instead of replacing
 their statuses. This fixture does not itself submit any product job or
 qualify cancellation, cross-host storage or crash recovery.
+
+Submitted metadata and live resource evidence
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An exported ``meta.json`` is not proof of submitted resource requirements.
+Run the real ``nvflare job submit`` path, then retrieve the server-stored job
+metadata and retain it with the job ID and source/config hashes. Compare its
+compute and CJ budgets with the intended values before accepting a run.
+Literal ``@default`` keys, and the ``@ALL`` CJ marker for an all-client task
+deployment, must survive CLI staging and server validation. A missing or
+renamed key is a failed qualification even if computation completes.
+
+For each owned CJ and task allocation, retain its submitted scheduler request
+and live Slurm requested/allocated TRES, including CPU, memory and GPU counts.
+Join those records to the job/site/attempt identity and terminal accounting.
+The task-mode CJ must match only its coordinator budget, while every task
+must match the compute budget. In job mode compute belongs to the resident
+CJ. Explain scheduler CPU rounding against the explicit request; an inherited
+default or ambient GPU visibility cannot replace allocation evidence.
+
+The local qualification tests pass exported native and portable jobs through
+the same ``prepare_job_config`` staging call used by the submit CLI, then
+resolve their compute and CJ budgets into real Slurm submission arguments.
+This detects metadata conversion regressions locally. It does not replace
+the required server-stored metadata and live allocation checks above.
 
 Additional deployed qualification requires an authorized test scheduler/account,
 the shared filesystem and matching software environment, CPU CP/CJ

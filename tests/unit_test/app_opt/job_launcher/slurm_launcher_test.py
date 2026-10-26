@@ -96,6 +96,14 @@ def test_resource_resolution_combines_portable_gpu_total():
     assert resources.nodes == 1
 
 
+@pytest.mark.parametrize("nodes", [1, 2])
+@pytest.mark.parametrize("gpu_count", [None, 0])
+def test_portable_zero_gpu_disables_all_node_gpus_without_changing_unspecified_defaults(nodes, gpu_count):
+    meta = {} if gpu_count is None else {"resource_spec": {"@default": {"num_of_gpus": gpu_count}}}
+    resources = _resolve_resources(meta, "site-1", "none", 600, spec={"nodes": nodes})
+    assert resources.gpus_per_node == gpu_count
+
+
 def test_resource_resolution_uses_slurm_node_topology():
     job_meta = {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {"num_of_gpus": 16}}}
 
