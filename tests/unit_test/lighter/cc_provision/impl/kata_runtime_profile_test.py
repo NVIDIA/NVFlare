@@ -166,7 +166,7 @@ def test_install_stock_header_and_runtime_symlink(deployed_profile, tmp_path):
     inode = target.stat().st_ino
     subprocess.run(command, check=True)
     assert target.stat().st_ino == inode  # Idempotent: do not even replace the file.
-    for role in ("trusted_system", "coco"):
+    for role in ("trusted_system",):
         helper = ROOT / role / "lib/kata-runtime-profile.py"
         subprocess.run([sys.executable, str(helper), "enable", str(installed)], check=True)
         subprocess.run([sys.executable, str(helper), "check", str(installed)], check=True)
@@ -218,7 +218,7 @@ def test_unsafe_runtime_links_rejected(tmp_path, kind):
 
 
 def test_source_and_isolated_role_helpers(tmp_path):
-    for role in ("trusted_system", "coco"):
+    for role in ("trusted_system",):
         source = runpy.run_path(str(ROOT / role / "lib/kata-runtime-profile.py"))
         assert source["derive"](CONFIG) == API["derive"](CONFIG)
     isolated = tmp_path / "kit/lib/kata-runtime-profile.py"
@@ -271,65 +271,61 @@ def test_admin_rejects_old_or_missing_capability(tmp_path):
         load({**contract, "guest_token_api": "resource-only"})
 
 
-def test_exported_contract_and_measured_option(tmp_path):
+def test_ready_launch_contract_and_measured_option(tmp_path):
+    capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
     runtime = "kata-qemu-nvidia-gpu-snp"
-    image = "registry/runtime@sha256:" + "a" * 64
-    resources = {"limits": {"nvidia.com/pgpu": 1}, "requests": {"nvidia.com/pgpu": 1}}
+    resources = {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
     approved = API["derive"](CONFIG)
     profile = {
+        "runtime_class": runtime,
+        "cpu_tee": "snp",
+        "gpu": "nvidia",
+        "kata_version": "3.29.0",
         "guest_token_api": API["CAPABILITY"],
         "workload_security_context": SECURITY_CONTEXT,
         "kata_config": tomllib.loads(approved),
         "kata_config_sha256": hashlib.sha256(approved.encode()).hexdigest(),
-        "runtime_class": runtime,
         "pod_resources": resources,
         "runtime_default_vcpus": 1,
         "runtime_default_memory_mib": 8192,
+        "artifacts": {
+            name: {"sha256": hashlib.sha256(name.encode()).hexdigest()}
+            for name in ("path", "firmware", "kernel", "initrd")
+        },
     }
     actual = {
+        "cpu_tee": "snp",
+        "gpu": "nvidia",
         "launch_inputs": {"kernel_command_line": API["REQUIRED"], "smp": "1", "memory": "8192M"},
         "pod_resources": [resources],
         "artifacts": {"kata_config": {"sha256": profile["kata_config_sha256"]}},
     }
-    actual_path = tmp_path / "rehearsal-collector-build/actual-launch.json"
-    actual_path.parent.mkdir()
-    profile_path = tmp_path / "approved-launch-profile.json"
-
-    def export():
-        actual["launch_inputs_sha256"] = hashlib.sha256(
-            json.dumps(actual["launch_inputs"], sort_keys=True).encode()
-        ).hexdigest()
-        profile_path.write_text(json.dumps(profile))
-        actual_path.write_text(json.dumps(actual))
-        return subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "trusted_system/export-workload-launch-profile.py"),
-                str(tmp_path),
-                "reviewed",
-                "3.29.0",
-                runtime,
-                image,
-                hashlib.sha256(profile_path.read_bytes()).hexdigest(),
-                hashlib.sha256(actual_path.read_bytes()).hexdigest(),
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-    result = export()
-    assert result.returncode == 0, result.stderr
+    actual["artifacts"].update(
+        {"qemu_executable" if key == "path" else key: value for key, value in profile["artifacts"].items()}
+    )
+    actual["launch_inputs_sha256"] = hashlib.sha256(
+        json.dumps(actual["launch_inputs"], sort_keys=True).encode()
+    ).hexdigest()
+    value = capture["build_launch_profile"](profile, actual, "reviewed")
     contract = tmp_path / "contract.json"
-    contract.write_text(result.stdout)
-    assert ADMIN["load_profile"](contract, hashlib.sha256(contract.read_bytes()).hexdigest(), runtime, "3.29.0")
-    assert json.loads(result.stdout)["workload_security_context"] == SECURITY_CONTEXT
+    contract.write_text(json.dumps(value))
+    assert ADMIN["load_profile"](contract, None, runtime, "3.29.0")
+    assert value["workload_security_context"] == SECURITY_CONTEXT
+    assert "kata_deploy_image" not in value
     del profile["workload_security_context"]
-    assert export().returncode != 0
+    with pytest.raises((KeyError, ValueError)):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     profile["workload_security_context"] = {**SECURITY_CONTEXT, "privileged": True}
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="fixed NVFlare"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
+    profile["workload_security_context"] = {**SECURITY_CONTEXT, "readOnlyRootFilesystem": True}
+    with pytest.raises(ValueError, match="fixed NVFlare"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     profile["workload_security_context"] = SECURITY_CONTEXT
     actual["launch_inputs"]["kernel_command_line"] = "quiet"
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="guest_components_rest_api"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     actual["launch_inputs"]["kernel_command_line"] = API["REQUIRED"]
     del profile["guest_token_api"]
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="guest-local token API"):
+        capture["build_launch_profile"](profile, actual, "reviewed")

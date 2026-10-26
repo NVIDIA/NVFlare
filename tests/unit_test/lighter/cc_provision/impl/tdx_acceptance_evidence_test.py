@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
-EVIDENCE = runpy.run_path(str(ROOT / "examples/devops/coco/acceptance/evidence.py"))
+EVIDENCE = runpy.run_path(str(ROOT / "tests/integration_test/confidential_computing/coco/acceptance/evidence.py"))
 
 
 @pytest.fixture

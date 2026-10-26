@@ -27,7 +27,9 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
-APPLICATION = Path(__file__).resolve().parents[5] / "examples/devops/coco/acceptance/application"
+APPLICATION = (
+    Path(__file__).resolve().parents[5] / "tests/integration_test/confidential_computing/coco/acceptance/application"
+)
 NONCE = "0123456789abcdef0123456789abcdef"
 
 

@@ -16,7 +16,6 @@
 
 import base64
 import copy
-import hashlib
 import importlib.util
 import json
 import subprocess
@@ -26,12 +25,12 @@ from unittest.mock import patch
 import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
-WORKFLOW = ROOT / "examples/devops/coco/trusted_system/tdx-reference.py"
+WORKFLOW = ROOT / "examples/devops/coco/trusted_system/lib/platform-evidence.py"
 spec = importlib.util.spec_from_file_location("tdx_reference", WORKFLOW)
 workflow = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(workflow)
 collector_spec = importlib.util.spec_from_file_location(
-    "tdx_collector", WORKFLOW.parent / "rehearsal-collector/collect-tdx-evidence.py"
+    "tdx_collector", WORKFLOW.parent.parent / "rehearsal-collector/collect-tdx-evidence.py"
 )
 collector = importlib.util.module_from_spec(collector_spec)
 collector_spec.loader.exec_module(collector)
@@ -130,108 +129,45 @@ def test_frame_decode_requires_raw_quote_and_ccel():
             workflow.decode_evidence(workflow.FRAME + base64.b64encode(json.dumps(bad).encode()).decode())
 
 
+def prepare_tdx_inputs(directory, nonce=b"a" * 64):
+    (directory / "request-data.bin").write_bytes(nonce)
+    (directory / "evidence.json").write_text('{"quote":"raw-quote","cc_eventlog":"raw-ccel"}')
+    (directory / "initdata.toml").write_text("reviewed initdata")
+
+
 def test_verification_failure_cannot_export_decoded_measurement(tmp_path):
-    (tmp_path / "request-data.bin").write_bytes(b"a" * 64)
-    with (
-        patch.object(workflow, "verifier", return_value=Path("pinned-verifier")),
-        patch.object(workflow, "output", side_effect=subprocess.CalledProcessError(1, ["pinned-verifier"])),
-    ):
+    prepare_tdx_inputs(tmp_path)
+    with patch.object(workflow.subprocess, "run", side_effect=subprocess.CalledProcessError(1, ["pinned-verifier"])):
         with pytest.raises(subprocess.CalledProcessError):
-            workflow.verify_run(tmp_path, tmp_path, "tdx")
+            workflow.verify_tdx(tmp_path, "pinned-verifier", "tdx")
 
 
 def test_verify_uses_raw_report_nonce_and_exact_initdata(tmp_path):
-    (tmp_path / "request-data.bin").write_bytes(b"b" * 64)
-    with (
-        patch.object(workflow, "verifier", return_value=Path("pinned-verifier")),
-        patch.object(workflow, "output", return_value=json.dumps(verified_claims())) as verify,
-    ):
-        profile, _ = workflow.verify_run(tmp_path, tmp_path, "tdx")
+    prepare_tdx_inputs(tmp_path, b"b" * 64)
+    with patch.object(
+        workflow.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(verified_claims()), "")
+    ) as verify:
+        profile, claims = workflow.verify_tdx(tmp_path, "pinned-verifier", "tdx")
     assert profile["mr_td"] == "a" * 96
-    assert verify.call_args.args[0] == [
-        Path("pinned-verifier"),
-        tmp_path / "evidence.json",
-        tmp_path / "request-data.bin",
-        tmp_path / "initdata.toml",
-    ]
+    assert claims == verified_claims()
+    command = verify.call_args.args[0]
+    assert command[0] == "pinned-verifier"
+    paths = [Path(value) for value in command[1:]]
+    assert [path.name for path in paths] == ["evidence.json", "request-data.bin", "initdata.toml"]
+    assert all(path.parent == paths[0].parent and path.parent.parent == tmp_path for path in paths)
+    assert paths[0].parent.name.startswith(".tdx-verify-")
+    assert not paths[0].parent.exists()
+    assert verify.call_args.kwargs["check"] is True
+    assert verify.call_args.kwargs["timeout"] == 300
 
 
-@pytest.mark.parametrize("baseline", [None, "", "0", "true", "yes"])
-def test_baseline_must_be_explicit(tmp_path, baseline):
-    approval = tmp_path / "platform-approval.env"
-    approval.touch()
-    with patch.object(workflow, "read_env", return_value={"TDX_SECURITY_BASELINE_APPROVED": baseline}):
-        with pytest.raises(ValueError, match="baseline"):
-            workflow.approval(tmp_path, approval)
-
-
-def test_finalize_requires_specific_authority_approval(tmp_path):
-    candidate = tmp_path / "candidate-tdx-profile.json"
-    candidate.write_text(json.dumps({"id": "not-yet-approved"}))
-    with (
-        patch.object(workflow, "config", return_value=({}, tmp_path)),
-        patch.object(workflow, "approval", return_value={"TDX_SECURITY_BASELINE_APPROVED": "1"}),
-        patch.object(workflow, "verify_run") as verify,
-    ):
-        with pytest.raises(ValueError, match="explicitly approve"):
-            workflow.finalize("base.env", "approval.env")
-    verify.assert_not_called()
-    assert not (tmp_path / "platform-reference.final.env").exists()
-
-
-@pytest.mark.parametrize("field", ["rtmr_0", "rtmr_3"])
-@pytest.mark.parametrize("changed_run", ["first", "repeat", "both"])
-def test_finalize_rejects_register_change_in_reverified_runs(tmp_path, field, changed_run):
-    claims = verified_claims()
-    candidate = tmp_path / "candidate-tdx-profile.json"
-    candidate.write_text(json.dumps(workflow.extract_profile(claims, "tdx-test")))
-    for directory, nonce in (("rehearsal-collector-build", b"a" * 64), ("repeat-rehearsal", b"b" * 64)):
-        run_dir = tmp_path / directory
-        run_dir.mkdir()
-        (run_dir / "request-data.bin").write_bytes(nonce)
-    runs = [copy.deepcopy(claims), copy.deepcopy(claims)]
-    for index, name in enumerate(("first", "repeat")):
-        if changed_run in (name, "both"):
-            runs[index]["quote"]["body"][field] = "3" * 96
-    with (
-        patch.object(workflow, "config", return_value=({"PLATFORM_PROFILE": "tdx-test"}, tmp_path)),
-        patch.object(workflow, "approval", return_value={"APPROVED_TDX_PROFILE_SHA256": workflow.sha(candidate)}),
-        patch.object(workflow, "verifier", return_value=Path("pinned-verifier")),
-        patch.object(workflow, "output", side_effect=[json.dumps(run) for run in runs]) as verify,
-    ):
-        with pytest.raises(ValueError, match="both newly verified runs"):
-            workflow.finalize("base.env", "approval.env")
-    assert verify.call_count == 2
-    assert not (tmp_path / "approved-tdx-reference-values.json").exists()
-    assert not (tmp_path / "platform-reference.final.env").exists()
-
-
-@pytest.mark.parametrize("omitted", [(), ("rtmr_0",), ("rtmr_3",), ("rtmr_0", "rtmr_3")])
-def test_export_requires_complete_finalized_profile(tmp_path, omitted):
-    reference = workflow.extract_profile(verified_claims(), "tdx-test")
-    for field in omitted:
-        del reference[field]
-    values = {"schema": "coco-platform-reference-values/v2", "tee": "tdx", "profiles": [reference]}
-    source = tmp_path / "approved-tdx-reference-values.json"
-    source.write_text(json.dumps(values))
-    destination = tmp_path / "handoff.json"
-    env = {"TDX_REFERENCE_VALUES_SHA256": workflow.sha(source)}
-    with patch.object(workflow, "config", return_value=(env, tmp_path)):
-        if omitted:
-            with pytest.raises(ValueError, match="all eight measurement fields"):
-                workflow.export(tmp_path / "platform-reference.final.env", destination)
-            assert not destination.exists()
-        else:
-            workflow.export(tmp_path / "platform-reference.final.env", destination)
-            assert json.loads(destination.read_text()) == values
-
-
-def test_write_cannot_overwrite_evidence(tmp_path):
-    path = tmp_path / "evidence.json"
-    path.write_text("original")
-    with pytest.raises(FileExistsError):
-        workflow.write(path, "changed")
-    assert path.read_text() == "original"
+@pytest.mark.parametrize("nonce", [b"", b"a" * 63, b"a" * 65])
+def test_verify_rejects_invalid_nonce_before_verifier(tmp_path, nonce):
+    (tmp_path / "request-data.bin").write_bytes(nonce)
+    with patch.object(workflow.subprocess, "run") as verifier:
+        with pytest.raises(ValueError, match="64 bytes"):
+            workflow.verify_tdx(tmp_path, "pinned-verifier", "tdx")
+    verifier.assert_not_called()
 
 
 @pytest.mark.parametrize("nonce", [b"", b"x" * 64, b"a" * 63, b"A" * 64, b"a" * 65, bytes(range(64))])
@@ -249,127 +185,34 @@ def test_collector_redirects_forbidden():
         collector.NoRedirect().redirect_request(None, None, 302, "", {}, "https://elsewhere")
 
 
-def test_approval_outside_selected_profile_rejected(tmp_path):
-    profile = tmp_path / "profile"
-    profile.mkdir()
-    elsewhere = tmp_path / "elsewhere.env"
-    elsewhere.touch()
-    with pytest.raises(ValueError, match="selected profile"):
-        workflow.approval(profile, elsewhere)
-
-
-def test_read_launch_rejects_mutated_records_even_if_both_copies_match(tmp_path):
-    launch = {"launch_inputs": {"kernel_command_line": "approved", "smp": "4"}}
-    launch["launch_inputs_sha256"] = hashlib.sha256(
-        json.dumps(launch["launch_inputs"], sort_keys=True).encode()
-    ).hexdigest()
-    path = tmp_path / "launch.json"
-    path.write_text(json.dumps(launch))
-    assert workflow.read_launch(path) == launch
-    launch["launch_inputs"]["kernel_command_line"] = "changed-in-both-first-and-repeat"
-    for name in ("first.json", "repeat.json"):
-        path = tmp_path / name
-        path.write_text(json.dumps(launch))
-        with pytest.raises(ValueError, match="stale or inconsistent"):
-            workflow.read_launch(path)
-
-
-def test_approval_does_not_inherit_previous_shell_approval(tmp_path, monkeypatch):
-    path = tmp_path / "approval.env"
-    path.write_text("# no approval yet\n")
-    monkeypatch.setenv("TDX_SECURITY_BASELINE_APPROVED", "1")
-    monkeypatch.setenv("APPROVED_TDX_PROFILE_SHA256", "a" * 64)
-    assert workflow.read_env(path) == {}
-
-
-def test_collector_guest_digest_matches_containerd_cache_alias(tmp_path):
-    tls = tmp_path / "registry-tls"
-    tls.mkdir()
-    (tls / "ca.crt").write_text("public rehearsal CA\n")
-    source = tmp_path / "source.yaml"
-    source.write_text(
-        "spec:\n  runtimeClassName: kata-qemu-tdx\n  containers:\n  - name: app\n    image: example/app\n"
-    )
-    digest = "sha256:" + "a" * 64
-    tagged = "192.0.2.10:5443/coco-tdx-rehearsal:trusted-run"
-    expected = "192.0.2.10:5443/coco-tdx-rehearsal@" + digest
-    with patch.object(workflow, "run") as fake_runner:
-        pinned = workflow.pin_collector_cache(tagged, digest)
-    fake_runner.assert_called_once_with(["sudo", "ctr", "--namespace", "k8s.io", "images", "tag", tagged, expected])
-    pod = workflow.make_pod(
-        {"RUNTIME_CLASS": "kata-qemu-tdx", "REHEARSAL_WORKLOAD_YAML": str(source)},
-        tmp_path,
-        "trusted-namespace",
-        "192.0.2.10:5443",
-        pinned,
-    )
-    assert pod["spec"]["containers"][0]["image"] == expected
-    assert pod["spec"]["containers"][0]["imagePullPolicy"] == "Never"
-
-
-@pytest.mark.parametrize("digest", ["latest", "", "sha256:" + "g" * 64, "sha256:" + "A" * 64])
-def test_collector_cache_rejects_nonimmutable_digest(digest):
-    with patch.object(workflow, "run") as fake_runner:
-        with pytest.raises(ValueError, match="immutable"):
-            workflow.pin_collector_cache("192.0.2.10:5443/collector:run", digest)
-    fake_runner.assert_not_called()
-
-
-def test_collector_publishing_isolates_private_keys_from_skopeo_and_build_context(tmp_path):
-    digest = "sha256:" + "a" * 64
-    first = tmp_path / "rehearsal-collector-build"
-    config = tmp_path / "base.env"
-    config.touch()
-    approval = tmp_path / "approval.env"
-    approval.touch()
-    publishing_commands = []
-
-    def fake_run(args, **kwargs):
-        args = [str(arg) for arg in args]
-        if args[0] == "openssl":
-            for flag in ("-out", "-keyout"):
-                if flag in args:
-                    Path(args[args.index(flag) + 1]).write_text("test " + flag)
-        elif args[:2] == ["docker", "build"]:
-            assert Path(args[-1]) == first
-            assert (first / ".dockerignore").read_text().splitlines() == [
-                "*",
-                "!Dockerfile",
-                "!collect-tdx-evidence.py",
-            ]
-            assert (first / "Dockerfile").is_file()
-            assert (first / "collect-tdx-evidence.py").is_file()
-            assert (first / "registry-tls/ca.key").is_file()
-            assert (first / "registry-tls/server.key").is_file()
-        elif args[:2] == ["skopeo", "copy"]:
-            publishing_commands.append(args)
-            Path(args[args.index("--digestfile") + 1]).write_text(digest)
-
-    def fake_output(args, **kwargs):
-        args = [str(arg) for arg in args]
-        if args[0] == "ip":
-            return json.dumps([{"prefsrc": "192.0.2.10"}])
-        if args[:2] == ["skopeo", "inspect"]:
-            publishing_commands.append(args)
-        return digest
-
-    with (
-        patch.object(workflow, "config", return_value=({"RUNTIME_CLASS": "kata-qemu-tdx"}, tmp_path)),
-        patch.object(workflow, "approval"),
-        patch.object(workflow, "verifier"),
-        patch.object(workflow, "preflight"),
-        patch.object(workflow, "start_registry"),
-        patch.object(workflow, "run", side_effect=fake_run),
-        patch.object(workflow, "output", side_effect=fake_output),
-        patch.object(workflow, "pin_collector_cache", side_effect=RuntimeError("stop after publishing")),
-        patch.object(workflow.subprocess, "run"),
+def test_verifier_duplicate_claim_fields_rejected(tmp_path):
+    prepare_tdx_inputs(tmp_path, b"b" * 64)
+    with patch.object(
+        workflow.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '{"quote":{},"quote":{}}', "")
     ):
-        with pytest.raises(RuntimeError, match="stop after publishing"):
-            workflow.collect(config, approval)
+        with pytest.raises(ValueError, match="Duplicate evidence"):
+            workflow.verify_tdx(tmp_path, "pinned-verifier", "tdx")
 
-    certs = first / "skopeo-certs"
-    assert sorted(path.name for path in certs.iterdir()) == ["ca.crt"]
-    assert (certs / "ca.crt").read_bytes() == (first / "registry-tls/ca.crt").read_bytes()
-    assert len(publishing_commands) == 2
-    for command, flag in zip(publishing_commands, ("--dest-cert-dir", "--cert-dir")):
-        assert Path(command[command.index(flag) + 1]) == certs
+
+def test_tdx_verifies_private_snapshot_when_original_inputs_are_replaced(tmp_path):
+    prepare_tdx_inputs(tmp_path)
+    originals = {
+        name: (tmp_path / name).read_bytes() for name in ("request-data.bin", "evidence.json", "initdata.toml")
+    }
+    snapshots = []
+
+    def replace_inputs(command, **kwargs):
+        snapshots.extend(Path(value) for value in command[1:])
+        for name in originals:
+            (tmp_path / name).write_bytes(b"replaced original")
+        for path in snapshots:
+            assert path.parent.parent == tmp_path
+            assert path.read_bytes() == originals[path.name]
+            assert path.stat().st_mode & 0o777 == 0o600
+            assert path.parent.stat().st_mode & 0o777 == 0o700
+        return subprocess.CompletedProcess(command, 0, json.dumps(verified_claims()), "")
+
+    with patch.object(workflow.subprocess, "run", side_effect=replace_inputs):
+        profile, _ = workflow.verify_tdx(tmp_path, "pinned-verifier", "tdx")
+    assert profile["mr_td"] == "a" * 96
+    assert all(not path.exists() for path in snapshots)

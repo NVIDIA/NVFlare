@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Authoritative validation helpers; role-local copies are generated when packaging.
+# Validation helpers for operator-supplied build configuration.
 # Configuration is trusted executable shell code, never an untrusted handoff.
 config_error() { printf 'Configuration error: %s\n' "$*" >&2; exit 2; }
-validate_target_host() {
-    [[ -n ${EXPECTED_HOSTNAME:-} ]] || config_error 'Set EXPECTED_HOSTNAME to the intended machine hostname -f.'
-    [[ ${EXPECTED_HOSTNAME} == "$(hostname -f)" ]] || config_error 'EXPECTED_HOSTNAME does not match this machine.'
-}
 validate_service_host() {
     local host=$1 label
     [[ ${#host} -le 253 && $host =~ ^[a-zA-Z0-9.-]+$ && $host == *.* && $host != *..* ]] || config_error 'Set a valid secure-services DNS name.'
@@ -24,4 +20,16 @@ validate_private_root() {
     local directory=$1
     [[ $directory == /* && $directory != / && $directory != "$HOME" && $directory != /home && $directory != /tmp ]] || config_error 'Use a dedicated absolute state directory.'
     [[ $directory != *'/../'* && $directory != */.. && $directory != *'/./'* && $directory != */. ]] || config_error 'State paths must not contain dot components.'
+}
+
+# Registry endpoints are independent of Trustee and may use any TLS port.
+validate_registry_host() {
+    local endpoint=$1 host port
+    [[ $endpoint =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]] || config_error 'Set REGISTRY_HOST to a hostname with an optional port, without a scheme or path.'
+    host=${endpoint%%:*}
+    validate_service_host "$host"
+    if [[ $endpoint == *:* ]]; then
+        port=${endpoint##*:}
+        [[ ${#port} -le 5 ]] && ((10#$port >= 1 && 10#$port <= 65535)) || config_error 'Registry port must be between 1 and 65535.'
+    fi
 }

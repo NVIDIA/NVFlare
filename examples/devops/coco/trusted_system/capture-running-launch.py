@@ -122,9 +122,16 @@ def rootfs_image(argv):
     return images[0] if images else None
 
 
-def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf"):
+def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf", platform_profile=None):
     kube = ["kubectl", "--kubeconfig", kubeconfig]
     obj = json.loads(subprocess.check_output(kube + ["-n", namespace, "get", "pod", pod, "-o", "json"]))
+    platform_helper = runpy.run_path(str(Path(__file__).resolve().parent / "lib/installed-platform.py"))
+    if platform_profile is None:
+        raise ValueError("An inspected platform profile is required for host-side launch capture")
+    snapshot = platform_helper["verify_snapshot"](platform_profile)
+    platform_helper["check_pod_node"](obj, snapshot)
+    if config != snapshot["installed_config"] or kubeconfig != snapshot["kubeconfig"]:
+        raise ValueError("Launch capture configuration differs from the inspected worker")
     uid = obj["metadata"]["uid"]
     cri = ["crictl", "--runtime-endpoint=unix:///run/containerd/containerd.sock"]
     sandboxes = json.loads(subprocess.check_output(cri + ["pods", "-o", "json"]))
@@ -186,6 +193,9 @@ def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf"):
         "cpu_tee": target["cpu_tee"],
         "gpu": target["gpu"],
         "pod_uid": uid,
+        "node_name": snapshot["node"]["name"],
+        "node_uid": snapshot["node"]["uid"],
+        "platform_snapshot_sha256": platform_helper["digest"](Path(platform_profile) / "installed-platform.json"),
         "sandbox_ids": ids,
         "qemu_pid": int(process.name),
         "qemu_argv": argv,
@@ -206,9 +216,10 @@ if __name__ == "__main__":
     parser.add_argument("config")
     parser.add_argument("output")
     parser.add_argument("kubeconfig", nargs="?", default="/etc/kubernetes/admin.conf")
+    parser.add_argument("--platform", required=True)
     args = parser.parse_args()
     os.umask(0o077)
-    result = capture(args.namespace, args.pod, args.config, args.kubeconfig)
+    result = capture(args.namespace, args.pod, args.config, args.kubeconfig, args.platform)
     with Path(args.output).open("x") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")
