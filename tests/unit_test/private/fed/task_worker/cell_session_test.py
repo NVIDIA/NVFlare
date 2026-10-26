@@ -12,128 +12,105 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Protocol edge cases of the cell session, over fake cells; the full flow runs in task_execution_test."""
+"""The cell session over real clear loopback cells; mTLS is in cell_session_mtls_test, the full flow in task_execution_test."""
 
+import threading
+import time
+import uuid
 from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils import fobs
 from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.cell_session import CellWorkerSession, CellWorkerTransport
 
 pytestmark = pytest.mark.timeout(60)
 
-CJ_FQCN = "site-1.job-1"
-
-
-class FakeCell:
-    """Delivers requests straight to the peer's registered callback, stamping the origin header."""
-
-    def __init__(self, network, fqcn):
-        self.network = network
-        self.fqcn = fqcn
-        self.callbacks = {}
-        self.listener = None
-        self.core_cell = self
-
-    def get_fqcn(self):
-        return self.fqcn
-
-    def make_internal_listener(self, scheme=None, resources=None):
-        self.listener = f"{scheme}://127.0.0.1:1"
-
-    def get_internal_listener_url(self):
-        return self.listener
-
-    def is_cell_connected(self, target):
-        return target in self.network
-
-    def register_request_cb(self, channel, topic, cb, *args):
-        self.callbacks[(channel, topic)] = (cb, args)
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-    def send_request(self, channel, topic, target, request, timeout=None, **kwargs):
-        peer = self.network.get(target)
-        callback = peer.callbacks.get((channel, topic)) if peer is not None else None
-        if callback is None:
-            return make_reply(CellReturnCode.TARGET_UNREACHABLE)
-        request.set_header(MessageHeaderKey.ORIGIN, self.fqcn)
-        cb, args = callback
-        return cb(request, *args)
-
 
 @pytest.fixture
-def network(monkeypatch):
-    cells = {}
-    cells[CJ_FQCN] = FakeCell(cells, CJ_FQCN)
-    monkeypatch.setattr(cell_session, "Cell", lambda fqcn, **_kwargs: cells.setdefault(fqcn, FakeCell(cells, fqcn)))
-    monkeypatch.setattr(cell_session, "_sessions", {})
-    cell_session.listen(cells[CJ_FQCN])
-    return cells
+def cj():
+    """A Client Job cell that connects nowhere; workers join it through its internal listener."""
+    original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.start()
+    cell_session.listen(cell)
+    transports = []
+    try:
+        yield cell, transports
+    finally:
+        for transport in transports:
+            transport.close()
+        cell.stop()
+        CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
+        StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
 
 
-def _open_pair(network, on_analytics=None, **overrides):
-    cj = CellWorkerSession(network[CJ_FQCN], on_analytics or Mock())
-    return cj, CellWorkerTransport({**cj.bootstrap_fields(), **overrides})
+def _worker(cj, on_analytics=None, **overrides):
+    cell, transports = cj
+    session = CellWorkerSession(cell, on_analytics or Mock())
+    transport = CellWorkerTransport({**session.bootstrap_fields(), **overrides})
+    transports.append(transport)
+    return session, transport
 
 
-def test_hello_requires_the_launch_token_of_the_prescribed_identity(network):
-    _, transport = _open_pair(network, token="forged")
-    with pytest.raises(RuntimeError, match="launch token mismatch"):
-        transport.open()
+def _log_request(payload=None):
+    return new_cell_message({}, fobs.dumps(Shareable()) if payload is None else payload)
 
-    _, transport = _open_pair(network, worker_fqcn=CJ_FQCN + ".task_worker_99")
+
+def test_a_clear_site_gives_workers_the_cj_listener_and_no_credentials(cj):
+    session, _ = _worker(cj)
+    fields = session.bootstrap_fields()
+    assert fields["connect_url"] == cj[0].get_internal_listener_url()
+    assert "credentials" not in fields
+    assert fields["worker_fqcn"].startswith(cj[0].get_fqcn() + ".task_worker_")
+
+
+def test_hello_needs_the_session_of_the_prescribed_worker_name(cj):
+    _, transport = _worker(cj, worker_fqcn=cj[0].get_fqcn() + ".task_worker_99")
     with pytest.raises(RuntimeError, match="unknown task worker"):
         transport.open()
 
-    cj, transport = _open_pair(network)
+    _, transport = _worker(cj)
     transport.open()
-    assert transport.cj_fqcn == CJ_FQCN
-    assert cj.bootstrap_fields()["connect_url"] == "tcp://127.0.0.1:1"
+    assert transport.cj_fqcn == cj[0].get_fqcn()
 
 
-def test_two_sessions_on_one_cell_route_records_by_worker(network):
+def test_two_sessions_route_records_by_worker_and_report_decode_errors(cj):
     records_1, records_2 = [], []
-    cj_1, transport_1 = _open_pair(network, records_1.append)
-    cj_2, transport_2 = _open_pair(network, records_2.append)
+    session_1, transport_1 = _worker(cj, records_1.append)
+    _, transport_2 = _worker(cj, records_2.append)
     transport_1.open()
     transport_2.open()
     first, second = Shareable({"metric": 1}), Shareable({"metric": 2})
     transport_1.log(first)
     transport_2.log(second)
     assert records_1 == [first] and records_2 == [second]
-    cj_1.close()
+
+    reply = session_1.handle(cell_session.Topic.LOG, _log_request(b"not fobs"))
+    assert "Error" in reply.get_header(MessageHeaderKey.ERROR), "a payload the CJ cannot decode is rejected with why"
+
+    session_1.close(timeout=0)
     with pytest.raises(RuntimeError, match="unknown task worker"):
         transport_1.log(first)
     transport_2.log(first)
     assert records_2 == [second, first]
 
 
-def test_rejected_or_unproven_records_fail_the_logging_worker(network):
-    cj, transport = _open_pair(network, Mock(side_effect=ValueError("unsupported task worker analytics event")))
+def test_a_rejected_record_fails_the_logging_worker(cj):
+    _, transport = _worker(cj, Mock(side_effect=ValueError("unsupported task worker analytics")))
     transport.open()
-    with pytest.raises(RuntimeError, match="ValueError: unsupported task worker analytics event"):
+    with pytest.raises(RuntimeError, match="ValueError: unsupported task worker analytics"):
         transport.log(Shareable())
-    transport.config["token"] = "forged"
-    with pytest.raises(RuntimeError, match="launch token mismatch"):
-        transport.log(Shareable())
-    cj.close()
-    assert cell_session._sessions == {}
 
 
-def test_a_record_that_reaches_a_closed_session_is_rejected_and_close_never_waits_for_a_receiver(network):
-    """A request queued behind the lock must not fire after close(), and close() must not wait for a stalled one."""
-    import threading
-
+def test_close_rejects_queued_records_and_waits_for_a_stalled_receiver_only_up_to_its_timeout(cj):
     fired = []
     receiving, release = threading.Event(), threading.Event()
 
@@ -142,14 +119,14 @@ def test_a_record_that_reaches_a_closed_session_is_rejected_and_close_never_wait
         receiving.set()
         release.wait(5)
 
-    cj, transport = _open_pair(network, receiver)
-    transport.open()
-    request = new_cell_message({}, {"token": cj.token, "data": Shareable()})
-    stalled = threading.Thread(target=cj.handle, args=(cell_session.Topic.LOG, request), daemon=True)
+    session, _ = _worker(cj, receiver)
+    stalled = threading.Thread(target=session.handle, args=(cell_session.Topic.LOG, _log_request()), daemon=True)
     stalled.start()
     assert receiving.wait(5)
-    cj.close()  # returns while the receiver is still stalled
-    reply = cj.handle(cell_session.Topic.LOG, new_cell_message({}, {"token": cj.token, "data": Shareable()}))
+    started = time.monotonic()
+    session.close(timeout=0.2)
+    assert time.monotonic() - started < 2, "close() is bounded even while a receiver is stalled"
+    reply = session.handle(cell_session.Topic.LOG, _log_request())
     release.set()
     stalled.join(5)
     assert reply.get_header(MessageHeaderKey.ERROR) == "session is closed"

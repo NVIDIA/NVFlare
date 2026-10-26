@@ -80,15 +80,24 @@ def _require_absolute_directory_name(name: str, value: str):
         raise ValueError(f"{name} must be an absolute path")
 
 
-CELL_SESSION_FIELDS = ("connect_url", "worker_fqcn", "token")
+# A worker is a client of its Client Job's listener: it needs the CA and the Client Job's client pair.
+CELL_SESSION_CREDENTIALS = ("ca_cert", "client_cert", "client_key")
+# text field -> required
+_CELL_SESSION_TEXT = {"connect_url": True, "worker_fqcn": True, "connection_security": False, "identity": False}
 
 
 def _require_cell_session(value):
-    """The connection a worker opens to its Client Job; the token is the worker's only proof of launch."""
-    if not isinstance(value, Mapping) or set(value) != set(CELL_SESSION_FIELDS):
-        raise ValueError(f"cell_session must contain exactly {sorted(CELL_SESSION_FIELDS)}")
-    for name in CELL_SESSION_FIELDS:
-        _require_text(f"cell_session {name}", value[name])
+    """How a worker joins its Client Job's cell: as the Client Job joins its CP's."""
+    if not isinstance(value, Mapping) or not set(value) <= set(_CELL_SESSION_TEXT) | {"credentials"}:
+        raise ValueError(f"cell_session may contain only {sorted(_CELL_SESSION_TEXT)} and credentials")
+    for name, required in _CELL_SESSION_TEXT.items():
+        if required or name in value:
+            _require_text(f"cell_session {name}", value.get(name))
+    credentials = value.get("credentials", {})
+    if not isinstance(credentials, Mapping) or not set(credentials) <= set(CELL_SESSION_CREDENTIALS):
+        raise ValueError(f"cell_session credentials may name only {list(CELL_SESSION_CREDENTIALS)}")
+    for name, path in credentials.items():
+        _require_absolute_directory_name(f"cell_session credentials {name}", path)
     if "." not in value["worker_fqcn"].strip("."):
         raise ValueError("cell_session worker_fqcn must be a child of the Client Job FQCN")
 

@@ -44,20 +44,39 @@ the Client Job's authority on whether the worker is alive.
 
 `nvflare/private/fed/task_worker/cell_session.py` holds both halves.
 
-`listen(cell)` runs once per executor at `START_RUN`, as the external-process
-backend does: it makes the Client Job cell's clear TCP loopback internal
-listener and routes the two topics below. `CellWorkerSession` is the Client Job
-half. `TaskWorkerExecutor.execute` creates one per attempt with a fresh worker
-FQCN (`<cj>.task_worker_<id>`) and a launch token, which registers it, and
-closes it as soon as the supervisor reports the worker settled, so a record
-can only ever fire while its attempt is owned. `bootstrap_fields` is what
-goes into the bootstrap's `cell_session`: `connect_url`, `worker_fqcn`, `token`.
-The Client Job FQCN is the worker FQCN's parent.
+A worker joins its Client Job exactly as the Client Job joins its CP:
+
+| | Client Job joins CP | Worker joins Client Job |
+| --- | --- | --- |
+| Listener | CP cell's internal listener, site internal settings | Client Job cell's internal listener, the same site settings |
+| Told how to connect | `--parent_url`, `--parent_conn_sec` | bootstrap `connect_url`, `connection_security` |
+| Credential (secure mode) | per-job certificate | the same per-job certificate |
+| Names it may claim | job cell and descendants (certificate scope) | `<job cell>.task_worker_<id>`, inside that scope |
+
+`listen(cell)` runs once per executor at `START_RUN` and calls
+`make_internal_listener()` with no scheme or resources, so the site's internal
+connection settings apply, mTLS included when the site configures it. The
+Client Job cell is created with its own FQCN mapped to its own identity in
+`auth_identity_map`, so a cell under it must present the job's identity;
+together with the certificate scope, only holders of this job's credential can
+join, and only under this job's names. In a clear deployment the listener is
+clear, the same as the CP's.
+
+`CellWorkerSession` is the Client Job half. `TaskWorkerExecutor.execute`
+creates one per attempt with a fresh worker FQCN, which registers it, and
+closes it as soon as the supervisor reports the worker
+settled. Closing never waits on a stalled receiver longer than the settlement
+timeout, and a record that arrives afterwards is rejected, so a metric only
+fires while its attempt is owned. `bootstrap_fields` is what goes into the
+bootstrap's `cell_session`: `connect_url`, `worker_fqcn`, and the
+Client Job's `connection_security`, `identity` and credential paths
+(CA, client certificate and key) where it has them.
 
 `CellWorkerTransport` is the worker half. `run_worker` opens it once every codec
-is registered, right before reading the input, and closes it on exit. `open`
-creates a Cell under the Client Job cell, waits for the connection and says
-HELLO. `log(record)` is the only thing it does afterwards. Records go as one
+is registered, right before reading the input, and closes it on exit; a close
+that fails is logged and never replaces the attempt's outcome. `open` creates
+a cell under the Client Job cell with those settings, waits for the connection
+and says HELLO. `log(record)` is the only thing it does afterwards. Records go as one
 framed message on the parent connection, not through the blob-streaming layer
 the Cell uses for application channels, and are FOBS-encoded natively by the
 worker so array values (images, histograms) travel inline instead of as
@@ -66,14 +85,15 @@ since they all share the attempt's `FLContext`.
 
 | Direction | Topic | Payload | Reply |
 | --- | --- | --- | --- |
-| worker to CJ | `task_worker.hello` | `token` | ok |
-| worker to CJ | `task_worker.log` | `token`, the metric's DXO Shareable | ok once fired into the job |
+| worker to CJ | `task_worker.hello` | none | ok |
+| worker to CJ | `task_worker.log` | the metric's DXO Shareable | ok once fired into the job |
 
 Several `TaskWorkerExecutor`s share one Client Job cell, whose callback registry
 holds one handler per topic, so requests are routed to their session by the
-sender's FQCN. The token on every request is the one credential: a request from
-an unknown FQCN or with another session's token is rejected. HELLO exists only
-so a worker that cannot prove its launch fails before the script runs.
+sender's FQCN. The connection credential is the only authentication, as for
+the Client Job's own link to the CP: a request from a worker name with no open
+session, including a settled attempt's, is rejected. HELLO exists only so a
+worker that cannot reach its Client Job fails before the script runs.
 
 ### 2.3 Metrics
 
@@ -91,8 +111,17 @@ executors that never log, but a Client API worker refuses to start without one.
 
 - The Client Job remains the only federation endpoint; the worker talks only to
   its Client Job. Hop count is unchanged.
-- Launchers need a network path from the worker to the Client Job listener:
-  loopback for the Process launcher. Nothing supported today lacks it.
+- The security boundary is the one the CP already draws for Client Jobs: the
+  job credential. A worker holding it can reach the Client Job cell's other
+  routes, as code running inside the Client Job can in job lifetime; a process
+  without it cannot connect in a secure deployment. In a clear deployment
+  nothing on the internal listeners is authenticated, for the CP's listener
+  as for this one.
+- Launchers need a network path from the worker to the Client Job listener and
+  the job credential: the Process launcher shares the host and the files. A
+  container launcher adds what it already does for the Client Job: a reachable
+  internal listener host in the site's internal settings, and the job
+  credential mounted where the bootstrap's paths point.
 - Outbound calls from a worker (Collab) are the next thing to carry over this
   session: the worker has a Cell and a proven identity, so a call is one more
   request the Client Job authorises and dispatches, with no second mechanism.

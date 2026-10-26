@@ -20,6 +20,7 @@ import os
 import sys
 import textwrap
 import threading
+import uuid
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -266,7 +267,6 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.fuel.f3.cellnet.core_cell import CoreCell
     from nvflare.fuel.f3.stats_pool import StatsPoolManager
-    from nvflare.fuel.utils.network_utils import get_open_ports
 
     nvflare_fobs_initialize()
     register_framework_decomposers("numpy", "numpy")
@@ -280,23 +280,17 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[5]))
     monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
     workspace = Workspace(str(root), site_name="site-1")
-    # Workers open a cell under the Client Job cell, so the executor needs a real one.
-    # Cells register in process-wide tables that stop() leaves alone; restore them afterwards.
+    # Workers join the Client Job cell, so the executor needs a real one; it connects nowhere itself.
+    # A unique name keeps it clear of cells other tests in this process may leave behind, and the
+    # process-wide tables that stop() leaves alone are restored afterwards.
     original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
-    server_url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
-    cells = []
+    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.start()
     try:
-        for fqcn in ("server", "site-1.job-1"):
-            # Other tests in the same process may leak a cell under this name, and its stats pools, without stopping it.
-            CoreCell.ALL_CELLS.pop(fqcn, None)
-            for pool in [name for name in StatsPoolManager.pools if name.endswith(f"@{fqcn}")]:
-                StatsPoolManager.delete_pool(pool)
-            cells.append(Cell(fqcn, server_url, secure=False, credentials={}))
-            cells[-1].start()
         context = FLContext()
         context.set_prop(
             ReservedKey.ENGINE,
-            SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cells[1], fire_event=Mock()),
+            SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
             private=True,
             sticky=True,
         )
@@ -312,8 +306,7 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
         policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
         yield root, custom, context, policy
     finally:
-        for cell in cells:
-            cell.stop()
+        cell.stop()
         CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
         StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
 
@@ -420,7 +413,7 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert len(files) == 1
     assert not list(payload.rglob("analytics.fobs")), "metrics are messages, never files"
     worker_fqcn = read_bootstrap(payload / identity.attempt_id / "bootstrap.json").cell_session["worker_fqcn"]
-    assert worker_fqcn.startswith("site-1.job-1.task_worker_")
+    assert worker_fqcn.startswith(context.get_engine().get_cell().get_fqcn() + ".task_worker_")
     context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
     adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
@@ -779,7 +772,7 @@ def test_receipts_ignore_other_identity_and_retain_filtered_failure():
 
 
 @pytest.mark.parametrize("write_failure", [None, "result", "analytics"])
-def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, write_failure):
+def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, request, write_failure):
     import nvflare.client.api as client_api
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.private.fed.client.client_api_task_runner import bind_client_task_context
@@ -795,7 +788,6 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     root, custom, context, _policy = native_task
     monkeypatch.setattr(client_api, "context_dict", {})
     monkeypatch.setattr(client_api, "default_context", None)
-    monkeypatch.setattr(cell_session, "_sessions", {})
     # A script may catch an I/O error, but it cannot make failed persistence
     # look like a successfully completed assignment.
     (custom / "train.py").write_text("try:\n" + textwrap.indent(SCRIPT, "    ") + "\nexcept OSError:\n    pass\n")
@@ -820,7 +812,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     data.set_header(AppConstants.CURRENT_ROUND, 3)
     store.write_input(identity, data)
     path = store.bootstrap_path(identity)
-    # The worker runs in this process and opens its cell under the fixture's Client Job cell.
+    # The worker runs in this process and joins the fixture's Client Job cell.
     records = []
     on_analytics = records.append
     if write_failure == "analytics":
@@ -828,6 +820,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     cj_cell = context.get_engine().get_cell()
     cell_session.listen(cj_cell)
     session = cell_session.CellWorkerSession(cj_cell, on_analytics)
+    request.addfinalizer(session.close)
     spec = _config()["executors"][0]["executor"]
     write_bootstrap(
         path, WorkerBootstrap(identity, store.root_dir, str(root), spec, cell_session=session.bootstrap_fields())
@@ -1390,7 +1383,9 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
     adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
     adapter.handle_event(EventType.START_RUN, context)
     assert cell.decode_pass_through_topics == {route, unrelated}
-    assert cell.register_request_cb.call_count == 2, "the session's topics are routed once the job starts"
+    # No scheme or resources: the site's internal listener settings apply, as for the CP's own listener.
+    cell.make_internal_listener.assert_called_once_with()
+    assert cell.register_request_cb.call_count == 2
     adapter.handle_event(EventType.END_RUN, context)
     assert cell.decode_pass_through_topics == {unrelated}
 

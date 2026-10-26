@@ -332,11 +332,15 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
-        if transport is not None:
-            transport.close()
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
+        if transport is not None:
+            # The outcome is already on disk; a session that will not close cleanly must not replace it.
+            try:
+                transport.close()
+            except Exception as e:
+                logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
 
 
 def main():

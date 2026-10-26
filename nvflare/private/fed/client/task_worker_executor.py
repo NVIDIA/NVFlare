@@ -90,6 +90,7 @@ class TaskWorkerExecutor(Executor):
                         raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                # Workers join this cell as the Client Job joins its CP: same listener security, job credential.
                 cell_session.listen(cell)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
@@ -236,7 +237,7 @@ class TaskWorkerExecutor(Executor):
                 ),
             )
             # The worker has settled: a record arriving now belongs to no owned attempt.
-            session.close()
+            session.close(timeout=self.policy.settlement_timeout)
             # Finish fallible CJ replay/reporting before promoting application
             # state. The success path's finally block only releases ownership.
             self._report_issues(fl_ctx)
@@ -256,7 +257,7 @@ class TaskWorkerExecutor(Executor):
             return outcome.result
         finally:
             if session is not None:
-                session.close()
+                session.close(timeout=self.policy.settlement_timeout)
             try:
                 if (
                     outcome is None
