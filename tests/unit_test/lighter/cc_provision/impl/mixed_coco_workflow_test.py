@@ -32,7 +32,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import verify_folder_signature
 
 ROOT = Path(__file__).resolve().parents[5]
-EXAMPLE = ROOT / "examples/devops/coco/provision/mixed-tdx-snp"
+EXAMPLE = ROOT / "tests/integration_test/confidential_computing/coco/mixed-tdx-snp"
 
 
 def load_builder():

@@ -21,7 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
-API = runpy.run_path(str(ROOT / "examples/devops/coco/acceptance/trusted_proof_audit.py"))
+API = runpy.run_path(str(ROOT / "tests/integration_test/confidential_computing/coco/acceptance/trusted_proof_audit.py"))
 FIXTURE = runpy.run_path(str(ROOT / "tests/unit_test/app_opt/confidential_computing/coco_authorizer_test.py"))
 
 

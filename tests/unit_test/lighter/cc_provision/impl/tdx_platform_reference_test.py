@@ -18,7 +18,6 @@ import base64
 import copy
 import importlib.util
 import json
-import stat
 from pathlib import Path
 
 import pytest
@@ -168,24 +167,18 @@ def test_tdx_readback_rejects_changed_rtmr(field):
         INSTALLER.compare_reference(values, "coco_tdx_profiles_v2", json.dumps(actual))
 
 
-def test_update_env_saves_private_validated_snapshot_without_touching_snp(tmp_path):
-    env = tmp_path / "platform.env"
-    env.write_text('SNP_LAUNCH_MEASUREMENT="existing"\nPLATFORM_REFERENCE_VALUES_FILE=""\n')
-    values = tdx_values()
-    INSTALLER.update_env(values, env)
-    snapshot = tmp_path / "approved-platform-reference-values.json"
-    assert INSTALLER.load_values(snapshot) == values
-    assert stat.S_IMODE(snapshot.stat().st_mode) == 0o600
-    assert 'SNP_LAUNCH_MEASUREMENT="existing"' in env.read_text()
-    assert str(snapshot) in env.read_text()
-
-
-def test_update_env_rejects_reference_snapshot_symlink(tmp_path):
-    env = tmp_path / "platform.env"
-    env.write_text("")
-    (tmp_path / "approved-platform-reference-values.json").symlink_to(tmp_path / "other")
-    with pytest.raises(ValueError, match="symlink"):
-        INSTALLER.update_env(tdx_values(), env)
+def test_validate_cli_consumes_received_values_without_installation_state(tmp_path, monkeypatch, capsys):
+    received = tmp_path / "received-platform-values.json"
+    received.write_text(json.dumps(tdx_values(), indent=4) + "\n")
+    received.chmod(0o600)
+    original = received.read_bytes()
+    mode = received.stat().st_mode
+    monkeypatch.setattr(INSTALLER.sys, "argv", [str(SOURCE), "validate", str(received)])
+    INSTALLER.main()
+    assert json.loads(capsys.readouterr().out) == tdx_values()
+    assert received.read_bytes() == original
+    assert received.stat().st_mode == mode
+    assert list(tmp_path.iterdir()) == [received]
 
 
 def test_tdx_install_is_one_reference_replacement_and_leaves_snp_untouched(monkeypatch):

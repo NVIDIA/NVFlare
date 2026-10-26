@@ -25,6 +25,10 @@ ADMIN_DIR="${REQUEST[1]}"
 RESULT_FILE="${REQUEST[2]}"
 # The platform file and scripts are trusted admin-node inputs, never CoCo inputs.
 source "${ADMIN_DIR}/lib/release.sh"
+for executable in docker skopeo cosign jq openssl python3; do need_cmd "${executable}"; done
+[[ -x "${GENPOLICY}" ]] || die "GENPOLICY must name the preinstalled executable"
+need_file "${RULES}"
+need_file "${SETTINGS}"
 need_file "${WORKLOAD_LAUNCH_PROFILE}"
 python3 "${WORKLOAD_PROFILE_VALIDATOR}" "${WORKLOAD_LAUNCH_PROFILE}" \
     "${WORKLOAD_LAUNCH_PROFILE_SHA256:-}" "$RUNTIME_CLASS" "$KATA_VERSION"
@@ -34,10 +38,7 @@ for stage in 10-build-plaintext.sh 20-encrypt-sign-publish.sh 25-verify-publishe
 done
 
 "${ADMIN_DIR}/10-build-plaintext.sh" "${OWNER_CONFIG}"
-[[ -t 0 ]] || die 'Review the plaintext image interactively before signing/publishing'
-read -r -p "Review the image records above; type ${RELEASE_NAME} to sign, encrypt and publish: " APPROVAL
-[[ "${APPROVAL}" == "${RELEASE_NAME}" ]] || die 'Plaintext image approval did not match'
-"${ADMIN_DIR}/20-encrypt-sign-publish.sh" "${OWNER_CONFIG}" --approve-reviewed-plaintext
+"${ADMIN_DIR}/20-encrypt-sign-publish.sh" "${OWNER_CONFIG}"
 "${ADMIN_DIR}/25-verify-published-image.sh" "${OWNER_CONFIG}"
 "${ADMIN_DIR}/30-generate-pod-and-policies.sh" "${OWNER_CONFIG}"
 "${ADMIN_DIR}/40-create-handoffs.sh" "${OWNER_CONFIG}"

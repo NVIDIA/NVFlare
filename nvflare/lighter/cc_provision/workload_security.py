@@ -39,9 +39,13 @@ HANDOFF_FILES = {
 }
 
 
-def authenticate_handoff(source, destination, expected_manifest_sha256):
-    """Snapshot and authenticate a confidential bundle against an out-of-band pin."""
-    require(bool(re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256)), "invalid manifest pin")
+def authenticate_handoff(source, destination, expected_manifest_sha256=None):
+    """Copy a bounded bundle, checking payload integrity and an optional manifest digest."""
+    if expected_manifest_sha256 not in (None, ""):
+        require(
+            isinstance(expected_manifest_sha256, str) and bool(re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256)),
+            "invalid manifest pin",
+        )
     source, destination = Path(source), Path(destination)
     require(not source.is_symlink() and source.is_dir(), "handoff must be a regular directory")
     require({p.name for p in source.iterdir()} == HANDOFF_FILES | {"SHA256SUMS"}, "unexpected handoff files")
@@ -55,7 +59,8 @@ def authenticate_handoff(source, destination, expected_manifest_sha256):
             contents[name] = stream.read(2 * 1024 * 1024 + 1)
             require(len(contents[name]) <= 2 * 1024 * 1024, "handoff file is too large")
     manifest = contents["SHA256SUMS"]
-    require(hashlib.sha256(manifest).hexdigest() == expected_manifest_sha256, "owner manifest pin mismatch")
+    if expected_manifest_sha256 not in (None, ""):
+        require(hashlib.sha256(manifest).hexdigest() == expected_manifest_sha256, "owner manifest pin mismatch")
     entries = {}
     for line in manifest.decode().splitlines():
         match = re.fullmatch(r"([0-9a-f]{64}) [ *]([^/\\]+)", line)

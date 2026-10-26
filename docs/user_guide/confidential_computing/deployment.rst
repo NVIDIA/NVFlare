@@ -230,10 +230,18 @@ CoCo
      platform_config_file: ../admin/platform.env
 
 ``registry`` selects the project-level registry; ``registry_repository`` is
-only its repository path. ``platform_config_file`` pins the approved Kata
-runtime profile and must not own registry credentials. The trusted project
+only its repository path. ``platform_config_file`` supplies the captured
+Kata runtime profile and existing genpolicy/rules/settings paths; it must not
+own registry credentials. The trusted project
 ``build_command`` consumes a generated request containing the participant's
 staged source. It cannot replace or override that source.
+
+The example starts with a CoCo-ready cluster and configured Trustee. Its
+:github_nvflare_link:`four-step workflow <examples/devops/coco/README.md>`
+captures the installed runtime, sets Trustee reference values, provisions the
+images and Pod YAML, then registers the generated release resources before launch.
+It does not install infrastructure or configure Trustee automatically during
+provisioning.
 
 The CPU/GPU pair selects one of ``kata-qemu-snp``,
 ``kata-qemu-nvidia-gpu-snp``, ``kata-qemu-tdx``, or

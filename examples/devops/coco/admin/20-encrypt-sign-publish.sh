@@ -3,8 +3,8 @@
 set -Eeuo pipefail
 umask 077
 
-[[ $# -eq 2 && "$2" == "--approve-reviewed-plaintext" ]] || {
-    printf 'Usage: %s WORKLOAD.env --approve-reviewed-plaintext\n' "$0" >&2
+[[ $# -eq 1 || ( $# -eq 2 && "${2:-}" == "--approve-reviewed-plaintext" ) ]] || {
+    printf 'Usage: %s WORKLOAD.env\n' "$0" >&2
     exit 2
 }
 export OWNER_CONFIG="$1"
@@ -16,18 +16,27 @@ for command in cosign docker jq openssl python3 skopeo; do need_cmd "${command}"
 need_file "${PRIVATE_DIR}/build-state.env"
 need_file "${REGISTRY_USERNAME_PATH}"
 need_file "${REGISTRY_PASSWORD_PATH}"
+[[ "${KEYPROVIDER_IMAGE}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] \
+    || die "KEYPROVIDER_IMAGE must be pinned by a SHA256 digest"
 
 # shellcheck disable=SC1090
 source "${PRIVATE_DIR}/build-state.env"
 [[ "${CONFIG_SHA256}" == "$(sha256sum "${OWNER_CONFIG}" | awk '{print $1}')" ]] \
     || die "workload config changed after plaintext build; start a new release"
 [[ "$(sudo docker image inspect --format '{{.Id}}' "${PLAIN_IMAGE}")" == "${PLAIN_IMAGE_ID}" ]] \
-    || die "plaintext image changed after review"
+    || die "plaintext image changed after build"
 [[ ! -e "${OUTPUT_DIR}/encrypted-image-reference.txt" ]] \
     || die "this release was already published"
 
 [[ "$(tr -d '\r\n' < "${REGISTRY_USERNAME_PATH}")" == "${REGISTRY_USERNAME}" ]] \
     || die "registry username does not match the platform publisher identity"
+
+if ! sudo docker image inspect "${KEYPROVIDER_IMAGE}" >/dev/null 2>&1; then
+    sudo docker pull "${KEYPROVIDER_IMAGE}" \
+        || die "Could not fetch the configured key-provider image"
+    sudo docker image inspect "${KEYPROVIDER_IMAGE}" >/dev/null \
+        || die "The configured key-provider image is unavailable after pulling"
+fi
 
 mkdir -p "${PRIVATE_DIR}/plain-oci" "${PRIVATE_DIR}/encrypted-oci"
 sudo skopeo copy --insecure-policy \
@@ -55,8 +64,7 @@ chmod 0600 "${COSIGN_KEY_PATH}" "${COSIGN_PASSWORD_PATH}"
 chmod 0644 "${COSIGN_PUB_PATH}"
 
 KBS_KEY_URI="$(kbs_uri "${KBS_IMAGE_KEY_PATH}")"
-sudo docker pull "${KEYPROVIDER_IMAGE}"
-sudo docker run --rm \
+sudo docker run --pull=never --rm \
     --entrypoint /bin/sh \
     --volume "${IMAGE_KEY_PATH}:/key:ro" \
     --volume "${PRIVATE_DIR}:/work" \
@@ -91,7 +99,9 @@ sudo chown -R "$(id -u):$(id -g)" "${PRIVATE_DIR}"
 REGISTRY_PASSWORD="$(<"${REGISTRY_PASSWORD_PATH}")"
 mkdir -p "${REGISTRY_SECRET_DIR}"
 chmod 0700 "${REGISTRY_SECRET_DIR}"
+prepare_registry_certificates
 printf '%s' "${REGISTRY_PASSWORD}" | skopeo login \
+    --cert-dir "${REGISTRY_CERT_DIR}" --tls-verify=true \
     --authfile "${REGISTRY_AUTH_FILE}" \
     --username "${REGISTRY_USERNAME}" --password-stdin "$(registry_base)"
 unset REGISTRY_PASSWORD
@@ -100,6 +110,7 @@ chmod 0600 "${REGISTRY_AUTH_FILE}"
 IMAGE_TAG="${IMAGE_REPOSITORY}:${RELEASE_NAME}"
 DIGEST_FILE="${PRIVATE_DIR}/encrypted.digest"
 skopeo copy --insecure-policy --authfile "${REGISTRY_AUTH_FILE}" \
+    --dest-cert-dir "${REGISTRY_CERT_DIR}" --dest-tls-verify=true \
     --digestfile "${DIGEST_FILE}" \
     "dir:${PRIVATE_DIR}/encrypted-oci" "docker://${IMAGE_TAG}"
 
@@ -118,6 +129,7 @@ cosign verify --registry-cacert "${REGISTRY_CA_FILE}" \
     "${IMAGE_REF}" > "${OUTPUT_DIR}/publisher-cosign-verification.json"
 
 skopeo inspect --raw --authfile "${REGISTRY_AUTH_FILE}" \
+    --cert-dir "${REGISTRY_CERT_DIR}" --tls-verify=true \
     "docker://${IMAGE_REF}" > "${OUTPUT_DIR}/encrypted-manifest.json"
 
 python3 - "${OUTPUT_DIR}/encrypted-manifest.json" "${KBS_KEY_URI}" <<'PY'
@@ -146,7 +158,7 @@ PY
 install -m 0644 "${COSIGN_PUB_PATH}" "${OUTPUT_DIR}/cosign.pub"
 printf '%s\n' "${IMAGE_REF}" > "${OUTPUT_DIR}/encrypted-image-reference.txt"
 printf '%s\n' "${IMAGE_TAG}" > "${OUTPUT_DIR}/encrypted-image-tag.txt"
-printf '%s\n' "$(date -u +%FT%TZ)" > "${REVIEW_DIR}/plaintext-approved-at.txt"
+printf '%s\n' "$(date -u +%FT%TZ)" > "${REVIEW_DIR}/published-at.txt"
 sha256sum "${OUTPUT_DIR}/encrypted-manifest.json" "${OUTPUT_DIR}/cosign.pub" \
     > "${OUTPUT_DIR}/published-SHA256SUMS"
 

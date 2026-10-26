@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run the release installer through authentication, reconstruction and readiness."""
+"""Ready-Trustee CLI accepts opaque credentials without local deployment inspection."""
 
-import hashlib
 import json
 import os
 import shlex
@@ -25,136 +24,99 @@ from pathlib import Path
 
 import pytest
 
-from nvflare.lighter.cc_provision import workload_release as release
-from nvflare.lighter.cc_provision.workload_security import HANDOFF_FILES
-from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import require_coco_bash
+from nvflare.lighter.cc_provision import workload_release
+from tests.unit_test.lighter.cc_provision.impl.existing_trustee_integration_test import (
+    INITIAL_POLICY,
+    make_handoff,
+    update_manifest,
+)
 
 COCO = Path(__file__).resolve().parents[5] / "examples/devops/coco"
-SERVICE = COCO / "service"
-IMAGE = "secure-services.example.com:5000/workload@sha256:" + "c" * 64
 
 
-def run_installer(tmp_path, runtime, ready, attack=None):
-    """Stub host services, retaining the full shell script and actual handoff checks.
-
-    The OPA boundary deliberately terminates the run after readiness, before
-    interactive approval and publication. It proves CPU releases reach policy
-    validation even when GPU readiness would fail, without emulating publication.
-    """
-    bash = require_coco_bash()
+def run_installer(tmp_path, runtime, pin_mode="omitted", invalid_target=False):
     kit = tmp_path / "kit"
     (kit / "lib").mkdir(parents=True)
-    (kit / "policies").mkdir()
-    script = kit / "12-install-trusted-service-handoff.sh"
-    shutil.copyfile(SERVICE / script.name, script)
-    for name in ("workload-release.py", "workload-security-context.py"):
-        (kit / "lib" / name).symlink_to(SERVICE / "lib" / name)
-    for name in ("workload-resource-policy.rego.template", "workload-resource-policy-v1.rego.template"):
-        shutil.copyfile(SERVICE / "policies" / name, kit / "policies" / name)
-
-    incoming = tmp_path / "incoming"
-    incoming.mkdir()
-    paths = [f"default/{kind}/demo" for kind in ("image-key", "sig-public-key", "security-policy")]
-    auth = release.build_authorization(runtime, "demo", IMAGE, ["/bin/workload"], "ab" * 32, paths)
-    fragment = release.render_fragment(auth, (SERVICE / "policies/workload-resource-policy.rego.template").read_text())
-    if attack == "invalid-target":
-        auth["gpu"] = "none"
-    (incoming / "release-authorization.json").write_text(json.dumps(auth))
-    (incoming / "resource-policy-fragment.rego").write_text(fragment)
-    (incoming / "cosign.pub").write_text("-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----\n")
-    (incoming / "image_key").write_bytes(b"k" * 32)
-    (incoming / "image_key").chmod(0o600)
-    (incoming / "image-security-policy.json").write_text(
-        json.dumps(
-            {
-                "default": [{"type": "reject"}],
-                "transports": {
-                    "docker": {
-                        IMAGE.split("@")[0]: [
-                            {
-                                "type": "sigstoreSigned",
-                                "keyPath": "kbs:///default/sig-public-key/demo",
-                                "signedIdentity": {"type": "matchRepository"},
-                            }
-                        ]
-                    }
-                },
-            }
-        )
+    for name in ("12-install-trusted-service-handoff.sh", "lib/common.sh"):
+        shutil.copyfile(COCO / "service" / name, kit / name)
+    shutil.copyfile(COCO / "shared/lib/common-base.sh", kit / "lib/common-base.sh")
+    (kit / "lib/install-workload-release.py").symlink_to(COCO / "service/lib/install-workload-release.py")
+    incoming, pin = make_handoff(tmp_path / "handoff", runtime)
+    if invalid_target:
+        path = incoming / "release-authorization.json"
+        auth = json.loads(path.read_text())
+        auth["gpu"] = "unapproved"
+        path.write_text(json.dumps(auth))
+        pin = update_manifest(incoming)
+    current = tmp_path / "operator-current.rego"
+    current.write_bytes(INITIAL_POLICY)
+    certificate = tmp_path / "ca.pem"
+    certificate.write_text("existing trusted CA fixture")
+    credential = tmp_path / "credential"
+    credential.write_text("opaque-server-issued-credential-with-custom-role")
+    credential.chmod(0o644)
+    client = tmp_path / "kbs-client"
+    client.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\nfrom pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "assert args[:2] == ['--url', 'https://localhost:9544']\n"
+        "assert Path(args[6]).read_text() == 'opaque-server-issued-credential-with-custom-role'\n"
+        "operation = args[7]\n"
+        "record = {'operation': operation, 'arguments': args[8:]}\n"
+        "with Path(os.environ['EVENTS']).open('a') as stream: stream.write(json.dumps(record) + '\\n')\n"
+        "print('vendor client output may include secret resource bytes')\n"
     )
-    manifest = "".join(
-        hashlib.sha256((incoming / name).read_bytes()).hexdigest() + "  " + name + "\n"
-        for name in sorted(HANDOFF_FILES)
-    )
-    (incoming / "SHA256SUMS").write_text(manifest)
-    pin = hashlib.sha256(manifest.encode()).hexdigest()
-    if attack == "unauthenticated-target":
-        auth["gpu"] = "none"
-        (incoming / "release-authorization.json").write_text(json.dumps(auth))
-
-    trustee = tmp_path / "trustee"
-    policy = trustee / "kbs/data/kbs-policy/resource-policy.rego"
-    policy.parent.mkdir(parents=True)
-    initial_policy = "package policy\nimport rego.v1\ndefault allow := false\n"
-    policy.write_text(initial_policy)
-    storage = trustee / "kbs/data/kbs-storage"
-    storage.mkdir()
-    (trustee / "docker-compose.yml").write_text("services: {}\n")
-    for name in ("cert", "token", "client"):
-        (tmp_path / name).write_text("fixture\n")
-    (tmp_path / "client").chmod(0o700)
+    client.chmod(0o755)
+    values = {
+        "KBS_URL": "https://localhost:9544",
+        "TRUSTEE_PUBLIC_CERT": str(certificate),
+        "ADMIN_TOKEN": str(credential),
+        "KBS_CLIENT": str(client),
+        "STATE_DIR": str(tmp_path / "state"),
+        "CURRENT_RESOURCE_POLICY_FILE": str(current),
+    }
+    (kit / "platform.env").write_text("".join(f"{key}={shlex.quote(value)}\n" for key, value in values.items()))
+    arguments = ["bash", str(kit / "12-install-trusted-service-handoff.sh"), str(incoming)]
+    if pin_mode != "omitted":
+        arguments.append({"empty": "", "valid": pin, "malformed": "bad", "mismatch": "0" * 64}[pin_mode])
     events = tmp_path / "events"
-    (kit / "lib/common.sh").write_text(
-        f"TRUSTEE_ROOT={shlex.quote(str(trustee))}\n"
-        f"TRUSTEE_PUBLIC_CERT={shlex.quote(str(tmp_path / 'cert'))}\n"
-        f"ADMIN_TOKEN={shlex.quote(str(tmp_path / 'token'))}\n"
-        f"KBS_CLIENT={shlex.quote(str(tmp_path / 'client'))}\n"
-        f"EVENTS={shlex.quote(str(events))}\n"
-        "SERVICE_FQDN=secure-services.example.com\nREGISTRY_PORT=5000\nKBS_URL=https://kbs.invalid\n"
-        'die() { echo "$*" >&2; exit 1; }\n'
-        "need_cmd() { :; }\n"
-        'need_file() { [[ -f "$1" ]] || die "missing $1"; }\n'
-        f'python3() {{ {shlex.quote(sys.executable)} "$@"; }}\n'
-        # Isolate the root ownership prerequisite without requiring root fixtures.
-        'stat() { case "$2" in %a) echo 600 ;; %U:%G) echo root:root ;; *) return 1 ;; esac; }\n'
-        + ('sha256sum() { shasum -a 256 "$@"; }\n' if sys.platform == "darwin" else "")
-        + "openssl() { :; }\ncurl() { :; }\n"
-        'lock_platform_reference_update() { echo LOCK >> "$EVENTS"; }\n'
-        f'verify_gpu_readiness() {{ echo GPU_READINESS >> "$EVENTS"; return {0 if ready else 47}; }}\n'
-        'opa() { echo POLICY_VALIDATION >> "$EVENTS"; return 48; }\n'
-        'sudo() { echo UNEXPECTED_PUBLICATION >> "$EVENTS"; return 49; }\n'
-    )
     result = subprocess.run(
-        [bash, str(script), str(incoming), pin],
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env={**os.environ, "HOME": str(tmp_path)},
+        arguments, capture_output=True, text=True, timeout=20, env={**os.environ, "EVENTS": str(events)}
     )
-    assert policy.read_text() == initial_policy
-    assert list(storage.iterdir()) == []
-    assert not (tmp_path / "trustee-release-backups").exists()
-    return result, events.read_text().splitlines() if events.exists() else []
+    records = [json.loads(line) for line in events.read_text().splitlines()] if events.exists() else []
+    return result, records, current
 
 
-@pytest.mark.parametrize("runtime", release.RUNTIME_TARGETS)
-@pytest.mark.parametrize("ready", [False, True])
-def test_full_release_installer_gates_validated_gpu_target_before_publication(tmp_path, runtime, ready):
-    result, events = run_installer(tmp_path, runtime, ready)
-    gpu = release.RUNTIME_TARGETS[runtime][1] == "nvidia"
-    if gpu and not ready:
-        assert result.returncode == 47, result.stderr
-        assert events == ["LOCK", "GPU_READINESS"]
-    else:
-        assert result.returncode == 48, result.stderr
-        assert events == ["LOCK"] + (["GPU_READINESS"] if gpu else []) + ["POLICY_VALIDATION"]
+@pytest.mark.parametrize("runtime", workload_release.RUNTIME_TARGETS)
+@pytest.mark.parametrize("pin_mode", ["omitted", "empty", "valid"])
+def test_ready_trustee_only_needs_api_access_current_export_and_handoff(tmp_path, runtime, pin_mode):
+    result, records, current = run_installer(tmp_path, runtime, pin_mode)
+    assert result.returncode == 0, result.stderr
+    assert [record["operation"] for record in records] == [
+        "set-resource",
+        "set-resource",
+        "set-resource",
+        "set-resource-policy",
+    ]
+    assert current.read_bytes().startswith(INITIAL_POLICY.rstrip())
+    assert "secret resource bytes" not in result.stdout + result.stderr
+    assert "opaque-server-issued" not in result.stdout + result.stderr
+    assert "Trustee accepted resource uploads" in result.stdout
 
 
-@pytest.mark.parametrize("attack", ["invalid-target", "unauthenticated-target"])
-def test_release_installer_rejects_invalid_or_unauthenticated_gpu_metadata(tmp_path, attack):
-    result, events = run_installer(tmp_path, "kata-qemu-nvidia-gpu-snp", False, attack)
+@pytest.mark.parametrize("pin_mode", ["malformed", "mismatch"])
+def test_cli_rejects_invalid_supplied_pin_before_any_api_request(tmp_path, pin_mode):
+    result, records, current = run_installer(tmp_path, "kata-qemu-snp", pin_mode)
     assert result.returncode != 0
-    assert events == []
-    assert (
-        "incorrect required EAR submodule set" if attack == "invalid-target" else "payload digest mismatch"
-    ) in result.stderr
+    assert not records
+    assert "manifest pin" in result.stderr
+    assert current.read_bytes() == INITIAL_POLICY
+
+
+@pytest.mark.parametrize("runtime", workload_release.RUNTIME_TARGETS)
+def test_cli_rejects_invalid_target_before_any_api_request(tmp_path, runtime):
+    result, records, current = run_installer(tmp_path, runtime, invalid_target=True)
+    assert result.returncode != 0
+    assert not records
+    assert current.read_bytes() == INITIAL_POLICY

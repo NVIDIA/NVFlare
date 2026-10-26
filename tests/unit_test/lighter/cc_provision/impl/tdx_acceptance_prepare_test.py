@@ -29,7 +29,9 @@ ROOT = Path(__file__).resolve().parents[5]
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "examples/devops/coco/acceptance" / (name + ".py"))
+    spec = importlib.util.spec_from_file_location(
+        name, ROOT / "tests/integration_test/confidential_computing/coco/acceptance" / (name + ".py")
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -182,7 +184,9 @@ def test_private_application_can_be_read_by_approved_guest_identity(inputs, topo
     """Private source stays 0600; Docker must transfer ownership to the guest UID."""
     output = load("prepare").prepare(**inputs)
     protected = {"site-1", "site-2"} | ({"server"} if topology == "b" else set())
-    reviewed = (ROOT / "examples/devops/coco/acceptance/application/tdx_acceptance.py").read_bytes()
+    reviewed = (
+        ROOT / "tests/integration_test/confidential_computing/coco/acceptance/application/tdx_acceptance.py"
+    ).read_bytes()
     for site in protected:
         context = output / topology / site
         source = context / "tdx_acceptance.py"
@@ -272,7 +276,7 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
     output = load("prepare").prepare(**inputs)
     source = output / topology / "project.yaml"
     definition = yaml.safe_load(source.read_text())
-    monkeypatch.syspath_prepend(str(ROOT / "examples/devops/coco/acceptance"))
+    monkeypatch.syspath_prepend(str(ROOT / "tests/integration_test/confidential_computing/coco/acceptance"))
     project = prepare_project(definition, project_file=str(source))
     pipeline = prepare_builders(definition)
     # Leave CCPackager disabled: this proves signed private-kit generation,
@@ -333,3 +337,44 @@ def test_offline_real_builders_produce_verified_kits_and_observer(inputs, monkey
             assert "token_url" not in authorizer
             assert not any(key.startswith("retry_") for key in authorizer)
     assert (result / "admin@example.com/startup").is_dir()
+
+
+@pytest.mark.parametrize("pin", [None, ""])
+@pytest.mark.usefixtures("require_source_git_commit")
+def test_received_as_key_is_usable_without_transfer_fingerprint(inputs, pin):
+    inputs["as_key_sha256"] = pin
+    output = load("prepare").prepare(**inputs)
+    recorded = json.loads((output / "inputs.json").read_text())
+    assert recorded["as_public_key_sha256"] == hashlib.sha256(Path(inputs["as_key"]).read_bytes()).hexdigest()
+    assert (output / "a/trustee-as-public.pem").read_bytes() == Path(inputs["as_key"]).read_bytes()
+
+
+@pytest.mark.usefixtures("require_source_git_commit")
+def test_prepare_cli_omits_transfer_fingerprint(inputs):
+    supplied = dict(inputs)
+    supplied.pop("as_key_sha256")
+    arguments = [argument for key, value in supplied.items() for argument in ("--" + key.replace("_", "-"), str(value))]
+    load("prepare").main(arguments)
+    recorded = json.loads((inputs["output"] / "inputs.json").read_text())
+    assert recorded["as_public_key_sha256"] == hashlib.sha256(Path(inputs["as_key"]).read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("pin", ["not-a-digest", "A" * 64, "a" * 63, "0" * 64, 0, False])
+def test_explicit_invalid_as_key_fingerprint_rejected(inputs, pin):
+    inputs["as_key_sha256"] = pin
+    with pytest.raises(ValueError, match="provided fingerprint"):
+        load("prepare").prepare(**inputs)
+    assert not inputs["output"].exists()
+
+
+def test_as_key_must_remain_p256_when_transfer_fingerprint_is_omitted(inputs):
+    public = (
+        ec.generate_private_key(ec.SECP384R1())
+        .public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    )
+    Path(inputs["as_key"]).write_bytes(public)
+    inputs.pop("as_key_sha256")
+    with pytest.raises(ValueError, match="P-256"):
+        load("prepare").prepare(**inputs)
+    assert not inputs["output"].exists()

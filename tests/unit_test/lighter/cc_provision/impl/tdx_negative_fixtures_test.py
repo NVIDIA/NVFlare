@@ -32,7 +32,7 @@ import yaml
 tomllib = pytest.importorskip("tomllib", reason="CoCo negative-fixture helpers require Python 3.11+")
 
 ROOT = Path(__file__).resolve().parents[5]
-API = runpy.run_path(str(ROOT / "examples/devops/coco/acceptance/negative_fixtures.py"))
+API = runpy.run_path(str(ROOT / "tests/integration_test/confidential_computing/coco/acceptance/negative_fixtures.py"))
 
 
 @pytest.fixture
@@ -247,3 +247,68 @@ def test_scope_and_identity_inputs_fail_closed(baseline, tmp_path, overrides):
     path, _ = baseline
     with pytest.raises(ValueError):
         prepare(path, tmp_path / "output", **overrides)
+
+
+@pytest.mark.parametrize("pin", [None, ""])
+def test_received_baseline_records_its_digest_without_transfer_pin_or_source_note(baseline, tmp_path, pin):
+    path, _ = baseline
+    manifest = API["prepare"](
+        path,
+        expected_sha256=pin,
+        output=tmp_path / "output",
+        run_id="received-input",
+        topology="A",
+        participant="site-1",
+        namespace="isolated-fixtures",
+    )
+    assert manifest["baseline"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert manifest["baseline"]["authority_note"] == "received baseline"
+    assert manifest["hardware_acceptance"] == "NOT_RUN"
+    assert set(manifest["fixtures"]) == {
+        "control",
+        "changed-command",
+        "weakened-context",
+        "host-mount",
+        "altered-initdata",
+    }
+
+
+def test_negative_fixture_cli_does_not_require_transfer_pin_or_source_note(baseline, tmp_path):
+    path, _ = baseline
+    assert (
+        API["main"](
+            [
+                "--pod",
+                str(path),
+                "--output",
+                str(tmp_path / "output"),
+                "--run-id",
+                "received-input",
+                "--topology",
+                "A",
+                "--participant",
+                "site-1",
+                "--namespace",
+                "isolated-fixtures",
+            ]
+        )
+        == 0
+    )
+    manifest = json.loads((tmp_path / "output/manifest.json").read_text())
+    assert manifest["baseline"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert manifest["baseline"]["authority_note"] == "received baseline"
+
+
+@pytest.mark.parametrize("pin", ["not-a-digest", "A" * 64, "a" * 63, "0" * 64, 0, False])
+def test_explicit_invalid_baseline_pin_still_fails_before_writing(baseline, tmp_path, pin):
+    path, _ = baseline
+    with pytest.raises(ValueError, match="provided digest"):
+        prepare(path, tmp_path / "output", expected_sha256=pin)
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize("note", [None, "", " "])
+def test_empty_optional_baseline_source_note_is_neutral(baseline, tmp_path, note):
+    path, _ = baseline
+    manifest = prepare(path, tmp_path / "output", authority_note=note, expected_sha256=None)
+    assert manifest["baseline"]["authority_note"] == "received baseline"

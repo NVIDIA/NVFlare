@@ -24,26 +24,30 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PUBLIC_DOCS = {
-    "docs/coco-security-design-3-slides.md",
-    "docs/coco-four-party-sequence.mmd",
-    "docs/coco-four-party-sequence.html",
-}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--assembled", action="store_true", help="validate generated role kits, not source wrappers")
-    args = parser.parse_args()
-    # Validation must not add bytecode caches containing local checkout paths.
+    parser.add_argument("--working-tree", action="store_true", help="validate the current source checkout (default)")
+    parser.parse_args()
     sys.dont_write_bytecode = True
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    from role_kits import package_files, validate_layout
-
     if sys.version_info < (3, 11):
         raise SystemExit("Python 3.11+ is required")
-    names = package_files(ROOT, assembled=args.assembled)
-    validate_layout(ROOT, assembled=args.assembled)
+    # Include newly added source and omit pending deletions without modifying
+    # the index. Ignored deployment inputs and credentials stay outside checks.
+    entries = subprocess.check_output(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."],
+        cwd=ROOT,
+        text=True,
+    ).split("\0")
+    names = sorted({name for name in entries if name and ((ROOT / name).exists() or (ROOT / name).is_symlink())})
+    for name in names:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or str(path) != name:
+            raise SystemExit(f"Unsafe source path: {name}")
+        if any((ROOT / part).is_symlink() for part in (path, *path.parents)) or not (ROOT / path).is_file():
+            raise SystemExit(f"Source must contain regular files: {name}")
 
     private = re.compile(
         r"\b[a-z]+[0-9]*-[0-9]{4}\.[a-z0-9]+\.[a-z0-9]+\.nvidia\.com|/localhome/[a-zA-Z0-9_-]+/|"
@@ -53,8 +57,6 @@ def main():
     shell_count = python_count = embedded_count = 0
     for name in names:
         path = ROOT / name
-        if name.startswith("docs/") and name not in PUBLIC_DOCS:
-            raise SystemExit(f"Unapproved public document in docs/: {name}")
         if path.suffix in (".pptx", ".pdf"):
             raise SystemExit(f"Generated slide exports are not part of this package: {name}")
         if path.name == "CURRENT-STATE.md":

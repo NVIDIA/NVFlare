@@ -21,7 +21,6 @@ import gzip
 import hashlib
 import json
 import runpy
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -456,59 +455,75 @@ def test_final_handoff_cannot_omit_policy():
     assert '--pod "${OUTPUT_DIR}/pod.yaml" --require-policy' in (ROOT / "admin/40-create-handoffs.sh").read_text()
 
 
-@pytest.mark.parametrize("role", ["admin", "trusted_system", "coco"])
-def test_shared_helper_is_materialized_in_standalone_kit(tmp_path, role):
-    kits = runpy.run_path(str(ROOT / "role_kits.py"))
-    target = f"{role}/lib/workload-security-context.py"
-    assert kits["GENERATED"][target] == "shared/workload-security-context.py"
-    wrapper = runpy.run_path(str(ROOT / target))
+@pytest.mark.parametrize("role", ["admin", "trusted_system", "service"])
+def test_source_checkout_helpers_use_canonical_workload_context(role):
+    wrapper = runpy.run_path(str(ROOT / role / "lib/workload-security-context.py"))
     assert wrapper["pod_context"](pod()) == context()
-    isolated = tmp_path / "kit/lib/workload-security-context.py"
-    isolated.parent.mkdir(parents=True)
-    isolated.write_bytes(Path(workload_security.__file__).read_bytes())
-    assert runpy.run_path(str(isolated))["pod_context"](pod()) == context()
+    assert wrapper["pod_context"](pod(True)) == context(True)
     if role == "admin":
-        consumer = isolated.parent / "workload-launch-profile.py"
-        consumer.write_bytes(Path(workload_launch_profile.__file__).read_bytes())
-        (isolated.parent / "kata-runtime-profile.py").write_bytes(Path(kata_runtime_profile.__file__).read_bytes())
-        runpy.run_path(str(consumer))["validate_pod"](contract(), pod())
+        consumer = runpy.run_path(str(ROOT / "admin/lib/workload-launch-profile.py"))
+        consumer["validate_pod"](contract(), pod())
 
 
-@pytest.mark.parametrize("readonly", [True, False])
-def test_stage05_actual_entrypoint(tmp_path, readonly):
+@pytest.mark.parametrize("runtime", kata_runtime_profile.RUNTIME_TARGETS)
+def test_ready_profile_uses_fixed_nvflare_context_without_a_source_pod(runtime):
     pytest.importorskip("tomllib", reason="trusted deployment scripts require Python 3.11+")
-    yaml = pytest.importorskip("yaml")
-    source, config, output = (tmp_path / name for name in ("source.yaml", "kata.toml", "approved.json"))
-    source.write_text(yaml.safe_dump(pod(readonly)))
-    config.write_text(
-        '[hypervisor.qemu]\nkernel_params = "agent.guest_components_rest_api=all"\n'
-        "confidential_guest = true\nsev_snp_guest = true\n"
-        "default_vcpus = 1\ndefault_memory = 8192\n"
-    )
-    entry = ROOT / "trusted_system/05-define-approved-launch-profile.py"
-    with (
-        patch.object(sys, "argv", [str(entry), str(source), str(config), str(output)]),
-        patch("subprocess.check_output", return_value=b'{"lscpu": []}'),
-        patch("os.umask"),
-    ):
-        runpy.run_path(str(entry), run_name="__main__")
-    approved = json.loads(output.read_text())
-    assert approved["workload_security_context"] == context(readonly)
-    assert approved["workload_yaml_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
-    # Unsafe source must be rejected before even querying host CPU/artifacts.
-    bad = pod(readonly)
-    bad["spec"]["containers"][0]["securityContext"]["privileged"] = True
-    source.write_text(yaml.safe_dump(bad))
-    rejected = tmp_path / "rejected.json"
-    with (
-        patch.object(sys, "argv", [str(entry), str(source), str(config), str(rejected)]),
-        patch("subprocess.check_output") as cpu,
-        patch("os.umask"),
-    ):
-        with pytest.raises(ValueError, match="privileged"):
-            runpy.run_path(str(entry), run_name="__main__")
+    capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
+    target = kata_runtime_profile.runtime_target(runtime)
+    paths = {name: "/ready/installed/" + name for name in ("path", "firmware", "kernel", "initrd")}
+    installed_config = "/ready/custom-config/selected.toml"
+    qemu = {
+        **paths,
+        "kernel_params": kata_runtime_profile.REQUIRED,
+        "confidential_guest": True,
+        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "machine_type": "q35",
+        "default_vcpus": 1,
+        "default_memory": 8192,
+    }
+    snapshot = {
+        "config": {"hypervisor": {"qemu": qemu}},
+        "installed_config": installed_config,
+        "files": {value: hashlib.sha256(name.encode()).hexdigest() for name, value in paths.items()},
+        "runtime_version": "3.29.0",
+    }
+    snapshot["files"][installed_config] = "a" * 64
+    with patch("subprocess.check_output") as cpu:
+        approved = capture["prepare_profile"](snapshot, runtime)
+        workload = capture["fixed_workload"](runtime)
         cpu.assert_not_called()
-    assert not rejected.exists()
+    assert approved["workload_security_context"] == context(False)
+    assert workload["spec"]["containers"][0]["securityContext"] == context(False)
+    assert approved["kata_config_sha256"] == "a" * 64
+    assert approved["artifacts"] == {
+        name: {"path": path, "sha256": snapshot["files"][path]} for name, path in paths.items()
+    }
+    resources = (
+        {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}} if target["gpu_count"] else {}
+    )
+    assert approved["pod_resources"] == resources
+    assert workload["spec"]["containers"][0]["resources"] == resources
+    assert "workload_source" not in approved and "workload_yaml_sha256" not in approved
+    assert "kata_deploy_image" not in approved
+
+
+@pytest.mark.parametrize("runtime", kata_runtime_profile.RUNTIME_TARGETS)
+@pytest.mark.parametrize("setting,value", [("kernel_params", "quiet"), ("confidential_guest", False)])
+def test_ready_profile_rejects_missing_token_api_or_confidential_runtime(runtime, setting, value):
+    pytest.importorskip("tomllib", reason="trusted deployment scripts require Python 3.11+")
+    capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
+    target = kata_runtime_profile.runtime_target(runtime)
+    qemu = {
+        "kernel_params": kata_runtime_profile.REQUIRED,
+        "confidential_guest": True,
+        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "machine_type": "q35",
+    }
+    qemu[setting] = value
+    with patch("subprocess.check_output") as command:
+        with pytest.raises(ValueError):
+            capture["prepare_profile"]({"config": {"hypervisor": {"qemu": qemu}}}, runtime)
+        command.assert_not_called()
 
 
 @pytest.mark.parametrize("changed_uid", [False, True])

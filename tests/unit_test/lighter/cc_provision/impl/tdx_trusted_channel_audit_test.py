@@ -22,7 +22,9 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "examples/devops/coco/acceptance"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[5] / "tests/integration_test/confidential_computing/coco/acceptance")
+)
 from trusted_channel_audit import install  # noqa: E402
 
 SECRET = "PRIVATE_KEY_JWT_ATTESTED_EVIDENCE_SECRET"

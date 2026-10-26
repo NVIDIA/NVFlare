@@ -19,7 +19,10 @@ from types import SimpleNamespace
 
 import pytest
 
-PATH = Path(__file__).resolve().parents[5] / "examples/devops/coco/acceptance/verify_federation.py"
+PATH = (
+    Path(__file__).resolve().parents[5]
+    / "tests/integration_test/confidential_computing/coco/acceptance/verify_federation.py"
+)
 SPEC = importlib.util.spec_from_file_location("tdx_federation", PATH)
 federation = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(federation)
