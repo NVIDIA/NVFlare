@@ -412,11 +412,11 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
 
 `approval_public_keys` lists the acceptance authorities whose Ed25519 signature
 on a bundle's `approval.json` counts as production approval; `admin install`
-refuses unsigned or foreign-signed receipts. The paths above use the files
-emitted by `examples/devops/coco/service/04-build-trustee-main.sh`. For another
-image deployment, retain its immutable image identity and source provenance
-alongside the binary extracted from that image. The shared CoCo service's
-deployment receipt contains:
+refuses unsigned or foreign-signed receipts. The Trustee administrator supplies
+the configured binary, immutable image identity, and build-provenance files for
+the existing compatible deployment. For an image deployment, retain its immutable
+image identity and source provenance alongside the binary extracted from that
+image. The configured Trustee deployment receipt contains:
 
 ```json
 {

@@ -20,14 +20,37 @@ checkout or an installed NVFlare package.
 - NVFlare provisioning and the image/policy tools listed in
   [provisioning](provision/README.md).
 
+Before starting, check these operational dependencies:
+
+- Synchronize clocks on workers, Trustee, and NVFlare participants; certificate
+  validity, collateral expiry, and short-lived attestation proofs depend on time.
+- Ensure hosts and confidential guests can resolve the configured registry and
+  Trustee DNS names, reach their HTTPS endpoints, and verify their certificates.
+- Allow the configured verifiers to retrieve AMD KDS/VCEK material for SNP,
+  Intel PCS collateral for TDX, and NVIDIA NRAS/RIM material for GPU appraisal,
+  through the deployment's existing network/cache configuration.
+- Confirm the existing CPU/GPU appraisal policies consume the selected reference
+  values, and the guest-local AA token API supports the NVFlare proof flow.
+
+These public trust inputs serve different purposes:
+
+| Input | Purpose |
+| --- | --- |
+| Registry CA/bundle | Verify registry TLS for image publication and pulls. |
+| Trustee TLS CA/bundle | Verify the Trustee HTTPS endpoint. |
+| AS signing public key | Verify AS-signed attestation results (EARs) carried by NVFlare peer proofs. |
+
 ## Select the runtime
 
-| CPU | GPU | `cpu_tee` | `gpu_tee` | RuntimeClass | Allocation |
+| CPU | GPU | Participant `cpu_tee` | Participant `gpu_tee` | RuntimeClass | Allocation |
 | --- | --- | --- | --- | --- | --- |
 | SNP | None | `amd_sev_snp` | `none` | `kata-qemu-snp` | None |
 | SNP | NVIDIA | `amd_sev_snp` | `nvidia_cc` | `kata-qemu-nvidia-gpu-snp` | 1 `nvidia.com/pgpu` |
 | TDX | None | `intel_tdx` | `none` | `kata-qemu-tdx` | None |
 | TDX | NVIDIA | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` | 1 `nvidia.com/pgpu` |
+
+The table uses participant configuration values. For constraints on signed EAR
+evidence, `cpu_tee` instead uses `snp` or `tdx`.
 
 The guest must provide its local AA token API at
 `http://127.0.0.1:8006/aa/token`. GPU profiles allocate one `nvidia.com/pgpu`
@@ -41,6 +64,13 @@ no GPU Operator. TDX remains experimental pending complete hardware acceptance.
 2. [Set Trustee values](TRUSTEE.md) and read them back.
 3. [Provision NVFlare](provision/README.md) to build encrypted images and Pod YAML.
 4. Register each generated release with Trustee, then [launch its Pod](LAUNCH.md).
+
+| Operator | Input | Output/destination |
+| --- | --- | --- |
+| Platform owner | Existing worker and capture configuration | Reference values to Trustee admin; launch profile to provisioner. |
+| Trustee admin | Reference values and per-release handoff | Configured references, image keys, and release policies before launch. |
+| NVFlare provisioner | Project/application inputs and launch profile | Encrypted images to registry; private handoff to Trustee admin; Pod YAML to cluster operator. |
+| Cluster operator | Generated Pod YAML | Running confidential Pod. |
 
 `nvflare provision` generates the Trustee release handoff; it does not install
 that handoff automatically. The received files are used directly. Keep image

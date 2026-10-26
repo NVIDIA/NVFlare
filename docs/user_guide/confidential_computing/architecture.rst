@@ -152,8 +152,8 @@ Trustee with separate policies and reference values. This is not administrative
 isolation for mutually untrusted tenants. See the
 :github_nvflare_link:`Trustee configuration guide
 <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` and the
-:github_nvflare_link:`CoCo secure-services guide
-<examples/devops/coco/service/README.md>`.
+:github_nvflare_link:`CoCo reference and release operations
+<examples/devops/coco/TRUSTEE.md>`.
 
 Boot and workload-release flows
 -------------------------------
@@ -344,12 +344,13 @@ Deployment-specific network enforcement
   controlled by the cluster operator. They provide connectivity and operational
   filtering, not independent protection from that operator. Authenticate
   services from inside the guest and keep sensitive endpoints and secrets
-  within the intended trust domains. The reference secure-services deployment
-  exposes TLS KBS and registry listeners while keeping internal service ports
-  private; its management paths require separate authorization. Follow the
-  :github_nvflare_link:`secure-services network procedure
-  <examples/devops/coco/service/SERVICE-INSTALLATION.md>` for the actual ports,
-  publisher/pull origins, certificates, and firewall rules.
+  within the intended trust domains. CoCo uses existing configured KBS and
+  registry endpoints; their operator controls the listeners, internal routes,
+  and administrative authorization. The
+  :github_nvflare_link:`existing-service inputs
+  <examples/devops/coco/TRUSTEE.md#configure-existing-service-access>` cover the
+  endpoint and TLS settings used by this workflow. Check actual network exposure
+  with the service operator.
 * **Azure:** cloud networking and resource creation are managed through Azure
   tooling. Review ingress, egress, routing, and TLS termination in the selected
   :doc:`Azure deployment guide <azure/index>`; do not assume the standalone
@@ -394,8 +395,8 @@ components. Code or policy changes require a new approved release.
 
 Validate the executor and persistence behavior for the selected deployment.
 External-process execution has failed in sealed CoCo deployments; see the
-:github_nvflare_link:`in-process executor workaround
-<examples/devops/coco/FL-DEPLOYMENT.md#executor-limitation-and-workaround>`.
+:github_nvflare_link:`in-process executor guidance
+<examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
 An approved executor is not a substitute for reviewing application behavior
 and outputs.
 
@@ -458,8 +459,8 @@ evidence that a particular deployment has passed those tests.
 * **CoCo resource, guest, and network boundaries:**
   :ref:`coco_security_architecture`, the
   :github_nvflare_link:`guest token client <nvflare/app_opt/confidential_computing/coco_authorizer.py>`,
-  and the :github_nvflare_link:`secure-services implementation and runbooks
-  <examples/devops/coco/service/README.md>`.
+  and the :github_nvflare_link:`CoCo reference and release operations
+  <examples/devops/coco/TRUSTEE.md>`.
 
 Platform and upstream documentation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
