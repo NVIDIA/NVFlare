@@ -15,45 +15,42 @@ Run Your First Federation
 Create and activate a fresh Python virtual environment as described in
 :doc:`Installation <installation>`, then choose **one** installation option:
 
-**Development (unstable main branch):** To try the code on ``main``, install
-from source. This option requires Git and does not depend on a PyPI release:
-
-.. code-block:: bash
-
-   git clone --branch main https://github.com/NVIDIA/NVFlare.git
-   cd NVFlare
-   python -m pip install -e .
-   cd examples/hello-world/hello-pt
-
-The editable installation and example use the same checkout, so no separate
-example download is needed.
-
-**Released package with the examples CLI:** If NVFLARE 2.10.0 or later is
-available on `PyPI <https://pypi.org/project/nvflare/>`_, install it and retrieve
-the matching example with:
+**Released package:** Once NVFLARE 2.10.0 or later is available on
+`PyPI <https://pypi.org/project/nvflare/>`_, install it with:
 
 .. code-block:: bash
 
    python -m pip install "nvflare>=2.10.0"
-   nvflare examples get hello-pt
-   cd hello-pt
+
+**Development version from main:** Before the 2.10.0 release, or to try the
+latest development code, install directly from GitHub:
+
+.. code-block:: bash
+
+   python -m pip install "git+https://github.com/NVIDIA/NVFlare.git@main"
+
+The development option requires Git; pip manages a temporary checkout.
+``main`` is the unstable development branch. Use a separate virtual environment
+for each installation. For an editable checkout to modify NVFLARE itself, see
+:doc:`Installation <installation>`.
 
 For earlier releases, follow the Quick Start for that documentation version;
 the `stable Quick Start <https://nvflare.readthedocs.io/en/stable/quickstart.html>`_
 matches the current stable release. The ``nvflare examples`` commands
-do not apply to versions before 2.10.0. Do not install both options in the same
-environment.
+do not apply to released versions before 2.10.0.
 
-From the example directory reached by either option, install its dependencies
-and run it with focused progress output:
+After either installation, retrieve the matching Hello PyTorch example,
+install its dependencies, and run it with focused progress output:
 
 .. code-block:: bash
 
+   nvflare examples get hello-pt
+   cd hello-pt
    python -m pip install -r requirements.txt
    python job.py --log_config progress
 
-For other examples, use the same source checkout, or retrieve a revision-matched
-copy with ``nvflare examples get``. Add the extras the example's README names,
+For other examples, retrieve a revision-matched copy with
+``nvflare examples get``. Add the extras the example's README names,
 such as ``HE``, to the same NVFLARE installation, install its
 ``requirements.txt``, then follow its README. If an older
 ``requirements.txt`` still has a line that installs ``nvflare`` or
@@ -61,9 +58,9 @@ such as ``HE``, to the same NVFLARE installation, install its
 
 The installed NVFLARE version selects the example version: ``nvflare examples
 get`` downloads the example from the source revision recorded in your
-installation. With an editable installation, this command requires a clean
-checkout at a revision available on GitHub. To reproduce a released version,
-pin that version when installing it.
+installation. To reproduce a released version, pin that version when installing
+it. For download failures and GitHub rate limits, see the
+:doc:`examples CLI guide <user_guide/nvflare_cli/examples_command>`.
 
 The default run uses two simulated clients and three federated rounds. It runs
 on CPU, downloads no dataset, and uses deterministic synthetic images generated

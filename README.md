@@ -52,34 +52,45 @@ The example below runs this workflow on your computer, with two simulated client
 
 ## Try it locally
 
-To try the development version from `main`, create and activate a Python virtual environment as described in the
-[installation guide](https://nvflare.readthedocs.io/en/main/installation.html). With Git installed, retrieve the
-source, install it, and run the matching Hello PyTorch example:
+Create and activate a fresh Python virtual environment as described in the
+[installation guide](https://nvflare.readthedocs.io/en/main/installation.html), then choose **one** installation:
+
+**Released package, once NVFLARE 2.10.0 or later is available on [PyPI](https://pypi.org/project/nvflare/):**
 
 ```bash
-git clone --branch main https://github.com/NVIDIA/NVFlare.git
-cd NVFlare
-python -m pip install -e .
-cd examples/hello-world/hello-pt
+python -m pip install "nvflare>=2.10.0"
+```
+
+**Development version from `main`, including before the 2.10.0 release:**
+
+```bash
+python -m pip install "git+https://github.com/NVIDIA/NVFlare.git@main"
+```
+
+The development option requires Git; pip manages a temporary checkout. `main` is the unstable development branch.
+Use a separate virtual environment for each installation. If you use an earlier stable release, follow its
+[version of the Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html); the `nvflare examples` command
+was introduced in 2.10.0.
+
+After either installation, retrieve the matching Hello PyTorch example, install its dependencies, and run it:
+
+```bash
+nvflare examples get hello-pt
+cd hello-pt
 python -m pip install -r requirements.txt
 python job.py --log_config progress
 ```
 
-`main` is the unstable development branch. The editable installation and example use the same checkout. For the
-current stable release, install `nvflare` from PyPI and follow the
-[stable Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html). Use a separate virtual environment for
-each installation.
-
 This runs a two-client simulation on CPU using synthetic data; no dataset download is required. For other examples,
-use the same source checkout, or retrieve a revision-matched copy with `nvflare examples get`. Add the extras the
-example's README names, such as `HE`, to the same NVFLARE installation, install its `requirements.txt`, then follow
-its README. If an older
+retrieve a revision-matched copy with `nvflare examples get`. Add the extras the example's README names, such as
+`HE`, to the same NVFLARE installation, install its `requirements.txt`, then follow its README. If an older
 `requirements.txt` still has a line that installs `nvflare` or `nvflare-nightly`, skip it so the installed NVFLARE
 version is preserved.
 
 The installed NVFLARE version selects the example version: `nvflare examples get` downloads the example from the
-source revision recorded in your installation. With an editable installation, this command requires a clean
-checkout at a revision available on GitHub. To reproduce a released version, pin that version when installing it.
+source revision recorded in your installation. To reproduce a released version, pin that version when installing it.
+For download failures and GitHub rate limits, see the
+[examples CLI guide](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/examples_command.html#automation).
 
 Continue with the [Quick Start for main](https://nvflare.readthedocs.io/en/main/quickstart.html) to understand the run
 and inspect its results. If you use a released package, select its version in the documentation and follow the
