@@ -160,6 +160,57 @@ while flare.is_running():
     assert len(completions) == len({item["worker_pid"] for item in completions}) == 4
 
 
+@pytest.mark.timeout(300)
+def test_task_worker_metrics_reach_the_server_tensorboard_receiver(tmp_path, monkeypatch):
+    import numpy as np
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    from nvflare.fuel.utils.constants import FrameworkType
+    from nvflare.recipe.fedavg import FedAvgRecipe
+    from nvflare.recipe.utils import add_experiment_tracking
+
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
+    monkeypatch.delenv("NVFLARE_HOME", raising=False)
+    script = tmp_path / "metrics_client.py"
+    script.write_text(
+        """import nvflare.client as flare
+from nvflare.apis.analytix import AnalyticsDataType
+
+flare.init()
+while flare.is_running():
+    model = flare.receive()
+    flare.log("e2e_metric", 10.0 * model.current_round + 0.5, AnalyticsDataType.SCALAR, global_step=model.current_round)
+    flare.send(flare.FLModel(params={k: v + 1 for k, v in model.params.items()}, current_round=model.current_round,
+                             meta={"NUM_STEPS_CURRENT_ROUND": 1}))
+"""
+    )
+    recipe = FedAvgRecipe(
+        name="task_worker_metrics",
+        model=np.zeros(4),
+        min_clients=2,
+        num_rounds=2,
+        train_script=str(script),
+        framework=FrameworkType.NUMPY,
+        execution_lifetime="task",
+    )
+    add_experiment_tracking(recipe, "tensorboard")
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "simulation"))
+    run = recipe.execute(env)
+    result = run.get_result(timeout=240, clean_up=False)
+    assert result is not None and not env.last_run_failed
+    root = Path(result)
+    # Each worker logs over its cell session; the Client Job fires the event and the server's receiver writes it.
+    scalars = {}
+    for events in root.rglob("events.out.tfevents*"):
+        accumulator = EventAccumulator(str(events))
+        accumulator.Reload()
+        for tag in accumulator.Tags()["scalars"]:
+            scalars[(events.parent.name, tag)] = [(e.step, e.value) for e in accumulator.Scalars(tag)]
+    assert scalars == {(site, "e2e_metric"): [(0, 0.5), (1, 10.5)] for site in ("site-1", "site-2")}
+    assert not list(root.rglob("analytics.fobs")), "metrics are messages, never files"
+    assert len(list(root.rglob("completion.json"))) == 4
+
+
 @pytest.mark.timeout(900)
 @pytest.mark.parametrize("exchange_format,transfer_type", [("numpy", "FULL"), ("pytorch", "FULL"), ("pytorch", "DIFF")])
 def test_seeded_task_and_job_training_match_every_round(tmp_path, monkeypatch, exchange_format, transfer_type):

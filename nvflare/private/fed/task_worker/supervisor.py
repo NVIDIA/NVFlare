@@ -72,7 +72,6 @@ class TaskSupervisorOutcome:
     identity: TaskAttemptIdentity
     result: Optional[Shareable] = None
     completion: Optional[TaskCompletion] = None
-    analytics: tuple[dict, ...] = ()
     aborted: bool = False
     execution_status: Optional[TaskExecutionStatus] = None
 
@@ -304,7 +303,6 @@ class TaskSupervisor:
             worker_pid = getattr(handle, "process_group_id", None)
             if worker_pid is not None and completion.worker_pid != worker_pid:
                 raise ValueError("task completion worker PID does not match launched process")
-            analytics = tuple(store.read_analytics(identity, completion))
             with self._state_lock:
                 if self._aborted(attempt, abort_signal):
                     attempt.failed = True
@@ -313,7 +311,7 @@ class TaskSupervisor:
                 attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
             self._diagnostic(attempt, "validated", worker_pid=completion.worker_pid, worker_ppid=completion.worker_ppid)
-            return TaskSupervisorOutcome(identity, result, completion, analytics, execution_status=status)
+            return TaskSupervisorOutcome(identity, result, completion, execution_status=status)
         except BaseException as e:
             if attempt is not None:
                 attempt.failed = True
