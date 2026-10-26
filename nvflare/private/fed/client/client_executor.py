@@ -22,7 +22,14 @@ from dataclasses import dataclass, field
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConnPropKey,
+    FLContextKey,
+    ReservedKey,
+    RunProcessKey,
+    SystemConfigs,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode
@@ -684,6 +691,9 @@ class JobExecutor(ClientExecutor):
             self.logger.debug("abort_task sent")
 
     def _restart_job(self, job_id, job_handle, return_code, fl_ctx):
+        # A replacement cannot reconstruct an intermediate CJ's child-result receipts.
+        if not fl_ctx.get_prop(ReservedKey.IS_LEAF, True):
+            return False
         if not self.max_cj_restart_failures or return_code not in (
             JobReturnCode.EXECUTION_ERROR,
             ProcessExitCode.EXCEPTION,

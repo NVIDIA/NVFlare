@@ -21,7 +21,14 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, FLMetaKey, JobConstants, RunProcessKey
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    FLMetaKey,
+    JobConstants,
+    ReservedKey,
+    RunProcessKey,
+)
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode
@@ -44,8 +51,9 @@ from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_ce
 from tests.timing_utils import isolate_time
 
 
-def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True):
+def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True):
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    ctx.set_prop(ReservedKey.IS_LEAF, is_leaf, private=False, sticky=True)
     client.cell.get_fqcn.return_value = "site-1"
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
     executor.max_cj_restart_failures = limit
@@ -129,10 +137,11 @@ def test_nonretryable_outcomes_do_not_restart(tmp_path, code):
     assert launcher.launch_job.call_count == 1
 
 
-@pytest.mark.parametrize("limit, confirmed", [(0, True), (3, False)])
-def test_recovery_requires_enabled_policy_and_confirmed_death(tmp_path, limit, confirmed):
-    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], limit=limit, confirmed=confirmed)
+@pytest.mark.parametrize("limit, confirmed, is_leaf", [(0, True, True), (3, False, True), (3, True, False)])
+def test_recovery_requires_leaf_site_enabled_policy_and_confirmed_death(tmp_path, limit, confirmed, is_leaf):
+    launcher, client, _ = _run_recovery(tmp_path, [(True, 104)], limit=limit, confirmed=confirmed, is_leaf=is_leaf)
     assert launcher.launch_job.call_count == 1
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
 
 
 def test_delayed_readiness_from_dead_cj_does_not_reset_budget(tmp_path):

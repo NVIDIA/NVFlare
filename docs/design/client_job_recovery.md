@@ -7,6 +7,9 @@ its existing task and attempt IDs. User code restores its own checkpoint.
 
 Implemented for Process, Docker, and Slurm. Kubernetes is deferred because its
 current CJ workspace is ephemeral. CP and the server must remain running.
+Hierarchical federation recovery is outside this feature's scope. Intermediate
+CJs retain their existing failure behavior because replacement cannot restore
+their in-memory child-result receipts; automatic recovery is limited to leaf CJs.
 The job's client registration must also remain valid: re-registering CP creates a
 new token that the existing server job does not adopt. Migrating that registration
 is outside this client-only recovery feature.
