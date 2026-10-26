@@ -287,8 +287,10 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     cells = []
     try:
         for fqcn in ("server", "site-1.job-1"):
-            # Other tests in the same process may leak a cell under this name without stopping it.
+            # Other tests in the same process may leak a cell under this name, and its stats pools, without stopping it.
             CoreCell.ALL_CELLS.pop(fqcn, None)
+            for pool in [name for name in StatsPoolManager.pools if name.endswith(f"@{fqcn}")]:
+                StatsPoolManager.delete_pool(pool)
             cells.append(Cell(fqcn, server_url, secure=False, credentials={}))
             cells[-1].start()
         context = FLContext()
