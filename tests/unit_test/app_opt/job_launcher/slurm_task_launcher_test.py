@@ -114,6 +114,20 @@ def backend(tmp_path, monkeypatch, request):
     return _backend(tmp_path, monkeypatch, request.param)
 
 
+def test_task_allocation_always_requests_cpu_and_memory(backend):
+    launcher, adapter, request = backend
+    launcher.launch_task(request)
+    argv = adapter.submit.call_args.args[0]
+    assert "--cpus-per-task=1" in argv
+    assert "--mem=1024M" in argv
+
+
+@pytest.mark.parametrize("defaults", [{"cpu_cores": None}, {"memory_mb": None}])
+def test_site_task_defaults_require_cpu_and_memory(tmp_path, defaults):
+    with pytest.raises(ValueError, match="defaults require CPU and memory"):
+        SlurmTaskLauncher(workspace_path=str(tmp_path), shared_filesystem=True, cgroup_enforced=True, **defaults)
+
+
 def test_submission_and_resources_are_separate_from_cj(backend, monkeypatch):
     launcher, adapter, request = backend
     monkeypatch.setenv("SLURM_GPUS_ON_NODE", "8")
@@ -301,7 +315,9 @@ def test_uncertain_submission_retains_cleanup_handle_and_identity_fence(backend,
     with pytest.raises(TaskLaunchError) as error:
         launcher.launch_task(request)
     handle = error.value.handle
-    assert handle.request == request
+    assert handle.request == replace(
+        request, resources=TaskResourceRequest(cpu_cores=1, memory_mb=1024, gpu_count=request.resources.gpu_count)
+    )
     assert Path(handle.job_dir, "batch.sh").exists()
     with pytest.raises(SlurmLauncherError, match="stale Slurm artifacts"):
         launcher.launch_task(request)

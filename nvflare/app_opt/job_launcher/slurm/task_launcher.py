@@ -475,7 +475,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         pending_timeout=600.0,
         python_path="/usr/bin/python3",
         cpu_cores=1,
-        memory_mb=None,
+        memory_mb=1024,
         gpu_count=0,
         environment=None,
     ):
@@ -505,6 +505,8 @@ class SlurmTaskLauncher(TaskLauncherSpec):
             raise ValueError("Slurm task python_path must be an absolute path shared with compute hosts")
         self.python_path = python_path
         self.resources = TaskResourceRequest(cpu_cores, memory_mb, gpu_count)
+        if self.resources.cpu_cores is None or self.resources.memory_mb is None:
+            raise ValueError("Slurm task defaults require CPU and memory requests")
         if self.resources.cpu_cores is not None and not float(self.resources.cpu_cores).is_integer():
             raise ValueError("Slurm task default CPU request must be whole cores")
         self.environment = {"PATH": "/usr/local/bin:/usr/bin:/bin", **dict(environment or {})}
@@ -626,6 +628,15 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         )
         if staged:
             request = self._materialize_staged(request)
+        else:
+            request = replace(
+                request,
+                resources=TaskResourceRequest(
+                    request.resources.cpu_cores or self.resources.cpu_cores,
+                    request.resources.memory_mb or self.resources.memory_mb,
+                    request.resources.gpu_count,
+                ),
+            )
         # Native allocation ownership is required. A process launcher fallback
         # or a visible GPU on the CJ would not satisfy this contract.
         if os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit():
