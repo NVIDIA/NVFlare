@@ -8,7 +8,7 @@ site keeps control of its data and local execution.
 [Website](https://nvidia.github.io/NVFlare) |
 [NVIDIA FLARE Developer Site](https://developer.nvidia.com/flare) |
 [Documentation](https://nvflare.readthedocs.io/en/main/) |
-[Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html) |
+[Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) |
 [Examples](https://nvidia.github.io/NVFlare/catalog/) |
 [Discussions](https://github.com/NVIDIA/NVFlare/discussions)
 
@@ -52,31 +52,39 @@ The example below runs this workflow on your computer, with two simulated client
 
 ## Try it locally
 
-Create and activate a Python virtual environment as described in the
-[installation guide](https://nvflare.readthedocs.io/en/stable/installation.html), then install NVFLARE 2.10.0 or
-later, retrieve the matching Hello PyTorch example, install its dependencies, and run it:
+To try the development version from `main`, create and activate a Python virtual environment as described in the
+[installation guide](https://nvflare.readthedocs.io/en/main/installation.html). With Git installed, retrieve the
+source, install it, and run the matching Hello PyTorch example:
 
 ```bash
-python -m pip install "nvflare>=2.10.0"
-nvflare examples get hello-pt
-cd hello-pt
+git clone --branch main https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
+python -m pip install -e .
+cd examples/hello-world/hello-pt
 python -m pip install -r requirements.txt
 python job.py --log_config progress
 ```
 
-This runs a two-client simulation on CPU using synthetic data; no dataset download is required. The same pattern
-applies to other examples: install NVFLARE (add the extras the example's README names, such as `HE`), retrieve the
-example with `nvflare examples get`, install its `requirements.txt`, then follow its README. If an older
+`main` is the unstable development branch. The editable installation and example use the same checkout. For the
+current stable release, install `nvflare` from PyPI and follow the
+[stable Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html). Use a separate virtual environment for
+each installation.
+
+This runs a two-client simulation on CPU using synthetic data; no dataset download is required. For other examples,
+use the same source checkout, or retrieve a revision-matched copy with `nvflare examples get`. Add the extras the
+example's README names, such as `HE`, to the same NVFLARE installation, install its `requirements.txt`, then follow
+its README. If an older
 `requirements.txt` still has a line that installs `nvflare` or `nvflare-nightly`, skip it so the installed NVFLARE
 version is preserved.
 
 The installed NVFLARE version selects the example version: `nvflare examples get` downloads the example from the
-source revision recorded in your installation. To reproduce a specific release, pin it, for example
-`"nvflare==2.10.0"`.
+source revision recorded in your installation. With an editable installation, this command requires a clean
+checkout at a revision available on GitHub. To reproduce a released version, pin that version when installing it.
 
-Continue with the [Quick Start for the stable release](https://nvflare.readthedocs.io/en/stable/quickstart.html) to
-understand the run and inspect its results. If you use an older release, select its version in the documentation.
-Follow the example README for that release for dependencies, commands, and troubleshooting.
+Continue with the [Quick Start for main](https://nvflare.readthedocs.io/en/main/quickstart.html) to understand the run
+and inspect its results. If you use a released package, select its version in the documentation and follow the
+matching example README for dependencies, commands, and troubleshooting. The `nvflare examples` command requires
+NVFLARE 2.10.0 or later, or a development installation from `main`.
 
 ## Choose your path
 
@@ -84,7 +92,7 @@ Start with the guide for the concept and supported workflow, then use a maintain
 
 | Goal | Read first | Then run or adapt |
 |---|---|---|
-| Adapt existing training code | [Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html), then [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported projects or [API selection](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html) for manual and custom integration | Try the [Agent Skills conversion examples](./examples/hello-world/agent-skills/README.md), or use [Hello PyTorch with the Client API and a Recipe](./examples/hello-world/hello-pt/README.md) |
+| Adapt existing training code | [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html), then [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported projects or [API selection](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html) for manual and custom integration | Try the [Agent Skills conversion examples](./examples/hello-world/agent-skills/README.md), or use [Hello PyTorch with the Client API and a Recipe](./examples/hello-world/hello-pt/README.md) |
 | Fine-tune large language models | [Federated LLM guide](https://nvflare.readthedocs.io/en/main/programming_guide/llm_fine_tuning.html) | [Hugging Face LoRA fine-tuning](./examples/hello-world/hello-huggingface/README.md) or [NeMo supervised fine-tuning](./integration/nemo/examples/supervised_fine_tuning/README.md) |
 | Federated analytics and statistics | [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported tabular and image datasets, or the [Federated Statistics guide](https://nvflare.readthedocs.io/en/main/examples/federated_statistics_overview.html) for manual and custom workflows | Agent-assisted [tabular](./examples/hello-world/agent-skills/fedstats-tabular/README.md) or [image statistics](./examples/hello-world/agent-skills/fedstats-image/README.md), or manual [DataFrame](./examples/advanced/federated-statistics/df_stats/README.md) or [image statistics](./examples/advanced/federated-statistics/image_stats/README.md) |
 | Research and design custom FL algorithms or workflows | [Collaboration API guide (Technical Preview)](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/collab_api.html) | [Hello FedAvg with the Collab API](./examples/hello-world/hello-collab/README.md), then [split learning, asynchronous aggregation, and swarm examples](./examples/advanced/collab/README.md) |
@@ -95,9 +103,9 @@ Start with the guide for the concept and supported workflow, then use a maintain
 
 Use the [NVIDIA FLARE website](https://nvidia.github.io/NVFlare) to discover tutorials, examples, research, webinars,
 and events. The [documentation](https://nvflare.readthedocs.io/en/main/) provides the authoritative guides. After
-installing NVFLARE 2.10.0 or later, `nvflare examples list` shows the curated catalog and `nvflare examples get <name>`
-retrieves an example matched to that installation's source revision. Each example README then owns its exact setup
-and run steps.
+installing NVFLARE 2.10.0 or later, or the development version from `main`, `nvflare examples list` shows the curated
+catalog and `nvflare examples get <name>` retrieves an example matched to that installation's source revision. Each
+example README then owns its exact setup and run steps.
 
 ## Federated learning and computing
 

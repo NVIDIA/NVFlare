@@ -12,49 +12,58 @@ then points you to the right API and execution environment for your own work.
 Run Your First Federation
 =========================
 
-The ``nvflare examples`` command used below is available in NVFLARE 2.10.0 and
-later, or in development builds from ``main``. Create and activate a fresh Python
-virtual environment as described in :doc:`Installation <installation>`, then
-choose **one** installation option:
+Create and activate a fresh Python virtual environment as described in
+:doc:`Installation <installation>`, then choose **one** installation option:
 
-**Released package (NVFLARE 2.10.0 or later):**
-
-.. code-block:: bash
-
-   python -m pip install "nvflare>=2.10.0"
-
-**Development only (unstable main branch):** To develop or test unreleased
-features, install from source instead. This option requires Git:
+**Development (unstable main branch):** To try the code on ``main``, install
+from source. This option requires Git and does not depend on a PyPI release:
 
 .. code-block:: bash
 
    git clone --branch main https://github.com/NVIDIA/NVFlare.git
-   python -m pip install -e ./NVFlare
+   cd NVFlare
+   python -m pip install -e .
+   cd examples/hello-world/hello-pt
 
-Keep the checkout unchanged while retrieving examples: the CLI uses its Git
-revision to select matching source and rejects uncommitted tracked changes.
-Do not install both options in the same environment.
+The editable installation and example use the same checkout, so no separate
+example download is needed.
 
-After either installation, retrieve the Hello PyTorch example that matches the
-installed package revision and run it with focused progress output:
+**Released package with the examples CLI:** If NVFLARE 2.10.0 or later is
+available on `PyPI <https://pypi.org/project/nvflare/>`_, install it and retrieve
+the matching example with:
 
 .. code-block:: bash
 
+   python -m pip install "nvflare>=2.10.0"
    nvflare examples get hello-pt
    cd hello-pt
+
+For earlier releases, follow the Quick Start for that documentation version;
+the `stable Quick Start <https://nvflare.readthedocs.io/en/stable/quickstart.html>`_
+matches the current stable release. The ``nvflare examples`` commands
+do not apply to versions before 2.10.0. Do not install both options in the same
+environment.
+
+From the example directory reached by either option, install its dependencies
+and run it with focused progress output:
+
+.. code-block:: bash
+
    python -m pip install -r requirements.txt
    python job.py --log_config progress
 
-The same pattern applies to other examples: install NVFLARE (add the extras the
-example's README names, such as ``HE``), retrieve it with ``nvflare examples
-get``, install its ``requirements.txt``, then follow its README. If an older
+For other examples, use the same source checkout, or retrieve a revision-matched
+copy with ``nvflare examples get``. Add the extras the example's README names,
+such as ``HE``, to the same NVFLARE installation, install its
+``requirements.txt``, then follow its README. If an older
 ``requirements.txt`` still has a line that installs ``nvflare`` or
 ``nvflare-nightly``, skip it so the installed NVFLARE version is preserved.
 
 The installed NVFLARE version selects the example version: ``nvflare examples
 get`` downloads the example from the source revision recorded in your
-installation. To reproduce a specific release, pin it, for example
-``"nvflare==2.10.0"``.
+installation. With an editable installation, this command requires a clean
+checkout at a revision available on GitHub. To reproduce a released version,
+pin that version when installing it.
 
 The default run uses two simulated clients and three federated rounds. It runs
 on CPU, downloads no dataset, and uses deterministic synthetic images generated
@@ -269,7 +278,8 @@ learning resources together with research, webinars, and events. Visit the
 `NVIDIA FLARE developer portal <https://developer.nvidia.com/flare>`_ for the
 broader product and developer entry point.
 
-With NVFLARE 2.10.0 or later installed, list and retrieve curated examples with:
+With NVFLARE 2.10.0 or later, or the development version from ``main`` installed,
+list and retrieve curated examples with:
 
 .. code-block:: bash
 
