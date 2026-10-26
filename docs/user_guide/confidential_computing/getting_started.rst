@@ -39,8 +39,8 @@ See :ref:`cc_architecture_overview` for the responsibilities and trust boundarie
    * - Confidential Containers (CoCo)
      - You deploy Kubernetes workloads inside Kata confidential VMs, with
        encrypted workload images and InitData-bound guest policy.
-     - :github_nvflare_link:`CoCo collaboration and deployment walkthrough
-       <examples/devops/coco/FL-DEPLOYMENT.md>`
+     - :github_nvflare_link:`CoCo-ready cluster workflow
+       <examples/devops/coco/README.md>`
    * - Azure confidential computing
      - You use Azure confidential VMs or confidential container instances.
        External Azure tooling creates the images and resources.
@@ -65,14 +65,13 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   <nvflare/lighter/cc/image_builder/CONFORMANCE.md>`. Prepare the trusted build
   worker, approved generic CVM, and Trustee service described in
   :ref:`cvm_builder`.
-* For CoCo, the :github_nvflare_link:`hardware validation record
-  <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`
-  reports a mixed TDX CPU-only and SNP+NVIDIA GPU functional run on
-  **2026-10-04**, with an ordinary trusted server. The workload performed CPU
-  arithmetic, not GPU training. Review the machine prerequisites and
-  role-separated handoffs in the
-  :github_nvflare_link:`deployment walkthrough
-  <examples/devops/coco/FL-DEPLOYMENT.md>`.
+* For CoCo, the :ref:`implementation scope and hardware evidence limits
+  <coco_security_architecture>` describe a mixed TDX CPU-only and SNP+NVIDIA GPU
+  functional run on **2026-10-04**, with an ordinary trusted server. The workload
+  performed CPU arithmetic, not GPU training. Start with an existing CoCo-ready
+  cluster and configured Trustee, using the inputs in the
+  :github_nvflare_link:`four-step deployment workflow
+  <examples/devops/coco/README.md>`.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`
   for the cloud resources and attestation setup.
 
@@ -88,8 +87,8 @@ configuration check is not hardware acceptance.
   Use exact, reviewed ``class_allow_list`` entries for additional components.
 * Validate the job's executor against the selected deployment. External-process
   execution has failed in sealed CoCo deployments; follow the documented
-  :github_nvflare_link:`in-process executor workaround
-  <examples/devops/coco/FL-DEPLOYMENT.md#executor-limitation-and-workaround>`.
+  :github_nvflare_link:`in-process executor guidance
+  <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
   Changing code or policy requires a new approved release.
 * Keep confidential checkpoints, credentials, and logs within protected storage
   or an explicitly approved secure output path. CVM Builder's ``user_config``,
@@ -98,7 +97,7 @@ configuration check is not hardware acceptance.
   An encrypted image does not implement dataset authorization or output review.
 * Treat GPU driver and VBIOS versions as approved policy inputs. See the
   :github_nvflare_link:`CoCo GPU reference-value procedure
-  <examples/devops/coco/service/GPU-REFERENCE-VALUES.md>` before deploying or
+  <examples/devops/coco/TRUSTEE.md#set-gpu-references-when-required>` before deploying or
   changing a GPU baseline.
 
 5. Provision, launch, and validate

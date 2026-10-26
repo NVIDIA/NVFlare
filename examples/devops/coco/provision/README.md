@@ -80,6 +80,14 @@ The default protects one client. To protect the server too, enable its
 `cc_config` in `project.yaml` and provide its own application image/profile.
 GPU profiles require one pGPU per Pod, including a protected GPU server.
 
+## Start with one CPU-only client
+
+For a CPU-only SNP first run, leave the server's `cc_config` commented out in
+`project.yaml`, set `gpu_tee: none` in `cc_site-1.yml`, and use
+`RUNTIME_CLASS=kata-qemu-snp` in `../admin/platform.env`. Capture with that same
+runtime and use its launch-profile output. The remaining build and handoff
+steps are identical; GPU reference values are unnecessary for this variant.
+
 ## Provision
 
 While still in `examples/devops/coco/provision`, run:
@@ -115,6 +123,24 @@ to the Trustee administrator and run
 [release registration](../TRUSTEE.md#after-provisioning-register-each-workload-release).
 `nvflare provision` does not configure Trustee automatically. After registration,
 give only the Pod YAML to the cluster operator and follow [launch](../LAUNCH.md).
+
+## When inputs change
+
+Each provisioning run builds every protected participant. Choose a fresh
+`coco.release_name` for each of them before rerunning; existing releases are
+immutable. Register every new private handoff before launching its new Pod.
+
+| Changed input | Steps to repeat |
+| --- | --- |
+| Application image, NVFlare version, dependencies, or startup kit | Provision, register the new releases, then launch. Reuse capture outputs only while the runtime and launch contract remain unchanged. |
+| Guest runtime/firmware artifacts or launch/security configuration | Confirm the runtime is supported, capture again, register/read back platform references, use the new launch profile, then provision/register/launch new releases. |
+| CPU/GPU selection | Select the matching runtime, capture it, register the required CPU/GPU references, then provision/register/launch new releases. |
+| AS signing public key, Trustee endpoint/CA, or registry endpoint/CA | Update the project inputs and any corresponding `service/platform.env` administration access or collector-publication/capture inputs. Reprovision participants so guest and peer-verification configuration changes together; register and launch the new releases. |
+| Publisher or Trustee administration credential only | Replace the private credential input for its next use. This alone requires neither recapture nor rebuilding running images. |
+| Reference allowlist or appraisal policy only, with unchanged runtime/launch inputs | Have the Trustee administrator update and verify the active configuration; check that intended releases still appraise successfully. Already released keys are not recovered by a policy change. |
+
+Keep the generated Pod paired with its release. Make workload changes through
+provisioning rather than editing its image, command, or InitData in place.
 
 The [unified deployment schema](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html)
 and [security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
