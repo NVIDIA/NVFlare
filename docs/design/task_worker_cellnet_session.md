@@ -102,8 +102,13 @@ metric's DXO Shareable. The Client Job answers the request after
 `send_analytic_dxo` on the executing attempt's `FLContext`, on a cell thread,
 while `execute` is still blocked in the supervisor; the resident
 `ConvertToFedEvent` widget forwards it to the server as for any resident
-executor. A metric the Client Job rejects (not a DXO, or a receiver that raises) fails the worker's attempt,
-as a rejected spool write did before. The analytics spool, its artifact kind
+executor. A metric the Client Job rejects (not a DXO, undecodable, or arriving
+after the attempt settled) fails the worker's attempt. A receiver that raises
+does not: event dispatch logs the exception and records it on the context, the
+same as for a resident executor in job lifetime, so a failing tracking backend
+never fails training; the replayed spool behaved the same. The worker's `log`
+therefore means delivered and fired, not processed by every receiver. The
+analytics spool, its artifact kind
 and its replay are gone. `cell_session` stays optional in the bootstrap for
 executors that never log, but a Client API worker refuses to start without one.
 

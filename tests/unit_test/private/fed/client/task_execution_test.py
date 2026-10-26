@@ -743,6 +743,31 @@ flare.send(FLModel(metrics={"decoded": model.meta["custom"].value}))
         adapter.handle_event(EventType.END_RUN, context)
 
 
+def test_a_receiver_failure_is_logged_as_in_job_lifetime_and_only_unfirable_metrics_are_rejected():
+    """Event dispatch records receiver exceptions instead of raising, for task and job lifetime alike."""
+    from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
+    from nvflare.apis.fl_component import FLComponent
+    from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+    from nvflare.apis.utils.event import fire_event_to_components
+
+    class FailingReceiver(FLComponent):
+        def handle_event(self, event_type, fl_ctx):
+            if event_type == ANALYTIC_EVENT_TYPE:
+                raise RuntimeError("tracking backend is down")
+
+    receiver = FailingReceiver()
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    context = FLContext()
+    engine = SimpleNamespace(fire_event=lambda event, ctx: fire_event_to_components(event, [receiver], ctx))
+    context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=True)
+    metric = create_analytic_dxo(tag="loss", value=0.5, data_type=AnalyticsDataType.SCALAR).to_shareable()
+
+    adapter._fire_analytics(context, metric)
+    assert isinstance(context.get_prop(FLContextKey.EXCEPTIONS)[receiver.name], RuntimeError)
+    with pytest.raises(ValueError, match="DXO Shareable"):
+        adapter._fire_analytics(context, {"not": "a shareable"})
+
+
 def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     from nvflare.apis.fl_constant import ReturnCode
     from nvflare.apis.shareable import make_reply
@@ -816,7 +841,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     records = []
     on_analytics = records.append
     if write_failure == "analytics":
-        on_analytics = Mock(side_effect=ValueError("receiver refused the record"))
+        on_analytics = Mock(side_effect=ValueError("the Client Job rejected the metric"))
     cj_cell = context.get_engine().get_cell()
     cell_session.listen(cj_cell)
     session = cell_session.CellWorkerSession(cj_cell, on_analytics)
@@ -830,7 +855,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
         if write_failure == "result":
             monkeypatch.setattr(FileTaskArtifactStore, "stage_result", Mock(side_effect=OSError(match)))
         else:
-            error, match = RuntimeError, "receiver refused the record"
+            error, match = RuntimeError, "the Client Job rejected the metric"
         with pytest.raises(error, match=match):
             worker.run_worker(path, context_binding=bind_client_task_context)
         assert not Path(store.attempt_dir(identity), "completion.json").exists()

@@ -131,7 +131,7 @@ class CellWorkerSession:
 
     def handle(self, topic, request):
         if topic == Topic.LOG:
-            # The reply is the report: the worker raises it and records it in failure.json.
+            # A rejection is reported in the reply; the worker raises it and records it in failure.json.
             try:
                 data = fobs.loads(bytes(request.payload))
                 with self._lock:
@@ -193,7 +193,11 @@ class CellWorkerTransport:
         _check_reply(reply, what)
 
     def log(self, data):
-        """One metric as a DXO Shareable; the Client Job answers after firing it, so a rejected one fails the attempt."""
+        """Send one metric as a DXO Shareable and wait until the Client Job has fired it.
+
+        A metric the Client Job rejects fails the attempt. A receiver that raises does not: event dispatch logs it,
+        as for a resident executor in job lifetime.
+        """
         self._request(Topic.LOG, fobs.dumps(data, fobs_ctx={"native": True}), "analytics")
 
     def close(self):

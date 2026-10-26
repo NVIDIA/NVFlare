@@ -70,7 +70,8 @@ Sending serializes the result durably to disk before returning and retains only
 its artifact reference in the worker. Script failure or finalizer failure still
 prevents completion. Each log call travels live to the Client Job over the
 worker's cell session (`task_worker_cellnet_session.md`), which fires it into the
-job while the attempt is still owned; a rejected record fails the attempt. The
+job while the attempt is still owned; a record the Client Job rejects fails the
+attempt, while a receiver that raises is logged as in job lifetime. The
 worker captures these records directly through the Client API adapter; it has no
 local analytics event handlers.
 Worker log lines are replayed through CJ logging after settlement, making them

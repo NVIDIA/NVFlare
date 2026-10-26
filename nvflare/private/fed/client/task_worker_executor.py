@@ -300,7 +300,11 @@ class TaskWorkerExecutor(Executor):
             self.log_warning(fl_ctx, f"could not replay task worker log {path}: {e}")
 
     def _fire_analytics(self, fl_ctx, data):
-        """Fire one metric the worker logged; runs on a cell thread while ``execute`` owns the attempt."""
+        """Fire one metric the worker logged; runs on a cell thread while ``execute`` owns the attempt.
+
+        Raises only for a metric it cannot fire. Receiver failures are logged and recorded on ``fl_ctx`` by event
+        dispatch, as for a resident executor in job lifetime, so a failing tracking backend never fails training.
+        """
         if not isinstance(data, Shareable):
             raise ValueError("task worker analytics must be a DXO Shareable")
         send_analytic_dxo(self, from_shareable(data), fl_ctx)
