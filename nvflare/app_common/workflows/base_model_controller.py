@@ -18,7 +18,7 @@ from typing import Callable, List, Optional, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
@@ -315,8 +315,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             )
             if accepted:
                 self.info(f"Result of unknown task {task_name} sent to aggregator.")
+        elif fl_ctx.get_prop(FLContextKey.TASK_RESULT_IS_LATE, False):
+            self.log_info(fl_ctx, f"Ignoring late result from completed task {task_name}")
         else:
-            self.error("Ignoring result from unknown task.")
+            self.log_error(fl_ctx, "Ignoring result from unknown task.")
 
     def _accept_train_result(
         self, client_name: str, result: Shareable, fl_ctx: FLContext, is_unknown_task: bool = False
