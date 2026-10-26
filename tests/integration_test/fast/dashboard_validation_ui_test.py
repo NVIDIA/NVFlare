@@ -110,6 +110,8 @@ def test_registration_invalid_organization_can_be_corrected(page, live_dashboard
     page.locator('input[name="password"]').fill("Testing1234!")
     page.locator('input[name="confirm_password"]').fill("Testing1234!")
     page.get_by_role("button", name="Register", exact=True).click()
+    # Step two is rendered before the separate login request stores its token.
+    page.wait_for_function("JSON.parse(localStorage.getItem('session') || '{}').user?.token")
     organization = page.locator('input[name="org"]')
     expect(organization).to_be_visible()
     organization.fill("Test Holger Client")
