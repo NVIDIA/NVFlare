@@ -98,8 +98,9 @@ class CellWorkerSession:
         self.worker_fqcn = FQCN.join([cell.get_fqcn(), f"task_worker_{uuid.uuid4().hex[:8]}"])
         # Requests arrive on the cell's frame pool; metrics share the attempt's FLContext, so fire them one at a
         # time, and never after close(): a request already waiting for the lock belongs to a settled attempt.
+        # close() only sets the event, so a receiver that stalls never holds up the executor thread.
         self._lock = threading.Lock()
-        self._closed = False
+        self._closed = threading.Event()
         _sessions[self.worker_fqcn] = self
 
     def bootstrap_fields(self):
@@ -109,8 +110,7 @@ class CellWorkerSession:
         return {"connect_url": connect_url, "worker_fqcn": self.worker_fqcn, "token": self.token}
 
     def close(self):
-        with self._lock:
-            self._closed = True
+        self._closed.set()
         if _sessions.get(self.worker_fqcn) is self:
             del _sessions[self.worker_fqcn]
 
@@ -126,7 +126,7 @@ class CellWorkerSession:
         if topic == Topic.LOG:
             try:
                 with self._lock:
-                    if self._closed:
+                    if self._closed.is_set():
                         return _reject("session is closed")
                     self.on_analytics(payload.get("data"))
             except Exception as e:

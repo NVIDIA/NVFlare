@@ -130,13 +130,27 @@ def test_rejected_or_unproven_records_fail_the_logging_worker(network):
     assert cell_session._sessions == {}
 
 
-def test_a_record_that_reaches_a_closed_session_is_rejected(network):
-    """A request past the registry lookup but queued behind the lock must not fire after close()."""
+def test_a_record_that_reaches_a_closed_session_is_rejected_and_close_never_waits_for_a_receiver(network):
+    """A request queued behind the lock must not fire after close(), and close() must not wait for a stalled one."""
+    import threading
+
     fired = []
-    cj, transport = _open_pair(network, fired.append)
+    receiving, release = threading.Event(), threading.Event()
+
+    def receiver(data):
+        fired.append(data)
+        receiving.set()
+        release.wait(5)
+
+    cj, transport = _open_pair(network, receiver)
     transport.open()
     request = new_cell_message({}, {"token": cj.token, "data": Shareable()})
-    cj.close()
-    reply = cj.handle(cell_session.Topic.LOG, request)
+    stalled = threading.Thread(target=cj.handle, args=(cell_session.Topic.LOG, request), daemon=True)
+    stalled.start()
+    assert receiving.wait(5)
+    cj.close()  # returns while the receiver is still stalled
+    reply = cj.handle(cell_session.Topic.LOG, new_cell_message({}, {"token": cj.token, "data": Shareable()}))
+    release.set()
+    stalled.join(5)
     assert reply.get_header(MessageHeaderKey.ERROR) == "session is closed"
-    assert fired == []
+    assert len(fired) == 1, "only the record that started before close() reached the receiver"
