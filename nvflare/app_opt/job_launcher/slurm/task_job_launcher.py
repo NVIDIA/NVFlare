@@ -32,6 +32,7 @@ from nvflare.app_opt.job_launcher.slurm.task_policy import (
 )
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.defs import ExecutionLifetime
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.task_worker.protocol import _open_regular
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -81,7 +82,7 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         check_job_id(job_id)
         with _open_regular(workspace.get_client_app_config_file_path(job_id)) as stream:
             config = json.load(stream)
-        lifetime = ExecutionLifetime.validate(config.get("execution_lifetime", ExecutionLifetime.JOB))
+        lifetime = get_client_execution_lifetime(config)
         validate_cj_execution_lifetime(job_meta, fl_ctx.get_identity_name(), lifetime)
         if lifetime == ExecutionLifetime.JOB:
             plan = super()._build_launch_plan(job_meta, fl_ctx)
