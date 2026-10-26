@@ -79,6 +79,16 @@ differs. A first recognized late result within its issuing workflow still follow
 the established unknown-task hook. Exceptions after receipt do not repeat effects.
 Fatal results record receipt before panic handling.
 
+During the unknown-task callback and its surrounding events, a private, non-sticky
+`FLContextKey.TASK_RESULT_IS_LATE` property identifies a recognized retired
+assignment whose client, task, attempt, peer, and job identities match. The property
+is removed when callback processing exits. The default ModelController logs an
+ignored non-training result at INFO for these expected late assignments, while
+genuinely unknown non-training tasks retain ERROR diagnostics. Training-result
+handling and duplicate-result suppression are unchanged.
+This logging policy applies only to the default `BaseModelController` hook;
+other controller overrides retain their existing behavior.
+
 There is one workflow assignment history, with identity and receipt metadata,
 never result payloads. Active assignments hold their own receipt marker; retired
 assignments enter a bounded LRU history. Configure `task_result_history_size` in

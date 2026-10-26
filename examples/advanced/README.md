@@ -19,6 +19,10 @@ provided.
 * [Attach an externally managed trainer](./client-api-attach/README.md)
   * Connects the same Client API training loop through either a direct network profile or shared-file rendezvous.
 
+## Data access
+* [Gen3 data access](./gen3/README.md)
+  * Access protected Gen3 data using site-owned study credentials and train a federated NumPy model.
+
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
