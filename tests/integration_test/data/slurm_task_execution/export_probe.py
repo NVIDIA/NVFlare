@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Export the shared CPU/CUDA application with native Slurm resource metadata."""
+"""Export the CPU/CUDA probe with native or portable Slurm compute budgets."""
 
 import argparse
 from pathlib import Path
@@ -32,16 +32,14 @@ def main():
     parser.add_argument("--gpu-count", type=int, default=1)
     parser.add_argument("--clients", type=int, default=1)
     parser.add_argument("--lifetime", choices=("job", "task"), default="task")
+    parser.add_argument("--resource-format", choices=("native", "portable"), default="native")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     gpu_count = args.gpu_count if args.device == "cuda" else 0
     if args.clients < 1 or (args.device == "cuda" and gpu_count < 1):
         parser.error("clients and requested CUDA GPU count must be positive")
-    job = FedJob(
-        name=f"slurm-probe-{args.device}-{args.lifetime}",
-        min_clients=args.clients,
-        execution_lifetime=args.lifetime,
-        meta_props={
+    if args.resource_format == "native":
+        metadata = {
             "launcher_spec": {
                 "default": {
                     "slurm": {
@@ -54,7 +52,23 @@ def main():
                 },
                 "server": {"slurm": {"gpus_per_node": 0}},
             }
-        },
+        }
+    else:
+        metadata = {
+            "resource_spec": {
+                "@default": {"num_of_cpus": 2, "memory": "3Gi", "num_of_gpus": gpu_count},
+                "server": {"num_of_cpus": 1, "memory": "2Gi", "num_of_gpus": 0},
+            },
+            "launcher_spec": {"default": {"slurm": {"nodes": 1, "time": "00:20:00"}}},
+        }
+        if args.lifetime == "task":
+            metadata["cj_resource_spec"] = {"@default": {"num_of_cpus": 2, "memory": "1536Mi", "num_of_gpus": 0}}
+    suffix = "-portable" if args.resource_format == "portable" else ""
+    job = FedJob(
+        name=f"slurm-probe-{args.device}-{args.lifetime}{suffix}",
+        min_clients=args.clients,
+        execution_lifetime=args.lifetime,
+        meta_props=metadata,
     )
     job.to_server(NPModelPersistor(model=[[1.0, 2.0]]), id="persistor")
     job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator")

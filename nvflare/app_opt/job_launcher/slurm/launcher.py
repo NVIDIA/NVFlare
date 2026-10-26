@@ -120,7 +120,7 @@ def _resolve_resources(
         raise SlurmLauncherError("num_of_gpus must equal nodes * gpus_per_node when both are specified")
     if nodes > 1 and portable_total and gpus_per_node is None:
         raise SlurmLauncherError("multi-node GPU jobs require explicit gpus_per_node")
-    if nodes == 1 and gpus_per_node is None and portable_total:
+    if gpus_per_node is None and portable_total is not None:
         gpus_per_node = portable_total
 
     cpus_per_node = optional_int("cpus_per_node")
