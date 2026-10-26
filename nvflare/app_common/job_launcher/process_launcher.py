@@ -41,8 +41,10 @@ class ProcessHandle(JobHandleSpec):
         process: Optional[subprocess.Popen] = None,
         pid: Optional[int] = None,
         process_adapter: Optional[ProcessAdapter] = None,
+        owns_process_group: bool = False,
     ):
         super().__init__()
+        self.owns_process_group = owns_process_group
 
         if process_adapter:
             self.adapter = process_adapter
@@ -62,6 +64,19 @@ class ProcessHandle(JobHandleSpec):
 
     def wait(self):
         self.adapter.wait()
+
+    def can_restart(self):
+        # The launcher starts a new session. Other supplied processes need not
+        # own their group. Detached trainers retain their own cleanup/watchdogs.
+        if not self.owns_process_group or self.adapter.poll() is None:
+            return False
+        try:
+            os.killpg(self.adapter.pid, 0)
+        except ProcessLookupError:
+            return True
+        except (OSError, AttributeError):
+            return False
+        return False
 
 
 class ProcessJobLauncher(JobLauncherSpec):
@@ -101,7 +116,7 @@ class ProcessJobLauncher(JobLauncherSpec):
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
         process_adapter = spawn_process(argv, new_env)
 
-        return ProcessHandle(process_adapter=process_adapter)
+        return ProcessHandle(process_adapter=process_adapter, owns_process_group=True)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:

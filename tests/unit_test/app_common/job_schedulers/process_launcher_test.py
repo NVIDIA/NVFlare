@@ -31,6 +31,16 @@ from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, Proc
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
 
 
+@pytest.mark.parametrize("group_state", ["gone", "alive", "unknown"])
+def test_restart_requires_confirmed_empty_owned_group(group_state):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    error = {"gone": ProcessLookupError(), "alive": None, "unknown": PermissionError()}[group_state]
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=error):
+        assert handle.can_restart() is (group_state == "gone")
+
+
 class DummyWorkspace:
     def __init__(self, root_dir, custom_path: str = ""):
         self.root_dir = str(root_dir)
