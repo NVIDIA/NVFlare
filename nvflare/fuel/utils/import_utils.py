@@ -43,7 +43,19 @@ OPTIONAL_IMPORT_MSG_FMT = "{}"
 OPS = ["==", ">=", ">", "<", "<="]
 
 
-_RELEASE_PATTERN = re.compile(r"v?(\d+(?:\.\d+)*)")
+# PEP 440 version: optional epoch, numeric release, then optional pre, post, dev and local parts
+_VERSION_PATTERN = re.compile(
+    r"""
+    v?
+    (?:(?P<epoch>\d+)!)?
+    (?P<release>\d+(?:\.\d+)*)
+    (?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview)[-_.]?\d*)?
+    (?:-\d+|[-_.]?(?:post|rev|r)[-_.]?\d*)?
+    (?:[-_.]?dev[-_.]?\d*)?
+    (?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
 
 
 def get_module_version(this_pkg):
@@ -59,31 +71,33 @@ def get_module_version_str(the_module):
     return module_version
 
 
-def _release_tuple(version: str) -> Tuple[int, ...]:
+def _parse_version(version: str) -> Tuple[int, Tuple[int, ...]]:
     """
-    Numeric release part of a version string, e.g. "2.4.6rc1" -> (2, 4, 6) and "2.1.0+cu121" -> (2, 1, 0).
+    Epoch and numeric release of a version string, e.g. "2.4.6rc1" -> (0, (2, 4, 6)) and "1!2.0" -> (1, (2, 0)).
     """
-    match = _RELEASE_PATTERN.match(str(version).strip())
+    match = _VERSION_PATTERN.fullmatch(str(version).strip())
     if not match:
         raise ValueError(f"cannot parse version '{version}'")
-    return tuple(int(x) for x in match.group(1).split("."))
+    epoch = int(match.group("epoch") or 0)
+    return epoch, tuple(int(x) for x in match.group("release").split("."))
 
 
 def check_version(that_pkg, version: str = "", op: str = "==") -> bool:
     """
     compare module version with provided version
 
-    Only the numeric release parts are compared, padded with zeros to the same length,
-    so "2.4" == "2.4.0". Pre-release, post-release, dev and local suffixes are ignored.
+    The epoch and the numeric release parts are compared, releases padded with zeros to the same
+    length, so "2.4" == "2.4.0". Pre-release, post-release, dev and local suffixes are ignored.
+    Raises ValueError if either version is not a valid PEP 440 version.
     """
     if not version or not hasattr(that_pkg, "__version__"):
         return True  # always valid version
 
-    mod_version = _release_tuple(that_pkg.__version__)
-    required = _release_tuple(version)
-    length = max(len(mod_version), len(required))
-    mod_version += (0,) * (length - len(mod_version))
-    required += (0,) * (length - len(required))
+    mod_epoch, mod_release = _parse_version(that_pkg.__version__)
+    req_epoch, req_release = _parse_version(version)
+    length = max(len(mod_release), len(req_release))
+    mod_version = (mod_epoch,) + mod_release + (0,) * (length - len(mod_release))
+    required = (req_epoch,) + req_release + (0,) * (length - len(req_release))
     result = True
     if op == "==":
         result = mod_version == required

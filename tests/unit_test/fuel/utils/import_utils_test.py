@@ -92,6 +92,10 @@ class TestOptionalImport:
             ("2.1.0+cu121", "==", "2.1.0", True),
             ("2.1.0+cu121", ">=", "2.1.1", False),
             ("1.26.0.dev0", "<", "2", True),
+            ("1!2.0", ">=", "1!3.0", False),
+            ("1!2.0", ">=", "3.0", True),
+            ("2.0", "<", "1!1.0", True),
+            ("1!2.0", "==", "1!2", True),
         ],
     )
     def test_version_uses_all_components(self, fake_module, installed, op, required, expected):
@@ -103,6 +107,21 @@ class TestOptionalImport:
         else:
             with pytest.raises(LazyImportError):
                 mod.value
+
+    @pytest.mark.parametrize(
+        "installed, required",
+        [
+            ("2.4.6", "2.4.6garbage"),
+            ("2.4.6garbage", "2.4.6"),
+            ("2.4.6", "2.4.6 7"),
+            ("1!2.0x", "1!2.0"),
+            ("2.4.6", "!2.0"),
+        ],
+    )
+    def test_invalid_version_raises(self, fake_module, installed, required):
+        fake_module(installed)
+        with pytest.raises(ValueError, match="cannot parse version"):
+            optional_import(FAKE_MODULE, ">=", required)
 
     def test_installed_numpy_version_satisfies_itself(self):
         import numpy
