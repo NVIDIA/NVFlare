@@ -94,6 +94,8 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.apis.dxo.DataKind",
     # ParamsType is embedded in FLModel
     "nvflare.app_common.abstract.fl_model.ParamsType",
+    # Connector parameters returned by the admin conns command
+    "nvflare.fuel.f3.drivers.driver_params.DriverParams",
     # Analytics / tracking enums used in streaming and metrics
     "nvflare.apis.analytix.AnalyticsDataType",
     "nvflare.apis.analytix.LogWriterName",
