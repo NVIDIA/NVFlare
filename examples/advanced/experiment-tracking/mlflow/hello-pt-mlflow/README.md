@@ -10,12 +10,12 @@ This example demonstrates the **Recipe API** for easily adding MLflow tracking t
 
 ### 1. Install requirements
 
-Install NVFlare first, then the shared requirements in the parent directory (`requirements.txt` does not install NVFlare):
+Install NVFlare first, then the shared requirements for the MLflow examples (`requirements.txt` does not install NVFlare). Run this from the repository root:
 
 ```
 # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
 python -m pip install nvflare
-python -m pip install -r ../requirements.txt
+python -m pip install -r examples/advanced/experiment-tracking/mlflow/requirements.txt
 ```
 ### 2. Download Data
 Pre-download the CIFAR-10 dataset to avoid multiple sites downloading simultaneously.

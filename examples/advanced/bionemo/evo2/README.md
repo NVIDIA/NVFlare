@@ -57,7 +57,7 @@ and Megatron Bridge.
 
 ```bash
 # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
-python3 -m pip install nvflare
+python3 -m pip install "nvflare>=2.9"
 python3 -m pip install -r requirements.txt
 ```
 

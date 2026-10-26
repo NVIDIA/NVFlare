@@ -95,7 +95,7 @@ Install NVFlare first, then the example dependencies (PyTorch and torchvision;
 
 ```bash
 # Stable release; use nvflare-nightly for a nightly build, or `-e .` for this checkout
-python3 -m pip install nvflare
+python3 -m pip install "nvflare>=2.9"
 python3 -m pip install -r examples/advanced/recipe-k8s/requirements.txt
 ```
 

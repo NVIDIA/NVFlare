@@ -24,7 +24,7 @@ Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/main/r
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install nvflare            # or: python -m pip install -e "../.." from this repository
+python -m pip install "nvflare>=2.9"     # or: python -m pip install -e "../.." from this repository
 python -m pip install -r ./requirements.txt
 ```
 

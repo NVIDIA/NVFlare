@@ -31,7 +31,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 
 # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
-python3 -m pip install nvflare
+python3 -m pip install "nvflare>=2.9"
 
 # Install the Qwen3-VL requirements (PyTorch, flash_attn, and the other dependencies)
 ./install_requirements.sh

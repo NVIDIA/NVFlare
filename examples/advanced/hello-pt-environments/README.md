@@ -6,7 +6,8 @@ actual `client.py`, `model.py`, and `prepare_data.py`; only the Recipe options a
 Keep this directory at `advanced/hello-pt-environments` beside `hello-world/hello-pt`. A full source checkout already
 has that layout. `nvflare examples get hello-pt-environments` downloads both catalog entries at those relative paths.
 
-Complete the beginner simulation first so you already understand its training, evaluation, and artifacts:
+This example requires NVFlare 2.10 or later. Complete the beginner simulation first so you already understand its
+training, evaluation, and artifacts:
 
 ```bash
 cd ../../hello-world/hello-pt
