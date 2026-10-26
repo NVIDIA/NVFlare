@@ -347,6 +347,23 @@ def verify_evidence(output, env, snapshot):
     return values, summary
 
 
+def require_capture_tools():
+    # Match capture-running-launch.py's effective sudo Python environment:
+    # checking the caller's PATH would miss sudoers secure_path differences.
+    command = [
+        "sudo",
+        "python3",
+        "-c",
+        "import shutil,sys; sys.exit(0 if shutil.which('crictl') else 1)",
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise ValueError(
+            "Capture requires crictl in the PATH used by sudo python3; check privileged command access before retrying"
+        ) from error
+
+
 def capture(config, output):
     helper = helpers()
     env = helper["read_config"](Path(config).resolve(strict=True), ENV_KEYS)
@@ -354,10 +371,17 @@ def capture(config, output):
     if target["cpu_tee"] == "snp":
         snp_floors(env)
     output = Path(output).absolute()
-    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}", output.name):
+    name_pattern = r"[a-z0-9][a-z0-9_.-]{0,63}" if target["cpu_tee"] == "tdx" else r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}"
+    if not re.fullmatch(name_pattern, output.name):
+        if target["cpu_tee"] == "tdx":
+            raise ValueError(
+                "TDX output directory name must be 1..64 lowercase alphanumeric, dot, underscore or hyphen characters, "
+                "starting with a lowercase letter or digit"
+            )
         raise ValueError("Choose a simple profile directory name")
     if output.exists() or output.is_symlink():
         raise ValueError("Use a new output directory; existing evidence is never overwritten")
+    require_capture_tools()
     os.umask(0o077)
     output.mkdir(parents=True, mode=0o700)
     write_json(output / "capture-inputs.json", env)

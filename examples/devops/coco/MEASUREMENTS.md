@@ -41,8 +41,11 @@ verifier executables from the operator's tool environment. Verifiers check fresh
 evidence signatures/collateral and the selected platform's security baseline.
 
 The selected worker needs Python 3.11+ with PyYAML, Bash, kubectl, skopeo,
-OpenSSL, iproute2's `ip`, and containerd's `ctr`. Capture uses `sudo ctr` to cache
-the collector image and `sudo python3` to inspect its QEMU process. The kubeconfig
+OpenSSL, iproute2's `ip`, containerd's `ctr`, and the separate CRI client `crictl`.
+`crictl` must be executable in the effective PATH of `sudo python3`, not only in
+the caller's shell; capture checks this before caching or launching the collector.
+Capture uses `sudo ctr` to cache the image and `sudo python3` to inspect its
+QEMU process. The kubeconfig
 must permit reading the selected Node, creating the temporary namespace, Pod,
 and challenge ConfigMap, reading Pod status/logs, and cleanup.
 Run capture on that worker; placement and the observed node must agree.
@@ -106,8 +109,12 @@ OUTPUT="$HOME/coco-private/new-capture"
 python3 trusted_system/capture-platform.py "$CONFIG" "$OUTPUT"
 ~~~
 
-Use a new output directory. Capture records the installed runtime and actual
-launch, obtains fresh challenge-bound SNP or TDX evidence, and verifies it.
+Use a new output directory. For TDX only, its basename must match
+`[a-z0-9][a-z0-9_.-]{0,63}`: 1–64 characters starting with a lowercase letter
+or digit, followed by lowercase letters, digits, dots, underscores, or hyphens.
+This naming restriction applies to the basename, not the parent path.
+Capture records the installed runtime and actual launch, obtains fresh
+challenge-bound SNP or TDX evidence, and verifies it.
 
 Capture writes `capture-summary.json`, the retained verified evidence, and the
 two output files directly. For SNP, the signed report supplies the measurement;

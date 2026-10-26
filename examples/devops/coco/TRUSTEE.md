@@ -83,6 +83,12 @@ For release registration, also set `CURRENT_RESOURCE_POLICY_FILE` in
 policy. The API cannot retrieve its bytes. Use the same canonical export path
 for successive installations; the installer updates it after confirmed writes.
 
+The export must include the full current policy and all unrelated existing rules,
+and must already use Rego v1 syntax. **Rego v0 is unsupported and must not be used.**
+If the existing service uses Rego v0, migrate and validate that policy externally
+before exporting it and registering a handoff. The installer merges Rego v1
+release rules; it does not translate legacy policy syntax.
+
 ~~~bash
 HANDOFF="$HOME/coco-private/releases/site-1/trusted-service"
 bash service/12-install-trusted-service-handoff.sh "$HANDOFF"
