@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from math import sqrt
-from typing import Dict, List, TypeVar
+from typing import Dict, List, Optional, Set, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
@@ -44,8 +44,20 @@ def get_global_feature_data_types(
 
 
 def get_global_stats(
-    global_metrics: dict, client_metrics: dict, metric_task: str, statistic_configs: Dict[str, dict], precision: int = 4
+    global_metrics: dict,
+    client_metrics: dict,
+    metric_task: str,
+    statistic_configs: Dict[str, dict],
+    precision: int = 4,
+    withheld_features: Optional[Dict[str, Dict[str, Set[str]]]] = None,
 ) -> dict:
+    """Combine the client statistics into global statistics.
+
+    ``withheld_features`` maps a client name to the features ``{dataset: {feature, ...}}`` whose statistics the
+    client's privacy filter withheld. Such a client keeps only its count for the feature, which must not enter the
+    global count: it would no longer match the global sum, mean and variance of the same feature.
+    """
+    withheld_features = withheld_features or {}
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
@@ -55,7 +67,11 @@ def get_global_stats(
             global_metrics[metric] = {}
 
         stats = client_metrics[metric]
-        if metric == StC.STATS_COUNT or metric == StC.STATS_FAILURE_COUNT or metric == StC.STATS_SUM:
+        if metric == StC.STATS_COUNT or metric == StC.STATS_FAILURE_COUNT:
+            for client_name in stats:
+                client_counts = exclude_withheld_features(stats[client_name], withheld_features.get(client_name))
+                global_metrics[metric] = accumulate_metrics(client_counts, global_metrics[metric], precision)
+        elif metric == StC.STATS_SUM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric], precision)
         elif metric == StC.STATS_MEAN:
@@ -110,6 +126,25 @@ def accumulate_metrics(metrics: dict, global_metrics: dict, precision: int) -> d
                     )
 
     return global_metrics
+
+
+def exclude_withheld_features(metrics: dict, withheld: Optional[Dict[str, Set[str]]]) -> dict:
+    """Return a client's metric values without the features its privacy filter withheld.
+
+    Args:
+        metrics: the client's metric values, ``{dataset: {feature: value}}``
+        withheld: the client's withheld features, ``{dataset: {feature, ...}}``, or None
+
+    Returns:
+        the metric values of the other features, in the same layout as ``metrics``
+    """
+    if not withheld:
+        return metrics
+
+    return {
+        ds_name: {f: v for f, v in features.items() if f not in withheld.get(ds_name, ())}
+        for ds_name, features in metrics.items()
+    }
 
 
 def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision: int = 4) -> dict:
