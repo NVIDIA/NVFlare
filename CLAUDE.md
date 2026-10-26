@@ -147,11 +147,9 @@ nvflare simulator --help
 
 ## Pull Request Preparation
 
-- Before creating or updating a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and follow its submission requirements.
-- Before opening a PR or requesting re-review of changed code, run `/code-review` with an explicit PR target or base-to-head range, or have a fresh-context subagent review the final diff against the PR's base using the imported review guidance.
-- Run relevant checks before handing off a change. Record actual commands, results, and validation gaps in the PR template.
+- Before opening a new PR, run `/code-review` with an explicit PR target or base-to-head range, or have a fresh-context subagent review the final diff against the PR's base using the imported review guidance.
 - Address every local and PR review finding: fix it or record why no change is needed. Before merge, resolve every review thread with the fix or a reasoned explanation, as required by the branch rules.
-- Read and use [.github/pull_request_template.md](.github/pull_request_template.md) for the PR body, including when supplying a custom body through a CLI or API. Fill the description, testing, risk, and rollback sections with change-specific details; check only completed checklist items.
+- Read and use [.github/pull_request_template.md](.github/pull_request_template.md) for the PR body, including when supplying a custom body through a CLI or API. Fill the description, testing, and risk sections with change-specific details; check only completed checklist items.
 - Verify the submitted PR body contains the template sections and accurate validation results.
 
 ## Personal Configuration
