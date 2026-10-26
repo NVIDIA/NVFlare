@@ -18,10 +18,12 @@ from dataclasses import replace
 from nvflare.apis.task_launcher_spec import TaskResourceRequest
 from nvflare.app_opt.job_launcher.slurm.config import _require_int
 from nvflare.app_opt.job_launcher.slurm.launcher import _resolve_resources
+from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.utils.job_launcher_utils import (
+    get_compute_resource_manager_spec,
     get_job_launcher_spec,
+    get_launcher_resource_spec,
     get_portable_resource_spec,
-    get_resource_manager_spec,
     validate_portable_resource_conflicts,
 )
 
@@ -71,12 +73,11 @@ def validate_slurm_site(launcher, site_config):
 def task_resources(launcher, meta, site_name):
     """Resolve native/default resources without retaining whole-job GPU tokens."""
     validate_portable_resource_conflicts(meta)
-    reservation = get_resource_manager_spec(meta, site_name)
-    if reservation.get("num_of_gpus", 0):
-        raise ValueError(
-            "Slurm task GPUs must use native launcher_spec gpus_per_node; "
-            "portable/legacy GPU metadata would retain a whole-job CP reservation"
-        )
+    reject_job_gpu_reservation(meta, site_name)
+    compute_admission = get_compute_resource_manager_spec(meta, site_name)
+    unsupported = set(compute_admission) - {"num_of_gpus", "mem_per_gpu_in_GiB"}
+    if unsupported or compute_admission.get("mem_per_gpu_in_GiB", 0):
+        raise ValueError("Slurm task allocations cannot enforce custom resource-manager or GPU-memory requirements")
     portable = get_portable_resource_spec(meta, site_name)
     native = get_job_launcher_spec(meta, site_name, "slurm")
     if native.get("nodes", 1) != 1 or native.get("additional_node_command"):
@@ -84,13 +85,19 @@ def task_resources(launcher, meta, site_name):
     if native.get("image"):
         raise ValueError("Slurm task profile does not support container images")
     default = launcher.resources
-    gpu_count = native.get("gpus_per_node", portable.get("num_of_gpus", default.gpu_count))
+    # RM admission drops zero GPU counts; preserve an explicit legacy zero.
+    compute_gpus = get_launcher_resource_spec(meta, site_name, "process").get(
+        "num_of_gpus", compute_admission.get("num_of_gpus", default.gpu_count)
+    )
+    gpu_count = native.get("gpus_per_node", portable.get("num_of_gpus", compute_gpus))
     _require_int(gpu_count, "gpus_per_node", 0)
     spec = {"cpus_per_node": int(default.cpu_cores or 1), **native}
     if default.memory_mb is not None:
         spec.setdefault("mem_per_node", default.memory_mb)
     spec["gpus_per_node"] = gpu_count
     resolved = _resolve_resources(meta, site_name, "none", launcher.manager.config.pending_timeout, spec=spec)
+    if resolved.cpus_per_node is None or resolved.mem_per_node is None:
+        raise ValueError("Slurm task allocations require CPU and memory requests, including GPU tasks")
     return replace(resolved, gpus_per_node=gpu_count)
 
 

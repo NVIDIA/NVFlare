@@ -40,6 +40,7 @@ from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TAS
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor
+from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
 from tests.unit_test.app_opt.job_launcher.slurm_launcher_test import _fl_ctx
 from tests.unit_test.app_opt.job_launcher.slurm_task_launcher_test import (
     _accounting,
@@ -159,7 +160,7 @@ def test_native_site_default_override_and_cpu_memory_mapping(profile, gpus):
 )
 def test_whole_job_cp_gpu_reservation_fails_closed(profile, meta):
     _, _, _, _, task = profile
-    with pytest.raises(ValueError, match="whole-job CP reservation"):
+    with pytest.raises(ValueError, match="whole job"):
         task_resources(task, meta, "site-1")
 
 
@@ -194,6 +195,167 @@ def test_cpu_cj_separate_allocation_preserves_original_task_metadata(profile):
     assert plan.study_env["CUDA_VISIBLE_DEVICES"] == ""
     assert "--gres=none" in _submission_argv(plan, str(root), "cpu-cj", "marker", cj.config)
     assert meta == original
+
+
+@pytest.mark.parametrize("cj_gpu_count", [0, 1])
+def test_cj_site_gpu_default_is_independent_of_compute(profile, cj_gpu_count):
+    root, _, site, _, task = profile
+    cj = ClientSlurmTaskJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": cj_gpu_count})
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 2, "cpus_per_node": 8, "mem_per_node": 4096}}},
+    }
+    original = copy.deepcopy(meta)
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    compute = task_resources(task, meta, "site-1")
+    assert (plan.resources.cpus_per_node, plan.resources.mem_per_node, plan.resources.gpus_per_node) == (
+        2,
+        512,
+        cj_gpu_count,
+    )
+    assert (compute.cpus_per_node, compute.mem_per_node, compute.gpus_per_node) == (8, 4096, 2)
+    assert ("--gres=gpu:1" if cj_gpu_count else "--gres=none") in _submission_argv(
+        plan, str(root), "cj", "marker", cj.config
+    )
+    assert plan.study_env.get("CUDA_VISIBLE_DEVICES") == (None if cj_gpu_count else "")
+    assert meta == original
+
+
+@pytest.mark.parametrize(
+    "cj_spec, expected",
+    [
+        ({"@default": {"num_of_cpus": 3, "memory": "2Gi", "num_of_gpus": 1}}, (3, 2048, 1)),
+        (
+            {
+                "@default": {"num_of_cpus": 3, "memory": "2Gi", "num_of_gpus": 1},
+                "site-1": {"num_of_cpus": 5, "num_of_gpus": 0},
+            },
+            (5, 2048, 0),
+        ),
+        ({"site-2": {"num_of_cpus": 7, "memory": "8Gi", "num_of_gpus": 3}}, (2, 512, 0)),
+    ],
+)
+def test_cj_metadata_overrides_only_cj_resources(profile, cj_spec, expected):
+    root, _, _, cj, task = profile
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "cj_resource_spec": cj_spec,
+        "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 2, "cpus_per_node": 8, "mem_per_node": 4096}}},
+    }
+    normalize_cj_resource_spec(meta, {"site-1", "site-2"})
+    original = copy.deepcopy(meta)
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    compute = task_resources(task, meta, "site-1")
+    assert (plan.resources.cpus_per_node, plan.resources.mem_per_node, plan.resources.gpus_per_node) == expected
+    assert (compute.cpus_per_node, compute.mem_per_node, compute.gpus_per_node) == (8, 4096, 2)
+    assert plan.study_env.get("CUDA_VISIBLE_DEVICES") == (None if expected[2] else "")
+    assert meta == original
+
+
+def test_cj_explicit_zero_gpu_overrides_site_default(profile):
+    root, _, site, _, _ = profile
+    cj = ClientSlurmTaskJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": 1})
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "cj_resource_spec": {"@default": {"num_of_gpus": 0}},
+        "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 2}}},
+    }
+    normalize_cj_resource_spec(meta, {"site-1"})
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    assert (plan.resources.cpus_per_node, plan.resources.mem_per_node, plan.resources.gpus_per_node) == (2, 512, 0)
+    assert plan.study_env["CUDA_VISIBLE_DEVICES"] == ""
+    assert "--gres=none" in _submission_argv(plan, str(root), "cj", "marker", cj.config)
+
+
+@pytest.mark.parametrize("cj_gpu_count", [0, 1])
+def test_portable_compute_uses_per_task_allocation_and_independent_cj_reservation(profile, cj_gpu_count):
+    root, _, _, cj, task = profile
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "resource_spec": {"@default": {"num_of_cpus": 6, "memory": "3Gi", "num_of_gpus": 2}},
+        "cj_resource_spec": {"@default": {"num_of_cpus": 1, "memory": "1Gi", "num_of_gpus": cj_gpu_count}},
+    }
+    normalize_cj_resource_spec(meta, {"site-1"})
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    compute = task_resources(task, meta, "site-1")
+    assert (plan.resources.cpus_per_node, plan.resources.mem_per_node, plan.resources.gpus_per_node) == (
+        1,
+        1024,
+        cj_gpu_count,
+    )
+    assert get_resource_manager_spec(meta, "site-1") == ({"num_of_gpus": 1} if cj_gpu_count else {})
+    assert (compute.cpus_per_node, compute.mem_per_node, compute.gpus_per_node) == (6, 3072, 2)
+    # Shared policy must also accept normalized portable GPU compute admission.
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+    policy = TaskExecutionPolicy.from_config({"launcher": _site(root)["task_execution"]["launcher"]})
+    assert policy.task_resources(meta, "site-1").is_empty()
+
+
+@pytest.mark.parametrize("gpu_count", [0, 1, 2])
+def test_legacy_compute_gpu_count_overrides_task_default_without_a_cj_reservation(profile, gpu_count):
+    root, _, _, cj, task = profile
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "resource_spec": {"site-1": {"process": {"num_of_gpus": gpu_count}}},
+    }
+    normalize_cj_resource_spec(meta, {"site-1"})
+    original = copy.deepcopy(meta)
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    assert task_resources(task, meta, "site-1").gpus_per_node == gpu_count
+    assert cj._build_launch_plan(meta, _fl_ctx(root)).resources.gpus_per_node == 0
+    assert meta == original
+
+
+def test_cj_all_sites_default_and_site_overrides(profile):
+    root, _, _, cj, task = profile
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "cj_resource_spec": {
+            "@default": {"num_of_cpus": 3, "memory": "2Gi", "num_of_gpus": 1},
+            "@ALL": {"memory": "3Gi"},
+            "site-1": {"num_of_cpus": 5, "num_of_gpus": 0},
+        },
+    }
+    normalize_cj_resource_spec(meta, {"@ALL"})
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    assert (plan.resources.cpus_per_node, plan.resources.mem_per_node, plan.resources.gpus_per_node) == (5, 3072, 0)
+
+
+@pytest.mark.parametrize("cpu_share, cores", [(0.25, 1), (1.5, 2), (2, 2)])
+def test_cj_cpu_shares_receive_at_least_the_requested_whole_cores(profile, cpu_share, cores):
+    root, _, _, cj, _ = profile
+    meta = {JobConstants.JOB_ID: "job-1", "cj_resource_spec": {"site-1": {"num_of_cpus": cpu_share}}}
+    normalize_cj_resource_spec(meta, {"site-1"})
+    plan = cj._build_launch_plan(meta, _fl_ctx(root))
+    assert plan.resources.cpus_per_node == cores
+
+
+def test_cj_resource_role_cannot_replace_resident_compute_admission(profile):
+    root, workspace, _, cj, _ = profile
+    Path(workspace.get_client_app_config_file_path("job-1")).write_text("{}")
+    meta = {JobConstants.JOB_ID: "job-1", "cj_resource_spec": {"site-1": {}}}
+    with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        cj._build_launch_plan(meta, _fl_ctx(root))
+
+
+def test_cj_gpu_memory_requirement_is_rejected(profile):
+    root, _, _, cj, _ = profile
+    meta = {
+        JobConstants.JOB_ID: "job-1",
+        "cj_resource_spec": {"site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2}},
+    }
+    with pytest.raises(ValueError, match="per-GPU memory"):
+        cj._build_launch_plan(meta, _fl_ctx(root))
+
+
+@pytest.mark.parametrize("extra", [{"custom_tokens": 1}, {"mem_per_gpu_in_GiB": 2}])
+def test_task_cannot_drop_unenforceable_resource_manager_requirements(profile, extra):
+    _, _, _, _, task = profile
+    meta = {"resource_spec": {"site-1": {"num_of_gpus": 1, **extra}}}
+    normalize_cj_resource_spec(meta, {"site-1"})
+    with pytest.raises(ValueError, match="cannot enforce custom resource-manager or GPU-memory"):
+        task_resources(task, meta, "site-1")
 
 
 def test_resident_job_keeps_original_slurm_resource_behavior(profile):

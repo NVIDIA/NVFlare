@@ -58,7 +58,7 @@ CPU and GPU task profiles
 -------------------------
 
 Both profiles are required. The task request selects resources independently
-of the CPU CJ: ``gpu_count=0`` submits ``--gres=none``; a positive count submits
+of the CJ: ``gpu_count=0`` submits ``--gres=none``; a positive count submits
 ``--gres=gpu:<count>`` and receives device visibility from that allocation.
 CPU/memory requests, cancellation, immutable result handoff, receipt retention
 and whole-allocation settlement apply to both. The CJ's result upload must not
@@ -69,6 +69,47 @@ allocator. The existing CPU-only Process implementation is a base-revision
 limitation, not the target resource scope for either backend. Process GPU work
 is separate from this Slurm implementation. Supporting a GPU resource request
 does not add multi-machine execution or a torchrun/DDP contract.
+
+CJ and compute resource budgets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Existing portable ``resource_spec`` and native Slurm ``launcher_spec`` fields
+describe compute. With job lifetime they apply to the resident CJ. With task
+lifetime they apply to each physical task allocation. A task-mode CJ uses
+the separate ``cj_resource_spec`` budget instead of inheriting compute CPU,
+memory or GPUs. Omitted CJ fields use the trusted site's ``cj_cpu_cores``
+(default 1), ``cj_memory_mb`` (default 1024) and ``cj_gpu_count`` (default 0).
+An explicitly requested CJ GPU is independent of task GPUs and remains held
+for that CJ's lifetime. The site's CJ partition must support that request.
+
+For example, a task application may supply::
+
+    {
+      "resource_spec": {
+        "@default": {"num_of_cpus": 4, "memory": "4Gi", "num_of_gpus": 1}
+      },
+      "cj_resource_spec": {
+        "@default": {"num_of_cpus": 1, "memory": "1Gi", "num_of_gpus": 0}
+      }
+    }
+
+Shared export and server submission derive task sites from the actual client
+configs, including mixed lifetimes and ``@ALL`` deployments. They add the
+applicable CJ entries even when the application omits a budget. The shared
+resolver merges ``@default``, ``@ALL`` and site-specific CJ fields; this
+backend does not create another metadata schema or infer admission roles
+from a supplied flag. CP and CJ validate the locally resolved lifetime
+before application components start. Resident-job admission remains based
+on its compute requirements.
+
+Only the CJ budget enters long-lived admission. Compute CPU, memory and GPU
+requests belong to each task's native allocation and are held until physical
+settlement. Every task allocation requests CPU and memory, including GPU
+tasks; trusted task defaults are one CPU and 1024 MiB. Slurm allocates whole
+CPU cores, so a fractional CJ CPU share rounds up to the next whole core.
+Task CPU requests must be whole cores. Memory quantities convert to exact
+MiB. This adapter rejects custom resource-manager requirements and positive
+per-GPU memory requirements that it cannot enforce.
 
 Storage layout, persistence and CJ resume
 -----------------------------------------
@@ -172,6 +213,7 @@ In the canonical site resources file, select the exact matching pair::
           "executables": {},
           "cj_cpu_cores": 1,
           "cj_memory_mb": 1024,
+          "cj_gpu_count": 0,
           "sbatch_directives": {"account": "site-account", "partition": "cpu"}
         }
       }],
@@ -198,10 +240,11 @@ In the canonical site resources file, select the exact matching pair::
 The existing Slurm parent-listener/network configuration still applies.
 Executable paths, when configured, must be available on the respective CP/CJ
 hosts. Otherwise the existing Slurm resolver locates the CLI tools there.
-The CPU CJ adapter reads the deployed application lifetime and preserves
-ordinary resident-job behavior. In task lifetime it submits a separate CPU CJ
-request with explicit ``--gres=none`` and masked GPU visibility; it leaves the
-original task metadata intact for CJ admission.
+The CJ adapter reads the deployed application lifetime and preserves ordinary
+resident-job behavior. In task lifetime it submits a separate CJ request
+using only its coordinator budget. With the default zero-GPU CJ it submits
+explicit ``--gres=none`` and masks GPU visibility. Original compute metadata
+remains intact for task admission.
 
 Worker defaults come from the task launcher. Existing native
 ``launcher_spec["default"]["slurm"]`` and site overrides then determine
@@ -210,11 +253,12 @@ For example, ``launcher_spec["site-1"]["slurm"]={"gpus_per_node":1}`` requests
 one task GPU; explicit zero overrides a GPU default. Portable CPU and memory
 fields retain their usual mapping and conflict checks.
 
-Positive portable/legacy GPU fields currently also reserve GPUs through the
-NVFlare CP ResourceManager for the whole job. This profile rejects them and
-requires native Slurm GPU metadata; removing GPUs from the CJ alone would not
-release that independent reservation. Portable task-level GPU delegation needs
-a separate trusted CP integration change.
+Portable and legacy compute GPU counts use the shared compute resolver;
+normalized task metadata keeps them out of the whole-job CJ reservation.
+Old, unnormalized task metadata that would reserve compute GPUs for the full
+job fails closed and must be resubmitted through updated export/submission.
+Native Slurm GPU metadata remains supported. Task and CJ capability checks
+reject requirements that the selected runtime cannot enforce.
 
 Construction performs no scheduler calls. First launch initializes the
 manager and probes local storage and accounting. The runtime provides an
