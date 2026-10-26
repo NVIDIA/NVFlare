@@ -17,8 +17,6 @@ We recommend creating a [conda environment](https://www.anaconda.com):
 ```commandline
 conda create -n fedumm python=3.10 -y
 conda activate fedumm
-# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
-pip install nvflare
 pip install -r requirements.txt
 ```
 

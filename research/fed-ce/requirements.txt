@@ -1,6 +1,5 @@
+nvflare[PT]~=2.9.0rc
 tensorboard
 monai
 tqdm
 nibabel
-torch
-torchvision

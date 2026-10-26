@@ -1,4 +1,5 @@
 # NVIDIA FLARE
+nvflare~=2.9.0
 
 # PyTorch
 torch>=2.2.0
