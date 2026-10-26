@@ -60,7 +60,7 @@ and consecutive-attempt limit.
 
 | Backend | Required evidence |
 | --- | --- |
-| Process | The launcher-owned CJ has exited and its process group is absent. |
+| Process | The launcher-owned CJ has exited, its process group is absent, and no external-trainer launch bootstrap remains. |
 | Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
 | Slurm | Accounting reports COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY, or PREEMPTED, and the allocation has left the active queue. |
 
@@ -73,9 +73,15 @@ waits for that worker before releasing its resources. Docker physical launches u
 unique container names, allowing delayed auto-removal of the previous container.
 Existing scheduler queue/startup timeouts remain in effect.
 
-Local process recovery relies on existing cleanup/watchdogs for trainers launched
-in separate process groups. CP does not independently confirm or kill those
-trainers. After a failed CJ exits, the Process handle waits up to 10 seconds for
+Process recovery is skipped when an `external_process` trainer launch bootstrap
+remains in the app directory. The backend writes this existing file before
+launching a detached trainer and removes it only after confirming trainer-group
+exit. After an abrupt CJ loss, the file remains even if the trainer subsequently
+exits, so CP ends the job instead of risking overlapping trainers. The existing
+trainer watchdog handles detached-group termination. Docker and Slurm retain
+recovery when the container or allocation is confirmed dead.
+
+After a failed CJ exits, the Process handle waits up to 10 seconds for
 its owned group to drain, kills remaining members of that group, and waits up to
 10 more seconds to confirm exit. Recovery requires the group to be gone; cleanup
 timeout or uncertain observations end recovery. Job/task cancellation during
@@ -107,6 +113,8 @@ exceeding the default failed-start limit. Five distinct CJs reuse the same
 job/task/attempt IDs, restore an on-disk checkpoint, and produce the uninterrupted
 arithmetic result with one server result receipt. Unit coverage also exercises
 twelve consecutive successful replacements.
+An external-process regression kills CJ while its detached trainer ignores
+SIGTERM and verifies that CP ends the job without launching another trainer.
 The server implementation is unchanged.
 
 Focused tests cover repeated successful replacements, exhausted/reset failure

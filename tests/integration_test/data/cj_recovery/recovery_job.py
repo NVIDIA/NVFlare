@@ -19,13 +19,53 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from nvflare.apis.controller_spec import Task
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+
+
+class DetachedTrainerExecutor(ClientAPIExecutor):
+    def __init__(self):
+        super().__init__(
+            execution_mode="external_process",
+            command="python3 -c 'from recovery_job import run_detached_trainer; run_detached_trainer()'",
+            launch_once=False,
+            params_exchange_format="numpy",
+            server_expected_format="numpy",
+        )
+
+
+def run_detached_trainer():
+    import nvflare.client as flare
+    from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, BootstrapKey
+
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    flare.init()
+    flare.receive()
+    bootstrap = json.loads(Path(os.environ[BOOTSTRAP_FILE_ENV_VAR]).read_text())
+    record = Path("detached_trainers.json")
+    launched = json.loads(record.read_text()) if record.exists() else []
+    overlap = False
+    if launched:
+        try:
+            os.kill(launched[-1]["pid"], 0)
+            overlap = True
+        except ProcessLookupError:
+            pass
+    launched.append({"pid": os.getpid(), "cj_pid": bootstrap[BootstrapKey.CJ_PID], "overlap": overlap})
+    pending = record.with_suffix(".tmp")
+    pending.write_text(json.dumps(launched))
+    pending.replace(record)
+    if len(launched) == 1:
+        os.kill(bootstrap[BootstrapKey.CJ_PID], signal.SIGKILL)
+    time.sleep(15)  # The owner watchdog must kill the first trainer during this wait.
 
 
 class CheckpointExecutor(Executor):
@@ -79,7 +119,9 @@ class RecoveryController(Controller):
         pass
 
     def control_flow(self, abort_signal, fl_ctx):
-        task = Task("train", Shareable({"crashes": self.crashes}), timeout=240, result_received_cb=self.received)
+        data = DXO(DataKind.WEIGHTS, {"w": [0.0]}).to_shareable()
+        data["crashes"] = self.crashes
+        task = Task("train", data, timeout=240, result_received_cb=self.received)
         self.broadcast_and_wait(task, fl_ctx, min_responses=1, abort_signal=abort_signal)
         if self.receipts != 1:
             self.system_panic(f"expected one result, got {self.receipts}", fl_ctx)

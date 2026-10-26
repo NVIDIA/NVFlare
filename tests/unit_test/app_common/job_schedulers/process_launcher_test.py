@@ -29,6 +29,7 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobRet
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, ProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
+from nvflare.client.cell.bootstrap import bootstrap_file_name
 from tests.timing_utils import isolate_time
 
 
@@ -40,6 +41,29 @@ def test_restart_requires_confirmed_empty_owned_group(group_state):
     error = {"gone": ProcessLookupError(), "alive": None, "unknown": PermissionError()}[group_state]
     with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=error):
         assert handle.can_restart() is (group_state == "gone")
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+def test_restart_requires_no_uncleared_external_trainer(tmp_path, bootstrap):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    (tmp_path / "checkpoint.json").write_text("checkpoint")
+    if bootstrap:
+        (tmp_path / bootstrap_file_name(1)).write_text("launch in progress")
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError):
+        assert handle.can_restart() is not bootstrap
+
+
+def test_restart_requires_readable_trainer_launch_directory(tmp_path):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    with (
+        mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError),
+        mock.patch("nvflare.app_common.job_launcher.process_launcher.os.listdir", side_effect=PermissionError),
+    ):
+        assert not handle.can_restart()
 
 
 @pytest.mark.parametrize("cleanup", ["delayed", "forced", "stuck", "unknown", "cancelled"])
@@ -90,6 +114,9 @@ class DummyWorkspace:
 
     def get_root_dir(self):
         return self.root_dir
+
+    def get_app_dir(self, job_id):
+        return os.path.join(self.root_dir, job_id, "app")
 
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
@@ -308,6 +335,7 @@ def test_launch_job_uses_posix_spawn_when_supported(monkeypatch, tmp_path):
     # Access via adapter
     assert handle.adapter.process is None
     assert handle.adapter.pid == 4321
+    assert handle.app_dir == workspace.get_app_dir("job-posix")
     assert spawned["setsid"] is True
     assert spawned["argv"][0].endswith("python")
     popen_mock.assert_not_called()
@@ -337,6 +365,7 @@ def test_launch_job_falls_back_when_spawn_fails(monkeypatch, tmp_path):
     # Access via adapter
     assert handle.adapter.process is popen_instance
     assert handle.adapter.pid == popen_instance.pid
+    assert handle.app_dir == workspace.get_app_dir("job-fallback")
 
 
 def test_process_handle_with_pid_wait_and_poll(monkeypatch):

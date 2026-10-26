@@ -19,6 +19,7 @@ import json
 import os
 import socket
 import sys
+import time
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -29,8 +30,8 @@ from nvflare.job_config.api import FedJob
 from nvflare.recipe import PocEnv
 
 
-@pytest.mark.timeout(360)
-def test_checkpoint_task_survives_repeated_cj_crashes(tmp_path, monkeypatch):
+@pytest.fixture
+def recovery_env(tmp_path, monkeypatch):
     repo = Path(__file__).resolve().parents[3]
     fixture = repo / "tests/integration_test/data/cj_recovery"
     monkeypatch.syspath_prepend(str(fixture))
@@ -52,23 +53,51 @@ def test_checkpoint_task_survives_repeated_cj_crashes(tmp_path, monkeypatch):
     project_path = tmp_path / "project.yml"
     project_path.write_text(yaml.safe_dump(project))
     env = PocEnv(num_clients=1, username="super@test.org", project_conf_path=str(project_path))
+    try:
+        yield env, module
+    finally:
+        env.stop(clean_up=False)
+
+
+@pytest.mark.timeout(360)
+def test_checkpoint_task_survives_repeated_cj_crashes(recovery_env):
+    env, module = recovery_env
     job = FedJob(name="cj_recovery", min_clients=1)
     job.to(module.RecoveryController(crashes=4), "server")
     job.to(module.CheckpointExecutor(), "site-1", tasks=["train"])
-    try:
-        job_id = env.deploy(job)
-        result = env.get_job_result(job_id, timeout=270)
-        assert result is not None
-        assert env.get_job_status(job_id) == "FINISHED:COMPLETED"
-        results = list(Path(result).rglob("recovery_result.json"))
-        assert len(results) == 1
-        saved = json.loads(results[0].read_text())
-        assert saved["receipts"] == 1
-        assert saved["value"] == sum(range(1, 6))
-        runs = saved["runs"]
-        assert len(runs) == len({r["pid"] for r in runs}) == 5
-        for key in ("job", "task", "attempt"):
-            assert runs[0][key]
-            assert len({r[key] for r in runs}) == 1
-    finally:
-        env.stop(clean_up=False)
+    job_id = env.deploy(job)
+    result = env.get_job_result(job_id, timeout=270)
+    assert result is not None
+    assert env.get_job_status(job_id) == "FINISHED:COMPLETED"
+    results = list(Path(result).rglob("recovery_result.json"))
+    assert len(results) == 1
+    saved = json.loads(results[0].read_text())
+    assert saved["receipts"] == 1
+    assert saved["value"] == sum(range(1, 6))
+    runs = saved["runs"]
+    assert len(runs) == len({r["pid"] for r in runs}) == 5
+    for key in ("job", "task", "attempt"):
+        assert runs[0][key]
+        assert len({r[key] for r in runs}) == 1
+
+
+@pytest.mark.timeout(180)
+def test_detached_trainer_prevents_process_recovery(recovery_env):
+    env, module = recovery_env
+    job = FedJob(name="cj_detached_trainer", min_clients=1)
+    job.to(module.RecoveryController(), "server")
+    job.to(module.DetachedTrainerExecutor(), "site-1", tasks=["train"])
+    job_id = env.deploy(job)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        records = list(Path(env.poc_workspace).rglob("detached_trainers.json"))
+        if records:
+            assert len(records) == 1
+            launched = json.loads(records[0].read_text())
+            assert len(launched) == 1, f"unexpected replacement trainers: {launched}"
+            status = env.get_job_status(job_id)
+            if status and status.startswith("FINISHED:"):
+                assert status == "FINISHED:EXECUTION_EXCEPTION"
+                return
+        time.sleep(0.1)
+    pytest.fail("CJ failure did not finish the job with exactly one detached trainer")

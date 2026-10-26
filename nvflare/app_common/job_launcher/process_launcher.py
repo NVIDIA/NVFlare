@@ -44,9 +44,11 @@ class ProcessHandle(JobHandleSpec):
         pid: Optional[int] = None,
         process_adapter: Optional[ProcessAdapter] = None,
         owns_process_group: bool = False,
+        app_dir: Optional[str] = None,
     ):
         super().__init__()
         self.owns_process_group = owns_process_group
+        self.app_dir = app_dir
 
         if process_adapter:
             self.adapter = process_adapter
@@ -83,7 +85,7 @@ class ProcessHandle(JobHandleSpec):
 
     def _wait_for_group_exit(self):
         deadline = time.monotonic() + 10.0
-        while not self.can_restart():
+        while not self._group_exited():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return False
@@ -91,8 +93,22 @@ class ProcessHandle(JobHandleSpec):
         return True
 
     def can_restart(self):
+        if not self._group_exited():
+            return False
+        if self.app_dir is None:
+            return True
+        try:
+            # Written before Popen and cleared only after detached-trainer exit.
+            # Its presence makes CJ group exit insufficient evidence for recovery.
+            return not any(
+                name.startswith("client_api_bootstrap_") and name.endswith(".json") for name in os.listdir(self.app_dir)
+            )
+        except OSError:
+            return False
+
+    def _group_exited(self):
         # The launcher starts a new session. Other supplied processes need not
-        # own their group. Detached trainers retain their own cleanup/watchdogs.
+        # own their group.
         if not self.owns_process_group or self.adapter.poll() is None:
             return False
         try:
@@ -141,7 +157,9 @@ class ProcessJobLauncher(JobLauncherSpec):
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
         process_adapter = spawn_process(argv, new_env)
 
-        return ProcessHandle(process_adapter=process_adapter, owns_process_group=True)
+        return ProcessHandle(
+            process_adapter=process_adapter, owns_process_group=True, app_dir=workspace_obj.get_app_dir(job_id)
+        )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
