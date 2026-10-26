@@ -6,14 +6,13 @@ NVFlare communication stack. The parent participant does not expose a separate
 HTTP service for workspace transfer, and job Pods do not mount the parent's
 private workspace PVC.
 
-There is also an optional persistent jobs profile, described in the
-[Kubernetes task launcher guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst).
-It requires a second, separate jobs PVC. Task CJs and workers mount only their
-assigned job/site subPath. Resident CJs use this profile only when the site sets
-`persist_resident_workspaces: true`; otherwise they keep the emptyDir behavior
-below. Workspace download, startup Secrets and result upload remain in use with
-both profiles. Persistent storage retains files but does not implement CJ resume.
-The emptyDir statements in this document apply to the default ephemeral profile.
+An optional persistent jobs profile uses a separate jobs PVC and assigned
+job/site subPaths, while still withholding the parent's private claim. Task mode
+requires that profile; resident jobs opt in with `persist_resident_workspaces`.
+Workspace download, startup Secrets and result upload remain in use. The
+[Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
+configures persistence; the emptyDir behavior below describes the default resident
+profile. Persistent files alone do not implement CJ resume.
 
 ## Goal
 

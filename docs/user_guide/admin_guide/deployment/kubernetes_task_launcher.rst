@@ -1,135 +1,58 @@
-Kubernetes task launcher
-========================
+Kubernetes task execution: deployment and operations
+====================================================
 
-Backend contract
-----------------
+This guide configures a Kubernetes site to run each assignment in a fresh CPU or
+GPU worker Pod. The Client Parent (CP) starts and monitors Client Jobs (CJs).
+Each task-mode CJ keeps federation communication, filters and result submission
+resident; CP creates and cleans up its compute workers. Existing job mode keeps
+compute inside CJ and remains the default.
 
-* Launch authority: the Client Parent (CP) creates, observes and cancels task
-  Pods through its existing Kubernetes client. The Client Job (CJ) uses a
-  job-scoped Cell command interface. CJ and task Pods use the configured
-  unprivileged worker service account with automatic token mounting disabled.
-  Applications cannot choose Pod manifests, accounts, namespace or storage.
-* Identity: every physical attempt has a unique namespace/name/UID, labels for
-  job/site/task/attempt, and full identities in annotations. Deletes use UID
-  preconditions; replacement pods are never adopted or deleted.
-* Storage: CP's private workspace uses its own PVC. A second, shared jobs PVC
-  holds per-job workspaces for task CJs and optionally resident CJs. CJ and its task pods
-  mount only their job/site subtree at the same absolute workspace root. That
-  root contains bootstrap, application code, input, immutable output and
-  checkpoints. Pod-local
-  ``emptyDir`` is insufficient. CP explicitly mounts that PVC and creates an
-  owned per-job/site subtree. Paths outside the configured root are rejected.
-* Resources: both CPU and GPU task workers are required. Kubernetes admits
-  their independent CPU/memory/GPU requests; CJ defaults to CPU with no GPU request. GPU
-  workers obtain devices through the cluster's NVIDIA device plugin. CPU
-  workers mask GPU visibility even when using a GPU-capable image. No Process
-  GPU allocator, physical retry scheduler or distributed trainer is introduced.
-* Settlement: graceful deletion alone is insufficient. A finalizer preserves
-  the owned pod until shutdown evidence is observed. Scheduled pods require
-  terminal status, termination of every admitted container, and kubelet sandbox
-  teardown evidence. An unscheduled pod requires a deletion timestamp that
-  fences scheduling. Only after this evidence and confirmed pod removal does
-  the handle report settlement. Missing/replaced pods without prior evidence,
-  API errors, node loss, and timeouts retain unresolved ownership. Transient
-  observation errors preserve the last-known execution phase and report a
-  diagnostic; they do not start terminal settlement of a healthy Running Pod.
-  An ambiguous create remains fenced even after a 404 with an unknown UID:
-  the server may still admit the outstanding request later.
-* Results: pod cleanup never deletes PVC files. CJ validates the existing
-  immutable result/checkpoint contract after settlement. Receipt, algorithm
-  acceptance and local checkpoint promotion remain separate. Payload release
-  requires the existing supervisor receipt/closure and reader-quiescence rules.
+The site chooses one matching Kubernetes CP/CJ/worker backend and owns images,
+accounts, namespace and storage. Jobs supply separate resource budgets:
 
-Trusted site selection
------------------------
+* ``resource_spec`` and native compute CPU/memory/GPU fields apply to workers in
+  task mode and to CJ in job mode.
+* ``cj_resource_spec`` applies only to task-mode coordinators. Site defaults are
+  0.25 CPU, 512Mi and zero GPUs; explicit coordinator GPUs are independent.
+* The worker image comes from trusted ``task_execution`` configuration. A job's
+  Kubernetes image setting selects its CJ image.
 
-The current profile uses one backend for the full CP/CJ/task-worker chain:
-Process launches all three as processes; Kubernetes runs all three in Pods.
-Mixed chains are unsupported. CPU versus GPU is a resource choice within that
-backend, so the CPU CJ can request either CPU or GPU task Pods from CP.
+Workers use their CJ's configured namespace. CP can share that namespace or use
+a separate control namespace with explicit permissions and compatible storage.
+There is no automatic namespace per job. The recommended storage profile uses a
+private CP workspace PVC and a separate jobs PVC, with one job/site subPath per
+CJ and its workers. Task mode requires durable storage; resident jobs stay
+ephemeral unless ``persist_resident_workspaces`` is enabled explicitly.
 
-The shared task policy selects the exact site-configured task launcher and
-validates its canonical ``local/resources.json`` configuration. Kubernetes
-requires one matching ``ClientK8sJobLauncher`` / ``K8sTaskLauncher`` pair,
-matching CJ/worker namespace, PVC, workspace path and numeric filesystem identity. Mixed modes fail before task launch.
-Job configuration cannot choose the backend or launch authority. Resource
-export checks shape; CPU/GPU capability is checked at the trusted site boundary.
+CJ and workers have no Kubernetes API token. CJ sends bounded commands to CP
+using a per-job capability token; CP fixes the Pod manifest and admits one
+unsettled attempt per job. Pod deletion alone does not prove settlement: CP uses
+UID preconditions, a finalizer and container/sandbox shutdown evidence. API errors,
+ambiguous creates or missing evidence retain ownership and prevent unsafe retry.
+CP continues cleanup after CJ exits; CP restart adoption is not provided.
 
-Before starting CJ, CP loads canonical site policy and binds the task backend to
-its admitted job/site metadata. CJ's ``START_RUN`` binds a tokenless proxy to the
-existing CP Cell endpoint using the per-job workspace-transfer capability. CP
-authenticates every request with that capability and checks the expected CJ
-origin header for consistency.
-Only bounded JSON commands and staged paths are accepted; job-controlled data
-cannot supply a Pod manifest or override the site's runtime authority. CP fences
-attempt identities, admits one unsettled task per job, and owns a launch even
-when its reply is lost. CJ cannot launch or inspect another job's attempts. Native workers receive
-only the site-configured worker environment. Process-style environment
-passthrough is rejected for native backends. These shared selection and resource
-rules delegate to an installed native backend's site validator. A backend whose
-implementation is absent is rejected as unsupported. Kubernetes implements this
-contract; other backend support requires its corresponding installed implementation. Use the full ``path`` for ``ClientK8sJobLauncher``; its short ``name``
-is not registered in the component registry.
+The `task execution design <../../../design/task_worker_lifecycle.md>`_ explains
+the architecture and lifecycle. The configuration, storage assumptions, operational
+limits and qualification steps needed to deploy this profile are included below.
 
-The Kubernetes adapter accepts only the common CJ's strict staged-bootstrap
-request, bound to its owning job/site by ``START_RUN``. The request's local
-interpreter and parent PID are never used in the Pod command and do not select
-a Process backend. The Pod command uses the configured image Python and site
-worker environment, with resource defaults overridden by the bound job's resource
-metadata. Standalone native requests and per-request environment/resource
-overrides are rejected. Both backends invoke the existing
-``task_worker_process`` entry point. The Pod launcher selects
-``--execution_scope native`` because CJ is not the worker's OS parent. Process
-launches require an explicit ``--parent_pid`` greater than 1 and retain
-expected-parent and owned-process-group checks. A missing parent flag or an
-init-adopted Process worker is rejected before compute. Native workers support
-PID 1 without Process parent/group checks. ``TaskLaunchRequest``,
-``TaskSupervisor`` and artifact formats are unchanged.
+Control-plane limits
+--------------------
 
-Job and task launchers share stateless Pod construction and startup diagnostics.
-The CP task backend creates ``K8sTaskHandle``; CJ receives a remote task handle.
-Credential/workspace-transfer cleanup stays with the job handle. CP retains
-physical task ownership independently of those job credentials.
+The normal job handle observes CJ lifecycle. A separate ten-second CJ observer
+backs it up without using the shorter worker polling interval. CJ shutdown makes
+bounded cleanup calls; CP keeps responsibility for unresolved workers.
 
-The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
-optional ``job_workspace_pvc``, ``job_workspace_pvc_root`` and numeric identity
-settings enable the persistent jobs profile required for task CJs. Resident CJs
-keep the existing ``workspace-job`` emptyDir unless the site also sets
-``persist_resident_workspaces: true``. That explicit choice stores both CJ
-lifetimes on the jobs PVC and retains their workspaces after completion. Resident
-CJs retain their native GPU resources. Task-mode CJs use their independent
-``cj_resources`` / ``cj_resource_spec`` budget, which defaults to zero GPUs;
-their compute budget applies to workers. A zero-GPU CJ masks device visibility.
-The task profile selects the unprivileged worker account with API token mounting
-disabled and uses the durable workspace. It preserves the existing workspace download and credential-Secret lifecycle. A pod-template PVC override
-alone is insufficient because generated workspace volumes take precedence.
+CP retains attempt identities to fence delayed requests and lost replies. The
+trusted task launcher ``max_attempts`` setting (positive integer, default 10,000)
+bounds all retained identities per job, including locally rejected launches.
+Unknown cancel-before-launch identities also have a limit of 128. Exceeding either
+quota closes admission and cancels owned execution without evicting old fences.
+Existing poll/cancel operations and CP cleanup remain available. Size the history
+quota for the expected number of assignments; it does not provide automatic retry.
 
-CP seals task admission before terminating CJ. A Pending CJ that never starts
-can be deleted using the normal job launcher path. CP continues observing and
-cancelling workers after CJ exits, including a create still in flight when CJ
-was terminated. The CJ end-run handler makes bounded cleanup attempts; it does
-not have to remain alive indefinitely to preserve Kubernetes cleanup authority.
-An independent CP monitor also detects a terminal, deleting, replaced or missing
-CJ and closes its task admission. The job handle observes normal CJ lifecycle;
-the independent task-owner monitor reads CJ at most once every ten seconds as a
-backstop, independently of the shorter worker polling interval. API observation
-errors preserve ownership.
-
-CP retains task identities to make lost replies and delayed requests safe. The
-site's task launcher ``max_attempts`` (positive integer, default 10,000) limits
-all retained attempts per job, including locally rejected launches. Unknown
-cancel-before-launch identities also have a limit of 128. Exceeding either limit
-closes task admission and cancels owned execution without evicting old fences;
-existing poll/cancel operations remain available. Size ``max_attempts`` for the
-job's expected assignment count; it is a safety quota, not automatic retry or
-history eviction.
-
-Missing/replaced task Pods and lost settlement evidence remain explicitly fenced
-in CP, even after CJ exits. Retained ownership does not authorize a replacement
-attempt or result publication. CP must remain available to perform this cleanup;
-a CP crash/restart or permanently lost node evidence requires operator
-reconciliation of stranded Pods/finalizers after verifying runtime shutdown.
-Never remove a finalizer solely to clear a stuck Pod.
+Do not clear an unresolved finalizer solely to remove a stuck Pod. Verify runtime
+shutdown before operator reconciliation after CP loss, node loss or missing
+settlement evidence. No timeout or subsequent 404 substitutes for that proof.
 
 Site prerequisites
 ------------------
@@ -161,7 +84,9 @@ components maintained, and grant applications no path to the full jobs claim.
 The persistent profile rejects duplicate jobs-claim volumes and extra workspace
 mounts. Trusted Pod templates retain security settings such as seccomp profiles,
 supplemental groups and a read-only container root filesystem, while the launcher
-enforces nonroot IDs, no privilege escalation and dropped capabilities.
+enforces nonroot IDs, no privilege escalation and dropped capabilities. The
+persistent CJ profile requires one container, no init/ephemeral containers, and
+no host PID/IPC/network sharing; a template with sidecars is rejected.
 
 The resident workspace download stages ``local/`` and this job's files into the
 subtree. The worker mounts ``local/`` read-only from that same subtree, protecting

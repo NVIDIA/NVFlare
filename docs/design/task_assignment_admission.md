@@ -102,13 +102,10 @@ Before assigning a task or claiming receipt, the parent binds the child's identi
 and job to its exact job-cell origin using the server-provided client table. This
 also applies to relay paths where the client-name authentication header is stripped.
 
-Task-worker artifact cleanup must wait for terminal receipt or closure and for
-outstanding transfer readers to release the source. The
-[task execution lifecycle](task_worker_lifecycle.md) uses this contract: after
-physical settlement and result validation, CJ locally promotes an optional opaque
-checkpoint and retains the saved result through submission retries. Promotion is
-independent of receipt and aggregation. A repeated assignment reuses its verified
-saved result without running compute again. In particular, `TASK_CLOSED` is not
-proof that an earlier result was not received or used; closure alone cannot decide
-checkpoint promotion. Neither this receipt protocol nor persistent files provide
-automatic CJ recovery or durable server receipt history across restart.
+Task-mode CJ retains saved output through submission retries. Payload release
+requires physical worker settlement, terminal receipt/closure and quiescent
+readers. Optional application checkpoint promotion is a local commit after output
+validation, independent of server receipt or aggregation. `TASK_CLOSED` cannot
+prove an earlier upload was unused. The [task execution design](task_worker_lifecycle.md)
+explains the worker, checkpoint and storage lifecycle; this document specifies
+the shared receipt protocol for both execution modes.

@@ -436,30 +436,17 @@ Launch sequence:
 | 6 | Publish the created handle through `JOB_HANDLE_CALLBACK` before waiting for Running, so a concurrent abort can delete a never-started Pod. Then call `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
 
-The launch sequence above describes the resident default. ClientK8sJobLauncher
-also accepts `job_workspace_pvc`, `job_workspace_pvc_root`, `run_as_user` and
-`run_as_group` together for a persistent jobs profile. Task lifetime requires
-that profile; resident lifetime uses it only with the additional site setting
-`persist_resident_workspaces: true`. CP creates a fresh hashed job/site subtree
-and replaces the workspace emptyDir with that subPath on the jobs claim. It never
-mounts its private workspace claim into CJ. Persistent CJs require one isolated
-container; the profile merges site security context while enforcing nonroot IDs,
-no privilege escalation and no automatic API token mount.
-
-For task lifetime, CJ resources come from independent coordinator defaults and
-`cj_resource_spec`, while compute `resource_spec` and native resource settings bind
-the worker backend. Before starting CJ, CP installs a per-job task owner and
-capability-authenticated Cell endpoint. The CJ proxy cannot choose Pod authority.
-Normal job termination seals task admission and deletes CJ; CP retains physical
-task cleanup until settlement. Both the job and task launchers share stateless
-Pod construction helpers, while their handles retain distinct lifecycle roles.
-
-On a definitively rejected CJ create, CP removes only its freshly reserved empty
-workspace directory. It retains directories for ambiguous create outcomes and all
-persisted job data. Persistent resident workspaces are an explicit retention
-choice and require operator capacity/archival/deletion policy. See the
-[Kubernetes guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
-for namespace, storage, resource and cleanup configuration.
+ClientK8sJobLauncher also supports task lifetime: the Client Job (CJ) stays
+resident for coordination while the Client Parent (CP) owns disposable compute
+Pods. `resource_spec` describes workers; `cj_resource_spec` independently sizes CJ.
+The persistent jobs profile uses `job_workspace_pvc`, `job_workspace_pvc_root`
+and numeric UID/GID settings to mount only the assigned job/site subtree. Task
+mode requires this profile; resident jobs use it only with
+`persist_resident_workspaces: true`. CP's private workspace claim is never mounted
+in CJ. The [task execution design](task_worker_lifecycle.md) contains the complete
+control, resource, settlement and retention contract; the
+[Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
+contains deployment instructions.
 
 The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
 instance; restart the parent site process to pick up hand edits. The v2
