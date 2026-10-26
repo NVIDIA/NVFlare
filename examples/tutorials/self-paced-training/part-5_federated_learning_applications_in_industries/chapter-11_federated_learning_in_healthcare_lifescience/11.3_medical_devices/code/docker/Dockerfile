@@ -20,7 +20,6 @@ ARG PYTHON_VERSION=3.12
 FROM python:${PYTHON_VERSION}
 
 RUN pip install -U pip
-RUN pip install nvflare
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
