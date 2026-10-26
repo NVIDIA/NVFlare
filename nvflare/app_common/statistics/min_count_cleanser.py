@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
@@ -33,7 +33,7 @@ class MinCountCleanser(FLComponent, StatisticsPrivacyCleanser):
         if self.min_count < 0:
             raise ValueError(f"min_count must be positive, but {self.min_count} is provided. ")
 
-    def min_count_validate(self, client_name: str, statistics: Dict) -> Dict[str, Dict[str, bool]]:
+    def _validate(self, statistics: Dict) -> Dict[str, Dict[str, bool]]:
         feature_statistics_valid = {}
         if StC.STATS_COUNT in statistics:
             count_statistics = statistics[StC.STATS_COUNT]
@@ -45,14 +45,27 @@ class MinCountCleanser(FLComponent, StatisticsPrivacyCleanser):
                     count = feature_counts[feature]
                     failure_count = feature_failure_counts[feature]
                     effective_count = count - failure_count
-                    feature_statistics_valid[ds_name][feature] = True
-                    if effective_count < self.min_count:
-                        feature_statistics_valid[ds_name][feature] = False
-                        self.logger.info(
-                            f"dataset {ds_name} feature '{feature}' item count is "
-                            f"less than required minimum count {self.min_count} for client {client_name} "
-                        )
+                    feature_statistics_valid[ds_name][feature] = effective_count >= self.min_count
         return feature_statistics_valid
+
+    def min_count_validate(self, client_name: str, statistics: Dict) -> Dict[str, Dict[str, bool]]:
+        feature_statistics_valid = self._validate(statistics)
+        for ds_name, features in feature_statistics_valid.items():
+            for feature, valid in features.items():
+                if not valid:
+                    self.logger.info(
+                        f"dataset {ds_name} feature '{feature}' item count is "
+                        f"less than required minimum count {self.min_count} for client {client_name} "
+                    )
+        return feature_statistics_valid
+
+    def withheld_features(self, statistics: dict, client_name: str) -> Dict[str, List[str]]:
+        withheld = {}
+        for ds_name, features in self._validate(statistics).items():
+            names = [feature for feature, valid in features.items() if not valid]
+            if names:
+                withheld[ds_name] = names
+        return withheld
 
     def apply(self, statistics: dict, client_name) -> Tuple[dict, bool]:
         self.logger.info(f"apply MinCountCheck for client {client_name}")

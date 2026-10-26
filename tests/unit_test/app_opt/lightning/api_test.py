@@ -227,11 +227,16 @@ def test_validation_end_sends_only_from_runtime_global_rank_zero(runtime_rank, e
         state=SimpleNamespace(fn=TrainerFn.VALIDATING),
     )
 
-    callback.on_validation_end(trainer, SimpleNet())
+    with patch("nvflare.app_opt.lightning.api.clear") as clear:
+        callback.on_validation_end(trainer, SimpleNet())
 
     assert callback._send_model.call_count == expected_send_count
-    assert callback.metrics == {"val_loss": 0.5}
-    callback.reset_state.assert_called_once_with(trainer)
+    for call in callback._send_model.call_args_list:
+        assert call.args[0].metrics == {"val_loss": 0.5}
+    # The evaluate task clears the per-task state but never touches the training budget.
+    callback.reset_state.assert_not_called()
+    assert callback.metrics is None
+    clear.assert_called_once_with()
 
 
 @pytest.fixture
@@ -1536,6 +1541,111 @@ def test_real_lightning_max_steps_bounds_every_round_to_the_same_step_count():
         steps_per_round
     ] * num_rounds
     assert trainer.global_step == steps_per_round * num_rounds
+
+
+class _TinyDataModule(pl.LightningDataModule):
+    """Builds the validation set for every stage and the training set only for ``train_stages``."""
+
+    def __init__(self, train_stages):
+        super().__init__()
+        self.train_stages = train_stages
+
+    def setup(self, stage):
+        if stage in self.train_stages:
+            self.train_set = TensorDataset(torch.randn(8, 2), torch.tensor([0, 1] * 4))
+        self.val_set = TensorDataset(torch.randn(8, 2), torch.tensor([0, 1] * 4))
+
+    def train_dataloader(self):
+        return DataLoader(self.train_set, batch_size=1, shuffle=False)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_set, batch_size=1, shuffle=False)
+
+
+def _run_real_lightning_tasks(tasks, trainer_kwargs, datamodule=None):
+    """Drive one patched trainer through FL tasks: "train" calls fit, "evaluate" calls validate.
+
+    Without a datamodule the loaders are passed to fit/validate directly and the module defines no
+    train_dataloader hook, as in most Lightning code outside the NVFlare examples.
+    """
+    module = TinyLightningNet()
+    input_models = [FLModel(params=_clone_state_dict(module), current_round=0, meta={}) for _ in tasks]
+    loader = DataLoader(TensorDataset(torch.randn(8, 2), torch.tensor([0, 1] * 4)), batch_size=1, shuffle=False)
+    fit_data = {"datamodule": datamodule} if datamodule else {"train_dataloaders": loader}
+    validate_data = {"datamodule": datamodule} if datamodule else {"dataloaders": loader}
+
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.receive", side_effect=input_models),
+        patch("nvflare.app_opt.lightning.api.is_train", side_effect=[task == "train" for task in tasks]),
+        patch("nvflare.app_opt.lightning.api.is_evaluate", side_effect=[task == "evaluate" for task in tasks]),
+        patch("nvflare.app_opt.lightning.api.is_submit_model", return_value=False),
+        patch("nvflare.app_opt.lightning.api.send") as send,
+        patch("nvflare.app_opt.lightning.api.clear"),
+    ):
+        callback = FLCallback(rank=0)
+        trainer = pl.Trainer(
+            callbacks=[callback],
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            num_sanity_val_steps=0,
+            **trainer_kwargs,
+        )
+        for task in tasks:
+            if task == "train":
+                trainer.fit(module, **fit_data)
+            else:
+                trainer.validate(module, **validate_data)
+    return [call.args[0] for call in send.call_args_list]
+
+
+def _assert_task_results(tasks, sent, steps_per_round):
+    assert len(sent) == len(tasks)
+    for task, model in zip(tasks, sent):
+        if task == "evaluate":
+            assert model.params is None
+            assert model.metrics["val_loss"] >= 0.0
+        else:
+            assert model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == steps_per_round
+
+
+BUDGETS = pytest.mark.parametrize(
+    ("trainer_kwargs", "steps_per_round"),
+    [({"max_epochs": 1}, 8), ({"max_steps": 3}, 3)],
+    ids=["max_epochs", "max_steps"],
+)
+
+
+@BUDGETS
+@pytest.mark.parametrize(
+    "tasks",
+    [["evaluate", "train", "train"], ["train", "evaluate", "train"], ["train", "evaluate"]],
+    ids=["evaluate_first", "evaluate_between_rounds", "evaluate_after_training"],
+)
+def test_real_lightning_evaluate_task_keeps_the_training_budget(tasks, trainer_kwargs, steps_per_round):
+    # An evaluate task trains nothing, so it must neither need a train dataloader
+    # (estimated_stepping_batches loads one) nor raise the step budget of the next round.
+    sent = _run_real_lightning_tasks(tasks, trainer_kwargs)
+
+    _assert_task_results(tasks, sent, steps_per_round)
+
+
+@BUDGETS
+@pytest.mark.parametrize(
+    "train_stages",
+    [("fit", "validate"), ("fit",)],
+    ids=["train_set_built_for_validate", "train_set_built_for_fit_only"],
+)
+def test_real_lightning_evaluate_first_with_a_datamodule(train_stages, trainer_kwargs, steps_per_round):
+    # The NVFlare examples build the training set in setup("validate") too; many datamodules build it
+    # for "fit" only. Neither may make an evaluate task touch training data or the step budget.
+    tasks = ["evaluate", "train", "train"]
+    sent = _run_real_lightning_tasks(tasks, trainer_kwargs, datamodule=_TinyDataModule(train_stages))
+
+    _assert_task_results(tasks, sent, steps_per_round)
 
 
 def test_real_lightning_fit_only_ignores_sanity_and_mid_fit_validation_metrics():

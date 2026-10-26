@@ -191,25 +191,30 @@ class FLCallback(Callback):
         """
         # set states for next round
         if self.current_round is not None:
-            if self.max_epochs_per_round is None and trainer.max_epochs and trainer.max_epochs > 0:
-                self.max_epochs_per_round = trainer.max_epochs
-            if self.max_steps_per_round is None and trainer.max_steps and trainer.max_steps > 0:
-                self.max_steps_per_round = trainer.max_steps
+            self._set_next_round_budget(trainer)
+        self._clear_round_state()
 
-            # record total local epochs/steps
-            self.total_local_epochs = trainer.current_epoch
-            self.total_local_steps = trainer.estimated_stepping_batches
+    def _set_next_round_budget(self, trainer):
+        """Record the per-round budget and extend the fit loop by one round past the trained progress."""
+        if self.max_epochs_per_round is None and trainer.max_epochs and trainer.max_epochs > 0:
+            self.max_epochs_per_round = trainer.max_epochs
+        if self.max_steps_per_round is None and trainer.max_steps and trainer.max_steps > 0:
+            self.max_steps_per_round = trainer.max_steps
 
-            # for next round
-            trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
+        # record total local epochs/steps
+        self.total_local_epochs = trainer.current_epoch
+        self.total_local_steps = trainer.estimated_stepping_batches
 
-            if self._update_fit_loop:
-                if self.total_local_epochs and self.max_epochs_per_round is not None:
-                    trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
-                if self.total_local_steps and self.max_steps_per_round is not None:
-                    trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
+        # for next round
+        trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
 
-        # resets attributes
+        if self._update_fit_loop:
+            if self.total_local_epochs and self.max_epochs_per_round is not None:
+                trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
+            if self.total_local_steps and self.max_steps_per_round is not None:
+                trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
+
+    def _clear_round_state(self):
         self.metrics = None
         self._pending_train_model = None
         self._training_round_started = False
@@ -306,7 +311,12 @@ class FLCallback(Callback):
             if self._is_evaluation:
                 if trainer.global_rank == 0:
                     self._send_model(FLModel(metrics=self.metrics))
-                self.reset_state(trainer)
+                # An evaluate task trains nothing, so the training budget stays as the last
+                # training round left it. Recomputing it here would load a train dataloader the
+                # validate() call may not have, and would extend max_steps by another round.
+                if self.current_round is not None:
+                    trainer.num_sanity_val_steps = 0
+                self._clear_round_state()
 
     def _receive_and_update_model(self, trainer, pl_module):
         """Receive a global model and apply the compatible portion locally.
