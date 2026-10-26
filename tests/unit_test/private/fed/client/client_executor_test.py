@@ -23,7 +23,7 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode, publish_job_handle
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -256,6 +256,52 @@ def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, he
     assert pending_handle.poll() == JobReturnCode.ABORTED
     pending_handle.wait()
     job_handle.wait.assert_called_once_with()
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
+@pytest.mark.parametrize("abort_before_publish", [False, True], ids=["during_startup_wait", "before_publish"])
+def test_start_app_can_abort_published_runtime_before_launcher_returns(
+    tmp_path, heartbeat_cleanup, abort_before_publish
+):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    job_handle = MagicMock(spec=JobHandleSpec)
+    properties = {
+        FLContextKey.WORKSPACE_OBJECT: workspace,
+        FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
+    }
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: properties.get(key)
+    fl_ctx.set_prop.side_effect = lambda key, value, **kwargs: properties.__setitem__(key, value)
+    fl_ctx.remove_prop.side_effect = lambda key: properties.pop(key, None)
+    launcher = MagicMock()
+
+    def abort():
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+    def launch_job(_meta, context):
+        if abort_before_publish:
+            abort()
+            job_handle.terminate.assert_not_called()
+        publish_job_handle(job_handle, context)
+        if not abort_before_publish:
+            abort()
+        # The runtime is reclaimed while launch_job is still waiting for startup.
+        job_handle.terminate.assert_called_once_with()
+        return job_handle
+
+    launcher.launch_job.side_effect = launch_job
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client, job_id, job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, fl_ctx
+        )
+
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+    assert FLContextKey.JOB_HANDLE_CALLBACK not in properties
 
 
 def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):

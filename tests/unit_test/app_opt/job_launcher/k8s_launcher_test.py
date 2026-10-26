@@ -72,7 +72,7 @@ def _isolate_kubernetes_modules():
 
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
@@ -1993,6 +1993,52 @@ class TestK8sJobLauncherLaunchJob:
                 namespace="test-ns",
                 grace_period_seconds=0,
             )
+        finally:
+            _exit_patches(patches)
+
+    @pytest.mark.parametrize("abort_before_publish", [False, True], ids=["pending", "before_publish"])
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_abort_deletes_unscheduled_cj_before_pending_timeout(self, mock_time, abort_before_publish):
+        from nvflare.private.fed.client.client_engine import ClientEngine
+        from nvflare.private.fed.client.client_executor import JobExecutor, _PendingJobHandle
+        from nvflare.private.fed.client.client_status import ClientStatus
+
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=120)
+        mock_api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        mock_time.time.return_value = 0.0
+        executor = JobExecutor(client=MagicMock(), startup="startup")
+        pending = _PendingJobHandle()
+        executor.run_processes[_JOB_UUID] = {
+            RunProcessKey.JOB_HANDLE: pending,
+            RunProcessKey.STATUS: ClientStatus.STARTING,
+        }
+
+        def abort(_seconds=None):
+            ClientEngine.abort_app(SimpleNamespace(client_executor=executor), _JOB_UUID)
+            mock_api.delete_namespaced_pod.assert_called_once()
+
+        def register(handle):
+            heartbeat_cleanup = pending.attach(handle)
+            if heartbeat_cleanup is not None:
+                executor.abort_app(_JOB_UUID, heartbeat_cleanup=heartbeat_cleanup)
+
+        context = _make_launch_fl_ctx()
+        context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register, private=True, sticky=False)
+        mock_time.sleep.side_effect = abort
+        try:
+            if abort_before_publish:
+                executor.abort_app(_JOB_UUID)
+            handle = launcher.launch_job(_make_launch_job_meta(), context)
+            assert handle.poll() == JobReturnCode.ABORTED
+            mock_api.delete_namespaced_pod.assert_called_once_with(
+                name=_EXPECTED_POD_NAME, namespace="test-ns", grace_period_seconds=0
+            )
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            if abort_before_publish:
+                mock_time.sleep.assert_not_called()
+            else:
+                mock_time.sleep.assert_called_once()
         finally:
             _exit_patches(patches)
 

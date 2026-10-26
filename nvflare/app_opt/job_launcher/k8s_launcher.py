@@ -37,6 +37,7 @@ from nvflare.apis.job_launcher_spec import (
     JobProcessEnv,
     JobReturnCode,
     add_launcher,
+    publish_job_handle,
 )
 from nvflare.app_opt.job_launcher.k8s_pod import (
     build_pod_manifest,
@@ -1085,6 +1086,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 return job_handle
             raise
         try:
+            publish_job_handle(job_handle, fl_ctx)
             entered_running = job_handle.enter_states([JobState.RUNNING])
         except BaseException:
             job_handle.terminate()

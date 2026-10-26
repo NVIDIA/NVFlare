@@ -51,7 +51,7 @@ _ABORT_REQUESTED_KEY = "_abort_requested"
 
 
 class _PendingJobHandle(JobHandleSpec):
-    """Hold an abort request until a launcher returns the real job handle."""
+    """Hold abort intent until a launcher publishes or returns the real handle."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -60,8 +60,14 @@ class _PendingJobHandle(JobHandleSpec):
 
     def attach(self, job_handle: JobHandleSpec) -> bool | None:
         with self._lock:
+            if self._job_handle is not None:
+                if self._job_handle is not job_handle:
+                    raise RuntimeError("launcher published a different job handle")
+                return None
             self._job_handle = job_handle
-            return self._pending_heartbeat_cleanup
+            heartbeat_cleanup = self._pending_heartbeat_cleanup
+            self._pending_heartbeat_cleanup = None
+            return heartbeat_cleanup
 
     def terminate(self, heartbeat_cleanup=False):
         with self._lock:
@@ -306,6 +312,15 @@ class JobExecutor(ClientExecutor):
                 RunProcessKey.STATUS: ClientStatus.STARTING,
                 _ABORT_REQUESTED_KEY: False,
             }
+
+        def register_handle(job_handle):
+            heartbeat_cleanup = pending_handle.attach(job_handle)
+            if heartbeat_cleanup is not None:
+                self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+        # A launcher may wait for scheduling after creating the runtime. Give
+        # abort_app access to that runtime before launch_job finishes waiting.
+        fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
             job_handle = job_launcher.launch_job(job_meta, fl_ctx)
             if job_handle is None:
@@ -315,10 +330,10 @@ class JobExecutor(ClientExecutor):
                 if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
                     self.run_processes.pop(job_id, None)
             raise
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
 
-        heartbeat_cleanup = pending_handle.attach(job_handle)
-        if heartbeat_cleanup is not None:
-            self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+        register_handle(job_handle)
 
         self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
 

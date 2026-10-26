@@ -114,7 +114,7 @@ def test_other_job_capability_cannot_launch_or_observe(control, field, value):
     assert "create" not in api.calls
 
 
-def test_capability_also_requires_the_authenticated_cj_origin(control):
+def test_capability_also_requires_the_expected_cj_origin(control):
     _, api, request, cell, _, _, _ = control
     cell.origin = "site-parent.other-job"
     response = raw(cell, bootstrap=request.argv[4], cwd=request.cwd)

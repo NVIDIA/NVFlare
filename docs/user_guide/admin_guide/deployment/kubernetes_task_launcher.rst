@@ -58,7 +58,8 @@ export checks shape; CPU/GPU capability is checked at the trusted site boundary.
 Before starting CJ, CP loads canonical site policy and binds the task backend to
 its admitted job/site metadata. CJ's ``START_RUN`` binds a tokenless proxy to the
 existing CP Cell endpoint using the per-job workspace-transfer capability. CP
-checks both that capability and the authenticated CJ origin on every request.
+authenticates every request with that capability and checks the expected CJ
+origin header for consistency.
 Only bounded JSON commands and staged paths are accepted; job-controlled data
 cannot supply a Pod manifest or override the site's runtime authority. CP fences
 attempt identities, admits one unsettled task per job, and owns a launch even
@@ -190,7 +191,9 @@ including queue waiting, startup and execution. Give it enough time for expected
 contention, or set it to ``null`` and rely on the job/task deadlines. Explicit
 abort remains effective in every phase. Configure settlement bounds appropriate
 to the termination grace period and storage driver. These task settings do not
-change the job launcher's existing ``pending_timeout`` policy.
+change the job launcher's existing ``pending_timeout`` policy. A created CJ's
+handle is handed to CP before the launcher waits for Running, so aborting an
+unscheduled CJ deletes its Pod without waiting for that resource timeout.
 
 For example, two CPU CJs can keep their jobs alive while their task Pods request
 one GPU each from a cluster with one allocatable GPU. One worker runs and the
