@@ -494,7 +494,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.ext_listener_impossible = False
 
         self.int_listener = None  # backbone internal listener - only for cells with child cells
-        self.int_listener_lock = threading.Lock()  # first callers may race to create it
 
         # a cell could have any number of connectors: some for backbone, some for ad-hoc
         self.bb_ext_connector = None  # backbone external connector - only for Client cells
@@ -830,17 +829,16 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _create_internal_listener(self, scheme=None, resources=None):
         # internal listener is always backbone
-        with self.int_listener_lock:
-            if not self.int_listener:
-                self.int_listener = self.connector_manager.get_internal_listener(scheme, resources)
-                if self.int_listener:
-                    self.logger.info(
-                        f"{self.my_info.fqcn}: created backbone internal listener "
-                        f"for {self.int_listener.get_connection_url()}"
-                    )
-                else:
-                    raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal listener")
-            return self.int_listener
+        if not self.int_listener:
+            self.int_listener = self.connector_manager.get_internal_listener(scheme, resources)
+            if self.int_listener:
+                self.logger.info(
+                    f"{self.my_info.fqcn}: created backbone internal listener "
+                    f"for {self.int_listener.get_connection_url()}"
+                )
+            else:
+                raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal listener")
+        return self.int_listener
 
     def _create_external_listener(self, url: str):
         adhoc = len(url) == 0
@@ -1801,10 +1799,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return self._send_reply(reply, ep)
 
     def _try_cb(self, message, cb, *args, **kwargs):
-        # callables such as functools.partial have no __name__
-        cb_name = getattr(cb, "__name__", repr(cb))
         try:
-            self.logger.debug(f"{self.my_info.fqcn}: calling CB {cb_name}")
+            self.logger.debug(f"{self.my_info.fqcn}: calling CB {cb.__name__}")
             return cb(message, *args, **kwargs)
         except ServiceUnavailable:
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
@@ -1817,7 +1813,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         except AbortRun:
             return make_reply(ReturnCode.ABORT_RUN)
         except Exception as ex:
-            self.log_error(f"exception from CB {cb_name}: {secure_format_exception(ex)}", msg=message, log_except=True)
+            self.log_error(
+                f"exception from CB {cb.__name__}: {secure_format_exception(ex)}", msg=message, log_except=True
+            )
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
     def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):

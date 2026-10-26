@@ -75,20 +75,6 @@ def test_the_listener_is_at_the_launcher_host_on_its_own_port_not_the_cps_addres
     assert cj[0].core_cell.connector_manager.int_resources == _SITE_INTERNAL, "the site settings are left alone"
 
 
-def test_concurrent_listen_calls_open_one_listener(cells):
-    cell = _client_job_cell()
-    cells.append(cell)
-    calls = Mock(wraps=cell.core_cell.connector_manager.get_internal_listener)
-    cell.core_cell.connector_manager.get_internal_listener = calls
-    listeners = [threading.Thread(target=cell_session.listen, args=(cell, "localhost")) for _ in range(8)]
-    for listener in listeners:
-        listener.start()
-    for listener in listeners:
-        listener.join(10)
-    calls.assert_called_once()
-    assert cell.get_internal_listener_url().startswith("tcp://localhost:")
-
-
 def _worker(cj, on_analytics=None, **overrides):
     cell, transports = cj
     session = CellWorkerSession(cell, on_analytics or Mock())

@@ -275,14 +275,6 @@ class Cell(StreamCell):
 
         return method
 
-    def register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
-        """Register a request callback; on a stream channel it also receives streamed requests.
-
-        Defined explicitly because ``__getattr__`` sees the channel only as a keyword: a positional channel used to
-        get framed-only delivery on a stream channel, silently.
-        """
-        self._register_request_cb(channel, topic, cb, *args, **kwargs)
-
     def _broadcast_request(
         self,
         channel: str,

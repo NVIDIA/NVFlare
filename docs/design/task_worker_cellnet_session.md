@@ -59,9 +59,8 @@ included when the site configures it, but not their address: those settings
 name the CP's own host and port. The host comes from the task launcher's
 `get_worker_listener_host()` (`localhost` for the Process launcher; a launcher
 that places workers elsewhere returns a Client Job address they can reach), and
-the port is picked freshly, so each Client Job has its own listener. Creating
-the internal listener is locked in `CoreCell`, so concurrent first callers get
-one listener. The Client Job cell is created with its own FQCN mapped to its own identity in
+the port is picked freshly, so each Client Job has its own listener. The
+Client Job cell is created with its own FQCN mapped to its own identity in
 `auth_identity_map`, so a cell under it must present the job's identity;
 together with the certificate scope, only holders of this job's credential can
 join, and only under this job's names. In a clear deployment the listener is
