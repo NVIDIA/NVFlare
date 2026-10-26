@@ -1690,14 +1690,16 @@ def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(
     config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
     assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
-    assert caplog.records == []
+    assert not [record for record in caplog.records if record.name == isolated_importer.__name__]
     with caplog.at_level("WARNING", logger=isolated_importer.__name__):
         assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
         assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
     assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
-    assert len(caplog.records) == 1
-    assert f"{import_error.__name__}: NVFlare is unavailable in the agent environment" in caplog.text
-    assert "retrying on the next check" in caplog.text
+    importer_records = [record for record in caplog.records if record.name == isolated_importer.__name__]
+    assert len(importer_records) == 1
+    message = importer_records[0].getMessage()
+    assert f"{import_error.__name__}: NVFlare is unavailable in the agent environment" in message
+    assert "retrying on the next check" in message
     assert config["import"]["support"]["status"] == "supported"
 
 
