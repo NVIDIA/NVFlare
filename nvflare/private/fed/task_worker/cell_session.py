@@ -23,7 +23,6 @@ to each other. The worker exits after its one attempt; the Client Job keeps the 
 authority on the worker.
 """
 
-import logging
 import secrets
 import threading
 import time
@@ -47,7 +46,6 @@ class Topic:
 
 
 _CONTROL_TIMEOUT = 30.0
-_LOGGER = logging.getLogger(__name__)
 
 
 def _check_reply(reply, what):
@@ -130,7 +128,7 @@ class CellWorkerSession:
                         return _reject("session is closed")
                     self.on_analytics(payload.get("data"))
             except Exception as e:
-                _LOGGER.error("rejecting task worker %s: %s", topic, e)
+                # The reply is the report: the worker raises it and records it in failure.json.
                 return _reject(f"{type(e).__name__}: {e}")
         return make_reply(CellReturnCode.OK)
 
