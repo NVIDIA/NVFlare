@@ -77,13 +77,23 @@ class ClientAppRunner(Runner):
         )
         federated_client.status = ClientStatus.STARTED
 
-        self.client_runner.run(app_root, args)
+        def on_ready():
+            self.notify_job_status(
+                federated_client,
+                args.job_id,
+                ClientStatus.READY,
+                timeout=notify_timeout,
+                retry_timeout=retry_timeout,
+            )
+
+        self.client_runner.run(app_root, args, on_ready=on_ready)
 
         self.notify_job_status(
             federated_client,
             args.job_id,
             ClientStatus.STOPPED,
             timeout=notify_timeout,
+            retry_timeout=retry_timeout,
         )
         federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
@@ -180,14 +190,14 @@ class ClientAppRunner(Runner):
 
         Returns: None
 
-        When the CJ is just started (status=2), it tries to notify the CP. Since this is the very first message from
-        CJ to SP, the connection to CP may not have been established. We'll retry until the notification is sent
-        successfully, or the retry_timeout has been reached.
+        Retry until acknowledged or retry_timeout is reached. Exhausting status
+        delivery retries is logged without failing the job or skipping teardown.
 
         """
         message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         message.set_header(RequestHeader.JOB_STATUS, status)
+        message.set_header(RequestHeader.CJ_LAUNCH_ID, ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID))
 
         my_fqcn = federated_client.cell.core_cell.get_fqcn()
         cp_fqcn = FQCN.get_parent(my_fqcn)
@@ -218,6 +228,7 @@ class ClientAppRunner(Runner):
                 self.logger.error(
                     f"cannot notify status {status} to {cp_fqcn} in {duration} seconds after {num_tries} tries"
                 )
+                return
             else:
                 time.sleep(0.5)
 

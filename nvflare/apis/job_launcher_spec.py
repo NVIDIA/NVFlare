@@ -83,6 +83,14 @@ def add_launcher(launcher, fl_ctx: FLContext):
 
 
 class JobHandleSpec(ABC):
+    def can_restart(self) -> bool:
+        """Confirm termination of this handle's execution (e.g. the CJ process group).
+
+        Missing records and communication failures are not proof. Unsupported
+        launchers return False. The caller separately applies the retry policy.
+        """
+        return False
+
     @abstractmethod
     def terminate(self):
         """To terminate the job run.
