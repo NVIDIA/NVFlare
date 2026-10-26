@@ -5,7 +5,7 @@ Backend contract
 ----------------
 
 * Launch authority: the Client Parent (CP) creates, observes and cancels task
-  Pods through its existing Kubernetes client. The CPU Client Job (CJ) uses a
+  Pods through its existing Kubernetes client. The Client Job (CJ) uses a
   job-scoped Cell command interface. CJ and task Pods use the configured
   unprivileged worker service account with automatic token mounting disabled.
   Applications cannot choose Pod manifests, accounts, namespace or storage.
@@ -13,7 +13,7 @@ Backend contract
   job/site/task/attempt, and full identities in annotations. Deletes use UID
   preconditions; replacement pods are never adopted or deleted.
 * Storage: CP's private workspace uses its own PVC. A second, shared jobs PVC
-  holds per-job workspaces for both resident and task CJs. CJ and its task pods
+  holds per-job workspaces for task CJs and optionally resident CJs. CJ and its task pods
   mount only their job/site subtree at the same absolute workspace root. That
   root contains bootstrap, application code, input, immutable output and
   checkpoints. Pod-local
@@ -67,9 +67,8 @@ when its reply is lost. CJ cannot launch or inspect another job's attempts. Nati
 only the site-configured worker environment. Process-style environment
 passthrough is rejected for native backends. These shared selection and resource
 rules delegate to an installed native backend's site validator. A backend whose
-implementation is absent is rejected as unsupported. This change supplies the
-Kubernetes implementation; Docker and Slurm implementations are delivered
-separately. Use the full ``path`` for ``ClientK8sJobLauncher``; its short ``name``
+implementation is absent is rejected as unsupported. Kubernetes implements this
+contract; other backend support requires its corresponding installed implementation. Use the full ``path`` for ``ClientK8sJobLauncher``; its short ``name``
 is not registered in the component registry.
 
 The Kubernetes adapter accepts only the common CJ's strict staged-bootstrap
@@ -94,15 +93,15 @@ physical task ownership independently of those job credentials.
 
 The existing ``ClientK8sJobLauncher`` handles both execution lifetimes. Its
 optional ``job_workspace_pvc``, ``job_workspace_pvc_root`` and numeric identity
-settings enable persistent workspaces for both CJ lifetimes. With this profile,
-it replaces the generated ``workspace-job`` emptyDir with the job's subtree on
-the shared jobs PVC for resident and task CJs. Resident CJs retain their native
-GPU resources; only task-mode CJs have their GPU resources removed. Deployments
-without this optional storage profile retain the existing resident emptyDir
-behavior.
-The task profile removes CJ GPU requests/limits and visibility, selects the
-unprivileged worker account with API token mounting disabled, and uses the
-durable workspace. It preserves the existing workspace download and credential-Secret lifecycle. A pod-template PVC override
+settings enable the persistent jobs profile required for task CJs. Resident CJs
+keep the existing ``workspace-job`` emptyDir unless the site also sets
+``persist_resident_workspaces: true``. That explicit choice stores both CJ
+lifetimes on the jobs PVC and retains their workspaces after completion. Resident
+CJs retain their native GPU resources. Task-mode CJs use their independent
+``cj_resources`` / ``cj_resource_spec`` budget, which defaults to zero GPUs;
+their compute budget applies to workers. A zero-GPU CJ masks device visibility.
+The task profile selects the unprivileged worker account with API token mounting
+disabled and uses the durable workspace. It preserves the existing workspace download and credential-Secret lifecycle. A pod-template PVC override
 alone is insufficient because generated workspace volumes take precedence.
 
 CP seals task admission before terminating CJ. A Pending CJ that never starts
@@ -111,7 +110,19 @@ cancelling workers after CJ exits, including a create still in flight when CJ
 was terminated. The CJ end-run handler makes bounded cleanup attempts; it does
 not have to remain alive indefinitely to preserve Kubernetes cleanup authority.
 An independent CP monitor also detects a terminal, deleting, replaced or missing
-CJ and closes its task admission. API observation errors preserve ownership.
+CJ and closes its task admission. The job handle observes normal CJ lifecycle;
+the independent task-owner monitor reads CJ at most once every ten seconds as a
+backstop, independently of the shorter worker polling interval. API observation
+errors preserve ownership.
+
+CP retains task identities to make lost replies and delayed requests safe. The
+site's task launcher ``max_attempts`` (positive integer, default 10,000) limits
+all retained attempts per job, including locally rejected launches. Unknown
+cancel-before-launch identities also have a limit of 128. Exceeding either limit
+closes task admission and cancels owned execution without evicting old fences;
+existing poll/cancel operations remain available. Size ``max_attempts`` for the
+job's expected assignment count; it is a safety quota, not automatic retry or
+history eviction.
 
 Missing/replaced task Pods and lost settlement evidence remain explicitly fenced
 in CP, even after CJ exits. Retained ownership does not authorize a replacement
@@ -141,6 +152,16 @@ CJ and workers mount that subtree at the CJ's ``workspace_mount_path`` / worker'
 CP, CJ and workers must share the configured nonroot UID; configure matching
 numeric groups and volume permissions. No chown or privileged helper is used.
 The storage driver must permit these directory and fsGroup operations.
+
+The shared UID is a site trust assumption: mode 0700 does not separate jobs
+owned by that same UID. Cross-job filesystem isolation depends on kubelet's
+subPath mount boundary and the storage driver. This profile does not allocate
+per-job filesystem identities or claims. Keep Kubernetes nodes and storage
+components maintained, and grant applications no path to the full jobs claim.
+The persistent profile rejects duplicate jobs-claim volumes and extra workspace
+mounts. Trusted Pod templates retain security settings such as seccomp profiles,
+supplemental groups and a read-only container root filesystem, while the launcher
+enforces nonroot IDs, no privilege escalation and dropped capabilities.
 
 The resident workspace download stages ``local/`` and this job's files into the
 subtree. The worker mounts ``local/`` read-only from that same subtree, protecting
@@ -287,6 +308,7 @@ both local files::
          "namespace": "site",
          "job_workspace_pvc": "site-1-jobs",
          "job_workspace_pvc_root": "/mnt/nvflare-jobs",
+         "persist_resident_workspaces": true,
          "workspace_mount_path": "/var/tmp/nvflare/workspace",
          "run_as_user": 1000,
          "run_as_group": 1000,
@@ -550,7 +572,7 @@ driver. Before deployment qualification, run it in both CJ and task images on
 the chosen volume, and exercise cross-pod
 visibility, exclusive creation, no-follow directory operations, file fsync,
 atomic small-manifest replacement and crash durability. Attempt and checkpoint
-directories must reside on the same filesystem. Do not disable P4 validation
+directories must reside on the same filesystem. Do not disable task artifact validation
 when any required operation is unsupported.
 
 The backend deletes only its Pod. Immutable results, native checkpoint candidates
@@ -568,23 +590,35 @@ storage paths before forwarding terminal ``RECEIVED``/``TASK_CLOSED`` into the
 existing supervisor's cleanup path. Such lazy readers require explicit ownership;
 the supervisor has no general reader-lease API. Failures and unresolved
 settlement retain diagnostics and payloads. Checkpoint promotion continues to
-use P4's opaque file, immutable hard links and atomic local manifest,
+use an opaque application file, immutable hard links and an atomic local manifest,
 independently of server receipt or algorithm use.
 
-Per-job/site PVC subtrees are retained after CJ shutdown; there is no automatic
-subtree garbage collector. The operator owns archival and deletion under the
-site's retention policy. Before removing a subtree, confirm that the job is
+Task workspaces and explicitly enabled persistent resident workspaces are
+retained after CJ shutdown, including successful completion; there is no
+automatic subtree garbage collector. Enabling resident persistence is therefore
+a storage-retention decision. Budget capacity for accumulated checkpoints,
+artifacts and workspaces, set storage alerts and define archival/deletion policy.
+The resident default remains ephemeral even when a task jobs PVC is configured.
+The operator owns archival and deletion under the site's retention policy. Before removing a subtree, confirm that the job is
 closed, all CJ/task Pods and in-flight create requests are settled, and no
 result/checkpoint readers or uploads still use its files. Retain failure and
 unresolved-settlement evidence. Re-launching the same job/site while its subtree
 exists raises ``ValueError`` and preserves the files; use a new job identity or
 complete operator cleanup before reusing that identity.
 
+A failed pre-create preparation or definitive API rejection (for example quota
+403 or invalid manifest 422) releases only the freshly reserved empty directory,
+after checking that its inode has not changed. Nonempty directories and replaced
+paths remain untouched. A transport error, server error or name conflict can
+hide an admitted Pod, so its subtree stays fenced for operator reconciliation.
+A subsequent 404 alone does not authorize deleting that fence.
+
 Persistent files and CJ resume
 ------------------------------
 
 The shared jobs PVC preserves workspace files, committed checkpoints and task
-artifacts after either kind of CJ Pod is removed. Scratch files and container
+artifacts after a task CJ Pod is removed, and after a resident CJ Pod is removed
+when ``persist_resident_workspaces`` is enabled. Scratch files and container
 logs outside that mount remain ephemeral. The existing CJ ephemeral-storage
 request/limit (default 1Gi) continues to cover Pod-local storage; it does not
 limit files on the PVC. Task workers currently set no explicit ephemeral-storage
@@ -592,16 +626,10 @@ request/limit, so namespace defaults and node eviction policy apply.
 
 Persistence does not itself implement CJ resume. Applications must write their
 required recovery state, and a future restart path must restore committed state,
-coordinate with SJ and fence every earlier CJ/worker attempt. This PR continues
-to reject an existing job/site directory rather than overwrite or automatically
+coordinate with SJ and fence every earlier CJ/worker attempt. The launcher rejects an existing job/site directory rather than overwrite or automatically
 adopt it. The current shutdown upload also remains in place for CP's result
 archive. Abrupt CJ loss preserves the jobs-PVC files without depending on that
 upload running.
-
-For profiles from earlier unreleased revisions, rename ``task_workspace_pvc`` /
-``task_workspace_pvc_root`` to ``job_workspace_pvc`` /
-``job_workspace_pvc_root``. The existing hashed ``nvflare-tasks`` directory format
-is retained so this configuration change cannot bypass the retained-data fence.
 
 Local reproduction and deployment qualification
 --------------------------------------------------

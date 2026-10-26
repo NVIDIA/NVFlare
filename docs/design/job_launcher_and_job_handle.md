@@ -166,8 +166,17 @@ Resolution model for new job metadata:
 1. Merge `launcher_spec["default"][mode]` with `launcher_spec[site_name][mode]` (site wins on conflict).
 2. Keep `resource_spec` separate from launcher settings; it is not a place for new backend-specific configuration.
 
-`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to
-decide if the site has the required hardware. Docker, K8s, and Slurm use flat
+Resource admission follows the client app's execution lifetime. With job lifetime,
+`resource_spec` describes the resident CJ including compute. With task lifetime,
+it describes each task worker, and an independent `cj_resource_spec` describes
+the resident coordinator. Empty per-site CJ entries select site defaults and keep
+compute GPUs out of whole-job admission. CPU/memory enforcement belongs to a
+capable backend; unsupported custom resource requirements must be rejected rather
+than silently dropped. See the complete
+[metadata contract](job_meta_launcher_config.md) and
+[task lifecycle](task_worker_lifecycle.md).
+
+Docker, K8s, and Slurm use flat
 `resource_spec[site]["num_of_gpus"]` as the portable GPU total. Slurm permits only `nodes`, `gpus_per_node`,
 `image`, `cpus_per_node`, `mem_per_node`, `time`, and reduce-only `pending_timeout` in its job block. A job image
 requires BYOC authorization and overrides study/site image defaults. Routing, account, QOS, sandbox, setup, and raw
@@ -424,8 +433,33 @@ Launch sequence:
 | 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials, the workspace transfer token, and — when the job has one — the per-job certificate and key as `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. The startup Secret never includes `*.key`; in secure mode a job without a credential is refused. |
 | 4 | Create `K8sJobHandle` (carries the credential Secret name). |
 | 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
-| 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
+| 6 | Publish the created handle through `JOB_HANDLE_CALLBACK` before waiting for Running, so a concurrent abort can delete a never-started Pod. Then call `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
+
+The launch sequence above describes the resident default. ClientK8sJobLauncher
+also accepts `job_workspace_pvc`, `job_workspace_pvc_root`, `run_as_user` and
+`run_as_group` together for a persistent jobs profile. Task lifetime requires
+that profile; resident lifetime uses it only with the additional site setting
+`persist_resident_workspaces: true`. CP creates a fresh hashed job/site subtree
+and replaces the workspace emptyDir with that subPath on the jobs claim. It never
+mounts its private workspace claim into CJ. Persistent CJs require one isolated
+container; the profile merges site security context while enforcing nonroot IDs,
+no privilege escalation and no automatic API token mount.
+
+For task lifetime, CJ resources come from independent coordinator defaults and
+`cj_resource_spec`, while compute `resource_spec` and native resource settings bind
+the worker backend. Before starting CJ, CP installs a per-job task owner and
+capability-authenticated Cell endpoint. The CJ proxy cannot choose Pod authority.
+Normal job termination seals task admission and deletes CJ; CP retains physical
+task cleanup until settlement. Both the job and task launchers share stateless
+Pod construction helpers, while their handles retain distinct lifecycle roles.
+
+On a definitively rejected CJ create, CP removes only its freshly reserved empty
+workspace directory. It retains directories for ambiguous create outcomes and all
+persisted job data. Persistent resident workspaces are an explicit retention
+choice and require operator capacity/archival/deletion policy. See the
+[Kubernetes guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
+for namespace, storage, resource and cleanup configuration.
 
 The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
 instance; restart the parent site process to pick up hand edits. The v2

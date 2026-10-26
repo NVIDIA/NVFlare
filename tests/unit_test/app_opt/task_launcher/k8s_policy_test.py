@@ -224,3 +224,16 @@ def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch
     with pytest.raises(ValueError, match="portable GPUs reserve the whole job"):
         cp_launcher.launch_job(meta, context)
     assert cp_launcher.core_v1 is None
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "10000"])
+def test_attempt_history_limit_requires_a_positive_integer(tmp_path, limit):
+    with pytest.raises(ValueError, match="max_attempts must be a positive integer"):
+        K8sTaskLauncher("site", "site/worker", str(tmp_path), "pvc", "no-api", max_attempts=limit)
+
+
+def test_cp_backend_keeps_the_site_attempt_history_limit(profile):
+    launcher, _ = profile
+    launcher.max_attempts = 123
+    backend = launcher.create_backend(Mock(), "/cp/jobs/job", {}, "job", "site-1")
+    assert backend.max_attempts == 123

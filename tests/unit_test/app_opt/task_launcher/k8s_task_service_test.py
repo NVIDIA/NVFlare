@@ -344,3 +344,69 @@ def test_cj_end_run_is_bounded_when_cp_retains_unsettleable_execution(control):
     adapter._end_native_run.assert_not_called()
     adapter.supervisor.end_run.assert_called_once()
     assert "delete" not in api.calls
+
+
+def test_unknown_cancel_flood_seals_admission_without_evicting_fences(control, monkeypatch):
+    _, api, request, _, _, owner, client = control
+    monkeypatch.setattr("nvflare.app_opt.task_launcher.k8s_task_service._MAX_CANCEL_FENCES", 3)
+    for index in range(3):
+        client.call("cancel", task_id=request.task_id, attempt_id=str(index))
+    with pytest.raises(Exception, match="CP task cancel rejected"):
+        client.call("cancel", task_id=request.task_id, attempt_id="overflow")
+    assert owner.closed
+    assert len(owner.attempts) == 3
+    for index in range(3):
+        assert client.call("cancel", task_id=request.task_id, attempt_id=str(index))["settled"]
+        with pytest.raises(TaskLaunchError):
+            client.launch(replace(request, attempt_id=str(index)))
+    with pytest.raises(TaskLaunchError):
+        client.launch(request)
+    assert not api.calls
+
+
+def test_cj_observer_is_a_slow_backstop_not_the_task_poll_loop():
+    from nvflare.app_opt.task_launcher.k8s_task_service import _CJ_OBSERVATION_INTERVAL, _Job
+
+    backend = SimpleNamespace(core_v1=Mock(), namespace="site", request_timeout=1)
+    backend.core_v1.read_namespaced_pod.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(uid="cj-uid", deletion_timestamp=None),
+        status=SimpleNamespace(phase="Running"),
+    )
+    owner = _Job(backend, "job", "site", "token", "origin")
+    owner.attach_cj("cj", "cj-uid")
+    owner.observe_cj()
+    for _ in range(100):
+        owner.observe_cj()
+    backend.core_v1.read_namespaced_pod.assert_called_once()
+    assert _CJ_OBSERVATION_INTERVAL == 10
+    owner.attach_cj("cj", "cj-uid")
+    owner.observe_cj()
+    assert backend.core_v1.read_namespaced_pod.call_count == 2
+
+
+def test_end_run_is_safe_after_start_run_fails(control, monkeypatch):
+    _, _, request, _, _, _, _ = control
+    proxy = K8sTaskLauncher("site", "trusted", request.cwd, "pvc", "no-api")
+    monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN)
+    context = Mock()
+    context.get_prop.return_value = {}
+    with pytest.raises(RuntimeError, match="CP-provisioned"):
+        proxy.handle_event(EventType.START_RUN, context)
+    proxy.handle_event(EventType.END_RUN, context)
+    proxy.handle_event(EventType.END_RUN, context)
+
+
+def test_rejected_launch_flood_is_bounded_and_seals_admission(control):
+    backend, api, request, _, _, owner, client = control
+    backend.max_attempts = 3
+    invalid = replace(request, argv=(*request.argv[:4], request.cwd + "/missing.json", *request.argv[5:]))
+    for index in range(3):
+        handle = client.launch(replace(invalid, attempt_id=str(index)))
+        assert handle.wait_for_settlement(2).failure_reason
+    with pytest.raises(TaskLaunchError):
+        client.launch(replace(invalid, attempt_id="overflow"))
+    assert owner.closed
+    assert len(owner.attempts) == 3
+    assert owner.cancel_fences == 0
+    assert not api.calls
+    assert client.call("cancel", task_id=request.task_id, attempt_id="0")["settled"]

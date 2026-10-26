@@ -44,6 +44,8 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 _CHANNEL = "k8s_task_control"
 _TOPIC = "request"
 _MAX_MESSAGE = 65536
+_MAX_CANCEL_FENCES = 128
+_CJ_OBSERVATION_INTERVAL = 10.0
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +79,8 @@ class _Job:
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.attempts = {}
+        self.cancel_fences = 0
+        self.next_cj_observation = 0.0
         self.closed = False
         self.released = False
         self.on_done = None
@@ -87,6 +91,7 @@ class _Job:
             raise ValueError("CP task owner requires the created CJ UID")
         with self.lock:
             self.cj_name, self.cj_uid = name, uid
+            self.next_cj_observation = 0.0
         self.wake.set()
 
     def close(self):
@@ -105,8 +110,10 @@ class _Job:
     def observe_cj(self):
         with self.lock:
             name, uid, released = self.cj_name, self.cj_uid, self.released
-        if released or not name:
-            return
+            now = time.monotonic()
+            if released or not name or now < self.next_cj_observation:
+                return
+            self.next_cj_observation = now + _CJ_OBSERVATION_INTERVAL
         try:
             pod = self.backend.core_v1.read_namespaced_pod(
                 name=name,
@@ -247,6 +254,14 @@ class K8sTaskService:
             identity = (data["task_id"], data["attempt_id"])
             with job.lock:
                 attempt = job.attempts.get(identity)
+                if attempt is None and action in {"launch", "cancel"} and len(job.attempts) >= job.backend.max_attempts:
+                    # Retain every old identity to fence delayed/replayed launches.
+                    # This includes cheap launches rejected before any Pod exists.
+                    job.closed = True
+                    for known in job.attempts.values():
+                        known.cancel = True
+                    job.wake.set()
+                    raise ValueError("task attempt history limit reached; job task admission is closed")
                 if action == "launch":
                     from nvflare.app_opt.task_launcher.k8s_launcher import WORKER_MODULE, _within
 
@@ -272,6 +287,17 @@ class K8sTaskService:
                 elif attempt is None:
                     if action != "cancel":
                         raise ValueError("unknown attempt")
+                    if job.closed:
+                        raise ValueError("job task admission is closed")
+                    if job.cancel_fences >= _MAX_CANCEL_FENCES:
+                        # Do not evict a fence: a delayed launch could then run.
+                        # Seal admission instead, keeping existing cleanup live.
+                        job.closed = True
+                        for known in job.attempts.values():
+                            known.cancel = True
+                        job.wake.set()
+                        raise ValueError("too many unknown task cancellations; job task admission is closed")
+                    job.cancel_fences += 1
                     # Fence a launch delayed behind a cancellation/lost launch reply.
                     request = TaskLaunchRequest(job.job_id, job.site_name, *identity, ("cancelled",))
                     attempt = _Attempt(request, cancel=True, status=_terminal("task cancelled before launch"))

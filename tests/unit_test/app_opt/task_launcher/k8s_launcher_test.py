@@ -1203,3 +1203,13 @@ def test_legacy_process_gpu_count_still_becomes_worker_admission_after_split():
     resources = task_pod_resources(meta, "site-1", TaskResourceRequest())
     assert resources["requests"]["nvidia.com/gpu"] == "2"
     assert resources["limits"]["nvidia.com/gpu"] == "2"
+
+
+def test_legacy_explicit_zero_gpu_overrides_gpu_site_defaults():
+    from nvflare.apis.task_launcher_spec import TaskResourceRequest
+    from nvflare.app_opt.task_launcher.k8s_launcher import task_pod_resources
+
+    meta = {"resource_spec": {"site-1": {"process": {"num_of_gpus": 0}}}, "cj_resource_spec": {"site-1": {}}}
+    resources = task_pod_resources(meta, "site-1", TaskResourceRequest(gpu_count=2))
+    assert "nvidia.com/gpu" not in resources["requests"]
+    assert "nvidia.com/gpu" not in resources["limits"]

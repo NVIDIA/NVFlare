@@ -432,3 +432,105 @@ def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
     valid, error, _ = JobMetaValidator().validate("split", data)
     assert not valid
     assert "task-lifetime" in error
+
+
+@pytest.mark.parametrize("extension", ["yml", "yaml", "conf"])
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_submission_leaves_client_only_substitutions_unresolved(extension, lifetime, monkeypatch):
+    monkeypatch.delenv("NVFLARE_TEST_CLIENT_DATA_ROOT", raising=False)
+    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
+    variable = "${NVFLARE_TEST_CLIENT_DATA_ROOT}" if extension == "conf" else "${oc.env:NVFLARE_TEST_CLIENT_DATA_ROOT}"
+    if extension != "conf":
+        variable = json.dumps(variable)
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr("split/meta.json", json.dumps(meta))
+        archive.writestr("split/app/config/", "")
+        archive.writestr("split/app/config/config_fed_server.json", "{}")
+        archive.writestr(
+            f"split/app/config/config_fed_client.{extension}",
+            f"execution_lifetime: {lifetime}\nexecutors: [{{data_root: {variable}}}]\n",
+        )
+    valid, error, submitted = JobMetaValidator().validate("split", bio.getvalue())
+    assert valid, error
+    assert ("cj_resource_spec" in submitted) == (lifetime == "task")
+
+
+@pytest.mark.parametrize(
+    "include",
+    [
+        'include "client.conf"',
+        'include required(file("/client-only/data.conf"))',
+        'include url("https://client.invalid/config")',
+        'include package("client:config.conf")',
+    ],
+)
+def test_submission_does_not_open_client_hocon_includes(include, monkeypatch):
+    from pyhocon import ConfigFactory as HoconFactory
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("submission attempted to open a client config include")
+
+    monkeypatch.setattr(HoconFactory, "parse_file", forbidden)
+    monkeypatch.setattr(HoconFactory, "parse_URL", forbidden)
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr("config_fed_client.conf", f"{include}\nexecution_lifetime = task\n")
+    with ZipFile(bio) as archive:
+        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
+    assert config["execution_lifetime"] == "task"
+
+
+@pytest.mark.parametrize("quotes", [3, 4, 5, 8])
+def test_client_hocon_multiline_strings_cannot_hide_include_directives(quotes, monkeypatch):
+    from pyhocon import ConfigFactory as HoconFactory
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("submission opened a hidden client include")
+
+    monkeypatch.setattr(HoconFactory, "parse_file", forbidden)
+    monkeypatch.setattr(HoconFactory, "parse_URL", forbidden)
+    text = (
+        "a="
+        + '"' * 3
+        + "safe"
+        + '"' * quotes
+        + ', include url("https://client.invalid/config")\nexecution_lifetime=task\n'
+    )
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr("config_fed_client.conf", text)
+    with ZipFile(bio) as archive:
+        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
+    assert config["execution_lifetime"] == "task"
+
+
+def test_client_hocon_include_keys_and_strings_remain_application_data():
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr(
+            "config_fed_client.conf", 'execution_lifetime=job\nargs {include=true, note="include url(ignored)"}\n'
+        )
+    with ZipFile(bio) as archive:
+        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
+    assert config["args"] == {"include": True, "note": "include url(ignored)"}
+
+
+@pytest.mark.parametrize("comment", ["#comment", "//comment"])
+@pytest.mark.parametrize("newline", ["\r", "\r\n", "\n"])
+def test_client_hocon_comment_line_endings_cannot_hide_an_include(comment, newline, monkeypatch):
+    from pyhocon import ConfigFactory as HoconFactory
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("submission opened a client include after a comment")
+
+    monkeypatch.setattr(HoconFactory, "parse_file", forbidden)
+    monkeypatch.setattr(HoconFactory, "parse_URL", forbidden)
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr(
+            "config_fed_client.conf", comment + newline + 'include "client.conf"\nexecution_lifetime=task\n'
+        )
+    with ZipFile(bio) as archive:
+        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
+    assert config["execution_lifetime"] == "task"

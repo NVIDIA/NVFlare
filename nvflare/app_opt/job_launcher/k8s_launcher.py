@@ -938,6 +938,8 @@ class K8sJobLauncher(JobLauncherSpec):
         workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
         credential_secret_name = None
         created_pod = None
+        pod_create_attempted = False
+        workspace_reservations = []
         try:
             startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
 
@@ -1066,6 +1068,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 job_meta=job_meta,
                 fl_ctx=fl_ctx,
                 transfer_token=workspace_transfer_token,
+                workspace_reservations=workspace_reservations,
             )
             job_handle.pod_manifest = pod_manifest
             self.logger.debug(
@@ -1074,12 +1077,19 @@ class K8sJobLauncher(JobLauncherSpec):
                 self.namespace,
                 job_image,
             )
+            pod_create_attempted = True
             created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
             if job_handle.task_owner is not None:
                 job_handle.task_owner.attach_cj(pod_name, created_pod.metadata.uid)
             if credential_secret_name:
                 self._own_credential_secret(credential_secret_name, pod_name, created_pod)
         except Exception as e:
+            # A transport/5xx error can hide a successful create. Keep its
+            # workspace fenced; a later empty read is not proof it never ran.
+            rejected = getattr(e, "status", None) in {400, 401, 403, 404, 405, 413, 415, 422, 429}
+            if created_pod is None and (not pod_create_attempted or rejected):
+                for directory, device, inode in workspace_reservations:
+                    self._discard_empty_workspace(directory, device, inode)
             workspace_transfer.remove_job(raw_job_id)
             if credential_secret_name and created_pod is None:
                 # No pod means no ownerReference, so GC would never collect the Secret.
@@ -1102,6 +1112,21 @@ class K8sJobLauncher(JobLauncherSpec):
         if not entered_running:
             self.logger.warning(f"unable to enter running phase {job_id}")
         return job_handle
+
+    def _discard_empty_workspace(self, directory, device, inode):
+        try:
+            parent_fd = os.open(os.path.dirname(directory), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                name = os.path.basename(directory)
+                info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if (info.st_dev, info.st_ino) != (device, inode):
+                    return
+                # rmdir refuses symlinks and nonempty workspaces. Never recurse.
+                os.rmdir(name, dir_fd=parent_fd)
+            finally:
+                os.close(parent_fd)
+        except OSError as error:
+            self.logger.warning("retaining job workspace after rejected launch: %s", error)
 
     def get_execution_lifetime(self, job_meta, fl_ctx):
         return "job"
@@ -1150,6 +1175,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         run_as_user: int = None,
         run_as_group: int = None,
         cj_resources: dict = None,
+        persist_resident_workspaces: bool = False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -1157,6 +1183,9 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             validate_cj_resource_spec({"@default": cj_resources})
         self.cj_resources = {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
         self.cj_resources.update(cj_resources or {})
+        if not isinstance(persist_resident_workspaces, bool):
+            raise ValueError("persist_resident_workspaces must be a boolean")
+        self.persist_resident_workspaces = persist_resident_workspaces
         self.job_workspace_pvc = None
         self.job_workspace_pvc_root = None
         self.job_security_context = None
@@ -1164,6 +1193,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         self._job_storage_checked = False
         settings = (job_workspace_pvc, job_workspace_pvc_root, run_as_user, run_as_group)
         if all(value is None for value in settings):
+            if persist_resident_workspaces:
+                raise ValueError("persist_resident_workspaces requires the persistent jobs PVC profile")
             return
         if any(value is None for value in settings):
             raise ValueError("persistent job workspaces require PVC, CP mount and numeric UID/GID together")
@@ -1207,8 +1238,9 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         job_meta=None,
         fl_ctx=None,
         transfer_token=None,
+        workspace_reservations=None,
     ):
-        if self.job_workspace_pvc is None:
+        if self.job_workspace_pvc is None or (execution_lifetime == "job" and not self.persist_resident_workspaces):
             return
 
         spec = manifest["spec"]
@@ -1236,15 +1268,30 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             policy = TaskExecutionPolicy.from_workspace(workspace)
             if type(policy.launcher) is not K8sTaskLauncher:
                 raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
+        if (
+            any(
+                volume.get("persistentVolumeClaim", {}).get("claimName") == self.job_workspace_pvc
+                for volume in spec["volumes"]
+                if volume is not volumes[0]
+            )
+            or len([mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]) != 1
+        ):
+            raise ValueError("the jobs PVC may only be mounted through the assigned job subPath")
         mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
+        if workspace_reservations is not None:
+            directory = os.path.join(self.job_workspace_pvc_root, mounts[0]["subPath"])
+            info = os.stat(directory, follow_symlinks=False)
+            workspace_reservations.append((directory, info.st_dev, info.st_ino))
         container["securityContext"] = {
+            **container.get("securityContext", {}),
+            "privileged": False,
             "runAsUser": self.job_security_context["runAsUser"],
             "runAsGroup": self.job_security_context["runAsGroup"],
             "runAsNonRoot": True,
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
         }
-        spec["securityContext"] = dict(self.job_security_context)
+        spec["securityContext"] = {**spec.get("securityContext", {}), **self.job_security_context}
         spec["automountServiceAccountToken"] = False
         if execution_lifetime != "task":
             return
@@ -1291,6 +1338,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             raise ValueError("job workspace already exists; retained job/site data cannot be reused") from error
         info = os.stat(directory)
         if info.st_uid != self.job_security_context["runAsUser"]:
+            self._discard_empty_workspace(directory, info.st_dev, info.st_ino)
             raise ValueError("CP, CJ and workers must use the same nonroot numeric UID")
         return subpath
 

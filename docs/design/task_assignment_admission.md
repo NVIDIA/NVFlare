@@ -2,7 +2,8 @@
 
 The server gives each client assignment a task ID and a separate attempt ID.
 Resending an assignment preserves both. This change supports ordinary job-lifetime
-executors and the future task-worker path without changing executor configuration.
+executors and task workers. In task execution mode, a fresh worker computes one
+assignment while the resident Client Job (CJ) owns result submission and receipt.
 
 ## Client contract
 
@@ -102,9 +103,12 @@ and job to its exact job-cell origin using the server-provided client table. Thi
 also applies to relay paths where the client-name authentication header is stripped.
 
 Task-worker artifact cleanup must wait for terminal receipt or closure and for
-outstanding transfer readers to release the source. Worker supervision, launchers,
-declared-state promotion, adapters, and recipes remain separate work in #5352.
-Its integration must consume this receipt contract and decide state promotion
-locally; it cannot gate promotion on a server aggregation-admission boolean.
-In particular, `TASK_CLOSED` cannot be interpreted as proof that an earlier result
-was not received or used; closure alone cannot decide state promotion.
+outstanding transfer readers to release the source. The
+[task execution lifecycle](task_worker_lifecycle.md) uses this contract: after
+physical settlement and result validation, CJ locally promotes an optional opaque
+checkpoint and retains the saved result through submission retries. Promotion is
+independent of receipt and aggregation. A repeated assignment reuses its verified
+saved result without running compute again. In particular, `TASK_CLOSED` is not
+proof that an earlier result was not received or used; closure alone cannot decide
+checkpoint promotion. Neither this receipt protocol nor persistent files provide
+automatic CJ recovery or durable server receipt history across restart.

@@ -3806,12 +3806,13 @@ _TASK_JOB_ID = "4df684c0-d73d-4e7e-83d6-e4e8d0171532"
 _TASK_SITE = "site-1"
 
 
-def _task_profile(pvc_root):
+def _task_profile(pvc_root, persist_resident_workspaces=True):
     return ClientK8sJobLauncher(
         config_file_path=None,
         namespace="site",
         job_workspace_pvc="existing-pvc",
         job_workspace_pvc_root=str(pvc_root),
+        persist_resident_workspaces=persist_resident_workspaces,
         run_as_user=max(os.getuid(), 1),
         run_as_group=max(os.getgid(), 1),
     )
@@ -3820,7 +3821,8 @@ def _task_profile(pvc_root):
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yml"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
-def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension, budgets):
+@pytest.mark.parametrize("create_status", [None, 403, 500])
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension, budgets, create_status):
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
     (tmp_path / "startup").mkdir()
@@ -3885,6 +3887,10 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
     )
     launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
     api = launcher.core_v1 = Mock()
+    if create_status:
+        from kubernetes.client.rest import ApiException
+
+        api.create_namespaced_pod.side_effect = ApiException(status=create_status)
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
     launcher._ensure_startup_secret = Mock(return_value="existing-startup-secret")
     launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
@@ -3917,6 +3923,11 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
         handle = launcher.launch_job(meta, fl_ctx)
     manifest = api.create_namespaced_pod.call_args.kwargs["body"]
     assert handle.get_manifest() == manifest
+    if create_status:
+        directory = pvc_root / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        assert directory.exists() == (create_status == 500)
+        assert handle.terminal_return_code == JobReturnCode.EXCEPTION
+        return
     assert (handle.task_owner is not None) == (lifetime == "task")
     spec = manifest["spec"]
     container = spec["containers"][0]
@@ -4072,3 +4083,59 @@ def test_never_started_task_cj_is_terminated_and_cp_owner_retains_cleanup(phase)
     owner.close.assert_called()
     owner.release.assert_called()
     api.delete_namespaced_pod.assert_called_once()
+
+
+def test_resident_persistence_is_an_explicit_site_choice(tmp_path):
+    launcher = _task_profile(tmp_path, persist_resident_workspaces=False)
+    manifest = {"spec": {"volumes": [{"name": "workspace-job", "emptyDir": {}}]}}
+    launcher.prepare_job_manifest(manifest, _TASK_JOB_ID, _TASK_SITE, None, execution_lifetime="job")
+    assert manifest["spec"]["volumes"][0] == {"name": "workspace-job", "emptyDir": {}}
+    assert not (tmp_path / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)).exists()
+
+
+def test_persistent_profile_preserves_site_security_context(tmp_path):
+    launcher = _task_profile(tmp_path)
+    manifest = {
+        "spec": {
+            "securityContext": {
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "supplementalGroups": [2000],
+                "runAsUser": 0,
+            },
+            "volumes": [{"name": "workspace-job", "emptyDir": {}}],
+            "containers": [
+                {
+                    "name": "cj",
+                    "securityContext": {"readOnlyRootFilesystem": True, "privileged": True},
+                    "volumeMounts": [{"name": "workspace-job", "mountPath": launcher.workspace_mount_path}],
+                }
+            ],
+        }
+    }
+    launcher.prepare_job_manifest(manifest, _TASK_JOB_ID, _TASK_SITE, None, execution_lifetime="job")
+    assert manifest["spec"]["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert manifest["spec"]["securityContext"]["supplementalGroups"] == [2000]
+    assert manifest["spec"]["securityContext"]["runAsUser"] == os.getuid()
+    security = manifest["spec"]["containers"][0]["securityContext"]
+    assert security["readOnlyRootFilesystem"] is True
+    assert security["privileged"] is False
+
+
+@pytest.mark.parametrize("replacement", ["empty", "data", "symlink", "other-inode"])
+def test_failed_submission_cleanup_only_removes_the_fresh_empty_directory(tmp_path, replacement):
+    launcher = _task_profile(tmp_path)
+    directory = tmp_path / "fresh"
+    directory.mkdir()
+    info = directory.stat()
+    if replacement == "data":
+        (directory / "checkpoint").write_text("retain")
+    elif replacement == "symlink":
+        directory.rmdir()
+        target = tmp_path / "target"
+        target.mkdir()
+        directory.symlink_to(target, target_is_directory=True)
+    elif replacement == "other-inode":
+        directory.rename(tmp_path / "original")
+        directory.mkdir()
+    launcher._discard_empty_workspace(str(directory), info.st_dev, info.st_ino)
+    assert directory.exists() == (replacement != "empty")

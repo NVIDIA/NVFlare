@@ -1515,3 +1515,13 @@ def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
 def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
     policy = TaskExecutionPolicy.from_config({})
     assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
+
+
+@pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])
+def test_process_task_cannot_drop_compute_resource_manager_requirements(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": compute}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )

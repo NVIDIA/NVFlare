@@ -1,222 +1,141 @@
-Job meta.json: Launcher Configuration Design Options
-Background
-NVFlare jobs use meta.json to describe how a job should be launched at each site. The process, Docker, Kubernetes,
-and Slurm modes have different execution settings, while portable resources such as `num_of_gpus` apply across
-launchers.
-The core design question is whether meta.json should separate scheduler-facing resource requirements from launcher-specific execution configuration, or combine them into a single structure.
-This distinction matters because the server scheduler wants a clean, launcher-agnostic view of required resources for placement decisions, while each launcher needs concrete, mode-specific settings to actually run the job.
-The schema must support explicit job images for Docker, Kubernetes, and Slurm. Default-image policy is separate from
-that schema choice.
-Note: the current code reads Docker, Kubernetes, and Slurm job images from `launcher_spec`; older
-`deploy_map`-based behavior is no longer the primary path.
+# Job resources and launcher configuration
 
-Implemented outcome: Option 4 is the current schema. `launcher_spec["default"][mode]` is shallow-merged with
-`launcher_spec[site][mode]`, with the site block winning. `resource_spec[site].num_of_gpus` remains portable. The
-Slurm block accepts image and job-owned resource/time settings; site policy stays outside job metadata.
+Job metadata describes required resources and backend runtime settings. Site
+configuration chooses the backend and owns its authority: job metadata cannot
+select Kubernetes credentials, Docker sockets, Slurm accounts, namespaces or
+storage mounts. This contract covers both resident job execution and fresh task
+workers. A Client Job (CJ) coordinates one federated job at a site; a Client Parent
+(CP) starts CJs. In task mode, each assignment runs in a separate compute worker.
 
-Option 1: Launcher namespaces inside resource_spec
-Each site entry in resource_spec contains a sub-key for each launcher mode. A launcher reads only its own block.
+## Resource roles
+
+| Field | Job execution mode | Task execution mode |
+| --- | --- | --- |
+| `resource_spec` | Resident CJ resources, including compute. | Per-worker compute resources. |
+| `cj_resource_spec` | Not accepted for resident client apps. | Independent coordinator resource budget. |
+| `launcher_spec` | Backend-specific runtime settings. | Backend-specific compute/runtime settings, separate from CJ resources. |
+
+Portable resources are `num_of_cpus`, `memory` and `num_of_gpus`. CPU requests
+are positive integers for compute; coordinator CPU budgets may be positive
+fractions. Native Kubernetes CPU quantities can also express fractions. Memory
+uses positive integer `Mi`,
+`Gi` or `Ti` quantities. GPU count is a nonnegative integer; zero is an explicit
+request and must override a GPU site default. A backend must enforce a supplied
+requirement or reject it, rather than silently discarding it.
+
+For a task client, this example requests a small CPU coordinator and a GPU worker:
+
+```json
 {
-  "deploy_map": { "app": ["@ALL"] },
+  "deploy_map": {"app": ["@ALL"]},
   "resource_spec": {
-    "site-1": {
-      "k8s": { "image": "repo/nvflare:2.7.2", "num_of_gpus": 2 },
-      "docker": { "image": "repo/nvflare:2.7.2", "shm_size": "8g", "num_of_gpus": 2 },
-      "process": { "num_of_gpus": 2 }
-    }
-  }
-}
-Pros:
-Launcher-specific configuration is explicit and isolated
-A launcher reads only the fields that belong to it
-New launcher modes can be added without colliding with existing mode-specific fields
-Cons:
-resource_spec is meant to represent resources, so fields like image and shm_size do not fit its semantics
-Shared values such as num_of_gpus must be repeated across launcher blocks unless another fallback rule is introduced
-It is verbose for simple jobs that use the same image or same GPU setting across modes
-
-Option 2: Flat universal args in resource_spec
-Each site entry uses a single flat dictionary. All launchers see the same keys, and each launcher ignores the ones that do not apply.
-{
-  "deploy_map": { "app": ["@ALL"] },
-  "resource_spec": {
-    "site-1": {
-      "image": "repo/nvflare:2.7.2",
-      "shm_size": "8g",
-      "num_of_gpus": 2,
-      "mem_per_gpu_in_GiB": 16
-    }
-  }
-}
-Pros:
-Simplest format to write and read
-No need to know which launcher will be used at authoring time
-Backward compatible with existing flat resource_spec jobs
-All job-related requirements appear in one place
-Cons:
-Launcher-specific keys become noise for launchers that do not use them
-Docker-only and K8s-only fields share one namespace, which increases the chance of misuse or confusion
-The schema is forced toward a lowest-common-denominator model, which makes launcher-specific evolution harder
-Validation becomes harder because the same key space has different meanings for different launchers
-
-Option 3: Launcher config mixed into deploy_map
-In this model, deploy_map entries carry both deployment targeting and launcher configuration.
-{
-  "deploy_map": {
-    "app": [
-      {
-        "sites": ["@ALL"],
-        "image": "repo/nvflare:2.7.2"
-      }
-    ]
-  }
-}
-The structure could be extended further if needed:
-{
-  "deploy_map": {
-    "app": [
-      {
-        "sites": ["site-1"],
-        "image": "repo/nvflare:2.7.2",
-        "shm_size": "8g"
-      },
-      {
-        "sites": ["site-2"],
-        "image": "repo/nvflare:2.7.3"
-      }
-    ]
-  }
-}
-Pros:
-Keeps image selection close to deployment targeting, so it is easy to see which image goes to which site
-Feels natural if the team views image selection as part of deployment mapping
-Can express per-site image overrides without introducing another top-level section
-Cons:
-deploy_map is conceptually about routing apps to sites, not about how jobs are launched, so the concerns become mixed
-It does not scale cleanly as more launcher settings are added, such as Docker shm_size or K8s CPU and memory limits
-It becomes harder to define what belongs in deploy_map versus what belongs elsewhere
-It risks turning deploy_map into a catch-all structure instead of keeping it a clean deployment map
-
-Option 4: Two top-level sections: resource_spec and launcher_spec
-This option introduces two explicit top-level keys with separate responsibilities:
-resource_spec: abstract resource requirements, used by the server scheduler for placement and by launchers for hardware-related configuration. This section stays launcher-agnostic.
-launcher_spec: launcher-specific execution configuration, namespaced by launcher mode. The scheduler ignores this section entirely.
-{
-  "deploy_map": { "app": ["@ALL"] },
-  "resource_spec": {
-    "site-1": { "num_of_gpus": 2, "mem_per_gpu_in_GiB": 16 }
+    "@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 1}
+  },
+  "cj_resource_spec": {
+    "@default": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
   },
   "launcher_spec": {
-    "site-1": {
-      "k8s": { "image": "repo/nvflare:2.7.2", "cpu": "500m", "memory": "2Gi", "ephemeral_storage": "4Gi" },
-      "docker": { "image": "repo/nvflare:2.7.2", "shm_size": "8g" },
-      "slurm": { "nodes": 2, "gpus_per_node": 1, "cpus_per_node": 8, "mem_per_node": 32768, "time": "02:00:00" }
-    }
+    "default": {"k8s": {"image": "registry.example/nvflare-training:2.10"}}
   }
 }
-In this model, num_of_gpus remains in resource_spec as the scheduler-facing requirement. Docker and K8s translate the flat resource_spec[site] value into their runtime-specific GPU request:
-Docker: --gpus=2
-K8s: resources.limits["nvidia.com/gpu"] = 2
-Slurm: one-node GPU request by default, or `--gres=gpu:<gpus_per_node>` with validated multi-node topology
-Process: passed as an environment variable or argument
-Launcher-only fields such as image, shm_size, K8s CPU/memory/ephemeral storage, and Slurm topology/time values use launcher_spec as their canonical location. The existing nested resource_spec compatibility fallback is also accepted when launcher_spec has no matching site/mode block.
-This makes image a first-class launcher field for both Docker and K8s, instead of an implicit value derived from unrelated configuration.
-Pros:
-Separation of concerns is explicit and unambiguous
-resource_spec stays scheduler-facing, while launcher_spec stays launcher-facing
-Shared values such as num_of_gpus are defined once and translated by each launcher without duplication
-New launcher modes can be added by introducing a new block in launcher_spec
-Validation is cleaner because the scheduler and launcher validate different inputs
-Cons:
-Introduces a new top-level key, which is a schema change
-Existing jobs already use flat resource_spec, so backward compatibility needs to be considered
-Job authors must consider two sections instead of one
-Implemented extension: default in launcher_spec
-Option 4 supports a default block to reduce repetition for common launcher settings such as image, time, or pending timeout.
+```
+
+The client app must declare `execution_lifetime: "task"`. In Kubernetes,
+`launcher_spec...k8s.image` still selects the CJ image. The task worker image is
+fixed separately by trusted `task_execution.launcher.args.image`; a job cannot
+select its worker image. Export and submission
+derive an empty `cj_resource_spec` entry for each receiving task site, such as
+`"@ALL": {}`; authors need not add that marker themselves. Without coordinator
+overrides, the empty entry selects trusted site defaults. Compute CPU, memory and
+GPU fields never fill missing coordinator fields. Kubernetes coordinator defaults
+are 0.25 CPU, 512Mi and zero GPUs; sites may configure `cj_resources` on
+ClientK8sJobLauncher. An explicit CJ GPU budget is independent of its workers.
+Process has no implicit Kubernetes coordinator defaults or OS resource limiter.
+
+Resident job apps keep their existing resource admission and may coexist with
+named task apps at other sites. A coordinator budget for a resident app is rejected.
+The Server Job keeps its existing resource semantics.
+
+## Resolution and compatibility
+
+Portable `resource_spec` and `cj_resource_spec` use `@default`. Matching `@ALL`
+and named-site entries overlay coordinator defaults, with the named site winning.
+Portable resource site overrides are field-based; omitted fields inherit defaults.
+`launcher_spec` uses the different reserved key `default`, followed by mode:
+
+```json
 {
-  "deploy_map": { "app": ["@ALL"] },
-  "resource_spec": {
-    "site-1": { "num_of_gpus": 2, "mem_per_gpu_in_GiB": 16 }
-  },
   "launcher_spec": {
-    "default": {
-      "k8s": { "image": "repo/nvflare:2.7.2" },
-      "docker": { "image": "repo/nvflare:2.7.2" },
-      "slurm": { "time": "02:00:00", "pending_timeout": 300 }
-    },
-    "site-1": {
-      "k8s": { "cpu": "500m", "memory": "2Gi" },
-      "docker": { "shm_size": "8g" },
-      "slurm": { "nodes": 2, "gpus_per_node": 1 }
-    }
+    "default": {"k8s": {"image": "registry.example/training:2.10"}},
+    "site-1": {"k8s": {"python_path": "/usr/local/bin/python"}}
   }
 }
-Merge rule:
-Start with default[mode]
-Overlay site[mode]
-Site-specific values win
-This reduces verbosity for jobs that use the same launcher image or other settings everywhere. The merge is shallow,
-and `default` is a reserved key rather than a site name.
+```
 
-Comparison
+Resolution shallow-merges `launcher_spec.default[mode]` with
+`launcher_spec[site][mode]`. The site block wins; nested dictionaries are not
+recursively merged. An installed launcher reads only its own mode's settings.
+When a matching launcher block is absent, the existing nested
+`resource_spec[site][mode]` compatibility fallback remains available. New jobs
+should use portable resource fields and `launcher_spec` rather than mixing images
+or runtime flags into `resource_spec`.
 
+Submission preparation preserves the reserved `@default` and `@ALL` keys
+through JSON/YAML-to-ConfigTree conversion, CLI overrides and serialization.
+Saving uses the full indexed configuration root, including when the first field
+is a nested resource block. `default` and `@default` remain distinct keys.
 
-Option 1
-Option 2
-Option 3
-Option 4
-Launcher isolation
-✓
-✗
-✗
-✓
-No repeated fields
-✗
-✓
-~
-✓
-Clear separation of concerns
-✗
-~
-✗
-✓
-Backward compatible
-✓
-✓
-✗
-~
-Scales to new launchers
-✓
-✗
-✗
-✓
-Handles common defaults well
-✗
-✗
-~
-~ (+✓ with extension)
+Portable and native declarations of the same resource are rejected as conflicts.
+For example, do not combine portable `num_of_cpus` with Kubernetes `cpu` or
+`cpu_request`, nor portable memory with Kubernetes `memory` or `memory_request`.
+Legacy Process GPU requirements and a native GPU count must remain consistent.
+Explicit zero GPU counts are preserved when resolving worker defaults.
 
-Option 4 gets ~ on backward compatibility because it introduces launcher_spec, but it can still preserve compatibility during migration by continuing to support the current resource_spec contract.
+Native settings remain backend-specific. Kubernetes supports CPU/memory request
+and limit quantities, image, Python path, pending timeout and ephemeral storage.
+Docker has its own image, entrypoint and shared-memory settings. Slurm has job
+topology, CPU/memory/GPU quantities and time settings. Each backend's validator
+defines its allowed fields. Site routing, accounts, setup commands and arbitrary
+runtime authority remain outside job metadata. Job-supplied images retain the
+existing bring-your-own-code authorization requirement.
 
-Recommendation
-Recommended: Option 4
-Option 4 is the only option that cleanly separates what resources are required from how the job is launched. That separation gives it the strongest long-term foundation.
-Its main advantages are:
-Clear semantics: resource_spec is scheduler input, launcher_spec is launcher input
-No required duplication of shared resource fields such as num_of_gpus because launchers read the flat resource_spec value
-Better extensibility as new launcher modes or launcher-specific settings are added
-Cleaner validation boundaries between scheduler logic and launcher logic
-Although it introduces a new top-level key, it can still be rolled out in a backward-compatible way by continuing to support the current flat resource_spec format during migration.
-The default extension is implemented as a shallow merge without changing the core separation of concerns.
-Pragmatic fallback: Option 1
-If the immediate priority is to minimize implementation change, Option 1 is a reasonable interim step. However, it keeps launcher-specific configuration inside resource_spec, which weakens semantics and is less clean as a long-term model.
+## Admission and enforcement
 
-Resolved and remaining questions
-Who is the authoritative consumer of resource_spec: the server scheduler, the launcher, or both? This determines whether GPU-related fields must remain there or could move elsewhere.
-GPU counts should remain in flat resource_spec so the scheduler and launchers read the same resource requirement.
-Should image be required explicitly for Docker and K8s in launcher_spec, or may a launcher fall back to the CP/SP image when image is absent?
-Is backward compatibility with flat resource_spec a hard requirement, or would a migration guide be sufficient?
-The default extension uses only shallow per-launcher merging; recursive merging is not supported.
+Submission derives coordinator entries from the client app declaration, without
+resolving unrelated application arguments on the server. Client-only environment
+substitutions and HOCON includes remain client concerns. Task lifetime should be
+declared literally in the submitted root client config. Before launch, CP checks
+the deployed resolved mode; CJ checks it again before constructing application
+components. A task admission marker cannot excuse a resident CJ from compute
+resource reservation if local configuration resolves to job lifetime.
 
-The implemented merge is shallow. Job images use the existing BYOC authorization. Backend-specific validation and
-image precedence are documented with each launcher.
+The scheduler's resource-manager request is obtained through
+`get_resource_manager_spec`. For a task site this uses only the coordinator
+budget; `get_compute_resource_manager_spec` resolves compute admission fields
+separately. Native worker launchers translate those compute fields into their
+runtime's resource requests. CPU and memory are enforced by a capable backend,
+rather than implicitly reserved in the legacy NVFlare GPU resource manager.
+
+Custom resources, licenses and per-GPU memory requirements need explicit backend
+enforcement. The current Kubernetes and Process task paths reject unsupported
+compute resource-manager claims. Process validates its compute CPU/memory and
+custom resource claims before starting a normalized task CJ and again before
+executing a task, so unsupported sites fail once at launch. Removing the compute GPU from whole-job admission
+must never silently drop these other requirements. Unsupported Process CPU/memory
+limits or coordinator GPU requirements likewise fail explicitly.
+
+With one available GPU, two Kubernetes task CJs can remain resident while their
+worker Pods use that GPU successively. Kubernetes owns scheduling and fairness;
+NVFlare does not guarantee round-robin alternation. A queued worker holds its
+attempt identity until settlement, cancellation or a configured deadline. Worker
+resource queue waiting and container startup use separate timeouts. A resident
+job continues to use the K8s job launcher's existing pending timeout.
+
+## Related contracts
+
+- [Task execution architecture and lifecycle](task_worker_lifecycle.md): compute,
+  coordination, settlement, checkpoint promotion and cancellation.
+- [JobLauncher and JobHandle](job_launcher_and_job_handle.md): resident runtime
+  creation, early handle publication and job termination.
+- [Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst):
+  site configuration, two-PVC storage, namespace choices and qualification checks.

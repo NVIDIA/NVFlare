@@ -51,6 +51,7 @@ from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONME
 from nvflare.private.fed.task_worker.protocol import _open_directory, read_bootstrap
 from nvflare.utils.job_launcher_utils import (
     get_job_launcher_spec,
+    get_launcher_resource_spec,
     get_portable_resource_spec,
     validate_portable_resource_conflicts,
 )
@@ -165,7 +166,10 @@ def task_pod_resources(meta, site_name, defaults):
         if quantities.get("requests", 0) > quantities.get("limits", float("inf")):
             raise ValueError(f"task {key} request exceeds its limit")
     gpu_count = native.get(
-        "num_of_gpus", portable.get("num_of_gpus", compute_admission.get("num_of_gpus", defaults.gpu_count))
+        "num_of_gpus",
+        portable.get(
+            "num_of_gpus", get_launcher_resource_spec(meta, site_name, "process").get("num_of_gpus", defaults.gpu_count)
+        ),
     )
     TaskResourceRequest(gpu_count=gpu_count)
     for kind in result.values():
@@ -211,6 +215,7 @@ class _K8sTaskProfile(TaskLauncherSpec):
         gpu_count: int = 0,
         environment: dict = None,
         queue_timeout: float = None,
+        max_attempts: int = 10000,
     ):
         super().__init__()
         self.namespace = validate_dns_name("namespace", namespace)
@@ -231,6 +236,9 @@ class _K8sTaskProfile(TaskLauncherSpec):
         self.startup_timeout = _seconds("startup_timeout", startup_timeout)
         self.queue_timeout = None if queue_timeout is None else _seconds("queue_timeout", queue_timeout, positive=False)
         self.request_timeout = _seconds("request_timeout", request_timeout)
+        if type(max_attempts) is not int or max_attempts <= 0:
+            raise ValueError("max_attempts must be a positive integer")
+        self.max_attempts = max_attempts
         self.security_context = task_security_context(run_as_user, run_as_group)
         self.resources = TaskResourceRequest(cpu_cores=cpu_cores, memory_mb=memory_mb, gpu_count=gpu_count)
         self.environment = dict(environment or {})
@@ -340,7 +348,9 @@ class K8sTaskBackend(_K8sTaskProfile):
             )
         path = _within(self.workspace_root, request.argv[4])
         _within(self.workspace_root, request.cwd)
-        bootstrap = read_bootstrap(self._storage_path(path), resolve_parent=False)
+        storage_path = self._storage_path(path)
+        _within(self.storage_root, os.path.realpath(storage_path))
+        bootstrap = read_bootstrap(storage_path, resolve_parent=False)
         artifact_fd = _open_directory(self._storage_path(bootstrap.artifact_root))
         try:
             if os.stat(self.storage_root).st_dev != os.fstat(artifact_fd).st_dev:
@@ -714,7 +724,9 @@ class K8sTaskLauncher(_K8sTaskProfile):
                 self.cleanup_timeout,
             )
         elif event_type == EventType.END_RUN:
-            self._client.close()
+            client = getattr(self, "_client", None)
+            if client is not None:
+                client.close()
 
     def launch_task(self, request):
         client = getattr(self, "_client", None)
@@ -743,6 +755,7 @@ class K8sTaskLauncher(_K8sTaskProfile):
             gpu_count=self.resources.gpu_count,
             environment=self.environment,
             queue_timeout=self.queue_timeout,
+            max_attempts=self.max_attempts,
         )
         reject_job_gpu_reservation(job_meta, site_name)
         backend._job_binding = (job_id, site_name, task_pod_resources(job_meta, site_name, self.resources))
