@@ -68,10 +68,11 @@ rank semantics. The same receive/send loop exits after that send. Script argumen
 retain their boundaries, and supported secret placeholders resolve in the worker.
 Sending serializes the result durably to disk before returning and retains only
 its artifact reference in the worker. Script failure or finalizer failure still
-prevents completion. Analytics are serialized to a disk spool as each log call
-arrives, then sealed and replayed by the Client
-Job after settlement. The worker captures these records directly through the
-Client API adapter; it has no local analytics event handlers.
+prevents completion. Each log call travels live to the Client Job over the
+worker's cell session (`task_worker_cellnet_session.md`), which fires it into the
+job while the attempt is still owned; a rejected record fails the attempt. The
+worker captures these records directly through the Client API adapter; it has no
+local analytics event handlers.
 Worker log lines are replayed through CJ logging after settlement, making them
 available to the existing JobLogStreamer. Replay accepts only regular files, reads
 at most 1 MiB and emits at most 4,096 lines; truncated logs remain in the workspace.
@@ -123,7 +124,7 @@ checkpoint remains per client executor/task slot for the job. Retained attempts
 share storage with their committed payload instead of duplicating it.
 
 When the server resends the same assignment and attempt ID, CJ re-reads the
-checksum-verified saved result. It does not rerun training, replay analytics or
+checksum-verified saved result. It does not rerun training, resend metrics or
 promote that attempt's checkpoint again, including after a newer task completed.
 Only attempts that finished CJ result processing are eligible. Missing, corrupt,
 unsettled or already released results are rejected rather than re-executed.
@@ -187,7 +188,7 @@ application execution through script exit and finalizers. Framework result
 serialization pauses this application deadline. After the result has been staged,
 the site also imposes a finite `finalization_timeout` (30 seconds by default),
 including when result_wait_timeout is unset. Once application finalization finishes,
-checkpoint sealing, analytics sealing and completion publication run outside these
+checkpoint sealing and completion publication run outside these
 application deadlines. The absolute `worker_timeout`, when configured, still bounds
 the entire worker lifetime, including artifact I/O. Sending does not waive physical
 settlement.

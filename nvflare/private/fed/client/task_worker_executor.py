@@ -23,7 +23,6 @@ import threading
 from contextlib import contextmanager
 from functools import partial
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -32,11 +31,11 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
-from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.defs import CellChannel
+from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
     TaskAttemptIdentity,
@@ -91,6 +90,7 @@ class TaskWorkerExecutor(Executor):
                         raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                cell_session.listen(cell)
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
@@ -165,7 +165,7 @@ class TaskWorkerExecutor(Executor):
         if not self._gate.acquire(blocking=False):
             raise RuntimeError("task worker executor already has an active attempt")
         self._done.clear()
-        identity = workspace = outcome = None
+        identity = workspace = outcome = session = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
@@ -188,14 +188,6 @@ class TaskWorkerExecutor(Executor):
                 json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
             ).hexdigest()
             checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
-            bootstrap = WorkerBootstrap(
-                identity,
-                store.root_dir,
-                workspace.get_root_dir(),
-                self.executor_spec,
-                self.component_specs,
-                max_payload_bytes=self.policy.max_payload_bytes,
-            )
 
             def request_factory(attempt, path):
                 store.prepare_checkpoint(attempt, checkpoint_file)
@@ -217,6 +209,19 @@ class TaskWorkerExecutor(Executor):
                     cwd=workspace.get_run_dir(attempt.job_id),
                 )
 
+            # Metrics logged by the worker are fired into the job while the attempt is still owned.
+            session = cell_session.CellWorkerSession(
+                fl_ctx.get_engine().get_cell(), partial(self._fire_analytics, fl_ctx)
+            )
+            bootstrap = WorkerBootstrap(
+                identity,
+                store.root_dir,
+                workspace.get_root_dir(),
+                self.executor_spec,
+                self.component_specs,
+                max_payload_bytes=self.policy.max_payload_bytes,
+                cell_session=session.bootstrap_fields(),
+            )
             outcome = self.supervisor.run(
                 bootstrap=bootstrap,
                 store=store,
@@ -230,6 +235,8 @@ class TaskWorkerExecutor(Executor):
                     result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
                 ),
             )
+            # The worker has settled: a record arriving now belongs to no owned attempt.
+            session.close()
             # Finish fallible CJ replay/reporting before promoting application
             # state. The success path's finally block only releases ownership.
             self._report_issues(fl_ctx)
@@ -239,7 +246,6 @@ class TaskWorkerExecutor(Executor):
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
             fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
-            self._replay_analytics(outcome.analytics, fl_ctx)
             if outcome.result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK:
                 store.commit_checkpoint(
                     outcome.completion,
@@ -249,6 +255,8 @@ class TaskWorkerExecutor(Executor):
             self._completed_attempts.add(identity)
             return outcome.result
         finally:
+            if session is not None:
+                session.close()
             try:
                 if (
                     outcome is None
@@ -290,19 +298,11 @@ class TaskWorkerExecutor(Executor):
         except Exception as e:
             self.log_warning(fl_ctx, f"could not replay task worker log {path}: {e}")
 
-    def _replay_analytics(self, records, fl_ctx):
-        for record in records:
-            if record.get("event_type") not in (ANALYTIC_EVENT_TYPE, FED_ANALYTIC_EVENT_TYPE) or not isinstance(
-                record.get("federated"), bool
-            ):
-                raise ValueError("unsupported task worker analytics event")
-            send_analytic_dxo(
-                self,
-                from_shareable(record["data"]),
-                fl_ctx,
-                event_type=record["event_type"],
-                fire_fed_event=record["federated"],
-            )
+    def _fire_analytics(self, fl_ctx, data):
+        """Fire one metric the worker logged; runs on a cell thread while ``execute`` owns the attempt."""
+        if not isinstance(data, Shareable):
+            raise ValueError("task worker analytics must be a DXO Shareable")
+        send_analytic_dxo(self, from_shareable(data), fl_ctx)
 
     def _record_receipt(self, fl_ctx):
         identity = fl_ctx.get_prop(TASK_ATTEMPT_IDENTITY)

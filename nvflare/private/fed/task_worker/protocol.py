@@ -80,6 +80,19 @@ def _require_absolute_directory_name(name: str, value: str):
         raise ValueError(f"{name} must be an absolute path")
 
 
+CELL_SESSION_FIELDS = ("connect_url", "worker_fqcn", "token")
+
+
+def _require_cell_session(value):
+    """The connection a worker opens to its Client Job; the token is the worker's only proof of launch."""
+    if not isinstance(value, Mapping) or set(value) != set(CELL_SESSION_FIELDS):
+        raise ValueError(f"cell_session must contain exactly {sorted(CELL_SESSION_FIELDS)}")
+    for name in CELL_SESSION_FIELDS:
+        _require_text(f"cell_session {name}", value[name])
+    if "." not in value["worker_fqcn"].strip("."):
+        raise ValueError("cell_session worker_fqcn must be a child of the Client Job FQCN")
+
+
 def _require_payload_limit(value):
     if value is not None and (type(value) is not int or value <= 0):
         raise ValueError("max_payload_bytes must be a positive integer or None")
@@ -248,6 +261,7 @@ class WorkerBootstrap:
     context_properties: Mapping[str, ContextProperty] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
     max_payload_bytes: int | None = None
+    cell_session: Mapping[str, Any] | None = None
 
     def __post_init__(self):
         if not isinstance(self.identity, TaskAttemptIdentity):
@@ -257,6 +271,8 @@ class WorkerBootstrap:
         _require_absolute_directory_name("artifact_root", self.artifact_root)
         _require_absolute_directory_name("workspace_root", self.workspace_root)
         _require_payload_limit(self.max_payload_bytes)
+        if self.cell_session is not None:
+            _require_cell_session(self.cell_session)
         if not isinstance(self.executor, Mapping):
             raise TypeError("executor must be a JSON component mapping")
         if not isinstance(self.components, Sequence) or isinstance(self.components, (str, bytes)):
@@ -277,6 +293,7 @@ class WorkerBootstrap:
                 raise TypeError(f"context property {name!r} must be a ContextProperty")
         object.__setattr__(self, "executor", _freeze_json(self.executor))
         object.__setattr__(self, "components", _freeze_json(self.components))
+        object.__setattr__(self, "cell_session", _freeze_json(self.cell_session))
         object.__setattr__(self, "context_properties", MappingProxyType(dict(self.context_properties)))
         if len(json.dumps(self.to_dict(), allow_nan=False).encode("utf-8")) > _MAX_BOOTSTRAP_BYTES:
             raise ValueError("worker bootstrap is too large")
@@ -291,6 +308,7 @@ class WorkerBootstrap:
             "components": _thaw_json(self.components),
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
             "max_payload_bytes": self.max_payload_bytes,
+            "cell_session": _thaw_json(self.cell_session),
         }
 
     @classmethod
@@ -298,7 +316,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties", "max_payload_bytes"}
+        optional = {"components", "context_properties", "max_payload_bytes", "cell_session"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -313,6 +331,7 @@ class WorkerBootstrap:
             components=tuple(value.get("components", ())),
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
             max_payload_bytes=value.get("max_payload_bytes"),
+            cell_session=value.get("cell_session"),
         )
 
 
