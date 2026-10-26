@@ -177,13 +177,13 @@ class TestAdminRoleAssignment:
 
         resp = client.patch(
             NS + f"/api/v1/users/{user_id}",
-            json={"organization": "approved-org", "role": "org_admin"},
+            json={"organization": "approved_org", "role": "org_admin"},
             headers=auth_header,
         )
 
         assert resp.status_code == 200
         assert resp.json["user"]["role"] == "org_admin"
-        assert resp.json["user"]["organization"] == "approved-org"
+        assert resp.json["user"]["organization"] == "approved_org"
 
     def test_unapproved_project_admin_cannot_create_admin_role(self, client, auth_header):
         resp = client.post(
