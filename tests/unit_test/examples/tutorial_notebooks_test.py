@@ -89,7 +89,8 @@ def test_recipe_notebook_keeps_processes_out_of_the_kernel():
 
 def test_recipe_production_kit_matches_provision_workspace():
     provision = _fenced("job_recipe", "d3451070-14ff-4fdd-bd79-e87413f5d30c", "bash")[0]
-    argv = shlex.split(provision.strip())
+    argv = shlex.split(provision.strip().splitlines()[-1])
+    assert (_TUTORIALS / argv[argv.index("-p") + 1]).is_file()
     workspace = Path(argv[argv.index("-w") + 1])
     tree = ast.parse(_fenced("job_recipe", "67c99d67", "python")[0])
     admin_kit = next(
