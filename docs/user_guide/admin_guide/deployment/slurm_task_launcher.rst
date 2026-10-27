@@ -340,11 +340,12 @@ roles, authorization, immutable completion and checkpoint/receipt retention:
   ``task_resources`` common hook returns an empty request after admission;
   START_RUN binding preserves its complete native resources. The shared
   executor forwards that existing event rather than adding a lifecycle API.
-* Slurm materializes the bootstrap with its own worker entry point. The worker
-  retains authorization, initialize/execute/finalize, Client API context
-  binding, bounded log flush and bounded exit behavior without a local CJ PID
-  requirement. TaskHandle/Supervisor/artifact/receipt/checkpoint schemas stay
-  unchanged.
+* Slurm's thin worker entry point verifies its allocation marker and delegates
+  to the common worker with ``--execution_scope native``. The common path owns
+  authorization, initialize/execute/finalize, Client API context binding,
+  inherited job-credential removal and bounded log flush/exit, without a local
+  CJ PID requirement. TaskHandle/Supervisor/artifact/receipt/checkpoint schemas
+  stay unchanged.
 * The shared saved-result reader fix pins payloads while a replay reads them;
   receipt cleanup waits for the last reader without holding compute or a
   state lock across disk IO. Read failure retains evidence. Deterministic

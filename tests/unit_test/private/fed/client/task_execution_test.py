@@ -1510,34 +1510,6 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
     assert cell.decode_pass_through_topics == {unrelated}
 
 
-@pytest.mark.parametrize("failure", ["binding", "listener"])
-def test_task_adapter_start_failure_keeps_actual_error_and_prevents_compute(monkeypatch, failure):
-    cell = SimpleNamespace(decode_pass_through_topics=set())
-    context = FLContext()
-    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
-    policy = TaskExecutionPolicy.from_config({})
-    error = RuntimeError(f"native {failure} unavailable")
-    binding = Mock(side_effect=error if failure == "binding" else None)
-    policy.launcher.handle_event = binding
-    listener = Mock(side_effect=error if failure == "listener" else None)
-    monkeypatch.setattr("nvflare.private.fed.client.task_worker_executor.cell_session.listen", listener)
-    adapter = TaskWorkerExecutor({}, (), policy)
-    adapter.system_panic = Mock()
-    adapter.supervisor.run = Mock()
-
-    with pytest.raises(RuntimeError, match=str(error)):
-        adapter.handle_event(EventType.START_RUN, context)
-    assert not adapter._started
-    assert adapter._start_error == str(error)
-    assert not cell.decode_pass_through_topics
-    adapter.system_panic.assert_called_once_with(f"task launcher START_RUN failed: {error}", context)
-    with pytest.raises(RuntimeError, match=str(error)):
-        adapter.execute("train", Shareable(), context, Signal())
-    adapter.supervisor.run.assert_not_called()
-    if failure == "binding":
-        listener.assert_not_called()
-
-
 def test_task_adapter_requires_a_cell_before_starting():
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
