@@ -17,7 +17,7 @@
 import argparse
 
 import torch
-from src.data import SyntheticImageDataset, stable_seed
+from data import SyntheticImageDataset, stable_seed
 from torch.utils.data import DataLoader
 
 

@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run ordinary local training: python -m src.client_origin."""
+"""Run ordinary local training: python train.py."""
 
-from src.network import create_model
-from src.training import evaluate, make_loaders, train, training_parser
+from model import create_model
+from training import evaluate, make_loaders, train, training_parser
 
 
 def main():

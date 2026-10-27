@@ -16,7 +16,7 @@
 
 import argparse
 
-from src.network import create_model
+from model import create_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation
@@ -28,7 +28,7 @@ def create_recipe(num_rounds=5, stop_accuracy=80.0, patience=2):
         model=create_model(),
         min_clients=2,
         num_rounds=num_rounds,
-        train_script="src/client.py",
+        train_script="client.py",
         key_metric="accuracy",
         key_metric_mode="max",
         stop_cond=f"accuracy >= {stop_accuracy}",

@@ -17,13 +17,13 @@
 import argparse
 from pathlib import Path
 
-from src.network import create_model
+from model import create_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking, add_final_global_evaluation
 
 
-def create_recipe(num_rounds=3, tracking="none", client_script="src/client.py"):
+def create_recipe(num_rounds=3, tracking="none", client_script="client.py"):
     recipe = FedAvgRecipe(
         name=f"chapter1-{tracking}",
         model=create_model(),
@@ -32,7 +32,7 @@ def create_recipe(num_rounds=3, tracking="none", client_script="src/client.py"):
         train_script=client_script,
         train_args=["--tracking", tracking],
     )
-    if client_script == "src/client.py":
+    if client_script == "client.py":
         add_final_global_evaluation(recipe)
     if tracking == "tensorboard":
         add_experiment_tracking(recipe, "tensorboard")
@@ -47,10 +47,10 @@ def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument("--tracking", choices=("none", "tensorboard", "mlflow"), default="none")
-    parser.add_argument("--client-script", choices=("src/client.py", "src/client_v1.py"), default="src/client.py")
+    parser.add_argument("--client-script", choices=("client.py", "client_train_only.py"), default="client.py")
     args = parser.parse_args()
-    if args.client_script == "src/client_v1.py" and args.tracking != "none":
-        parser.error("the minimal client does not send tracking events; use src/client.py")
+    if args.client_script == "client_train_only.py" and args.tracking != "none":
+        parser.error("the minimal client does not send tracking events; use client.py")
     recipe = create_recipe(args.num_rounds, args.tracking, args.client_script)
     run = recipe.execute(SimEnv(num_clients=2))
     print("Results:", run.get_result())

@@ -46,27 +46,27 @@ All executable examples are in [code](code), shared across the notebooks:
 
 | File | Lesson |
 | --- | --- |
-| `fl_job.py` | Construct `FedAvgRecipe`, add final evaluation, and execute with `SimEnv` |
-| `src/client_origin.py` | Ordinary local PyTorch training |
-| `src/client_v1.py` | Minimal training-only Client API conversion |
-| `src/client.py` | Training, evaluation, and optional analytics |
-| `custom_server_job.py` | Recipe stopping, model selection, and persistence settings |
-| `custom_client_job.py` | `set_per_site_config()` for different client arguments |
-| `src/training.py` | Shared local training and evaluation functions |
-| `src/network.py`, `src/data.py` | Seeded CNN and site-specific synthetic images |
+| `job.py` | Construct `FedAvgRecipe`, add final evaluation, and execute with `SimEnv` |
+| `train.py` | Ordinary local PyTorch training |
+| `client_train_only.py` | Minimal training-only Client API conversion |
+| `client.py` | Training, evaluation, and optional analytics |
+| `job_custom_server.py` | Recipe stopping, model selection, and persistence settings |
+| `job_custom_clients.py` | `set_per_site_config()` for different client arguments |
+| `training.py` | Shared local training and evaluation functions |
+| `model.py`, `data.py` | Seeded CNN and site-specific synthetic images |
 
 The synthetic data uses the same design as Hello PyTorch: 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. It is an offline workflow exercise, not a benchmark. Local SGD state is reset every round. The client reports actual optimizer-step counts for aggregation and evaluates received weights before training; final evaluation measures the persisted checkpoint separately.
 
 From `code`, run:
 
 ```bash
-python -m src.client_origin
-python fl_job.py
-python fl_job.py --client-script src/client_v1.py
-python custom_server_job.py
-python custom_client_job.py
-python fl_job.py --export --export-dir ./exported
-python custom_client_job.py --export --export-dir ./exported
+python train.py
+python job.py
+python job.py --client-script client_train_only.py
+python job_custom_server.py
+python job_custom_clients.py
+python job.py --export --export-dir ./exported
+python job_custom_clients.py --export --export-dir ./exported
 ```
 
 Recipe workspaces default to `/tmp/nvflare/simulation/<recipe-name>`. Set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory to preserve separate experiments, and give the notebook kernel the same setting. The default and minimal-client jobs both use `chapter1-none`, so use separate roots to retain both runs.
@@ -75,8 +75,8 @@ Optional tracking labs:
 
 ```bash
 python -m pip install tensorboard mlflow
-python fl_job.py --tracking tensorboard
-python fl_job.py --tracking mlflow
+python job.py --tracking tensorboard
+python job.py --tracking mlflow
 ```
 
 The TensorBoard and MLflow notebooks explain how to open the local UIs in a separate terminal. Neither UI is started automatically by a notebook cell. MLflow uses `code/mlflow.db`; repeated runs remain in that store.

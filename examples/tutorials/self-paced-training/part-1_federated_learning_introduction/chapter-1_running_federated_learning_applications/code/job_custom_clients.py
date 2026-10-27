@@ -14,7 +14,7 @@
 
 """Give each client its own training arguments using the recipe API."""
 
-from src.network import create_model
+from model import create_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation, set_per_site_config
@@ -26,7 +26,7 @@ def create_recipe():
         model=create_model(),
         min_clients=2,
         num_rounds=3,
-        train_script="src/client.py",
+        train_script="client.py",
     )
     set_per_site_config(
         recipe,

@@ -14,8 +14,8 @@
 
 """Minimal conversion: this client handles training tasks only."""
 
-from src.network import create_model
-from src.training import copy_weights, evaluate, make_loaders, train, training_parser
+from model import create_model
+from training import copy_weights, evaluate, make_loaders, train, training_parser
 
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -29,7 +29,7 @@ def main():
     while flare.is_running():
         incoming = flare.receive()
         if not flare.is_train():
-            raise RuntimeError("client_v1.py supports training tasks only")
+            raise RuntimeError("client_train_only.py supports training tasks only")
         model.load_state_dict(incoming.params)
         # Measure the received global model BEFORE local training changes its weights.
         accuracy = evaluate(model, eval_loader)

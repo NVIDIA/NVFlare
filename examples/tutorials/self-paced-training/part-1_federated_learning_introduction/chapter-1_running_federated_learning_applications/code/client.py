@@ -14,8 +14,8 @@
 
 """Training and evaluation client used by the Chapter 1 jobs."""
 
-from src.network import create_model
-from src.training import copy_weights, evaluate, make_loaders, train, training_parser
+from model import create_model
+from training import copy_weights, evaluate, make_loaders, train, training_parser
 
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel

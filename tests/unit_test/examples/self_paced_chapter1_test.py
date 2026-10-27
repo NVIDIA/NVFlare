@@ -33,36 +33,25 @@ pytestmark = pytest.mark.skipif(importlib.util.find_spec("torch") is None, reaso
 
 @pytest.fixture
 def lesson(monkeypatch):
-    # Isolate the example's generic src package from other examples in the test process.
-    original = {name: module for name, module in sys.modules.items() if name == "src" or name.startswith("src.")}
+    # Isolate the flat example modules from same-named modules in other examples.
+    module_names = {path.stem for path in CHAPTER_CODE.glob("*.py")}
+    original = {name: sys.modules[name] for name in module_names if name in sys.modules}
     for name in original:
         sys.modules.pop(name)
     monkeypatch.syspath_prepend(str(CHAPTER_CODE))
     monkeypatch.chdir(CHAPTER_CODE)
-    loaded = []
-
-    def load(name):
-        if name.startswith("src."):
-            return importlib.import_module(name)
-        module_name = f"chapter1_{name}"
-        spec = importlib.util.spec_from_file_location(module_name, CHAPTER_CODE / f"{name}.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        loaded.append(module_name)
-        spec.loader.exec_module(module)
-        return module
-
-    yield load
-    for name in list(sys.modules):
-        if name == "src" or name.startswith("src.") or name in loaded:
-            sys.modules.pop(name)
-    sys.modules.update(original)
+    try:
+        yield importlib.import_module
+    finally:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        sys.modules.update(original)
 
 
 def test_site_and_split_data_are_reproducible_and_distinct(lesson):
     import torch
 
-    dataset = lesson("src.data").SyntheticImageDataset
+    dataset = lesson("data").SyntheticImageDataset
     first = dataset("site-1", "train", 200)
     repeated = dataset("site-1", "train", 200)
     other_site = dataset("site-2", "train", 200)
@@ -80,8 +69,8 @@ def test_site_and_split_data_are_reproducible_and_distinct(lesson):
 def test_training_reports_actual_steps_and_evaluation_preserves_weights(lesson, batch_size, epochs, expected_steps):
     import torch
 
-    training = lesson("src.training")
-    model = lesson("src.network").create_model()
+    training = lesson("training")
+    model = lesson("model").create_model()
     train_loader, eval_loader = training.make_loaders("site-1", batch_size)
     before = training.copy_weights(model)
     steps, loss = training.train(model, train_loader, epochs, 0.1)
@@ -98,7 +87,7 @@ def test_training_reports_actual_steps_and_evaluation_preserves_weights(lesson, 
 def test_client_evaluation_does_not_train_and_training_reports_received_model_score(lesson, monkeypatch):
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    client = lesson("src.client")
+    client = lesson("client")
     model = client.create_model()
     incoming = FLModel(params=client.copy_weights(model), current_round=0)
     tasks = iter(["train", "evaluate"])
@@ -132,8 +121,8 @@ def test_client_evaluation_does_not_train_and_training_reports_received_model_sc
 
 
 def test_minimal_recipe_does_not_schedule_evaluation(lesson, tmp_path):
-    module = lesson("fl_job")
-    module.create_recipe(client_script="src/client_v1.py").export(str(tmp_path))
+    module = lesson("job")
+    module.create_recipe(client_script="client_train_only.py").export(str(tmp_path))
     server_path = next(tmp_path.rglob("config_fed_server.json"))
     server = json.loads(server_path.read_text())
     assert len(server["workflows"]) == 1
@@ -141,7 +130,7 @@ def test_minimal_recipe_does_not_schedule_evaluation(lesson, tmp_path):
 
 
 def test_client_recipe_exports_distinct_arguments_for_each_site(lesson, tmp_path):
-    lesson("custom_client_job").create_recipe().export(str(tmp_path))
+    lesson("job_custom_clients").create_recipe().export(str(tmp_path))
     job = tmp_path / "chapter1-custom-clients"
     meta = json.loads((job / "meta.json").read_text())
     expected = {
@@ -153,10 +142,13 @@ def test_client_recipe_exports_distinct_arguments_for_each_site(lesson, tmp_path
         config = json.loads((job / app / "config/config_fed_client.json").read_text())
         executor = config["executors"][0]["executor"]
         assert executor["args"]["task_script_args"] == arguments
+        assert executor["args"]["task_script_path"] == "client.py"
+        for module in ("client.py", "model.py", "data.py", "training.py"):
+            assert (job / app / "custom" / module).is_file()
 
 
 def test_server_recipe_exports_stopping_and_final_evaluation(lesson, tmp_path):
-    lesson("custom_server_job").create_recipe(num_rounds=8, stop_accuracy=75.0, patience=3).export(str(tmp_path))
+    lesson("job_custom_server").create_recipe(num_rounds=8, stop_accuracy=75.0, patience=3).export(str(tmp_path))
     config = json.loads(next(tmp_path.rglob("config_fed_server.json")).read_text())
     training, evaluation = config["workflows"]
     assert training["args"]["num_rounds"] == 8
