@@ -21,6 +21,7 @@ import threading
 import time
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
     TaskExecutionStatus,
@@ -71,6 +72,16 @@ def _timeout(value, *, allow_none=False):
         raise ValueError("timeout must be finite and nonnegative")
 
 
+class _ControlDeadline(Signal):
+    def __init__(self, deadline):
+        super().__init__()
+        self.deadline = deadline
+
+    @property
+    def triggered(self):
+        return super().triggered or time.monotonic() >= self.deadline
+
+
 class DockerTaskHandle(TaskHandleSpec):
     def __init__(self, launcher, request):
         self._launcher = launcher
@@ -86,14 +97,16 @@ class DockerTaskHandle(TaskHandleSpec):
     def execution_id(self):
         return self._execution_id
 
-    def _call(self, operation):
+    def _call(self, operation, *, deadline=None):
         if self._settled is not None:
             return self._settled
-        response = self._launcher._call(operation, self.request)
-        self._execution_id = response["execution_id"]
+        response = self._launcher._call(operation, self.request, deadline=deadline)
         values = dict(response["status"])
         values["phase"] = TaskExecutionPhase(values["phase"])
         status = TaskExecutionStatus(**values)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Docker task control deadline expired")
+        self._execution_id = response["execution_id"]
         if status.settled:
             self._settled = status
         if operation == "launch" and response.get("launch_failed"):
@@ -104,16 +117,21 @@ class DockerTaskHandle(TaskHandleSpec):
         return self._call("poll")
 
     def cancel(self):
-        try:
-            status = self._call("cancel")
-        except Exception as error:
-            raise TaskSettlementError(
-                "Docker task cancellation could not be confirmed",
-                TaskExecutionStatus(TaskExecutionPhase.TERMINAL, cancel_requested=True, failure_reason=str(error)),
-            ) from error
-        if not status.settled:
-            raise TaskSettlementError("Docker task settlement is unconfirmed", status)
-        return status
+        deadline = time.monotonic() + self._launcher.cleanup_timeout
+        status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, cancel_requested=True)
+        error = None
+        while time.monotonic() < deadline:
+            try:
+                # Repeating cancellation also covers a lost first request.
+                status = self._call("cancel", deadline=deadline)
+                if status.settled and time.monotonic() < deadline:
+                    return status
+            except Exception as failure:
+                error = failure
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(self._launcher.poll_interval, remaining))
+        raise TaskSettlementError("Docker task settlement is unconfirmed after cancellation", status) from error
 
     def wait_for_settlement(self, timeout=None):
         _timeout(timeout, allow_none=True)
@@ -135,12 +153,24 @@ class DockerTaskLauncher(TaskLauncherSpec):
     launch_mode = "docker"
     cleanup_owned_by_parent = True
 
-    def __init__(self, rpc_timeout=30.0, max_retained_attempts=DEFAULT_MAX_RETAINED_ATTEMPTS):
+    def __init__(
+        self,
+        rpc_timeout=30.0,
+        max_retained_attempts=DEFAULT_MAX_RETAINED_ATTEMPTS,
+        cleanup_timeout=10.0,
+        poll_interval=0.05,
+    ):
         super().__init__()
         _timeout(rpc_timeout)
         if rpc_timeout == 0:
             raise ValueError("rpc_timeout must be positive")
+        _timeout(cleanup_timeout)
+        _timeout(poll_interval)
+        if cleanup_timeout == 0 or poll_interval == 0:
+            raise ValueError("cleanup_timeout and poll_interval must be positive")
         self.rpc_timeout = rpc_timeout
+        self.cleanup_timeout = cleanup_timeout
+        self.poll_interval = poll_interval
         self._cell = None
         self._session = None
         self._listener_host = None
@@ -182,9 +212,14 @@ class DockerTaskLauncher(TaskLauncherSpec):
                 raise ValueError("Docker worker listener must use its CP-issued container DNS name")
             self._cell, self._session, self._listener_host = cell, session, host
 
-    def _call(self, operation, request):
+    def _call(self, operation, request, *, deadline=None):
         if self._cell is None:
             raise RuntimeError("Docker task launcher has not bound its CJ runtime")
+        abort_signal = None
+        if deadline is not None:
+            abort_signal = _ControlDeadline(min(deadline, time.monotonic() + self.rpc_timeout))
+            if abort_signal.triggered:
+                raise TimeoutError("Docker task control deadline expired")
         reply = self._cell.send_request(
             target=FQCN.get_parent(self._cell.get_fqcn()),
             channel=CHANNEL,
@@ -200,11 +235,19 @@ class DockerTaskLauncher(TaskLauncherSpec):
                     }
                 )
             ),
-            timeout=self.rpc_timeout,
+            # Streaming timeouts apply to each phase and renew on progress.
+            # Use one abort deadline across all phases instead.
+            timeout=self.rpc_timeout if abort_signal is None else None,
+            abort_signal=abort_signal,
         )
+        if abort_signal is not None and abort_signal.triggered:
+            raise TimeoutError("Docker task control deadline expired")
         if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
             raise RuntimeError("Docker task authority did not acknowledge the request")
-        return decode_control(reply.payload)
+        response = decode_control(reply.payload)
+        if abort_signal is not None and abort_signal.triggered:
+            raise TimeoutError("Docker task control deadline expired")
+        return response
 
     def launch_task(self, request):
         with self._lock:

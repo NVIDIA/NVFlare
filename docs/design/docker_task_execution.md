@@ -26,7 +26,10 @@ P4 merge `94c5b0aebd3de9a6733926d5fc285144bfd335da`.
   attempts count too. The CJ proxy has its own `max_retained_attempts` argument
   with the same default. Exhaustion closes admission without evicting replay
   fences; existing handles remain available for cleanup. Repaired bootstrap files
-  do not authorize another launch of a rejected identity.
+  do not authorize another launch of a rejected identity. CP drops the logical
+  job session only after owned CJ/worker removal and all GPU releases are
+  confirmed. Old session capabilities then fail, while retained artifact files
+  remain governed by the existing receipt/reader policy.
 * **Storage:** single-daemon Linux bind mounts. The persistent daemon-host job
   directory appears at `/var/tmp/nvflare/workspace/<job_id>` in both CJ and worker.
   Bootstrap paths and opaque checkpoint records retain their existing format.
@@ -90,8 +93,11 @@ RPCs. CJ containers use `auto_remove=False` so CP can observe their identity and
 exit, remove only an owned container, and confirm absence. On CJ exit or abort,
 the monitor closes admission and retries task/GPU cleanup after API recovery.
 Job `poll()` stays UNKNOWN and `wait()` retains job files and credentials until
-both CJ and task cleanup are confirmed. Returning from `terminate()` only
-acknowledges a cleanup request. CJ exit with unfinished tasks cannot become a
+both CJ and task cleanup are confirmed. An abort stops the owned CJ before
+worker settlement or GPU-reservation verification, so an uncertain worker cannot
+keep a hung coordinator running. CJ removal, final completion and session
+release still wait for confirmed worker/GPU cleanup. Returning from `terminate()`
+only acknowledges a cleanup request. CJ exit with unfinished tasks cannot become a
 successful job outcome merely because cleanup later succeeds.
 
 Both resident and task Docker launchers publish the created job handle through
@@ -257,7 +263,8 @@ these task settings **after** preparing the kit.
   ],
   "task_execution": {
     "launcher": {
-      "path": "nvflare.app_opt.task_launcher.docker_launcher.DockerTaskLauncher"
+      "path": "nvflare.app_opt.task_launcher.docker_launcher.DockerTaskLauncher",
+      "args": {"cleanup_timeout": 60, "poll_interval": 0.05}
     },
     "worker_timeout": 120,
     "settlement_timeout": 60,
@@ -268,7 +275,9 @@ these task settings **after** preparing the kit.
 
 The image must contain this implementation and the application's dependencies.
 Install the Docker Python SDK in CP's image; CJ and worker images do not need it.
-An image-selected entrypoint is cleared so the fixed Python worker becomes PID 1.
+An image-selected entrypoint is cleared and worker creation explicitly sets
+`init=False`, so the fixed Python worker remains PID 1 even when dockerd's
+site-wide default injects an init process.
 Use a non-root CP user with daemon access and matching numeric IDs in all three
 containers. Workers get the existing public startup-file mounts and site policy,
 not the provisioned site private key. Do not add a socket bind, `volumes_from`,
@@ -277,6 +286,16 @@ secret mounts and CJ environment are not implicitly forwarded to workers.
 Set worker environment explicitly in `task_worker_config.environment`;
 `task_execution.environment_variables` applies to Process and is rejected here.
 The worker has a private `/tmp`; HOME is `/tmp` for UID portability.
+
+`DockerTaskLauncher.cleanup_timeout` bounds cancellation reconciliation
+(default 10 seconds), independently of the launch RPC timeout. A cancel response
+can be temporarily unsettled while CP finishes a create/start call; the proxy
+retries within this budget. One absolute deadline aborts all streaming RPC
+phases; progress cannot renew the budget, and late replies are rejected. A
+confirmed cleanup returns normally without fencing the supervisor. Expiry keeps
+ownership fenced and CP continues cleanup. `poll_interval` defaults to 0.05
+seconds. The example aligns this cancellation budget with the site's ordinary
+`settlement_timeout`; configure both for the deployment's expected cleanup time.
 
 Jobs keep the single application flag `execution_lifetime="task"`, and ordinary
 jobs retain the default `"job"`. Existing job metadata selects the CJ image as

@@ -763,9 +763,7 @@ def test_task_cj_death_keeps_attempt_fences_and_disables_automatic_restart(profi
     worker.remove_error = None
     _drain(handle)
     assert not handle.can_restart() and not p.daemon.items
-    with pytest.raises(RuntimeError, match="session already exists"):
-        p.service.add_job("job", "site", str(p.tmp_path), p.mounts, "501:20")
-    assert p.service.sessions["job"] is old
+    assert "job" not in p.service.sessions and old.job_handle is None
     creates = len(p.daemon.creates)
     assert old.launch(p.request.identity).poll().settled
     assert len(p.daemon.creates) == creates
@@ -784,8 +782,7 @@ def test_task_cj_cannot_restart_even_without_a_cp_execution_record(profile, monk
     cj.attrs["State"]["ExitCode"] = 1
     _drain(handle)
     assert not handle.can_restart()
-    with pytest.raises(RuntimeError, match="session already exists"):
-        p.service.add_job("job", "site", str(p.tmp_path), p.mounts, "501:20")
+    assert "job" not in p.service.sessions
 
 
 def test_explicit_abort_never_authorizes_cj_replacement(profile, monkeypatch):
@@ -794,8 +791,7 @@ def test_explicit_abort_never_authorizes_cj_replacement(profile, monkeypatch):
     handle.terminate()
     _drain(handle)
     assert not handle.can_restart()
-    with pytest.raises(RuntimeError, match="session already exists"):
-        p.service.add_job("job", "site", str(p.tmp_path), p.mounts, "501:20")
+    assert "job" not in p.service.sessions
 
 
 def test_task_cj_preserves_unlimited_startup_timeout(profile, monkeypatch):
@@ -815,3 +811,184 @@ def test_task_cj_preserves_unlimited_startup_timeout(profile, monkeypatch):
     handle.terminate()
     _drain(handle)
     assert not p.daemon.items
+
+
+@pytest.mark.parametrize("gpu_count", [0, 1])
+@pytest.mark.parametrize("failure", ["missing", "owner", "remove"])
+def test_abort_stops_cj_even_while_worker_settlement_stays_unconfirmed(profile, monkeypatch, gpu_count, failure):
+    p = profile
+    if gpu_count:
+        _configure_gpu(p)
+    p.stage()
+    p.launcher.launch_task(p.request)
+    worker = fixtures._workers(p.daemon)[0]
+    handle, cj = _cj_handle(p, monkeypatch)
+    if failure == "missing":
+        del p.daemon.items[worker.id]
+    elif failure == "owner":
+        worker.attrs["Config"]["Labels"][OWNER_LABEL] = "another-owner"
+    else:
+        worker.remove_error = RuntimeError("removal pending")
+    handle.terminate()
+    for _ in range(3):
+        with pytest.raises(RuntimeError, match="settlement unconfirmed"):
+            handle._cleanup_once()
+        assert cj.status == "exited", "worker uncertainty must not prevent CJ stop"
+        assert cj.id in p.daemon.items and p.service.sessions["job"] is p.session
+        assert handle.poll() == JobReturnCode.UNKNOWN and not handle._cleanup_done.is_set()
+        if gpu_count:
+            assert _reservations(p.daemon)
+    if failure == "remove":
+        worker.remove_error = None
+        _drain(handle)
+        assert not p.daemon.items and "job" not in p.service.sessions
+
+
+def test_abort_stops_cj_before_verifying_its_gpu_reservation(profile, monkeypatch):
+    from nvflare.app_opt.task_launcher.docker_gpu import GPU_OWNER
+
+    p = profile
+    _configure_gpu(p)
+    monkeypatch.setattr(TaskDockerJobHandle, "_start_cleanup_monitor", lambda self: None)
+    handle = TaskDockerJobHandle(
+        container_id=None,
+        container_name="owned-cj",
+        docker_client=p.daemon,
+        task_session=p.session,
+        cj_gpu_count=1,
+    )
+    handle.launch(lambda: p.daemon.create("cj", name="owned-cj", labels={OWNER_LABEL: p.session.owner}))
+    cj = p.daemon.get(handle.container_id)
+    reservation = _reservations(p.daemon)[0]
+    owner = reservation.attrs["Config"]["Labels"][GPU_OWNER]
+    reservation.attrs["Config"]["Labels"][GPU_OWNER] = "unknown-owner"
+    handle.terminate()
+    for _ in range(2):
+        with pytest.raises(Exception, match="ownership changed"):
+            handle._cleanup_once()
+        assert cj.status == "exited" and cj.id in p.daemon.items
+        assert handle.poll() == JobReturnCode.UNKNOWN and p.service.sessions["job"] is p.session
+    reservation.attrs["Config"]["Labels"][GPU_OWNER] = owner
+    _drain(handle)
+    assert not p.daemon.items and not p.service.sessions
+
+
+def test_finished_session_is_removed_only_after_all_owned_removal_is_confirmed(profile, monkeypatch):
+    p = profile
+    _configure_gpu(p)
+    p.stage()
+    p.launcher.launch_task(p.request)
+    worker = fixtures._workers(p.daemon)[0]
+    worker.remove_error = RuntimeError("worker busy")
+    handle, cj = _cj_handle(p, monkeypatch)
+    handle.terminate()
+    with pytest.raises(RuntimeError, match="settlement unconfirmed"):
+        handle._cleanup_once()
+    assert p.service.sessions["job"] is p.session and _reservations(p.daemon)
+    worker.remove_error = None
+    cj.remove_error = RuntimeError("CJ busy")
+    with pytest.raises(RuntimeError, match="CJ busy"):
+        handle._cleanup_once()
+    assert p.service.sessions["job"] is p.session
+    cj.remove_error = None
+    handle._cleanup_once()
+    assert p.service.sessions["job"] is p.session and not handle._cleanup_done.is_set()
+    handle._cleanup_once()
+    assert not p.service.sessions and handle._cleanup_done.is_set() and p.session.job_handle is None
+    replacement = p.service.add_job("job", "site", str(p.tmp_path), p.mounts, "501:20")
+    assert replacement.token != p.session.token and replacement.owner != p.session.owner
+    with pytest.raises(RuntimeError, match="did not acknowledge"):
+        p.launcher._call("poll", p.request)
+    p.service._remove_settled_job(p.session)
+    assert p.service.sessions["job"] is replacement, "late cleanup must not remove a newer session"
+
+
+@pytest.mark.parametrize("lose_cancel_reply", [False, True])
+@pytest.mark.parametrize(
+    "gpu_count,stage",
+    [(0, "worker-create"), (0, "worker-start"), (1, "worker-create"), (1, "worker-start"), (1, "gpu-reservation")],
+)
+def test_supervisor_reconciles_a_timed_out_slow_launch_before_fencing(profile, gpu_count, stage, lose_cancel_reply):
+    _slow_launch_supervisor(profile, gpu_count, stage, lose_cancel_reply, settles=True)
+
+
+@pytest.mark.parametrize("gpu_count", [0, 1])
+def test_supervisor_keeps_a_genuinely_unsettled_slow_launch_fenced(profile, gpu_count):
+    _slow_launch_supervisor(profile, gpu_count, "worker-create", False, settles=False)
+
+
+def _slow_launch_supervisor(p, gpu_count, stage, lose_cancel_reply, *, settles):
+    from nvflare.private.fed.task_worker.supervisor import TaskSupervisor
+
+    if gpu_count:
+        _configure_gpu(p)
+    p.launcher.cleanup_timeout = 0.5 if settles else 0.025
+    p.launcher.poll_interval = 0.002
+    entered, release = threading.Event(), threading.Event()
+    create = p.daemon.create
+    send = p.cj.send_request.side_effect
+    replies, errors, threads = [], [], []
+    cancel_signals = []
+
+    def blocked_create(*args, **kwargs):
+        resource = kwargs["labels"]["nvflare.task.resource"]
+        if (stage == "worker-create" and resource == "worker") or (
+            stage == "gpu-reservation" and resource == "gpu-reservation"
+        ):
+            entered.set()
+            assert release.wait(3)
+        container = create(*args, **kwargs)
+        if stage == "worker-start" and resource == "worker":
+            start = container.start
+
+            def blocked_start():
+                entered.set()
+                assert release.wait(3)
+                start()
+
+            container.start = blocked_start
+        return container
+
+    def delayed_send(**kwargs):
+        if kwargs["topic"] == "launch":
+
+            def launch():
+                try:
+                    replies.append(send(**kwargs))
+                except BaseException as error:
+                    errors.append(error)
+
+            thread = threading.Thread(target=launch)
+            threads.append(thread)
+            thread.start()
+            assert entered.wait(1)
+            raise TimeoutError("launch reply timed out while CP still creates")
+        result = send(**kwargs)
+        if kwargs["topic"] == "cancel":
+            assert kwargs["timeout"] is None
+            cancel_signals.append(kwargs["abort_signal"])
+            if settles:
+                release.set()
+            if lose_cancel_reply and len(cancel_signals) == 1:
+                raise TimeoutError("cancel reply lost")
+        return result
+
+    p.daemon.create = blocked_create
+    p.cj.send_request.side_effect = delayed_send
+    supervisor = TaskSupervisor()
+    try:
+        with pytest.raises(TaskLaunchError if settles else TaskSettlementError):
+            p.run(supervisor)
+        assert cancel_signals and all(signal.deadline <= cancel_signals[0].deadline for signal in cancel_signals)
+        assert supervisor.settlement_unconfirmed is not settles
+        assert supervisor.owns_execution is not settles
+        if not settles and gpu_count:
+            assert _reservations(p.daemon), "deadline expiry cannot free an in-flight GPU reservation"
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(3)
+            assert not thread.is_alive()
+    assert not errors and replies and not p.daemon.items
+    if not settles:
+        assert supervisor.settlement_unconfirmed, "later cleanup cannot erase the supervisor fence"

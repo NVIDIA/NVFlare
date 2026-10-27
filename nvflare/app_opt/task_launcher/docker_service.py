@@ -356,8 +356,10 @@ class _JobSession:
         cpu_cores=None,
         memory_mb=None,
         network="nvflare-network",
+        on_settled=None,
     ):
         self.client, self.job_id, self.site_name = client, job_id, site_name
+        self.on_settled = on_settled
         self.workspace, self.mounts, self.config, self.uid_gid = workspace, mounts, config, uid_gid
         self.token = secrets.token_urlsafe(32)
         self.owner = secrets.token_hex(32)
@@ -492,6 +494,7 @@ class _JobSession:
                 security_opt=["no-new-privileges:true"],
                 detach=True,
                 auto_remove=False,
+                init=False,
                 **{name: self.config[name] for name in ("nano_cpus", "mem_limit") if name in self.config},
                 **gpu_kwargs,
             )
@@ -605,9 +608,19 @@ class DockerTaskService:
                 cpu_cores=resources.cpu_cores,
                 memory_mb=resources.memory_mb,
                 network=self.network,
+                on_settled=self._remove_settled_job,
             )
             self.sessions[job_id] = session
             return session
+
+    def _remove_settled_job(self, session):
+        # Called only after the handle confirms CJ/worker removal and GPU
+        # release. Old callbacks must never remove a newer logical session.
+        with self.lock:
+            if self.sessions.get(session.job_id) is session:
+                del self.sessions[session.job_id]
+            session.job_handle = None
+            session.on_settled = None
 
     def close(self):
         with self.lock:
@@ -780,57 +793,76 @@ class TaskDockerJobHandle(backend.DockerJobHandle):
         with self._cleanup_lock:
             if self._terminate_requested.is_set() or self._cj_return_code is not None:
                 self.task_session.request_close()
+            container = None
+            terminal = False
+            cj_error = None
+            if self._launch_complete.is_set():
+                if self._creation_rejected:
+                    self._cj_return_code = JobReturnCode.ABORTED
+                    self._cj_removed = True
+                if not self._cj_removed:
+                    try:
+                        container = self._get_owned_cj()
+                        self._observed_state = container.status
+                        never_started = (
+                            container.status == backend.DockerStatus.CREATED and self._terminate_requested.is_set()
+                        )
+                        terminal = container.status in backend.TERMINAL_STATUSES or never_started
+                        if not terminal:
+                            # Stop the owned CJ independently of worker/GPU
+                            # settlement. Their uncertainty must not prevent abort.
+                            if self._terminate_requested.is_set():
+                                container.stop(timeout=0)
+                        else:
+                            if self._terminate_requested.is_set():
+                                self._cj_return_code = JobReturnCode.ABORTED
+                            elif self._cj_return_code is None:
+                                self._cj_return_code = self._resolve_terminal_return_code(container)
+                                with self.task_session.lock:
+                                    active = any(
+                                        not execution.status.settled
+                                        for execution in self.task_session.executions.values()
+                                    )
+                                if active:
+                                    self._cj_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                            self.task_session.request_close()
+                    except backend.docker.errors.NotFound:
+                        self.task_session.request_close()
+                        if self._cj_removal_requested:
+                            self._cj_removed = True
+                        else:
+                            cj_error = RuntimeError("Docker task CJ disappeared without confirmed owned removal")
+                    except Exception as error:
+                        cj_error = error
+            # Also attempt worker cleanup when CJ observation/stop failed. Both
+            # owners stay retained; neither failure authorizes resource release.
+            worker_error = None
             if self.task_session.closed:
-                # Also runs while CJ creation is still in flight. Pending task
-                # creates keep their ownership until their calls finish.
-                self.task_session.close()
+                try:
+                    self.task_session.close()
+                except Exception as error:
+                    worker_error = error
+            if cj_error is not None:
+                raise cj_error
+            if worker_error is not None:
+                raise worker_error
             if not self._launch_complete.is_set():
                 return
-            if self._creation_rejected:
-                self._cj_return_code = JobReturnCode.ABORTED
-                self._cj_removed = True
             if not self._cj_removed:
                 if self._cj_gpu_reservations is not None:
                     self._cj_gpu_reservations.verify()
-                try:
-                    container = self._get_owned_cj()
-                except backend.docker.errors.NotFound:
-                    self.task_session.request_close()
-                    if not self._cj_removal_requested:
-                        raise RuntimeError("Docker task CJ disappeared without confirmed owned removal")
-                    self._cj_removed = True
-                else:
-                    self._observed_state = container.status
-                    never_started = (
-                        container.status == backend.DockerStatus.CREATED and self._terminate_requested.is_set()
-                    )
-                    if container.status not in backend.TERMINAL_STATUSES and not never_started:
-                        if self._terminate_requested.is_set():
-                            container.stop(timeout=0)
-                        return
-                    if self._terminate_requested.is_set():
-                        self._cj_return_code = JobReturnCode.ABORTED
-                    elif self._cj_return_code is None:
-                        self._cj_return_code = self._resolve_terminal_return_code(container)
-                        with self.task_session.lock:
-                            active = any(
-                                not execution.status.settled for execution in self.task_session.executions.values()
-                            )
-                        if active:
-                            # The framework preserves infrastructure failures
-                            # over a CJ-written success return-code file.
-                            self._cj_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
-                    self.task_session.request_close()
-                    self.task_session.close()
-                    self._cj_removal_requested = True
-                    container.remove(force=True, v=True)
-                    # A successful API response is followed by an owned-ID
-                    # absence check on the next pass; API failure retains it.
+                if not terminal:
                     return
+                self._cj_removal_requested = True
+                container.remove(force=True, v=True)
+                # Only a later owned-ID absence check confirms removal.
+                return
             self.task_session.close()
             if self._cj_gpu_reservations is not None:
                 self._cj_gpu_reservations.release()
             self._set_terminal_state(self._cj_return_code)
+            if self.task_session.on_settled is not None:
+                self.task_session.on_settled(self.task_session)
             self._cleanup_done.set()
 
     def _monitor_cleanup(self):

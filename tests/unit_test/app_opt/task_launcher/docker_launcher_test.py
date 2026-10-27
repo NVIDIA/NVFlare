@@ -36,6 +36,7 @@ from nvflare.apis.task_launcher_spec import (
     UnsupportedTaskResourceError,
 )
 from nvflare.app_opt.job_launcher import docker_launcher as backend
+from nvflare.app_opt.task_launcher import docker_launcher as proxy
 from nvflare.app_opt.task_launcher.docker_launcher import (
     CHANNEL,
     LISTENER_HOST_ENV,
@@ -45,9 +46,12 @@ from nvflare.app_opt.task_launcher.docker_launcher import (
     encode_control,
 )
 from nvflare.app_opt.task_launcher.docker_service import OWNER_LABEL, DockerTaskService, validate_worker_config
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.utils import waiter_utils
 from nvflare.fuel.utils.fobs import fobs as fobs_registry
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
@@ -163,7 +167,7 @@ def profile(tmp_path, monkeypatch):
     cj = SimpleNamespace(get_fqcn=lambda: "site.job", send_request=Mock(side_effect=send_request))
     monkeypatch.setenv(SESSION_ENV, session.token)
     monkeypatch.setenv(LISTENER_HOST_ENV, "owned-cj")
-    launcher = DockerTaskLauncher()
+    launcher = DockerTaskLauncher(cleanup_timeout=0.05, poll_interval=0.005)
     launcher.handle_event(EventType.START_RUN, SimpleNamespace(get_engine=lambda: SimpleNamespace(get_cell=lambda: cj)))
     assert SESSION_ENV not in os.environ and LISTENER_HOST_ENV not in os.environ
     assert launcher.get_worker_listener_host() == "owned-cj"
@@ -270,6 +274,7 @@ def test_command_permissions_storage_and_environment_are_cp_owned(profile):
     assert kwargs["entrypoint"] == []
     assert kwargs["user"] == "501:20" and kwargs["mounts"] == p.mounts
     assert kwargs["network"] == "nvflare-network" and kwargs["auto_remove"] is False
+    assert kwargs["init"] is False, "override a daemon-wide init=true so the authorized worker remains PID 1"
     assert "network_mode" not in kwargs
     assert kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == "none"
     assert kwargs["environment"]["OMP_NUM_THREADS"] == "1"
@@ -1151,3 +1156,74 @@ def test_live_session_credential_paths_fit_the_worker_job_and_ca_mounts(profile)
         assert execution.cancel().settled
     finally:
         session.close()
+
+
+@pytest.mark.parametrize("name", ["cleanup_timeout", "poll_interval"])
+@pytest.mark.parametrize("value", [0, -1, True, float("nan"), float("inf")])
+def test_cancellation_budget_and_poll_interval_must_be_finite_and_positive(name, value):
+    with pytest.raises(ValueError):
+        DockerTaskLauncher(**{name: value})
+
+
+@pytest.mark.parametrize("rpc_timeout", [30.0, 0.02])
+@pytest.mark.parametrize("progressing", [False, True])
+def test_cancellation_deadline_covers_stream_phases_and_progress(profile, monkeypatch, progressing, rpc_timeout):
+    p = profile
+    p.stage()
+    handle = p.launcher.launch_task(p.request)
+    p.launcher.rpc_timeout = rpc_timeout
+    send = p.cj.send_request.side_effect
+    clock = [0.0]
+    signals = []
+
+    class ScheduledEvent:
+        def __init__(self, ready_at):
+            self.ready_at = ready_at
+
+        def wait(self, timeout=None):
+            clock[0] = self.ready_at if timeout is None else min(self.ready_at, clock[0] + timeout)
+            return clock[0] >= self.ready_at
+
+    class Transport:
+        # Exercise Cell's real multi-phase waits, with deterministic transport events.
+        _future_wait = Cell._future_wait
+        _check_error = Cell._check_error
+        _get_result = Cell._get_result
+
+        def __init__(self):
+            self.requests_dict = {}
+            self.logger = Mock()
+            self.decode_pass_through_channels = set()
+            self.decode_pass_through_topics = set()
+
+        def get_fobs_context(self, **kwargs):
+            return {}
+
+        def send_blob(self, message, **kwargs):
+            reply = send(request=message, **kwargs)
+            waiter = next(iter(self.requests_dict.values()))
+            response = StreamFuture(2, headers=reply.headers)
+            response.value = reply.payload
+            response.waiter = ScheduledEvent(0.5 if progressing else 0.115)
+            waiter.receiving_future = response
+            waiter.in_receiving = ScheduledEvent(0.5 if progressing else 0.075)
+            outbound = StreamFuture(1)
+            outbound.waiter = ScheduledEvent(0.5 if progressing else 0.035)
+            outbound.get_progress = lambda: int(clock[0] * 1000)
+            return outbound
+
+    transport = Transport()
+
+    def stream_request(**kwargs):
+        signals.append(kwargs["abort_signal"])
+        return Cell._send_one_request(transport, **kwargs)
+
+    monkeypatch.setattr(proxy, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=lambda delay: None))
+    monkeypatch.setattr(waiter_utils, "time", SimpleNamespace(time=lambda: clock[0]))
+    p.cj.send_request.side_effect = stream_request
+    with pytest.raises(TaskSettlementError):
+        handle.cancel()
+    assert clock[0] <= p.launcher.cleanup_timeout + 0.1, "stream progress cannot renew the total budget"
+    assert signals[0].deadline == min(p.launcher.cleanup_timeout, rpc_timeout)
+    assert handle._settled is None, "a late settlement reply must not enter the handle cache"
+    assert not transport.requests_dict

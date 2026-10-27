@@ -182,6 +182,15 @@ Task CJs reject Docker control environment variables, host or other-container
 PID/IPC namespaces, extra capabilities, and privileged/device/socket inheritance.
 Keep CP daemon credentials out of approved datasets and study-secret mounts.
 The task profile fixes ``cap_drop=ALL`` and ``no-new-privileges`` for CJ.
+Worker creation also fixes ``init=False`` so the authorized Python worker stays
+PID 1 even when the Docker daemon has ``init: true`` as its default.
+
+``DockerTaskLauncher`` accepts ``cleanup_timeout`` (default 10 seconds) and
+``poll_interval`` (default 0.05 seconds). Cancellation retries temporarily
+unsettled replies within that budget. One absolute deadline covers all streaming
+RPC phases, including continued progress; late replies are rejected. Align ``cleanup_timeout`` with the site's ``task_execution.settlement_timeout``
+when configuring a longer cleanup allowance. Expiry retains the supervisor
+fence; later CP cleanup does not authorize another physical attempt.
 
 CP retains up to 10000 attempt identities per job by default, including rejected
 launches and cancel-before-launch fences. Configure
@@ -199,8 +208,11 @@ its outcome to be reconciled; publication does not cancel the API call itself.
 CP retains the task job before native creation and monitors cleanup after CJ
 exit. A termination request can return while Docker is unavailable; the job
 remains pending cleanup until CP confirms owned CJ/worker removal and GPU
-reservation release. Keep CP running during recovery and preserve the job
-workspace. An unexpected missing container or lost API reply requires
+reservation release. Abort stops the owned CJ independently of uncertain worker
+or GPU-reservation cleanup. Its container record and job session remain retained
+until physical settlement is confirmed; then CP removes the finished session
+and rejects its old capability. Keep CP running during recovery and preserve the
+job workspace. An unexpected missing container or lost API reply requires
 reconciliation rather than manual capacity release. The earlier four-row
 compute evidence predates these authority/lifecycle changes; qualify the new
 source and images again.
