@@ -256,15 +256,25 @@ def run_eval(
     # Results, cache files and held-out tagging all use the canonical suite name, so a
     # config alias (LIBERO's `spatial`) matches the held-out spec's `libero_spatial`.
     canonical = getattr(benchmark, "canonical_suite", lambda s: s)
+    canon_names = [canonical(s) for s in cfg.eval.benchmark.suites]
+    dupes = sorted({n for n in canon_names if canon_names.count(n) > 1})
+    if dupes:
+        raise ValueError(
+            f"eval.benchmark.suites names the same suite twice ({dupes}); list each suite once, "
+            "by either its alias or its full name."
+        )
     for config_suite in cfg.eval.benchmark.suites:
         suite = canonical(config_suite)
         suite_path = suites_dir / f"{suite}.json"
+        # An alias selects tasks by its own name (LIBERO's task_filter is keyed by the config
+        # name), so it is part of the key; keys for canonical names are unchanged.
+        suite_prov = provenance if config_suite == suite else {**provenance, "config_suite": config_suite}
         if suite_path.exists():
             with suite_path.open() as f:
                 cached = json.load(f)
             # The provenance key is cache metadata, not part of the suite
             # result — strip it before assembling results.json.
-            if cached.pop("provenance", None) == provenance:
+            if cached.pop("provenance", None) == suite_prov:
                 logger.info("skipping %s: already evaluated", suite)
                 suites[suite] = cached
                 continue
@@ -287,7 +297,7 @@ def run_eval(
         # later resume would skip as "already evaluated".
         tmp = suite_path.with_suffix(".json.tmp")
         with tmp.open("w") as f:
-            json.dump({**suite_dict, "provenance": provenance}, f, indent=2)
+            json.dump({**suite_dict, "provenance": suite_prov}, f, indent=2)
         tmp.rename(suite_path)
         suites[suite] = suite_dict
 

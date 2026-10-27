@@ -140,12 +140,13 @@ def run_personalized_eval(
     plus the pooled ``personalized_results.json`` under ``eval_dir``.
     The server checkpoint is ``ckpt_path`` when given (a ``server_round_*.pt``
     blob), else ``server_round_final.pt``, else the latest periodic one; each
-    client's state is the one saved in the same round.
+    client's state is its newest one saved at or before that round.
     Per-client results are provenance-cached like the generic eval: a crashed
     eval re-runs only the missing clients.
     """
     from decent_vla.core.partitioner import PartitionManifest
     from decent_vla.runtime.builders import build_benchmark
+    from decent_vla.runtime.client_checkpoint import client_checkpoints
     from decent_vla.runtime.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
     from decent_vla.runtime.server_session import latest_server_checkpoint
 
@@ -176,7 +177,7 @@ def run_personalized_eval(
     if not (isinstance(server_blob, dict) and "state" in server_blob and "round" in server_blob):
         raise ValueError(
             f"{server_ckpt} is not a server_round_*.pt checkpoint ('state' and 'round'); "
-            "personalized eval pairs it with the client states saved in the same round."
+            "personalized eval pairs it with each client's newest state up to that round."
         )
     server_shared = server_blob["state"]
     server_round = int(server_blob["round"])
@@ -196,12 +197,20 @@ def run_personalized_eval(
     clients_dir.mkdir(parents=True, exist_ok=True)
     per_client: dict[str, dict[str, Any]] = {}
     for cid in sorted(manifest.clients):
-        client_ckpt = run_dir / "client_states" / f"{cid}_round_{server_round:04d}.pt"
-        if not client_ckpt.exists():
+        # The client's newest state at or before the server round: a client that sat out the
+        # last rounds keeps its older personal weights; a state from a later round is never used.
+        earlier = [(r, p) for r, p in client_checkpoints(run_dir / "client_states", cid) if r <= server_round]
+        if not earlier:
             raise FileNotFoundError(
-                f"no client state for {cid} from round {server_round} ({client_ckpt.name}) under "
+                f"no client state for {cid} from round {server_round} or earlier under "
                 f"{run_dir / 'client_states'}: personalized eval needs fl.persist_client_state on the "
-                "training run, and a client state saved in the round of the server checkpoint."
+                "training run."
+            )
+        client_round, client_ckpt = earlier[-1]
+        if client_round < server_round:
+            logger.warning(
+                "%s: no client state from round %d; using its newest earlier one, from round %d",
+                cid, server_round, client_round,
             )
         task_filter = _client_task_filter(
             list(manifest.clients[cid]["task_names"]), name_maps
@@ -258,6 +267,7 @@ def run_personalized_eval(
         }
         entry = {
             "client_id": cid,
+            "client_round": client_round,
             "task_names": list(manifest.clients[cid]["task_names"]),
             "n_episodes": sum(s["n_episodes"] for s in suites_out.values()),
             "n_success": sum(s["n_success"] for s in suites_out.values()),

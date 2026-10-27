@@ -343,3 +343,18 @@ def test_cli_eval_passes_ckpt_to_personalized_eval(tmp_path, monkeypatch):
     ckpt = tmp_path / "out" / "checkpoints" / "server_round_0001.pt"
     assert main(["eval", "--config", str(cfg_path), "--ckpt", str(ckpt)]) == 0
     assert str(seen["ckpt_path"]) == str(ckpt)
+
+
+def test_personalized_eval_takes_each_clients_newest_state_up_to_the_server_round(tmp_path, monkeypatch):
+    """Client states from rounds 0 and 2, server checkpoint from round 1: each client uses its
+    round-0 state (a client that sat out round 1 keeps it), never the later round-2 state."""
+    from decent_vla.runtime.personalized_eval import run_personalized_eval
+    from decent_vla.runtime.round_loop import save_server_checkpoint
+
+    cfg, factory, run_dir = _personalized_run(tmp_path, monkeypatch, client_rounds=[0, 2])
+    save_server_checkpoint(run_dir / "checkpoints", 1, factory().get_state("shared"), None)
+    run_personalized_eval(cfg, factory, run_dir, run_dir / "eval")
+    for cid in ("c0", "c1"):
+        blob = json.loads((run_dir / "eval" / "personalized_clients" / f"{cid}.json").read_text())
+        assert blob["provenance"]["client_checkpoint"].endswith(f"{cid}_round_0000.pt")
+        assert blob["client_round"] == 0
