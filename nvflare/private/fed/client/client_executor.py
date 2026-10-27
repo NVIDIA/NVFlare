@@ -385,31 +385,35 @@ class JobExecutor(ClientExecutor):
         ):
             job_args[key] = (job_args[key][0], value)
         fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+        published_handle = None
 
         def register_handle(job_handle):
+            nonlocal published_handle
             heartbeat_cleanup = pending_handle.attach(job_handle)
+            published_handle = job_handle
             if heartbeat_cleanup is not None:
                 self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
 
-        # Publish created runtimes before scheduling waits on initial and
-        # replacement launches, so an abort can reclaim an unscheduled CJ.
+        # Both initial launches and replacement CJs can wait for startup after
+        # native creation. Publish each generation's handle before that wait.
         fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
             job_handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
-        finally:
-            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
-        if job_handle is None:
-            raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
-        try:
+            if job_handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(job_handle)
             self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
             fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
             fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
         except BaseException:
-            # Once launched, retain ownership until the worker has exited.
-            job_handle.terminate()
-            job_handle.wait()
+            # A launcher can fail after publishing its runtime. Keep files and
+            # resources owned until that runtime has physically settled.
+            if published_handle is not None:
+                published_handle.terminate()
+                published_handle.wait()
             raise
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
 
     def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         engine = fl_ctx.get_engine()

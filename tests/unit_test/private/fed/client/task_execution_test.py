@@ -1519,6 +1519,64 @@ def test_task_adapter_requires_a_cell_before_starting():
     assert not adapter._started
 
 
+def test_task_adapter_binding_failure_cannot_leave_execution_enabled(monkeypatch):
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    adapter = TaskWorkerExecutor({}, (), policy)
+
+    def reject_binding(*_):
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(policy.launcher, "handle_event", reject_binding)
+    panic = Mock()
+    monkeypatch.setattr(adapter, "system_panic", panic)
+    with pytest.raises(RuntimeError, match="bind failed"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started and not cell.decode_pass_through_topics
+    assert panic.call_count == 1
+    with pytest.raises(RuntimeError, match="bind failed"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+def test_task_adapter_listener_failure_cannot_leave_execution_enabled(monkeypatch):
+    from nvflare.private.fed.task_worker import cell_session
+
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    monkeypatch.setattr(cell_session, "listen", Mock(side_effect=RuntimeError("listener failed")))
+    panic = Mock()
+    monkeypatch.setattr(adapter, "system_panic", panic)
+    with pytest.raises(RuntimeError, match="listener failed"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started and not cell.decode_pass_through_topics
+    assert panic.call_count == 1
+    with pytest.raises(RuntimeError, match="listener failed"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+def test_parent_owned_cleanup_allows_bounded_cj_end_run(monkeypatch):
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context = FLContext()
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    adapter = TaskWorkerExecutor({}, (), policy)
+    monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", True, raising=False)
+    parent_event = Mock()
+    monkeypatch.setattr(policy.launcher, "handle_event", parent_event)
+    adapter._done.clear()
+    adapter.supervisor = SimpleNamespace(
+        owns_execution=True, settlement_unconfirmed=False, end_run=Mock(), take_issues=lambda: []
+    )
+    adapter.handle_event(EventType.END_RUN, context)
+    parent_event.assert_called_once_with(EventType.END_RUN, context)
+    adapter.supervisor.end_run.assert_called_once()
+    assert adapter._ending and not adapter._done.is_set()
+
+
 def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_path, monkeypatch):
     import torch
     from safetensors.torch import save_file
@@ -1599,6 +1657,29 @@ def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
 def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
     policy = TaskExecutionPolicy.from_config({})
     assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
+
+
+@pytest.mark.parametrize(
+    "requirements",
+    [
+        {"custom_device": 1},
+        {"num_of_gpus": 0, "custom_device": 1},
+        {"process": {"custom_device": 1}},
+        {"mem_per_gpu_in_GiB": 1},
+    ],
+)
+def test_process_task_cannot_drop_compute_claims_after_cj_normalization(requirements):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+    from nvflare.utils.job_launcher_utils import get_compute_resource_manager_spec, get_resource_manager_spec
+
+    meta = {"resource_spec": {"site-1": requirements}, "cj_resource_spec": {"site-1": {}}}
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    compute = get_compute_resource_manager_spec(meta, "site-1")
+    assert compute
+    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(meta, "site-1")
+    # Resident admission still receives the original compute claims.
+    assert get_resource_manager_spec({"resource_spec": meta["resource_spec"]}, "site-1") == compute
 
 
 @pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])

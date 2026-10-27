@@ -35,7 +35,6 @@ from nvflare.job_config.task_execution import (
 )
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -53,6 +52,7 @@ FORBIDDEN_ENVIRONMENT_NAMES = (
         "NVFLARE_CLIENT_API_CONFIG_PATH",
         "NVFLARE_CLIENT_API_SERVICE_CONF",
         "NVFLARE_DOCKER_TASK_SESSION",
+        "NVFLARE_DOCKER_TASK_LISTENER_HOST",
         "DOCKER_HOST",
         "DOCKER_CONTEXT",
         "DOCKER_CERT_PATH",
@@ -244,5 +244,6 @@ class TaskExecutionPolicy:
             return TaskResourceRequest()
         if self.launcher.launch_mode != "docker":
             return TaskResourceRequest()
-        spec = get_job_launcher_spec(meta, site_name, "docker")
-        return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))
+        from nvflare.app_opt.task_launcher.docker_service import resolve_task_resources
+
+        return resolve_task_resources(meta, site_name)

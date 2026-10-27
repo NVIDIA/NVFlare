@@ -61,7 +61,8 @@ and consecutive-attempt limit.
 | Backend | Required evidence |
 | --- | --- |
 | Process | The launcher-owned CJ has exited, its process group is absent, and no external-trainer launch bootstrap remains. |
-| Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
+| Resident Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
+| Task-mode Docker | Opts out: retained task artifacts and replay fences cannot resume the same server-issued attempt in a new CJ. |
 | Slurm | Accounting reports COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY, or PREEMPTED, and the allocation has left the active queue. |
 
 Normal success, STOPPED teardown, cancellation, configuration errors, and unsafe
@@ -79,7 +80,11 @@ launching a detached trainer and removes it only after confirming trainer-group
 exit. After an abrupt CJ loss, the file remains even if the trainer subsequently
 exits, so CP ends the job instead of risking overlapping trainers. The existing
 trainer watchdog handles detached-group termination. Docker and Slurm retain
-recovery when the container or allocation is confirmed dead.
+recovery when the resident container or allocation is confirmed dead. Task-mode
+Docker CJs explicitly opt out: the server reuses the task/attempt ID, while
+retained artifacts reject recreating that attempt and CP retains its replay
+fence. Physical container cleanup does not supply a durable task recovery
+protocol. See [Docker task execution](docker_task_execution.md).
 
 After a failed CJ exits, the Process handle waits up to 10 seconds for
 its owned group to drain, kills remaining members of that group, and waits up to

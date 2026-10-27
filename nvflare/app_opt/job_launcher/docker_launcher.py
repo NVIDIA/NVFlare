@@ -35,7 +35,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, JobConstants, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -51,15 +58,19 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,
+    get_cj_resource_spec,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
     portable_memory_to_bytes,
+    validate_cj_execution_lifetime,
+    validate_cj_resource_spec,
     validate_docker_job_launcher_spec,
 )
 
@@ -446,6 +457,8 @@ class DockerJobLauncher(JobLauncherSpec):
         default_job_container_kwargs: dict = None,
         default_job_env: dict = None,
         default_python_path: str = None,
+        task_worker_config: dict = None,
+        cj_resources: dict = None,
     ):
         """
         Args:
@@ -474,6 +487,10 @@ class DockerJobLauncher(JobLauncherSpec):
                              like USER, HOME, and PYTHONPATH still take precedence.
             default_python_path: Default Python executable path inside job containers. Jobs can override
                                  it with launcher_spec[site]["docker"]["python_path"].
+            task_worker_config: Optional site-owned task image, python_path, environment,
+                                nano_cpus/mem_limit and approved exclusive gpu_partition.
+            cj_resources: Trusted task-mode CJ defaults, independent of compute requirements.
+                          Defaults to 0.25 CPU, 512Mi memory, and zero GPUs.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -500,6 +517,52 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_job_env = default_job_env or {}
 
         self._docker_client = None
+        # CP owns task launch policy. An opted-in GPU partition also fences
+        # resident access so job-lifetime launches cannot bypass task admission.
+        self.task_worker_config = task_worker_config
+        if cj_resources is not None and not isinstance(cj_resources, dict):
+            raise ValueError("cj_resources must be a dictionary")
+        self.cj_resources = {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0, **(cj_resources or {})}
+        validate_cj_resource_spec({"site": self.cj_resources})
+        if self.cj_resources.get("mem_per_gpu_in_GiB", 0) != 0:
+            raise ValueError("Docker CJ cannot enforce per-GPU memory claims")
+        self._task_service = None
+        self._task_service_lock = threading.Lock()
+
+    def _is_task_job(self, job_id, workspace_obj):
+        if not isinstance(self, ClientDockerJobLauncher) or workspace_obj is None:
+            return False
+        from nvflare.fuel.utils.config_service import ConfigService
+
+        path = workspace_obj.get_client_app_config_file_path(job_id)
+        if not isinstance(path, str):
+            return False
+        config = ConfigService.load_config_dict(path, raise_exception=False) or {}
+        return get_client_execution_lifetime(config) == "task"
+
+    def _task_session(self, job_id, site_name, mounts, fl_ctx, job_meta=None):
+        from nvflare.app_opt.task_launcher.docker_service import DockerTaskService
+
+        if self.task_worker_config is None:
+            raise ValueError("Docker task lifetime requires site-owned task_worker_config")
+        if not os.path.isfile("/.dockerenv"):
+            raise ValueError("Docker task execution requires a Docker CP container")
+        if os.getuid() == 0:
+            raise ValueError("Docker task execution requires a non-root CP user with daemon access")
+        from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+        policy = TaskExecutionPolicy.from_workspace(fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT))
+        if policy.launcher.launch_mode != "docker":
+            raise ValueError("Docker CJ requires a matching site Docker TaskLauncher")
+        cell = fl_ctx.get_engine().get_cell()
+        with self._task_service_lock:
+            if self._task_service is None:
+                self._task_service = DockerTaskService(
+                    cell, self._get_docker_client(), self.task_worker_config, network=self.network
+                )
+            return self._task_service.add_job(
+                job_id, site_name, self.WORKSPACE_MOUNT, mounts, f"{os.getuid()}:{os.getgid()}", job_meta=job_meta
+            )
 
     def _resolve_study_runtime(self, study):
         # Reads use WORKSPACE_MOUNT (container-internal path) because launch_job runs inside
@@ -667,6 +730,11 @@ class DockerJobLauncher(JobLauncherSpec):
         }
         environment.update(get_credential_env(job_args))
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        task_job = self._is_task_job(job_id, workspace_obj)
+        validate_cj_execution_lifetime(job_meta, site_name, "task" if task_job else "job")
+        cj_budget = {**self.cj_resources, **get_cj_resource_spec(job_meta, site_name)} if task_job else None
+        if cj_budget is not None and cj_budget.get("mem_per_gpu_in_GiB", 0) != 0:
+            raise ValueError("Docker CJ cannot enforce per-GPU memory claims")
         if workspace_obj is not None:
             python_paths = []
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
@@ -700,10 +768,48 @@ class DockerJobLauncher(JobLauncherSpec):
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
         elif job_gpus_specified:
             merged_container_kwargs.pop("device_requests", None)
-        if "num_of_cpus" in portable_spec:
-            merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
-        if "memory" in portable_spec:
-            merged_container_kwargs["mem_limit"] = portable_memory_to_bytes(portable_spec["memory"])
+            from nvflare.app_opt.task_launcher.docker_service import CPU_ENVIRONMENT
+
+            # An explicit zero also overrides CUDA images whose baked-in
+            # NVIDIA_VISIBLE_DEVICES=all would otherwise expose host GPUs.
+            environment.update(CPU_ENVIRONMENT)
+        if task_job:
+            from nvflare.app_opt.task_launcher.docker_service import CPU_ENVIRONMENT, restrict_task_cj
+            from nvflare.job_config.task_execution import validate_task_resources
+
+            validate_task_resources(job_meta, site_name, allow_gpu=True)
+            # Job-level resource requests and inherited study/site device
+            # defaults must never reserve GPUs for the resident task-mode CJ.
+            merged_container_kwargs.pop("device_requests", None)
+            environment.update(CPU_ENVIRONMENT)
+            merged_container_kwargs = restrict_task_cj(merged_container_kwargs, environment)
+            # These resident defaults can conflict with, or override, the
+            # independent task CJ budget in Docker's resource validation.
+            for key in ("cpu_period", "cpu_quota", "mem_reservation", "memswap_limit"):
+                merged_container_kwargs.pop(key, None)
+            merged_container_kwargs["nano_cpus"] = int(cj_budget["num_of_cpus"] * 1_000_000_000)
+            if merged_container_kwargs["nano_cpus"] <= 0:
+                raise ValueError("Docker CJ CPU shares are below the native nanocpu minimum")
+            merged_container_kwargs["mem_limit"] = portable_memory_to_bytes(cj_budget["memory"])
+        else:
+            if "num_of_cpus" in portable_spec:
+                merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
+            if "memory" in portable_spec:
+                merged_container_kwargs["mem_limit"] = portable_memory_to_bytes(portable_spec["memory"])
+        if not task_job and self.task_worker_config and self.task_worker_config.get("gpu_partition") is not None:
+            from nvflare.app_opt.task_launcher.docker_gpu import validate_partition, validate_resident_access
+            from nvflare.app_opt.task_launcher.docker_service import CPU_ENVIRONMENT
+
+            devices = validate_resident_access(
+                validate_partition(self.task_worker_config["gpu_partition"]), merged_container_kwargs
+            )
+            # NVIDIA runtimes also honor image/site environment without a
+            # DeviceRequest. Bound visibility to validated outside-partition
+            # UUIDs, or disable GPU access for a resident CPU launch.
+            environment.update(CPU_ENVIRONMENT)
+            if devices:
+                environment["NVIDIA_VISIBLE_DEVICES"] = ",".join(devices)
+                environment["CUDA_VISIBLE_DEVICES"] = ",".join(str(index) for index in range(len(devices)))
 
         # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
         # container user because server job startup may create ephemeral storage dirs such as
@@ -743,6 +849,7 @@ class DockerJobLauncher(JobLauncherSpec):
         require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
 
         docker_client = self._get_docker_client()
+        task_session = None
         try:
             # bind the kit file by file: site private keys never enter the job container;
             # the job credential arrives through the read-write job workspace bind
@@ -781,6 +888,19 @@ class DockerJobLauncher(JobLauncherSpec):
                         read_only=dataset_mount.read_only,
                     )
                 )
+            if task_job:
+                from nvflare.app_opt.task_launcher.docker_launcher import LISTENER_HOST_ENV, SESSION_ENV
+
+                task_session = self._task_session(job_id, site_name, list(mounts), fl_ctx, job_meta)
+                environment[SESSION_ENV] = task_session.token
+                environment[LISTENER_HOST_ENV] = container_name
+                from nvflare.app_opt.task_launcher.docker_service import OWNER_LABEL
+
+                merged_container_kwargs["labels"] = {
+                    **merged_container_kwargs.get("labels", {}),
+                    OWNER_LABEL: task_session.owner,
+                    "nvflare.task.resource": "client-job",
+                }
             if file_parent_dir:
                 # The job cell must update leases and append its log, so read-write
                 mounts.append(
@@ -796,13 +916,12 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
-            container = docker_client.containers.run(
-                job_image,
+            container_kwargs = dict(
                 command=command,
                 name=container_name,
                 network=self.network,
                 detach=True,
-                auto_remove=True,
+                auto_remove=task_session is None,
                 environment=environment if environment else None,
                 mounts=mounts,
                 working_dir=container_job_workspace,
@@ -812,21 +931,55 @@ class DockerJobLauncher(JobLauncherSpec):
                 user=f"{os.getuid()}:{os.getgid()}",
                 **merged_container_kwargs,
             )
+            if task_session is not None:
+                from nvflare.app_opt.task_launcher.docker_service import TaskDockerJobHandle
+
+                # Retain a CP owner before Docker can create anything. A lost
+                # create/start reply leaves the same session under reconciliation.
+                job_handle = TaskDockerJobHandle(
+                    container_id=None,
+                    container_name=container_name,
+                    docker_client=docker_client,
+                    timeout=self.timeout,
+                    task_session=task_session,
+                    cj_gpu_count=cj_budget["num_of_gpus"],
+                )
+
+                def create_task_cj():
+                    devices = job_handle.cj_gpu_devices
+                    if devices:
+                        container_kwargs["device_requests"] = [{"DeviceIDs": list(devices), "Capabilities": [["gpu"]]}]
+                        environment.update(
+                            NVIDIA_VISIBLE_DEVICES=",".join(devices),
+                            CUDA_VISIBLE_DEVICES=",".join(str(index) for index in range(len(devices))),
+                            NVIDIA_DRIVER_CAPABILITIES="compute,utility",
+                        )
+                    return docker_client.containers.create(job_image, **container_kwargs)
+
+                job_handle.launch(create_task_cj)
+            else:
+                container = docker_client.containers.run(job_image, **container_kwargs)
         except docker.errors.ImageNotFound:
+            if task_session is not None:
+                task_session.close()
             raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
         except docker.errors.APIError as e:
+            if task_session is not None:
+                task_session.close()
             raise RuntimeError(f"error creating container for job {job_id}: {e}")
 
-        job_handle = DockerJobHandle(
-            container_id=container.id,
-            container_name=container_name,
-            docker_client=docker_client,
-            timeout=self.timeout,
-            container=container,
-            watch_exit=True,
-        )
+        if task_session is None:
+            job_handle = DockerJobHandle(
+                container_id=container.id,
+                container_name=container_name,
+                docker_client=docker_client,
+                timeout=self.timeout,
+                container=container,
+                watch_exit=True,
+            )
 
         try:
+            publish_job_handle(job_handle, fl_ctx)
             if not job_handle.enter_states([DockerStatus.RUNNING]):
                 self.logger.warning(f"container {container_name} did not reach RUNNING state for job {job_id}")
         except BaseException:
@@ -839,6 +992,8 @@ class DockerJobLauncher(JobLauncherSpec):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             add_launcher(self, fl_ctx)
+        elif event_type == EventType.SYSTEM_END and self._task_service is not None:
+            self._task_service.close()
 
     @abstractmethod
     def get_module_args(self, job_args: dict) -> dict:

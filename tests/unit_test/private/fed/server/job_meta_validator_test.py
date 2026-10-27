@@ -505,7 +505,7 @@ def test_client_hocon_multiline_strings_cannot_hide_include_directives(quotes, m
     assert config["execution_lifetime"] == "task"
 
 
-def test_client_hocon_include_keys_and_strings_remain_application_data():
+def test_client_hocon_include_keys_and_strings_preserve_literal_declaration_and_original_data():
     bio = io.BytesIO()
     with ZipFile(bio, "w") as archive:
         archive.writestr(
@@ -513,7 +513,10 @@ def test_client_hocon_include_keys_and_strings_remain_application_data():
         )
     with ZipFile(bio) as archive:
         config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
-    assert config["args"] == {"include": True, "note": "include url(ignored)"}
+        assert archive.read("config_fed_client.conf").decode() == (
+            'execution_lifetime=job\nargs {include=true, note="include url(ignored)"}\n'
+        )
+    assert config == {"execution_lifetime": "job"}
 
 
 @pytest.mark.parametrize("comment", ["#comment", "//comment"])
@@ -534,6 +537,60 @@ def test_client_hocon_comment_line_endings_cannot_hide_an_include(comment, newli
     with ZipFile(bio) as archive:
         config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
     assert config["execution_lifetime"] == "task"
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "x=${missing#token}",
+        "x=${missing//token}",
+        'x=\\"',
+        "x=\\#",
+        "x=\\\\",
+        '"""key\\"""tail"""=ok',
+        '"""key\\\\\\"""tail"""=ok',
+        '"""key\\\\\\\\\\"""tail"""=ok',
+    ],
+)
+@pytest.mark.parametrize(
+    "include",
+    [
+        'include "client.conf"',
+        'include url("https://client.invalid/conf")',
+        'include file("/client-only/*.conf")',
+        'include package("client:config.conf")',
+    ],
+)
+def test_client_hocon_tokens_cannot_mask_include_io_during_submission(prefix, include, monkeypatch):
+    from pyhocon import ConfigFactory as HoconFactory
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("submission opened an include hidden by another HOCON token")
+
+    monkeypatch.setattr(HoconFactory, "parse_file", forbidden)
+    monkeypatch.setattr(HoconFactory, "parse_URL", forbidden)
+    monkeypatch.setattr("pyhocon.config_parser.glob", forbidden)
+    monkeypatch.setattr("pyhocon.config_parser.ConfigParser.resolve_package_path", forbidden)
+    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr("split/meta.json", json.dumps(meta))
+        archive.writestr("split/app/config/", "")
+        archive.writestr("split/app/config/config_fed_server.json", "{}")
+        archive.writestr(
+            "split/app/config/config_fed_client.conf", prefix + " " + include + "\nexecution_lifetime=task\n"
+        )
+    valid, error, submitted = JobMetaValidator().validate("split", bio.getvalue())
+    assert valid, error
+    assert submitted["cj_resource_spec"] == {"@ALL": {}}
+
+
+def test_client_hocon_declaration_rejects_a_non_object_root():
+    bio = io.BytesIO()
+    with ZipFile(bio, "w") as archive:
+        archive.writestr("config_fed_client.conf", "[1, 2]")
+    with ZipFile(bio) as archive, pytest.raises(ValueError, match="must be a dictionary"):
+        JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
 
 
 def test_submission_uses_shared_resource_lifetime_classifier(monkeypatch):
