@@ -1,0 +1,27 @@
+name: mock_fl_fedprox
+seed: 42
+device: cpu
+
+backend:
+  name: mock
+
+data:
+  name: mock
+  batch_size: 8
+  num_clients: 2
+  partitioning: iid
+
+fl:
+  strategy:
+    name: fedprox
+    mu: 0.01
+  num_rounds: 2
+  local_steps: 10
+  mode: local
+  output_dir: outputs/mock_fl_fedprox
+
+eval:
+  benchmark:
+    name: mock
+    suites: [default, extra]
+  n_episodes_per_task: 2

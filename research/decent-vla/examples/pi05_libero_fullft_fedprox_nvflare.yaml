@@ -1,0 +1,57 @@
+# pi0.5 full fine-tuning on LIBERO with FedProx, through the NVFlare simulator.
+# Settings of the paper's run: 8 clients with 5 disjoint LIBERO tasks each, 250 local steps
+# per round, 100 rounds. The paper evaluates every 20 rounds and reports the best score.
+# One client per GPU, as in the paper: a pi0.5 full fine-tuning client keeps more than 50 GB of
+# weights, gradients and AdamW state on its GPU, so 8 clients need 8 GPUs (96 GB GH200s in the paper).
+# Evaluate a checkpoint with scripts/eval_libero.sh.
+# Train: decent-vla train --config examples/pi05_libero_fullft_fedprox_nvflare.yaml
+name: pi05_libero_fullft_fedprox_nvflare
+seed: 42
+device: auto
+
+backend:
+  name: lerobot
+  extra:
+    policy_type: pi05
+    pretrained_path: lerobot/pi05_base
+    dtype: bfloat16
+    train_config_path: examples/pi05_libero_train_pipeline.yaml
+    tokenizer_local_repo: google/paligemma-3b-pt-224   # gated: accept the PaliGemma terms on Hugging Face
+  optim:
+    name: adamw
+    lr: 2.5e-5
+    weight_decay: 0.01
+    betas: [0.9, 0.95]
+    scheduler: cosine
+    warmup_steps: 1000
+    decay_steps: 30000
+    decay_lr: 2.5e-6
+
+data:
+  name: lerobot
+  repo_id: HuggingFaceVLA/libero
+  batch_size: 32
+  num_workers: 2
+  extra:
+    # Workers forked after the policy is on CUDA can segfault; forkserver starts them clean.
+    dataloader_mp_context: forkserver
+    prefetch_factor: 1              # caps host shared-memory use
+  partitioning:
+    scheme: task_round_robin        # task non-IID: each client gets a disjoint set of LIBERO tasks
+    num_clients: 8
+    seed: 42
+
+fl:
+  strategy:
+    name: fedprox
+    mu: 0.01
+    extra:
+      normalize: false              # proximal term on the raw sum of squared differences, as in FedProx
+  rounds: 100
+  local_steps: 250
+  execution: nvflare
+  save_every_n_rounds: 10
+  output_dir: outputs/pi05_libero_fullft_fedprox_nvflare
+  nvflare:
+    env: simulator                # in-process NVFlare simulator
+    gpu: "0,1,2,3,4,5,6,7"        # one entry per client: client i -> GPU in entry i
