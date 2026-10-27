@@ -18,8 +18,10 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
@@ -39,6 +41,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import WORKER_MODULE, Slur
 from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
+from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
 from tests.unit_test.app_opt.job_launcher.slurm_launcher_test import _fl_ctx
@@ -82,6 +85,7 @@ def _site(root):
                     "cpu_cores": 4,
                     "memory_mb": 2048,
                     "gpu_count": 2,
+                    "worker_listener_host": "127.0.0.1",
                     "environment": {"PYTHONPATH": os.getcwd()},
                     "sbatch_directives": {"account": "site-account", "partition": "gpu"},
                 },
@@ -112,6 +116,25 @@ def _context(workspace, meta, job_id="job-1", site_name="site-1"):
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     context.set_prop(FLContextKey.JOB_META, meta)
     return context
+
+
+@pytest.fixture
+def cj_cell():
+    from nvflare.fuel.f3.cellnet.cell import Cell
+    from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+    from nvflare.fuel.f3.stats_pool import StatsPoolManager
+
+    cells, pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.start()
+    try:
+        yield cell
+    finally:
+        cell.stop()
+        CoreCell.ALL_CELLS.clear()
+        CoreCell.ALL_CELLS.update(cells)
+        StatsPoolManager.pools.clear()
+        StatsPoolManager.pools.update(pools)
 
 
 def test_exact_matching_slurm_site_profile(profile):
@@ -375,6 +398,29 @@ def test_resident_job_keeps_original_slurm_resource_behavior(profile):
     assert cpu.resources.gpus_per_node == 0 and cpu.study_env["CUDA_VISIBLE_DEVICES"] == ""
 
 
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_cj_recovery_requires_proof_for_every_independent_execution(profile, lifetime):
+    root, workspace, _, cj, _ = profile
+    Path(workspace.get_client_app_config_file_path("job-1")).write_text(json.dumps({"execution_lifetime": lifetime}))
+    native = Mock()
+    native.can_restart.return_value = True
+    native.poll.return_value = 1
+    cj.manager = Mock()
+    cj.manager.launch.return_value = native
+    handle = cj.launch_job({"job_id": "job-1"}, _fl_ctx(root))
+    assert handle.can_restart() is (lifetime == "job")
+    if lifetime == "job":
+        assert handle is native
+    else:
+        assert handle.poll() == 1
+        handle.terminate()
+        handle._terminate_for_heartbeat_cleanup()
+        handle.wait()
+        native.terminate.assert_called_once_with()
+        native._terminate_for_heartbeat_cleanup.assert_called_once_with()
+        native.wait.assert_called_once_with()
+
+
 def test_start_run_binding_is_immutable_and_preserves_study_policy(profile):
     root, workspace, site, cj, task = profile
     (root / "local" / "study_runtime.yaml").write_text(
@@ -399,8 +445,10 @@ def test_start_run_binding_is_immutable_and_preserves_study_policy(profile):
 
 @pytest.mark.parametrize("gpu_count", [0, 1])
 @pytest.mark.usefixtures("isolated_fobs")
-def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(tmp_path, monkeypatch, gpu_count):
-    backend = _backend(tmp_path, monkeypatch, gpu_count)
+def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(
+    tmp_path, monkeypatch, gpu_count, cj_cell
+):
+    backend = _backend(tmp_path, monkeypatch, gpu_count, worker_listener_host="127.0.0.1")
     launcher, adapter, request = backend
     launcher.python_path = sys.executable
     launcher.environment["PYTHONPATH"] = os.getcwd()
@@ -410,6 +458,9 @@ def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(tm
         "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": gpu_count, "cpus_per_node": 3, "time": "00:03:00"}}}
     }
     launcher.handle_event(EventType.START_RUN, _context(workspace, meta))
+    cell_session.listen(cj_cell, launcher.get_worker_listener_host())
+    session = cell_session.CellWorkerSession(cj_cell, lambda data: None)
+    arguments["bootstrap"] = replace(arguments["bootstrap"], cell_session=session.bootstrap_fields())
 
     def factory(attempt, path):
         return replace(
@@ -442,7 +493,10 @@ def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(tm
 
     adapter.submit.side_effect = submit
     arguments["request_factory"] = factory
-    outcome = TaskSupervisor().run(**arguments)
+    try:
+        outcome = TaskSupervisor().run(**arguments)
+    finally:
+        session.close()
     assert outcome.execution_status.succeeded
     np.testing.assert_array_equal(from_shareable(outcome.result).data["numpy_key"], np.full(3, 3.0))
     assert Path(store.attempt_dir(identity), "result.fobs").exists()
@@ -469,7 +523,7 @@ def test_staged_request_requires_start_run_before_submission(tmp_path, monkeypat
 
 @pytest.mark.parametrize("gpu_count", [0, 1])
 @pytest.mark.usefixtures("isolated_fobs")
-def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_count):
+def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_count, cj_cell):
     root, workspace, site, cj, task = profile
     config_path = Path(workspace.get_client_app_config_file_path("job-1"))
     config_path.write_text(
@@ -526,6 +580,7 @@ def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_
 
     adapter.submit.side_effect = submit
     context = _context(workspace, meta)
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cj_cell, fire_event=Mock()))
     context.set_prop(FLContextKey.TASK_ID, "task-1")
     context.set_prop(FLContextKey.TASK_NAME, "train")
     context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "attempt-1")

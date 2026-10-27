@@ -19,11 +19,13 @@ deployment documentation. It never interprets job metadata as site policy.
 """
 
 import hashlib
+import ipaddress
 import json
 import math
 import os
 import re
 import shlex
+import socket
 import tempfile
 import threading
 import time
@@ -62,7 +64,8 @@ from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobHandle, SlurmJobM
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
-from nvflare.private.fed.task_worker.protocol import read_bootstrap
+from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
+from nvflare.private.fed.utils.job_cert_utils import job_cert_paths
 
 WORKER_MODULE = "nvflare.app_opt.job_launcher.slurm.task_worker"
 
@@ -71,6 +74,7 @@ WORKER_MODULE = "nvflare.app_opt.job_launcher.slurm.task_worker"
 class _JobBinding:
     job_id: str
     site_name: str
+    run_dir: str
     resources: JobResources
     config: SlurmConfig
     python_path: str
@@ -478,6 +482,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         memory_mb=1024,
         gpu_count=0,
         environment=None,
+        worker_listener_host=None,
     ):
         super().__init__()
         if shared_filesystem is not True or cgroup_enforced is not True:
@@ -504,6 +509,9 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         if not isinstance(python_path, str) or not os.path.isabs(python_path) or "\x00" in python_path:
             raise ValueError("Slurm task python_path must be an absolute path shared with compute hosts")
         self.python_path = python_path
+        self.worker_listener_host = (
+            None if worker_listener_host is None else _require_string(worker_listener_host, "worker_listener_host")
+        )
         self.resources = TaskResourceRequest(cpu_cores, memory_mb, gpu_count)
         if self.resources.cpu_cores is None or self.resources.memory_mb is None:
             raise ValueError("Slurm task defaults require CPU and memory requests")
@@ -516,6 +524,27 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         self._binding = None
         self._binding_lock = threading.Lock()
         self._initialization_lock = threading.Lock()
+
+    def get_worker_listener_host(self):
+        """Advertise this CJ's host to workers in independent Slurm allocations."""
+        host = self.worker_listener_host or socket.getfqdn()
+        if not isinstance(host, str) or not host or host == "0" or host != host.strip():
+            raise TaskLauncherError("Slurm worker_listener_host must name a worker-reachable CJ host")
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", host):
+                raise TaskLauncherError("Slurm worker_listener_host must be a host name or IP address, without a port")
+            loopback = host.rstrip(".").lower() == "localhost" or host.lower().endswith(".localhost")
+        else:
+            if address.is_unspecified:
+                raise TaskLauncherError("Slurm worker_listener_host cannot advertise a wildcard address")
+            loopback = address.is_loopback
+        if loopback and self.worker_listener_host is None:
+            raise TaskLauncherError(
+                "Slurm could not discover a worker-reachable CJ host; configure worker_listener_host"
+            )
+        return host
 
     def validate_site_config(self, site_config):
         from nvflare.app_opt.job_launcher.slurm.task_policy import validate_slurm_site
@@ -566,6 +595,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         binding = _JobBinding(
             job_id,
             site_name,
+            workspace.get_run_dir(job_id),
             resources,
             replace(config, pending_timeout=resources.pending_timeout),
             python_path,
@@ -599,6 +629,24 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         identity = bootstrap.identity
         if (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id) != request.identity:
             raise TaskLauncherError("Slurm bootstrap identity differs from the staged request")
+        session = bootstrap.cell_session
+        if session is None:
+            raise TaskLauncherError("Slurm staged task requires its owning CJ's live Cell session")
+        credentials = session.get("credentials", {})
+        if credentials or session.get("connection_security") == "mtls":
+            if set(credentials) != set(CELL_SESSION_CREDENTIALS):
+                raise TaskLauncherError("Slurm Cell session must provide the CA and both job credential pairs")
+            certificate, key = job_cert_paths(binding.run_dir)
+            for name, credential_path in credentials.items():
+                if os.path.commonpath((root, credential_path)) != root:
+                    raise TaskLauncherError("Slurm Cell credentials must be reachable in the shared workspace")
+                if name != "ca_cert" and credential_path != (key if name.endswith("_key") else certificate):
+                    raise TaskLauncherError("Slurm Cell credentials must use this job's certificate and key")
+                try:
+                    with _open_regular(credential_path):
+                        pass
+                except (OSError, ValueError) as error:
+                    raise TaskLauncherError("Slurm Cell credential path is not a shared regular file") from error
         artifact_root = os.path.realpath(bootstrap.artifact_root)
         if (
             bootstrap.workspace_root != root

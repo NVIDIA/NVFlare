@@ -21,8 +21,9 @@ from dataclasses import replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobHandleSpec
 from nvflare.apis.utils.format_check import check_job_id
-from nvflare.app_opt.job_launcher.slurm.config import JobResources
+from nvflare.app_opt.job_launcher.slurm.config import JobResources, SlurmLauncherError
 from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import (
     TASK_LAUNCHER_PATH,
@@ -41,6 +42,25 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES")
+
+
+class _TaskCJHandle(JobHandleSpec):
+    """CJ exit alone cannot authorize recovery of independent task allocations."""
+
+    def __init__(self, handle):
+        self.handle = handle
+
+    def terminate(self):
+        return self.handle.terminate()
+
+    def _terminate_for_heartbeat_cleanup(self):
+        return self.handle._terminate_for_heartbeat_cleanup()
+
+    def poll(self):
+        return self.handle.poll()
+
+    def wait(self):
+        return self.handle.wait()
 
 
 class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
@@ -118,5 +138,17 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         if cj_resources.gpus_per_node == 0:
             environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in _GPU_ENV})
         return replace(
-            plan, resources=cj_resources, study_env=environment, additional_node_command=(), node_app_dir=None
+            plan,
+            resources=cj_resources,
+            study_env=environment,
+            additional_node_command=(),
+            node_app_dir=None,
+            execution_lifetime=ExecutionLifetime.TASK,
         )
+
+    def launch_job(self, job_meta, fl_ctx):
+        if self.manager is None:
+            raise SlurmLauncherError("nested Slurm job launch is unavailable inside a Slurm child process")
+        plan = self._build_launch_plan(job_meta, fl_ctx)
+        handle = self.manager.launch(plan)
+        return _TaskCJHandle(handle) if plan.execution_lifetime == ExecutionLifetime.TASK else handle

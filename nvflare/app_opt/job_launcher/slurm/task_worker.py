@@ -37,9 +37,10 @@ def main():
         )
         exit_code = 0
     except BaseException as error:
-        from nvflare.security.logging import secure_format_exception
+        from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
         logging.getLogger(__name__).error("Slurm task worker failed: %s", secure_format_exception(error))
+        secure_log_traceback()
     finally:
         try:
             flush = threading.Thread(target=_flush_logs, daemon=True, name="slurm-task-log-flush")
