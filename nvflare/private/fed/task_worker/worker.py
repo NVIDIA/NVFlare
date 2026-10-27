@@ -18,7 +18,6 @@ import logging
 import os
 import resource
 import sys
-import tempfile
 import time
 
 from nvflare.apis.executor import Executor
@@ -48,6 +47,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion, _read_json
+from .cell_session import CellWorkerTransport
 from .protocol import (
     SESSION_END_MARKER,
     TaskAttemptIdentity,
@@ -182,7 +182,6 @@ class AttemptBinding:
 
     def __init__(self, identity):
         self.identity = identity
-        self.analytics = None
 
 
 def _set_attempt_context(fl_ctx, identity):
@@ -216,7 +215,7 @@ def _attempt_identities(bootstrap: WorkerBootstrap):
             interval = min(interval * 2, _SESSION_POLL_MAX_INTERVAL)
 
 
-def _commit_attempt(store, identity, result, analytics, runtime, started_at, started_monotonic, *, final):
+def _commit_attempt(store, identity, result, runtime, started_at, started_monotonic, *, final):
     reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
     # Serialization can invoke application decomposers. Fail early here;
     # the publication guard makes the final decision after verification.
@@ -233,10 +232,6 @@ def _commit_attempt(store, identity, result, analytics, runtime, started_at, sta
     checkpoint = store.stage_checkpoint(identity)
     if checkpoint is not None:
         diagnostics["checkpoint"] = checkpoint.to_dict()
-    if analytics is not None:
-        analytics_reference = store.write_analytics(identity, analytics)
-        if analytics_reference is not None:
-            diagnostics["analytics"] = analytics_reference.to_dict()
     return store.commit_staged_result(
         identity,
         reference,
@@ -259,6 +254,7 @@ def _execute(
     protected_context_keys=(),
     started_at=None,
     started_monotonic=None,
+    log=None,
 ):
     """Run every attempt of this worker on one executor; return the last completion.
 
@@ -281,12 +277,11 @@ def _execute(
     session = bootstrap.session_dir is not None
     adapt_executor = None
     if context_binding is not None:
-        adapt_executor = context_binding(fl_ctx, binding, store, session)
+        adapt_executor = context_binding(fl_ctx, binding, store, session, log)
     executor = _build_executor(bootstrap.executor)
     if adapt_executor is not None:
         executor = adapt_executor(executor)
 
-    spool_analytics = context_binding is not None
     completion = None
     pending = None
     try:
@@ -302,28 +297,22 @@ def _execute(
             if identity != bootstrap.identity:
                 store.claim_worker(identity)
             binding.identity = identity
-            binding.analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity)) if spool_analytics else None
-            try:
-                _set_attempt_context(fl_ctx, identity)
-                data = store.read_input(identity)
-                _restore_peer_context(data, fl_ctx)
-                fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
-                with runtime.operation():
-                    result = executor.execute(identity.task_name, data, fl_ctx, runtime.abort_signal)
-                runtime.raise_if_failed()
-                if not isinstance(result, (Shareable, ArtifactReference)):
-                    raise TypeError(f"Executor returned {type(result)} instead of Shareable")
-                fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
-                if session:
-                    completion = _commit_attempt(
-                        store, identity, result, binding.analytics, runtime, started_at, started_monotonic, final=False
-                    )
-                else:
-                    pending = (identity, started_at, started_monotonic, binding.analytics)
-            finally:
-                if session and binding.analytics is not None:
-                    binding.analytics.close()
-                    binding.analytics = None
+            _set_attempt_context(fl_ctx, identity)
+            data = store.read_input(identity)
+            _restore_peer_context(data, fl_ctx)
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, data, private=True, sticky=False)
+            with runtime.operation():
+                result = executor.execute(identity.task_name, data, fl_ctx, runtime.abort_signal)
+            runtime.raise_if_failed()
+            if not isinstance(result, (Shareable, ArtifactReference)):
+                raise TypeError(f"Executor returned {type(result)} instead of Shareable")
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+            if session:
+                completion = _commit_attempt(
+                    store, identity, result, runtime, started_at, started_monotonic, final=False
+                )
+            else:
+                pending = (identity, started_at, started_monotonic)
     except BaseException as error:
         runtime.fail(error)
     finally:
@@ -336,17 +325,11 @@ def _execute(
             runtime.fail(error)
     runtime.raise_if_failed()
     if pending is not None:
-        identity, started_at, started_monotonic, analytics = pending
+        identity, started_at, started_monotonic = pending
         result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
         if not isinstance(result, (Shareable, ArtifactReference)):
             raise TypeError("executor finalization must leave a Shareable or staged result reference")
-        try:
-            completion = _commit_attempt(
-                store, identity, result, analytics, runtime, started_at, started_monotonic, final=True
-            )
-        finally:
-            if analytics is not None:
-                analytics.close()
+        completion = _commit_attempt(store, identity, result, runtime, started_at, started_monotonic, final=True)
     runtime.raise_if_failed()
     return completion
 
@@ -370,6 +353,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
     owns_auditor = False
+    transport = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -396,6 +380,10 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             spec = _thaw_json(original)
             if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
                 instantiate_class(_class_path(spec), task_constructor_args(spec))
+        # Records travel FOBS-encoded, so the session opens only once every codec is registered.
+        if bootstrap.cell_session is not None:
+            transport = CellWorkerTransport(bootstrap.cell_session)
+            transport.open()
         return _execute(
             bootstrap,
             workspace,
@@ -403,6 +391,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             binding,
             context_binding=context_binding,
             protected_context_keys=protected_context_keys,
+            log=None if transport is None else transport.log,
             started_at=started_at,
             started_monotonic=started_monotonic,
         )
@@ -424,6 +413,18 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
+        if transport is not None:
+            # The outcome is already on disk; a session that will not close cleanly must not replace it.
+            try:
+                transport.close()
+            except Exception as e:
+                logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
+        if transport is not None:
+            # The outcome is already on disk; a session that will not close cleanly must not replace it.
+            try:
+                transport.close()
+            except Exception as e:
+                logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
 
 
 def main():

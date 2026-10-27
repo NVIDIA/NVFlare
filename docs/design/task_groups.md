@@ -313,6 +313,11 @@ Job and the worker today:
 | attempt done | `<attempt>/completion.json` or `<attempt>/failure.json`, as today | worker |
 | session over | `<runtime_root>/sessions/<session>/end` | Client Job |
 
+Metrics (`flare.log`) do not use these files: since #5548 every worker,
+grouped or not, opens a cell session to its Client Job and sends each metric
+live. A group worker keeps one such session for its lifetime, and the Client
+Job fires each metric into the attempt it currently owns.
+
 The worker polls the session directory at the site poll interval, backing
 off to half a second while idle, and exits through `finalize` if its parent
 Client Job disappears, since no end marker would ever come. The Client Job

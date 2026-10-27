@@ -322,6 +322,11 @@ class ControllerSpec(ABC):
         - the client's submission is too late - the task is already completed
         - the Controller lost the task, e.g. the Server is restarted
 
+        During this hook and its surrounding events, WFCommServer exposes the private,
+        non-sticky FLContextKey.TASK_RESULT_IS_LATE property for a recognized retired
+        assignment. Read it with fl_ctx.get_prop(FLContextKey.TASK_RESULT_IS_LATE, False);
+        an absent property defaults to False. The property is removed after processing.
+
         Args:
             client: the client that the result comes from
             task_name: the name of the task

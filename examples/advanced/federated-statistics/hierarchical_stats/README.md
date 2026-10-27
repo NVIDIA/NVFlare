@@ -35,13 +35,13 @@ it should show something like
 ```
 Preparing data at data directory `/tmp/nvflare/data/hierarchical_stats/`...
 
-CSV file `university-1.csv` is generated with 1506 entries for client `university-1` at /tmp/nvflare/data/hierarchical_stats//university-1.
-CSV file `university-2.csv` is generated with 1649 entries for client `university-2` at /tmp/nvflare/data/hierarchical_stats//university-2.
-CSV file `university-3.csv` is generated with 1164 entries for client `university-3` at /tmp/nvflare/data/hierarchical_stats//university-3.
-CSV file `university-4.csv` is generated with 1453 entries for client `university-4` at /tmp/nvflare/data/hierarchical_stats//university-4.
-CSV file `university-5.csv` is generated with 1604 entries for client `university-5` at /tmp/nvflare/data/hierarchical_stats//university-5.
-CSV file `university-6.csv` is generated with 1613 entries for client `university-6` at /tmp/nvflare/data/hierarchical_stats//university-6.
-CSV file `university-7.csv` is generated with 1118 entries for client `university-7` at /tmp/nvflare/data/hierarchical_stats//university-7.
+CSV file `university-1.csv` is generated with 1477 entries for client `university-1` at /tmp/nvflare/data/hierarchical_stats//university-1.
+CSV file `university-2.csv` is generated with 1396 entries for client `university-2` at /tmp/nvflare/data/hierarchical_stats//university-2.
+CSV file `university-3.csv` is generated with 1081 entries for client `university-3` at /tmp/nvflare/data/hierarchical_stats//university-3.
+CSV file `university-4.csv` is generated with 1550 entries for client `university-4` at /tmp/nvflare/data/hierarchical_stats//university-4.
+CSV file `university-5.csv` is generated with 1902 entries for client `university-5` at /tmp/nvflare/data/hierarchical_stats//university-5.
+CSV file `university-6.csv` is generated with 1666 entries for client `university-6` at /tmp/nvflare/data/hierarchical_stats//university-6.
+CSV file `university-7.csv` is generated with 1776 entries for client `university-7` at /tmp/nvflare/data/hierarchical_stats//university-7.
 
 Done preparing data.
 
@@ -338,6 +338,11 @@ to calculate the local statistics, we will need to implements few methods
     def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float) -> Histogram:
 
 ```
+
+`HierarchicalStatisticsController` computes the var of each level below the top one from the clients' own `stddev`,
+together with their count and mean. So `stddev` must be implemented whenever `var` or `stddev` is configured, even if
+only `var` is, and it must return the sample standard deviation (N - 1 in the denominator, as pandas `std()` does).
+
 since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
 the global min/max, and then use the global bin/max as the range for all clients' histogram bin range.
 

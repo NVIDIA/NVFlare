@@ -21,7 +21,6 @@ import os
 import threading
 import time
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -236,20 +235,14 @@ class _ClientAPITaskRunner:
             on_finished()
 
 
-def bind_client_task_context(fl_ctx, binding, store, session):
+def bind_client_task_context(fl_ctx, binding, store, session, log):
     """Bind the Client API runner to the worker's current attempt; ``binding`` moves between attempts."""
     fl_ctx.set_prop(FLContextKey.CLIENT_NAME, binding.identity.site_name, private=True, sticky=True)
     fl_ctx.set_prop(FLContextKey.PROCESS_TYPE, "client_task_worker", private=True, sticky=True)
 
     def capture_analytics(dxo):
         with fl_ctx.get_engine().operation():
-            if binding.analytics is None:
-                logging.getLogger(__name__).warning("dropping metric logged between task group attempts")
-                return
-            store.write_analytics_record(
-                binding.analytics,
-                {"event_type": ANALYTIC_EVENT_TYPE, "data": dxo.to_shareable(), "federated": False},
-            )
+            log(dxo.to_shareable())
 
     def save_result(shareable):
         with fl_ctx.get_engine().operation():
@@ -261,6 +254,8 @@ def bind_client_task_context(fl_ctx, binding, store, session):
     def adapt_executor(executor):
         if type(executor) is not ClientAPIExecutor:
             return executor
+        if log is None:
+            raise RuntimeError("a Client API task worker requires a cell session to its Client Job")
         return _ClientAPITaskRunner(
             executor,
             session=session,

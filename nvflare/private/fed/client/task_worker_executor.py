@@ -23,7 +23,6 @@ import threading
 from contextlib import contextmanager
 from functools import partial
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -32,11 +31,11 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
-from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.job_config.task_execution import validate_task_resources
 from nvflare.private.defs import CellChannel
+from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
     TaskAttemptIdentity,
@@ -92,6 +91,8 @@ class TaskWorkerExecutor(Executor):
         self._session = None
         self._session_ctx = None
         self._ended_groups = set()
+        self._metrics = None
+        self._attempt_ctx = None
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -104,6 +105,9 @@ class TaskWorkerExecutor(Executor):
                         raise RuntimeError("task lifetime requires a Cell from the engine")
                     self._started = True
                 cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                # Workers join this cell as the Client Job joins its CP: same listener security, job credential,
+                # at an address the launcher's workers can reach.
+                cell_session.listen(cell, self.policy.launcher.get_worker_listener_host())
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type == EventType.TASK_GROUP_CLOSED:
@@ -183,6 +187,7 @@ class TaskWorkerExecutor(Executor):
         self._done.clear()
         identity = workspace = outcome = None
         group_id = None
+        metrics = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
@@ -215,6 +220,11 @@ class TaskWorkerExecutor(Executor):
                 session = self.supervisor.open_session(None, store, runtime_root, self.policy.launcher, request_factory)
             else:
                 session = self._session_for(group_id, store, runtime_root, request_factory, fl_ctx)
+            if group_id is None:
+                # Metrics logged by the worker are fired into the job while the attempt is still owned.
+                metrics = cell_session.CellWorkerSession(fl_ctx.get_engine().get_cell(), self._fire_current_analytics)
+            else:
+                metrics = self._metrics
             bootstrap = WorkerBootstrap(
                 identity,
                 store.root_dir,
@@ -223,7 +233,10 @@ class TaskWorkerExecutor(Executor):
                 self.component_specs,
                 max_payload_bytes=self.policy.max_payload_bytes,
                 session_dir=session.session_dir,
+                cell_session=metrics.bootstrap_fields(),
             )
+            with self._state_lock:
+                self._attempt_ctx = fl_ctx
             outcome = self.supervisor.run_attempt(
                 session, bootstrap, shareable, abort_signal, self.options, deadline_provider, stage_hook
             )
@@ -236,7 +249,6 @@ class TaskWorkerExecutor(Executor):
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
             fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
-            self._replay_analytics(outcome.analytics, fl_ctx)
             if outcome.result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK:
                 store.commit_checkpoint(
                     outcome.completion,
@@ -246,6 +258,9 @@ class TaskWorkerExecutor(Executor):
             self._completed_attempts.add(identity)
             return outcome.result
         finally:
+            if group_id is None and metrics is not None:
+                # The worker has settled: a record arriving now belongs to no owned attempt.
+                metrics.close(timeout=self.policy.settlement_timeout)
             try:
                 if group_id is not None:
                     self._settle_session(fl_ctx)
@@ -306,6 +321,9 @@ class TaskWorkerExecutor(Executor):
             with self._state_lock:
                 self._session = session
                 self._session_ctx = fl_ctx
+                self._metrics = cell_session.CellWorkerSession(
+                    fl_ctx.get_engine().get_cell(), self._fire_current_analytics
+                )
             self.log_info(fl_ctx, f"opened task worker session for group {group_id}")
         return session
 
@@ -348,6 +366,9 @@ class TaskWorkerExecutor(Executor):
             with self._state_lock:
                 self._session = None
                 self._ended_groups.add(session.group_id)
+                metrics, self._metrics = self._metrics, None
+            if metrics is not None:
+                metrics.close(timeout=self.policy.settlement_timeout)
             self._report_issues(fl_ctx)
             if session.identity is not None and not self.supervisor.settlement_unconfirmed:
                 self._replay_worker_log(_workspace(fl_ctx), session.identity, fl_ctx)
@@ -379,19 +400,23 @@ class TaskWorkerExecutor(Executor):
         except Exception as e:
             self.log_warning(fl_ctx, f"could not replay task worker log {path}: {e}")
 
-    def _replay_analytics(self, records, fl_ctx):
-        for record in records:
-            if record.get("event_type") not in (ANALYTIC_EVENT_TYPE, FED_ANALYTIC_EVENT_TYPE) or not isinstance(
-                record.get("federated"), bool
-            ):
-                raise ValueError("unsupported task worker analytics event")
-            send_analytic_dxo(
-                self,
-                from_shareable(record["data"]),
-                fl_ctx,
-                event_type=record["event_type"],
-                fire_fed_event=record["federated"],
-            )
+    def _fire_current_analytics(self, data):
+        """A group worker outlives attempts; its metrics belong to whichever attempt is owned now."""
+        with self._state_lock:
+            fl_ctx = self._attempt_ctx
+        if fl_ctx is None:
+            raise RuntimeError("no owned attempt to fire task worker analytics into")
+        self._fire_analytics(fl_ctx, data)
+
+    def _fire_analytics(self, fl_ctx, data):
+        """Fire one metric the worker logged; runs on a cell thread while ``execute`` owns the attempt.
+
+        Raises only for a metric it cannot fire. Receiver failures are logged and recorded on ``fl_ctx`` by event
+        dispatch, as for a resident executor in job lifetime, so a failing tracking backend never fails training.
+        """
+        if not isinstance(data, Shareable):
+            raise ValueError("task worker analytics must be a DXO Shareable")
+        send_analytic_dxo(self, from_shareable(data), fl_ctx)
 
     def _record_receipt(self, fl_ctx):
         identity = fl_ctx.get_prop(TASK_ATTEMPT_IDENTITY)

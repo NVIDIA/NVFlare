@@ -138,6 +138,7 @@ class StatisticsController(Controller):
         self.client_statistics = {}
         self.global_statistics = {}
         self.client_features = {}
+        self.withheld_features = {}
         self.result_wait_timeout = result_wait_timeout
         self.wait_time_after_min_received = wait_time_after_min_received
         self.precision = precision
@@ -299,7 +300,12 @@ class StatisticsController(Controller):
         )
 
         self.global_statistics = get_global_stats(
-            self.global_statistics, self.client_statistics, statistic_task, self.statistic_configs, self.precision
+            self.global_statistics,
+            self.client_statistics,
+            statistic_task,
+            self.statistic_configs,
+            self.precision,
+            self.withheld_features,
         )
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
@@ -360,6 +366,12 @@ class StatisticsController(Controller):
                     self.client_statistics[statistic] = {client_name: statistics[statistic]}
                 else:
                     self.client_statistics[statistic].update({client_name: statistics[statistic]})
+
+            withheld = client_result.get(StC.STATS_WITHHELD_FEATURES, None)
+            if withheld:
+                for ds_name, features in fobs.loads(withheld).items():
+                    client_withheld = self.withheld_features.setdefault(client_name, {})
+                    client_withheld.setdefault(ds_name, set()).update(features)
 
             ds_features = client_result.get(StC.STATS_FEATURES, None)
             if ds_features:
