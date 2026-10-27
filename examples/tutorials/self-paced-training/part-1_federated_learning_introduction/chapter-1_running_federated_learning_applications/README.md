@@ -2,7 +2,7 @@
 
 This development revision targets **NVFlare 2.10** and uses the **Recipe API throughout**. Start with the [introduction](01.0_introduction/introduction.ipynb), then [setup](01.1_running_federated_learning_job/setup.ipynb) and the [first run](01.1_running_federated_learning_job/running_pytorch_fl_job.ipynb).
 
-The remaining chapters still describe the 2.6 course. Keep this revision on the course development branch until the new edition is ready as a whole. The [original 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available with its original code and videos.
+This chapter has been validated against the NVFlare 2.10 development branch and is ready for independent review. Other chapters are being migrated and reviewed separately. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) preserves the original notebooks and videos.
 
 ## Environment: development and published editions
 
@@ -85,4 +85,4 @@ The TensorBoard and MLflow notebooks explain how to open the local UIs in a sepa
 
 Complete the [recap exercise](01.8_recap/recap.ipynb): configure a site, inspect the exported recipe, run it, and explain the saved model's evaluation using its artifacts and logs.
 
-The [existing videos](video.md) teach the original Job API edition. They require new recordings to match this Recipe API revision. The new course edition also needs the remaining chapters, full-book validation, and learner review before publication; this chapter does not mark the whole course as updated.
+The [existing videos](video.md) teach the original Job API edition. They require new recordings to match this Recipe API revision. Updates to other chapters, full-course validation, and learner review proceed separately and do not block review of this chapter.

@@ -3,7 +3,7 @@
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!  
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
 
-> **Development edition:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) is being rewritten for NVFlare 2.10 with the Recipe API. The remaining chapters still describe NVFlare 2.6. Use the environment matching each edition. The [original 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available.
+> **NVFlare 2.10 course update:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) now uses the Recipe API and has been validated against the 2.10 development branch. Other sections are being migrated and reviewed incrementally; consult each section's README for its validation status. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available for the original notebooks and videos.
 
 ---
 
@@ -25,7 +25,7 @@ This course covers everything from the fundamentals to advanced applications, sy
   Access over 100 notebooks and 88 videos for a thorough learning experience.
 
 > **Tip:**  
-> While each notebook is self-contained and can be run independently, for best results, follow the sequence to build a strong foundation.
+> Follow each chapter's setup and prerequisites. The revised application lessons share one code project and are designed to be followed in sequence.
 
 ---
 
@@ -43,13 +43,13 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 - Customizing client and server logic in NVIDIA FLARE
 - Understanding job structure, configuration, and statistics
 
-#### Running Federated Learning Applications [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb)]
-- Train an image classification model with PyTorch using NVIDIA FLARE
-- Convert standard PyTorch training code to federated learning code
-- Customize client and server logic in NVIDIA FLARE
-- Explore job structure and configuration for federated learning
+#### Running Federated Learning Applications [[Open notebooks](./part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb)]
+- Run a CPU-only PyTorch application with `FedAvgRecipe` and `SimEnv`
+- Convert local PyTorch training with the Client API
+- Customize server settings and per-site training through recipe helpers
+- Track metrics, evaluate the saved global model, and inspect recipe exports
 
-#### Developing Federated Learning Applications [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb)]
+#### Developing Federated Learning Applications [[Open notebooks](./part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb)]
 - Perform federated statistics for both image and tabular data
 - Convert PyTorch Lightning and traditional ML code to federated learning workflows with NVIDIA FLARE
 - Use the NVIDIA FLARE Client API for advanced customization
@@ -65,11 +65,11 @@ This section explores the architecture and deployment of federated computing sys
 - User interaction methods: admin console, Python API, and CLI
 - Monitoring system events with Prometheus and Grafana
 
-#### Federated Computing Platform [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb)]
+#### Federated Computing Platform [[Open notebooks](./part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb)]
 - Understand the NVIDIA FLARE federated computing platform and its components
 - Learn about system roles, communication, and workflow
 
-#### Setup Federated Computing System [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb)]
+#### Setup Federated Computing System [[Open notebooks](./part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb)]
 - Step-by-step guide to setting up a federated computing system with NVIDIA FLARE
 - Simulate deployments and interact with the system using various tools
 
@@ -85,11 +85,11 @@ Federated Learning (FL) enables decentralized model training while preserving da
 - Security solutions: authentication, RBAC, encrypted communication, trust mechanisms
 - How NVIDIA FLARE implements robust security and privacy for federated learning
  
-#### Privacy in Federated Learning [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb)]
+#### Privacy in Federated Learning [[Open notebooks](./part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb)]
 - Understand privacy risks and attacks in federated learning
 - Explore privacy-preserving techniques with NVIDIA FLARE
 
-#### Security in Federated Computing System [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb)]
+#### Security in Federated Computing System [[Open notebooks](./part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb)]
 - Learn about security threats and solutions in federated learning
 - See how NVIDIA FLARE enforces secure communication, authentication, and access control
 
@@ -105,16 +105,16 @@ This section explores advanced topics and techniques in federated learning using
 - Secure federated XGBoost
 - High-level vs. low-level APIs in NVIDIA FLARE
 
-#### Federated Learning Algorithms and Workflows [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb)]
+#### Federated Learning Algorithms and Workflows [[Open notebooks](./part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb)]
 - Explore various federated learning algorithms and workflow strategies with NVIDIA FLARE
 
-#### Federated LLM Training [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb)]
+#### Federated LLM Training [[Open notebooks](./part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb)]
 - Learn how to train and fine-tune large language models in a federated setting with NVIDIA FLARE
 
-#### NVIDIA FLARE Low-level APIs [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb)]
+#### NVIDIA FLARE Low-level APIs [[Open notebooks](./part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb)]
 - Discover the power and flexibility of NVIDIA FLARE's low-level APIs
 
-#### Federated XGBoost [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb)]
+#### Federated XGBoost [[Open notebooks](./part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb)]
 - Step-by-step guide to secure federated XGBoost with NVIDIA FLARE
 
 ### [Federated Learning Applications in Industries](./part-5_federated_learning_applications_in_industries/part-5_introduction.ipynb)
@@ -132,18 +132,19 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
   - Anomaly detection in transactions
  
 
-#### Federated Learning in Healthcare and Life Sciences [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb)]
+#### Federated Learning in Healthcare and Life Sciences [[Open notebooks](./part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb)]
 - Use cases for NVIDIA FLARE in medical research, diagnostics, and drug discovery
 - How to train robust, privacy-preserving models across hospitals and research centers
 
-#### Federated Learning in Financial Services [[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb)]
+#### Federated Learning in Financial Services [[Open notebooks](./part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb)]
 - Collaborative model training for fraud detection, credit risk, and regulatory compliance
 
 ---
 
 ## Getting Started
 
-- Start with any part or topic of interest, or follow the sequence for a comprehensive journey.
+- Start with the validated [Running Federated Learning Applications guide](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) for the Recipe API and 2.10 environment setup.
+- Check each other section's migration status before using its notebooks with 2.10.
 - Refer to the official [NVIDIA FLARE documentation](https://nvflare.readthedocs.io/) for deeper dives and troubleshooting.
 
 ---
