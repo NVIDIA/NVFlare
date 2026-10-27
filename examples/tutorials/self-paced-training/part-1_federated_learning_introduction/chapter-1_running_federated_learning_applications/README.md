@@ -44,6 +44,22 @@ Use **NVFlare Self-Paced Training** in Jupyter. Run training commands in a termi
 
 All executable examples are in [code](code), shared across the notebooks:
 
+```text
+chapter-1_running_federated_learning_applications/
+├── code/                         # Shared runnable project
+│   ├── job.py
+│   ├── client.py
+│   ├── model.py
+│   └── ...
+├── 01.1_running_federated_learning_job/
+│   ├── setup.ipynb
+│   ├── running_pytorch_fl_job.ipynb
+│   └── code/README.md             # Links to the shared project
+└── ...
+```
+
+Open `code` directly under the chapter directory. The former lesson-specific `code/src` directories may remain locally because of ignored Jupyter checkpoints.
+
 | File | Lesson |
 | --- | --- |
 | `job.py` | Construct `FedAvgRecipe`, add final evaluation, and execute with `SimEnv` |
