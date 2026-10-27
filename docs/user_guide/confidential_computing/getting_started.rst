@@ -68,8 +68,15 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
 * For CoCo, the :ref:`implementation scope and hardware evidence limits
   <coco_security_architecture>` describe a mixed TDX CPU-only and SNP+NVIDIA GPU
   functional run on **2026-10-04**, with an ordinary trusted server. The workload
-  performed CPU arithmetic, not GPU training. Start with an existing CoCo-ready
-  cluster and configured Trustee, using the inputs in the
+  performed CPU arithmetic, not GPU training. **Before the four-step workflow,
+  deploy and verify both Trustee and the CoCo-ready Kubernetes cluster.** Follow
+  the `official Trustee installation guide
+  <https://confidentialcontainers.org/docs/attestation/installation/>`_ and, for
+  GPU workloads, the `NVIDIA CoCo/Kata GPU deployment guide (v1.0)
+  <https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy>`_
+  to prepare the Kata confidential GPU runtime and GPU Operator. CPU-only
+  profiles do not require GPU components. Use the supported component versions,
+  then proceed with the inputs in the
   :github_nvflare_link:`four-step deployment workflow
   <examples/devops/coco/README.md>`.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`
@@ -136,14 +143,15 @@ requirements. For CPU/GPU hardware and attestation specifications, see
      - `CoCo getting started <https://confidentialcontainers.org/docs/getting-started/>`_
      - Cluster prerequisites and confidential workloads.
    * - Trustee
-     - `Attestation with Trustee <https://confidentialcontainers.org/docs/attestation/>`_
-     - Attestation, policies, reference values, and resource release.
+     - `Trustee installation <https://confidentialcontainers.org/docs/attestation/installation/>`_
+       and `Attestation with Trustee <https://confidentialcontainers.org/docs/attestation/>`_
+     - Deploy the prerequisite service; review policies, reference values, and resource release.
    * - Kata Containers
      - `Kata 3.29.0 documentation <https://github.com/kata-containers/kata-containers/tree/3.29.0/docs>`_
      - Runtime and guest behavior for the supported Kata version.
    * - NVIDIA GPU Operator
-     - `Confidential Containers and Kata integration <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-operator-confidential-containers.html>`_
-     - Confidential-GPU workloads and operator integration.
+     - `NVIDIA CoCo/Kata GPU deployment (v1.0) <https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy>`_
+     - Prepare the prerequisite Kata GPU runtime and GPU Operator for the supported profile.
    * - Kubernetes
      - `RuntimeClass <https://kubernetes.io/docs/concepts/containers/runtime-class/>`_
        and `crictl <https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/>`_

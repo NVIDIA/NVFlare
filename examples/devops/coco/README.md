@@ -1,8 +1,17 @@
 # NVFlare on an existing CoCo-ready cluster
 
-This example starts with Kubernetes, Kata confidential runtimes, NVIDIA GPU
-Operator for GPU workloads, and configured Trustee KBS/AS/RVPS already running.
-It covers measurements, Trustee values, NVFlare images, and Pod launch.
+**Complete and verify these prerequisites before starting the four-step workflow:**
+
+- A running, configured **Trustee service (KBS/AS/RVPS)**. Follow the
+  [official Trustee installation guide](https://confidentialcontainers.org/docs/attestation/installation/).
+- A **CoCo-ready Kubernetes cluster with the supported Kata confidential runtime**.
+  GPU workloads require the Kata confidential GPU runtime and NVIDIA GPU Operator;
+  follow the [official NVIDIA CoCo/Kata GPU deployment guide (v1.0)](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy).
+  CPU-only profiles do not require the GPU components.
+
+Use the component versions required by the supported NVFlare profile. This
+example then covers measurements, Trustee values, NVFlare images, and Pod launch
+using those existing services.
 
 Run commands from `examples/devops/coco` in an NVFlare source checkout,
 except where a guide explicitly changes directory. The helper modules use that
