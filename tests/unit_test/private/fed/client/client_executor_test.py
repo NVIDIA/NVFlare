@@ -304,6 +304,53 @@ def test_replacement_failure_after_attachment_reaps_worker_before_releasing_reso
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
 
 
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True])
+@pytest.mark.parametrize("abort_before_publication", [False, True])
+def test_replacement_handle_publication_keeps_abort_live(tmp_path, heartbeat_cleanup, abort_before_publication):
+    def intercept_launch(executor, index, _):
+        if index != 0:
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_and_abort(meta, ctx):
+            if abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            if not abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle.terminate.assert_called_once()
+            return handle
+
+        launcher.launch_job.side_effect = publish_and_abort
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 9)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+
+
+def test_replacement_submission_failure_after_publication_reaps_accepted_worker(tmp_path):
+    def intercept_launch(executor, index, handle):
+        if index:
+            handle.terminate.assert_called_once()
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_then_fail(meta, ctx):
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            raise RuntimeError("launcher failed after accepting the replacement")
+
+        launcher.launch_job.side_effect = publish_then_fail
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+    handles[-1].wait.assert_called_once()
+
+
 def test_abort_while_replacement_launcher_has_not_returned(tmp_path):
     def intercept_launch(executor, index, _):
         if index != 0:
@@ -1324,3 +1371,127 @@ def test_recovery_launch_keeps_early_handle_abort_support(tmp_path, abort_before
     launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 0)], on_launch=on_launch)
     assert launcher.launch_job.call_count == 2
     handles[1].terminate.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", ["exception", "missing-return"])
+def test_initial_launch_failure_after_publication_keeps_owner_until_wait(tmp_path, failure):
+    meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    runtime = MagicMock(spec=JobHandleSpec)
+
+    def wait():
+        assert "job-1" in executor.run_processes
+
+    runtime.wait.side_effect = wait
+    launcher = MagicMock()
+
+    def launch(_meta, fl_ctx):
+        publish_job_handle(runtime, fl_ctx)
+        if failure == "exception":
+            raise RuntimeError("failed after native creation")
+        return None
+
+    launcher.launch_job.side_effect = launch
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with pytest.raises(RuntimeError):
+            executor.start_app(
+                client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    runtime.terminate.assert_called_once_with()
+    runtime.wait.assert_called_once_with()
+    assert "job-1" not in executor.run_processes
+    assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
+
+
+@pytest.mark.parametrize("failure", ["terminate", "wait", "both"])
+@pytest.mark.parametrize("missing_return", [False, True])
+def test_initial_published_launch_cleanup_retains_owner_through_backend_failure(tmp_path, failure, missing_return):
+    meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    runtime = MagicMock(spec=JobHandleSpec)
+    resources = MagicMock()
+    run_dir = tmp_path / "job-1"
+    write_job_cert(str(run_dir), b"cert", b"key")
+
+    def retained():
+        assert executor.get_run_processes_keys() == ["job-1"]
+        assert find_job_cert(str(run_dir)) is not None
+        resources.free_resources.assert_not_called()
+        client.send_request_before_shutdown.assert_not_called()
+        assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is not None
+
+    def terminate():
+        retained()
+        if runtime.terminate.call_count == 1 and failure in ("terminate", "both"):
+            raise RuntimeError("cancel API unavailable")
+
+    def wait():
+        retained()
+        if runtime.wait.call_count == 1 and failure in ("wait", "both"):
+            raise RuntimeError("query API unavailable")
+
+    runtime.terminate.side_effect = terminate
+    runtime.wait.side_effect = wait
+    launcher = MagicMock()
+
+    def launch(_meta, fl_ctx):
+        publish_job_handle(runtime, fl_ctx)
+        if missing_return:
+            return None
+        raise RuntimeError("original launch failure")
+
+    launcher.launch_job.side_effect = launch
+    message = "returned no job handle" if missing_return else "original launch failure"
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch("nvflare.private.fed.client.client_executor.time.sleep", side_effect=lambda _: retained()),
+        pytest.raises(RuntimeError, match=message),
+    ):
+        executor.start_app(
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            {"gpu": 1},
+            "token",
+            resources,
+            context,
+        )
+    attempts = 1 if failure == "terminate" else 2
+    assert runtime.terminate.call_count == attempts
+    assert runtime.wait.call_count == attempts
+    launcher.launch_job.assert_called_once()
+    assert executor.get_run_processes_keys() == []
+    assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
+
+
+@pytest.mark.parametrize("failure", ["terminate", "wait", "both"])
+def test_replacement_published_launch_cleanup_retains_owner_through_backend_failure(tmp_path, failure):
+    def on_launch(executor, index, handle, ctx):
+        if index != 1:
+            return
+        original_wait = handle.wait.side_effect
+
+        def terminate():
+            assert executor.get_run_processes_keys() == ["job-1"]
+            assert find_job_cert(str(tmp_path / "job-1")) is not None
+            if handle.terminate.call_count == 1 and failure in ("terminate", "both"):
+                raise RuntimeError("cancel API unavailable")
+
+        def wait():
+            original_wait()
+            if handle.wait.call_count == 1 and failure in ("wait", "both"):
+                raise RuntimeError("query API unavailable")
+
+        handle.terminate.side_effect = terminate
+        handle.wait.side_effect = wait
+        publish_job_handle(handle, ctx)
+        raise RuntimeError("replacement failed after native creation")
+
+    with patch("nvflare.private.fed.client.client_executor.time.sleep", return_value=None):
+        launcher, client, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_launch=on_launch)
+    attempts = 1 if failure == "terminate" else 2
+    assert handles[-1].terminate.call_count == attempts
+    assert handles[-1].wait.call_count == attempts
+    assert launcher.launch_job.call_count == 2
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
