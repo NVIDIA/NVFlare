@@ -105,7 +105,7 @@ def _execute(application, clients, *, abort=None, **options):
         with ThreadPoolExecutor(max_workers=len(clients)) as workers:
             proxies = []
             for index, client in enumerate(clients):
-                name = f"site-{index+1}"
+                name = f"site-{index + 1}"
                 app = ClientApp(client)
                 app.name = name
                 app._abort_signal = signal
