@@ -16,6 +16,7 @@
 
 import gc
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,8 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
 from nvflare.collab import collab
+from nvflare.collab.pt_seed import seed_worker, torch_seed_scope
+from nvflare.collab.seed_policy import SeedPolicy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 _TRAIN_TRANSFORM = transforms.Compose(
@@ -95,8 +98,8 @@ class Cifar10Trainer:
     def _device(self) -> torch.device:
         return torch.device(self.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
-    def _build_dataloader(self, logical_name: str) -> DataLoader:
-        if logical_name in self._dataloaders:
+    def _build_dataloader(self, logical_name: str, train_seed: int | None = None) -> DataLoader:
+        if train_seed is None and logical_name in self._dataloaders:
             return self._dataloaders[logical_name]
         indices_file = Path(self.train_idx_root).expanduser().resolve() / f"{logical_name}.npy"
         if not indices_file.is_file():
@@ -105,15 +108,24 @@ class Cifar10Trainer:
                 "Re-run job.py to regenerate the shared CIFAR-10 split."
             )
         indices = np.load(indices_file)
+        # Sampling has a separate stream from augmentation/dropout. Seeded
+        # loaders are assignment-local so worker RNGs are restarted correctly.
+        generator = None
+        if train_seed is not None:
+            data_seed = SeedPolicy(train_seed).seed("data")
+            generator = torch.Generator().manual_seed(data_seed)
         dataloader = DataLoader(
             Subset(self._dataset, indices.tolist()),
             batch_size=self.local_batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=self.num_workers > 0 and train_seed is None,
+            generator=generator,
+            worker_init_fn=seed_worker if train_seed is not None else None,
         )
-        self._dataloaders[logical_name] = dataloader
+        if train_seed is None:
+            self._dataloaders[logical_name] = dataloader
         return dataloader
 
     def _prepare_model(self, global_model: dict[str, torch.Tensor], device: torch.device):
@@ -129,6 +141,7 @@ class Cifar10Trainer:
         model_version: int,
         global_model: dict[str, torch.Tensor],
         logical_assignments: dict[str, str],
+        train_seeds: dict[str, int] | None = None,
     ):
         started = time.time()
         if collab.is_aborted:
@@ -143,55 +156,65 @@ class Cifar10Trainer:
             f"(physical={physical_name}, logical={logical_name})"
         )
 
-        data_started = time.time()
-        dataloader = self._build_dataloader(logical_name)
-        data_time = time.time() - data_started
-
-        model_started = time.time()
         device = self._device()
-        model = self._prepare_model(global_model, device)
-        optimizer = self._optimizer
-        criterion = nn.CrossEntropyLoss()
-        model_time = time.time() - model_started
+        train_seed = None if train_seeds is None else train_seeds[physical_name]
+        cuda_devices = []
+        if train_seed is not None and device.type == "cuda":
+            cuda_devices = [device.index if device.index is not None else torch.cuda.current_device()]
+        rng_scope = nullcontext() if train_seed is None else torch_seed_scope(train_seed, cuda_devices=cuda_devices)
+        # One training call runs per physical worker. Preserve process RNG state
+        # so assignment order does not consume another component's random stream.
+        with rng_scope:
+            data_started = time.time()
+            dataloader = self._build_dataloader(logical_name, train_seed)
+            data_time = time.time() - data_started
 
-        train_started = time.time()
-        model.train()
-        total_loss = 0.0
-        num_steps = self.aggregation_epochs * len(dataloader)
-        if num_steps == 0:
-            raise ValueError(f"Prepared shard for '{logical_name}' contains no training batches")
-        for _epoch in range(self.aggregation_epochs):
+            model_started = time.time()
+            model = self._prepare_model(global_model, device)
+            optimizer = self._optimizer
+            criterion = nn.CrossEntropyLoss()
+            model_time = time.time() - model_started
+
+            train_started = time.time()
             model.train()
-            for inputs, labels in dataloader:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-                optimizer.zero_grad()
-                loss = criterion(model(inputs), labels)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
-            if self._scheduler.last_epoch < self._scheduler.T_max:
-                self._scheduler.step()
-        train_time = time.time() - train_started
+            total_loss = 0.0
+            num_steps = self.aggregation_epochs * len(dataloader)
+            if num_steps == 0:
+                raise ValueError(f"Prepared shard for '{logical_name}' contains no training batches")
+            for _epoch in range(self.aggregation_epochs):
+                model.train()
+                for inputs, labels in dataloader:
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
+                    optimizer.zero_grad()
+                    loss = criterion(model(inputs), labels)
+                    loss.backward()
+                    optimizer.step()
+                    total_loss += loss.item()
+                if self._scheduler.last_epoch < self._scheduler.T_max:
+                    self._scheduler.step()
+            train_time = time.time() - train_started
 
-        metrics = {
-            "train_loss": total_loss / num_steps,
-            "num_samples": len(dataloader.dataset),
-            "num_steps": num_steps,
-        }
-        updated_state = get_model_params(model, target_device="cpu")
-        gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+            metrics = {
+                "train_loss": total_loss / num_steps,
+                "num_samples": len(dataloader.dataset),
+                "num_steps": num_steps,
+            }
+            updated_state = get_model_params(model, target_device="cpu")
+            gc.collect()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
-        self.logger.info(
-            f"[{collab.call_info}] completed assignment {assignment_id} (logical={logical_name}); "
-            f"loss={metrics['train_loss']:.4f}; data={data_time:.3f}s, model={model_time:.3f}s, "
-            f"training={train_time:.3f}s, total={time.time() - started:.3f}s"
-        )
+            self.logger.info(
+                f"[{collab.call_info}] completed assignment {assignment_id} (logical={logical_name}); "
+                f"loss={metrics['train_loss']:.4f}; data={data_time:.3f}s, model={model_time:.3f}s, "
+                f"training={train_time:.3f}s, total={time.time() - started:.3f}s"
+            )
         metadata = {
             "assignment_id": assignment_id,
             "model_version": model_version,
             "logical_name": logical_name,
         }
+        if train_seed is not None:
+            metadata["train_seed"] = train_seed
         return updated_state, metrics, metadata

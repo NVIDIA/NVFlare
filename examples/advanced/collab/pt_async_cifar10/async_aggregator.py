@@ -42,7 +42,7 @@ _TEST_TRANSFORM = transforms.Compose(
 
 def seed_everything(seed: int) -> None:
     random.seed(seed)
-    np.random.seed(seed)
+    np.random.seed(seed % 2**32)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -83,7 +83,7 @@ class Cifar10AsyncApplication:
         self._run_dir = None
 
     def _new_model(self):
-        return ModerateCNN()
+        return ModerateCNN(seed=self.setup_seed)
 
     def _device(self) -> torch.device:
         return torch.device(self.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -93,6 +93,9 @@ class Cifar10AsyncApplication:
         tensorboard_dir = os.path.join(self._run_dir, "tensorboard")
         os.makedirs(tensorboard_dir, exist_ok=True)
         self._writer = SummaryWriter(log_dir=tensorboard_dir)
+        # A new run records only its own dispatch/accept sequence and seeds.
+        with open(os.path.join(self._run_dir, "schedule.jsonl"), "w"):
+            pass
         self.logger.info(f"TensorBoard logs: {tensorboard_dir}")
 
     def _init_test_loader(self):
@@ -172,6 +175,12 @@ class Cifar10AsyncApplication:
             os.makedirs(round_dir, exist_ok=True)
             torch.save(model, os.path.join(round_dir, f"model_round_{version}.pt"))
         gc.collect()
+
+    def on_event(self, event):
+        from dataclasses import asdict
+
+        with open(os.path.join(self._run_dir, "schedule.jsonl"), "a") as trace:
+            trace.write(json.dumps(asdict(event)) + "\n")
 
     def on_finish(self, model, version):
         self._evaluate_snapshots()

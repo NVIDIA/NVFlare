@@ -28,6 +28,8 @@ from trainer import Cifar10Trainer
 
 from nvflare.collab import AsyncRecipe
 from nvflare.collab.async_models.pytorch import PTAsyncModelAdapter
+from nvflare.collab.async_scheduling import ReplayScheduler
+from nvflare.collab.seed_policy import SeededTrainArgs, SeedPolicy
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_async_cifar10"
@@ -87,7 +89,19 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--call-timeout", type=float, default=3600.0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--setup-seed", type=int, default=10)
-    parser.add_argument("--run-seed", type=int, default=10)
+    parser.add_argument(
+        "--run-seed",
+        type=int,
+        default=10,
+        help="Root for assignment training seeds; arrival order is controlled separately",
+    )
+    parser.add_argument(
+        "--arrival-sequence",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Replay assignment IDs in this order (num-rounds * buffer-size entries)",
+    )
     parser.add_argument("--checkpoint-interval", type=int, default=0)
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
     return parser
@@ -144,6 +158,8 @@ def make_recipe(args) -> AsyncRecipe:
         min_open_slots=args.min_open_slots,
         server_lr=args.server_lr,
         weight_metric="num_steps",
+        train_kwargs=SeededTrainArgs(SeedPolicy(args.run_seed)),
+        scheduler=ReplayScheduler(args.arrival_sequence) if args.arrival_sequence is not None else None,
         call_timeout=args.call_timeout,
         client=client,
         min_clients=args.num_clients,

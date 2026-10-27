@@ -17,10 +17,12 @@ from nvflare.collab.async_scheduling import (
 from nvflare.collab.async_storage import (
     SnapshotStore, ResultStore, MemorySnapshotStore, MemoryResultStore,
 )
+from nvflare.collab.seed_policy import SeedPolicy, SeededTrainArgs
 from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
 
 # Optional, for PyTorch applications:
 from nvflare.collab.async_models.pytorch import PTAsyncModelAdapter
+from nvflare.collab.pt_seed import torch_seed_scope, seed_worker
 ```
 
 The engine/result types work independently of a recipe. The recipe and NumPy
@@ -210,6 +212,99 @@ trace. `current_version` on an acceptance event is the version **before** that
 update, so staleness is `current_version - base_version`. A physical dispatch
 event can occur after logical reservation and reports both versions explicitly.
 
+### Reusable seed policy
+
+`SeedPolicy` is usable without Collab initialization or a tensor framework. It
+uses a fixed `nvflare.seed.v1` encoding and SHA-256 to derive 63-bit seeds from
+`run_seed`, a named stream, and optional assignment/logical identity. It does not
+use Python's randomized `hash()`, a physical worker name, wall-clock time, or a
+mutable global generator. Derivation and policy construction do not change RNG
+state. The v1 mapping has fixed reference-vector tests.
+
+```python
+policy = SeedPolicy(run_seed=10)
+training_seed = policy.seed("train", assignment_id=7, logical_name="alice")
+probe_rng = policy.numpy_rng("probe")
+schedule_rng = policy.numpy_rng("schedule")
+# These generators advance independently; KD draws do not consume either one.
+kd_rng = policy.numpy_rng("kd")
+```
+
+`python_rng` and `numpy_rng` create **fresh** caller-owned generators. Retain a
+generator to advance its stream; asking for a fresh generator restarts it. The
+policy does not own mutable component state or checkpoint recovery. The optional
+assignment identity can also scope per-update KD/probe seeds. Use distinct names
+for selection, delays, probes, synthesis, KD and client training when they must
+remain independent during ablations.
+
+Attach client seeds through the existing extension point:
+
+```python
+recipe = AsyncRecipe(
+    job_name="seeded_replay", client=SeededClient(), application=MyApplication(),
+    model_adapter=NumpyAsyncModelAdapter(),
+    num_updates=4, num_active_jobs=2, buffer_size=1,
+    scheduler=ReplayScheduler([1, 0, 3, 2]),
+    train_kwargs=SeededTrainArgs(policy),
+)
+```
+
+`SeededTrainArgs` derives `train_seed` from the logical name and assignment ID,
+records it in the assignment's server-owned metadata before dispatch, and sends
+`train_seeds={physical_site: seed}`. An explicit `metadata["train_seed"]` takes
+precedence so recorded seeds can be replayed. The adapter validates the seed
+range; it does not apply RNG state on another process's behalf. Seed values are
+included in dispatch/accept traces, and a cooperating client echoes the applied
+seed in result metadata. Both policy and adapter reconstruct through job export.
+
+The FedRevive research implementation already uses the underlying pattern:
+assignment-derived training seeds, a dedicated scheduling RNG, and a separate
+probe generator. Its linear `run_seed * 1_000_000 + assignment_id + 1` mapping
+is distinct from the generic v1 mapping. The research implementation is not
+migrated here; preserving one of its seed values uses explicit assignment
+metadata. That alone does not assert equivalent training/delay configurations.
+
+For clients using PyTorch:
+
+```python
+from nvflare.collab.pt_seed import torch_seed_scope, seed_worker
+
+seed = train_seeds[collab.site_name]
+data_seed = SeedPolicy(seed).seed("data")
+loader = DataLoader(
+    dataset, shuffle=True, num_workers=2,
+    generator=torch.Generator().manual_seed(data_seed),
+    worker_init_fn=seed_worker, persistent_workers=False,
+)
+with torch_seed_scope(seed):  # CPU-only; select cuda_devices=[index] for CUDA.
+    train(model, loader)
+```
+
+The context temporarily seeds Python, NumPy's legacy global RNG, CPU PyTorch,
+and any explicitly selected CUDA devices. It restores their states on success
+or failure. Existing independent Generator objects are caller-owned and need
+explicit seeds. The CPU default does not initialize/seed CUDA or change backend
+flags. Cooperating scopes serialize access to process-global RNGs; unrelated
+threads must not use those RNGs concurrently. For CUDA, list every device used
+by training; device RNG state outside that list is untouched.
+
+`seed_worker` extends each DataLoader worker's PyTorch seed to Python and NumPy.
+Use an explicit loader generator, and recreate workers when an assignment seed
+changes. Persistent workers do not rerun their initializer for a new assignment.
+The CIFAR client follows these rules while keeping its SGD optimizer and cosine
+scheduler persistent. Its `--run-seed` now controls actual client training;
+`--setup-seed` is passed to initial model construction. Its traces include the
+selected training seeds. Direct four-argument calls remain supported without
+an assignment seed.
+
+Seed control and replay address different parts of reproducibility. The default
+actual-arrival scheduler still depends on host timing. Fixed seeds do not force
+deterministic kernels, device arithmetic, software versions, or checkpointed
+optimizer state; see [PyTorch's reproducibility guidance](https://docs.pytorch.org/docs/2.2/notes/randomness.html).
+The tests compare repeated stochastic CPU training/model hashes, including
+worker processes and async replay over different physical worker counts. CUDA
+training and the full CIFAR accuracy experiment are not qualified by those tests.
+
 ### Custom scheduling and simulated time
 
 Implement `AsyncScheduler` for sampled delay profiles, phase events, or another
@@ -289,7 +384,7 @@ The source workflow needs the following independently switchable pieces:
 | K logical jobs over a small physical pool | engine.reserve plus ScheduledCall worker binding. |
 | Seeded download/train/upload delays, logical release before upload | Custom AsyncScheduler phase events and optional `time`. |
 | Simulated-time budget with a version safety limit | Scheduler `finished` plus recipe `num_updates`; partial buffers are discarded. |
-| Per-assignment training seeds | Assignment metadata plus train_kwargs. |
+| Per-assignment training seeds | SeedPolicy plus SeededTrainArgs, with explicit trace-seed overrides. |
 | Exact bases and early results offloaded to disk | SnapshotStore and ResultStore. |
 | Full uploaded teachers, two-upload class proxies | AcceptedUpdate.returned_model, metadata and assignment.logical_name. |
 | Teacher buffer, generator cadence, KD warmup and cosine stale mixing | Stateful update_transform using current_version/staleness; optional initialize/close. |

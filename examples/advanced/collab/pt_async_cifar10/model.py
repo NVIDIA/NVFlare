@@ -51,7 +51,7 @@ def set_seed(seed: int) -> None:
     import numpy as np
 
     random.seed(seed)
-    np.random.seed(seed)
+    np.random.seed(seed % 2**32)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
