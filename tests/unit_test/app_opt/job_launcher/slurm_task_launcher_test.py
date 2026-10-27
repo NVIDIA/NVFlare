@@ -21,6 +21,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
@@ -236,6 +237,52 @@ def test_allocation_and_step_failures_are_attributable(backend, kwargs):
     assert status.settled and not status.succeeded
     assert "42" in status.failure_reason
     assert status.termination_signal == (kwargs.get("exit_signal") or kwargs.get("derived_exit_signal"))
+
+
+@pytest.mark.parametrize("state", ["PREEMPTED", "REVOKED", "LAUNCH_FAILED", "RECONFIG_FAIL"])
+@pytest.mark.parametrize("step", [None, "COMPLETED"])
+def test_infrastructure_terminal_states_settle_as_failures(backend, state, step):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state=state, step=step)
+    status = launcher.launch_task(request).poll()
+    assert status.settled and not status.succeeded
+    assert state in status.failure_reason
+
+
+def test_settled_handle_releases_memory_but_retains_control_evidence(backend):
+    launcher, adapter, request = backend
+    adapter.active_by_id.return_value = _query("RUNNING")
+    handle = launcher.launch_task(request)
+    assert handle.nvflare_job_id in launcher.manager._handles
+    assert not handle.poll().settled
+    adapter.active_by_id.return_value = _query()
+    assert handle.poll().succeeded
+    assert handle.nvflare_job_id not in launcher.manager._handles
+    assert Path(handle.job_dir, "identity.json").is_file()
+    assert Path(handle.job_dir, "scheduler.jsonl").is_file()
+    with pytest.raises(SlurmLauncherError, match="stale Slurm artifacts"):
+        launcher.launch_task(request)
+
+
+def test_settlement_wait_refreshes_lagging_accounting_inside_default_budget(backend, monkeypatch):
+    launcher, adapter, request = backend
+    now = [0.0]
+    launcher.manager._monotonic = lambda: now[0]
+    launcher.manager.config = replace(launcher.manager.config, poll_interval=10.0)
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.time", SimpleNamespace(time=lambda: 0.0, sleep=sleep)
+    )
+    adapter.task_accounting.side_effect = lambda *args, **kwargs: _accounting(
+        step="RUNNING" if now[0] < 2 else "COMPLETED"
+    )
+    handle = launcher.launch_task(request)
+    assert not handle.poll().settled
+    assert handle.wait_for_settlement(10.0).succeeded
+    assert now[0] == 2.0, "settlement must refresh accounting before the ordinary ten-second poll interval"
 
 
 def test_controller_recheck_blocks_completion_race(backend):

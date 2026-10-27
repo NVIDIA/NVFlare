@@ -60,7 +60,13 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     normalize_slurm_executables,
     normalize_slurm_workspace_path,
 )
-from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobHandle, SlurmJobManager, _ensure_dir, _write_exclusive
+from nvflare.app_opt.job_launcher.slurm.manager import (
+    SlurmJobHandle,
+    SlurmJobManager,
+    _ensure_dir,
+    _is_terminal,
+    _write_exclusive,
+)
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
@@ -81,16 +87,6 @@ class _JobBinding:
     environment: tuple
 
 
-_TERMINAL = {
-    "BOOT_FAIL",
-    "CANCELLED",
-    "COMPLETED",
-    "DEADLINE",
-    "FAILED",
-    "NODE_FAIL",
-    "OUT_OF_MEMORY",
-    "TIMEOUT",
-}
 _QUEUED = {"PENDING", "CONFIGURING"}
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
 _ALLOCATION_ENV = (
@@ -256,7 +252,8 @@ class SlurmTaskManager(SlurmJobManager):
                 forward_env=(),
             )
             argv = _submission_argv(plan, job_dir, name, self._marker(key), self.config)
-            self._handles[key] = handle
+            with self._lock:
+                self._handles[key] = handle
             try:
                 submission = self.adapter.submit(argv, self.config.submit_timeout)
                 handle.job_id, handle.cluster = submission.job_id, submission.cluster
@@ -326,6 +323,9 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         self._last_status = status
         if settled:
             self._settled = status
+            with self.manager._lock:
+                if self.manager._handles.get(self.nvflare_job_id) is self:
+                    self.manager._handles.pop(self.nvflare_job_id)
         return status
 
     def poll(self):
@@ -359,7 +359,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         if active.status == LookupStatus.FOUND:
             record = active.records[0]
             phase = TaskExecutionPhase.QUEUED if record.state in _QUEUED else TaskExecutionPhase.RUNNING
-            if record.state in _TERMINAL:
+            if _is_terminal(record.state):
                 phase = TaskExecutionPhase.TERMINAL
             if (
                 phase == TaskExecutionPhase.QUEUED
@@ -386,7 +386,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             self._record("accounting", records=evidence)
             self._last_evidence = evidence
         allocation = next(r for r in records if r.job_id == self.job_id)
-        if allocation.state not in _TERMINAL or any(r.state not in _TERMINAL for r in records):
+        if not _is_terminal(allocation.state) or any(not _is_terminal(r.state) for r in records):
             return self._status(TaskExecutionPhase.TERMINAL, failure="Slurm allocation/steps have not settled")
         # A completed allocation must include its batch step. A queued cancel
         # or launch failure can legitimately have no steps at all.
@@ -429,13 +429,18 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             raise ValueError("timeout must be finite and nonnegative or None")
         deadline = None if timeout is None else self.manager._monotonic() + timeout
         while True:
-            status = self.poll()
+            # An explicit settlement wait must not consume its entire budget
+            # behind a prior poll's throttle while terminal accounting catches up.
+            with self.operation_lock:
+                self._next_query_at = float("-inf")
+                status = self.poll()
             if status.settled:
                 return status
             remaining = None if deadline is None else deadline - self.manager._monotonic()
             if remaining is not None and remaining <= 0:
                 raise TimeoutError(f"Slurm task settlement is unconfirmed: {self.execution_id}")
-            time.sleep(self.poll_interval if remaining is None else min(self.poll_interval, remaining))
+            interval = min(self.poll_interval, 1.0)
+            time.sleep(interval if remaining is None else min(interval, remaining))
 
     def cancel(self):
         with self.operation_lock:
@@ -474,7 +479,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         executables=None,
         submit_timeout=30.0,
         query_timeout=10.0,
-        cancel_timeout=30.0,
+        cancel_timeout=120.0,
         poll_interval=10.0,
         pending_timeout=600.0,
         python_path="/usr/bin/python3",
@@ -580,7 +585,11 @@ class SlurmTaskLauncher(TaskLauncherSpec):
 
         job_id, site_name = fl_ctx.get_job_id(), fl_ctx.get_identity_name()
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
-        if not job_id or not site_name or workspace.get_root_dir() != self._site_config.workspace_path:
+        if (
+            not job_id
+            or not site_name
+            or os.path.realpath(workspace.get_root_dir()) != self._site_config.workspace_path
+        ):
             raise ValueError("Slurm task START_RUN requires the owning CJ's job/site/shared workspace")
         meta = fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}
         resources = task_resources(self, meta, site_name)
@@ -595,7 +604,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
         binding = _JobBinding(
             job_id,
             site_name,
-            workspace.get_run_dir(job_id),
+            os.path.realpath(workspace.get_run_dir(job_id)),
             resources,
             replace(config, pending_timeout=resources.pending_timeout),
             python_path,
@@ -649,7 +658,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
                     raise TaskLauncherError("Slurm Cell credential path is not a shared regular file") from error
         artifact_root = os.path.realpath(bootstrap.artifact_root)
         if (
-            bootstrap.workspace_root != root
+            os.path.realpath(bootstrap.workspace_root) != root
             or os.path.commonpath((root, artifact_root)) != root
             or os.stat(artifact_root).st_dev != os.stat(root).st_dev
         ):
@@ -663,6 +672,7 @@ class SlurmTaskLauncher(TaskLauncherSpec):
             argv=(binding.python_path, "-m", WORKER_MODULE, "--bootstrap", path),
             environment=dict(binding.environment),
             resources=resource_request(binding.resources),
+            cwd=os.path.realpath(request.cwd) if request.cwd else None,
         )
 
     def launch_task(self, request: TaskLaunchRequest):

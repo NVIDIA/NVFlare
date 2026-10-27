@@ -202,6 +202,36 @@ def test_unsupported_task_resource_contract_is_rejected(profile, native):
         task_resources(task, {"launcher_spec": {"site-1": {"slurm": native}}}, "site-1")
 
 
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+def test_cj_reads_all_config_service_formats_before_selecting_lifetime(profile, lifetime, extension):
+    root, workspace, _, cj, _ = profile
+    path = Path(workspace.get_client_app_config_file_path("job-1"))
+    path.unlink()
+    if extension == "json":
+        path.write_text(json.dumps({"execution_lifetime": lifetime}))
+    elif extension == "conf":
+        path.with_suffix(".conf").write_text('include "lifetime.conf"\n')
+        path.with_name("lifetime.conf").write_text(f'execution_lifetime = "{lifetime}"\n')
+    else:
+        path.with_suffix(".yml").write_text(f"execution_lifetime: {lifetime}\n")
+    plan = cj._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(root))
+    assert plan.execution_lifetime == lifetime
+
+
+@pytest.mark.parametrize("alias", ["trailing_slash", "symlink"])
+def test_start_run_compares_the_canonical_workspace(profile, tmp_path, alias):
+    root, _, _, _, task = profile
+    if alias == "symlink":
+        link = tmp_path / "workspace-alias"
+        link.symlink_to(root, target_is_directory=True)
+        path = str(link)
+    else:
+        path = str(root) + "/"
+    task.handle_event(EventType.START_RUN, _context(Workspace(path, site_name="site-1"), {}))
+    assert task._binding.run_dir == str(root / "job-1")
+
+
 def test_cpu_cj_separate_allocation_preserves_original_task_metadata(profile):
     root, workspace, site, cj, task = profile
     meta = {
@@ -444,23 +474,31 @@ def test_start_run_binding_is_immutable_and_preserves_study_policy(profile):
 
 
 @pytest.mark.parametrize("gpu_count", [0, 1])
+@pytest.mark.parametrize("workspace_alias", [False, True])
 @pytest.mark.usefixtures("isolated_fobs")
 def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(
-    tmp_path, monkeypatch, gpu_count, cj_cell
+    tmp_path, monkeypatch, gpu_count, cj_cell, workspace_alias
 ):
     backend = _backend(tmp_path, monkeypatch, gpu_count, worker_listener_host="127.0.0.1")
     launcher, adapter, request = backend
     launcher.python_path = sys.executable
     launcher.environment["PYTHONPATH"] = os.getcwd()
     identity, store, arguments = _supervisor_case(backend, write_result=False)
-    workspace = Workspace(launcher.manager.config.workspace_path, site_name="site-1")
+    workspace_root = launcher.manager.config.workspace_path
+    if workspace_alias:
+        alias = tmp_path / "workspace-link"
+        alias.symlink_to(workspace_root, target_is_directory=True)
+        workspace_root = str(alias)
+    workspace = Workspace(workspace_root, site_name="site-1")
     meta = {
         "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": gpu_count, "cpus_per_node": 3, "time": "00:03:00"}}}
     }
     launcher.handle_event(EventType.START_RUN, _context(workspace, meta))
     cell_session.listen(cj_cell, launcher.get_worker_listener_host())
     session = cell_session.CellWorkerSession(cj_cell, lambda data: None)
-    arguments["bootstrap"] = replace(arguments["bootstrap"], cell_session=session.bootstrap_fields())
+    arguments["bootstrap"] = replace(
+        arguments["bootstrap"], workspace_root=workspace_root, cell_session=session.bootstrap_fields()
+    )
 
     def factory(attempt, path):
         return replace(
@@ -476,6 +514,7 @@ def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(
             ),
             environment={"CJ_PRIVATE": "not forwarded"},
             resources=TaskResourceRequest(),
+            cwd=workspace.get_run_dir(attempt.job_id),
         )
 
     def submit(argv, timeout):
