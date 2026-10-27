@@ -14,7 +14,6 @@
 """Slurm CP adapter with separate CJ and per-task compute allocations."""
 
 import copy
-import json
 import math
 import os
 from dataclasses import replace
@@ -34,7 +33,6 @@ from nvflare.app_opt.job_launcher.slurm.task_policy import (
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
-from nvflare.private.fed.task_worker.protocol import _open_regular
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
     portable_memory_to_mib,
@@ -100,8 +98,7 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         job_id = job_meta.get(JobConstants.JOB_ID)
         check_job_id(job_id)
-        with _open_regular(workspace.get_client_app_config_file_path(job_id)) as stream:
-            config = json.load(stream)
+        config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
         lifetime = get_client_execution_lifetime(config)
         validate_cj_execution_lifetime(job_meta, fl_ctx.get_identity_name(), lifetime)
         if lifetime == ExecutionLifetime.JOB:

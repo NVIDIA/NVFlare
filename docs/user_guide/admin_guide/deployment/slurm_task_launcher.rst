@@ -256,7 +256,7 @@ In the canonical site resources file, select the exact matching pair::
             "gpu_count": 0,
             "sbatch_directives": {"account": "site-account", "partition": "task-compute"},
             "poll_interval": 10,
-            "cancel_timeout": 60
+            "cancel_timeout": 120
           }
         }
       }
@@ -315,6 +315,13 @@ cannot erase cancellation intent. Acknowledgement is followed by polling for
 allocation/step release. Cancellation timeout raises ``TaskSettlementError``;
 scripts, diagnostics and the handle remain owned. A delayed terminal state
 can subsequently be observed without rerunning compute.
+
+The task adapter defaults ``cancel_timeout`` to 120 seconds to allow the
+scheduler's termination grace period and epilog/accounting delay. Sites should
+set it above their configured KillWait plus cleanup delay. A settlement wait
+queries immediately with at most one second between queries while accounting catches up;
+ordinary polling retains the configured Slurm poll interval. Neither timeout
+expiry nor a cancellation acknowledgement authorizes resource release.
 
 If sbatch throws, times out, returns an invalid response or reports another
 cluster, ``TaskLaunchError.handle`` retains the unresolved execution. The
