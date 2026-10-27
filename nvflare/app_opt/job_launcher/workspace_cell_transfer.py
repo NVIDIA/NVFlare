@@ -50,12 +50,14 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
 from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_DIR_NAME,
@@ -714,6 +716,13 @@ def download_workspace(args, secure_mode: bool) -> None:
         with zipfile.ZipFile(bundle_path) as zf:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
+        # The bootstrap Cell was created before the site configuration existed
+        # and may have cached clear/default communication settings. Make the
+        # downloaded workspace visible and reload those settings before any
+        # subsequent job Cell or configuration-built component is created.
+        ConfigService.reset()
+        ConfigService.initialize(section_files={}, config_path=[args.workspace])
+        CommConfigurator.reset()
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

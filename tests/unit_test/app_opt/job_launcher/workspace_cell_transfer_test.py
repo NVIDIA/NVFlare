@@ -40,11 +40,16 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     upload_results,
     upload_results_on_shutdown,
 )
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 from nvflare.private.fed.utils.job_cert_utils import job_cert_uris
 from tests.timing_utils import isolate_time
@@ -938,3 +943,75 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.app_opt.job_launcher.workspace_cell_transfer",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_communication_config(monkeypatch):
+    for name, value in (
+        ("_sections", {}),
+        ("_config_path", []),
+        ("_cmd_args", None),
+        ("_var_dict", None),
+        ("_var_values", {}),
+    ):
+        monkeypatch.setattr(ConfigService, name, value)
+    monkeypatch.setattr(CommConfigurator, "_config_loaded", False)
+    monkeypatch.setattr(CommConfigurator, "_configuration", None)
+
+
+@pytest.mark.parametrize("owner", ["site-1", "server"])
+@pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
+@pytest.mark.parametrize("security", ["mtls", "clear"])
+def test_downloaded_site_security_replaces_bootstrap_defaults(tmp_path, monkeypatch, owner, extension, security):
+    # Even unstarted configuration probes register Cells and statistics pools.
+    monkeypatch.setattr(CoreCell, "ALL_CELLS", {})
+    monkeypatch.setattr(StatsPoolManager, "pools", {})
+    # Workspace transfer constructs a Cell before the site files are available.
+    # The parent link carries its explicit security; a later CJ listener needs
+    # the downloaded site settings rather than this early process-wide cache.
+    bootstrap = Cell(
+        f"{owner}.{JOB_ID}.workspace",
+        "tcp://localhost:1234",
+        secure=False,
+        credentials={},
+        create_internal_listener=False,
+    )
+    assert bootstrap.core_cell.connector_manager.int_resources["connection_security"] == "clear"
+    config = {
+        "internal": {"scheme": "tcp", "resources": {"host": owner, "port": 8102, "connection_security": security}}
+    }
+    config["max_message_size"] = 16777216
+    text = json.dumps(config)
+    if extension == "yaml":
+        text = f"max_message_size: 16777216\ninternal:\n  scheme: tcp\n  resources:\n    host: {owner}\n    port: 8102\n    connection_security: {security}\n"
+    bundle = tmp_path / "bundle.zip"
+    _make_zip(str(bundle), {f"local/comm_config.{extension}": text.encode()})
+    fake = _FakeCell(
+        fqcn=owner, reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1", "sha256": _hash_file(str(bundle))})
+    )
+    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, owner)
+    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell", lambda *_: fake)
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
+    )
+    args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID)
+    job_cell = None
+    try:
+        download_workspace(args, secure_mode=False)
+        # Normal startup initialization still follows the download. Repeating it
+        # cannot repair a CommConfigurator that cached the bootstrap defaults.
+        ConfigService.initialize(section_files={}, config_path=[args.workspace])
+        job_cell = Cell(
+            f"{owner}.{JOB_ID}", "tcp://localhost:1234", secure=False, credentials={}, create_internal_listener=False
+        )
+        manager = job_cell.core_cell.connector_manager
+        assert manager.int_resources["connection_security"] == security
+        assert job_cell.core_cell.max_msg_size == 16777216
+        assert manager.int_resources["host"] == owner
+        assert manager.int_resources["port"] == 8102
+        assert bootstrap.core_cell.connector_manager.int_resources["connection_security"] == "clear"
+    finally:
+        if job_cell:
+            job_cell.stop()
+        bootstrap.stop()
