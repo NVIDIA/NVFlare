@@ -26,8 +26,11 @@ resources or reject unsupported requirements before compute.
 Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
 admits at most one unsettled attempt per job. Worker memory, optimizer state and
 executor instances do not survive an assignment. Application-selected checkpoint
-files can survive. Persistent files do not provide automatic CJ resume, CP restart
-adoption, physical task retry or distributed training.
+files can survive. Process CJ recovery can replace a failed CJ only after its job
+handle confirms termination. This Kubernetes profile does not opt into CJ restart:
+its CP still fences unsettled attempts and refuses retained subtree adoption.
+Persistent files alone do not provide CP restart adoption, physical task retry or
+distributed training.
 
 Four separate facts govern the lifecycle:
 
@@ -55,7 +58,8 @@ after server restart.
    checkpoint candidate, and publishes an immutable completion record.
 5. The supervisor confirms physical settlement and validates completion identity,
    worker PID, payload sizes and digests before consuming output.
-6. CJ reports diagnostics and replays worker logs/analytics. Only after those
+6. CJ reports diagnostics and replays worker logs. Metrics have already been
+   delivered live through the worker's Cell session. Only after those
    fallible steps succeed does it promote a valid optional checkpoint locally,
    followed by downstream result processing/filters and submission.
 7. CJ retries submission of that saved result until an identity-bound terminal
@@ -174,8 +178,13 @@ A Client API task script runs on the worker's main thread, receives one input an
 sends one result through the shared InProcessClientAPI, then exits. Script arguments,
 FULL/DIFF exchange, metadata and rank semantics are preserved. Sending durably
 stages output; script/finalizer failure before completion still fails the attempt.
-Analytics are spooled to disk and replayed once by CJ after settlement. Worker
-logs are also replayed through CJ logging, bounded to 1 MiB and 4,096 lines;
+Metrics travel live over a worker-to-CJ Cell session. CJ fires each metric into
+its active attempt's context before replying; unsupported/rejected metric data
+fails the worker, while tracking-receiver exceptions are logged as in job mode.
+A metric request waits up to 30 seconds for CJ's reply. The session closes after
+physical settlement and rejects later metrics. Analytics are not stored in an
+attempt spool or replayed on resubmission. Worker logs are replayed through CJ
+logging after settlement, bounded to 1 MiB and 4,096 lines;
 the complete file remains available for diagnosis. The first failure retains its
 type, message and diagnostic path; a later cleanup failure cannot replace it.
 
@@ -288,7 +297,7 @@ copy of the last committed checkpoint (or None) and an attempt-unique pending
 `output` path. The script uses its own framework to load/save that opaque file.
 The worker seals it after finalization and binds its checksum to the completion.
 
-After settlement, output validation and diagnostic/analytics replay, CJ atomically
+After settlement, output validation and diagnostic/log replay, CJ atomically
 promotes the candidate with the completion identity and result reference, before
 result submission. Missing, invalid or cancelled candidates, and failures before
 checkpoint manifest replacement (including replay failure), leave previous state
@@ -350,6 +359,17 @@ its CA. Unsecured kits without a root CA use a digest of the public kit payload.
 Changing a trust root or unsecured kit requires a fresh Secret name or deliberate
 operator-managed replacement after stopping its consumers.
 
+Workers connect directly to CJ's live Cell listener, on a port selected by CJ.
+CP injects `NVFLARE_K8S_CJ_POD_IP` from `status.podIP`; K8sTaskLauncher advertises
+that IPv4 address rather than loopback or the CP's configured address. Cluster
+routing and NetworkPolicy must permit worker-to-CJ traffic on that selected port.
+CellNet currently requires IPv4 for this path. The listener keeps the site's
+internal scheme/security. In mTLS mode the bootstrap supplies the job identity,
+CA and both client/server certificate-key pairs; credential paths are identical
+inside the CJ/worker shared workspace. A startup kit without the site's private
+key remains valid because both Cell roles use the per-job credential. See the
+optional [Cell session details](task_worker_cellnet_session.md).
+
 The usual site layout has a private CP workspace PVC plus a separate shared jobs
 PVC. CP mounts the jobs claim and creates a fresh hashed job/site directory; each
 CJ/worker mounts only that directory as its workspace subPath. Task execution
@@ -372,7 +392,7 @@ budget capacity, archive and remove them only after the job, runtimes, in-flight
 creates and readers/uploads are quiescent. Reusing an existing job/site subtree
 fails instead of adopting or overwriting it. Definitive pre-create/API rejection
 removes only a freshly reserved, unchanged empty directory; ambiguous outcomes keep
-their storage fence. There is no automatic subtree collector or CJ/CP recovery.
+their storage fence. There is no automatic subtree collector or Kubernetes CJ/CP recovery.
 
 ## Deadlines and failure handling
 
@@ -384,7 +404,7 @@ Elapsed deadlines use a monotonic clock; wall-clock timestamps are diagnostic.
 | `startup_timeout` | Time from first observed Kubernetes node assignment until Running; default 120 seconds. |
 | `worker_timeout` | Optional absolute whole-worker lifetime, including queueing and artifact I/O; a job may shorten it. |
 | `result_wait_timeout` | Client API application execution through script exit/finalizers; framework result serialization pauses this deadline. |
-| `finalization_timeout` | Finite post-staging application finalization bound, default 30 seconds. Later checkpoint/analytics sealing and publication remain subject to the absolute worker deadline. |
+| `finalization_timeout` | Finite post-staging application finalization bound, default 30 seconds. Later checkpoint sealing and publication remain subject to the absolute worker deadline. |
 | `settlement_timeout` | Supervisor's bounded wait for terminal execution to settle, default 10 seconds; expiry fences further attempts and retains ownership/evidence. |
 | `cleanup_timeout` | Kubernetes cleanup-call bound; CP can continue reconciliation after CJ exits. |
 

@@ -30,6 +30,8 @@ from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 import yaml
 from pyhocon import ConfigFactory as CF
 
+import nvflare.lighter
+from nvflare.apis.utils.format_check import name_check
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
@@ -622,6 +624,24 @@ def prepare_clients(clients, number_of_clients):
             clients.append(f"site-{(i + 1)}")
 
     return clients
+
+
+def _validate_poc_clients(clients: List[str]):
+    """Reject client names that provisioning would fail on, before the existing workspace is removed."""
+    seen = set()
+    for name in clients:
+        err, reason = name_check(name, "client")
+        if err:
+            raise CLIException(f"invalid client name '{name}': {reason}")
+        if name in seen:
+            raise CLIException(f"client '{name}' is specified more than once")
+        seen.add(name)
+
+    template_file = os.path.join(os.path.dirname(os.path.abspath(nvflare.lighter.__file__)), "dummy_project.yml")
+    project_config = update_server_name(load_yaml(template_file))
+    for p in project_config["participants"]:
+        if p.get("type") != "client" and p.get("name") in seen:
+            raise CLIException(f"client name '{p['name']}' is already used by the POC {p.get('type')} participant")
 
 
 def _is_startup_kit_kind(kit_dir: str, expected_kind: str) -> bool:
@@ -1419,6 +1439,8 @@ def _prepare_poc(
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
+        if not project_conf_path:
+            _validate_poc_clients(clients)
     from nvflare.tool.cli_output import print_human, prompt_yn
 
     if not project_conf_path:

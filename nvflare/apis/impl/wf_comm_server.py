@@ -631,12 +631,23 @@ class WFCommServer(FLComponent, WFCommSpec):
                 return
         with self._task_lock:
             client_task = self._client_task_map.get(task_id)
+            completed = None
             if client_task is not None and client_task.task.completion_status is not None:
+                completed = self._remember_completed_client_task(client_task)
                 client_task = None
+            elif client_task is None:
+                completed = self._get_completed_client_task_info(task_id)
+            is_late = completed is not None and self._matches_retired_assignment(
+                completed, client.name, task_name, attempt_id, fl_ctx
+            )
         if client_task is None:
-            self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
-            self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
-            self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT_IS_LATE, is_late, private=True, sticky=False)
+            try:
+                self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+                self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
+                self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+            finally:
+                fl_ctx.remove_prop(FLContextKey.TASK_RESULT_IS_LATE, force_removal=True)
             return
         task = client_task.task
         with task.cb_lock:

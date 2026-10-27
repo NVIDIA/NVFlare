@@ -738,7 +738,7 @@ def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch)
 
     monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
-        worker._execute(bootstrap, Shareable(), workspace, None)
+        worker._execute(bootstrap, Shareable(), workspace)
     finalized.assert_called_once()
 
 

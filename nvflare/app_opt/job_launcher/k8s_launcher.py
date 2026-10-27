@@ -75,6 +75,8 @@ from nvflare.utils.job_launcher_utils import (
     validate_cj_resource_spec,
 )
 
+ENV_CJ_POD_IP = "NVFLARE_K8S_CJ_POD_IP"
+
 _STARTUP_FEDERATION_LABEL = "nvflare.nvidia.com/startup-federation"
 
 
@@ -1365,6 +1367,16 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         spec["automountServiceAccountToken"] = False
         if execution_lifetime != "task":
             return
+        # A worker Pod cannot reach CJ's loopback. Kubernetes, rather than a
+        # job/template environment value, supplies the advertised CJ address.
+        env = [item for item in container.get("env", []) if item["name"] != ENV_CJ_POD_IP]
+        env.append(
+            {
+                "name": ENV_CJ_POD_IP,
+                "valueFrom": {"fieldRef": {"apiVersion": "v1", "fieldPath": "status.podIP"}},
+            }
+        )
+        container["env"] = env
         if not self.get_cj_resources(job_meta, site_name).get("num_of_gpus"):
             env = [item for item in container.get("env", []) if item["name"] not in GPU_ENVIRONMENT_NAMES]
             env.extend(

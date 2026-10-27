@@ -125,6 +125,11 @@ class HierarchicalStatisticsController(StatisticsController):
         Only count, mean and stddev statistics are specified, so the statistics_controller
         will only set tasks to calculate these three statistics.
 
+        The top level var is computed from the clients' 'variance_with_mean' results as in StatisticsController.
+        The var of every other level, and each client's Local var, is computed from the count, mean and stddev
+        of the clients under it. So the clients' stddev is requested whenever var or stddev is configured, and
+        the Statistics generator must implement both 'variance_with_mean' and 'stddev'.
+
         For 'hierarchy_config', below is an example hierarchy specification with 4 level hierarchy for 9 NVFLARE clients with the names ranging
         from 'Device-1' to 'Device-9' and with hierarchical levels named 'Manufacturers', 'Orgs', 'Locations', 'Devices' with
         'Manufacturers' being the top most hierarchical level and "Devices" being the lowest hierarchical level:
@@ -259,7 +264,11 @@ class HierarchicalStatisticsController(StatisticsController):
         )
 
         self.global_statistics = get_global_stats(
-            self.global_statistics, self.client_statistics, statistic_task, hierarchy_config_json
+            self.global_statistics,
+            self.client_statistics,
+            statistic_task,
+            hierarchy_config_json,
+            self.withheld_features,
         )
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
@@ -319,6 +328,11 @@ class HierarchicalStatisticsController(StatisticsController):
         target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
             self.statistic_configs, StC.ordered_statistics[statistic_task]
         )
+        target_names = [tm.name for tm in target_statistics]
+        if StC.STATS_VAR in target_names and StC.STATS_STDDEV not in target_names:
+            # The var of each level below the top is computed from the clients' own stddev,
+            # so it is needed even when only var is configured.
+            target_statistics.append(StatisticConfig(StC.STATS_STDDEV, {}))
         for tm in target_statistics:
             if tm.name == StC.STATS_HISTOGRAM:
                 if StC.STATS_MIN in self.global_statistics[StC.GLOBAL]:

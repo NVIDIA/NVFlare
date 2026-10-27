@@ -15,6 +15,7 @@
 """Site-owned Kubernetes task execution with native CPU/GPU admission."""
 
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -38,6 +39,7 @@ from nvflare.apis.task_launcher_spec import (
 )
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_NAMESPACE,
+    ENV_CJ_POD_IP,
     WORKSPACE_MOUNT_PATH,
     is_cpu_memory_gpu_shortage,
     job_workspace_subpath,
@@ -256,6 +258,17 @@ class _K8sTaskProfile(TaskLauncherSpec):
         self._job_binding = None
         self._storage_checked = False
         self.storage_root = self.workspace_root
+
+    def get_worker_listener_host(self):
+        """Advertise CJ's downward-API Pod IP to workers in separate Pods."""
+        value = os.environ.get(ENV_CJ_POD_IP)
+        try:
+            address = ipaddress.IPv4Address(value)
+        except (ipaddress.AddressValueError, TypeError) as error:
+            raise ValueError(f"{ENV_CJ_POD_IP} must contain CJ's downward-API IPv4 Pod address") from error
+        if address.is_loopback or address.is_unspecified or address.is_multicast or address.is_link_local:
+            raise ValueError(f"{ENV_CJ_POD_IP} must be a worker-reachable CJ IPv4 Pod address")
+        return str(address)
 
     def validate_site_config(self, site_config):
         """Check the canonical CP/CJ/task profile without creating any resources."""

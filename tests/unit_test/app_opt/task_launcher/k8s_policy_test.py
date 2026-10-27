@@ -97,6 +97,20 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
 
     cell, service = wire_client(monkeypatch)
     cell.decode_pass_through_topics = set()
+    # This test models Pods/CP with an in-memory transport; isolate the actual
+    # live metrics link, tested separately with real Cell and mTLS sessions.
+    from nvflare.app_opt.job_launcher.k8s_launcher import ENV_CJ_POD_IP
+    from nvflare.private.fed.task_worker import cell_session
+
+    monkeypatch.setenv(ENV_CJ_POD_IP, "10.42.0.7")
+    listen = Mock()
+    session = Mock()
+    session.bootstrap_fields.return_value = {
+        "connect_url": "tcp://10.42.0.7:12345",
+        "worker_fqcn": "site-parent.job.task_worker_test",
+    }
+    monkeypatch.setattr(cell_session, "listen", listen)
+    monkeypatch.setattr(cell_session, "CellWorkerSession", Mock(return_value=session))
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell), private=True, sticky=True)
     for key, value in (
         (ReservedKey.RUN_NUM, "job"),
@@ -127,11 +141,13 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     def complete():
         argv = api.manifest["spec"]["containers"][0]["args"]
         bootstrap = read_bootstrap(argv[argv.index("--bootstrap") + 1])
+        assert bootstrap.cell_session["connect_url"] == "tcp://10.42.0.7:12345"
         FileTaskArtifactStore(bootstrap.artifact_root).commit_result(bootstrap.identity, Shareable({"gpu": gpu_count}))
         api.finish()
 
     api.on_create = complete
     adapter.handle_event(EventType.START_RUN, context)
+    listen.assert_called_once_with(cell, "10.42.0.7")
     try:
         result = adapter.execute("train", Shareable(), context, Signal())
         assert result["gpu"] == gpu_count
@@ -243,3 +259,29 @@ def test_cp_backend_keeps_the_site_attempt_history_limit(profile):
     launcher.max_attempts = 123
     backend = launcher.create_backend(Mock(), "/cp/jobs/job", {}, "job", "site-1", startup_secret_name="site-startup")
     assert backend.max_attempts == 123
+
+
+@pytest.mark.parametrize("pod_ip", ["10.42.0.7", "192.168.1.10"])
+def test_worker_listener_uses_cj_downward_api_address(profile, monkeypatch, pod_ip):
+    from nvflare.app_opt.job_launcher.k8s_launcher import ENV_CJ_POD_IP
+
+    launcher, _ = profile
+    monkeypatch.setenv(ENV_CJ_POD_IP, pod_ip)
+    assert launcher.get_worker_listener_host() == pod_ip
+    assert launcher.core_v1 is None
+
+
+@pytest.mark.parametrize(
+    "pod_ip",
+    [None, "", "localhost", "127.0.0.1", "0.0.0.0", "224.0.0.1", "169.254.1.1", "::1", "fd00::1", "10.42.0.7:1234"],
+)
+def test_worker_listener_rejects_unusable_cj_addresses(profile, monkeypatch, pod_ip):
+    from nvflare.app_opt.job_launcher.k8s_launcher import ENV_CJ_POD_IP
+
+    launcher, _ = profile
+    if pod_ip is None:
+        monkeypatch.delenv(ENV_CJ_POD_IP, raising=False)
+    else:
+        monkeypatch.setenv(ENV_CJ_POD_IP, pod_ip)
+    with pytest.raises(ValueError, match=ENV_CJ_POD_IP):
+        launcher.get_worker_listener_host()

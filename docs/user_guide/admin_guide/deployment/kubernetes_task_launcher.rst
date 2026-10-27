@@ -118,6 +118,22 @@ Authorized workers still share the job's filesystem identity and can read files
 already present there; this profile does not create a separate filesystem trust
 boundary for job credentials. Do not distribute a cluster-admin kubeconfig.
 
+Task workers require a direct Cell connection to their CJ for live metrics. CP
+injects ``NVFLARE_K8S_CJ_POD_IP`` from Kubernetes ``status.podIP``; the task launcher
+advertises it with a dynamically selected CJ listener port. A job/template value
+cannot override this downward-API field. Allow worker-to-CJ traffic on that port
+in cluster routing and NetworkPolicy. This CellNet path requires IPv4 Pod
+addresses; missing, loopback or unsupported addresses fail CJ startup.
+
+The listener uses the site's internal scheme and connection security, including
+mTLS when configured. The worker bootstrap supplies the per-job identity and
+both client/server certificate-key pairs with their CA. Those files must be
+readable at the same absolute paths in CJ and worker mounts; the shared jobs
+workspace and startup Secret provide this layout. No site private key is needed.
+Metrics are delivered while compute runs, with a 30-second reply timeout; a
+rejected metric fails its attempt. Tracking-receiver exceptions are logged as in
+resident job mode. Analytics no longer wait for settlement or replay from disk.
+
 The CP JobLauncher needs its documented Pod/event/Secret permissions plus
 ``patch`` on ``pods`` and ``get`` on ``pods/log`` in the configured CJ/worker
 namespace. The client Helm Role includes these permissions. CP may run in a
@@ -570,6 +586,8 @@ request/limit (default 1Gi) continues to cover Pod-local storage; it does not
 limit files on the PVC. Task workers currently set no explicit ephemeral-storage
 request/limit, so namespace defaults and node eviction policy apply.
 
+The Kubernetes job handle does not opt into main's automatic CJ restart policy;
+CP continues to fence old workers and refuses retained-workspace adoption.
 Persistence does not itself implement CJ resume. Applications must write their
 required recovery state, and a future restart path must restore committed state,
 coordinate with SJ and fence every earlier CJ/worker attempt. The launcher rejects an existing job/site directory rather than overwrite or automatically

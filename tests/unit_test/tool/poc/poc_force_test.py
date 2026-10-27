@@ -1166,6 +1166,57 @@ poc {{
         assert workspace.exists()
         assert sentinel.exists()
 
+    @pytest.mark.parametrize(
+        "clients",
+        [
+            ["site-1", "site-1"],
+            ["server"],
+            ["site-1", "admin@nvidia.com"],
+            ["site 1"],
+        ],
+    )
+    def test_force_prepare_rejects_bad_clients_before_deleting_workspace(self, tmp_path, clients):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        workspace = tmp_path / "poc_ws"
+        workspace.mkdir()
+        sentinel = workspace / "keep.txt"
+        sentinel.write_text("keep me")
+
+        cmd_args = MagicMock()
+        cmd_args.output = "json"
+        cmd_args.force = True
+        cmd_args.clients = clients
+        cmd_args.number_of_clients = 2
+        cmd_args.docker_image = None
+        cmd_args.he = False
+        cmd_args.project_input = ""
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(workspace)),
+            patch("nvflare.tool.poc.poc_commands._get_running_poc_context", return_value=None),
+            patch("nvflare.tool.cli_output.output_error") as mock_output_error,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                prepare_poc(cmd_args)
+
+        assert exc_info.value.code == 4
+        assert mock_output_error.call_args.args[0] == "INVALID_ARGS"
+        assert sentinel.exists()
+
+    def test_prepare_accepts_distinct_valid_clients(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws")
+        with (
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
+            patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+        ):
+            mock_prov.return_value = {"name": "example_project", "participants": []}
+            assert _prepare_poc(["site-a", "site-b"], 2, workspace, force=True) is True
+
+        assert mock_prov.call_args.args[0] == ["site-a", "site-b"]
+
     def test_link_jobs_dir_to_admin_transfer_replaces_existing_empty_symlink(self, tmp_path):
         from nvflare.tool.poc.poc_commands import _link_jobs_dir_to_admin_transfer
 

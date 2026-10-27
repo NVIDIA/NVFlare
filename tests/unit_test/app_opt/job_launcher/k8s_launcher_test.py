@@ -2808,13 +2808,14 @@ spec:
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
-            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5"])
+            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5", "cj_launch_id=physical-1"])
             launcher.launch_job(_make_launch_job_meta(), fl_ctx)
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             args = manifest["spec"]["containers"][0]["args"]
             assert "--set" in args
             assert "lr=0.01" in args
             assert "epochs=5" in args
+            assert "cj_launch_id=physical-1" in args
         finally:
             _exit_patches(patches)
 
@@ -3937,6 +3938,9 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
         assert handle.terminal_return_code == JobReturnCode.EXCEPTION
         return
     assert (handle.task_owner is not None) == (lifetime == "task")
+    # Kubernetes does not opt into generic CJ recovery while old attempts and
+    # retained workspaces still require the CP's ownership fence.
+    assert handle.can_restart() is False
     spec = manifest["spec"]
     container = spec["containers"][0]
     assert (
@@ -3954,6 +3958,15 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
         assert container["resources"]["requests"]["nvidia.com/gpu"] == "2"
         assert "serviceAccountName" not in spec
     else:
+        from nvflare.app_opt.job_launcher.k8s_launcher import ENV_CJ_POD_IP
+
+        address = [item for item in container["env"] if item["name"] == ENV_CJ_POD_IP]
+        assert address == [
+            {
+                "name": ENV_CJ_POD_IP,
+                "valueFrom": {"fieldRef": {"apiVersion": "v1", "fieldPath": "status.podIP"}},
+            }
+        ]
         cj_requests = container["resources"]["requests"]
         assert cj_requests["cpu"] == ("0.25" if budgets == "defaults" else "0.5")
         assert cj_requests["memory"] == ("512Mi" if budgets == "defaults" else "1Gi")
