@@ -89,6 +89,9 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ python3 -m pip install "nvflare[dashboard]"
 
+  Dashboard does not require Kubernetes. For Docker setup, see
+  :doc:`/user_guide/nvflare_cli/dashboard_command`.
+
 * **EDGE-HTTP** - HTTP/HTTPS routing bridge for mobile and other HTTP edge devices:
 
   .. code-block:: shell

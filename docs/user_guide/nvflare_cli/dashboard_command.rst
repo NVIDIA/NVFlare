@@ -31,6 +31,13 @@ the repository root with:
         --build-arg NVFLARE_EXTRAS=K8S,dashboard \
         -t nvflare-dashboard:latest .
 
+``K8S`` installs the parent image's Kubernetes Python client, which its build
+check requires; ``dashboard`` adds Dashboard's web dependencies. Dashboard
+itself does not require Kubernetes or a cluster.
+
+Publish the resulting image under a registry tag the Docker host or cloud VM
+can pull before using that tag with ``--image``.
+
 Syntax and Usage
 =================
 
@@ -74,11 +81,6 @@ Running ``nvflare dashboard -h`` shows all available options.
 
     The ``-i``/``--image`` option is required when starting Dashboard with Docker or launching Dashboard
     on cloud. It is not required for ``--stop`` or ``--local``.
-
-    The launcher host does not need the ``dashboard`` extra when Dashboard runs
-    in Docker, but the selected container image does. A core parent image built
-    with the default ``NVFLARE_EXTRAS=K8S`` does not contain the Dashboard web
-    dependencies.
 
     For AWS cloud launches, specify ``--vpc-id`` and ``--subnet-id`` together.
     If only one of these options is provided, Dashboard ignores it.
@@ -132,6 +134,7 @@ listens to port 443, unless the ``--port`` option is used to specify a different
 
 .. note::
 
-    Running Dashboard requires Docker. You have to ensure your system can pull and run Docker images. The initial docker pull may take some time depending on your network connection.
+    Container-based launches require Docker and access to pull the selected image;
+    ``--local`` does not require Docker.
 
 To stop the running Dashboard, run ``nvflare dashboard --stop``.
