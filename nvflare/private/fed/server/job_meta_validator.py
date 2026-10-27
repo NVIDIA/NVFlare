@@ -14,8 +14,10 @@
 
 import collections
 import logging
+import re
 from io import BytesIO
 from typing import Optional, Set, Tuple
+from uuid import uuid4
 from zipfile import ZipFile
 
 from nvflare.apis.app_validation import AppValidationKey
@@ -218,6 +220,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str, *, resolve=True) -> Optional[dict]:
+        """Load config; unresolved client HOCON reads expose only its literal lifetime."""
         basename = ConfigFactory.get_file_basename(init_config_path)
         for ext, fmt in ConfigFormat.config_ext_formats().items():
             config_path = f"{zip_folder}{basename}{ext}"
@@ -233,8 +236,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     # otherwise submission could open client paths or URLs on SJ.
                     from pyparsing import CaselessKeyword, Literal, Regex, Suppress
 
-                    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-
                     quoted = Regex(r'"(?:[^"\\\n]|\\.)*"[ \t]*')
                     target = quoted | (
                         (CaselessKeyword("url") | CaselessKeyword("file") | CaselessKeyword("package"))
@@ -245,16 +246,33 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     include = CaselessKeyword("include") + (
                         target | (CaselessKeyword("required") + Literal("(") + target + Literal(")"))
                     )
-                    # Match pyhocon's complete opaque-token grammar, including
-                    # extra closing quotes in multiline strings.
+                    # Preserve common strings and comments while stripping
+                    # ordinary directives. The final guard below blocks I/O.
                     opaque = Regex(r'"""[\s\S]*?"*"""') | quoted | Regex(r"(?://|#)[^\r\n]*")
                     text = (opaque | Suppress(include)).transform_string(text)
-                    # Never delegate a surviving directive to the include-capable
-                    # parser. Keep unrelated keys named "include" valid.
+                    # Reject any ordinary directive left by the first scan.
                     remaining = (Suppress(opaque) | include).search_string(text)
                     if any(tokens for tokens in remaining):
                         raise ValueError("client config includes cannot be opened during submission")
-                    return PyhoconConfig(HoconFactory.parse_string(text, resolve=False)).to_dict()
+                    # Lexical stripping is only a compatibility aid: HOCON
+                    # keys, values and substitutions have different escape
+                    # rules. Neutralize every remaining include spelling before
+                    # invoking the include-capable parser, even inside opaque
+                    # tokens. This read needs only the literal root declaration;
+                    # the original client config is never changed or returned.
+                    marker = "_nvflare_opaque_" + uuid4().hex
+                    while marker in text:
+                        marker = "_nvflare_opaque_" + uuid4().hex
+                    # Distinct case-sensitive application keys must stay distinct.
+                    text = re.sub(
+                        "include", lambda match: marker + match.group().encode("utf-8").hex(), text, flags=re.IGNORECASE
+                    )
+                    if "INCLUDE" in text.upper():
+                        raise ValueError("client config includes cannot be opened during submission")
+                    config = HoconFactory.parse_string(text, resolve=False)
+                    if not isinstance(config, dict):
+                        raise ValueError("client app config must be a dictionary")
+                    return {"execution_lifetime": config.get("execution_lifetime", "job")}
                 return config_loader.load_config_from_str(text).to_dict(resolve=resolve)
         return None
 
