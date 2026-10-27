@@ -216,10 +216,13 @@ Short runs of every configuration, following this README from environment setup 
 training through the NVFlare simulator, aggregation, checkpointing and evaluation, for each policy, recipe and
 algorithm.
 
-- **Revision:** the commit that adds this folder. Two late changes came after some of the checks: `run_eval` now
-  refuses a checkpoint path that does not exist, and unused packages were removed from the GR00T evaluation package
-  list. Federated training and the SmolVLA and π0.5 evaluations ran before both changes and use neither; the unit
-  tests and the mock federation ran after the first and do not use the second; the GR00T evaluation ran after both.
+- **Revision:** the code in this folder. The unit tests, the mock federation and the GR00T evaluation ran on the final
+  code, and so did a repeat of the `smolvla_libero_lora_nvflare_smoke` training (completed; mean client loss 3.1257
+  in round 1, 2.7178 in round 2). The smoke trainings in the table below, the SmolVLA and π0.5 evaluations and the
+  missing-checkpoint check ran on earlier versions. The changes since then do not alter what those runs do: a
+  missing `--ckpt` now raises, unused packages left the GR00T evaluation package list, settings the code did not
+  apply are rejected when the config loads (every example config still loads), and fixes went into paths those runs
+  do not use (personalized evaluation, the evaluation cache, the single-GPU local runner, zero-step rounds).
 - **Environment:** Isambard-AI, NVIDIA GH200 120GB nodes (aarch64), driver 580.178.04, one node per run.
   - SmolVLA and π0.5 environment: Python 3.12.13, torch 2.7.1+cu128, lerobot 0.5.2 (commit `8515d456`),
     NVFlare 2.8.1, transformers 5.5.4, peft 0.21.2.
@@ -230,11 +233,11 @@ algorithm.
 
 | Check | Command | Result |
 |---|---|---|
-| Unit tests | `python -m pytest tests --basetemp=/tmp/dvla-pytest` (SmolVLA and π0.5 environment) | 391 passed; one cache test needs sub-second file times, so its temporary files go on local disk, not Lustre |
+| Unit tests | `python -m pytest tests --basetemp=/tmp/dvla-pytest` (SmolVLA and π0.5 environment) | 408 passed; one cache test needs sub-second file times, so its temporary files go on local disk, not Lustre |
 | Mock federation on CPU | `bash scripts/smoke_nvflare.sh` | passed: 2 clients, 2 rounds, checkpoint written and evaluated |
 | Federated training | `decent-vla train --config examples/<config>_smoke.yaml` | all 8 configs completed; see below |
 | LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <config> <checkpoint>` | ran end to end: 10 episodes each, 0% success (SmolVLA 208 s, π0.5 453 s) |
-| LIBERO evaluation, GR00T | `decent-vla eval --config examples/groot_libero_lora_nvflare_smoke.yaml --ckpt <checkpoint>` | ran end to end: 10 episodes, 0% success (242 s) |
+| LIBERO evaluation, GR00T | `decent-vla eval --config examples/groot_libero_lora_nvflare_smoke.yaml --ckpt <checkpoint>` | ran end to end: 10 episodes, 0% success (246 s) |
 | Missing checkpoint, GR00T | the same command with a `--ckpt` file that does not exist | refused with `FileNotFoundError`; nothing written |
 
 Each smoke run federates 2 clients (20 LIBERO tasks each) for 2 rounds of 20 local steps. In every run both clients

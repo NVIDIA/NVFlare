@@ -136,6 +136,10 @@ class LIBEROBenchmark:
                 raise ValueError(f"Unknown LIBERO suite: {s!r} (known: {KNOWN_SUITES})")
         return cls(cfg)
 
+    def canonical_suite(self, suite: str) -> str:
+        """The canonical name of a suite (`spatial` -> `libero_spatial`)."""
+        return _ALIASES.get(suite, suite)
+
     def task_names(self, suite: str) -> dict[int, str]:
         """task_id -> language description, for mapping dataset task names
         onto ids (personalized eval)."""

@@ -131,29 +131,57 @@ def run_personalized_eval(
     backend_factory: Any,
     run_dir: str | Path,
     eval_dir: str | Path,
+    ckpt_path: str | Path | None = None,
 ) -> Path:
     """Evaluate every client's personalized model on its OWN tasks.
 
     Reads the training run's artifacts from ``run_dir`` (partition manifest,
-    latest server checkpoint, per-client states) and writes per-client JSONs
+    server checkpoint, per-client states) and writes per-client JSONs
     plus the pooled ``personalized_results.json`` under ``eval_dir``.
+    The server checkpoint is ``ckpt_path`` when given (a ``server_round_*.pt``
+    blob), else ``server_round_final.pt``, else the latest periodic one; each
+    client's state is the one saved in the same round.
     Per-client results are provenance-cached like the generic eval: a crashed
     eval re-runs only the missing clients.
     """
     from decent_vla.core.partitioner import PartitionManifest
     from decent_vla.runtime.builders import build_benchmark
-    from decent_vla.runtime.client_checkpoint import latest_client_checkpoint
-    from decent_vla.runtime.eval_runner import apply_action_horizon
+    from decent_vla.runtime.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
     from decent_vla.runtime.server_session import latest_server_checkpoint
 
     run_dir = Path(run_dir)
     eval_dir = Path(eval_dir)
     manifest = PartitionManifest.read(run_dir / "partition_manifest.json")
-    server_ckpt = latest_server_checkpoint(run_dir / "checkpoints")
-    if server_ckpt is None:
-        raise FileNotFoundError(f"no server_round_*.pt under {run_dir / 'checkpoints'}")
-    server_blob = torch.load(server_ckpt, map_location="cpu", weights_only=True)
+    ckpt_dir = run_dir / "checkpoints"
+    server_blob = None
+    if ckpt_path is not None:
+        server_ckpt = Path(ckpt_path)
+        if not server_ckpt.exists():
+            raise FileNotFoundError(f"eval checkpoint {server_ckpt} does not exist")
+    else:
+        # The final blob, unless a later periodic checkpoint exists (a resumed run that
+        # stopped before finishing leaves the previous run's final blob behind).
+        server_ckpt = latest_server_checkpoint(ckpt_dir)
+        final = ckpt_dir / "server_round_final.pt"
+        if final.exists():
+            final_blob = torch.load(final, map_location="cpu", weights_only=True)
+            periodic_round = int(server_ckpt.stem.rsplit("_", 1)[1]) - 1 if server_ckpt else -1
+            if int(final_blob["round"]) >= periodic_round:
+                server_ckpt, server_blob = final, final_blob
+            del final_blob
+        if server_ckpt is None:
+            raise FileNotFoundError(f"no server_round_*.pt under {ckpt_dir}")
+    if server_blob is None:
+        server_blob = torch.load(server_ckpt, map_location="cpu", weights_only=True)
+    if not (isinstance(server_blob, dict) and "state" in server_blob and "round" in server_blob):
+        raise ValueError(
+            f"{server_ckpt} is not a server_round_*.pt checkpoint ('state' and 'round'); "
+            "personalized eval pairs it with the client states saved in the same round."
+        )
     server_shared = server_blob["state"]
+    server_round = int(server_blob["round"])
+    server_size, server_mtime_ns = _checkpoint_identity(server_ckpt)
+    eval_config_hash = _eval_config_hash(cfg)
 
     base_bench = build_benchmark(cfg.eval)
     if not hasattr(base_bench, "task_names"):
@@ -168,20 +196,31 @@ def run_personalized_eval(
     clients_dir.mkdir(parents=True, exist_ok=True)
     per_client: dict[str, dict[str, Any]] = {}
     for cid in sorted(manifest.clients):
-        client_ckpt = latest_client_checkpoint(run_dir / "client_states", cid)
-        if client_ckpt is None:
+        client_ckpt = run_dir / "client_states" / f"{cid}_round_{server_round:04d}.pt"
+        if not client_ckpt.exists():
             raise FileNotFoundError(
-                f"no client state for {cid} under {run_dir / 'client_states'} — "
-                "personalized eval needs fl.persist_client_state on the training run."
+                f"no client state for {cid} from round {server_round} ({client_ckpt.name}) under "
+                f"{run_dir / 'client_states'}: personalized eval needs fl.persist_client_state on the "
+                "training run, and a client state saved in the round of the server checkpoint."
             )
+        task_filter = _client_task_filter(
+            list(manifest.clients[cid]["task_names"]), name_maps
+        )
+        client_size, client_mtime_ns = _checkpoint_identity(client_ckpt)
+        # Keyed on the checkpoints' identities (not only their paths), the eval settings and the
+        # client's tasks, so a retrain into the same directory or a changed split re-evaluates.
         provenance = {
             "server_checkpoint": str(server_ckpt),
+            "server_checkpoint_size": server_size,
+            "server_checkpoint_mtime_ns": server_mtime_ns,
             "client_checkpoint": str(client_ckpt),
+            "client_checkpoint_size": client_size,
+            "client_checkpoint_mtime_ns": client_mtime_ns,
             "seed": cfg.eval.seed,
             "n_episodes_per_task": cfg.eval.n_episodes_per_task,
-            # In the key, so a horizon change invalidates the per-client cache
-            # instead of silently returning scores from the previous protocol.
             "n_action_steps": cfg.eval.n_action_steps,
+            "eval_config_hash": eval_config_hash,
+            "task_filter": task_filter,
         }
         client_path = clients_dir / f"{cid}.json"
         if client_path.exists():
@@ -192,9 +231,6 @@ def run_personalized_eval(
                 continue
             logger.info("re-evaluating %s: provenance changed", cid)
 
-        task_filter = _client_task_filter(
-            list(manifest.clients[cid]["task_names"]), name_maps
-        )
         client_blob = torch.load(client_ckpt, map_location="cpu", weights_only=False)
         backend = backend_factory()
         assemble_personalized_state(backend, client_blob["weights"], server_shared)

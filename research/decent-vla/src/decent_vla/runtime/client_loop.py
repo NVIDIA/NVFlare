@@ -79,8 +79,8 @@ def run_client_round(
         except StopIteration:
             # Backends are expected to return a cycling iterator. If it
             # exhausts, the round ends early: the actual count travels in
-            # update.extra["steps_executed"] and a zero-step round logs a
-            # warning below so the silent under-training is visible.
+            # update.extra["steps_executed"], and a round that planned steps
+            # but trained none raises below instead of reporting success.
             break
 
         ctx.step_in_round = step
@@ -119,13 +119,11 @@ def run_client_round(
         update.num_samples = _num_train_frames
     steps_executed = int(ctx.scratch.get("loss_count", 0))
     update.extra.setdefault("steps_executed", steps_executed)
-    if steps_executed == 0:
-        log.warning(
-            "client %s round %d executed 0 steps (planned %d): the dataloader "
-            "was already exhausted. Non-cycling iterators with persistent "
-            "client state silently train 0 steps from round 2 onward — return "
-            "a cycling iterator from build_dataloader.",
-            client_id, round_num, plan.local_steps,
+    if steps_executed == 0 and plan.local_steps > 0:
+        raise ValueError(
+            f"client {client_id} round {round_num} trained 0 of {plan.local_steps} planned steps: "
+            "its dataloader is empty or exhausted. build_dataloader must return a non-empty, "
+            "cycling iterator."
         )
     return update
 

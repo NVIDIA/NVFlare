@@ -15,6 +15,7 @@
 """Runtime tests: hook ordering, local-mode FL E2E, partitioning."""
 from __future__ import annotations
 
+import pytest
 import torch
 
 from decent_vla.adapters._mock.backend import MockBackend
@@ -222,46 +223,39 @@ def test_localrunner_persistent_state_survives_rounds(backend_factory, data_cfg,
     assert runner.client_states["c0"].persistent["rounds_seen"] == [0, 1, 2]
 
 
-def test_zero_step_round_warns_and_reports_steps_executed(backend, backend_cfg, caplog):
-    """An exhausted non-cycling iterator -> warning + steps_executed == 0."""
-    import logging
-
+def test_zero_step_round_raises(backend, backend_cfg):
+    """An empty or exhausted iterator with steps planned -> ValueError, not a silent 0-step update."""
     from decent_vla.core.strategy import RoundPlan
 
     optimizer, _ = backend.build_optimizer(backend_cfg.optim)
     gs = backend.get_state("shared")
-    with caplog.at_level(logging.WARNING, logger="decent_vla.runtime.client_loop"):
-        update = run_client_round(
+    with pytest.raises(ValueError, match="0 of 3 planned steps"):
+        run_client_round(
             backend=backend, strategy=FedAvg(),
             plan=RoundPlan(selected_clients=["c0"], local_steps=3),
             dataloader=iter([]), client_id="c0", round_num=1,
             global_state=gs, optimizer=optimizer)
-    assert update.extra["steps_executed"] == 0
-    assert any("0 steps" in rec.message for rec in caplog.records)
 
 
 def test_localrunner_advances_global_step_by_actual_steps(
-    backend_cfg, data_cfg, device, caplog
+    backend_cfg, data_cfg, device
 ):
-    """A non-cycling dataloader exhausts after round 1: round 2 trains 0 steps,
-    warns, and st.global_step reflects ACTUAL executed steps, not the plan."""
+    """A non-cycling dataloader runs short in round 2 (1 of 3 steps): st.global_step
+    reflects ACTUAL executed steps, not the plan."""
     import itertools
-    import logging
 
     class _FiniteBackend(MockBackend):
         def build_dataloader(self, data_cfg, partition_indices):
             return iter(itertools.islice(
-                super().build_dataloader(data_cfg, partition_indices), 3))
+                super().build_dataloader(data_cfg, partition_indices), 4))
 
     runner = LocalRunner(
         backend_factory=lambda: _FiniteBackend(backend_cfg, device),
         strategy=FedAvg(), client_ids=["c0"], partition_indices=[list(range(16))],
         data_cfg=data_cfg, num_rounds=2, local_steps=3,
         optim_cfg=backend_cfg.optim, device=device)
-    with caplog.at_level(logging.WARNING, logger="decent_vla.runtime.client_loop"):
-        runner.run()
-    assert runner.client_states["c0"].global_step == 3  # round 2 executed 0 steps
-    assert any("0 steps" in rec.message for rec in caplog.records)
+    runner.run()
+    assert runner.client_states["c0"].global_step == 4  # round 2 executed 1 step
 
 
 def test_localrunner_fast_forwards_skipped_clients(
@@ -288,3 +282,34 @@ def test_localrunner_fast_forwards_skipped_clients(
     assert runner.client_states["c0"].global_step == 6
     # c1 first participates in round 1: gap fast-forward sets it to 3, then +3.
     assert runner.client_states["c1"].global_step == 6
+
+
+def test_localrunner_moves_the_resident_client_off_the_gpu_before_building_the_next(
+    backend_cfg, data_cfg, monkeypatch
+):
+    """Single-GPU juggling: the next client's model is built on the GPU, so the resident client
+    must move to the CPU first. Runs on CPU tensors with the device moves recorded."""
+    import decent_vla.runtime.client_state as client_state_mod
+    import decent_vla.runtime.local_runner as local_runner_mod
+
+    events = []
+    real_build = client_state_mod.build_client_state
+
+    def recording_build(**kw):
+        events.append(("build", kw["client_id"]))
+        return real_build(**kw)
+
+    monkeypatch.setattr(client_state_mod, "build_client_state", recording_build)
+    monkeypatch.setattr(local_runner_mod, "_move_client_state",
+                        lambda st, dev: events.append(("move", st.client_id, dev.type)))
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+
+    cpu = torch.device("cpu")
+    runner = LocalRunner(
+        backend_factory=lambda: MockBackend(backend_cfg, cpu),
+        strategy=FedAvg(), client_ids=["c0", "c1"],
+        partition_indices=[list(range(16)), list(range(16, 32))],
+        data_cfg=data_cfg, num_rounds=1, local_steps=1,
+        optim_cfg=backend_cfg.optim, device=torch.device("cuda"))
+    runner.run()
+    assert events.index(("move", "c0", "cpu")) < events.index(("build", "c1"))

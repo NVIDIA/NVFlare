@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-_WIRE_BYTES = {"fp16": 2, "fp32": 4, "bf16": 2}
+from decent_vla.runtime import wire
 
 
 def write_scope_manifest(
@@ -39,6 +39,8 @@ def write_scope_manifest(
     shared_numel = sum(int(v.numel()) for v in shared.values())
     personal_numel = sum(int(v.numel()) for v in personal.values())
     wire_dtype = getattr(fl_cfg, "wire_dtype", "fp32")
+    # Uplink bytes per element: the delta direction of a scalar or per-direction spec.
+    _, delta_bytes = wire.nbytes(wire_dtype)
     blob = {
         "trainable_params": backend_cfg.trainable_params,
         "shared_params": backend_cfg.shared_params,
@@ -55,7 +57,7 @@ def write_scope_manifest(
         },
         "bytes": {
             "shared_fp32": 4 * shared_numel,
-            "shared_wire": _WIRE_BYTES.get(wire_dtype, 4) * shared_numel,
+            "shared_wire": delta_bytes * shared_numel,
         },
     }
     out_dir = Path(out_dir)

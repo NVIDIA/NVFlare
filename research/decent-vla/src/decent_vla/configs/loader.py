@@ -16,7 +16,8 @@
 
 This module owns the config validation rules:
   * Exactly one of `train` / `fl` is set, unless `eval.only=True`.
-  * `backend.lora` and `fl.strategy.aggregate_lora_only` are consistent.
+  * Settings the code accepts but does not apply are rejected (`aggregate_lora_only`,
+    `client_state_keep` below 2, `attach_to` on the lerobot backend, `data.revision`).
   * Suite names valid for the chosen benchmark (deferred to benchmark
     `from_config`; we only validate the structural rules here).
 """
@@ -131,6 +132,10 @@ def _build_backend(d: dict) -> BackendConfig:
 def _build_data(d: dict | None) -> DataConfig:
     if not d:
         return DataConfig()
+    # explicit_repos: one client per repo list. Derive the count when it is not given, so a
+    # second list is not silently dropped by the default num_clients of 1.
+    if d.get("partitioning") == "explicit_repos" and d.get("client_repo_ids") and "num_clients" not in d:
+        d["num_clients"] = len(d["client_repo_ids"])
     return DataConfig(**d)
 
 
@@ -262,10 +267,36 @@ def validate_run_config(cfg: RunConfig) -> None:
         if not has_train and not has_fl:
             raise ConfigError("Set either `train`, `fl`, or `eval.only: true`.")
 
-    if has_fl and cfg.backend.lora is None and cfg.fl.strategy.aggregate_lora_only:
+    if has_fl and cfg.fl.strategy.aggregate_lora_only:
         raise ConfigError(
-            "fl.strategy.aggregate_lora_only=True requires backend.lora to be set."
+            "fl.strategy.aggregate_lora_only is not supported: the strategies aggregate every shared "
+            "parameter. Restrict the federated scope with backend.shared_params instead."
         )
+
+    if has_fl and cfg.fl.client_state_keep is not None and cfg.fl.client_state_keep < 2:
+        raise ConfigError(
+            f"fl.client_state_keep={cfg.fl.client_state_keep} is too low: keep at least 2 client-state "
+            "files, so the client state of the last round the server saved survives a crash."
+        )
+
+    if cfg.backend.name == "lerobot" and cfg.backend.lora is not None and cfg.backend.lora.attach_to:
+        raise ConfigError(
+            "backend.lora.attach_to is not supported by the lerobot backend, which chooses the LoRA "
+            "subtree itself; remove it."
+        )
+
+    if cfg.data.revision is not None:
+        raise ConfigError(
+            "data.revision is not supported: no backend applies it to dataset loading. Remove it, "
+            "and pin the dataset revision in the backend's own data config."
+        )
+
+    if cfg.data.partitioning == "explicit_repos" and cfg.data.client_repo_ids is not None:
+        if len(cfg.data.client_repo_ids) != cfg.data.num_clients:
+            raise ConfigError(
+                f"data.client_repo_ids has {len(cfg.data.client_repo_ids)} repo lists but "
+                f"data.num_clients is {cfg.data.num_clients}; explicit_repos needs one list per client."
+            )
 
     if cfg.eval is not None and cfg.eval.every_n_rounds is not None:
         raise ConfigError(

@@ -200,6 +200,19 @@ class LocalRunner:
         ) -> ClientUpdate:
             st = self.client_states.get(cid)
             if st is None:
+                # Single-GPU juggling: the new client's model is built on the GPU, so move the
+                # resident client to the CPU first, or both models are on the GPU at once.
+                if (
+                    self.client_devices is None
+                    and self.device.type == "cuda"
+                    and self._gpu_cid is not None
+                    and self._gpu_cid != cid
+                ):
+                    resident = self.client_states.get(self._gpu_cid)
+                    if resident is not None:
+                        _move_client_state(resident, torch.device("cpu"))
+                        torch.cuda.empty_cache()
+                    self._gpu_cid = None
                 st = build_client_state(
                     client_id=cid,
                     backend_factory=self.backend_factory,

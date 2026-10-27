@@ -37,6 +37,7 @@ eval — an in-place rewrite always moves `mtime_ns`.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import os
@@ -93,12 +94,18 @@ def _eval_config_hash(cfg: RunConfig) -> str:
     # The cache is per-suite, so the suite LIST is not part of any one suite's
     # identity — extending it must resume the finished suites, not re-run them.
     ev["benchmark"] = {k: v for k, v in ev["benchmark"].items() if k != "suites"}
-    payload = json.dumps(
-        {"backend": dataclasses.asdict(cfg.backend), "eval": ev},
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
+    key: dict[str, Any] = {"backend": dataclasses.asdict(cfg.backend), "eval": ev}
+    # The lerobot backend builds the policy and its preprocessing from the YAML at
+    # backend.extra.train_config_path, read again at eval time. Key on that file's contents,
+    # so an edit at the same path invalidates the cache. Added only when the path is set, so
+    # the keys of configs without one are unchanged.
+    tp_path = (cfg.backend.extra or {}).get("train_config_path")
+    if tp_path:
+        tp_file = Path(tp_path)
+        key["train_config_sha256"] = (
+            hashlib.sha256(tp_file.read_bytes()).hexdigest() if tp_file.is_file() else None
+        )
+    payload = json.dumps(key, sort_keys=True, separators=(",", ":"), default=str)
     return config_hash(payload)
 
 
@@ -246,7 +253,11 @@ def run_eval(
         "eval_config_hash": _eval_config_hash(cfg),
     }
     suites: dict[str, dict] = {}
-    for suite in cfg.eval.benchmark.suites:
+    # Results, cache files and held-out tagging all use the canonical suite name, so a
+    # config alias (LIBERO's `spatial`) matches the held-out spec's `libero_spatial`.
+    canonical = getattr(benchmark, "canonical_suite", lambda s: s)
+    for config_suite in cfg.eval.benchmark.suites:
+        suite = canonical(config_suite)
         suite_path = suites_dir / f"{suite}.json"
         if suite_path.exists():
             with suite_path.open() as f:
@@ -260,11 +271,12 @@ def run_eval(
             logger.info("re-evaluating %s: provenance changed", suite)
         bench_result = benchmark.evaluate(
             policy,
-            suites=[suite],
+            suites=[config_suite],  # the benchmark resolves its own aliases
             n_episodes_per_task=cfg.eval.n_episodes_per_task,
             seed=cfg.eval.seed,
         )
-        s = bench_result.suites[suite]
+        # One suite was requested; take its only result, whatever name the benchmark keys it by.
+        (s,) = bench_result.suites.values()
         suite_dict = {
             "n_episodes": s.n_episodes,
             "n_success": s.n_success,

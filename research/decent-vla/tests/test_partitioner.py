@@ -204,35 +204,3 @@ def test_mock_backend_list_episodes(backend, data_cfg):
     assert MockBackend.list_episodes(data_cfg) == eps
     n = data_cfg.extra.get("n_tasks", 4) * data_cfg.extra.get("eps_per_task", 8)
     assert len(eps) == n
-
-
-def test_dataset_revision_flows_into_manifest(tmp_path):
-    """data.revision (config) -> partition_for -> manifest.dataset_revision,
-    and round-trips through manifest write/read (audit provenance)."""
-    import yaml
-
-    from decent_vla.configs import load_run_config
-    from decent_vla.core.registry import discover
-    from decent_vla.runtime.builders import partition_for
-
-    cfg_yaml = {
-        "name": "t",
-        "backend": {"name": "mock"},
-        "data": {
-            "partitioning": "task",
-            "num_clients": 2,
-            "revision": "v2.1",
-            "extra": {"n_tasks": 4, "eps_per_task": 2},
-        },
-        "fl": {"num_rounds": 1, "local_steps": 1},
-    }
-    p = tmp_path / "c.yaml"
-    p.write_text(yaml.safe_dump(cfg_yaml))
-    cfg = load_run_config(p)
-    assert cfg.data.revision == "v2.1"
-
-    _, manifest = partition_for(cfg, discover().backends["mock"])
-    assert manifest.dataset_revision == "v2.1"
-
-    manifest.write(tmp_path / "m.json")
-    assert PartitionManifest.read(tmp_path / "m.json").dataset_revision == "v2.1"

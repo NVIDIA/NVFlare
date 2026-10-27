@@ -177,7 +177,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             run_dir = Path(cfg.fl.output_dir) if cfg.fl is not None else output_dir
             eval_dir = Path(cfg.eval.output_dir or (output_dir / "eval"))
-            run_personalized_eval(cfg, backend_factory, run_dir, eval_dir)
+            run_personalized_eval(cfg, backend_factory, run_dir, eval_dir, ckpt_path=args.ckpt)
         else:
             backend = backend_factory()
             ckpt_path = args.ckpt or _latest_checkpoint(output_dir)

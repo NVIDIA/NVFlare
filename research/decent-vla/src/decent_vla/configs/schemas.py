@@ -70,7 +70,7 @@ class DataConfig:
 
     name: str = "mock"
     repo_id: str | None = None
-    revision: str | None = None                 # dataset revision pin, recorded in the manifest
+    revision: str | None = None                 # not supported (the loader rejects it): no backend applies it
     batch_size: int = 8
     num_workers: int = 0
     partitioning: str = "iid"                   # "iid" | "task" | "explicit_tasks" | "explicit_repos"
@@ -90,7 +90,7 @@ class StrategyConfig:
     server_lr: float = 1.0                      # FedAdam server-side LR
     server_betas: tuple[float, float] = (0.9, 0.999)
     server_eps: float = 1e-3
-    aggregate_lora_only: bool = False
+    aggregate_lora_only: bool = False           # not supported (the loader rejects true)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -147,7 +147,7 @@ class FLConfig:
     output_dir: str = "outputs/fl_run"
     persist_client_state: bool = False          # opt-in: save/restore per-client state for warm resume
     client_state_keep: int | None = None        # retain only the N highest-round client-state files per
-                                                 # client (None = keep all). Set to 1-2 for 3B-scale runs:
+                                                 # client (None = keep all; minimum 2). Set to 2 for 3B-scale runs:
                                                  # a personalization client blob is ~35 GB.
     client_gpu_spread: bool = False             # local: one dedicated CUDA device per client (no single-GPU
                                                  # juggling). Engages only when visible GPUs >= num_clients,

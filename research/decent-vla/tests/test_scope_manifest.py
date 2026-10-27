@@ -58,3 +58,11 @@ def test_manifest_no_patterns_everything_shared(tmp_path):
     blob = json.loads(p.read_text())
     assert blob["personal_names"] == []
     assert blob["counts"]["shared_numel"] == blob["counts"]["trainable_numel"]
+
+
+def test_manifest_prices_the_uplink_of_a_per_direction_wire_dtype(tmp_path):
+    """A per-direction wire_dtype is a mapping; the manifest prices the delta (uplink) direction."""
+    backend, bcfg = _backend(shared_params=["fc2.*"])
+    fl = FLConfig(wire_dtype={"broadcast": "fp32", "delta": "fp16"})
+    blob = json.loads(write_scope_manifest(tmp_path, bcfg, fl, backend).read_text())
+    assert blob["bytes"]["shared_wire"] == 2 * (32 * 7 + 7)
