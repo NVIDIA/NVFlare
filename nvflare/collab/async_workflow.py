@@ -19,10 +19,12 @@ Adapters own model arithmetic; no runtime or ML framework is imported here.
 """
 
 import math
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.collab.async_storage import MemorySnapshotStore
 
 
 class AsyncModelAdapter(Protocol):
@@ -43,13 +45,26 @@ class AsyncModelAdapter(Protocol):
 
 @dataclass(frozen=True)
 class Assignment:
-    """Server-owned identity and exact starting snapshot; base_model is read-only."""
+    """Server-owned logical job and an exact, read-only starting snapshot.
+
+    client_name is a physical site for dispatch(), or None for reserve().
+    ScheduledCall binds an unbound job to its worker without changing its base.
+    base_model is borrowed and valid only until acceptance/cleanup. Metadata
+    carries run controls such as assignment seeds; it is not a wire envelope.
+    """
 
     assignment_id: int
-    client_name: str
+    client_name: str | None
     logical_name: str
     base_version: int
-    base_model: dict = field(repr=False)
+    snapshot: Any = field(repr=False)
+    snapshot_store: Any = field(repr=False)
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def base_model(self):
+        """Borrow the exact base, loading it on demand from the snapshot store."""
+        return self.snapshot_store.load(self.snapshot)
 
 
 @dataclass(frozen=True)
@@ -65,6 +80,7 @@ class AsyncResult:
     model: dict
     metrics: dict = field(default_factory=dict)
     is_delta: bool = False
+    metadata: dict = field(default_factory=dict)
 
     def __post_init__(self):
         for name, value in (("assignment_id", self.assignment_id), ("base_version", self.base_version)):
@@ -72,8 +88,8 @@ class AsyncResult:
                 raise ValueError(f"{name} must be a nonnegative integer")
         if not isinstance(self.is_delta, bool):
             raise ValueError("is_delta must be a boolean")
-        if not isinstance(self.model, dict) or not isinstance(self.metrics, dict):
-            raise TypeError("model and metrics must be dictionaries")
+        if not all(isinstance(value, dict) for value in (self.model, self.metrics, self.metadata)):
+            raise TypeError("model, metrics, and metadata must be dictionaries")
 
 
 @dataclass(frozen=True)
@@ -92,6 +108,8 @@ class AcceptedUpdate:
     delta: dict
     weight: float
     metrics: dict
+    returned_model: dict
+    metadata: dict
 
     @property
     def staleness(self):
@@ -123,6 +141,8 @@ class AsyncEngine:
         server_lr: float = 1.0,
         weight_metric: str | None = None,
         update_transform=None,
+        snapshot_store=None,
+        update_observer=None,
     ):
         for name, value in (
             ("num_updates", num_updates),
@@ -149,9 +169,11 @@ class AsyncEngine:
         self.server_lr = server_lr
         self.weight_metric = weight_metric
         self.update_transform = update_transform
+        self.snapshot_store = snapshot_store if snapshot_store is not None else MemorySnapshotStore()
+        self.update_observer = update_observer
         self.version = 0
         self.accepted_count = 0
-        self.active: dict[str, Assignment] = {}
+        self.active: dict[int, Assignment] = {}
         self._next_id = 0
         self._buffer = WeightedAggregationHelper()
         self._closed = False
@@ -174,19 +196,47 @@ class AsyncEngine:
             return []
         if len(set(available_clients)) != len(available_clients):
             raise ValueError("available client names must be unique")
+        busy = {assignment.client_name for assignment in self.active.values()}
+        clients = [name for name in available_clients if name not in busy]
+        return self._reserve(clients, clients, None)
+
+    def reserve(self, logical_names: list[str], metadata: list[dict] | None = None) -> list[Assignment]:
+        """Reserve logical jobs before assigning physical workers.
+
+        A scheduler owns logical eligibility, including overlapping uploads for
+        one logical client. K/O and the exact contribution budget remain engine
+        invariants. Repeated logical names are allowed; IDs remain unique.
+        """
+        if any(not isinstance(name, str) or not name for name in logical_names):
+            raise ValueError("logical names must be nonempty strings")
+        if metadata is not None and (
+            len(metadata) != len(logical_names) or any(not isinstance(m, dict) for m in metadata)
+        ):
+            raise ValueError("metadata must contain a dictionary per logical assignment")
+        return self._reserve(logical_names, [None] * len(logical_names), metadata)
+
+    def _reserve(self, logical_names, client_names, metadata):
+        if self._closed or self.finished:
+            return []
         slots = self.num_active_jobs - len(self.active)
         if slots < self.min_open_slots:
             return []
         remaining = self.num_updates * self.buffer_size - self.accepted_count - len(self.active)
-        clients = [name for name in available_clients if name not in self.active][: min(slots, remaining)]
-        if not clients:
-            return []
-        snapshot = self.adapter.snapshot(self.model)
+        count = min(len(logical_names), slots, remaining)
         assignments = []
-        for name in clients:
-            assignment = Assignment(self._next_id, name, name, self.version, snapshot)
+        for index in range(count):
+            snapshot = self.snapshot_store.retain(self.version, self.model, self.adapter)
+            assignment = Assignment(
+                self._next_id,
+                client_names[index],
+                logical_names[index],
+                self.version,
+                snapshot,
+                self.snapshot_store,
+                deepcopy(metadata[index]) if metadata else {},
+            )
             self._next_id += 1
-            self.active[name] = assignment
+            self.active[assignment.assignment_id] = assignment
             assignments.append(assignment)
         return assignments
 
@@ -197,7 +247,7 @@ class AsyncEngine:
         it never contributes to B. Equal weights are default; configured metric
         weights must be finite and strictly positive.
         """
-        current = self.active.get(assignment.client_name)
+        current = self.active.get(assignment.assignment_id)
         if self._closed or current is None or current.assignment_id != assignment.assignment_id:
             return False
         assignment = current
@@ -209,25 +259,30 @@ class AsyncEngine:
             raise TypeError("result must be AsyncResult")
         if result.assignment_id != assignment.assignment_id or result.base_version != assignment.base_version:
             raise ValueError("assignment metadata mismatch")
-        reference = (
-            self.adapter.difference(assignment.base_model, assignment.base_model)
-            if result.is_delta
-            else assignment.base_model
-        )
+        base_model = assignment.base_model
+        zero_delta = self.adapter.difference(base_model, base_model)
+        reference = zero_delta if result.is_delta else base_model
         self.adapter.validate(result.model, reference)
-        delta = result.model if result.is_delta else self.adapter.difference(result.model, assignment.base_model)
+        delta = result.model if result.is_delta else self.adapter.difference(result.model, base_model)
         weight = 1.0 if self.weight_metric is None else float(result.metrics[self.weight_metric])
         if not math.isfinite(weight) or weight <= 0:
             raise ValueError("aggregation weight must be finite and positive")
-        if self.update_transform is not None:
-            delta = self.update_transform(
-                AcceptedUpdate(assignment, self.version, self.model, delta, weight, result.metrics)
+        update = None
+        if self.update_transform is not None or self.update_observer is not None:
+            returned_model = self.adapter.apply(base_model, delta, 1.0) if result.is_delta else result.model
+            update = AcceptedUpdate(
+                assignment, self.version, self.model, delta, weight, result.metrics, returned_model, result.metadata
             )
-        self.adapter.validate(delta, self.adapter.difference(assignment.base_model, assignment.base_model))
+        if self.update_transform is not None:
+            delta = self.update_transform(update)
+        self.adapter.validate(delta, zero_delta)
+        if self.update_observer is not None:
+            self.update_observer(update)
         prepare = getattr(self.adapter, "prepare_for_aggregation", None)
         accumulation_delta = prepare(delta) if callable(prepare) else delta
         self._buffer.add(accumulation_delta, weight, str(assignment.assignment_id), assignment.base_version)
-        del self.active[assignment.client_name]
+        del self.active[assignment.assignment_id]
+        self.snapshot_store.release(assignment.snapshot)
         self.accepted_count += 1
         if self.buffered_count < self.buffer_size:
             return False
@@ -239,4 +294,7 @@ class AsyncEngine:
         """Release outstanding bases and partial accumulation; do not publish a partial version."""
         self._closed = True
         self.active.clear()
-        self._buffer.reset_stats()
+        try:
+            self.snapshot_store.close()
+        finally:
+            self._buffer.reset_stats()

@@ -95,9 +95,9 @@ class _ScaleUpdate:
 
 def _execute(application, clients, *, abort=None, **options):
     signal = abort or Signal()
-    workflow = AsyncWorkflow(
-        application, NumpyAsyncModelAdapter(), num_updates=2, num_active_jobs=len(clients), call_timeout=0.5, **options
-    )
+    settings = dict(num_updates=2, num_active_jobs=len(clients), call_timeout=0.5)
+    settings.update(options)
+    workflow = AsyncWorkflow(application, NumpyAsyncModelAdapter(), **settings)
     server = ServerApp(workflow)
     server._abort_signal = signal
     previous = get_call_context()

@@ -102,7 +102,7 @@ def test_late_duplicate_cannot_retire_new_assignment():
     run.accept(a, result(a, 11))
     current = run.dispatch(["a"])[0]
     assert not run.accept(a, result(a, 100))
-    assert run.active["a"] is current and run.accepted_count == 1
+    assert run.active[current.assignment_id] is current and run.accepted_count == 1
     run.close()
     assert not run.accept(b, result(b, 100))
     assert not run.active and run.buffered_count == 0
@@ -158,7 +158,7 @@ def test_invalid_weights_do_not_count(weight):
     with pytest.raises(ValueError, match="weight"):
         run.accept(job, result(job, 11, weight))
     assert run.accepted_count == run.buffered_count == 0
-    assert run.active["a"] is job
+    assert run.active[job.assignment_id] is job
 
 
 @pytest.mark.parametrize("case", ["metadata", "keys", "shape", "dtype", "nan", "none", "failure"])
