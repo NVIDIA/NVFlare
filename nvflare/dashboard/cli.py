@@ -165,6 +165,9 @@ def _fail_if_container_exited(container_obj):
 
 
 def start_local(env):
+    from nvflare.fuel.utils.optional_dependencies import DASHBOARD_OPTIONAL_MODULES, require_optional_dependencies
+
+    require_optional_dependencies("NVFlare Dashboard", "dashboard", DASHBOARD_OPTIONAL_MODULES)
     print("Local dashboard without docker is for development and test only")
     file_dir_path = os.path.dirname(__file__)
     wsgi_location = os.path.join(file_dir_path, "wsgi.py")

@@ -13,11 +13,14 @@
 # limitations under the License.
 from typing import Any
 
-from flask import Flask, jsonify
-from flask.json.provider import DefaultJSONProvider
-
 from nvflare.edge.web.models.api_error import ApiError
-from nvflare.edge.web.views.feg_views import feg_bp
+from nvflare.fuel.utils.optional_dependencies import EDGE_HTTP_OPTIONAL_MODULES, optional_dependency_import
+
+with optional_dependency_import("NVFlare edge HTTP service", "edge-http", EDGE_HTTP_OPTIONAL_MODULES):
+    from flask import Flask, jsonify
+    from flask.json.provider import DefaultJSONProvider
+
+    from nvflare.edge.web.views.feg_views import feg_bp
 
 app = Flask(__name__)
 

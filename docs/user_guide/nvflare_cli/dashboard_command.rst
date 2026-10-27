@@ -8,6 +8,29 @@ Introduction to the Dashboard Command
 The Dashboard command allows users to start the :ref:`dashboard_api` to provide a simple way to collect information
 of clients and users from different organizations and generate startup kits for users to download.
 
+Installing Dashboard Dependencies
+=================================
+
+The base ``nvflare`` installation includes the Dashboard command but not the
+optional Dashboard web dependencies. Install the ``dashboard`` extra on a host
+that runs Dashboard locally:
+
+.. code-block:: shell
+
+    $ python3 -m pip install "nvflare[dashboard]"
+    $ nvflare dashboard --start --local
+
+When Dashboard runs in Docker, the launcher host only needs the base NVFlare
+package and Docker access. The container image supplied with ``--image`` must
+include the ``dashboard`` extra. For example, build the Dashboard image from
+the repository root with:
+
+.. code-block:: shell
+
+    $ docker build -f docker/Dockerfile.parent \
+        --build-arg NVFLARE_EXTRAS=K8S,dashboard \
+        -t nvflare-dashboard:latest .
+
 Syntax and Usage
 =================
 
@@ -51,6 +74,11 @@ Running ``nvflare dashboard -h`` shows all available options.
 
     The ``-i``/``--image`` option is required when starting Dashboard with Docker or launching Dashboard
     on cloud. It is not required for ``--stop`` or ``--local``.
+
+    The launcher host does not need the ``dashboard`` extra when Dashboard runs
+    in Docker, but the selected container image does. A core parent image built
+    with the default ``NVFLARE_EXTRAS=K8S`` does not contain the Dashboard web
+    dependencies.
 
     For AWS cloud launches, specify ``--vpc-id`` and ``--subnet-id`` together.
     If only one of these options is provided, Dashboard ignores it.

@@ -22,12 +22,15 @@ Build from the repository root:
 docker build -f docker/Dockerfile.parent -t nvflare-parent:latest .
 ```
 
-The dashboard can use the same runtime image. If you want a dashboard-specific
-image name, tag the same build with both names:
+This build uses the default `NVFLARE_EXTRAS=K8S` build argument. It contains the
+parent-process dependencies but does not include the optional Dashboard web
+stack.
+
+Build a distinct Dashboard image with the `dashboard` extra:
 
 ```bash
 docker build -f docker/Dockerfile.parent \
-  -t nvflare-parent:latest \
+  --build-arg NVFLARE_EXTRAS=K8S,dashboard \
   -t nvflare-dashboard:latest \
   .
 ```
@@ -37,6 +40,11 @@ Then start the dashboard with the dashboard tag:
 ```bash
 nvflare dashboard --start -i nvflare-dashboard:latest --port 8443
 ```
+
+The machine running this launcher command only needs the base NVFlare package
+and Docker access. The referenced container image must include the `dashboard`
+extra. Do not retag a core parent image as a Dashboard image, because the core
+image intentionally omits the Dashboard web dependencies.
 
 Use this image in `docker.yaml` or `k8s.yaml` as the parent image:
 
@@ -85,8 +93,8 @@ containers include `/etc/pip/constraint.txt` to protect the tested package set.
 ## Choosing an Image
 
 - Use `Dockerfile.parent` for parent server/client processes.
-- Use `Dockerfile.parent` for the dashboard runtime; tag the same build as a
-  dashboard image if you want a dashboard-specific image name.
+- Use `Dockerfile.parent` with `NVFLARE_EXTRAS=K8S,dashboard` for the Dashboard
+  runtime, and give that build a distinct Dashboard image tag.
 - Use `Dockerfile.job` for submitted job containers.
 - Do not rely on a shell being available in the parent image; it is absent by
   design.
