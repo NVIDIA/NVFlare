@@ -57,6 +57,64 @@ The guest must provide its local AA token API at
 per Pod and require successful CPU and GPU appraisal. CPU-only profiles need
 no GPU Operator. TDX remains experimental pending complete hardware acceptance.
 
+## Check GPU Operator readiness
+
+Skip this section for CPU-only profiles. The platform owner runs these read-only
+checks before capture and repeats them after GPU Operator upgrades or changes to
+its operands. Replace the names below with the existing policy, namespace, and
+selected worker; access must permit reading ClusterPolicies, Nodes, and operands.
+
+~~~bash
+NODE_NAME=existing-worker
+CLUSTER_POLICY=existing-policy
+GPU_OPERATOR_NAMESPACE=existing-namespace
+kubectl get clusterpolicies.nvidia.com "$CLUSTER_POLICY" -o yaml
+kubectl -n "$GPU_OPERATOR_NAMESPACE" get deployments,daemonsets -o wide
+kubectl -n "$GPU_OPERATOR_NAMESPACE" get pods -o wide \
+  --field-selector "spec.nodeName=$NODE_NAME"
+kubectl get node "$NODE_NAME" \
+  -L nvidia.com/gpu.workload.config,nvidia.com/cc.mode,nvidia.com/cc.mode.state,nvidia.com/cc.ready.state
+kubectl get node "$NODE_NAME" -o jsonpath='{.status.allocatable.nvidia\.com/pgpu}{"\n"}'
+~~~
+
+Check the effective configuration and selected worker against the
+[GPU Operator ClusterPolicy fields](https://github.com/NVIDIA/gpu-operator/blob/v26.3.1/api/nvidia/v1/clusterpolicy_types.go):
+
+| Check | Required state |
+| --- | --- |
+| `spec.ccManager.enabled`, `spec.vfioManager.enabled`, `spec.kataSandboxDevicePlugin.enabled` | Enabled, with the corresponding selected-worker operands ready. Check the Kata sandbox device plugin, not the ordinary container GPU device plugin. |
+| `spec.sandboxWorkloads` | `enabled: true`, `mode: kata`; the selected worker's `nvidia.com/gpu.workload.config` override or `defaultWorkload` must select `vm-passthrough`. |
+| Worker and CC labels | Node is Ready; `nvidia.com/cc.ready.state=true`; `nvidia.com/cc.mode.state` matches the intended enabled mode from the node override or `ccManager.defaultMode`. |
+| GPU allocation | At least one allocatable `nvidia.com/pgpu` for this example's one-GPU Pod. |
+
+For CC mode values, use the installed release's
+[mode-label semantics](https://docs.nvidia.com/confidential-computing/containers/configure-cc-mode):
+`on` is the normal single-GPU mode; `ppcie` requires a separately qualified
+Hopper PPCIE configuration. Missing/false readiness, `off`, `failed`, or an
+incomplete mode transition requires platform-owner repair before capture.
+These labels indicate operational readiness, not attestation.
+
+On the selected worker, inspect PCI binding with `lspci -nnk -d 10de:`
+(`lspci` comes from pciutils). The GPUs intended for passthrough must use
+`vfio-pci`; an NVIDIA host driver must not own them. Review the existing
+`spec.driver.enabled` setting against the platform's driver-management plan.
+The [preinstalled-driver option](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/26.3/getting-started.html#pre-installed-nvidia-gpu-drivers)
+uses `driver.enabled=false` when driver installation is managed outside the
+Operator, including an applicable Ubuntu 26.04 host-managed-driver deployment.
+This is conditional, not an instruction to install NVIDIA host drivers on
+passthrough GPUs or to disable driver management solely because of the OS.
+
+Keep the supported version combination explicit:
+[NVIDIA CoCo v1.0](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
+lists Kata 3.29 and Ubuntu 25.10;
+[v1.1](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
+lists Kata 4.0 and adds Ubuntu 26.04. The newer matrix does not qualify this
+example's pinned Kata 3.29.0 profile for Ubuntu 26.04.
+
+Comprehensive new-host BIOS, CPU TEE, firmware, and GPU qualification remains a
+separate platform-owner follow-up. This workflow assumes that qualification is
+already complete; the checks and upstream links above do not perform it.
+
 ## Workflow
 
 1. [Capture measurements](MEASUREMENTS.md) from the installed runtime to obtain

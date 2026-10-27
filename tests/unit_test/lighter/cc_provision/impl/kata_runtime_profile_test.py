@@ -17,6 +17,8 @@
 import hashlib
 import json
 import runpy
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -105,10 +107,36 @@ def test_confidential_guard_only_reads_existing_settings(runtime):
         API["require_confidential_config"](qemu, runtime)
 
 
-def test_checkout_adapter_exports_current_read_only_guards():
-    source = runpy.run_path(str(ROOT / "trusted_system/lib/kata-runtime-profile.py"))
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / "shared/kata-runtime-profile.py",
+        ROOT / "trusted_system/lib/kata-runtime-profile.py",
+    ],
+)
+def test_checkout_adapter_exports_current_read_only_guards(path):
+    source = runpy.run_path(str(path))
     assert source["runtime_target"] is API["runtime_target"]
     source["require_token_api"](API["REQUIRED"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / "shared/kata-runtime-profile.py",
+        ROOT / "trusted_system/lib/kata-runtime-profile.py",
+        Path(kata_runtime_profile.__file__),
+    ],
+)
+@pytest.mark.parametrize(
+    "arguments", [[], ["target", "kata-qemu-snp", "--field", "cpu_tee"], ["enable", "unused.toml"]]
+)
+def test_removed_runtime_cli_rejects_direct_execution(path, arguments):
+    result = subprocess.run([sys.executable, str(path), *arguments], capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0
+    assert not result.stdout
+    assert "Kata runtime configuration CLI has been removed" in result.stderr
+    assert "agent.guest_components_rest_api=all" in result.stderr
 
 
 def test_admin_rejects_old_or_missing_capability(tmp_path):

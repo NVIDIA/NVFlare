@@ -23,6 +23,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -55,7 +57,34 @@ if args[0] == "apply" and "--dry-run=server" in args:
     if os.environ.get("CHANGE_SOURCE") == "1":
         Path(os.environ["SOURCE_POD"]).write_text("changed after validation\n")
     sys.exit(int(os.environ.get("DRY_RUN_STATUS", "0")))
-if args[0] == "get":
+case = os.environ.get("LAUNCH_CASE", "ready")
+namespace = os.environ.get("ACTUAL_NAMESPACE", "default")
+if args[0] == "apply":
+    print(json.dumps({"metadata": {"name": "review", "namespace": namespace, "uid": "current-uid"}}))
+elif args[:2] == ["get", "events"]:
+    if case == "event-forbidden":
+        print("Error from server (Forbidden): cannot list events", file=sys.stderr)
+        sys.exit(1)
+    if case == "invalid-events":
+        print("invalid JSON")
+        sys.exit(0)
+    event_uid = "old-uid" if case == "stale-event" else "current-uid"
+    print(json.dumps({"items": [{
+        "involvedObject": {"uid": event_uid},
+        "reason": "FailedCreatePodSandBox",
+        "message": "no runtime for kata-qemu-snp is configured",
+        "lastTimestamp": "2020-01-01T00:00:00Z",
+    }]}))
+elif args[:2] == ["get", "pod"] and "json" in args:
+    entries = [json.loads(line) for line in Path(os.environ["LAUNCH_CALLS"]).read_text().splitlines()]
+    count = sum(entry["args"][:2] == ["get", "pod"] for entry in entries)
+    ready = case in ("ready", "ready-retained") or (case == "stale-event" and count > 1)
+    uid = "replacement-uid" if case == "replaced" else "current-uid"
+    print(json.dumps({
+        "metadata": {"name": "review", "namespace": namespace, "uid": uid},
+        "status": {"conditions": [{"type": "Ready", "status": "True" if ready else "False"}]},
+    }))
+elif args[0] == "get":
     print("review Running")
 """
 
@@ -82,7 +111,15 @@ def launch(tmp_path):
     kubeconfig = tmp_path / "existing-kubeconfig"
     kubeconfig.write_text("current-context: existing-cluster\n")
 
-    def run(runtime="kata-qemu-snp", hash_mode="omitted", mutate=None, change_source=False, dry_run_status=0):
+    def run(
+        runtime="kata-qemu-snp",
+        hash_mode="omitted",
+        mutate=None,
+        change_source=False,
+        dry_run_status=0,
+        case="ready",
+        namespace="default",
+    ):
         fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
         pod = fixture["final_workload_pod"](runtime)
         if mutate:
@@ -106,6 +143,8 @@ def launch(tmp_path):
                 "SOURCE_POD": str(source),
                 "CHANGE_SOURCE": str(int(change_source)),
                 "DRY_RUN_STATUS": str(dry_run_status),
+                "LAUNCH_CASE": case,
+                "ACTUAL_NAMESPACE": namespace,
             },
         )
         operations = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
@@ -123,15 +162,24 @@ def test_manifest_only_launch_preserves_supported_target_and_existing_context(la
     result, operations, digest, source = launch(runtime, hash_mode)
     assert result.returncode == 0, result.stderr
     assert "image, runtime, security-context and InitData policy checks" in result.stdout
-    assert [operation["args"][0] for operation in operations] == ["apply", "apply", "wait", "get"]
+    assert [operation["args"][0] for operation in operations] == ["apply", "apply", "get", "get"]
     first, second = operations[:2]
-    assert first["args"] == ["apply", "--dry-run=server", "-f", first["snapshot"]]
-    assert second["args"] == ["apply", "-f", second["snapshot"]]
+    assert first["args"] == ["apply", "--dry-run=server", "-f", first["snapshot"], "--request-timeout=30s"]
+    assert second["args"] == ["apply", "-f", second["snapshot"], "--request-timeout=30s", "-o", "json"]
     assert first["snapshot"] == second["snapshot"] != str(source)
     assert first["digest"] == second["digest"] == digest
     assert all(item["kubeconfig"].endswith("existing-kubeconfig") for item in operations)
     assert first["file_mode"] == 0o600 and first["directory_mode"] == 0o700
-    assert operations[2]["args"] == ["wait", "--for=condition=Ready", "pod/review", "-n", "default", "--timeout=10m"]
+    assert operations[2]["args"] == [
+        "get",
+        "pod",
+        "review",
+        "-n",
+        "default",
+        "-o",
+        "json",
+        "--request-timeout=10s",
+    ]
     assert not Path(first["snapshot"]).exists()
 
 
@@ -175,3 +223,82 @@ def test_server_dry_run_failure_prevents_apply_and_cleans_snapshot(launch):
     result, operations, _, _ = launch(dry_run_status=7)
     assert result.returncode == 7
     assert len(operations) == 1 and "--dry-run=server" in operations[0]["args"]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_sandbox_failure_reports_event_and_handler_guidance_without_waiting(launch):
+    result, operations, _, _ = launch(case="sandbox-failure")
+    assert result.returncode != 0
+    assert "FailedCreatePodSandBox: no runtime for kata-qemu-snp is configured" in result.stderr
+    assert "RuntimeClass" in result.stderr and "containerd/Kata handler" in result.stderr
+    assert "Pod is retained for diagnosis" in result.stderr
+    assert [entry["args"][:2] for entry in operations[2:]] == [["get", "pod"], ["get", "events"]]
+    assert "involvedObject.uid=current-uid" in operations[3]["args"]
+    assert not any(entry["args"][0] in ("wait", "delete") for entry in operations)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_retained_warning_from_another_pod_uid_does_not_fail_launch(launch):
+    result, operations, _, _ = launch(case="stale-event")
+    assert result.returncode == 0, result.stderr
+    assert any(entry["args"][:2] == ["get", "events"] for entry in operations)
+    assert "FailedCreatePodSandBox" not in result.stderr
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_ready_pod_takes_precedence_over_retained_sandbox_warnings(launch):
+    result, operations, _, _ = launch(case="ready-retained")
+    assert result.returncode == 0, result.stderr
+    assert not any(entry["args"][:2] == ["get", "events"] for entry in operations)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_replaced_pod_is_not_silently_followed(launch):
+    result, operations, _, _ = launch(case="replaced")
+    assert result.returncode != 0
+    assert "Pod was replaced while waiting" in result.stderr
+    assert not any(entry["args"][:2] == ["get", "events"] for entry in operations)
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [("event-forbidden", "cannot list events"), ("invalid-events", "did not return valid JSON")],
+)
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_event_query_failures_are_reported(launch, case, message):
+    result, _, _, _ = launch(case=case)
+    assert result.returncode != 0
+    assert message in result.stderr
+    if case == "event-forbidden":
+        assert "permission to get Pods and list their events" in result.stderr
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo launch helpers require Python 3.11+")
+def test_context_namespace_is_taken_from_actual_applied_pod(launch):
+    result, operations, _, _ = launch(namespace="existing-context-namespace")
+    assert result.returncode == 0, result.stderr
+    assert "existing-context-namespace/review" in result.stdout
+    assert all(entry["args"][entry["args"].index("-n") + 1] == "existing-context-namespace" for entry in operations[2:])
+
+
+@pytest.mark.parametrize("failure", ["deadline", "request-timeout"])
+def test_readiness_deadline_and_api_request_timeout_are_bounded(tmp_path, failure):
+    applied = tmp_path / "applied.json"
+    applied.write_text(json.dumps({"metadata": {"name": "review", "namespace": "default", "uid": "current-uid"}}))
+    script = (ROOT / "coco/50-launch-handoff.sh").read_text()
+    program = script.split("<<'PY'\n", 2)[2].split("\nPY\n", 1)[0]
+    clock = SimpleNamespace(monotonic=Mock(side_effect=[0, 601 if failure == "deadline" else 1]), sleep=Mock())
+    request = Mock(side_effect=subprocess.TimeoutExpired("kubectl", 15))
+    api = SimpleNamespace(run=request, TimeoutExpired=subprocess.TimeoutExpired)
+    with (
+        patch.dict(sys.modules, {"time": clock, "subprocess": api}),
+        patch.object(sys, "argv", ["readiness", str(applied)]),
+    ):
+        with pytest.raises(SystemExit, match="timed out"):
+            exec(compile(program, str(ROOT / "coco/50-launch-handoff.sh"), "exec"), {})
+    if failure == "deadline":
+        request.assert_not_called()
+    else:
+        assert request.call_args.kwargs["timeout"] <= 15
+        assert "--request-timeout=10s" in request.call_args.args[0]
+    clock.sleep.assert_not_called()

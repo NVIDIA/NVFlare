@@ -15,6 +15,12 @@
 
 """Read-only runtime selection and capability guards for CoCo workloads."""
 
+CLI_REMOVED_MESSAGE = (
+    "The Kata runtime configuration CLI has been removed. Use a preconfigured CoCo-ready runtime "
+    "with exactly one agent.guest_components_rest_api=all kernel parameter; "
+    "this module provides read-only capture helpers."
+)
+
 OPTION = "agent.guest_components_rest_api"
 REQUIRED = OPTION + "=all"
 CAPABILITY = "guest-local-aa-token/v1"
@@ -70,3 +76,7 @@ def require_token_api(cmdline):
     values = [part for part in cmdline.split() if part == OPTION or part.startswith(OPTION + "=")]
     if values != [REQUIRED]:
         raise ValueError("Require exactly one " + REQUIRED)
+
+
+if __name__ == "__main__":
+    raise SystemExit(CLI_REMOVED_MESSAGE)

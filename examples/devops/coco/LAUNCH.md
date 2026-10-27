@@ -6,7 +6,8 @@ Ordinary server/admin startup kits stay on their trusted machines.
 
 Use the current Kubernetes context, or set standard `KUBECONFIG` to the existing
 cluster configuration. The manifest must select an available compatible
-RuntimeClass and, for GPU profiles, one allocatable confidential GPU.
+RuntimeClass and, for GPU profiles, one allocatable confidential GPU. The launcher
+requires permission to apply/get the Pod and list its events.
 
 ## Apply the received manifest
 
@@ -20,7 +21,14 @@ kubectl get -f "$POD" -o wide
 ~~~
 
 Invoking the helper authorizes applying the Pod. It validates the manifest,
-performs a server dry run, applies the received file, and waits for readiness.
+performs a server dry run, applies the received file, and observes readiness and
+events for the applied Pod UID for up to ten minutes. A `FailedCreatePodSandBox`
+event stops the launcher promptly with runtime-handler guidance; the Pod remains
+available for diagnosis. A Ready Pod takes precedence over retained warnings.
+For a Pod that is still pending, retained sandbox warnings for that same UID also
+stop a rerun; inspect the cause and wait for recovery or have the cluster operator
+recreate the Pod before retrying. Sandbox errors can be transient; launcher
+failure does not mean Kubernetes has stopped retrying.
 It checks supported runtime and image/policy structure, not sender identity or
 an independently supplied registry allowlist.
 

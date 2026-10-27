@@ -54,10 +54,62 @@ metadata.write_text(json.dumps(pod))
 print("Received Pod passed image, runtime, security-context and InitData policy checks")
 PY
 
-kubectl apply --dry-run=server -f "${POD_SNAPSHOT}" >/dev/null
-kubectl apply -f "${POD_SNAPSHOT}"
-POD_NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["metadata"]["name"])' "${POD_JSON}")"
-NAMESPACE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["metadata"].get("namespace", "default"))' "${POD_JSON}")"
-kubectl wait --for=condition=Ready "pod/${POD_NAME}" -n "${NAMESPACE}" --timeout=10m
-kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o wide
+kubectl apply --dry-run=server -f "${POD_SNAPSHOT}" --request-timeout=30s >/dev/null
+kubectl apply -f "${POD_SNAPSHOT}" --request-timeout=30s -o json > "${WORK_DIR}/applied-pod.json"
+python3 - "${WORK_DIR}/applied-pod.json" <<'PY'
+import json
+import subprocess
+import sys
+import time
+
+try:
+    applied = json.load(open(sys.argv[1]))["metadata"]
+except (ValueError, KeyError, TypeError) as error:
+    raise SystemExit("Kubernetes apply did not return valid Pod metadata") from error
+name, namespace, uid = (applied.get(key) for key in ("name", "namespace", "uid"))
+if not all(isinstance(value, str) and value for value in (name, namespace, uid)):
+    raise SystemExit("Kubernetes apply did not return the Pod name, namespace and UID")
+deadline = time.monotonic() + 600
+
+
+def query(*arguments):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise SystemExit("Pod readiness timed out after 10 minutes; inspect Pod events and runtime logs")
+    try:
+        result = subprocess.run(
+            ["kubectl", *arguments, "--request-timeout=10s"],
+            capture_output=True, text=True, timeout=min(15, remaining),
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SystemExit("Kubernetes readiness query failed or timed out; check API connectivity and Pod/event access") from error
+    if result.returncode:
+        raise SystemExit(
+            "Kubernetes readiness query failed: " + result.stderr.strip()[:1000]
+            + "\nCheck API connectivity and permission to get Pods and list their events."
+        )
+    try:
+        return json.loads(result.stdout)
+    except ValueError as error:
+        raise SystemExit("Kubernetes readiness query did not return valid JSON") from error
+
+
+while True:
+    pod = query("get", "pod", name, "-n", namespace, "-o", "json")
+    if pod.get("metadata", {}).get("uid") != uid:
+        raise SystemExit("Pod was replaced while waiting; inspect the replacement and rerun the launcher")
+    if any(c.get("type") == "Ready" and c.get("status") == "True" for c in pod.get("status", {}).get("conditions", [])):
+        break
+    events = query("get", "events", "-n", namespace, "--field-selector", "involvedObject.uid=" + uid, "-o", "json")
+    for event in events.get("items", []):
+        if event.get("involvedObject", {}).get("uid") == uid and event.get("reason") == "FailedCreatePodSandBox":
+            raise SystemExit(
+                "FailedCreatePodSandBox: " + str(event.get("message", ""))[:2000]
+                + "\nCheck the Pod's RuntimeClass and assigned worker's containerd/Kata handler and kubelet/containerd logs."
+                + "\nThe Pod is retained for diagnosis. This launcher stops on retained sandbox warnings for this Pod UID."
+            )
+    time.sleep(min(2, max(0, deadline - time.monotonic())))
+print("Pod Ready:", namespace + "/" + name)
+subprocess.run(["kubectl", "get", "pod", name, "-n", namespace, "-o", "wide", "--request-timeout=10s"], check=True, timeout=15)
+PY
 printf 'Pod Ready; verify Trustee key release and NVFlare registration and peer proofs from the trusted side.\n'
