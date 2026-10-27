@@ -1041,7 +1041,8 @@ class Session(SessionSpec):
         parts = [cmd, target]
         if options:
             options = validate_options_string(options)
-            parts.append(options)
+            # each option must reach the server as its own token; join_args would quote "-l -a" as one
+            parts.extend(options.split())
 
         if pattern_required:
             if not pattern:
@@ -1520,14 +1521,22 @@ class Session(SessionSpec):
 
         Args:
             config: str log level or built-in LogMode
-            target (str): target site name or "all"
+            target (str): "all", "server", or a client site name. A client
+                site name is sent to the server as "client <name>".
 
         Returns: None
 
         """
         config_str = validate_site_log_config(config)
 
-        command = join_args([AdminCommandNames.CONFIGURE_SITE_LOG, target, config_str])
+        parts = [AdminCommandNames.CONFIGURE_SITE_LOG]
+        if target in ("all", "server", "client"):
+            parts.append(target)
+        else:
+            # the server expects "client <name>" for a single client site
+            parts.extend(["client", target])
+        parts.append(config_str)
+        command = join_args(parts)
         self._do_command(command, enforce_meta=False)
 
     def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:

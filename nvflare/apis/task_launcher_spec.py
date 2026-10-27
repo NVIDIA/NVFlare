@@ -216,6 +216,15 @@ class TaskLauncherSpec(FLComponent, ABC):
 
     launch_mode = None
 
+    def get_worker_listener_host(self) -> str:
+        """Host at which this launcher's workers can reach their Client Job.
+
+        The Client Job listens for its workers there, on a port of its own. The default suits launchers that run
+        workers on the Client Job's host; a launcher that places workers elsewhere (another pod, node or
+        container) must return an address of the Client Job that those workers can reach.
+        """
+        return "localhost"
+
     @abstractmethod
     def launch_task(self, request: TaskLaunchRequest) -> TaskHandleSpec:
         """Launch one physical attempt.

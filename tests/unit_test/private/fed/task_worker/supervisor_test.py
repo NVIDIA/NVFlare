@@ -111,22 +111,21 @@ def _records(attempt):
     return [json.loads(line) for line in (Path(attempt["runtime_root"]) / "diagnostics.jsonl").read_text().splitlines()]
 
 
-def test_result_and_analytics_reads_follow_confirmed_settlement(tmp_path):
+def test_result_read_follows_confirmed_settlement(tmp_path):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
     store = attempt["store"]
     events = []
-    read_result, read_analytics = store.read_result, store.read_analytics
+    read_result = store.read_result
     handle.wait_for_settlement.side_effect = lambda **_: events.append("settled") or SETTLED
     store.read_result = lambda identity: (events.append("result"), read_result(identity))[1]
-    store.read_analytics = lambda *args: (events.append("analytics"), read_analytics(*args))[1]
 
     outcome = supervisor.run(**attempt)
 
     assert outcome.result["value"] == 2
     assert outcome.completion.identity == outcome.identity
     assert not outcome.aborted
-    assert events == ["settled", "result", "analytics"]
+    assert events == ["settled", "result"]
     assert [r["event"] for r in _records(attempt)] == ["launched", "settled", "validated"]
     assert supervisor._active is None
 
@@ -479,7 +478,7 @@ def test_cancellation_failure_is_terminal_ownership_problem(tmp_path, cancel_fai
     assert _payload(attempt).exists()
 
 
-@pytest.mark.parametrize("corruption", ["digest", "identity", "pid", "analytics", "missing_completion"])
+@pytest.mark.parametrize("corruption", ["digest", "identity", "pid", "missing_completion"])
 def test_completion_validation_failures_preserve_evidence(tmp_path, corruption):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
@@ -496,9 +495,6 @@ def test_completion_validation_failures_preserve_evidence(tmp_path, corruption):
             completion_path.write_text(json.dumps(record))
         elif corruption == "pid":
             handle.process_group_id = record["worker_pid"] + 1
-        elif corruption == "analytics":
-            record["diagnostics"]["analytics"] = record["result"]
-            completion_path.write_text(json.dumps(record))
         else:
             completion_path.unlink()
         return handle

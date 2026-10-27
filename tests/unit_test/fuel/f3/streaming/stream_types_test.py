@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+
 import pytest
 
 from nvflare.fuel.f3.streaming.stream_types import StreamCancelled, StreamError, StreamFuture, StreamTaskSpec
@@ -50,6 +52,62 @@ def test_stream_future_cancel_returns_false_after_completion_with_none_result():
     future.set_result(None)
 
     assert future.cancel() is False
+
+
+def test_cancel_task_can_complete_the_same_future_without_deadlocking():
+    future = StreamFuture(stream_id=9)
+    callback_calls = []
+
+    class CompletingTask(StreamTaskSpec):
+        def cancel(self):
+            future.set_exception(StreamError("task stopped"))
+
+    future.task_handle = CompletingTask()
+    future.add_done_callback(lambda: callback_calls.append("done"))
+    cancel_results = []
+    thread = threading.Thread(target=lambda: cancel_results.append(future.cancel()), daemon=True)
+    thread.start()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive(), "task cancellation must not re-enter a held future lock"
+    assert cancel_results == [True]
+    assert future.cancelled()
+    assert callback_calls == ["done"]
+
+
+def test_cancel_invokes_callbacks_when_task_cancellation_raises(caplog):
+    cancel_error = RuntimeError("task cancellation failed")
+
+    class RaisingTask(StreamTaskSpec):
+        def cancel(self):
+            raise cancel_error
+
+    future = StreamFuture(stream_id=11, task_handle=RaisingTask())
+    callback_calls = []
+
+    def raising_callback():
+        callback_calls.append("first")
+        raise RuntimeError("callback failed")
+
+    future.add_done_callback(raising_callback)
+    future.add_done_callback(lambda: callback_calls.append("second"))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        future.cancel()
+
+    assert exc_info.value is cancel_error
+    assert future.done()
+    assert future.cancelled()
+    assert isinstance(future.exception(timeout=0), StreamCancelled)
+    with pytest.raises(StreamCancelled):
+        future.result(timeout=0)
+    assert callback_calls == ["first", "second"]
+    assert "callback failed" in caplog.text
+
+    assert future.cancel() is False
+    assert callback_calls == ["first", "second"]
+    future.add_done_callback(lambda: callback_calls.append("late"))
+    assert callback_calls == ["first", "second", "late"]
 
 
 def test_add_done_callback_invoked_immediately_when_future_already_done():

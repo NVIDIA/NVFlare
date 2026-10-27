@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Execute one staged assignment without a federation Cell or live job engine."""
+"""Execute one staged assignment with a live CJ session and a minimal task runtime."""
 
 import logging
 import os
 import resource
 import sys
-import tempfile
 import time
+from functools import partial
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
@@ -48,6 +48,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
+from .cell_session import CellWorkerTransport
 from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
@@ -178,11 +179,9 @@ def _execute(
     bootstrap: WorkerBootstrap,
     data: Shareable,
     workspace: Workspace,
-    store: FileTaskArtifactStore,
     *,
     context_binding=None,
     protected_context_keys=(),
-    analytics=None,
 ):
     components = {}
     for original in bootstrap.components:
@@ -199,7 +198,7 @@ def _execute(
     runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys, components=components or None)
     adapt_executor = None
     if context_binding is not None:
-        adapt_executor = context_binding(fl_ctx, bootstrap.identity, store, analytics)
+        adapt_executor = context_binding(fl_ctx)
     executor = _build_executor(bootstrap.executor)
     if adapt_executor is not None:
         executor = adapt_executor(executor)
@@ -254,7 +253,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     # Failure to acquire the claim must not modify an existing attempt's records.
     store.claim_worker(identity)
     owns_auditor = False
-    analytics = None
+    transport = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -281,20 +280,17 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             spec = _thaw_json(original)
             if _class_path(spec) == DECOMPOSER_REGISTER_PATH and spec.get("disabled") is not True:
                 instantiate_class(_class_path(spec), task_constructor_args(spec))
+        # Records travel FOBS-encoded, so the session opens only once every codec is registered.
+        if bootstrap.cell_session is not None:
+            transport = CellWorkerTransport(bootstrap.cell_session)
+            transport.open()
+        if context_binding is not None:
+            log = None if transport is None else transport.log
+            context_binding = partial(context_binding, identity=identity, store=store, log=log)
         data = store.read_input(identity)
-        if context_binding is None:
-            result, runtime = _execute(bootstrap, data, workspace, store)
-        else:
-            analytics = tempfile.TemporaryFile(dir=store.attempt_dir(identity))
-            result, runtime = _execute(
-                bootstrap,
-                data,
-                workspace,
-                store,
-                context_binding=context_binding,
-                protected_context_keys=protected_context_keys,
-                analytics=analytics,
-            )
+        result, runtime = _execute(
+            bootstrap, data, workspace, context_binding=context_binding, protected_context_keys=protected_context_keys
+        )
         reference = result if isinstance(result, ArtifactReference) else store.stage_result(identity, result)
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
@@ -311,10 +307,6 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         checkpoint = store.stage_checkpoint(identity)
         if checkpoint is not None:
             diagnostics["checkpoint"] = checkpoint.to_dict()
-        if analytics is not None:
-            analytics_reference = store.write_analytics(identity, analytics)
-            if analytics_reference is not None:
-                diagnostics["analytics"] = analytics_reference.to_dict()
         return store.commit_staged_result(
             identity,
             reference,
@@ -340,11 +332,15 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
-        if analytics is not None:
-            analytics.close()
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
+        if transport is not None:
+            # The outcome is already on disk; a session that will not close cleanly must not replace it.
+            try:
+                transport.close()
+            except Exception as e:
+                logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
 
 
 def main():

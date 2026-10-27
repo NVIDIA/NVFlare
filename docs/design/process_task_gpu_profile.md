@@ -88,6 +88,19 @@ not a GPU reservation. Operator investigation is required for unresolved cleanup
 A task that hangs should have a finite worker_timeout; cleanup timing still
 assumes the OS can terminate and observe the owned process group.
 
+Workers connect to the CJ through a live Cell session before computation. The
+same-host Process topology uses the default localhost listener and the CJ's
+job-scoped credentials, including internal mTLS when configured. Metrics travel
+live; input, result, checkpoint and failure artifacts remain on disk. Each attempt
+closes its session before the CJ releases its execution gate, including on OOM.
+
+CP's automatic resident-CJ recovery cannot infer task worker settlement from CJ
+process-group exit: disposable workers have their own groups. Once a task runtime
+has been created, the existing runtime directory fences automatic CJ replacement.
+After abrupt CJ death, an operator must confirm worker cleanup before restarting.
+This does not prevent a living CJ from accepting fresh tasks after settled OOM or
+other worker failure. No additional reservation or restart-state file is created.
+
 Ordinary application OOM recovery comes from ending the worker and running the
 next task in a fresh process. There is no GPU reset, driver repair, unrelated
 process termination or device reconfiguration. Driver faults, unkillable processes

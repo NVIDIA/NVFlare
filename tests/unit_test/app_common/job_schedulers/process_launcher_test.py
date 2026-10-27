@@ -29,6 +29,119 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobRet
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, ProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
+from nvflare.client.cell.bootstrap import bootstrap_file_name
+from tests.timing_utils import isolate_time
+
+
+@pytest.mark.parametrize("group_state", ["gone", "alive", "unknown"])
+def test_restart_requires_confirmed_empty_owned_group(group_state):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    error = {"gone": ProcessLookupError(), "alive": None, "unknown": PermissionError()}[group_state]
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=error):
+        assert handle.can_restart() is (group_state == "gone")
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+def test_restart_requires_no_uncleared_external_trainer(tmp_path, bootstrap):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    (tmp_path / "checkpoint.json").write_text("checkpoint")
+    if bootstrap:
+        (tmp_path / bootstrap_file_name(1)).write_text("launch in progress")
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError):
+        assert handle.can_restart() is not bootstrap
+
+
+@pytest.mark.skipif(not hasattr(os, "waitid"), reason="Process tasks require waitid/WNOWAIT")
+def test_cj_exit_does_not_prove_its_separate_task_worker_group_settled(tmp_path):
+    from nvflare.utils.process_utils import spawn_process
+
+    app_dir = tmp_path / "job" / "app_site-1"
+    app_dir.mkdir(parents=True)
+    script = """
+from pathlib import Path
+import os, sys
+from nvflare.apis.task_launcher_spec import TaskLaunchRequest
+from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
+root = Path(sys.argv[1])
+(root / 'job' / '.nvflare' / 'task-execution' / 'attempts').mkdir(parents=True)
+worker = ProcessTaskLauncher().launch_task(TaskLaunchRequest(
+    'job', 'site-1', 'task', 'attempt',
+    (sys.executable, '-c', 'import time; time.sleep(60)')))
+(root / 'worker.pid').write_text(str(worker.process_group_id))
+os._exit(17)
+"""
+    adapter = spawn_process([sys.executable, "-c", script, str(tmp_path)], os.environ.copy())
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(app_dir))
+    try:
+        handle.wait()
+        worker_pid = int((tmp_path / "worker.pid").read_text())
+        assert os.getpgid(worker_pid) == worker_pid
+        assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+        assert not handle.can_restart()
+    finally:
+        record = tmp_path / "worker.pid"
+        if record.exists():
+            worker_pid = int(record.read_text())
+            try:
+                if os.getpgid(worker_pid) == worker_pid:
+                    os.killpg(worker_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_restart_requires_readable_trainer_launch_directory(tmp_path):
+    adapter = mock.Mock()
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    with (
+        mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError),
+        mock.patch("nvflare.app_common.job_launcher.process_launcher.os.listdir", side_effect=PermissionError),
+    ):
+        assert not handle.can_restart()
+
+
+@pytest.mark.parametrize("cleanup", ["delayed", "forced", "stuck", "unknown", "cancelled"])
+def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
+    adapter = mock.Mock(pid=4321)
+    adapter.poll.return_value = -signal.SIGKILL
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    clock = isolate_time(monkeypatch, "nvflare.app_common.job_launcher.process_launcher")
+    elapsed = [0.0]
+    kills = []
+
+    def killpg(pgid, sig):
+        assert pgid == adapter.pid
+        if cleanup == "unknown":
+            raise PermissionError("group cannot be inspected")
+        if sig == signal.SIGKILL:
+            kills.append(elapsed[0])
+        elif (cleanup == "delayed" and elapsed[0] >= 0.3) or (kills and cleanup != "stuck"):
+            raise ProcessLookupError()
+
+    def sleep(seconds):
+        elapsed[0] += seconds
+        if cleanup == "cancelled" and not kills:
+            handle.terminate()
+
+    clock.monotonic = lambda: elapsed[0]
+    clock.sleep = sleep
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.os.killpg", killpg)
+    handle.wait()
+    adapter.wait.assert_called_once()
+    assert handle.can_restart() is (cleanup not in ("stuck", "unknown"))
+    if cleanup == "delayed":
+        assert elapsed[0] == pytest.approx(0.3)
+        assert not kills
+    elif cleanup == "cancelled":
+        assert kills == [0.1]
+        assert elapsed[0] == pytest.approx(0.1)
+    else:
+        assert elapsed[0] == pytest.approx(10.0 if cleanup == "forced" else 20.0)
+        assert kills == ([] if cleanup == "unknown" else [10.0])
 
 
 class DummyWorkspace:
@@ -42,6 +155,9 @@ class DummyWorkspace:
 
     def get_resources_file_path(self):
         return None
+
+    def get_app_dir(self, job_id):
+        return os.path.join(self.root_dir, job_id, "app")
 
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
@@ -260,6 +376,7 @@ def test_launch_job_uses_posix_spawn_when_supported(monkeypatch, tmp_path):
     # Access via adapter
     assert handle.adapter.process is None
     assert handle.adapter.pid == 4321
+    assert handle.app_dir == workspace.get_app_dir("job-posix")
     assert spawned["setsid"] is True
     assert spawned["argv"][0].endswith("python")
     popen_mock.assert_not_called()
@@ -289,6 +406,7 @@ def test_launch_job_falls_back_when_spawn_fails(monkeypatch, tmp_path):
     # Access via adapter
     assert handle.adapter.process is popen_instance
     assert handle.adapter.pid == popen_instance.pid
+    assert handle.app_dir == workspace.get_app_dir("job-fallback")
 
 
 def test_process_handle_with_pid_wait_and_poll(monkeypatch):

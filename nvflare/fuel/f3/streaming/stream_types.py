@@ -159,11 +159,16 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
-            if self.task_handle:
-                self.task_handle.cancel()
+            task_handle = self.task_handle
             self.waiter.set()
 
-        self._invoke_callbacks()
+        # TxTask.cancel() completes this same StreamFuture. Calling it while
+        # holding the future's non-reentrant lock deadlocks in set_exception().
+        try:
+            if task_handle:
+                task_handle.cancel()
+        finally:
+            self._invoke_callbacks()
         return True
 
     def cancelled(self):
