@@ -14,11 +14,10 @@
 """One Slurm allocation's authorized worker, without a local CJ PID contract."""
 
 import argparse
-import logging
 import os
-import threading
+import sys
 
-from nvflare.private.fed.app.client.task_worker_process import _flush_logs
+from nvflare.private.fed.app.client.task_worker_process import main as worker_main
 
 
 def main():
@@ -27,29 +26,11 @@ def main():
     args = parser.parse_args()
     if not os.environ.get("SLURM_JOB_ID", "").isdigit():
         raise RuntimeError("Slurm task worker requires an allocation identity")
-    exit_code = 1
-    try:
-        from nvflare.private.fed.client.client_api_task_runner import CLIENT_TASK_CONTEXT_KEYS, bind_client_task_context
-        from nvflare.private.fed.task_worker.worker import run_worker
-
-        run_worker(
-            args.bootstrap, context_binding=bind_client_task_context, protected_context_keys=CLIENT_TASK_CONTEXT_KEYS
-        )
-        exit_code = 0
-    except BaseException as error:
-        from nvflare.security.logging import secure_format_exception, secure_log_traceback
-
-        logging.getLogger(__name__).error("Slurm task worker failed: %s", secure_format_exception(error))
-        secure_log_traceback()
-    finally:
-        try:
-            flush = threading.Thread(target=_flush_logs, daemon=True, name="slurm-task-log-flush")
-            flush.start()
-            flush.join(timeout=2.0)
-        finally:
-            # Slurm owns descendant cleanup. Do not wait in Python's unbounded
-            # atexit joins or mistake this process exit for allocation release.
-            os._exit(exit_code)
+    # The common entry point binds Client API context, removes inherited job
+    # credentials and bounds final log flushing/exit. Slurm owns settlement of
+    # the allocation; its worker does not share a host-local CJ parent PID.
+    sys.argv[:] = ["nvflare-slurm-task-worker", "--bootstrap", args.bootstrap, "--execution_scope", "native"]
+    worker_main()
 
 
 if __name__ == "__main__":
