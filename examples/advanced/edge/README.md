@@ -20,20 +20,15 @@ This guide supports two distinct workflows:
 ### Install prerequisites
 Install NVFlare and the required packages for this example:
 ```commandline
+python -m pip install nvflare
 pip install -r requirements.txt
 ```
 
-The requirements file installs base NVFlare for the Edge gRPC services and
-simulated-device workflows. It does not install the optional HTTP/HTTPS routing
-bridge used by real mobile devices. On the host that will run the routing proxy,
-install the `edge-http` extra while preserving this example's NVFlare version:
+On the HTTP routing-proxy host only, also install:
 
 ```commandline
-python -m pip install "nvflare[edge-http]~=2.10.0"
+python -m pip install "nvflare[edge-http]"
 ```
-
-Other server, relay, leaf-client, and simulated-device hosts do not need this
-extra. Their Edge gRPC behavior is unchanged.
 
 To run the ExecuTorch simulated devices, you need to install the executorch pybindings with training extension (please refer to [ExecuTorch GitHub](https://github.com/pytorch/executorch/issues/8990))
 
@@ -96,9 +91,7 @@ cd /tmp/nvflare/workspaces/edge_example/prod_00/scripts/
 ./start_rp.sh
 ```
 
-Run this command on the routing-proxy host after installing
-`nvflare[edge-http]`. By default, it will start listening on port 4321, feel
-free to adjust that.
+By default, it will start listening on port 4321, feel free to adjust that.
 
 
 ## Enable HTTPS with self-signed certs

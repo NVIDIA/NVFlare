@@ -1,6 +1,3 @@
-# Base Edge and gRPC runtime. The routing-proxy host additionally needs
-# "nvflare[edge-http]~=2.10.0"; see README.md.
-nvflare~=2.10.0
 executorch
 torchvision
 torch

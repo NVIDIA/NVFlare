@@ -83,39 +83,6 @@ Optional Dependencies
 
 NVFlare provides several optional dependency groups that you can install based on your needs:
 
-* **DASHBOARD** - Dashboard HTTP service and local Dashboard runtime:
-
-  .. code-block:: shell
-
-     $ python3 -m pip install "nvflare[dashboard]"
-
-  Dashboard does not require Kubernetes. For Docker setup, see
-  :doc:`/user_guide/nvflare_cli/dashboard_command`.
-
-* **EDGE-HTTP** - HTTP/HTTPS routing bridge for mobile and other HTTP edge devices:
-
-  .. code-block:: shell
-
-     $ python3 -m pip install "nvflare[edge-http]"
-
-  Install this extra only on a host that runs the Edge HTTP routing bridge.
-  The base NVFlare installation includes the Edge gRPC services and does not
-  require this extra for Edge simulation or other gRPC-only deployments.
-
-The base ``nvflare`` package still contains the Dashboard and Edge HTTP service
-code, but does not install either optional HTTP dependency set. You can run the
-Dashboard Docker launcher with the base package, but the Dashboard container
-image itself must include the ``dashboard`` extra.
-
-.. note::
-
-   Starting with NVFlare 2.10, running Dashboard locally or running the Edge
-   HTTP bridge requires the corresponding extra. Upgrading an existing
-   environment does not remove Flask packages installed by an earlier NVFlare
-   version; use a fresh virtual environment for a lean base installation. The
-   ``all``, ``test``, and ``dev`` dependency profiles intentionally include the
-   web dependencies.
-
 * **HE** - Homomorphic Encryption support:
 
   .. code-block:: shell
@@ -167,6 +134,12 @@ image itself must include the ``dashboard`` extra.
   .. code-block:: shell
 
      $ pip install nvflare[CONFIG]
+
+* **DASHBOARD** - Dashboard web interface:
+
+  .. code-block:: shell
+
+     $ python3 -m pip install "nvflare[dashboard]"
 
 You can also install multiple optional dependencies at once:
 
