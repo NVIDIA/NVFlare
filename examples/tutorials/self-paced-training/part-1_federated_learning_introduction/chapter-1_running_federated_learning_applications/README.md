@@ -1,4 +1,4 @@
-# Chapter 1: Running federated learning applications
+# Running Federated Learning Applications
 
 This development revision targets **NVFlare 2.10** and uses the **Recipe API throughout**. Start with the [introduction](01.0_introduction/introduction.ipynb), then [setup](01.1_running_federated_learning_job/setup.ipynb) and the [first run](01.1_running_federated_learning_job/running_pytorch_fl_job.ipynb).
 
@@ -34,11 +34,11 @@ Then install the notebook tools and select the matching kernel:
 
 ```bash
 python -m pip install jupyterlab ipykernel
-python -m ipykernel install --user --name nvflare-chapter1 --display-name 'NVFlare Chapter 1'
+python -m ipykernel install --user --name nvflare-chapter1 --display-name 'NVFlare Self-Paced Training'
 python -m jupyterlab
 ```
 
-Use **NVFlare Chapter 1** in Jupyter. Run training commands in a terminal with the same environment activated. Notebook cells inspect source and results; run each lesson's terminal commands before its result-inspection cells.
+Use **NVFlare Self-Paced Training** in Jupyter. Run training commands in a terminal with the same environment activated. Notebook cells inspect source and results; run each lesson's terminal commands before its result-inspection cells.
 
 ## One project for all lessons
 
