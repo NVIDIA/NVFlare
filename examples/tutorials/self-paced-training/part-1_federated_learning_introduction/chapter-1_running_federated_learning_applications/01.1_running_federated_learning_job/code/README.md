@@ -1,16 +1,15 @@
-# Example code
+# Run your first federated job
 
-The runnable Python files are in the chapter's shared [code directory](../../code):
+A two-client, three-round FedAvg recipe with evaluation of the saved global model.
 
-- [job.py](../../code/job.py): build and run the federated learning recipe.
-- [client.py](../../code/client.py): train and evaluate at each client.
-- [model.py](../../code/model.py): define the PyTorch model.
+`job.py` starts `client.py` at each site. The PyTorch training loop and evaluation functions are directly in `client.py`, alongside the Client API loop. This first-run example does not need a standalone `train.py` program. That comparison is introduced in the [conversion lesson](../../01.2_convert_deep_learning_to_federated_learning/convert_dl_to_fl.ipynb).
 
-After completing [setup](../setup.ipynb), run these commands from this directory:
+Complete the course [setup](../../01.1_running_federated_learning_job/setup.ipynb), then run from this `code` directory:
 
 ```bash
-cd ../../code
 python job.py
 ```
 
-All lessons use that shared project. The former per-lesson `src` files have moved there; local Jupyter checkpoints can leave the old directories visible after switching branches.
+This section is self-contained: [job.py](job.py) defines its Recipe, [client.py](client.py) runs at each site, and [model.py](model.py) and [data.py](data.py) define its model and synthetic dataset. The training and evaluation functions are directly in the client script. Edit these files to explore this lesson's variation.
+
+The default runtime workspace is `/tmp/nvflare/simulation/chapter1-basic`. Set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to use a different parent directory, and give the notebook kernel the same value. Exported jobs go under `./exported` when using `--export --export-dir ./exported`.

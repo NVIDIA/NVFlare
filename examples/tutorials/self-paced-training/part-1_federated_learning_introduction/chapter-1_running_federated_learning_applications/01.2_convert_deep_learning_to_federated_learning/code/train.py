@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ordinary PyTorch functions shared by the local and federated lessons."""
+"""Run ordinary local training: python train.py."""
 
 import argparse
 
 import torch
 from data import SyntheticImageDataset, stable_seed
+from model import create_model
 from torch.utils.data import DataLoader
 
 
@@ -33,7 +34,6 @@ def training_parser():
     parser.add_argument("--batch_size", type=positive_int, default=32)
     parser.add_argument("--learning_rate", type=float, default=0.1)
     parser.add_argument("--local_epochs", type=positive_int, default=1)
-    parser.add_argument("--tracking", choices=("none", "tensorboard", "mlflow"), default="none")
     return parser
 
 
@@ -83,5 +83,15 @@ def evaluate(model, loader):
     return 100.0 * correct / total
 
 
-def copy_weights(model):
-    return {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
+def main():
+    args = training_parser().parse_args()
+    model = create_model()
+    train_loader, eval_loader = make_loaders("site-1", args.batch_size)
+    before = evaluate(model, eval_loader)
+    steps, loss = train(model, train_loader, args.local_epochs, args.learning_rate)
+    after = evaluate(model, eval_loader)
+    print(f"Local training: {steps} optimizer steps, loss={loss:.4f}, accuracy={before:.1f}% -> {after:.1f}%")
+
+
+if __name__ == "__main__":
+    main()

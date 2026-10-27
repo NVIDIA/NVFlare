@@ -1,0 +1,7 @@
+# Self-paced course examples
+
+- Optimize for learners opening and running a section independently. Each hands-on section keeps its own `code/` directory beside its notebook, including its own supporting Python modules.
+- Repeating model, data, or training code across sections is intentional. Do not consolidate examples into a parent directory or make one section import another section's implementation.
+- Use `job.py`, `client.py`, and `model.py` for the main example files. Keep each section's implementation focused on its own lesson; include additional variants only when that lesson compares them.
+- Notebook commands and source displays must use that section's own code. Verify the example runs and exports from its local directory.
+- Avoid chapter and section numbers in headings and navigation labels so lessons can be reordered.

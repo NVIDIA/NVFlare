@@ -25,7 +25,7 @@ This course covers everything from the fundamentals to advanced applications, sy
   Access over 100 notebooks and 88 videos for a thorough learning experience.
 
 > **Tip:**  
-> Follow each chapter's setup and prerequisites. The revised application lessons share one code project and are designed to be followed in sequence.
+> Follow each chapter's setup and prerequisites. Each revised hands-on application lesson has its own runnable code and variation beside the notebook. Follow the learning sequence, or open a section independently after completing its prerequisites.
 
 ---
 

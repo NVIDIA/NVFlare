@@ -12,47 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run or export the Chapter 1 FedAvg recipe from this directory."""
+"""Run the converted training client, then optionally add evaluation support."""
 
 import argparse
-from pathlib import Path
 
 from model import create_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking, add_final_global_evaluation
+from nvflare.recipe import SimEnv, add_final_global_evaluation
 
 
-def create_recipe(num_rounds=3, tracking="none", client_script="client.py"):
+def create_recipe(num_rounds=3, client_script="client.py"):
+    with_evaluation = client_script == "client_evaluate.py"
     recipe = FedAvgRecipe(
-        name=f"chapter1-{tracking}",
+        name="chapter1-conversion-evaluate" if with_evaluation else "chapter1-conversion",
         model=create_model(),
         min_clients=2,
         num_rounds=num_rounds,
         train_script=client_script,
-        train_args=["--tracking", tracking],
+        train_args=["--local_epochs", "1"],
     )
-    if client_script == "client.py":
+    if with_evaluation:
         add_final_global_evaluation(recipe)
-    if tracking == "tensorboard":
-        add_experiment_tracking(recipe, "tensorboard")
-    elif tracking == "mlflow":
-        # An absolute SQLite URI works for both the receiver and the local UI.
-        tracking_uri = "sqlite:///" + str(Path("mlflow.db").resolve())
-        add_experiment_tracking(recipe, "mlflow", {"tracking_uri": tracking_uri})
     return recipe
 
 
 def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
     parser.add_argument("--num_rounds", type=int, default=3)
-    parser.add_argument("--tracking", choices=("none", "tensorboard", "mlflow"), default="none")
-    parser.add_argument("--client-script", choices=("client.py", "client_train_only.py"), default="client.py")
+    parser.add_argument("--client-script", choices=("client.py", "client_evaluate.py"), default="client.py")
     args = parser.parse_args()
-    if args.client_script == "client_train_only.py" and args.tracking != "none":
-        parser.error("the minimal client does not send tracking events; use client.py")
-    recipe = create_recipe(args.num_rounds, args.tracking, args.client_script)
-    run = recipe.execute(SimEnv(num_clients=2))
+    run = create_recipe(args.num_rounds, args.client_script).execute(SimEnv(num_clients=2))
     print("Results:", run.get_result())
 
 

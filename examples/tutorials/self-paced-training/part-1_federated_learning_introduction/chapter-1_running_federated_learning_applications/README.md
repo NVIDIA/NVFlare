@@ -8,7 +8,7 @@ This chapter has been validated against the NVFlare 2.10 development branch and 
 
 Use Python 3.10–3.14 on Linux or macOS. The exercises run on CPU with two simulated clients; they do not require a GPU or dataset download. Installation requires internet access unless the dependencies are already cached.
 
-Obtain the repository version containing these notebooks with Git **or extract its source ZIP**. Keep the chapter's notebooks and `code` directory together. A Git clone is not required. In a terminal at the repository root:
+Obtain the repository version containing these notebooks with Git **or extract its source ZIP**. Keep each section's notebook and its own `code` directory together. A Git clone is not required. In a terminal at the repository root:
 
 ```bash
 python3 -m venv .venv-chapter1
@@ -40,62 +40,55 @@ python -m jupyterlab
 
 Use **NVFlare Self-Paced Training** in Jupyter. Run training commands in a terminal with the same environment activated. Notebook cells inspect source and results; run each lesson's terminal commands before its result-inspection cells.
 
-## One project for all lessons
+## Run each section's example
 
-All executable examples are in [code](code), shared across the notebooks:
+Each hands-on section contains its own runnable `code/` directory beside the notebook. Every project uses `job.py`, `client.py`, and `model.py`, with a local dataset module and training functions directly in each client script. Changes in one example do not change another section's code.
 
 ```text
 chapter-1_running_federated_learning_applications/
-├── code/                         # Shared runnable project
-│   ├── job.py
-│   ├── client.py
-│   ├── model.py
-│   └── ...
 ├── 01.1_running_federated_learning_job/
-│   ├── setup.ipynb
 │   ├── running_pytorch_fl_job.ipynb
-│   └── code/README.md             # Links to the shared project
+│   └── code/
+│       ├── job.py
+│       ├── client.py
+│       ├── model.py
+│       └── ...
+├── 01.3_server_side_customization/
+│   ├── customize_server_logics.ipynb
+│   └── code/
+│       ├── job.py
+│       ├── client.py
+│       ├── model.py
+│       └── ...
 └── ...
 ```
 
-Open `code` directly under the chapter directory. The former lesson-specific `code/src` directories may remain locally because of ignored Jupyter checkpoints.
-
-| File | Lesson |
+| Section | Local example and variation |
 | --- | --- |
-| `job.py` | Construct `FedAvgRecipe`, add final evaluation, and execute with `SimEnv` |
-| `train.py` | Ordinary local PyTorch training |
-| `client_train_only.py` | Minimal training-only Client API conversion |
-| `client.py` | Training, evaluation, and optional analytics |
-| `job_custom_server.py` | Recipe stopping, model selection, and persistence settings |
-| `job_custom_clients.py` | `set_per_site_config()` for different client arguments |
-| `training.py` | Shared local training and evaluation functions |
-| `model.py`, `data.py` | Seeded CNN and site-specific synthetic images |
+| [First run](01.1_running_federated_learning_job/code) | Basic FedAvg recipe and final evaluation |
+| [Convert local training](01.2_convert_deep_learning_to_federated_learning/code) | `train.py`, a training-only `client.py`, and `client_evaluate.py` |
+| [Server customization](01.3_server_side_customization/code) | Stopping, model selection, and persistence settings |
+| [Client customization](01.4_client_side_customization/code) | Different training arguments per site |
+| [TensorBoard](01.5_experiment_tracking/01.5.1_experiment_tracking_with_tensorboard/code) | `SummaryWriter` and the matching server receiver |
+| [MLflow](01.5_experiment_tracking/01.5.2_experiment_tracking_with_mlflow/code) | `MLflowWriter` and a local SQLite store |
+| [Job structure](01.6_job_structure_and_configuration/code) | Standard and per-site exports from `job.py` |
+| [Logging](01.7_logging/code) | Client log messages and console logging modes |
+| [Recap](01.8_recap/code) | A local project to modify, export, run, and explain |
 
-The synthetic data uses the same design as Hello PyTorch: 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. It is an offline workflow exercise, not a benchmark. Local SGD state is reset every round. The client reports actual optimizer-step counts for aggregation and evaluates received weights before training; final evaluation measures the persisted checkpoint separately.
-
-From `code`, run:
+For example, from this chapter directory:
 
 ```bash
-python train.py
+cd 01.1_running_federated_learning_job/code
 python job.py
-python job.py --client-script client_train_only.py
-python job_custom_server.py
-python job_custom_clients.py
-python job.py --export --export-dir ./exported
-python job_custom_clients.py --export --export-dir ./exported
 ```
 
-Recipe workspaces default to `/tmp/nvflare/simulation/<recipe-name>`. Set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory to preserve separate experiments, and give the notebook kernel the same setting. The default and minimal-client jobs both use `chapter1-none`, so use separate roots to retain both runs.
+When moving to another section, open its notebook and use that section's `code` directory. Its README gives the commands and its notebook identifies the exact code and result paths. The introduction and experiment-tracking overview link to the hands-on sections.
 
-Optional tracking labs:
+The examples use 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. They are offline workflow exercises, not benchmarks. Local SGD state is reset every round. Clients report actual optimizer-step counts for aggregation and evaluate received weights before training; final evaluation measures the persisted checkpoint separately.
 
-```bash
-python -m pip install tensorboard mlflow
-python job.py --tracking tensorboard
-python job.py --tracking mlflow
-```
+Each example has a distinct recipe name and workspace under `/tmp/nvflare/simulation`. Set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory to preserve repeated experiments, and give the notebook kernel the same setting. The conversion and job-structure variations also have distinct names.
 
-The TensorBoard and MLflow notebooks explain how to open the local UIs in a separate terminal. Neither UI is started automatically by a notebook cell. MLflow uses `code/mlflow.db`; repeated runs remain in that store.
+The tracking labs explain how to open their UIs in a separate terminal. MLflow uses `mlflow.db` in its own section's `code` directory; repeated runs remain in that store.
 
 ## Completion and remaining edition work
 
