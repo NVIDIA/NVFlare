@@ -89,8 +89,14 @@ def test_recipe_notebook_keeps_processes_out_of_the_kernel():
 
 def test_recipe_production_kit_matches_provision_workspace():
     provision = _fenced("job_recipe", "d3451070-14ff-4fdd-bd79-e87413f5d30c", "bash")[0]
-    argv = shlex.split(provision.strip().splitlines()[-1])
-    assert (_TUTORIALS / argv[argv.index("-p") + 1]).is_file()
+    cd_line, command = provision.strip().splitlines()
+    # The preceding steps leave the terminal in the directory that holds run_recipe.py.
+    start = _HELLO_PT
+    assert shlex.split(cd_line)[0] == "cd"
+    project_dir = (start / shlex.split(cd_line)[1]).resolve()
+    assert project_dir == _TUTORIALS
+    argv = shlex.split(command)
+    assert (project_dir / argv[argv.index("-p") + 1]).is_file()
     workspace = Path(argv[argv.index("-w") + 1])
     tree = ast.parse(_fenced("job_recipe", "67c99d67", "python")[0])
     admin_kit = next(
