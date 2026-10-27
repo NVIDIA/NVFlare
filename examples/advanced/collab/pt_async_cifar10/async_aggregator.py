@@ -62,6 +62,10 @@ class Cifar10AsyncApplication:
         checkpoint_interval: int = 0,
         num_rounds: int = 100,
     ):
+        if eval_batch_size < 1:
+            raise ValueError("eval_batch_size must be >= 1")
+        if checkpoint_interval < 0:
+            raise ValueError("checkpoint_interval must be >= 0")
         self.data_root = data_root
         self.buffer_size = buffer_size
         self.device = device

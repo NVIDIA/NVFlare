@@ -224,7 +224,9 @@ class AsyncEngine:
                 AcceptedUpdate(assignment, self.version, self.model, delta, weight, result.metrics)
             )
         self.adapter.validate(delta, self.adapter.difference(assignment.base_model, assignment.base_model))
-        self._buffer.add(delta, weight, str(assignment.assignment_id), assignment.base_version)
+        prepare = getattr(self.adapter, "prepare_for_aggregation", None)
+        accumulation_delta = prepare(delta) if callable(prepare) else delta
+        self._buffer.add(accumulation_delta, weight, str(assignment.assignment_id), assignment.base_version)
         del self.active[assignment.client_name]
         self.accepted_count += 1
         if self.buffered_count < self.buffer_size:

@@ -34,3 +34,35 @@ def test_detached_cpu_snapshots_and_nonfloating_buffers():
     assert engine.model["counter"].item() == 5
     assert not engine.model["w"].requires_grad
     assert engine.model["w"].device.type == "cpu"
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("buffer_size", [1, 2])
+@pytest.mark.parametrize("is_delta", [False, True])
+def test_low_precision_weighted_updates_accumulate_in_float32(dtype, buffer_size, is_delta):
+    initial = {"w": torch.zeros(1, dtype=dtype), "counter": torch.tensor(5)}
+    engine = AsyncEngine(
+        initial, PTAsyncModelAdapter(), 1, buffer_size, buffer_size=buffer_size, weight_metric="num_steps"
+    )
+    assignments = engine.dispatch([f"site-{i}" for i in range(buffer_size)])
+    for index, assignment in enumerate(assignments):
+        payload = {"w": torch.tensor([100.0 * (index + 1)], dtype=dtype)}
+        if not is_delta:
+            payload["counter"] = torch.tensor(99)
+        published = engine.accept(
+            assignment,
+            AsyncResult(
+                assignment.assignment_id,
+                0,
+                payload,
+                {"num_steps": 1000},
+                is_delta=is_delta,
+            ),
+        )
+        if not published:
+            assert engine._buffer.total["w"].dtype == torch.float32
+            assert torch.isfinite(engine._buffer.total["w"]).all()
+        assert payload["w"].dtype == dtype
+    assert engine.model["w"].item() == 100.0 * (buffer_size + 1) / 2
+    assert engine.model["w"].dtype == dtype
+    assert engine.model["counter"].item() == 5

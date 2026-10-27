@@ -207,3 +207,28 @@ def test_close_discards_partial_buffer_and_releases_snapshots():
 def test_invalid_configuration(options):
     with pytest.raises(ValueError):
         engine(**options)
+
+
+@pytest.mark.parametrize("is_delta", [False, True])
+def test_numpy_float16_weighted_updates_do_not_overflow(is_delta):
+    run = engine(
+        initial_model={"w": np.zeros(1, dtype=np.float16)}, num_updates=1, buffer_size=2, weight_metric="num_steps"
+    )
+    for index, assignment in enumerate(run.dispatch(["a", "b"])):
+        payload = {"w": np.array([100.0 * (index + 1)], dtype=np.float16)}
+        published = run.accept(
+            assignment,
+            AsyncResult(
+                assignment.assignment_id,
+                0,
+                payload,
+                {"num_steps": 1000},
+                is_delta=is_delta,
+            ),
+        )
+        if not published:
+            assert run._buffer.total["w"].dtype == np.float32
+            assert np.isfinite(run._buffer.total["w"]).all()
+        assert payload["w"].dtype == np.float16
+    assert run.model["w"].item() == 150
+    assert run.model["w"].dtype == np.float16

@@ -44,6 +44,10 @@ class NumpyAsyncModelAdapter:
             if np.issubdtype(value.dtype, np.floating)
         }
 
+    def prepare_for_aggregation(self, delta):
+        """Widen float16 deltas before weighting and running accumulation."""
+        return {name: value.astype(np.float32) if value.dtype == np.float16 else value for name, value in delta.items()}
+
     def apply(self, model, delta, scale):
         result = self.snapshot(model)
         for name, value in delta.items():

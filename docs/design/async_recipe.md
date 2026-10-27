@@ -76,6 +76,12 @@ finite values. They average floating entries and preserve non-floating buffers
 from the current model. PyTorch snapshots are detached CPU tensors. Supply
 another adapter for different buffer rules.
 
+Adapters may optionally implement `prepare_for_aggregation(delta)` to select
+an accumulator dtype after input/transform validation. The supplied adapters
+widen float16 (and PyTorch bfloat16) deltas to float32 before weighting and
+summation, then restore the original model dtype when publishing. Custom
+adapters without this method retain their own delta dtype.
+
 Snapshots are shared within dispatch batches and released when assignments no
 longer reference them. Model storage is bounded by K active assignments plus
 the current model/accumulator, not run length. This implementation uses RAM;

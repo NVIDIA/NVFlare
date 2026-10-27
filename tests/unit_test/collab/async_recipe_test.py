@@ -302,3 +302,39 @@ def test_call_timeout_closes_application_without_retrying():
         _execute(app, [_Client(release)])
     assert app.closed and not app.finished
     assert len(app.versions) == 1
+
+
+@pytest.mark.parametrize(
+    "option,value,error",
+    [
+        ("eval_batch_size", 0, "eval_batch_size"),
+        ("eval_batch_size", -1, "eval_batch_size"),
+        ("checkpoint_interval", -1, "checkpoint_interval"),
+    ],
+)
+def test_cifar_invalid_options_fail_before_creating_trainer(monkeypatch, option, value, error):
+    pytest.importorskip("torch")
+    pytest.importorskip("torchvision")
+    pytest.importorskip("tensorboard")
+    folder = Path(__file__).resolve().parents[3] / "examples/advanced/collab/pt_async_cifar10"
+    names = ("job", "async_aggregator", "model", "trainer")
+    saved = {name: sys.modules.pop(name, None) for name in names}
+    monkeypatch.syspath_prepend(str(folder))
+    try:
+        job = importlib.import_module("job")
+        args = job.define_parser().parse_args([])
+        args.data_root = "/tmp/cifar10"
+        args.train_idx_root = "/tmp/prepared-cifar"
+        setattr(args, option, value)
+        constructed = []
+        monkeypatch.setattr(job, "Cifar10Trainer", lambda **kwargs: constructed.append(kwargs))
+        with pytest.raises(ValueError, match=error):
+            job.make_recipe(args)
+        assert constructed == []
+        with pytest.raises(ValueError, match=error):
+            job.Cifar10AsyncApplication(data_root=args.data_root, **{option: value})
+    finally:
+        for name, module in saved.items():
+            sys.modules.pop(name, None)
+            if module is not None:
+                sys.modules[name] = module

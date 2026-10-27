@@ -40,9 +40,18 @@ class PTAsyncModelAdapter:
     def difference(self, model, base):
         return {name: value.detach().cpu() - base[name] for name, value in model.items() if value.is_floating_point()}
 
+    def prepare_for_aggregation(self, delta):
+        """Widen low-precision deltas before weighting and running accumulation."""
+        return {
+            name: value.float() if value.dtype in (torch.float16, torch.bfloat16) else value
+            for name, value in delta.items()
+        }
+
     def apply(self, model, delta, scale):
         result = self.snapshot(model)
         for name, value in delta.items():
-            result[name].add_(value, alpha=scale)
+            dtype = torch.promote_types(result[name].dtype, value.dtype)
+            updated = result[name].to(dtype=dtype).add(value, alpha=scale)
+            result[name] = updated.to(dtype=model[name].dtype)
         self.validate(result, model)
         return result
