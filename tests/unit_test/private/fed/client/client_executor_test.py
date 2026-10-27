@@ -14,8 +14,9 @@
 
 import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -31,7 +32,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode, publish_job_handle
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -51,7 +52,7 @@ from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_ce
 from tests.timing_utils import isolate_time
 
 
-def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True):
+def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True, on_launch=None):
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
     ctx.set_prop(ReservedKey.IS_LEAF, is_leaf, private=False, sticky=True)
     client.cell.get_fqcn.return_value = "site-1"
@@ -95,6 +96,8 @@ def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_
                 on_wait(executor, index, handle)
 
         handle.wait.side_effect = wait
+        if on_launch:
+            on_launch(executor, index, handle, ctx)
         return handle
 
     launcher.launch_job.side_effect = launch
@@ -538,6 +541,45 @@ def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, he
     assert pending_handle.poll() == JobReturnCode.ABORTED
     pending_handle.wait()
     job_handle.wait.assert_called_once_with()
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
+@pytest.mark.parametrize("abort_before_publish", [False, True], ids=["during_startup_wait", "before_publish"])
+def test_start_app_can_abort_published_runtime_before_launcher_returns(
+    tmp_path, heartbeat_cleanup, abort_before_publish
+):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    job_handle = MagicMock(spec=JobHandleSpec)
+    launcher = MagicMock()
+
+    def abort():
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+    def launch_job(_meta, context):
+        if abort_before_publish:
+            abort()
+            job_handle.terminate.assert_not_called()
+        publish_job_handle(job_handle, context)
+        if not abort_before_publish:
+            abort()
+        # The runtime is reclaimed while launch_job is still waiting for startup.
+        job_handle.terminate.assert_called_once_with()
+        return job_handle
+
+    launcher.launch_job.side_effect = launch_job
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client, job_id, job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, fl_ctx
+        )
+
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+    assert fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
 
 
 def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
@@ -1099,3 +1141,182 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.private.fed.client.client_executor",
     )
+
+
+def test_start_app_rejects_cj_budget_drift(tmp_path):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    deployed = dict(job_meta, cj_resource_spec={"site-1": {"num_of_cpus": 0.5}})
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(deployed, stream)
+    with pytest.raises(RuntimeError, match="cj_resource_spec"):
+        JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+            client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+        )
+
+
+@pytest.mark.parametrize("config_case", ["nested_json", "hocon_include", "yaml_environment"])
+def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeypatch, config_case):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    if config_case == "nested_json":
+        (config / "config_fed_client.conf").write_text("execution_lifetime = task\n")
+        (config / "shadow").mkdir()
+        (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
+    elif config_case == "hocon_include":
+        (config / "config_fed_client.conf").write_text('execution_lifetime = task\ninclude "runtime-mode.conf"\n')
+        (config / "runtime-mode.conf").write_text("execution_lifetime = job\n")
+    else:
+        (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
+        monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    choose.assert_not_called()
+
+
+def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+
+    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    path = config / "config_fed_client.yml"
+    path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
+    monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
+    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
+    monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    args = SimpleNamespace(
+        workspace=str(tmp_path),
+        job_id="job-1",
+        client_name="site-1",
+        client_config="config/config_fed_client.json",
+        set=[],
+        sp_scheme="grpc",
+        sp_target="server:8002",
+    )
+    with patch.object(ClientJsonConfigurator, "configure") as build:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
+def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = MagicMock()
+    context.get_identity_name.return_value = "site-1"
+    with pytest.raises(ValueError, match="Process CJ cannot enforce"):
+        ClientProcessJobLauncher().get_command({"cj_resource_spec": {"site-1": budget}}, context)
+
+
+@pytest.mark.parametrize(
+    "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
+)
+def test_process_task_compute_requirements_fail_before_starting_cj(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command") as command:
+        with pytest.raises(UnsupportedTaskResourceError):
+            ClientProcessJobLauncher().get_command(
+                {"resource_spec": {"@default": compute}, "cj_resource_spec": {"site-1": {}}}, context
+            )
+    command.assert_not_called()
+
+
+def test_process_resident_compute_admission_keeps_legacy_behavior():
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command", return_value="CJ"):
+        assert (
+            ClientProcessJobLauncher().get_command({"resource_spec": {"@default": {"num_of_cpus": 2}}}, context) == "CJ"
+        )
+
+
+def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    with patch(
+        "nvflare.private.fed.client.client_executor.get_client_execution_lifetime", return_value="job"
+    ) as classify:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    classify.assert_called_once_with({"execution_lifetime": "task"})
+
+
+def test_cj_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+
+    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"format_version":3,"execution_lifetime":"task","executors":[]}')
+    args = SimpleNamespace(
+        workspace=str(tmp_path),
+        job_id="job-1",
+        client_name="site-1",
+        client_config="config/config_fed_client.json",
+        set=[],
+        sp_scheme="grpc",
+        sp_target="server:8002",
+    )
+    with (
+        patch(
+            "nvflare.private.fed.client.client_app_runner.get_client_execution_lifetime", return_value="job"
+        ) as classify,
+        patch.object(ClientJsonConfigurator, "configure") as build,
+    ):
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
+    classify.assert_called_once()
+    assert classify.call_args.args[0]["execution_lifetime"] == "task"
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("abort_before_publish", [False, True])
+def test_recovery_launch_keeps_early_handle_abort_support(tmp_path, abort_before_publish):
+    def on_launch(executor, index, handle, ctx):
+        if index != 1:
+            return
+        if abort_before_publish:
+            executor.abort_app("job-1")
+            handle.terminate.assert_not_called()
+        publish_job_handle(handle, ctx)
+        if not abort_before_publish:
+            executor.abort_app("job-1")
+        # Cleanup must happen while the replacement launcher still waits for
+        # scheduling, rather than only after returning its job handle.
+        handle.terminate.assert_called_once()
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 0)], on_launch=on_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[1].terminate.assert_called_once()

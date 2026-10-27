@@ -50,6 +50,7 @@ from nvflare.job_config.task_execution import (
     prepare_task_execution,
     validate_task_resources,
 )
+from nvflare.private.fed.client import task_execution_policy as policy_module
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
@@ -72,6 +73,91 @@ def _config(**args):
             }
         ],
     }
+
+
+@pytest.mark.parametrize(
+    "mode,module_name,class_name,gpu_field",
+    [
+        ("k8s", "nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher", "num_of_gpus"),
+        ("slurm", "nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher", "gpus_per_node"),
+    ],
+)
+def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
+    tmp_path, monkeypatch, mode, module_name, class_name, gpu_field
+):
+    class NativeLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise NotImplementedError()
+
+        def validate_site_config(self, site_config):
+            validate(site_config)
+
+    validate = Mock()
+    launcher = NativeLauncher()
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(**{class_name: NativeLauncher}))
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: launcher)
+    imported = []
+    real_import = importlib.import_module
+
+    def selected_import(name):
+        imported.append(name)
+        return real_import(name)
+
+    monkeypatch.setattr(policy_module.importlib, "import_module", selected_import)
+    config = {"launcher": {"path": module_name + "." + class_name}}
+    data = {"task_execution": config, "components": [{"path": "site.CPJobLauncher"}]}
+    path = tmp_path / "resources.json"
+    path.write_text(json.dumps(data))
+    policy = TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: str(path)))
+    validate.assert_called_once_with(data)
+    assert set(imported) == {module_name}
+    assert policy.worker_environment() == {}
+    assert policy.task_resources({"launcher_spec": {"site": {mode: {gpu_field: 1}}}}, "site").gpu_count == 0
+    with pytest.raises(ValueError, match="portable GPUs reserve"):
+        policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
+    with pytest.raises(ValueError, match="trusted backend"):
+        TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
+
+    class Impersonator(NativeLauncher):
+        pass
+
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: Impersonator())
+    with pytest.raises(ValueError, match="supported"):
+        TaskExecutionPolicy.from_config(config)
+
+
+@pytest.mark.parametrize("mode", ["docker", "slurm"])
+@pytest.mark.parametrize("missing", ["backend", "parent", "dependency"])
+def test_native_selection_reports_missing_backend_without_hiding_missing_dependency(monkeypatch, mode, missing):
+    class NativeLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise NotImplementedError()
+
+    module_name, class_name = policy_module._NATIVE_TASK_LAUNCHERS[mode]
+    missing_name = {
+        "backend": module_name,
+        "parent": module_name.rsplit(".", 1)[0],
+        "dependency": "missing_backend_dependency",
+    }[missing]
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: NativeLauncher())
+
+    def unavailable(name):
+        assert name == module_name
+        raise ModuleNotFoundError(name=missing_name)
+
+    monkeypatch.setattr(policy_module.importlib, "import_module", unavailable)
+    config = {"launcher": {"path": module_name + "." + class_name}}
+    expected = ModuleNotFoundError if missing == "dependency" else ValueError
+    with pytest.raises(expected) as error:
+        TaskExecutionPolicy.from_config(config)
+    if missing == "dependency":
+        assert error.value.name == missing_name
+    else:
+        assert "requires a supported" in str(error.value)
 
 
 def test_alias_timeout_and_specs_are_inert_snapshots():
@@ -1591,3 +1677,55 @@ def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_pa
         adapter.resolve_task_data(value, context, abort_signal=Signal())
     assert calls == ["a", "b"]
     assert not scratch.exists()
+
+
+@pytest.mark.parametrize("stage", ["launcher", "listener"])
+def test_start_run_binding_failure_panics_and_preserves_the_actual_error(monkeypatch, stage):
+    context = FLContext()
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    failure = Mock(side_effect=ValueError("owning job resource binding differs"))
+    if stage == "launcher":
+        policy.launcher.handle_event = failure
+    else:
+        from nvflare.private.fed.task_worker import cell_session
+
+        monkeypatch.setattr(cell_session, "listen", failure)
+    adapter = TaskWorkerExecutor({}, (), policy)
+    adapter.system_panic = Mock()
+    with pytest.raises(ValueError, match="resource binding differs"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started
+    assert adapter._start_error == "owning job resource binding differs"
+    assert not cell.decode_pass_through_topics
+    adapter.system_panic.assert_called_once_with(
+        "task launcher START_RUN failed: owning job resource binding differs", context
+    )
+    with pytest.raises(RuntimeError, match="resource binding differs"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 2}, {"memory": "1Gi"}])
+def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="CPU/memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": budget}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )
+
+
+def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
+    policy = TaskExecutionPolicy.from_config({})
+    assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
+
+
+@pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])
+def test_process_task_cannot_drop_compute_resource_manager_requirements(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": compute}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )

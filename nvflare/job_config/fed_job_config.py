@@ -29,9 +29,15 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
-from nvflare.job_config.task_execution import prepare_task_execution, validate_task_resources, validate_task_workflows
+from nvflare.job_config.task_execution import (
+    get_client_execution_lifetime,
+    prepare_task_execution,
+    validate_task_resources,
+    validate_task_workflows,
+)
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.utils.job_launcher_utils import normalize_cj_resource_spec
 from nvflare.utils.process_utils import popen_in_new_session
 
 CONFIG = "config"
@@ -143,6 +149,15 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
+        task_sites = {
+            site
+            for site, app_name in self.deploy_map.items()
+            if site != "server"
+            and self.fed_apps[app_name].client_app
+            and get_client_execution_lifetime(self.fed_apps[app_name].client_app.additional_params) == "task"
+        }
+        normalize_cj_resource_spec(meta_json, task_sites)
+
         if any(
             app.client_app and app.client_app.additional_params.get("execution_lifetime", "job") == "task"
             for app in self.fed_apps.values()
@@ -153,7 +168,7 @@ class FedJobConfig:
 
         for site, app_name in self.deploy_map.items():
             app = self.fed_apps[app_name].client_app
-            if app and app.additional_params.get("execution_lifetime", "job") == "task":
+            if app and get_client_execution_lifetime(app.additional_params) == "task":
                 # ALL_SITES also receives any site-specific overrides in meta.
                 sites = {site}
                 if site == "@ALL":
@@ -161,7 +176,9 @@ class FedJobConfig:
                     sites.update(meta_json.get("launcher_spec", {}))
                     sites.difference_update({"server", "@default", "default"})
                 for receiving_site in sites:
-                    validate_task_resources(meta_json, receiving_site)
+                    # Export cannot know the receiving site's trusted backend
+                    # or admission policy. Enforce resource capability there.
+                    validate_task_resources(meta_json, receiving_site, allow_gpu=True)
 
         return json.dumps(meta_json, indent=4)
 

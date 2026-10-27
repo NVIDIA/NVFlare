@@ -190,6 +190,7 @@ class FLContextKey:
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
     SITE_OBJ = "_site_obj_"
     JOB_LAUNCHER = "_job_launcher"
+    JOB_HANDLE_CALLBACK = "_job_handle_callback"
     SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"

@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
@@ -32,8 +33,9 @@ from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.runner import Runner
-from nvflare.private.fed.utils.fed_utils import authorize_build_component
+from nvflare.private.fed.utils.fed_utils import authorize_build_component, get_job_meta_from_workspace
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.utils.job_launcher_utils import validate_cj_execution_lifetime
 
 
 class ClientAppRunner(Runner):
@@ -121,6 +123,13 @@ class ClientAppRunner(Runner):
             app_root=app_root,
             args=args,
             kv_list=args.set,
+        )
+        # Includes, format search and image environment can resolve differently
+        # here than at submission/CP. Check before building any app component.
+        validate_cj_execution_lifetime(
+            get_job_meta_from_workspace(workspace, args.job_id),
+            args.client_name,
+            get_client_execution_lifetime(conf.config_data),
         )
         conf.set_component_build_authorizer(
             authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []

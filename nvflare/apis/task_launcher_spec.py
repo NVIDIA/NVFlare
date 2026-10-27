@@ -11,11 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Experimental contracts for launching disposable task execution units.
+"""Contracts for launching disposable task execution units.
 
-The initial CPU/Process slice uses a command-shaped workload. Backend-specific
-workload fields will be introduced with the first non-Process implementation,
-not selected by untrusted job configuration.
+Requests describe staged workloads. Trusted site policy owns backend
+materialization, launch authority, storage and resource admission.
 """
 
 import math
@@ -89,17 +88,15 @@ class TaskResourceRequest:
 
 @dataclass(frozen=True)
 class TaskLaunchRequest:
-    """Experimental request for one physical task attempt.
+    """Request for one physical task attempt.
 
-    ``argv``/``cwd`` currently describe the Process workload. They do not imply
-    that a future container launcher must use the supervisor's host interpreter
-    or filesystem; backend-specific materialization belongs to trusted runtime
-    policy, not application jobs.
+    ``argv``/``cwd`` describe the staged workload. Process launchers use them
+    directly; container and scheduler launchers materialize the workload using
+    trusted site runtime settings.
 
-    ``environment`` is a validated, read-only snapshot of the complete
-    environment passed to the execution unit;
-    launchers do not implicitly copy the parent process environment. This
-    keeps credential and policy decisions with the supervising runtime.
+    ``environment`` is a validated, read-only snapshot provided to the launcher.
+    The launcher applies trusted site policy when preparing the execution
+    environment. Launchers do not implicitly copy the parent process environment.
     """
 
     job_id: str
@@ -213,7 +210,7 @@ class TaskHandleSpec(ABC):
 
 
 class TaskLauncherSpec(FLComponent, ABC):
-    """Experimental launch backend for disposable task execution units."""
+    """Launch backend for disposable task execution units."""
 
     launch_mode = None
 
