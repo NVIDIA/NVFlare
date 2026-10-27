@@ -46,8 +46,8 @@ def main():
     sys.argv[:] = ["nvflare-task-worker"]
     if args.execution_scope == "process":
         parent_pid = args.parent_pid
-        # Process mode requires a Process CJ. Native workers do not rely on
-        # local PID or process-group ownership.
+        # Process mode requires a Process CJ. Native Pod workers use native
+        # scope above and do not rely on local PID or process-group ownership.
         if parent_pid <= 1 or os.getpgrp() != os.getpid():
             raise RuntimeError("a Process task worker requires a live parent and its own process group")
         if os.getppid() != parent_pid:

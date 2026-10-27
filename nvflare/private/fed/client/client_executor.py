@@ -41,10 +41,12 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.job_launcher_utils import has_cj_resource_spec, validate_cj_execution_lifetime
 
 from .client_status import ClientStatus, get_status_message
 
@@ -70,7 +72,7 @@ class _JobRestart:
 
 
 class _PendingJobHandle(JobHandleSpec):
-    """Hold an abort request until a launcher returns the real job handle."""
+    """Hold abort intent until a launcher publishes or returns the real handle."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -79,8 +81,14 @@ class _PendingJobHandle(JobHandleSpec):
 
     def attach(self, job_handle: JobHandleSpec) -> bool | None:
         with self._lock:
+            if self._job_handle is not None:
+                if self._job_handle is not job_handle:
+                    raise RuntimeError("launcher published a different job handle")
+                return None
             self._job_handle = job_handle
-            return self._pending_heartbeat_cleanup
+            heartbeat_cleanup = self._pending_heartbeat_cleanup
+            self._pending_heartbeat_cleanup = None
+            return heartbeat_cleanup
 
     def terminate(self, heartbeat_cleanup=False):
         with self._lock:
@@ -261,6 +269,7 @@ class JobExecutor(ClientExecutor):
         for meta_key in (
             JobMetaKey.JOB_ID.value,
             JobMetaKey.RESOURCE_SPEC.value,
+            JobMetaKey.CJ_RESOURCE_SPEC.value,
             JobMetaKey.JOB_LAUNCHER_SPEC.value,
             JobMetaKey.SCOPE.value,
             JobMetaKey.STUDY.value,
@@ -270,6 +279,9 @@ class JobExecutor(ClientExecutor):
                 raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
             if meta_key in deployed_job_meta:
                 job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if has_cj_resource_spec(job_meta, client.client_name):
+            client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
+            validate_cj_execution_lifetime(job_meta, client.client_name, get_client_execution_lifetime(client_config))
         if deployed_job_meta.get(AppValidationKey.BYOC, False):
             job_meta[AppValidationKey.BYOC] = True
         else:
@@ -338,6 +350,7 @@ class JobExecutor(ClientExecutor):
                 _ABORT_REQUESTED_KEY: False,
                 _RESTART_KEY: restart,
             }
+
         try:
             self._launch_job(job_id, restart, pending_handle, fl_ctx)
         except BaseException:
@@ -372,13 +385,23 @@ class JobExecutor(ClientExecutor):
         ):
             job_args[key] = (job_args[key][0], value)
         fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
-        job_handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
-        if job_handle is None:
-            raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
-        heartbeat_cleanup = pending_handle.attach(job_handle)
-        try:
+
+        def register_handle(job_handle):
+            heartbeat_cleanup = pending_handle.attach(job_handle)
             if heartbeat_cleanup is not None:
                 self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+        # Publish created runtimes before scheduling waits on initial and
+        # replacement launches, so an abort can reclaim an unscheduled CJ.
+        fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
+        try:
+            job_handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
+        if job_handle is None:
+            raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+        try:
+            register_handle(job_handle)
             self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
             fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
             fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)

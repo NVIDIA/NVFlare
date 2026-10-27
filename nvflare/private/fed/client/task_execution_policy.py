@@ -28,10 +28,20 @@ from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_cuda_device_environment
-from nvflare.job_config.task_execution import _timeout, validate_task_resources
+from nvflare.job_config.task_execution import (
+    _timeout,
+    reject_job_gpu_reservation,
+    validate_process_task_resources,
+    validate_task_resources,
+)
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec, get_resource_manager_spec
+from nvflare.utils.job_launcher_utils import (
+    get_compute_resource_manager_spec,
+    get_job_launcher_spec,
+    get_launcher_resource_spec,
+    get_portable_resource_spec,
+)
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -98,6 +108,22 @@ def _supported_native_launcher(launcher):
     return type(launcher) is getattr(module, class_name, None)
 
 
+def is_native_task_launcher(launcher):
+    return launcher.launch_mode in _NATIVE_TASK_LAUNCHERS
+
+
+def site_job_launchers(site_config):
+    """Find launcher components using the supported component field spellings."""
+    result = []
+    for item in site_config.get("components", []):
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path", item.get("class_path", item.get("name", "")))
+        if isinstance(path, str) and path.endswith("JobLauncher"):
+            result.append((path, item))
+    return result
+
+
 class _SiteBuilder(ComponentBuilder):
     def get_module_scanner(self):
         return ModuleScanner(["nvflare"], ["apis", "app_common"], True)
@@ -117,7 +143,7 @@ class TaskExecutionPolicy:
     @classmethod
     def from_workspace(cls, workspace):
         # Do not consult APPLICATION_CONF or job-supplied resources. Only the
-        # canonical site's resources config (including format/default variants) owns policy.
+        # canonical site resources (including format/default variants) own policy.
         path = workspace.get_resources_file_path()
         data = ConfigService.load_config_dict(path, prefer_exact_file=True) if path else {}
         policy = cls.from_config(data.get("task_execution", {}))
@@ -126,13 +152,7 @@ class TaskExecutionPolicy:
         if _supported_native_launcher(policy.launcher):
             policy.launcher.validate_site_config(data)
             return policy
-        launchers = []
-        for item in data.get("components", []):
-            if not isinstance(item, dict):
-                continue
-            path = item.get("path", item.get("class_path", item.get("name", "")))
-            if isinstance(path, str) and path.endswith("JobLauncher"):
-                launchers.append((path, item))
+        launchers = site_job_launchers(data)
         if launchers and (
             len(launchers) != 1
             or launchers[0][0]
@@ -224,17 +244,28 @@ class TaskExecutionPolicy:
         native_mode = _supported_native_launcher(self.launcher)
         process_gpu = type(self.launcher) is ProcessTaskLauncher and self.launcher.gpu_devices is not None
         validate_task_resources(meta, site_name, allow_gpu=native_mode or process_gpu)
-        if (native_mode or process_gpu) and get_resource_manager_spec(meta, site_name).get("num_of_gpus", 0):
-            raise ValueError("task GPU settings require launcher_spec; portable GPUs reserve the whole job")
-        if process_gpu:
+        if native_mode or process_gpu:
+            reject_job_gpu_reservation(meta, site_name)
+        if not native_mode:
+            validate_process_task_resources(meta, site_name)
+            if not process_gpu:
+                return TaskResourceRequest()
             for mode, field in (("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")):
                 if get_job_launcher_spec(meta, site_name, mode).get(field, 0):
                     raise ValueError("Process GPU tasks require process launcher_spec")
             spec = get_job_launcher_spec(meta, site_name, "process")
             if set(spec) - {"num_of_gpus"}:
                 raise ValueError("Process task GPU launcher_spec supports only whole-GPU counts")
-            return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))
-        if not native_mode or self.launcher.launch_mode != "docker":
+            compute = get_compute_resource_manager_spec(meta, site_name)
+            count = compute.get("num_of_gpus", 0)
+            portable = get_portable_resource_spec(meta, site_name)
+            legacy = get_launcher_resource_spec(meta, site_name, "process")
+            if "num_of_gpus" in spec:
+                if ("num_of_gpus" in portable or "num_of_gpus" in legacy) and spec["num_of_gpus"] != count:
+                    raise ValueError("Process GPU counts in resource_spec and launcher_spec must agree")
+                count = spec["num_of_gpus"]
+            return TaskResourceRequest(gpu_count=count)
+        if self.launcher.launch_mode != "docker":
             return TaskResourceRequest()
         spec = get_job_launcher_spec(meta, site_name, "docker")
         return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))

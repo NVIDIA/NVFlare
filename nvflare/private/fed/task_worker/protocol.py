@@ -362,12 +362,14 @@ def write_bootstrap(path: str, bootstrap: WorkerBootstrap):
     _atomic_publish(path, encoded)
 
 
-def read_bootstrap(path: str) -> WorkerBootstrap:
-    """Load and strictly validate a worker bootstrap."""
+def read_bootstrap(path: str, *, resolve_parent: bool = True) -> WorkerBootstrap:
+    """Load a bootstrap; CP disables parent resolution for job-controlled paths."""
 
     # Trusted callers may use directory aliases such as /tmp on macOS.
     # Canonicalize ancestors while still refusing a symlinked bootstrap file.
-    directory = os.path.realpath(os.path.dirname(os.path.abspath(path)))
+    directory = os.path.dirname(os.path.abspath(path))
+    if resolve_parent:
+        directory = os.path.realpath(directory)
     with _open_regular(os.path.join(directory, os.path.basename(path))) as stream:
         encoded = stream.read(_MAX_BOOTSTRAP_BYTES + 1)
     if len(encoded) > _MAX_BOOTSTRAP_BYTES:

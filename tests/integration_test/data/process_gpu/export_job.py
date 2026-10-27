@@ -30,7 +30,12 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--gpu-oom", action="store_true", help="fail site-1 task training with a real CUDA OOM")
+    parser.add_argument(
+        "--zero-gpu-site", choices=("site-1", "site-2"), help="override the portable task GPU default with zero"
+    )
     args = parser.parse_args()
+    if args.zero_gpu_site and (args.device != "cuda" or args.lifetime != "task" or args.gpu_oom):
+        parser.error("--zero-gpu-site requires CUDA task mode without --gpu-oom")
     if args.gpu_oom and (args.device != "cuda" or args.lifetime != "task"):
         parser.error("--gpu-oom requires --device cuda --lifetime task")
     model = torch.nn.Linear(2, 1)
@@ -38,24 +43,33 @@ def main():
         model.weight.zero_()
         model.bias.zero_()
     name = f"process-{args.device}-{args.lifetime}" + ("-oom" if args.gpu_oom else "")
+    if args.zero_gpu_site:
+        name += "-zero-" + args.zero_gpu_site
     recipe = FedAvgRecipe(
         name=name,
         model=model,
         min_clients=2,
         num_rounds=2,
         train_script=str(Path(__file__).with_name("train.py")),
-        train_args=["--device", args.device] + (["--gpu-oom"] if args.gpu_oom else []),
+        train_args=(
+            ["--device", args.device]
+            + (["--gpu-oom"] if args.gpu_oom else [])
+            + (["--cpu-site", args.zero_gpu_site] if args.zero_gpu_site else [])
+        ),
         execution_lifetime=args.lifetime,
     )
     add_final_global_evaluation(recipe, participating_clients=["site-1", "site-2"])
     recipe.export(args.output)
     # Build explicit submitted-job metadata in this test fixture. Task GPU
-    # counts belong to the task launcher; resident controls use the CP manager.
+    # compute counts belong to workers in task mode; the independent CJ budget
+    # is normalized from the exported task client configurations.
     meta_path = Path(args.output) / name / "meta.json"
     meta = json.loads(meta_path.read_text())
     if args.device == "cuda":
         if args.lifetime == "task":
-            meta["launcher_spec"] = {"default": {"process": {"num_of_gpus": 1}}}
+            meta["resource_spec"] = {"@default": {"num_of_gpus": 1}}
+            if args.zero_gpu_site:
+                meta["resource_spec"][args.zero_gpu_site] = {"num_of_gpus": 0}
         else:
             meta["resource_spec"] = {site: {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 1} for site in ("site-1", "site-2")}
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")

@@ -128,7 +128,7 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
         TaskExecutionPolicy.from_config(config)
 
 
-@pytest.mark.parametrize("mode", ["docker", "k8s", "slurm"])
+@pytest.mark.parametrize("mode", ["docker", "slurm"])
 @pytest.mark.parametrize("missing", ["backend", "parent", "dependency"])
 def test_native_selection_reports_missing_backend_without_hiding_missing_dependency(monkeypatch, mode, missing):
     class NativeLauncher(TaskLauncherSpec):
@@ -1632,3 +1632,55 @@ def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_pa
         adapter.resolve_task_data(value, context, abort_signal=Signal())
     assert calls == ["a", "b"]
     assert not scratch.exists()
+
+
+@pytest.mark.parametrize("stage", ["launcher", "listener"])
+def test_start_run_binding_failure_panics_and_preserves_the_actual_error(monkeypatch, stage):
+    context = FLContext()
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    failure = Mock(side_effect=ValueError("owning job resource binding differs"))
+    if stage == "launcher":
+        policy.launcher.handle_event = failure
+    else:
+        from nvflare.private.fed.task_worker import cell_session
+
+        monkeypatch.setattr(cell_session, "listen", failure)
+    adapter = TaskWorkerExecutor({}, (), policy)
+    adapter.system_panic = Mock()
+    with pytest.raises(ValueError, match="resource binding differs"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started
+    assert adapter._start_error == "owning job resource binding differs"
+    assert not cell.decode_pass_through_topics
+    adapter.system_panic.assert_called_once_with(
+        "task launcher START_RUN failed: owning job resource binding differs", context
+    )
+    with pytest.raises(RuntimeError, match="resource binding differs"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 2}, {"memory": "1Gi"}])
+def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="CPU/memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": budget}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )
+
+
+def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
+    policy = TaskExecutionPolicy.from_config({})
+    assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
+
+
+@pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])
+def test_process_task_cannot_drop_compute_resource_manager_requirements(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": compute}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )

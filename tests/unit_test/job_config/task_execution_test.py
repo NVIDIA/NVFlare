@@ -335,3 +335,73 @@ def test_task_export_preserves_gpu_counts_for_backend_admission(tmp_path, mode, 
     meta = json.loads((tmp_path / job.name / "meta.json").read_text())
     assert meta[meta_key]["site-1"][mode][gpu_field] == 1
     assert config_path.read_bytes() == before
+
+
+def test_export_splits_mixed_client_admission_and_keeps_compute_budget(tmp_path):
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    job = _job(
+        meta={
+            "resource_spec": {"@default": {"num_of_gpus": 1}},
+            "cj_resource_spec": {"@default": {"num_of_cpus": 0.5, "memory": "1Gi"}},
+        }
+    )
+    job.to(_executor(), "site-1")
+    job.to(_executor(), "site-2")
+    job.set_execution_lifetime("task", target="site-1")
+    job.export_job(str(tmp_path))
+    meta = json.loads((tmp_path / job.name / "meta.json").read_text())
+    assert meta["cj_resource_spec"]["site-1"] == {}
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    assert get_resource_manager_spec(meta, "site-2") == {"num_of_gpus": 1}
+    assert meta["resource_spec"]["@default"]["num_of_gpus"] == 1
+
+
+def test_export_generates_default_cj_admission_for_all_task_sites(tmp_path):
+    from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+
+    job = _job("task", {"resource_spec": {"@default": {"num_of_gpus": 1}}})
+    job.to_clients(_executor())
+    job.export_job(str(tmp_path))
+    meta = json.loads((tmp_path / job.name / "meta.json").read_text())
+    assert meta["cj_resource_spec"] == {"@ALL": {}}
+    assert get_resource_manager_spec(meta, "site-42") == {}
+
+
+@pytest.mark.parametrize(
+    "config,expected", [({}, "job"), ({"execution_lifetime": "job"}, "job"), ({"execution_lifetime": "task"}, "task")]
+)
+def test_resource_lifetime_classification(config, expected):
+    from nvflare.job_config.task_execution import get_client_execution_lifetime
+
+    assert get_client_execution_lifetime(config) == expected
+
+
+@pytest.mark.parametrize("value", [None, "other", True, 3, [], {}])
+def test_resource_lifetime_classification_rejects_invalid_modes(value):
+    from nvflare.job_config.task_execution import get_client_execution_lifetime
+
+    with pytest.raises(ValueError, match="execution_lifetime"):
+        get_client_execution_lifetime({"execution_lifetime": value})
+
+
+@pytest.mark.parametrize("config", [None, [], "task"])
+def test_resource_lifetime_classification_requires_config_dict(config):
+    from nvflare.job_config.task_execution import get_client_execution_lifetime
+
+    with pytest.raises(TypeError, match="client config must be a dict"):
+        get_client_execution_lifetime(config)
+
+
+def test_export_uses_resource_lifetime_classifier_without_changing_wrapping(tmp_path, monkeypatch):
+    import nvflare.job_config.fed_job_config as export
+
+    job = _job("job")
+    job.to_clients(_executor())
+    monkeypatch.setattr(export, "get_client_execution_lifetime", lambda config: "task")
+    job.export_job(str(tmp_path))
+    assert json.loads((tmp_path / job.name / "meta.json").read_text())["cj_resource_spec"] == {"@ALL": {}}
+    config = json.loads((tmp_path / job.name / "app" / "config" / "config_fed_client.json").read_text())
+    assert "execution_lifetime" not in config
+    assert config["format_version"] == 2
+    assert prepare_task_execution(config) is None

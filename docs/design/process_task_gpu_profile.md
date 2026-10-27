@@ -42,18 +42,33 @@ Applications select execution_lifetime: "task". Task counts use job metadata:
 
 ```json
 {
-  "launcher_spec": {
-    "default": {"process": {"num_of_gpus": 1}}
+  "resource_spec": {
+    "@default": {"num_of_gpus": 1},
+    "site-2": {"num_of_gpus": 0}
   }
 }
 ```
 
-The Process task profile rejects job-level resource_spec GPU requests, which
-would use the existing job admission path, and rejects other backend GPU requests.
-The opted-in client JobLauncher hides GPUs from resident CJs after study
-configuration overrides. Only task workers receive the configured assignment.
-Existing ResourceManager implementations and generic site inventories are
-unchanged. Job and task launch backends must match.
+Submission and export derive task sites from the actual client configurations
+and add an independent cj_resource_spec entry for each task site. For these sites,
+resource_spec describes disposable compute; it does not reserve that GPU count
+for the CJ lifetime. In this example site-2 explicitly requests a CPU task while
+other task sites request one GPU. A site count of zero overrides the default.
+
+Process CJs use the host's ordinary process resources and hide GPUs after study
+configuration overrides. Explicit CJ CPU/memory budgets and positive CJ GPU
+counts are rejected because this launcher cannot enforce them. Only task workers
+receive the configured device assignment. There are no implicit Kubernetes CJ
+resource defaults in Process mode. Older task metadata that would reserve compute
+GPUs through whole-job admission must be resubmitted through normalization.
+
+The legacy launcher_spec.default.process.num_of_gpus declaration is also
+supported. If both compute resource_spec and Process launcher_spec specify a GPU
+count, they must agree. Other backend GPU declarations, compute CPU/memory
+budgets, per-GPU memory quotas and custom resource claims are rejected. Existing
+ResourceManager implementations and generic site inventories are unchanged;
+job-mode admission keeps its existing meaning. Job and task launch backends must
+match.
 
 Omitting gpu_devices preserves the CPU-only default task policy and ordinary
 job-mode configuration. An explicit empty list enables an empty task assignment.

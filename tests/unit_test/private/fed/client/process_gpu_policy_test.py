@@ -23,6 +23,7 @@ from pyhocon import HOCONConverter
 
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.logging.constants import is_log_streaming_allowed
@@ -32,6 +33,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.task_worker.worker import ComponentNotAuthorized, _authorize_bootstrap
+from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
 
 GPU = "GPU-00000000-0000-0000-0000-000000000001"
 
@@ -79,6 +81,94 @@ def test_task_gpu_count_uses_launcher_spec_without_job_reservation(tmp_path):
         policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
     with pytest.raises(ValueError, match="process launcher_spec"):
         policy.task_resources({"launcher_spec": {"site": {"docker": {"num_of_gpus": 1}}}}, "site")
+
+
+@pytest.mark.parametrize(
+    "resource_spec",
+    [
+        {"@default": {"num_of_gpus": 1}},
+        {"site": {"num_of_gpus": 1}},
+        {"site": {"process": {"num_of_gpus": 1}}},
+    ],
+)
+def test_normalized_task_gpu_compute_is_separate_from_cj_admission(tmp_path, resource_spec):
+    workspace = _workspace(tmp_path, _config(tmp_path))
+    policy = TaskExecutionPolicy.from_workspace(workspace)
+    meta = {"resource_spec": resource_spec}
+    normalize_cj_resource_spec(meta, {"site"})
+    assert get_resource_manager_spec(meta, "site") == {}
+    assert policy.task_resources(meta, "site").gpu_count == 1
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site")
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
+    environment = {"CUDA_VISIBLE_DEVICES": "all"}
+    ClientProcessJobLauncher().prepare_environment(meta, context, environment)
+    assert environment["CUDA_VISIBLE_DEVICES"] == ""
+    assert meta["resource_spec"] == resource_spec
+
+
+def test_portable_site_zero_gpu_override_clears_compute_default(tmp_path):
+    policy = TaskExecutionPolicy.from_workspace(_workspace(tmp_path, _config(tmp_path)))
+    meta = {"resource_spec": {"@default": {"num_of_gpus": 1}, "site": {"num_of_gpus": 0}}}
+    normalize_cj_resource_spec(meta, {"site"})
+    assert get_resource_manager_spec(meta, "site") == {}
+    assert policy.task_resources(meta, "site").gpu_count == 0
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_conflicting_compute_and_process_launcher_gpu_counts_are_rejected(tmp_path, count):
+    policy = TaskExecutionPolicy.from_workspace(_workspace(tmp_path, _config(tmp_path)))
+    meta = {
+        "resource_spec": {"@default": {"num_of_gpus": 1}},
+        "launcher_spec": {"default": {"process": {"num_of_gpus": count}}},
+    }
+    normalize_cj_resource_spec(meta, {"site"})
+    with pytest.raises(ValueError, match="counts.*must agree"):
+        policy.task_resources(meta, "site")
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"resource_spec": {"site": {"license": 1}}},
+        {"resource_spec": {"site": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 1}}},
+        {"resource_spec": {"@default": {"num_of_cpus": 1}}},
+        {"resource_spec": {"@default": {"memory": "64Mi"}}},
+        {"launcher_spec": {"site": {"process": {"num_of_cpus": 1}}}},
+        {"launcher_spec": {"site": {"process": {"memory": "64Mi"}}}},
+    ],
+)
+def test_gpu_visibility_keeps_shared_process_compute_capability_guards(tmp_path, meta):
+    policy = TaskExecutionPolicy.from_workspace(_workspace(tmp_path, _config(tmp_path)))
+    normalize_cj_resource_spec(meta, {"site"})
+    with pytest.raises(UnsupportedTaskResourceError, match="cannot enforce"):
+        policy.task_resources(meta, "site")
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site")
+    with pytest.raises(UnsupportedTaskResourceError, match="cannot enforce"):
+        ClientProcessJobLauncher().get_command(meta, context)
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 0.25}, {"memory": "64Mi"}, {"num_of_gpus": 1}])
+def test_process_rejects_unenforceable_independent_cj_budget_before_launch(budget):
+    meta = {"cj_resource_spec": {"site": budget}}
+    normalize_cj_resource_spec(meta, {"site"})
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site")
+    with pytest.raises(ValueError, match="Process CJ cannot enforce"):
+        ClientProcessJobLauncher().get_command(meta, context)
+
+
+def test_task_gpu_capacity_is_checked_before_cp_changes_environment(tmp_path):
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site")
+    context.set_prop(FLContextKey.WORKSPACE_OBJECT, _workspace(tmp_path, _config(tmp_path)))
+    meta = {"resource_spec": {"@default": {"num_of_gpus": 2}}}
+    normalize_cj_resource_spec(meta, {"site"})
+    environment = {"CUDA_VISIBLE_DEVICES": "all"}
+    with pytest.raises(UnsupportedTaskResourceError, match="static visibility assignment"):
+        ClientProcessJobLauncher().prepare_environment(meta, context, environment)
+    assert environment == {"CUDA_VISIBLE_DEVICES": "all"}
 
 
 def test_cp_hides_gpus_after_study_overrides_only_for_opted_in_profile(tmp_path):

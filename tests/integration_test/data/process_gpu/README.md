@@ -22,12 +22,19 @@ provisioned admin connection:
 python tests/integration_test/data/process_gpu/export_job.py --device cpu --lifetime job --output /tmp/process-gpu-jobs
 python tests/integration_test/data/process_gpu/export_job.py --device cpu --lifetime task --output /tmp/process-gpu-jobs
 python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --output /tmp/process-gpu-jobs
+python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --zero-gpu-site site-2 --output /tmp/process-gpu-jobs
 python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime job --output /tmp/process-gpu-jobs
 ```
 
-Run the first three with the task visibility profile. CPU controls require zero
-visible CUDA devices; CUDA controls require actual allocated CUDA bytes and
-kernels. For the resident CUDA/job control, after owned tasks settle, stop only
+Run both CPU controls and both CUDA/task controls with the task visibility
+profile. The CUDA/task export uses resource_spec.@default.num_of_gpus=1 and
+independent empty CJ budgets normalized from the client task configurations. The
+mixed control adds a site-2 zero-GPU override: site-1 must perform real CUDA
+computation while site-2 trains on CPU with no visible CUDA devices. Check that
+server-stored and deployed metadata preserve @default, the site override and the
+CJ/compute split. Task CJs must have empty CUDA visibility in every task control.
+CPU workers require zero visible CUDA devices; CUDA workers require actual
+allocated CUDA bytes and kernels. For the resident CUDA/job control, after owned tasks settle, stop only
 owned idle participants, remove gpu_devices and restore the normal job resource
 manager/consumer configuration with the administrator-approved per-site assignment.
 Run this control serially; an empty job GPU inventory is not a passing control.

@@ -27,23 +27,25 @@ import nvflare.client as flare
 parser = argparse.ArgumentParser()
 parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
 parser.add_argument("--gpu-oom", action="store_true")
+parser.add_argument("--cpu-site", choices=("site-1", "site-2"))
 args = parser.parse_args()
 torch.set_num_threads(1)
-expected_gpus = 1 if args.device == "cuda" else 0
+flare.init()
+device = "cpu" if flare.get_site_name() == args.cpu_site else args.device
+expected_gpus = 1 if device == "cuda" else 0
 if torch.cuda.device_count() != expected_gpus:
     raise RuntimeError(f"expected {expected_gpus} visible GPUs; observed {torch.cuda.device_count()}")
 if expected_gpus and not torch.cuda.is_available():
     raise RuntimeError("CUDA qualification requires real CUDA kernels")
 
-flare.init()
 while flare.is_running():
     received = flare.receive()
     if received is None:
         break
-    model = torch.nn.Linear(2, 1).to(args.device)
+    model = torch.nn.Linear(2, 1).to(device)
     model.load_state_dict({key: torch.as_tensor(value) for key, value in received.params.items()})
-    inputs = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]], device=args.device)
-    targets = inputs @ torch.tensor([[2.0], [-3.0]], device=args.device)
+    inputs = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]], device=device)
+    targets = inputs @ torch.tensor([[2.0], [-3.0]], device=device)
     initial_loss = torch.nn.functional.mse_loss(model(inputs), targets).item()
     if flare.is_train():
         if args.gpu_oom and flare.get_site_name() == "site-1":
@@ -57,7 +59,7 @@ while flare.is_running():
             loss.backward()
             optimizer.step()
     final_loss = torch.nn.functional.mse_loss(model(inputs), targets).item()
-    if args.device == "cuda":
+    if device == "cuda":
         torch.cuda.synchronize()
     if not final_loss < 1e-4:
         raise RuntimeError(f"model did not converge: {final_loss}")
@@ -72,7 +74,7 @@ while flare.is_running():
         "site": flare.get_site_name(),
         "round": received.current_round,
         "task": "train" if flare.is_train() else "validate",
-        "device": args.device,
+        "device": device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "gpu_count": torch.cuda.device_count(),
         "mse_before": initial_loss,
