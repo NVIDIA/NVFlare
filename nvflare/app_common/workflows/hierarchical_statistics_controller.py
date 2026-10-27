@@ -264,7 +264,11 @@ class HierarchicalStatisticsController(StatisticsController):
         )
 
         self.global_statistics = get_global_stats(
-            self.global_statistics, self.client_statistics, statistic_task, hierarchy_config_json
+            self.global_statistics,
+            self.client_statistics,
+            statistic_task,
+            hierarchy_config_json,
+            self.withheld_features,
         )
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")

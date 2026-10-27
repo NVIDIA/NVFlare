@@ -183,7 +183,7 @@ def _run_process(bootstrap_path, extra_env=None):
         "import os,sys;"
         f"log=open({str(log_path)!r},'w');"
         "os.dup2(log.fileno(),1);os.dup2(log.fileno(),2);"
-        f"sys.argv=['worker','--bootstrap',{bootstrap_path!r}];"
+        f"sys.argv=['worker','--bootstrap',{bootstrap_path!r},'--parent_pid',{str(os.getpid())!r}];"
         "from nvflare.private.fed.app.client.task_worker_process import main;main()"
     )
     request = TaskLaunchRequest(
@@ -738,7 +738,7 @@ def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch)
 
     monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
-        worker._execute(bootstrap, Shareable(), workspace, None)
+        worker._execute(bootstrap, Shareable(), workspace)
     finalized.assert_called_once()
 
 
@@ -1034,7 +1034,15 @@ def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
         identity.site_name,
         identity.task_id,
         identity.attempt_id,
-        (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap", path),
+        (
+            sys.executable,
+            "-m",
+            "nvflare.private.fed.app.client.task_worker_process",
+            "--bootstrap",
+            path,
+            "--parent_pid",
+            str(os.getpid()),
+        ),
         environment=env,
         cwd=repo_root,
     )

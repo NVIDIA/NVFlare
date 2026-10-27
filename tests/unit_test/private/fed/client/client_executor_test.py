@@ -14,24 +14,34 @@
 
 import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    FLMetaKey,
+    JobConstants,
+    ReservedKey,
+    RunProcessKey,
+)
+from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode, publish_job_handle
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
-from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import (
     _ABORT_REQUESTED_KEY,
+    _RESTART_KEY,
     REPORTABLE_JOB_FAILURES,
     JobExecutor,
     _PendingJobHandle,
@@ -40,6 +50,273 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
 from tests.timing_utils import isolate_time
+
+
+def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True, on_launch=None):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    ctx.set_prop(ReservedKey.IS_LEAF, is_leaf, private=False, sticky=True)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.max_cj_restart_failures = limit
+    launcher = MagicMock()
+    resources = MagicMock()
+    handles = []
+    run_dir = tmp_path / "job-1"
+    write_job_cert(str(run_dir), b"cert", b"key")
+    checkpoint = run_dir / "checkpoint"
+    checkpoint.write_text("preserved")
+
+    def launch(*_):
+        index = len(handles)
+        ready, code = outcomes[index]
+        launch_id = executor.run_processes["job-1"][_RESTART_KEY].launch_id
+        option = f"{RequestHeader.CJ_LAUNCH_ID}={launch_id}"
+        assert ctx.get_prop(FLContextKey.ARGS).set == ["print_conf=True", option]
+        assert ctx._get_ctx_manager().new_context().get_prop(FLContextKey.ARGS).set == ["parent-only=True"]
+        assert ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.OPTIONS][1].split() == [
+            "print_conf=True",
+            option,
+        ]
+        handle = MagicMock(spec=JobHandleSpec)
+        handle.poll.return_value = code
+        handle.can_restart.return_value = confirmed
+        handles.append(handle)
+
+        def wait():
+            assert find_job_cert(str(run_dir)) is not None
+            assert checkpoint.read_text() == "preserved"
+            assert executor.get_run_processes_keys() == ["job-1"]
+            client.send_request_before_shutdown.assert_not_called()
+            resources.free_resources.assert_not_called()
+            restart = executor.run_processes["job-1"][_RESTART_KEY]
+            if ready:
+                executor.notify_job_status("job-1", ClientStatus.STARTED, restart.launch_id)
+                executor.notify_job_status("job-1", ClientStatus.READY, restart.launch_id)
+            if on_wait:
+                on_wait(executor, index, handle)
+
+        handle.wait.side_effect = wait
+        if on_launch:
+            on_launch(executor, index, handle, ctx)
+        return handle
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), {"gpu": 1}, "token", resources, ctx
+        )
+    executor._wait_child_process_finish(client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
+    assert executor.get_run_processes_keys() == []
+    assert find_job_cert(str(run_dir)) is None
+    assert checkpoint.read_text() == "preserved"
+    resources.free_resources.assert_called_once()
+    client.send_request_before_shutdown.assert_called_once()
+    assert sum(call.args[0] == EventType.JOB_COMPLETED for call in ctx.get_engine().fire_event.call_args_list) == 1
+    return launcher, client, handles
+
+
+@pytest.mark.parametrize(
+    "outcomes, launches, final_code",
+    [
+        ([(True, 104)] * 12 + [(True, 0)], 13, 0),
+        ([(True, 104)] + [(False, 1)] * 3, 4, 104),
+        ([(True, 104), (False, 1), (False, 1), (True, 104), (False, 1), (False, 1), (True, 0)], 7, 0),
+    ],
+    ids=["twelve-successful-replacements", "three-failed-startups", "ready-resets-failure-budget"],
+)
+def test_recovery_limits_failed_starts_not_successful_replacements(tmp_path, outcomes, launches, final_code):
+    launcher, client, _ = _run_recovery(tmp_path, outcomes)
+    assert launcher.launch_job.call_count == launches
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == final_code
+    assert all(call.args[0] == {JobConstants.JOB_ID: "job-1"} for call in launcher.launch_job.call_args_list)
+
+
+@pytest.mark.parametrize("code", [0, 9, 102, 103, 127])
+def test_nonretryable_outcomes_do_not_restart(tmp_path, code):
+    launcher, _, _ = _run_recovery(tmp_path, [(True, code)])
+    assert launcher.launch_job.call_count == 1
+
+
+@pytest.mark.parametrize("limit, confirmed, is_leaf", [(0, True, True), (3, False, True), (3, True, False)])
+def test_recovery_requires_leaf_site_enabled_policy_and_confirmed_death(tmp_path, limit, confirmed, is_leaf):
+    launcher, client, _ = _run_recovery(tmp_path, [(True, 104)], limit=limit, confirmed=confirmed, is_leaf=is_leaf)
+    assert launcher.launch_job.call_count == 1
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
+
+
+def test_delayed_readiness_from_dead_cj_does_not_reset_budget(tmp_path):
+    old_ids = []
+
+    def status(executor, index, _):
+        restart = executor.run_processes["job-1"][_RESTART_KEY]
+        old_ids.append(restart.launch_id)
+        if index:
+            executor.notify_job_status("job-1", ClientStatus.STARTED, old_ids[index - 1])
+            executor.notify_job_status("job-1", ClientStatus.READY, old_ids[index - 1])
+            executor.notify_job_status("job-1", ClientStatus.STOPPED, old_ids[index - 1])
+            assert restart.attempts == index
+            assert executor.get_status("job-1") == ClientStatus.STARTING
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)] + [(False, 1)] * 3, on_wait=status)
+    assert launcher.launch_job.call_count == 4
+    assert len(set(old_ids)) == 4
+
+
+@pytest.mark.parametrize("task_abort", [False, True])
+def test_abort_during_replacement_stops_recovery(tmp_path, task_abort):
+    def abort(executor, index, handle):
+        if index == 1:
+            (executor.abort_task if task_abort else executor.abort_app)("job-1")
+            handle.terminate.assert_called_once()
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=abort)
+    assert launcher.launch_job.call_count == 2
+
+
+def test_task_abort_while_cj_is_dying_prevents_replay(tmp_path):
+    def abort(executor, *_):
+        with patch.object(executor, "_terminate_job") as terminate:
+            executor.abort_task("job-1")
+        terminate.assert_called_once()
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=abort)
+    assert launcher.launch_job.call_count == 1
+
+
+@pytest.mark.parametrize("task_abort", [False, True])
+def test_abort_while_old_process_group_drains_prevents_recovery(tmp_path, task_abort):
+    def abort(executor, _, handle):
+        handle.can_restart.return_value = False  # CJ exited, but its children have not.
+        with patch.object(executor, "_terminate_job") as terminate:
+            (executor.abort_task if task_abort else executor.abort_app)("job-1")
+        terminate.assert_called_once()
+        handle.can_restart.return_value = True  # The old group finishes before wait returns.
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=abort)
+    assert launcher.launch_job.call_count == 1
+
+
+@pytest.mark.parametrize("ready", [False, True], ids=["initial-startup", "live-cj"])
+def test_task_abort_does_not_permanently_disable_recovery(tmp_path, ready):
+    def abort(executor, index, handle):
+        if index == 0:
+            handle.can_restart.return_value = False  # Still alive when abort_task arrives.
+            code = handle.poll.return_value
+            handle.poll.return_value = JobReturnCode.UNKNOWN
+            executor.abort_task("job-1")
+            handle.terminate.assert_not_called()
+            assert not executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
+            handle.can_restart.return_value = True  # Confirmed dead later.
+            handle.poll.return_value = code
+
+    launcher, _, _ = _run_recovery(tmp_path, [(ready, 104), (True, 0)], on_wait=abort)
+    assert launcher.launch_job.call_count == 2
+
+
+@pytest.mark.parametrize("limit, legacy", [(3, False), (3, True), (0, True)])
+def test_command_start_does_not_reset_budget_and_preserves_graceful_abort(tmp_path, limit, legacy):
+    def started(executor, index, handle):
+        restart = executor.run_processes["job-1"][_RESTART_KEY]
+        executor.notify_job_status("job-1", ClientStatus.STARTED, None if legacy else restart.launch_id)
+        assert executor.get_status("job-1") == ClientStatus.STARTED
+        assert restart.attempts == index
+        if index == 0:
+            handle.can_restart.return_value = False  # The task abort arrives while CJ is alive.
+            handle.poll.return_value = JobReturnCode.UNKNOWN
+            executor.abort_task("job-1")
+            assert executor.client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT_TASK
+            assert not executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
+            handle.terminate.assert_not_called()
+            handle.can_restart.return_value = True
+            handle.poll.return_value = JobReturnCode.EXECUTION_ERROR
+        if index == limit:
+            with patch.object(executor, "_terminate_job") as terminate:
+                executor.abort_app("job-1")
+            terminate.assert_called_once()
+            handle.terminate.assert_not_called()
+            assert executor.client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT
+
+    launcher, _, _ = _run_recovery(tmp_path, [(False, 1)] * (limit + 1), on_wait=started, limit=limit)
+    assert launcher.launch_job.call_count == limit + 1
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_stopped_runner_teardown_failure_does_not_restart(tmp_path, legacy):
+    def stopped(executor, *_):
+        restart = executor.run_processes["job-1"][_RESTART_KEY]
+        executor.notify_job_status("job-1", ClientStatus.STOPPED, None if legacy else restart.launch_id)
+        executor.notify_job_status("job-1", ClientStatus.READY, restart.launch_id)  # Delayed delivery.
+        assert executor.get_status("job-1") == ClientStatus.STOPPED
+
+    launcher, _, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=stopped)
+    assert launcher.launch_job.call_count == 1
+
+
+def test_legacy_started_crash_is_reported_as_execution_failure(tmp_path):
+    def started(executor, *_):
+        executor.notify_job_status("job-1", ClientStatus.STARTED)
+
+    launcher, client, _ = _run_recovery(tmp_path, [(False, 1)], on_wait=started, limit=0)
+    assert launcher.launch_job.call_count == 1
+    assert (
+        client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE]
+        == ProcessExitCode.EXCEPTION
+    )
+
+
+def test_ambiguous_replacement_submission_is_not_retried(tmp_path):
+    def fail_launch(executor, *_):
+        executor.run_processes["job-1"][_RESTART_KEY].launcher.launch_job.side_effect = RuntimeError("submission lost")
+
+    launcher, client, _ = _run_recovery(tmp_path, [(True, 104)], on_wait=fail_launch)
+    assert launcher.launch_job.call_count == 2
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
+
+
+def test_replacement_failure_after_attachment_reaps_worker_before_releasing_resources(tmp_path):
+    def fail_after_launch(executor, index, handle):
+        if index:
+            handle.terminate.assert_called_once()
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def failing_launch(meta, ctx):
+            def fail_event(event, _):
+                if event == EventType.AFTER_JOB_LAUNCH:
+                    raise RuntimeError("post-launch failure")
+
+            ctx.get_engine().fire_event.side_effect = fail_event
+            return launch(meta, ctx)
+
+        launcher.launch_job.side_effect = failing_launch
+
+    launcher, client, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=fail_after_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].wait.assert_called_once()
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
+
+
+def test_abort_while_replacement_launcher_has_not_returned(tmp_path):
+    def intercept_launch(executor, index, _):
+        if index != 0:
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def abort_and_launch(*args):
+            executor.abort_app("job-1")
+            return launch(*args)
+
+        launcher.launch_job.side_effect = abort_and_launch
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 9)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -175,11 +452,19 @@ def _make_start_app_inputs(tmp_path, job_id="job-1"):
     client.client_name = "site-1"
     client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
     client.cell.get_internal_listener_params.return_value = {}
-    fl_ctx = MagicMock()
-    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
-        FLContextKey.WORKSPACE_OBJECT: workspace,
-        FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
-    }.get(key)
+    manager = FLContextManager(
+        engine=MagicMock(),
+        identity_name="site-1",
+        job_id=job_id,
+        private_stickers={
+            FLContextKey.ARGS: SimpleNamespace(set=["parent-only=True"]),
+            FLContextKey.WORKSPACE_OBJECT: workspace,
+            FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
+        },
+        public_stickers={},
+    )
+    fl_ctx = manager.new_context()
+    fl_ctx.get_prop(FLContextKey.ARGS)  # Exercise a cached sticky parent value.
     return job_meta, workspace, client, fl_ctx
 
 
@@ -256,6 +541,45 @@ def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, he
     assert pending_handle.poll() == JobReturnCode.ABORTED
     pending_handle.wait()
     job_handle.wait.assert_called_once_with()
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
+@pytest.mark.parametrize("abort_before_publish", [False, True], ids=["during_startup_wait", "before_publish"])
+def test_start_app_can_abort_published_runtime_before_launcher_returns(
+    tmp_path, heartbeat_cleanup, abort_before_publish
+):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    job_handle = MagicMock(spec=JobHandleSpec)
+    launcher = MagicMock()
+
+    def abort():
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+    def launch_job(_meta, context):
+        if abort_before_publish:
+            abort()
+            job_handle.terminate.assert_not_called()
+        publish_job_handle(job_handle, context)
+        if not abort_before_publish:
+            abort()
+        # The runtime is reclaimed while launch_job is still waiting for startup.
+        job_handle.terminate.assert_called_once_with()
+        return job_handle
+
+    launcher.launch_job.side_effect = launch_job
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client, job_id, job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, fl_ctx
+        )
+
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+    assert fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
 
 
 def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
@@ -371,10 +695,12 @@ def test_start_app_allows_scheduler_metadata(tmp_path):
     client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
     client.cell.get_internal_listener_params.return_value = {}
     fl_ctx = MagicMock()
-    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
+    properties = {
         FLContextKey.WORKSPACE_OBJECT: workspace,
         FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
-    }.get(key)
+    }
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: properties.get(key)
+    fl_ctx.set_prop.side_effect = lambda key, value, **kwargs: properties.__setitem__(key, value)
     launcher = MagicMock()
     launcher.launch_job.return_value = MagicMock()
 
@@ -418,10 +744,12 @@ def test_start_app_uses_deployed_byoc_when_rewriting_job_meta(tmp_path, deployed
     client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
     client.cell.get_internal_listener_params.return_value = {}
     fl_ctx = MagicMock()
-    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
+    properties = {
         FLContextKey.WORKSPACE_OBJECT: workspace,
         FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
-    }.get(key)
+    }
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: properties.get(key)
+    fl_ctx.set_prop.side_effect = lambda key, value, **kwargs: properties.__setitem__(key, value)
     launcher = MagicMock()
     launcher.launch_job.return_value = MagicMock()
 
@@ -813,3 +1141,182 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.private.fed.client.client_executor",
     )
+
+
+def test_start_app_rejects_cj_budget_drift(tmp_path):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    deployed = dict(job_meta, cj_resource_spec={"site-1": {"num_of_cpus": 0.5}})
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(deployed, stream)
+    with pytest.raises(RuntimeError, match="cj_resource_spec"):
+        JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+            client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+        )
+
+
+@pytest.mark.parametrize("config_case", ["nested_json", "hocon_include", "yaml_environment"])
+def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeypatch, config_case):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    if config_case == "nested_json":
+        (config / "config_fed_client.conf").write_text("execution_lifetime = task\n")
+        (config / "shadow").mkdir()
+        (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
+    elif config_case == "hocon_include":
+        (config / "config_fed_client.conf").write_text('execution_lifetime = task\ninclude "runtime-mode.conf"\n')
+        (config / "runtime-mode.conf").write_text("execution_lifetime = job\n")
+    else:
+        (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
+        monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    choose.assert_not_called()
+
+
+def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+
+    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    path = config / "config_fed_client.yml"
+    path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
+    monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
+    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
+    monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    args = SimpleNamespace(
+        workspace=str(tmp_path),
+        job_id="job-1",
+        client_name="site-1",
+        client_config="config/config_fed_client.json",
+        set=[],
+        sp_scheme="grpc",
+        sp_target="server:8002",
+    )
+    with patch.object(ClientJsonConfigurator, "configure") as build:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
+def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = MagicMock()
+    context.get_identity_name.return_value = "site-1"
+    with pytest.raises(ValueError, match="Process CJ cannot enforce"):
+        ClientProcessJobLauncher().get_command({"cj_resource_spec": {"site-1": budget}}, context)
+
+
+@pytest.mark.parametrize(
+    "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
+)
+def test_process_task_compute_requirements_fail_before_starting_cj(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command") as command:
+        with pytest.raises(UnsupportedTaskResourceError):
+            ClientProcessJobLauncher().get_command(
+                {"resource_spec": {"@default": compute}, "cj_resource_spec": {"site-1": {}}}, context
+            )
+    command.assert_not_called()
+
+
+def test_process_resident_compute_admission_keeps_legacy_behavior():
+    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command", return_value="CJ"):
+        assert (
+            ClientProcessJobLauncher().get_command({"resource_spec": {"@default": {"num_of_cpus": 2}}}, context) == "CJ"
+        )
+
+
+def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    with patch(
+        "nvflare.private.fed.client.client_executor.get_client_execution_lifetime", return_value="job"
+    ) as classify:
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
+            )
+    classify.assert_called_once_with({"execution_lifetime": "task"})
+
+
+def test_cj_admission_uses_shared_resource_lifetime_classifier(tmp_path):
+    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
+
+    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
+        json.dump(job_meta, stream)
+    config = Path(workspace.get_app_config_dir("job-1"))
+    config.mkdir(parents=True)
+    (config / "config_fed_client.json").write_text('{"format_version":3,"execution_lifetime":"task","executors":[]}')
+    args = SimpleNamespace(
+        workspace=str(tmp_path),
+        job_id="job-1",
+        client_name="site-1",
+        client_config="config/config_fed_client.json",
+        set=[],
+        sp_scheme="grpc",
+        sp_target="server:8002",
+    )
+    with (
+        patch(
+            "nvflare.private.fed.client.client_app_runner.get_client_execution_lifetime", return_value="job"
+        ) as classify,
+        patch.object(ClientJsonConfigurator, "configure") as build,
+    ):
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
+    classify.assert_called_once()
+    assert classify.call_args.args[0]["execution_lifetime"] == "task"
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("abort_before_publish", [False, True])
+def test_recovery_launch_keeps_early_handle_abort_support(tmp_path, abort_before_publish):
+    def on_launch(executor, index, handle, ctx):
+        if index != 1:
+            return
+        if abort_before_publish:
+            executor.abort_app("job-1")
+            handle.terminate.assert_not_called()
+        publish_job_handle(handle, ctx)
+        if not abort_before_publish:
+            executor.abort_app("job-1")
+        # Cleanup must happen while the replacement launcher still waits for
+        # scheduling, rather than only after returning its job handle.
+        handle.terminate.assert_called_once()
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 0)], on_launch=on_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[1].terminate.assert_called_once()

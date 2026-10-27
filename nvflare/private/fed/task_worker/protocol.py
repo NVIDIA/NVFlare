@@ -80,6 +80,30 @@ def _require_absolute_directory_name(name: str, value: str):
         raise ValueError(f"{name} must be an absolute path")
 
 
+# The CA and both of the Client Job's pairs, which in secure mode are its job credential. A cell holds a server
+# role too (message crypto prefers it), and a cell missing a pair fills it from the CA's folder, i.e. the site's
+# kit; passing both pairs pins both roles to the job credential, exactly as FederatedClientBase pins the Client Job.
+CELL_SESSION_CREDENTIALS = ("ca_cert", "client_cert", "client_key", "server_cert", "server_key")
+# text field -> required
+_CELL_SESSION_TEXT = {"connect_url": True, "worker_fqcn": True, "connection_security": False, "identity": False}
+
+
+def _require_cell_session(value):
+    """How a worker joins its Client Job's cell: as the Client Job joins its CP's."""
+    if not isinstance(value, Mapping) or not set(value) <= set(_CELL_SESSION_TEXT) | {"credentials"}:
+        raise ValueError(f"cell_session may contain only {sorted(_CELL_SESSION_TEXT)} and credentials")
+    for name, required in _CELL_SESSION_TEXT.items():
+        if required or name in value:
+            _require_text(f"cell_session {name}", value.get(name))
+    credentials = value.get("credentials", {})
+    if not isinstance(credentials, Mapping) or not set(credentials) <= set(CELL_SESSION_CREDENTIALS):
+        raise ValueError(f"cell_session credentials may name only {list(CELL_SESSION_CREDENTIALS)}")
+    for name, path in credentials.items():
+        _require_absolute_directory_name(f"cell_session credentials {name}", path)
+    if "." not in value["worker_fqcn"].strip("."):
+        raise ValueError("cell_session worker_fqcn must be a child of the Client Job FQCN")
+
+
 def _require_payload_limit(value):
     if value is not None and (type(value) is not int or value <= 0):
         raise ValueError("max_payload_bytes must be a positive integer or None")
@@ -248,6 +272,7 @@ class WorkerBootstrap:
     context_properties: Mapping[str, ContextProperty] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
     max_payload_bytes: int | None = None
+    cell_session: Mapping[str, Any] | None = None
 
     def __post_init__(self):
         if not isinstance(self.identity, TaskAttemptIdentity):
@@ -257,6 +282,8 @@ class WorkerBootstrap:
         _require_absolute_directory_name("artifact_root", self.artifact_root)
         _require_absolute_directory_name("workspace_root", self.workspace_root)
         _require_payload_limit(self.max_payload_bytes)
+        if self.cell_session is not None:
+            _require_cell_session(self.cell_session)
         if not isinstance(self.executor, Mapping):
             raise TypeError("executor must be a JSON component mapping")
         if not isinstance(self.components, Sequence) or isinstance(self.components, (str, bytes)):
@@ -277,6 +304,7 @@ class WorkerBootstrap:
                 raise TypeError(f"context property {name!r} must be a ContextProperty")
         object.__setattr__(self, "executor", _freeze_json(self.executor))
         object.__setattr__(self, "components", _freeze_json(self.components))
+        object.__setattr__(self, "cell_session", _freeze_json(self.cell_session))
         object.__setattr__(self, "context_properties", MappingProxyType(dict(self.context_properties)))
         if len(json.dumps(self.to_dict(), allow_nan=False).encode("utf-8")) > _MAX_BOOTSTRAP_BYTES:
             raise ValueError("worker bootstrap is too large")
@@ -291,6 +319,7 @@ class WorkerBootstrap:
             "components": _thaw_json(self.components),
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
             "max_payload_bytes": self.max_payload_bytes,
+            "cell_session": _thaw_json(self.cell_session),
         }
 
     @classmethod
@@ -298,7 +327,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties", "max_payload_bytes"}
+        optional = {"components", "context_properties", "max_payload_bytes", "cell_session"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -313,6 +342,7 @@ class WorkerBootstrap:
             components=tuple(value.get("components", ())),
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
             max_payload_bytes=value.get("max_payload_bytes"),
+            cell_session=value.get("cell_session"),
         )
 
 
@@ -332,12 +362,14 @@ def write_bootstrap(path: str, bootstrap: WorkerBootstrap):
     _atomic_publish(path, encoded)
 
 
-def read_bootstrap(path: str) -> WorkerBootstrap:
-    """Load and strictly validate a worker bootstrap."""
+def read_bootstrap(path: str, *, resolve_parent: bool = True) -> WorkerBootstrap:
+    """Load a bootstrap; CP disables parent resolution for job-controlled paths."""
 
     # Trusted callers may use directory aliases such as /tmp on macOS.
     # Canonicalize ancestors while still refusing a symlinked bootstrap file.
-    directory = os.path.realpath(os.path.dirname(os.path.abspath(path)))
+    directory = os.path.dirname(os.path.abspath(path))
+    if resolve_parent:
+        directory = os.path.realpath(directory)
     with _open_regular(os.path.join(directory, os.path.basename(path))) as stream:
         encoded = stream.read(_MAX_BOOTSTRAP_BYTES + 1)
     if len(encoded) > _MAX_BOOTSTRAP_BYTES:
