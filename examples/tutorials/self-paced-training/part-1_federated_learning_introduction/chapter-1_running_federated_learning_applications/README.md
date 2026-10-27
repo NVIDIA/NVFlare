@@ -38,7 +38,7 @@ python -m ipykernel install --user --name nvflare-chapter1 --display-name 'NVFla
 python -m jupyterlab
 ```
 
-Use **NVFlare Self-Paced Training** in Jupyter. Run training commands in a terminal with the same environment activated. Notebook cells inspect source and results; run each lesson's terminal commands before its result-inspection cells.
+Use **NVFlare Self-Paced Training** in Jupyter and run each notebook from top to bottom. Executable cells launch training or export jobs, show their output, and then inspect the results. They use `sys.executable` so the commands run with the notebook kernel's Python environment. You can also run the example scripts from a terminal with that environment activated.
 
 ## Run each section's example
 
@@ -75,18 +75,18 @@ chapter-1_running_federated_learning_applications/
 | [Logging](01.7_logging/code) | Client log messages and console logging modes |
 | [Recap](01.8_recap/code) | A local project to modify, export, run, and explain |
 
-For example, from this chapter directory:
+To run the first example in Jupyter, open its notebook and run all cells. For an optional terminal run from this chapter directory:
 
 ```bash
 cd 01.1_running_federated_learning_job/code
 python job.py
 ```
 
-When moving to another section, open its notebook and use that section's `code` directory. Its README gives the commands and its notebook identifies the exact code and result paths. The introduction and experiment-tracking overview link to the hands-on sections.
+When moving to another section, open its notebook and run its cells in order. The notebook selects that section's `code` directory and identifies the result paths. Its README also gives terminal commands. The introduction and experiment-tracking overview link to the hands-on sections.
 
 The examples use 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. They are offline workflow exercises, not benchmarks. Local SGD state is reset every round. Clients report actual optimizer-step counts for aggregation and evaluate received weights before training; final evaluation measures the persisted checkpoint separately.
 
-Each example has a distinct recipe name and workspace under `/tmp/nvflare/simulation`. Set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory to preserve repeated experiments, and give the notebook kernel the same setting. The conversion and job-structure variations also have distinct names.
+Each example has a distinct recipe name and workspace under `/tmp/nvflare/simulation`. To preserve repeated experiments, set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory in the notebook environment before executing the run cell. The launched job inherits that setting. The conversion and job-structure variations also have distinct names.
 
 The tracking labs explain how to open their UIs in a separate terminal. MLflow uses `mlflow.db` in its own section's `code` directory; repeated runs remain in that store.
 
