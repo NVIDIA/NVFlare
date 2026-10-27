@@ -10,9 +10,9 @@ Resident ``ClientSlurmJobLauncher`` and ``ServerSlurmJobLauncher`` behavior is
 unchanged.
 
 The application uses its normal ``execution_lifetime="task"`` flag. Trusted
-site resources select the matching Slurm CP/CJ/task profile. Shared selection
-and saved-result reader changes are separate dependencies of this backend
-patch; their contracts are described below. Local tests include canonical
+site resources select the matching Slurm CP/CJ/task profile. This branch
+includes shared selection, saved-result reader pins, disk-backed task payloads
+and live worker Cell sessions from the common runtime. Local tests include canonical
 site selection and the ordinary client configurator/executor path, but do not
 qualify a deployed scheduler. The broader acceptance criteria in
 `issue 5434 <https://github.com/NVIDIA/NVFlare/issues/5434>`_ remain open.
@@ -132,14 +132,16 @@ continue to use the existing immutable payload and atomic manifest rules.
 Retention must not depend on a CJ completing its shutdown upload. CP still
 needs access to job state for result collection and cleanup after CJ loss.
 
-Persistent files do not implement automatic CJ resume or adoption. Restoring
-a CJ also requires restoring committed application state, coordinating with
-the server job and fencing every earlier CJ and task allocation. This
-adapter provides no automatic restart/adoption path. Preserve unresolved
-launch evidence and verify physical settlement before operator cleanup;
-neither a surviving directory nor a missing process proves that an earlier
-allocation can safely be replaced. Receipt-driven payload cleanup remains
-separate from retention of required checkpoints and recovery metadata.
+Resident ``job`` lifetime retains the common runtime's automatic CJ recovery
+after its Slurm handle confirms allocation exit. Task-mode CJs report
+``can_restart=False``: independent task allocations can outlive their CJ,
+so CJ allocation exit alone cannot authorize a replacement. Task-mode recovery
+requires trusted cleanup ownership that proves every earlier task has settled.
+Persistent files do not authorize task adoption. Preserve unresolved launch
+evidence and verify physical settlement before operator cleanup; neither a
+surviving directory nor a missing process proves an allocation can safely be
+replaced. Receipt-driven payload cleanup remains separate from retention of
+required checkpoints and recovery metadata.
 
 The current bare adapter and its qualification fixture share the site
 workspace under one UID. They do **not** enforce the accepted storage split,
@@ -154,6 +156,29 @@ for CP, CJ and workers, verify that CP-private and other-job paths are
 inaccessible, and confirm that committed checkpoints and metadata survive CJ
 loss in both lifetimes without relying on shutdown upload. Existing normal
 CPU/GPU results do not establish those storage or resume properties.
+
+Live worker connections and credentials
+---------------------------------------
+
+Workers connect to their owning CJ's internal Cell listener before running
+compute. The Slurm launcher advertises the CJ host from ``socket.getfqdn()``
+by default. If that name is not routable from compute nodes, set the trusted
+``task_execution.launcher.args.worker_listener_host`` to the CJ's reachable
+host name or IP address. The listener uses its own dynamic port and inherits
+the site's internal transport and connection security. Allow compute-node
+connections to that host and port range. Wildcard addresses and URLs with
+ports are rejected. Explicit loopback is suitable only for a qualification
+deployment whose CJ and workers all share one host.
+
+For mTLS, the bootstrap must contain a shared, readable root CA and both
+client and server credential pairs. Both pairs must name this job's
+``job_cert/job.crt`` and ``job_cert/job.key`` under its persistent run
+directory. The launcher checks every path before submitting the worker;
+private host paths, site-certificate fallback and symlinks are rejected.
+The worker joins the authenticated job Cell session and delivers analytics
+live while the attempt is owned. Analytics are not spooled for post-exit
+replay. Task inputs, results and checkpoints still use the shared artifact
+store; worker diagnostic logs retain their separate collection path.
 
 Shared filesystem and scheduler prerequisites
 ---------------------------------------------

@@ -300,6 +300,53 @@ def test_replacement_failure_after_attachment_reaps_worker_before_releasing_reso
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
 
 
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True])
+@pytest.mark.parametrize("abort_before_publication", [False, True])
+def test_replacement_handle_publication_keeps_abort_live(tmp_path, heartbeat_cleanup, abort_before_publication):
+    def intercept_launch(executor, index, _):
+        if index != 0:
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_and_abort(meta, ctx):
+            if abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            if not abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle.terminate.assert_called_once()
+            return handle
+
+        launcher.launch_job.side_effect = publish_and_abort
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 9)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+
+
+def test_replacement_submission_failure_after_publication_reaps_accepted_worker(tmp_path):
+    def intercept_launch(executor, index, handle):
+        if index:
+            handle.terminate.assert_called_once()
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_then_fail(meta, ctx):
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            raise RuntimeError("launcher failed after accepting the replacement")
+
+        launcher.launch_job.side_effect = publish_then_fail
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+    handles[-1].wait.assert_called_once()
+
+
 def test_abort_while_replacement_launcher_has_not_returned(tmp_path):
     def intercept_launch(executor, index, _):
         if index != 0:

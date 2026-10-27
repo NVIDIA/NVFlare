@@ -70,12 +70,12 @@ def _accounting(state="COMPLETED", step="COMPLETED", **kwargs):
     return QueryResult(LookupStatus.FOUND, tuple(records))
 
 
-def _backend(tmp_path, monkeypatch, gpu_count):
+def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", **launcher_args):
     root = tmp_path / "workspace"
     root.mkdir(mode=0o700)
     (root / "startup").mkdir()
     (root / "local").mkdir()
-    (root / "job-1").mkdir()
+    (root / job_id).mkdir()
     launcher = SlurmTaskLauncher(
         workspace_path=str(root),
         shared_filesystem=True,
@@ -83,6 +83,7 @@ def _backend(tmp_path, monkeypatch, gpu_count):
         sbatch_directives={"account": "site-account", "partition": "task-compute", "time": "00:05:00"},
         cancel_timeout=0.1,
         poll_interval=0.001,
+        **launcher_args,
     )
     adapter = Mock()
     adapter.accounting_probe.return_value = CommandResult(0, "", "")
@@ -98,12 +99,12 @@ def _backend(tmp_path, monkeypatch, gpu_count):
     monkeypatch.setenv(SLURM_CHILD_PROCESS_ENV, "1")
     monkeypatch.setenv("SLURM_JOB_ID", "7")
     launch_request = TaskLaunchRequest(
-        "job-1",
+        job_id,
         "site-1",
         "task-1",
         "attempt-1",
         (sys.executable, "-V"),
-        cwd=str(root / "job-1"),
+        cwd=str(root / job_id),
         resources=TaskResourceRequest(gpu_count=gpu_count),
     )
     return launcher, adapter, launch_request
