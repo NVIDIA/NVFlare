@@ -59,6 +59,7 @@ These use small NumPy arrays to focus on communication and control flow.
 
 | Example | What you'll learn |
 |---|---|
+| [Async recipe](numpy_async/README.md) | Reusable K/B/O scheduling with model adapters and optional update transformations |
 | [Response callbacks](response_callbacks/job.py) | Processing results with response callbacks within each round |
 | [Swarm learning](swarm/swarm.py) | Decentralized training with client-to-client calls |
 
@@ -70,6 +71,7 @@ the `collab` example package available to Python:
 cd examples/advanced
 python -m collab.simple_split_learning.simple_split_learning
 python -m collab.response_callbacks.job
+python -m collab.numpy_async.job
 python -m collab.swarm.swarm --num-clients 3
 ```
 

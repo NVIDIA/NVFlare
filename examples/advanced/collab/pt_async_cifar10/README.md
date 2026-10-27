@@ -36,12 +36,12 @@ For a source checkout, install that checkout from its repository root with
 
 ```text
 pt_async_cifar10/
-├── async_aggregator.py  # Server-side FedBuff scheduler and aggregation
+├── async_aggregator.py  # CIFAR model, evaluation, and artifact hooks
 ├── trainer.py           # Published client-side local training
 ├── model.py             # FedAvg ModerateCNN and state helpers
 ├── cifar10_data.py      # Local CIFAR-10 download and Dirichlet splitter
 ├── prepare_data.sh      # Standalone CIFAR-10 download entry point
-├── job.py               # CollabRecipe CLI and simulator wiring
+├── job.py               # AsyncRecipe CLI and simulator wiring
 └── requirements.txt
 ```
 
@@ -67,8 +67,8 @@ Common configurations are:
 | $O=B<K$ | Minimum-response synchronization: aggregate and refill in batches of $B$ while $K-B$ jobs may remain active |
 | $O=B=K$ | Synchronous FedAvg-style rounds: all jobs finish before aggregation and redistribution |
 
-Because the server dispatches all $K$ initial slots with a nonblocking group
-call, $K$ is also the configured client-training parallelism. It may be smaller
+Because the server dispatches all $K$ initial slots with nonblocking calls,
+$K$ is also the configured client-training parallelism. It may be smaller
 than `--num-clients`, but cannot exceed the available physical clients.
 
 `--num-rounds` counts global aggregations, not client dispatches. The default
@@ -132,8 +132,10 @@ with `--server-lr` to match the existing FedAvg example.
 
 ## Job Recipe Code
 
-`job.py` constructs a `CollabRecipe` with the server workflow and published
-client trainer. `recipe.execute(SimEnv(...))` starts the requested physical
+`job.py` constructs an `AsyncRecipe` with a published client trainer,
+`PTAsyncModelAdapter`, and CIFAR evaluation/artifact hooks. The recipe owns
+assignment tracking, K/B/O scheduling, and step-weighted buffered aggregation.
+`async_aggregator.py` contains only the model/evaluation hooks. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate
 scheduler, data loader, and corresponding `site-<N>` shard across assignments.
 The cosine schedule reaches its minimum after `--total-client-rounds`
@@ -218,15 +220,6 @@ evaluation concurrently with client training. After training is complete, the
 server evaluates every saved version on that common test set. Deferring
 evaluation prevents evaluation work from changing client completion order,
 open-slot timing, staleness, or the asynchronous participation sequence.
-
-### Matched comparison
-
-The two synchronous curves align when the model, client data, optimizer,
-learning-rate schedule, and accepted-update budget are matched. FedBuff uses
-the same 400 accepted updates, but its immediate slot refill and stale updates
-produce a different, more variable trajectory.
-
-![FedAvg and FedBuff comparison](comparison_results/fedavg_fedbuff_comparison.png)
 
 ## Outputs
 

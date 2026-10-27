@@ -23,10 +23,11 @@ From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 import argparse
 from pathlib import Path
 
-from async_aggregator import Cifar10AsyncAggregator
+from async_aggregator import Cifar10AsyncApplication
 from trainer import Cifar10Trainer
 
-from nvflare.collab import CollabRecipe
+from nvflare.collab import AsyncRecipe
+from nvflare.collab.async_models.pytorch import PTAsyncModelAdapter
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_async_cifar10"
@@ -92,7 +93,7 @@ def define_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def make_recipe(args) -> CollabRecipe:
+def make_recipe(args) -> AsyncRecipe:
     if args.num_clients < 1:
         raise ValueError("--num-clients must be >= 1")
     if args.alpha <= 0:
@@ -113,16 +114,12 @@ def make_recipe(args) -> CollabRecipe:
 
     device = None if args.device == "auto" else args.device
 
-    server = Cifar10AsyncAggregator(
+    application = Cifar10AsyncApplication(
         data_root=args.data_root,
         num_rounds=args.num_rounds,
-        num_active_jobs=num_active_jobs,
         buffer_size=args.buffer_size,
-        min_open_slots=args.min_open_slots,
-        call_timeout=args.call_timeout,
         device=device,
         eval_batch_size=args.eval_batch_size,
-        server_lr=args.server_lr,
         setup_seed=args.setup_seed,
         run_seed=args.run_seed,
         checkpoint_interval=args.checkpoint_interval,
@@ -137,13 +134,21 @@ def make_recipe(args) -> CollabRecipe:
         total_client_rounds=args.total_client_rounds,
         num_workers=args.num_workers,
     )
-    recipe = CollabRecipe(
+    recipe = AsyncRecipe(
         job_name=JOB_NAME,
-        server=server,
+        application=application,
+        model_adapter=PTAsyncModelAdapter(),
+        num_updates=args.num_rounds,
+        num_active_jobs=num_active_jobs,
+        buffer_size=args.buffer_size,
+        min_open_slots=args.min_open_slots,
+        server_lr=args.server_lr,
+        weight_metric="num_steps",
+        call_timeout=args.call_timeout,
         client=client,
         min_clients=args.num_clients,
         sync_task_timeout=600,
-        max_call_threads_for_server=max(100, args.num_clients),
+        max_call_threads_for_server=max(8, args.num_clients),
         max_call_threads_for_client=max(100, args.num_clients),
     )
     recipe.set_client_prop("data_root", args.data_root)

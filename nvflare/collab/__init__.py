@@ -17,9 +17,11 @@ from .api.facade import Facade as collab
 
 if TYPE_CHECKING:
     from .api.exceptions import CollabCallError
+    from .async_recipe import AsyncRecipe
     from .recipe import CollabRecipe
 
 __all__ = [
+    "AsyncRecipe",
     "collab",
     "CollabCallError",
     "CollabRecipe",
@@ -31,6 +33,7 @@ __all__ = [
 # recipe pulls in FLARE job/runtime machinery, which client-side
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
+    "AsyncRecipe": ".async_recipe",
     "CollabCallError": ".api.exceptions",
     "CollabRecipe": ".recipe",
 }
