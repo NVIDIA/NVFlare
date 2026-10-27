@@ -16,7 +16,13 @@
 import re
 from dataclasses import dataclass
 
-from nvflare.app_opt.job_launcher.slurm.config import LookupStatus, QueryResult, SlurmProtocolError, SlurmRecord
+from nvflare.app_opt.job_launcher.slurm.config import (
+    SQUEUE_FORMAT,
+    LookupStatus,
+    QueryResult,
+    SlurmProtocolError,
+    SlurmRecord,
+)
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _parse_state, _SlurmCliAdapter
 
 _TASK_FORMAT = "JobIDRaw%64,JobName%128,UID%32,Comment%128,State%64,ExitCode%32,DerivedExitCode%32"
@@ -28,6 +34,35 @@ class TaskSlurmRecord(SlurmRecord):
 
 
 class SlurmTaskCliAdapter(_SlurmCliAdapter):
+    def task_by_marker(self, job_name: str, marker: str, timeout: float) -> QueryResult:
+        """Recover one live allocation after a lost sbatch reply, only for cleanup."""
+        command = self._run(
+            [
+                self.executables["squeue"],
+                "--local",
+                "-h",
+                f"--user={self.uid}",
+                f"--name={job_name}",
+                f"--format={SQUEUE_FORMAT}",
+            ],
+            timeout,
+        )
+        if not command.available:
+            return QueryResult(LookupStatus.UNAVAILABLE)
+        records = []
+        for raw_id, state, uid, comment, name in self._rows(command, "squeue task marker", 5):
+            # Name alone never establishes ownership. Stray same-name jobs must
+            # not be cancelled, and duplicate exact matches remain ambiguous.
+            if uid.strip() != str(self.uid) or comment != marker or name.strip() != job_name:
+                continue
+            job_id, state = raw_id.strip(), _parse_state(state)
+            if not re.fullmatch(r"[1-9][0-9]*", job_id) or not state:
+                raise SlurmProtocolError("invalid task marker allocation identity/state")
+            records.append(SlurmRecord(job_id, state))
+        if len(records) > 1:
+            raise SlurmProtocolError("multiple live allocations have the task ownership marker")
+        return QueryResult(LookupStatus.FOUND if records else LookupStatus.NOT_FOUND, tuple(records))
+
     def task_accounting(self, job_id: str, job_name: str, marker: str, timeout: float) -> QueryResult:
         # -X deliberately omitted: a finished batch leader is insufficient.
         # Duplicates must be visible so ID recycling/requeue cannot look settled.

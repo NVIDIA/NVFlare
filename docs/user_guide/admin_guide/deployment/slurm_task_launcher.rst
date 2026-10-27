@@ -20,12 +20,15 @@ qualify a deployed scheduler. The broader acceptance criteria in
 Backend contract
 ----------------
 
-* **Authority:** a resident CPU CJ with site-authorized scheduler access
-  submits its task allocation directly. The adapter requires the Slurm child
-  marker and CJ allocation ID. Those checks do not establish the complete
-  CP/CJ launch chain; trusted same-mode selection must establish it.
-  The CPU CJ is the communication/supervision allocation; task computation
-  may use CPUs or GPUs in its separate allocation.
+* **Authority:** CP owns scheduler submission, observation and cancellation.
+  It registers a job-scoped Cell service before starting the CJ and gives
+  that CJ a capability for its own staged worker requests. The service binds
+  resources, executable and environment to trusted site policy. CJ requests
+  cannot supply scheduler commands or a different job's paths. The CJ still
+  requires its Slurm child marker and allocation ID; CP does not.
+  CP cleanup ownership survives CJ abort, allocation loss and an in-flight
+  submission. The default CPU CJ supervises communication; task computation
+  may use CPUs or GPUs in a separate allocation.
 * **Identity:** the complete job/site/task/attempt tuple has an exclusive,
   persistent control directory under ``.nvflare_slurm/tasks``. The scheduler
   name and comment carry its hash. The handle exposes allocation ID, local
@@ -70,6 +73,17 @@ limitation, not the target resource scope for either backend. Process GPU work
 is separate from this Slurm implementation. Supporting a GPU resource request
 does not add multi-machine execution or a torchrun/DDP contract.
 
+CP placement
+~~~~~~~~~~~~
+
+Run CP as a persistent service outside Slurm when possible. It must have
+scheduler access and access to the shared workspace, and its configured
+``parent_host`` must be reachable from CJ nodes. CP may also run inside a
+Slurm allocation; ``SLURMD_NODENAME`` supplies the parent host when no explicit
+``parent_host`` is configured. In either placement CP must outlive its CJs
+and task cleanup. A CP allocation wall limit can interrupt that ownership;
+this adapter does not recover owners after CP itself crashes.
+
 CJ and compute resource budgets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -111,6 +125,11 @@ Task CPU requests must be whole cores. Memory quantities convert to exact
 MiB. This adapter rejects custom resource-manager requirements and positive
 per-GPU memory requirements that it cannot enforce.
 
+Native ``launcher_spec`` timing fields apply to both the CJ and its task
+allocations: ``time`` is preserved for each allocation, and ``pending_timeout``
+is bounded by the respective trusted site limit. Splitting CPU, memory and
+GPU budgets does not discard the job timing policy.
+
 Storage layout, persistence and CJ resume
 -----------------------------------------
 
@@ -136,7 +155,12 @@ Resident ``job`` lifetime retains the common runtime's automatic CJ recovery
 after its Slurm handle confirms allocation exit. Task-mode CJs report
 ``can_restart=False``: independent task allocations can outlive their CJ,
 so CJ allocation exit alone cannot authorize a replacement. Task-mode recovery
-requires trusted cleanup ownership that proves every earlier task has settled.
+remains disabled even after cleanup. CP retains every accepted submission
+and allocation until controller and accounting observations prove settlement.
+The CP job handle withholds terminal completion and blocks ``wait`` until
+that cleanup finishes, retaining the job resources, certificates and files.
+An unresponsive controller or ambiguous submission keeps ownership pending;
+CJ exit, a timeout and ``scancel`` acknowledgement do not release it.
 Persistent files do not authorize task adoption. Preserve unresolved launch
 evidence and verify physical settlement before operator cleanup; neither a
 surviving directory nor a missing process proves an allocation can safely be
@@ -145,10 +169,11 @@ required checkpoints and recovery metadata.
 
 The current bare adapter and its qualification fixture share the site
 workspace under one UID. They do **not** enforce the accepted storage split,
-per-job filesystem exposure or CP-only scheduler authority. Completing that
-boundary requires the CP-owned launch and isolation revision; the layout
-above is its required contract, not a capability established by this
-revision's passing CPU/GPU tests. Do not expose the CP store to job code as
+per-job filesystem exposure or exclusive access to scheduler credentials.
+Scheduler operations now run in CP, but enforcing that authority boundary
+also requires scheduler credential and filesystem isolation. The layout
+above remains a required deployment contract; local CPU/GPU tests do not
+establish it. Do not expose the CP store to job code as
 a shortcut to making paths visible.
 
 Qualification of that revision must check the actual mounts and permissions
@@ -174,7 +199,10 @@ For mTLS, the bootstrap must contain a shared, readable root CA and both
 client and server credential pairs. Both pairs must name this job's
 ``job_cert/job.crt`` and ``job_cert/job.key`` under its persistent run
 directory. The launcher checks every path before submitting the worker;
-private host paths, site-certificate fallback and symlinks are rejected.
+workspace aliases are resolved before containment and job-path checks.
+Private host paths, traversal outside the workspace, site-certificate
+fallback and symlink credential files are rejected. A symlink used for the
+workspace directory is permitted.
 The worker joins the authenticated job Cell session and delivers analytics
 live while the attempt is owned. Analytics are not spooled for post-exit
 replay. Task inputs, results and checkpoints still use the shared artifact
@@ -263,11 +291,13 @@ In the canonical site resources file, select the exact matching pair::
     }
 
 The existing Slurm parent-listener/network configuration still applies.
-Executable paths, when configured, must be available on the respective CP/CJ
-hosts. Otherwise the existing Slurm resolver locates the CLI tools there.
+Scheduler executable paths, when configured, must be available on CP.
+The existing Slurm resolver locates CLI tools on CP when paths are omitted.
+The worker interpreter must be available on compute hosts.
 The CJ adapter reads the deployed application lifetime and preserves ordinary
 resident-job behavior. In task lifetime it submits a separate CJ request
-using only its coordinator budget. With the default zero-GPU CJ it submits
+using its coordinator CPU/memory/GPU budget and the preserved timing policy.
+With the default zero-GPU CJ it submits
 explicit ``--gres=none`` and masks GPU visibility. Original compute metadata
 remains intact for task admission.
 
@@ -319,15 +349,22 @@ can subsequently be observed without rerunning compute.
 The task adapter defaults ``cancel_timeout`` to 120 seconds to allow the
 scheduler's termination grace period and epilog/accounting delay. Sites should
 set it above their configured KillWait plus cleanup delay. A settlement wait
-queries immediately with at most one second between queries while accounting catches up;
+queries immediately, then backs off from one second by doubling to the
+configured poll interval while accounting catches up;
 ordinary polling retains the configured Slurm poll interval. Neither timeout
 expiry nor a cancellation acknowledgement authorizes resource release.
+After a successful cancellation acknowledgement, the adapter observes release
+without repeatedly issuing ``scancel``. CP continues cleanup after the CJ
+closes its proxy or disappears, independently of the CJ shutdown deadline.
 
 If sbatch throws, times out, returns an invalid response or reports another
 cluster, ``TaskLaunchError.handle`` retains the unresolved execution. The
-adapter cannot safely cancel a missing/unsupported physical identity. An
-operator must resolve the exact scheduler name/comment and confirm release
-before manual retention cleanup. It never cancels other jobs by a broad name,
+CP periodically looks for one live allocation with the exact task name,
+UID and ownership comment. A unique local match is bound only for cleanup
+and cancelled; no compute retry or normal execution adoption occurs. An
+empty lookup cannot prove that a delayed submission will never appear.
+Missing, duplicate or unsupported identities remain owned for operator
+reconciliation and confirmed release before manual retention cleanup. It never cancels other jobs by a broad name,
 deletes launch evidence or retries the same attempt automatically.
 
 Shared integration contract
@@ -503,8 +540,9 @@ This detects metadata conversion regressions locally. It does not replace
 the required server-stored metadata and live allocation checks above.
 
 Additional deployed qualification requires an authorized test scheduler/account,
-the shared filesystem and matching software environment, CPU CP/CJ
-allocations, the completed shared runtime integration, and an available GPU
+the shared filesystem and matching software environment, a persistent CP
+service (or a CP allocation), CJ allocations, the completed shared runtime
+integration, and an available GPU
 partition for GPU compute and resource-reuse cases. With uniquely owned test allocations,
 record allocation/step identities, scheduler release, retained output and
 server receipts. Queue a second task for the constrained GPU capacity and

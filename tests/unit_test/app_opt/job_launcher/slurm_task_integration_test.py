@@ -18,7 +18,6 @@ import json
 import os
 import subprocess
 import sys
-import uuid
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,8 +36,10 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
 from nvflare.app_opt.job_launcher.slurm.config import CommandResult, SubmissionResult
 from nvflare.app_opt.job_launcher.slurm.task_job_launcher import ClientSlurmTaskJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_launcher import WORKER_MODULE, SlurmTaskLauncher
+from nvflare.app_opt.job_launcher.slurm.task_launcher import WORKER_MODULE, SlurmTaskLauncher, _SlurmTaskBackend
 from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
+from nvflare.app_opt.job_launcher.slurm.task_service import _CHANNEL, ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker import cell_session
@@ -105,7 +106,7 @@ def profile(tmp_path, monkeypatch):
     config.parent.mkdir(parents=True)
     config.write_text(json.dumps({"execution_lifetime": "task"}))
     cj = ClientSlurmTaskJobLauncher(**site["components"][0]["args"])
-    task = SlurmTaskLauncher(**site["task_execution"]["launcher"]["args"])
+    task = _SlurmTaskBackend(**site["task_execution"]["launcher"]["args"])
     return root, workspace, site, cj, task
 
 
@@ -125,7 +126,7 @@ def cj_cell():
     from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
     cells, pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
-    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell = Cell("site-1.job-1", "tcp://127.0.0.1:0", secure=False, credentials={})
     cell.start()
     try:
         yield cell
@@ -437,18 +438,21 @@ def test_cj_recovery_requires_proof_for_every_independent_execution(profile, lif
     native.poll.return_value = 1
     cj.manager = Mock()
     cj.manager.launch.return_value = native
-    handle = cj.launch_job({"job_id": "job-1"}, _fl_ctx(root))
+    context = _fl_ctx(root)
+    cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    handle = cj.launch_job({"job_id": "job-1"}, context)
     assert handle.can_restart() is (lifetime == "job")
     if lifetime == "job":
         assert handle is native
     else:
-        assert handle.poll() == 1
         handle.terminate()
         handle._terminate_for_heartbeat_cleanup()
         handle.wait()
         native.terminate.assert_called_once_with()
         native._terminate_for_heartbeat_cleanup.assert_called_once_with()
         native.wait.assert_called_once_with()
+        assert handle.poll() == 1
 
 
 def test_start_run_binding_is_immutable_and_preserves_study_policy(profile):
@@ -562,7 +566,7 @@ def test_staged_request_requires_start_run_before_submission(tmp_path, monkeypat
 
 @pytest.mark.parametrize("gpu_count", [0, 1])
 @pytest.mark.usefixtures("isolated_fobs")
-def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_count, cj_cell):
+def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_count, cj_cell, monkeypatch):
     root, workspace, site, cj, task = profile
     config_path = Path(workspace.get_client_app_config_file_path("job-1"))
     config_path.write_text(
@@ -604,8 +608,23 @@ def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_
     adapter.accounting_probe.return_value = CommandResult(0, "", "")
     adapter.active_by_id.return_value = _query()
     adapter.task_accounting.return_value = _accounting()
-    launcher.manager.adapter = adapter
-    launcher.manager.initialize()
+    task.manager.adapter = adapter
+    task.manager.initialize()
+    task.bind_job("job-1", "site-1", workspace, meta)
+    service = SlurmTaskService(SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock()))
+    owner = service.add_job(task, "job-1", "site-1", "test-capability")
+    monkeypatch.setenv(ENV_TASK_OWNER, "site-1")
+    monkeypatch.setenv(ENV_TASK_TOKEN, "test-capability")
+    send_request = cj_cell.send_request
+
+    def route_request(*args, **kwargs):
+        if kwargs.get("channel") == _CHANNEL:
+            message = kwargs["request"]
+            message.set_header(MessageHeaderKey.ORIGIN, "site-1.job-1")
+            return service._request(message)
+        return send_request(*args, **kwargs)
+
+    monkeypatch.setattr(cj_cell, "send_request", route_request)
 
     def submit(argv, timeout):
         assert ("--gres=gpu:1" if gpu_count else "--gres=none") in argv
@@ -623,14 +642,104 @@ def test_application_flag_selects_slurm_and_runs_through_normal_cj(profile, gpu_
     context.set_prop(FLContextKey.TASK_ID, "task-1")
     context.set_prop(FLContextKey.TASK_NAME, "train")
     context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "attempt-1")
-    executor.handle_event(EventType.START_RUN, context)
-    result = executor.execute(
-        "train", DXO(DataKind.WEIGHTS, {"numpy_key": np.ones(3)}).to_shareable(), context, Signal()
-    )
-    np.testing.assert_array_equal(from_shareable(result).data["numpy_key"], np.full(3, 3.0))
-    executor.execute("train", DXO(DataKind.WEIGHTS, {"numpy_key": np.ones(3)}).to_shareable(), context, Signal())
-    assert adapter.submit.call_count == 1
-    context.set_prop(FLContextKey.TASK_RESULT, result)
-    context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED)
-    executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
-    executor.handle_event(EventType.END_RUN, context)
+    try:
+        executor.handle_event(EventType.START_RUN, context)
+        result = executor.execute(
+            "train", DXO(DataKind.WEIGHTS, {"numpy_key": np.ones(3)}).to_shareable(), context, Signal()
+        )
+        np.testing.assert_array_equal(from_shareable(result).data["numpy_key"], np.full(3, 3.0))
+        executor.execute("train", DXO(DataKind.WEIGHTS, {"numpy_key": np.ones(3)}).to_shareable(), context, Signal())
+        assert adapter.submit.call_count == 1
+        context.set_prop(FLContextKey.TASK_RESULT, result)
+        context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED)
+        executor.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
+        executor.handle_event(EventType.END_RUN, context)
+    finally:
+        owner.release()
+        owner.thread.join(5)
+        assert not owner.thread.is_alive()
+
+
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("inside", [False, True])
+@pytest.mark.parametrize("gpus", [0, 1])
+def test_cp_placement_and_job_timing_are_independent_of_compute_budget(profile, monkeypatch, lifetime, inside, gpus):
+    root, workspace, _, cj, task = profile
+    Path(workspace.get_client_app_config_file_path("job-1")).write_text(json.dumps({"execution_lifetime": lifetime}))
+    monkeypatch.delenv("NVFLARE_SLURM_CHILD_PROCESS", raising=False)
+    if inside:
+        monkeypatch.setenv("SLURM_JOB_ID", "900")
+        monkeypatch.setenv("SLURMD_NODENAME", "cp.compute.example")
+        cj.config = replace(cj.config, parent_host=None)
+    else:
+        monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+        monkeypatch.delenv("SLURMD_NODENAME", raising=False)
+    meta = {
+        "job_id": "job-1",
+        "launcher_spec": {
+            "site-1": {
+                "slurm": {
+                    "gpus_per_node": gpus,
+                    "cpus_per_node": 8,
+                    "mem_per_node": 4096,
+                    "time": "48:00:00",
+                    "pending_timeout": 60,
+                }
+            }
+        },
+    }
+    plan, backend = cj._prepare_launch(meta, _fl_ctx(root))
+    assert plan.resources.time_limit == "48:00:00"
+    assert plan.resources.pending_timeout == 60
+    argv = _submission_argv(plan, str(root / "out"), "name", "comment", cj.config)
+    assert "--time=48:00:00" in argv
+    assert plan.resources.gpus_per_node == (gpus if lifetime == "job" else 0)
+    if backend:
+        assert backend._binding.resources.time_limit == "48:00:00"
+        assert backend._binding.resources.pending_timeout == 60
+        assert backend._binding.resources.gpus_per_node == gpus
+
+
+def test_public_proxy_still_requires_a_slurm_cj(profile, monkeypatch):
+    _, workspace, site, _, _ = profile
+    proxy = SlurmTaskLauncher(**site["task_execution"]["launcher"]["args"])
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    with pytest.raises(TaskLauncherError, match="Slurm Client Job"):
+        proxy.handle_event(EventType.START_RUN, _context(workspace, {}))
+
+
+def test_task_plan_loads_study_once_and_does_not_construct_a_resident_launcher(profile, monkeypatch):
+    from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
+
+    root, _, _, cj, task = profile
+    load = Mock(wraps=cj._load_study_runtime)
+    monkeypatch.setattr(cj, "_load_study_runtime", load)
+    with monkeypatch.context() as check:
+        check.setattr(ClientSlurmJobLauncher, "__init__", Mock(side_effect=AssertionError("unused resident launcher")))
+        task.runtime_policy({})
+    cj._build_launch_plan({"job_id": "job-1"}, _fl_ctx(root))
+    load.assert_called_once_with(None)
+
+
+def test_cj_submission_failure_seals_cp_task_admission(profile):
+    root, _, _, cj, _ = profile
+    context = _fl_ctx(root)
+    cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    cj.manager = Mock()
+    captured = []
+
+    def reject(plan):
+        owner = cell._slurm_task_service.jobs["job-1"]
+        assert not owner.closed
+        assert plan.study_secret_env[ENV_TASK_TOKEN] == owner.token
+        assert plan.study_secret_env[ENV_TASK_OWNER] == "site-1"
+        captured.append(owner)
+        raise RuntimeError("CJ submission failed")
+
+    cj.manager.launch.side_effect = reject
+    with pytest.raises(RuntimeError, match="CJ submission failed"):
+        cj.launch_job({"job_id": "job-1"}, context)
+    captured[0].thread.join(5)
+    assert captured[0].closed and captured[0].released
+    assert not captured[0].thread.is_alive()

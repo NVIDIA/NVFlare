@@ -50,7 +50,12 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmRecord,
     SubmissionResult,
 )
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager, _batch_script
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    SlurmTaskLauncher,
+    SlurmTaskManager,
+    _batch_script,
+    _SlurmTaskBackend,
+)
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, TaskSlurmRecord
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap
@@ -77,7 +82,7 @@ def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", **launcher_arg
     (root / "startup").mkdir()
     (root / "local").mkdir()
     (root / job_id).mkdir()
-    launcher = SlurmTaskLauncher(
+    launcher = _SlurmTaskBackend(
         workspace_path=str(root),
         shared_filesystem=True,
         cgroup_enforced=True,
@@ -282,7 +287,7 @@ def test_settlement_wait_refreshes_lagging_accounting_inside_default_budget(back
     handle = launcher.launch_task(request)
     assert not handle.poll().settled
     assert handle.wait_for_settlement(10.0).succeeded
-    assert now[0] == 2.0, "settlement must refresh accounting before the ordinary ten-second poll interval"
+    assert now[0] == 3.0, "settlement must refresh accounting with backoff before the ten-second deadline"
 
 
 def test_controller_recheck_blocks_completion_race(backend):
@@ -417,10 +422,6 @@ def test_reject_request_environment_authority(backend, name):
 
 def test_reject_mixed_mode_paths_and_fractional_cpu(backend, monkeypatch, tmp_path):
     launcher, adapter, request = backend
-    monkeypatch.delenv(SLURM_CHILD_PROCESS_ENV)
-    with pytest.raises(TaskLauncherError, match="Slurm Client Job"):
-        launcher.launch_task(request)
-    monkeypatch.setenv(SLURM_CHILD_PROCESS_ENV, "1")
     with pytest.raises(TaskLauncherError, match="inside the site workspace"):
         launcher.launch_task(replace(request, cwd=str(tmp_path)))
     with pytest.raises(TaskLauncherError, match="absolute executable"):
@@ -653,3 +654,61 @@ def test_end_run_during_active_result_reader_retains_payloads(backend):
             proceed.set()
         assert future.result(timeout=10).aborted
     assert Path(store.attempt_dir(identity), "result.fobs").exists()
+
+
+def test_long_cancel_backs_off_queries_and_does_not_repeat_acknowledged_scancel(backend, monkeypatch):
+    launcher, adapter, request = backend
+    now = [0.0]
+    launcher.manager._monotonic = lambda: now[0]
+    launcher.manager.config = replace(launcher.manager.config, poll_interval=10.0, cancel_timeout=120.0)
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.time", SimpleNamespace(time=lambda: 0.0, sleep=sleep)
+    )
+    adapter.active_by_id.return_value = _query("RUNNING")
+    adapter.cancel.return_value = QueryResult(LookupStatus.FOUND)
+    handle = launcher.launch_task(request)
+    with pytest.raises(TaskSettlementError):
+        handle.cancel()
+    assert now[0] == 120.0
+    assert adapter.active_by_id.call_count <= 18
+    adapter.cancel.assert_called_once()
+    assert not handle.poll().settled
+
+
+@pytest.mark.parametrize(
+    "rows,expected",
+    [
+        ("42|RUNNING|{uid}|marker|name", LookupStatus.FOUND),
+        ("42|RUNNING|{uid}|other-marker|name", LookupStatus.NOT_FOUND),
+        ("42|RUNNING|999999|marker|name", LookupStatus.NOT_FOUND),
+        ("42|RUNNING|{uid}|marker|other-name", LookupStatus.NOT_FOUND),
+        ("", LookupStatus.NOT_FOUND),
+    ],
+)
+def test_lost_submission_marker_lookup_requires_exact_ownership(rows, expected):
+    adapter = SlurmTaskCliAdapter({"squeue": "/usr/bin/squeue"}, os.getuid(), Mock())
+    adapter._run = Mock(return_value=CommandResult(0, rows.format(uid=os.getuid()), ""))
+    result = adapter.task_by_marker("name", "marker", 5)
+    assert result.status == expected
+    argv = adapter._run.call_args.args[0]
+    assert "--local" in argv and "--name=name" in argv and f"--user={os.getuid()}" in argv
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "42|RUNNING|{uid}|marker|name\n43|RUNNING|{uid}|marker|name",
+        "42.batch|RUNNING|{uid}|marker|name",
+        "42| |{uid}|marker|name",
+        "malformed",
+    ],
+)
+def test_ambiguous_or_malformed_marker_lookup_cannot_select_an_allocation(rows):
+    adapter = SlurmTaskCliAdapter({"squeue": "/usr/bin/squeue"}, os.getuid(), Mock())
+    adapter._run = Mock(return_value=CommandResult(0, rows.format(uid=os.getuid()), ""))
+    with pytest.raises(SlurmProtocolError):
+        adapter.task_by_marker("name", "marker", 5)

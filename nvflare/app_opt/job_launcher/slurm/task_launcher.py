@@ -109,6 +109,8 @@ _FORBIDDEN_ENV = (
     | set(_GPU_ENV)
     | {
         "HIP_VISIBLE_DEVICES",
+        "NVFLARE_SLURM_TASK_OWNER",
+        "NVFLARE_SLURM_TASK_TOKEN",
         "NVIDIA_VISIBLE_DEVICES",
         CLIENT_API_TYPE_KEY,
         BOOTSTRAP_FILE_ENV_VAR,
@@ -283,6 +285,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         self._last_evidence = None
         self._last_queue = None
         self._cancel_sent_at = float("-inf")
+        self._cancel_acknowledged = False
         self._next_query_at = float("-inf")
 
     @property
@@ -332,12 +335,27 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         with self.operation_lock:
             if self._settled is not None:
                 return replace(self._settled, cancel_requested=self.cancel_requested)
-            if not self.job_id or self.cluster:
+            if self.cluster:
                 return self._status(TaskExecutionPhase.TERMINAL, failure="Slurm allocation identity is unresolved")
             if self.manager._monotonic() < self._next_query_at:
                 return replace(self._last_status, cancel_requested=self.cancel_requested)
             self._next_query_at = self.manager._monotonic() + self.poll_interval
             try:
+                if not self.job_id:
+                    result = self.manager.adapter.task_by_marker(
+                        self.job_name,
+                        self.manager._marker(self.nvflare_job_id),
+                        timeout=self.manager.config.query_timeout,
+                    )
+                    if result.status != LookupStatus.FOUND:
+                        return self._status(
+                            TaskExecutionPhase.TERMINAL, failure="Slurm allocation identity is unresolved"
+                        )
+                    if len(result.records) != 1 or not re.fullmatch(r"[1-9][0-9]*", result.records[0].job_id):
+                        raise TaskLauncherError("Slurm task marker lookup is ambiguous")
+                    self.job_id = result.records[0].job_id
+                    self.cancel_requested = True
+                    self._record("resolved_for_cleanup")
                 return self._observe()
             except Exception as e:
                 # A failed/invalid query is never evidence of released resources.
@@ -367,9 +385,14 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             ):
                 self.cancel_requested = True
                 self.failure_reason = "Slurm task exceeded pending_timeout"
-            if self.cancel_requested and self.manager._monotonic() - self._cancel_sent_at >= self.poll_interval:
+            if (
+                self.cancel_requested
+                and not self._cancel_acknowledged
+                and self.manager._monotonic() - self._cancel_sent_at >= self.poll_interval
+            ):
                 self._cancel_sent_at = self.manager._monotonic()
                 response = adapter.cancel(self.job_id, timeout=config.cancel_timeout)
+                self._cancel_acknowledged = response.status == LookupStatus.FOUND
                 self._record("cancel_ack", status=response.status.value)
             return self._status(phase)
         accounting = adapter.task_accounting(
@@ -428,6 +451,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         ):
             raise ValueError("timeout must be finite and nonnegative or None")
         deadline = None if timeout is None else self.manager._monotonic() + timeout
+        interval = min(self.poll_interval, 1.0)
         while True:
             # An explicit settlement wait must not consume its entire budget
             # behind a prior poll's throttle while terminal accounting catches up.
@@ -439,13 +463,17 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             remaining = None if deadline is None else deadline - self.manager._monotonic()
             if remaining is not None and remaining <= 0:
                 raise TimeoutError(f"Slurm task settlement is unconfirmed: {self.execution_id}")
-            interval = min(self.poll_interval, 1.0)
             time.sleep(interval if remaining is None else min(interval, remaining))
+            interval = min(self.poll_interval, interval * 2.0)
+
+    def request_cancel(self):
+        with self.operation_lock:
+            if not self.cancel_requested:
+                self.cancel_requested = True
+                self._next_query_at = float("-inf")
 
     def cancel(self):
-        with self.operation_lock:
-            self.cancel_requested = True
-            self._next_query_at = float("-inf")
+        self.request_cancel()
         try:
             return self.wait_for_settlement(self.manager.config.cancel_timeout)
         except TimeoutError as e:
@@ -455,7 +483,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         return self.cancel()
 
 
-class SlurmTaskLauncher(TaskLauncherSpec):
+class _SlurmTaskBackend(TaskLauncherSpec):
     """Trusted site adapter; construction does not contact or submit to Slurm.
 
     CPU and GPU tasks use native scheduler admission and the same allocation
@@ -556,22 +584,17 @@ class SlurmTaskLauncher(TaskLauncherSpec):
 
         validate_slurm_site(self, site_config)
 
-    def runtime_policy(self, meta):
-        from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
+    def runtime_policy(self, meta, *, runtime=None):
+        from nvflare.app_opt.job_launcher.slurm.launcher import effective_slurm_study_values, load_slurm_study_runtime
 
         config = self._site_config
-        resolver = ClientSlurmJobLauncher(
-            workspace_path=config.workspace_path,
-            sandbox="none",
-            python_path=self.python_path,
-            executables=config.executables,
-            sbatch_directives=config.sbatch_directives,
-            setup=config.setup,
-        )
-        runtime = resolver._load_study_runtime(meta.get("study"))
+        if runtime is None:
+            runtime = load_slurm_study_runtime(config, meta.get("study"), self.logger)
         if runtime.secret_env or runtime.secret_mounts or runtime.datasets or runtime.container_image:
             raise ValueError("Slurm task shared-path profile does not forward study secrets or container mounts")
-        sandbox, image, python_path, setup, directives = resolver._effective_study_values(runtime)
+        sandbox, image, python_path, setup, directives = effective_slurm_study_values(
+            replace(config, python_path=self.python_path), runtime
+        )
         if sandbox != "none" or image:
             raise ValueError("Slurm task shared-path profile requires effective sandbox none")
         environment = {**self.environment, **runtime.env}
@@ -581,19 +604,24 @@ class SlurmTaskLauncher(TaskLauncherSpec):
     def handle_event(self, event_type, fl_ctx):
         if event_type != EventType.START_RUN:
             return
+        self.bind_job(
+            fl_ctx.get_job_id(),
+            fl_ctx.get_identity_name(),
+            fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace(),
+            fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {},
+        )
+
+    def bind_job(self, job_id, site_name, workspace, meta, *, runtime=None):
         from nvflare.app_opt.job_launcher.slurm.task_policy import task_resources
 
-        job_id, site_name = fl_ctx.get_job_id(), fl_ctx.get_identity_name()
-        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
         if (
             not job_id
             or not site_name
             or os.path.realpath(workspace.get_root_dir()) != self._site_config.workspace_path
         ):
             raise ValueError("Slurm task START_RUN requires the owning CJ's job/site/shared workspace")
-        meta = fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}
         resources = task_resources(self, meta, site_name)
-        config, python_path, environment = self.runtime_policy(meta)
+        config, python_path, environment = self.runtime_policy(meta, runtime=runtime)
         custom_paths = (workspace.get_app_custom_dir(job_id), workspace.get_site_custom_dir())
         environment["PYTHONPATH"] = os.pathsep.join(
             dict.fromkeys(
@@ -647,6 +675,9 @@ class SlurmTaskLauncher(TaskLauncherSpec):
                 raise TaskLauncherError("Slurm Cell session must provide the CA and both job credential pairs")
             certificate, key = job_cert_paths(binding.run_dir)
             for name, credential_path in credentials.items():
+                if os.path.islink(credential_path):
+                    raise TaskLauncherError("Slurm Cell credential path cannot be a symlink file")
+                credential_path = os.path.realpath(credential_path)
                 if os.path.commonpath((root, credential_path)) != root:
                     raise TaskLauncherError("Slurm Cell credentials must be reachable in the shared workspace")
                 if name != "ca_cert" and credential_path != (key if name.endswith("_key") else certificate):
@@ -697,8 +728,6 @@ class SlurmTaskLauncher(TaskLauncherSpec):
             )
         # Native allocation ownership is required. A process launcher fallback
         # or a visible GPU on the CJ would not satisfy this contract.
-        if os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit():
-            raise TaskLauncherError("Slurm task launch requires a Slurm Client Job allocation")
         if request.cwd is None or os.path.realpath(request.cwd) != request.cwd or not os.path.isdir(request.cwd):
             raise TaskLauncherError("Slurm task cwd must be a canonical shared directory")
         if os.path.commonpath((self.manager.config.workspace_path, request.cwd)) != self.manager.config.workspace_path:
@@ -718,3 +747,41 @@ class SlurmTaskLauncher(TaskLauncherSpec):
                 # Keep command implementation shared; only task accounting differs.
                 self.manager.adapter = SlurmTaskCliAdapter(self.manager.config.executables, os.getuid(), self.logger)
         return self.manager.launch_task(request, self._binding.resources if staged else None)
+
+    @property
+    def poll_interval(self):
+        return self.manager.config.poll_interval
+
+    max_attempts = 10000
+
+
+class SlurmTaskLauncher(_SlurmTaskBackend):
+    """CJ proxy; CP retains every accepted allocation through CJ loss."""
+
+    cleanup_owned_by_parent = True
+
+    def handle_event(self, event_type, fl_ctx):
+        from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskClient
+
+        if event_type == EventType.START_RUN:
+            if os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit():
+                raise TaskLauncherError("Slurm task proxy requires a Slurm Client Job allocation")
+            super().handle_event(event_type, fl_ctx)
+            self._client = SlurmTaskClient(
+                fl_ctx.get_engine().get_cell(),
+                fl_ctx.get_job_id(),
+                fl_ctx.get_identity_name(),
+                self.manager.config.query_timeout,
+                self.poll_interval,
+                self.manager.config.cancel_timeout,
+            )
+        elif event_type == EventType.END_RUN:
+            client = getattr(self, "_client", None)
+            if client is not None:
+                client.close()
+
+    def launch_task(self, request):
+        client = getattr(self, "_client", None)
+        if client is None:
+            raise TaskLauncherError("Slurm task proxy has no START_RUN binding")
+        return client.launch(request)
