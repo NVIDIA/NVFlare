@@ -37,10 +37,12 @@ class FQN:
     def validate(cls, fqn) -> str:
         if not isinstance(fqn, str):
             return f"must be str but got {type(fqn)}"
-        fqn = cls.normalize(fqn)
         if not fqn:
             return "empty"
-        valid = bool(re.match(cls.VALID_PATTERN, fqn))
+        # Check the name the caller holds, not a stripped copy of it: the caller keeps
+        # using its own string. fullmatch is needed because "$" also matches just before
+        # a trailing newline, which would let "server\n" through on its own.
+        valid = bool(re.fullmatch(cls.VALID_PATTERN, fqn))
         if not valid:
             return "invalid char"
         parts = cls.split(fqn)
