@@ -12,67 +12,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Exercise the normal mixed example's real builders without publishing images."""
+"""Exercise production builders for mixed CoCo targets without publishing images."""
 
-import importlib.util
 import json
-import shutil
 from pathlib import Path
-from types import SimpleNamespace
 
-import pytest
 import yaml
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
 
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import verify_folder_signature
-
-ROOT = Path(__file__).resolve().parents[5]
-EXAMPLE = ROOT / "examples/devops/coco/provision/mixed-tdx-snp"
+from tests.unit_test.lighter.cc_provision.impl.test_cc import _coco_project
 
 
-def load_builder():
-    spec = importlib.util.spec_from_file_location("mixed_validation_builder", EXAMPLE / "validation_builder.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_real_builders_sign_normal_mixed_kits(tmp_path, monkeypatch):
+def test_real_builders_sign_mixed_coco_kits(tmp_path):
     private = tmp_path / "mixed"
-    shutil.copytree(EXAMPLE, private)
-    public = ec.generate_private_key(ec.SECP256R1()).public_key()
-    (private / "trustee-as-public.pem").write_bytes(
-        public.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
-    )
+    private.mkdir()
+    _coco_project(private)
     common = yaml.safe_load((private / "cc_project.yml").read_text())
-    for name in ("trustee-ca.pem", "admin.jwt", "registry-ca.pem", "username", "password"):
-        (private / name).write_text("fixture")
-    command = private / "build"
-    command.write_text("#!/bin/sh\n")
-    command.chmod(0o700)
-    trustee = common["attestation_services"]["trustee"]
-    trustee["ca_cert_file"] = "trustee-ca.pem"
-    trustee["admin_token_file"] = "admin.jwt"
-    registry = common["container_registries"]["coco_workloads"]
-    registry["ca_cert_file"] = "registry-ca.pem"
-    registry["publisher_username_file"] = "username"
-    registry["publisher_password_file"] = "password"
-    common["build_tools"]["coco"]["build_command"] = "build"
+    common["attestation_services"]["trustee"]["workload_constraints"] = {
+        "site-1": {"cpu_tee": "tdx"},
+        "site-2": {"cpu_tee": "snp"},
+    }
     (private / "cc_project.yml").write_text(yaml.safe_dump(common, sort_keys=False))
-    (private / "platform.env").write_text("# fixture\n")
-    for name in ("site-1", "site-2"):
-        participant = private / f"cc_{name}.yml"
-        config = yaml.safe_load(participant.read_text())
-        config["coco"]["platform_config_file"] = "platform.env"
-        participant.write_text(yaml.safe_dump(config, sort_keys=False))
+    template = yaml.safe_load((private / "cc_site.yml").read_text())
+    for name, cpu, gpu in (("site-1", "intel_tdx", "none"), ("site-2", "amd_sev_snp", "nvidia_cc")):
+        config = {**template, "cpu_tee": cpu, "gpu_tee": gpu}
+        config["coco"] = {
+            **template["coco"],
+            "release_name": name + "-v1",
+            "registry_repository": "workloads/" + name,
+        }
+        (private / f"cc_{name}.yml").write_text(yaml.safe_dump(config, sort_keys=False))
+    definition = {
+        "api_version": 3,
+        "name": "mixed_coco_project",
+        "cc_project_config": "cc_project.yml",
+        "participants": [
+            {"name": "server.example.com", "type": "server", "org": "model_owner", "fed_learn_port": 8002},
+            {"name": "site-1", "type": "client", "org": "data_owner_a", "cc_config": "cc_site-1.yml"},
+            {"name": "site-2", "type": "client", "org": "data_owner_b", "cc_config": "cc_site-2.yml"},
+            {"name": "admin@example.com", "type": "admin", "org": "model_owner", "role": "project_admin"},
+        ],
+        "builders": [
+            {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+            {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"config_folder": "config"}},
+            {"path": "nvflare.lighter.impl.cert.CertBuilder"},
+            {"path": "nvflare.lighter.cc_provision.impl.cc.CCBuilder"},
+            {"path": "nvflare.lighter.impl.signature.SignatureBuilder"},
+        ],
+        "packager": {"path": "nvflare.lighter.cc_provision.impl.cc_packager.CCPackager"},
+    }
     source = private / "project.yaml"
-    definition = yaml.safe_load(source.read_text())
-    monkeypatch.syspath_prepend(str(private))
+    source.write_text(yaml.safe_dump(definition, sort_keys=False))
     project = prepare_project(definition, project_file=str(source))
     # Disable packaging only in this offline test; real provisioning uses CCPackager.
     ctx = Provisioner(str(tmp_path / "workspace"), prepare_builders(definition)).provision(project)
@@ -103,9 +97,6 @@ def test_real_builders_sign_normal_mixed_kits(tmp_path, monkeypatch):
         assert manager["get_token_request_timeout"] == 45
         assert authorizer["workload_constraints"] == constraints
         assert authorizer["audience"] == "nvflare-trustee:mixed_coco_project"
-        resources = json.loads((kit / "local/resources.json.default").read_text())
-        for cls in load_builder().APPLICATION_CLASSES:
-            assert resources["class_allow_list"].count(cls) == 1
         if name == "server.example.com":
             assert manager["cc_issuers_conf"] == []
             assert "site_name" not in authorizer
@@ -129,37 +120,3 @@ def test_real_builders_sign_normal_mixed_kits(tmp_path, monkeypatch):
         single_signer=True,
         signature_file=ProvFileName.SIGNATURE_JSON,
     )
-
-
-@pytest.mark.parametrize(
-    "policy",
-    [
-        {"class_allow_list": ["*"]},
-        {"class_allow_list": ["my_application.*"]},
-        {"class_allow_list": [True]},
-        {"class_allow_list": "tdx_acceptance.AcceptanceController"},
-        {"class_list_enforcement_mode": "warn"},
-    ],
-)
-def test_validation_builder_rejects_weakened_component_policy(tmp_path, policy):
-    path = tmp_path / "resources.json.default"
-    original = json.dumps(policy)
-    path.write_text(original)
-    project = SimpleNamespace(get_server=lambda: object())
-    ctx = SimpleNamespace(get_local_dir=lambda participant: tmp_path)
-    with pytest.raises(ValueError, match="enforced explicit"):
-        load_builder().ValidationBuilder().build(project, ctx)
-    assert path.read_text() == original
-
-
-def test_validation_builder_preserves_existing_resources_and_is_idempotent(tmp_path):
-    path = tmp_path / "resources.json.default"
-    path.write_text(json.dumps({"components": [{"id": "preserved"}], "class_allow_list": ["my_app.Other"]}))
-    project = SimpleNamespace(get_server=lambda: object())
-    ctx = SimpleNamespace(get_local_dir=lambda participant: tmp_path)
-    builder = load_builder().ValidationBuilder()
-    builder.build(project, ctx)
-    builder.build(project, ctx)
-    resources = json.loads(path.read_text())
-    assert resources["components"] == [{"id": "preserved"}]
-    assert resources["class_allow_list"] == ["my_app.Other", *load_builder().APPLICATION_CLASSES]

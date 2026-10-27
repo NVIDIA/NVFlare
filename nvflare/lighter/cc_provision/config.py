@@ -263,7 +263,7 @@ def _validate_service(name, value, config_path):
             "proof_iat_leeway_seconds",
             "workload_constraints",
         }
-        required = allowed - {"retry", "proof_iat_leeway_seconds", "workload_constraints"}
+        required = allowed - {"admin_token_file", "retry", "proof_iat_leeway_seconds", "workload_constraints"}
         _exact(service, allowed, f"attestation_services.{name}", required=required)
         _https_endpoint(service["kbs_endpoint"], f"attestation_services.{name}.kbs_endpoint")
         endpoint = urlsplit(service["attestation_token_endpoint"])
@@ -281,7 +281,8 @@ def _validate_service(name, value, config_path):
                 "http://127.0.0.1:<port>/aa/token endpoint"
             )
         for field in ("ca_cert_file", "admin_token_file", "attestation_signing_public_key_file"):
-            service[field] = str(_path(config_path, service[field], f"attestation_services.{name}.{field}"))
+            if field in service:
+                service[field] = str(_path(config_path, service[field], f"attestation_services.{name}.{field}"))
         age = _positive_int(
             service["token_expiration_seconds"], f"attestation_services.{name}.token_expiration_seconds"
         )
@@ -415,6 +416,10 @@ def load_participant_config(config_path: Path, project_config: Mapping[str, Any]
     expected_type = "azure_maa" if mode is CCDeploymentMode.AZURE_CC else "trustee"
     if service["type"] != expected_type:
         raise ValueError(f"{mode.value} requires an attestation service of type {expected_type}")
+    if mode is CCDeploymentMode.BARE_METAL_CVM and "admin_token_file" not in service:
+        raise ValueError(
+            f"bare_metal_cvm requires attestation_services.{service_name}.admin_token_file for resource registration"
+        )
 
     allow_list = config.get("class_allow_list", [])
     if not isinstance(allow_list, list) or any(

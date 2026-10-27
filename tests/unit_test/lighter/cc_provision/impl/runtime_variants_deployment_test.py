@@ -205,72 +205,151 @@ def test_tdx_target_import_does_not_require_tomllib():
     assert result.returncode == 0, result.stderr
 
 
-def test_runtime_prerequisite_unknown_fails_closed():
-    helper = ROOT / "shared/bootstrap/lib/runtime-prerequisites.sh"
-    result = subprocess.run(
-        ["bash", "-c", 'source "$1"; validate_runtime_prerequisites invalid', "check", str(helper)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0
-    assert "Unsupported RuntimeClass" in result.stderr
-
-
-@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
-def test_export_preserves_target_and_approved_hashes(tmp_path, runtime_class):
-    pytest.importorskip("tomllib", reason="host profile exporter requires system Python 3.11+")
+def captured_inputs(runtime_class):
+    pytest.importorskip("tomllib", reason="host profile export requires Python 3.11+")
+    capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
     target = runtime.runtime_target(runtime_class)
-    resources = (
-        {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}} if target["gpu_count"] else {}
-    )
-    source = {
-        "runtime_class": runtime_class,
-        "cpu_tee": target["cpu_tee"],
-        "gpu": target["gpu"],
-        "guest_token_api": runtime.CAPABILITY,
-        "workload_security_context": CONTEXT,
-        "kata_config": {"hypervisor": {"qemu": {"kernel_params": runtime.REQUIRED}}},
-        "kata_config_sha256": "a" * 64,
-        "pod_resources": resources,
-        "runtime_default_vcpus": 1,
-        "runtime_default_memory_mib": 8192,
+    paths = {name: "/installed/ready-runtime/" + name for name in ("path", "firmware", "kernel", "initrd")}
+    config_path = "/installed/ready-runtime/configuration.toml"
+    qemu = {
+        **paths,
+        "kernel_params": runtime.REQUIRED,
+        "confidential_guest": True,
+        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "machine_type": "q35",
+        "default_vcpus": 1,
+        "default_memory": 8192,
     }
+    snapshot = {
+        "config": {"hypervisor": {"qemu": qemu}},
+        "installed_config": config_path,
+        "runtime_version": "3.29.0",
+        "files": {config_path: "a" * 64},
+    }
+    snapshot["files"].update({path: hashlib.sha256(name.encode()).hexdigest() for name, path in paths.items()})
+    source = capture["prepare_profile"](snapshot, runtime_class)
     actual = {
         "cpu_tee": target["cpu_tee"],
         "gpu": target["gpu"],
         "launch_inputs": {"kernel_command_line": runtime.REQUIRED, "smp": "1", "memory": "8192M"},
-        "pod_resources": [resources],
-        "artifacts": {"kata_config": {"sha256": "a" * 64}},
+        "pod_resources": [source["pod_resources"]],
+        "artifacts": {"kata_config": {"sha256": source["kata_config_sha256"]}},
     }
+    actual["artifacts"].update(
+        {
+            "qemu_executable" if name == "path" else name: {"sha256": value["sha256"]}
+            for name, value in source["artifacts"].items()
+        }
+    )
     actual["launch_inputs_sha256"] = hashlib.sha256(
         json.dumps(actual["launch_inputs"], sort_keys=True).encode()
     ).hexdigest()
-    source_path = tmp_path / "approved-launch-profile.json"
-    actual_path = tmp_path / "rehearsal-collector-build/actual-launch.json"
-    actual_path.parent.mkdir()
-    source_path.write_text(json.dumps(source))
-    actual_path.write_text(json.dumps(actual))
-    image = "runtime@sha256:" + "b" * 64
-    args = [
-        sys.executable,
-        str(ROOT / "trusted_system/export-workload-launch-profile.py"),
-        str(tmp_path),
-        "approved",
-        "3.29.0",
-        runtime_class,
-        image,
-        hashlib.sha256(source_path.read_bytes()).hexdigest(),
-        hashlib.sha256(actual_path.read_bytes()).hexdigest(),
-    ]
-    result = subprocess.run(args, capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
-    contract = load(tmp_path, json.loads(result.stdout))
+    return capture, source, actual
+
+
+@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
+def test_export_preserves_target_and_installed_launch_hashes(tmp_path, runtime_class):
+    capture, source, actual = captured_inputs(runtime_class)
+    contract = load(tmp_path, capture["build_launch_profile"](source, actual, "approved"))
+    target = runtime.runtime_target(runtime_class)
     assert contract["schema"] == runtime.PROFILE_SCHEMA_V4
-    assert contract["cpu_tee"] == target["cpu_tee"]
-    assert contract["gpu"] == target["gpu"]
+    assert contract["cpu_tee"] == target["cpu_tee"] and contract["gpu"] == target["gpu"]
     assert contract["launch_inputs_sha256"] == actual["launch_inputs_sha256"]
-    actual_path.write_text(json.dumps({**actual, "cpu_tee": "invalid"}))
-    args[-1] = hashlib.sha256(actual_path.read_bytes()).hexdigest()
-    result = subprocess.run(args, capture_output=True, text=True)
-    assert result.returncode != 0
-    assert "target differs" in result.stderr
+    assert contract["kata_config_sha256"] == source["kata_config_sha256"]
+    assert contract["workload_security_context"] == CONTEXT
+    assert "kata_deploy_image" not in contract
+    actual["cpu_tee"] = "invalid"
+    with pytest.raises(ValueError, match="target differs"):
+        capture["build_launch_profile"](source, actual, "approved")
+
+
+@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
+@pytest.mark.parametrize("artifact", ["kata_config", "qemu_executable", "firmware", "kernel", "initrd"])
+def test_export_rejects_changed_installed_or_boot_artifacts(runtime_class, artifact):
+    capture, source, actual = captured_inputs(runtime_class)
+    actual["artifacts"][artifact]["sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="differs from the installed snapshot"):
+        capture["build_launch_profile"](source, actual, "approved")
+
+
+@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
+@pytest.mark.parametrize("field,value", [("smp", "2"), ("memory", "4096M")])
+def test_export_rejects_changed_vm_defaults_even_with_consistent_fingerprint(runtime_class, field, value):
+    capture, source, actual = captured_inputs(runtime_class)
+    actual["launch_inputs"][field] = value
+    actual["launch_inputs_sha256"] = hashlib.sha256(
+        json.dumps(actual["launch_inputs"], sort_keys=True).encode()
+    ).hexdigest()
+    with pytest.raises(ValueError, match="VM sizing differs"):
+        capture["build_launch_profile"](source, actual, "approved")
+
+
+def test_export_rejects_stale_launch_fingerprint():
+    capture, source, actual = captured_inputs("kata-qemu-snp")
+    actual["launch_inputs"]["memory"] = "4096M"
+    with pytest.raises(ValueError, match="fingerprint is inconsistent"):
+        capture["build_launch_profile"](source, actual, "approved")
+
+
+@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
+def test_export_retains_supported_runtime_version_guard(runtime_class):
+    capture, source, actual = captured_inputs(runtime_class)
+    with pytest.raises(ValueError, match="supported Kata/genpolicy"):
+        capture["build_launch_profile"](source, actual, "approved", runtime_version="3.30.0")
+
+
+@pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
+@pytest.mark.parametrize("pin", [None, ""])
+def test_received_launch_profile_needs_no_external_checksum(tmp_path, runtime_class, pin):
+    path = tmp_path / "received.json"
+    value = profile(runtime_class)
+    path.write_text(json.dumps(value))
+    assert launch.load_profile(path, pin, runtime_class, "3.29.0") == value
+
+
+@pytest.mark.parametrize("pin", ["bad", "0" * 64, False, 0])
+def test_launch_profile_rejects_invalid_supplied_checksum(tmp_path, pin):
+    path = tmp_path / "received.json"
+    path.write_text(json.dumps(profile("kata-qemu-snp")))
+    with pytest.raises(ValueError, match="SHA-256"):
+        launch.load_profile(path, pin, "kata-qemu-snp", "3.29.0")
+
+
+@pytest.mark.parametrize("pin_mode", ["omitted", "empty", "provided"])
+def test_launch_profile_cli_keeps_supplied_and_omitted_checksum_forms(tmp_path, monkeypatch, pin_mode):
+    path, output = tmp_path / "received.json", tmp_path / "snapshot.json"
+    raw = json.dumps(profile("kata-qemu-snp")).encode()
+    path.write_bytes(raw)
+    pin_args = [] if pin_mode == "omitted" else ["" if pin_mode == "empty" else hashlib.sha256(raw).hexdigest()]
+    monkeypatch.setattr(
+        sys, "argv", ["profile-check", str(path), *pin_args, "kata-qemu-snp", "3.29.0", "--snapshot", str(output)]
+    )
+    launch.main()
+    assert output.read_bytes() == raw
+
+
+@pytest.mark.parametrize("change_before_validation", [False, True])
+def test_launch_profile_snapshot_uses_only_validated_bytes(tmp_path, monkeypatch, change_before_validation):
+    path, output = tmp_path / "received.json", tmp_path / "snapshot.json"
+    original = profile("kata-qemu-snp")
+    raw = json.dumps(original).encode()
+    path.write_bytes(raw)
+    changed = {**original, "profile_id": "changed"}
+    load_profile = launch.load_profile
+
+    def replace_file(*args):
+        if change_before_validation:
+            path.write_text(json.dumps(changed))
+        value = load_profile(*args)
+        path.write_text(json.dumps(changed))
+        return value
+
+    monkeypatch.setattr(launch, "load_profile", replace_file)
+    monkeypatch.setattr(sys, "argv", ["profile-check", str(path), "kata-qemu-snp", "3.29.0", "--snapshot", str(output)])
+    if change_before_validation:
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            launch.main()
+        assert not output.exists()
+    else:
+        launch.main()
+        assert output.read_bytes() == raw

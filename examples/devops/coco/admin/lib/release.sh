@@ -8,11 +8,11 @@ LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${LIB_DIR}/platform.sh"
 
 readonly WORK_ROOT
-readonly KATA_VERSION KATA_TOOLS_SHA256 KATA_TOOLS_URL
-readonly COSIGN_VERSION COSIGN_SHA256 COSIGN_URL KEYPROVIDER_IMAGE
+readonly KATA_VERSION KEYPROVIDER_IMAGE GENPOLICY RULES SETTINGS
 readonly RUNTIME_CLASS KUBERNETES_SERVICE_HOST KUBERNETES_SERVICE_PORT
+WORKLOAD_LAUNCH_PROFILE_SHA256="${WORKLOAD_LAUNCH_PROFILE_SHA256:-}"
 readonly WORKLOAD_LAUNCH_PROFILE_SHA256
-readonly WORKLOAD_LAUNCH_PROFILE="${SCRIPT_ROOT}/public/approved-workload-launch-profile.json"
+readonly WORKLOAD_LAUNCH_PROFILE
 readonly WORKLOAD_PROFILE_VALIDATOR="${LIB_DIR}/workload-launch-profile.py"
 
 [[ -n "${OWNER_CONFIG:-}" ]] || die "OWNER_CONFIG was not set by the caller"
@@ -47,21 +47,7 @@ for required in RELEASE_NAME BUILD_CONTEXT DOCKERFILE REGISTRY_REPOSITORY \
     [[ -n "${!required:-}" ]] || die "missing ${required} in ${OWNER_CONFIG}"
 done
 
-mapfile -t REGISTRY_PARTS < <(python3 - "${REGISTRY_ENDPOINT}" <<'PY'
-import sys
-from urllib.parse import urlsplit
-
-value = sys.argv[1]
-parsed = urlsplit("https://" + value)
-if not parsed.hostname or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-    raise SystemExit("invalid REGISTRY_ENDPOINT")
-print(parsed.hostname)
-print(parsed.port or 443)
-PY
-)
-[[ ${#REGISTRY_PARTS[@]} -eq 2 ]] || die "invalid REGISTRY_ENDPOINT"
-REGISTRY_HOST="${REGISTRY_PARTS[0]}"
-REGISTRY_PORT="${REGISTRY_PARTS[1]}"
+validate_registry_host "${REGISTRY_ENDPOINT}"
 REGISTRY_USERNAME_PATH="$(readlink -f -- "${REGISTRY_USERNAME_FILE}")"
 REGISTRY_PASSWORD_PATH="$(readlink -f -- "${REGISTRY_PASSWORD_FILE}")"
 REGISTRY_CA_FILE="$(readlink -f -- "${REGISTRY_CA_FILE}")"
@@ -72,10 +58,10 @@ need_file "${REGISTRY_CA_FILE}"
 need_file "${KBS_CA_FILE}"
 REGISTRY_USERNAME="$(tr -d '\r\n' < "${REGISTRY_USERNAME_PATH}")"
 [[ -n "${REGISTRY_USERNAME}" ]] || die "registry username is empty"
-readonly REGISTRY_HOST REGISTRY_PORT REGISTRY_USERNAME KBS_URL KBS_CA_FILE
+readonly REGISTRY_ENDPOINT REGISTRY_USERNAME KBS_URL KBS_CA_FILE
 
 registry_base() {
-    printf '%s:%s' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
+    printf '%s' "${REGISTRY_ENDPOINT}"
 }
 
 [[ "${RELEASE_NAME}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] \
@@ -122,6 +108,7 @@ COSIGN_PUB_PATH="${SIGNING_DIR}/cosign.pub"
 COSIGN_PASSWORD_PATH="${SIGNING_DIR}/cosign.password"
 REGISTRY_SECRET_DIR="${PRIVATE_DIR}/registry-auth"
 REGISTRY_AUTH_FILE="${REGISTRY_SECRET_DIR}/config.json"
+REGISTRY_CERT_DIR="${PRIVATE_DIR}/registry-certs"
 
 KBS_IMAGE_KEY_PATH="default/image-key/${RELEASE_NAME}"
 KBS_SIGNING_KEY_PATH="default/sig-public-key/${RELEASE_NAME}"
@@ -130,8 +117,12 @@ IMAGE_REPOSITORY="$(registry_base)/${REGISTRY_REPOSITORY}"
 
 CONFIG_SHA256="$(sha256sum "${OWNER_CONFIG}" | awk '{print $1}')"
 
-GENPOLICY="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/bin/genpolicy"
-RULES="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers/rules.rego"
-SETTINGS="${TOOLS_DIR}/kata-${KATA_VERSION}/opt/kata/share/defaults/kata-containers/genpolicy-settings.json"
-
 need_file "${REGISTRY_CA_FILE}"
+
+# Called only by publication/verification, after stage 10 creates this release.
+# Skopeo reads these roots for this registry operation; system trust is unchanged.
+prepare_registry_certificates() {
+    mkdir -p "${REGISTRY_CERT_DIR}"
+    chmod 0700 "${REGISTRY_CERT_DIR}"
+    install -m 0600 "${REGISTRY_CA_FILE}" "${REGISTRY_CERT_DIR}/ca.crt"
+}

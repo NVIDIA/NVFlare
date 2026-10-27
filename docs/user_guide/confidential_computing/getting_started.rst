@@ -39,8 +39,8 @@ See :ref:`cc_architecture_overview` for the responsibilities and trust boundarie
    * - Confidential Containers (CoCo)
      - You deploy Kubernetes workloads inside Kata confidential VMs, with
        encrypted workload images and InitData-bound guest policy.
-     - :github_nvflare_link:`CoCo collaboration and deployment walkthrough
-       <examples/devops/coco/FL-DEPLOYMENT.md>`
+     - :github_nvflare_link:`CoCo-ready cluster workflow
+       <examples/devops/coco/README.md>`
    * - Azure confidential computing
      - You use Azure confidential VMs or confidential container instances.
        External Azure tooling creates the images and resources.
@@ -65,14 +65,20 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   <nvflare/lighter/cc/image_builder/CONFORMANCE.md>`. Prepare the trusted build
   worker, approved generic CVM, and Trustee service described in
   :ref:`cvm_builder`.
-* For CoCo, the :github_nvflare_link:`hardware validation record
-  <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`
-  reports a mixed TDX CPU-only and SNP+NVIDIA GPU functional run on
-  **2026-10-04**, with an ordinary trusted server. The workload performed CPU
-  arithmetic, not GPU training. Review the machine prerequisites and
-  role-separated handoffs in the
-  :github_nvflare_link:`deployment walkthrough
-  <examples/devops/coco/FL-DEPLOYMENT.md>`.
+* For CoCo, the :ref:`implementation scope and hardware evidence limits
+  <coco_security_architecture>` describe a mixed TDX CPU-only and SNP+NVIDIA GPU
+  functional run on **2026-10-04**, with an ordinary trusted server. The workload
+  performed CPU arithmetic, not GPU training. **Before the four-step workflow,
+  deploy and verify both Trustee and the CoCo-ready Kubernetes cluster.** Follow
+  the `official Trustee installation guide
+  <https://confidentialcontainers.org/docs/attestation/installation/>`_ and, for
+  GPU workloads, the `NVIDIA CoCo/Kata GPU deployment guide (v1.0)
+  <https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy>`_
+  to prepare the Kata confidential GPU runtime and GPU Operator. CPU-only
+  profiles do not require GPU components. Use the supported component versions,
+  then proceed with the inputs in the
+  :github_nvflare_link:`four-step deployment workflow
+  <examples/devops/coco/README.md>`.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`
   for the cloud resources and attestation setup.
 
@@ -88,8 +94,8 @@ configuration check is not hardware acceptance.
   Use exact, reviewed ``class_allow_list`` entries for additional components.
 * Validate the job's executor against the selected deployment. External-process
   execution has failed in sealed CoCo deployments; follow the documented
-  :github_nvflare_link:`in-process executor workaround
-  <examples/devops/coco/FL-DEPLOYMENT.md#executor-limitation-and-workaround>`.
+  :github_nvflare_link:`in-process executor guidance
+  <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
   Changing code or policy requires a new approved release.
 * Keep confidential checkpoints, credentials, and logs within protected storage
   or an explicitly approved secure output path. CVM Builder's ``user_config``,
@@ -98,7 +104,7 @@ configuration check is not hardware acceptance.
   An encrypted image does not implement dataset authorization or output review.
 * Treat GPU driver and VBIOS versions as approved policy inputs. See the
   :github_nvflare_link:`CoCo GPU reference-value procedure
-  <examples/devops/coco/service/GPU-REFERENCE-VALUES.md>` before deploying or
+  <examples/devops/coco/TRUSTEE.md#set-gpu-references-when-required>` before deploying or
   changing a GPU baseline.
 
 5. Provision, launch, and validate
@@ -114,3 +120,52 @@ approval, distribution, and launch. Validate the selected platform and workload,
 including the required attestation and denial behavior, before approving the
 deployment for use. Keep configuration support, successful functional runs, and
 security acceptance as separate claims.
+
+.. _cc_official_references:
+
+Official component references
+-----------------------------
+
+Use these official references to review the platform, services, and tools used
+by the workflow. Select documentation matching the installed component versions
+and keep the NVFlare deployment's version, policy, and hardware-acceptance
+requirements. For CPU/GPU hardware and attestation specifications, see
+:ref:`cc_architecture_references`.
+
+.. list-table:: Upstream documentation
+   :header-rows: 1
+   :widths: 22 40 38
+
+   * - Component
+     - Official documentation
+     - Review
+   * - Confidential Containers
+     - `CoCo getting started <https://confidentialcontainers.org/docs/getting-started/>`_
+     - Cluster prerequisites and confidential workloads.
+   * - Trustee
+     - `Trustee installation <https://confidentialcontainers.org/docs/attestation/installation/>`_
+       and `Attestation with Trustee <https://confidentialcontainers.org/docs/attestation/>`_
+     - Deploy the prerequisite service; review policies, reference values, and resource release.
+   * - Kata Containers
+     - `Kata 3.29.0 documentation <https://github.com/kata-containers/kata-containers/tree/3.29.0/docs>`_
+     - Runtime and guest behavior for the supported Kata version.
+   * - NVIDIA GPU Operator
+     - `NVIDIA CoCo/Kata GPU deployment (v1.0) <https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy>`_
+     - Prepare the prerequisite Kata GPU runtime and GPU Operator for the supported profile.
+   * - Kubernetes
+     - `RuntimeClass <https://kubernetes.io/docs/concepts/containers/runtime-class/>`_
+       and `crictl <https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/>`_
+     - Runtime selection and CRI diagnostics.
+   * - Open Policy Agent / Rego
+     - `Upgrading Rego to v1 <https://www.openpolicyagent.org/docs/v0-upgrade>`_
+     - Rego v1 syntax and migration of existing policies.
+   * - Docker
+     - `Docker Build <https://docs.docker.com/build/>`_
+     - Application-image builds.
+   * - Skopeo
+     - `Skopeo command documentation <https://github.com/podman-container-tools/skopeo/tree/main/docs>`_
+     - Registry login, image copying/inspection, and TLS options.
+   * - Cosign
+     - `Container signing <https://docs.sigstore.dev/cosign/signing/signing_with_containers/>`_
+       and `signature verification <https://docs.sigstore.dev/cosign/verifying/verify/>`_
+     - Image-signing keys and signature checks.

@@ -19,6 +19,42 @@ need_file "${REGISTRY_PASSWORD_PATH}"
 need_file "${COSIGN_PASSWORD_PATH}"
 need_file "${COSIGN_KEY_PATH}"
 need_file "${OUTPUT_DIR}/approved-workload-launch-profile.json"
+need_file "${OUTPUT_DIR}/policy-SHA256SUMS"
+python3 - "${OUTPUT_DIR}" <<'PY'
+import hashlib
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+root = Path(sys.argv[1])
+names = {
+    "approved-workload-launch-profile.json", "pod.yaml", "final-initdata.toml",
+    "generated-policy.rego", "image-security-policy.json", "release-authorization.json",
+    "resource-policy-fragment.rego", "kata-policy-security-fix.txt",
+}
+def read_regular(path, limit=None):
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise SystemExit("Release output must be a regular file")
+        raw = stream.read(limit + 1) if limit is not None else stream.read()
+        if limit is not None and len(raw) > limit:
+            raise SystemExit("Release checksum manifest is too large")
+        return raw
+
+entries = {}
+for line in read_regular(root / "policy-SHA256SUMS", 8192).decode().splitlines():
+    match = re.fullmatch(r"([0-9a-f]{64}) [ *]([^/\\]+)", line)
+    if match is None or match[2] not in names or match[2] in entries:
+        raise SystemExit("Invalid release checksum manifest")
+    entries[match[2]] = match[1]
+if set(entries) != names:
+    raise SystemExit("Release checksum manifest must cover all generated policy outputs")
+for name, digest in entries.items():
+    if hashlib.sha256(read_regular(root / name)).hexdigest() != digest:
+        raise SystemExit("Generated release output changed: " + name)
+PY
 python3 "${WORKLOAD_PROFILE_VALIDATOR}" \
     "${OUTPUT_DIR}/approved-workload-launch-profile.json" \
     "${WORKLOAD_LAUNCH_PROFILE_SHA256:-}" "$RUNTIME_CLASS" "$KATA_VERSION" \
@@ -73,7 +109,6 @@ install -m 0644 "${OUTPUT_DIR}/resource-policy-fragment.rego" \
         release-authorization.json resource-policy-fragment.rego > SHA256SUMS
 )
 chmod 0600 "${SERVICE_HANDOFF}/SHA256SUMS"
-SERVICE_MANIFEST_SHA256="$(sha256sum "${SERVICE_HANDOFF}/SHA256SUMS" | awk '{print $1}')"
 
 POD_NAME="${RELEASE_NAME}-pod.yaml"
 install -m 0644 "${OUTPUT_DIR}/pod.yaml" "${COCO_HANDOFF}/${POD_NAME}"
@@ -92,9 +127,6 @@ PY
 
 COUNT="$(find "${COCO_HANDOFF}" -maxdepth 1 -type f | wc -l)"
 [[ "${COUNT}" -eq 1 ]] || die "coco handoff must contain exactly one file"
-POD_SHA256="$(sha256sum "${COCO_HANDOFF}/${POD_NAME}" | awk '{print $1}')"
-printf '%s\n' "${POD_SHA256}" > "${HANDOFF_DIR}/expected-pod-sha256.txt"
-chmod 0600 "${HANDOFF_DIR}/expected-pod-sha256.txt"
 
 cat <<EOF
 Handoffs created.
@@ -102,15 +134,8 @@ Handoffs created.
 Trusted service administrator only (contains image_key):
   ${SERVICE_HANDOFF}
 
-Authenticate this manifest SHA-256 to the service administrator through an
-independent authenticated channel (never trust a pin bundled with the files):
-  ${SERVICE_MANIFEST_SHA256}
-
 The only file to deliver manually to coco IT:
   ${COCO_HANDOFF}/${POD_NAME}
-
-Authenticate this SHA-256 to IT over an independent channel:
-  ${POD_SHA256}
 
 Do not copy the trusted-service directory, registry credentials, signing key,
 build context, plaintext image, or any other release file to coco.

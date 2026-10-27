@@ -46,15 +46,5 @@ sha256sum "${DOCKERFILE}" "${PRIVATE_DIR}/workload.env" \
     "${REVIEW_DIR}/plaintext-image-history.txt" \
     > "${REVIEW_DIR}/SHA256SUMS"
 
-cat <<EOF
-Built plaintext image ${PLAIN_IMAGE_ID}.
-
-STOP AND REVIEW:
-  ${REVIEW_DIR}/plaintext-image-inspect.json
-  ${REVIEW_DIR}/plaintext-image-history.txt
-
-Check for secrets, unwanted ENTRYPOINT/CMD/ENV/history, sshd, shells, package
-managers, and a UID/GID mismatch. Run functional and vulnerability tests here.
-Only after approval run:
-  ${SCRIPT_DIR}/20-encrypt-sign-publish.sh ${OWNER_CONFIG} --approve-reviewed-plaintext
-EOF
+printf 'Built plaintext image %s.\nImage records:\n  %s\n  %s\n' \
+    "${PLAIN_IMAGE_ID}" "${REVIEW_DIR}/plaintext-image-inspect.json" "${REVIEW_DIR}/plaintext-image-history.txt"

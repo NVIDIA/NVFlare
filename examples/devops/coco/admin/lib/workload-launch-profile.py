@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checkout adapter; assembly vendors the importable package implementation."""
+"""Source-checkout adapter for the workload launch-profile validator."""
 
 import sys
 from pathlib import Path
