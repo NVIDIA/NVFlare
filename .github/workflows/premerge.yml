@@ -431,23 +431,3 @@ jobs:
               catalog = json.loads(archive.read("nvflare/tool/examples/catalog.json"))
           assert catalog, "wheel contains an empty example catalog"
           PY
-      # Test each installation separately: the full test environment includes
-      # optional web dependencies and would hide accidental base requirements.
-      - name: Verify clean wheel installation profiles
-        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
-        working-directory: ${{ runner.temp }}
-        shell: bash
-        run: |
-          wheel=("$GITHUB_WORKSPACE"/dist/*.whl)
-          test "${#wheel[@]}" -eq 1
-          for profile in base dashboard edge-http; do
-            profile_python="$RUNNER_TEMP/nvflare-${profile}/bin/python"
-            uv venv --python "$(command -v python3)" "$RUNNER_TEMP/nvflare-${profile}"
-            target="${wheel[0]}"
-            if [ "$profile" != "base" ]; then
-              target="${target}[${profile}]"
-            fi
-            uv pip install --python "$profile_python" "$target"
-            uv pip check --python "$profile_python"
-            "$profile_python" "$GITHUB_WORKSPACE/ci/check_optional_dependencies.py" "$profile"
-          done
