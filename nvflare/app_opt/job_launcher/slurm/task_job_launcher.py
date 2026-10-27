@@ -15,21 +15,17 @@
 
 import copy
 import math
-import os
+import secrets
 from dataclasses import replace
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode, publish_job_handle
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.app_opt.job_launcher.slurm.config import JobResources, SlurmLauncherError
 from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_policy import (
-    TASK_LAUNCHER_PATH,
-    component_args,
-    component_path,
-    task_resources,
-)
+from nvflare.app_opt.job_launcher.slurm.task_policy import TASK_LAUNCHER_PATH, component_args, component_path
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
@@ -45,20 +41,30 @@ _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES
 class _TaskCJHandle(JobHandleSpec):
     """CJ exit alone cannot authorize recovery of independent task allocations."""
 
-    def __init__(self, handle):
+    def __init__(self, handle, owner):
         self.handle = handle
+        self.owner = owner
 
     def terminate(self):
+        self.owner.release()
         return self.handle.terminate()
 
     def _terminate_for_heartbeat_cleanup(self):
+        self.owner.release()
         return self.handle._terminate_for_heartbeat_cleanup()
 
     def poll(self):
-        return self.handle.poll()
+        code = self.handle.poll()
+        if code != JobReturnCode.UNKNOWN:
+            self.owner.release()
+            if self.owner.thread.is_alive():
+                return JobReturnCode.UNKNOWN
+        return code
 
     def wait(self):
-        return self.handle.wait()
+        self.handle.wait()
+        self.owner.release()
+        self.owner.thread.join()
 
 
 class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
@@ -92,7 +98,7 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
             gpus_per_node=requested.get("num_of_gpus", self.cj_resources.gpus_per_node),
         )
 
-    def _build_launch_plan(self, job_meta, fl_ctx):
+    def _prepare_launch(self, job_meta, fl_ctx):
         if not isinstance(job_meta, dict):
             raise ValueError("Slurm job metadata must be a dictionary")
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -108,44 +114,92 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
                     **plan.study_env,
                     **{name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in _GPU_ENV},
                 }
-                return replace(plan, study_env=environment)
-            return plan
-        if not os.environ.get("SLURM_JOB_ID", "").isdigit():
-            raise ValueError("Slurm task profile requires a Slurm CP allocation")
-        from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
+                return replace(plan, study_env=environment), None
+            return plan, None
+        from nvflare.app_opt.job_launcher.slurm.task_launcher import _SlurmTaskBackend
 
         data = ConfigService.load_config_dict(workspace.get_resources_file_path())
         launcher_config = data.get("task_execution", {}).get("launcher", {})
         if component_path(launcher_config) != TASK_LAUNCHER_PATH:
             raise ValueError("Slurm CPU CJ requires the exact site SlurmTaskLauncher")
-        task_launcher = SlurmTaskLauncher(**component_args(launcher_config))
+        task_launcher = _SlurmTaskBackend(**component_args(launcher_config))
         task_launcher.validate_site_config(data)
-        task_resources(task_launcher, job_meta, fl_ctx.get_identity_name())
-        task_launcher.runtime_policy(job_meta)
+        runtime = self._load_study_runtime(job_meta.get(JobMetaKey.STUDY.value))
+        task_launcher.bind_job(job_id, fl_ctx.get_identity_name(), workspace, job_meta, runtime=runtime)
         cj_resources = self._cj_resources_for_job(job_meta, fl_ctx.get_identity_name())
         # The original metadata stays intact on disk and in the CJ. This copy
         # is solely the physical CJ allocation, never the compute request.
         cj_meta = copy.deepcopy(job_meta)
         cj_meta[JobMetaKey.RESOURCE_SPEC.value] = {}
-        cj_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {fl_ctx.get_identity_name(): {"slurm": {}}}
-        plan = super()._build_launch_plan(cj_meta, fl_ctx)
+        from nvflare.utils.job_launcher_utils import get_job_launcher_spec
+
+        compute = get_job_launcher_spec(job_meta, fl_ctx.get_identity_name(), "slurm")
+        timing = {key: compute[key] for key in ("time", "pending_timeout") if key in compute}
+        if "pending_timeout" in timing:
+            timing["pending_timeout"] = min(timing["pending_timeout"], self.config.pending_timeout)
+        cj_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {fl_ctx.get_identity_name(): {"slurm": timing}}
+        plan = super()._build_launch_plan(cj_meta, fl_ctx, runtime=runtime)
         if plan.sandbox != "none" or plan.image:
             raise ValueError("Slurm task CJ requires the bare shared-filesystem profile")
         environment = dict(plan.study_env)
         if cj_resources.gpus_per_node == 0:
             environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in _GPU_ENV})
-        return replace(
-            plan,
-            resources=cj_resources,
-            study_env=environment,
-            additional_node_command=(),
-            node_app_dir=None,
-            execution_lifetime=ExecutionLifetime.TASK,
+        return (
+            replace(
+                plan,
+                resources=replace(
+                    cj_resources, time_limit=plan.resources.time_limit, pending_timeout=plan.resources.pending_timeout
+                ),
+                study_env=environment,
+                additional_node_command=(),
+                node_app_dir=None,
+                execution_lifetime=ExecutionLifetime.TASK,
+            ),
+            task_launcher,
         )
+
+    def _build_launch_plan(self, job_meta, fl_ctx):
+        return self._prepare_launch(job_meta, fl_ctx)[0]
 
     def launch_job(self, job_meta, fl_ctx):
         if self.manager is None:
             raise SlurmLauncherError("nested Slurm job launch is unavailable inside a Slurm child process")
-        plan = self._build_launch_plan(job_meta, fl_ctx)
-        handle = self.manager.launch(plan)
-        return _TaskCJHandle(handle) if plan.execution_lifetime == ExecutionLifetime.TASK else handle
+        plan, backend = self._prepare_launch(job_meta, fl_ctx)
+        if backend is None:
+            return self.manager.launch(plan)
+        from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
+
+        cell = fl_ctx.get_engine().get_cell()
+        service = SlurmTaskService.get_or_create(cell)
+        self._task_service = service
+        token = secrets.token_hex(32)
+        owner = service.add_job(backend, plan.job_id, plan.site_name, token)
+        plan = replace(
+            plan,
+            study_secret_env={
+                **plan.study_secret_env,
+                ENV_TASK_OWNER: cell.get_fqcn(),
+                ENV_TASK_TOKEN: token,
+            },
+        )
+        try:
+            handle = self.manager.launch(plan)
+        except BaseException:
+            owner.release()
+            raise
+        owner.attach_cj(handle)
+        result = _TaskCJHandle(handle, owner)
+        try:
+            publish_job_handle(result, fl_ctx)
+        except BaseException:
+            result.terminate()
+            result.wait()
+            raise
+        return result
+
+    def handle_event(self, event_type, fl_ctx):
+        super().handle_event(event_type, fl_ctx)
+        if event_type == EventType.SYSTEM_END:
+            service = getattr(self, "_task_service", None)
+            if service is not None:
+                service.shutdown()

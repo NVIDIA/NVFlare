@@ -94,10 +94,12 @@ def _cj_session(root, security, ready, stop, records):
             cell.stop()
 
 
-@pytest.mark.parametrize("security", ["clear", "mtls"])
+@pytest.mark.parametrize("security", ["clear", "mtls", "mtls_alias"])
 @pytest.mark.parametrize("gpu_count", [0, 1])
 @pytest.mark.usefixtures("isolated_fobs")
 def test_native_worker_hello_and_analytics_use_cj_session(tmp_path, monkeypatch, security, gpu_count):
+    use_alias = security == "mtls_alias"
+    security = "mtls" if use_alias else security
     backend = _backend(
         tmp_path,
         monkeypatch,
@@ -151,6 +153,12 @@ def test_native_worker_hello_and_analytics_use_cj_session(tmp_path, monkeypatch,
         if security == "mtls":
             assert fields["credentials"]["client_cert"] == fields["credentials"]["server_cert"] == certificate
             assert fields["credentials"]["client_key"] == fields["credentials"]["server_key"] == key
+        if use_alias:
+            alias = tmp_path / "workspace_alias"
+            alias.symlink_to(root, target_is_directory=True)
+            fields["credentials"] = {
+                k: str(alias / Path(v).relative_to(root)) for k, v in fields["credentials"].items()
+            }
         arguments["bootstrap"] = replace(
             arguments["bootstrap"],
             executor={
@@ -217,7 +225,9 @@ def test_invalid_advertised_host_fails_closed(tmp_path, monkeypatch, host):
         launcher.get_worker_listener_host()
 
 
-@pytest.mark.parametrize("problem", ["missing_pair", "other_job", "outside_ca", "site_cert", "symlink_key"])
+@pytest.mark.parametrize(
+    "problem", ["missing_pair", "other_job", "outside_ca", "traversal_ca", "site_cert", "symlink_key"]
+)
 def test_unreachable_or_non_job_credentials_fail_before_native_submission(tmp_path, monkeypatch, problem):
     backend = _backend(tmp_path, monkeypatch, 0)
     launcher, adapter, request = backend
@@ -240,6 +250,10 @@ def test_unreachable_or_non_job_credentials_fail_before_native_submission(tmp_pa
         credentials["client_cert"] = str(root / "other-job" / "job_cert" / "job.crt")
     elif problem == "outside_ca":
         credentials["ca_cert"] = str(tmp_path / "host-private-ca.pem")
+    elif problem == "traversal_ca":
+        outside = tmp_path / "host-private-ca.pem"
+        outside.write_text("outside fixture")
+        credentials["ca_cert"] = str(root / ".." / outside.name)
     elif problem == "site_cert":
         credentials["client_cert"] = str(root / "startup" / "client.crt")
     else:

@@ -276,6 +276,52 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
     return BindMount(source, destination, "rw")
 
 
+def load_slurm_study_runtime(config, study, logger):
+    runtime_file = study_runtime_file_path(config.workspace_path)
+    legacy_file = os.path.join(config.workspace_path, "local", "study_data.yaml")
+    runtime_exists = os.path.exists(runtime_file)
+    if os.path.exists(legacy_file):
+        message = (
+            f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
+            if runtime_exists
+            else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
+        )
+        raise SlurmLauncherError(message)
+    if not runtime_exists:
+        return StudyRuntime(study=study or "")
+    try:
+        runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=logger)
+        return resolve_study_runtime(runtime_map, study, runtime_file, logger=logger)
+    except ValueError as e:
+        raise SlurmLauncherError(str(e)) from e
+
+
+def effective_slurm_study_values(config, runtime, job_image=None):
+    slurm = runtime.slurm
+    sandbox = slurm.get("sandbox", config.sandbox)
+    if job_image is not None:
+        job_image = _require_string(job_image, "job-owned Slurm image")
+    if sandbox == "none" and (job_image or runtime.container_image or runtime.datasets or runtime.secret_mounts):
+        raise SlurmLauncherError(
+            "effective sandbox 'none' does not support job/study container, datasets, or secret_mounts"
+        )
+    image = (
+        None
+        if sandbox == "none"
+        else normalize_slurm_image(
+            job_image or runtime.container_image or config.image,
+            sandbox,
+            require_file=True,
+            label="effective image",
+        )
+    )
+    python_path = slurm.get("python_path", config.python_path)
+    setup = slurm.get("setup", config.setup)
+    directives = dict(config.sbatch_directives)
+    directives.update({key: slurm[key] for key in ("partition", "account", "qos") if key in slurm})
+    return sandbox, image, python_path, setup, directives
+
+
 class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
@@ -339,50 +385,10 @@ class SlurmJobLauncher(JobLauncherSpec):
         """Select and structure the worker arguments for this launcher type."""
 
     def _load_study_runtime(self, study: Optional[str]) -> StudyRuntime:
-        runtime_file = study_runtime_file_path(self.config.workspace_path)
-        legacy_file = os.path.join(self.config.workspace_path, "local", "study_data.yaml")
-        runtime_exists = os.path.exists(runtime_file)
-        if os.path.exists(legacy_file):
-            message = (
-                f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
-                if runtime_exists
-                else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
-            )
-            raise SlurmLauncherError(message)
-        if not runtime_exists:
-            return StudyRuntime(study=study or "")
-        try:
-            runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=self.logger)
-            return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
-        except ValueError as e:
-            raise SlurmLauncherError(str(e)) from e
+        return load_slurm_study_runtime(self.config, study, self.logger)
 
-    def _effective_study_values(
-        self, runtime: StudyRuntime, job_image: Optional[str] = None
-    ) -> tuple[str, Optional[str], str, str, dict]:
-        slurm = runtime.slurm
-        sandbox = slurm.get("sandbox", self.config.sandbox)
-        if job_image is not None:
-            job_image = _require_string(job_image, "job-owned Slurm image")
-        if sandbox == "none" and (job_image or runtime.container_image or runtime.datasets or runtime.secret_mounts):
-            raise SlurmLauncherError(
-                "effective sandbox 'none' does not support job/study container, datasets, or secret_mounts"
-            )
-        image = (
-            None
-            if sandbox == "none"
-            else normalize_slurm_image(
-                job_image or runtime.container_image or self.config.image,
-                sandbox,
-                require_file=True,
-                label="effective image",
-            )
-        )
-        python_path = slurm.get("python_path", self.config.python_path)
-        setup = slurm.get("setup", self.config.setup)
-        directives = dict(self.config.sbatch_directives)
-        directives.update({key: slurm[key] for key in ("partition", "account", "qos") if key in slurm})
-        return sandbox, image, python_path, setup, directives
+    def _effective_study_values(self, runtime: StudyRuntime, job_image: Optional[str] = None):
+        return effective_slurm_study_values(self.config, runtime, job_image)
 
     def _study_environment(self, runtime: StudyRuntime) -> tuple[dict, dict]:
         environment = dict(runtime.env)
@@ -432,7 +438,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         custom_paths = (workspace.get_app_custom_dir(job_id), workspace.get_site_custom_dir())
         return os.pathsep.join(dict.fromkeys(path for path in custom_paths if path and os.path.isdir(path)))
 
-    def _build_launch_plan(self, job_meta: dict, fl_ctx: FLContext) -> LaunchPlan:
+    def _build_launch_plan(self, job_meta: dict, fl_ctx: FLContext, *, runtime=None) -> LaunchPlan:
         if not isinstance(job_meta, dict):
             raise SlurmLauncherError("job_meta must be a mapping")
         job_id = job_meta.get(JobConstants.JOB_ID)
@@ -481,7 +487,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         study = job_meta.get(JobMetaKey.STUDY.value)
         if study is not None:
             study = _require_string(study, "study name")
-        runtime = self._load_study_runtime(study)
+        runtime = self._load_study_runtime(study) if runtime is None else runtime
         job_spec = _mapping_or_empty(
             get_job_launcher_spec(job_meta, site_name, "slurm"), f"Slurm spec for site '{site_name}'"
         )
