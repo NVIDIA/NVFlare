@@ -348,7 +348,12 @@ a compatible storage arrangement. Workers always use their CJ's namespace; the
 launcher does not create a namespace per job or choose one from job metadata.
 
 The job launcher accepts an optional `startup_secret_name` shared by its CJ and
-worker Pods. The default remains `nvflare-startup-<normalized-participant>`.
+worker Pods. The default is `nvflare-job-startup-<normalized-participant>`.
+This public-only Secret is separate from the deployment-staged CP Secret
+(`nvflare-startup-<normalized-participant>`), whose encoded keys and private
+site credentials must stay unchanged. A `startup_secret_name` override must name
+a dedicated public job kit, not CP's staged kit. Existing launcher-created
+Secrets with canonical filename keys can be retained using that override.
 Operators sharing a namespace across federations must configure unique Secret
 names per federation and participant. Each startup Secret carries the root CA's
 SHA-256 fingerprint as a label-safe base32 identity. Replacement checks that

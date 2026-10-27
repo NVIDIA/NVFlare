@@ -394,9 +394,9 @@ class K8sJobHandle(JobHandleSpec):
             self.api_instance.delete_namespaced_secret(name=self.credential_secret_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) != 404:
-                self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
-        except Exception as e:
-            self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+                self.logger.warning("failed to delete credential Secret")
+        except Exception:
+            self.logger.warning("failed to delete credential Secret")
         self.credential_secret_name = None
 
     def terminate(self):
@@ -778,7 +778,7 @@ class K8sJobLauncher(JobLauncherSpec):
             secret_body["metadata"]["labels"] = {_STARTUP_FEDERATION_LABEL: federation_identity}
         try:
             self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-            self.logger.debug("created Secret %s", secret_name)
+            self.logger.debug("created Secret")
         except ApiException as e:
             if getattr(e, "status", None) != 409:
                 raise
@@ -787,14 +787,14 @@ class K8sJobLauncher(JobLauncherSpec):
                 return secret_name
             try:
                 self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
-                self.logger.debug("replaced Secret %s", secret_name)
+                self.logger.debug("replaced Secret")
             except ApiException as e2:
                 # 409 -> (GC deletes the old Secret) -> replace 404: recreate.
                 if getattr(e2, "status", None) != 404:
                     raise
                 secret_body["metadata"].pop("resourceVersion", None)
                 self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-                self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
+                self.logger.debug("recreated Secret after concurrent deletion")
         return secret_name
 
     def _replace_startup_secret(self, body, federation_identity):
@@ -846,7 +846,10 @@ class K8sJobLauncher(JobLauncherSpec):
                 with open(os.path.join(startup_dir, fname), "rb") as f:
                     data[fname] = base64.b64encode(f.read()).decode()
 
-        name = self.startup_secret_name or f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
+        # Deployment staging owns nvflare-startup-<site> and projects encoded
+        # keys into CP's full kit. Jobs need a separate public-only kit: never
+        # replace CP's mounted Secret or copy its private keys into a job Pod.
+        name = self.startup_secret_name or f"nvflare-job-startup-{site_name_to_rfc1123(site_name)}"
         return self._create_or_replace_secret(
             name, {"data": data}, federation_identity=_startup_federation_identity(data)
         )
@@ -867,9 +870,9 @@ class K8sJobLauncher(JobLauncherSpec):
             self.core_v1.delete_namespaced_secret(name=secret_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) != 404:
-                self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
-        except Exception as e:
-            self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+                self.logger.warning("failed to delete Secret")
+        except Exception:
+            self.logger.warning("failed to delete Secret")
 
     def _own_credential_secret(self, secret_name: str, pod_name: str, pod) -> None:
         """Patch the credential Secret with an ownerReference to its pod so K8s GC deletes it."""
@@ -878,10 +881,10 @@ class K8sJobLauncher(JobLauncherSpec):
             self.core_v1.patch_namespaced_secret(
                 name=secret_name, namespace=self.namespace, body={"metadata": {"ownerReferences": [owner]}}
             )
-        except Exception as e:
+        except Exception:
             self.logger.warning(
-                f"failed to set ownerReference on Secret {secret_name}: {e}; "
-                f"it will be deleted when the job handle reaches a terminal state"
+                "failed to set ownerReference on credential Secret; "
+                "it will be deleted when the job handle reaches a terminal state"
             )
 
     def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:

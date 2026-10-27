@@ -1003,7 +1003,7 @@ startup-kit Secret name uses this pattern:
 
 .. code-block:: text
 
-   nvflare-startup-<rfc1123-site-name>-<8-char-sha256-prefix>
+   nvflare-job-startup-<rfc1123-site-name>-<8-char-sha256-prefix>
 
 ``<rfc1123-site-name>`` is the site name with non-RFC1123 characters replaced.
 The 8-char SHA256 suffix is always appended, even for site names that are
@@ -1017,7 +1017,7 @@ For example, inspect startup-kit Secrets with:
 
 .. code-block:: bash
 
-   kubectl -n "$NAMESPACE" get secret | grep nvflare-startup
+   kubectl -n "$NAMESPACE" get secret | grep nvflare-job-startup
 
 If your cluster operator disables ``serviceAccount.create`` or ``rbac.create``
 in chart values, provide equivalent API access in the same namespace before job

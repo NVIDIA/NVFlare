@@ -107,7 +107,7 @@ _DEFAULT_VOLUME_MOUNT_LIST = [
 
 _DEFAULT_VOLUME_LIST = [
     {"name": "workspace-job", "emptyDir": {}},
-    {"name": "startup-kit", "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123('site1')}"}},
+    {"name": "startup-kit", "secret": {"secretName": f"nvflare-job-startup-{site_name_to_rfc1123('site1')}"}},
     {"name": _DEFAULT_DATA_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
 ]
 
@@ -2195,7 +2195,7 @@ spec:
             training_volume = study_dataset_volume_name("study-a", "training")
             assert "template-volume" in volume_map
             assert volume_map["workspace-job"]["emptyDir"]["sizeLimit"] == "8Gi"
-            assert volume_map["startup-kit"]["secret"]["secretName"] == "nvflare-startup-site-1-f505dccd"
+            assert volume_map["startup-kit"]["secret"]["secretName"] == "nvflare-job-startup-site-1-f505dccd"
             assert volume_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
 
             job_container = manifest["spec"]["containers"][0]
@@ -3464,7 +3464,7 @@ spec:
 
             secret_name = launcher._ensure_startup_secret("site-1", "/fake/startup")
 
-            assert secret_name == f"nvflare-startup-{site_name_to_rfc1123('site-1')}"
+            assert secret_name == f"nvflare-job-startup-{site_name_to_rfc1123('site-1')}"
             mock_api.create_namespaced_secret.assert_called_once()
             mock_api.replace_namespaced_secret.assert_called_once()
             mock_api.read_namespaced_secret.assert_called_once()
@@ -3614,7 +3614,7 @@ class TestK8sCredentialTransport:
     def test_job_credential_rides_credential_secret(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
-        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-job-startup-site-1")
         try:
             with (
                 patch(
@@ -3659,7 +3659,7 @@ class TestK8sCredentialTransport:
     def test_non_secure_job_launches_without_credential(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
-        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-job-startup-site-1")
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
 
@@ -3827,11 +3827,30 @@ def _task_profile(pvc_root, persist_resident_workspaces=True):
     )
 
 
+def _mock_job_workspace_owner(monkeypatch, launcher):
+    # Unit-test the valid PVC profile independently of the host runner's UID.
+    # The separate ownership-guard tests continue to use real filesystem IDs.
+    real_stat = os.stat
+    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
+
+    def stat(path, *args, **kwargs):
+        info = real_stat(path, *args, **kwargs)
+        if os.fspath(path) == directory:
+            fields = list(info)
+            fields[4] = launcher.job_security_context["runAsUser"]
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(os, "stat", stat)
+
+
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yml"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
 @pytest.mark.parametrize("create_status", [None, 403, 500])
-def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetime, extension, budgets, create_status):
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
+    tmp_path, monkeypatch, lifetime, extension, budgets, create_status
+):
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
     (tmp_path / "startup").mkdir()
@@ -3862,6 +3881,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(tmp_path, lifetim
     pvc_root = tmp_path / "mounted-pvc"
     pvc_root.mkdir()
     launcher = _task_profile(pvc_root)
+    _mock_job_workspace_owner(monkeypatch, launcher)
     (tmp_path / "local" / "resources.json").write_text(
         json.dumps(
             {
@@ -4119,8 +4139,9 @@ def test_resident_persistence_is_an_explicit_site_choice(tmp_path):
     assert not (tmp_path / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)).exists()
 
 
-def test_persistent_profile_preserves_site_security_context(tmp_path):
+def test_persistent_profile_preserves_site_security_context(tmp_path, monkeypatch):
     launcher = _task_profile(tmp_path)
+    _mock_job_workspace_owner(monkeypatch, launcher)
     manifest = {
         "spec": {
             "securityContext": {
@@ -4141,7 +4162,7 @@ def test_persistent_profile_preserves_site_security_context(tmp_path):
     launcher.prepare_job_manifest(manifest, _TASK_JOB_ID, _TASK_SITE, None, execution_lifetime="job")
     assert manifest["spec"]["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     assert manifest["spec"]["securityContext"]["supplementalGroups"] == [2000]
-    assert manifest["spec"]["securityContext"]["runAsUser"] == os.getuid()
+    assert manifest["spec"]["securityContext"]["runAsUser"] == launcher.job_security_context["runAsUser"]
     security = manifest["spec"]["containers"][0]["securityContext"]
     assert security["readOnlyRootFilesystem"] is True
     assert security["privileged"] is False
@@ -4203,7 +4224,7 @@ def test_startup_secret_name_defaults_or_uses_site_override(tmp_path, startup_ca
     launcher = getattr(launchers, launcher_name)(config_file_path=None, startup_secret_name=name)
     launcher.core_v1 = Mock()
     actual = launcher._ensure_startup_secret("server", str(tmp_path))
-    assert actual == (name or f"nvflare-startup-{site_name_to_rfc1123('server')}")
+    assert actual == (name or f"nvflare-job-startup-{site_name_to_rfc1123('server')}")
     body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
     assert body["metadata"]["name"] == actual
     assert len(body["metadata"]["labels"][_STARTUP_FEDERATION_LABEL]) == 52
@@ -4399,3 +4420,78 @@ def test_startup_secret_conflict_revalidates_federation_before_retry(tmp_path):
     with pytest.raises(ValueError, match="different federation"):
         launcher._ensure_startup_secret("server", str(tmp_path))
     api.replace_namespaced_secret.assert_called_once()
+
+
+@pytest.mark.parametrize("launcher_name", ["ClientK8sJobLauncher", "ServerK8sJobLauncher"])
+@pytest.mark.parametrize("site_name", ["site-1", "Site-1"])
+def test_public_job_startup_secret_preserves_deployment_staged_kit(tmp_path, startup_ca, launcher_name, site_name):
+    import nvflare.app_opt.job_launcher.k8s_launcher as launchers
+    from nvflare.tool.deploy.k8s_stage import _build_volume_bundle, _default_k8_stage_resource_names, _secret_manifest
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    (tmp_path / "fed_client.json").write_text("{}")
+    (tmp_path / "client.key").write_bytes(b"site-private-key-canary")
+    staged = _build_volume_bundle(tmp_path)
+    _, cp_secret_name = _default_k8_stage_resource_names(tmp_path, {"siteName": site_name})
+    cp_secret = _secret_manifest(cp_secret_name, "site", staged["data"])
+    original = copy.deepcopy(cp_secret)
+    secrets = {cp_secret_name: cp_secret}
+
+    def create(namespace, body):
+        name = body["metadata"]["name"]
+        if name in secrets:
+            raise _FakeApiException(status=409)
+        secrets[name] = copy.deepcopy(body)
+
+    launcher = getattr(launchers, launcher_name)(config_file_path=None, namespace="site")
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = create
+    job_secret_name = launcher._ensure_startup_secret(site_name, str(tmp_path))
+
+    assert job_secret_name != cp_secret_name
+    assert secrets[cp_secret_name] == original
+    # CP's projected keys and private kit are unchanged; jobs mount only public files.
+    for item in staged["items"]:
+        assert secrets[cp_secret_name]["data"][item["key"]] == original["data"][item["key"]]
+    assert set(secrets[job_secret_name]["data"]) == {"rootCA.pem", "fed_client.json"}
+    api.read_namespaced_secret.assert_not_called()
+    api.replace_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["handle_cleanup", "launch_cleanup", "owner_reference"])
+def test_secret_failure_logs_omit_api_response_contents(caplog, operation):
+    canary = "credential-body-canary"
+    api = Mock()
+    api.delete_namespaced_secret.side_effect = RuntimeError(canary)
+    api.patch_namespaced_secret.side_effect = RuntimeError(canary)
+    if operation == "handle_cleanup":
+        handle = _make_handle(api=api)
+        handle.credential_secret_name = "credential-name-canary"
+        handle._delete_credential_secret()
+    else:
+        launcher = ClientK8sJobLauncher(config_file_path=None)
+        launcher.core_v1 = api
+        if operation == "launch_cleanup":
+            launcher._delete_secret("credential-name-canary")
+        else:
+            launcher._own_credential_secret("credential-name-canary", "pod", Mock())
+    assert "Secret" in caplog.text
+    assert canary not in caplog.text
+    assert "credential-name-canary" not in caplog.text
+
+
+def test_startup_override_refuses_deployment_private_kit(tmp_path, startup_ca):
+    from nvflare.tool.deploy.k8s_stage import _build_volume_bundle
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    (tmp_path / "client.key").write_bytes(b"site-private-key-canary")
+    staged = _build_volume_bundle(tmp_path)
+    launcher = ClientK8sJobLauncher(config_file_path=None, startup_secret_name="cp-private-kit")
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version="42"), data=staged["data"]
+    )
+    with pytest.raises(ValueError, match="unique startup_secret_name"):
+        launcher._ensure_startup_secret(_TASK_SITE, str(tmp_path))
+    api.replace_namespaced_secret.assert_not_called()

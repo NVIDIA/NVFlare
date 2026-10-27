@@ -96,8 +96,14 @@ excludes startup. The Secret construction already withholds site private keys.
 Set optional ``startup_secret_name`` on ``ClientK8sJobLauncher`` (and the server
 job launcher when sharing its namespace) to a DNS subdomain of at most 253
 characters. CJ and task workers use that exact Secret; do not configure a second
-name on the task launcher. The default remains
-``nvflare-startup-<normalized-participant>``. Names must be unique per federation
+name on the task launcher. The default is
+``nvflare-job-startup-<normalized-participant>``. This public kit is separate
+from CP's deployment-staged ``nvflare-startup-<normalized-participant>`` Secret,
+which uses encoded keys projected into filenames and includes site private keys.
+The launcher leaves that CP Secret unchanged. An override must name a dedicated
+public job kit; do not point it at the CP deployment Secret. To retain an existing
+launcher-created Secret with canonical filename keys, configure its old name
+explicitly. Names must be unique per federation
 and participant within a namespace; for example, use ``federation-a-site-1`` and
 ``federation-b-site-1`` when two federations both have ``site-1``.
 
