@@ -273,3 +273,24 @@ def test_ambiguous_subprocess_failure_is_reported_without_response(monkeypatch):
     with pytest.raises(ValueError) as error:
         client.set_policy("candidate.rego")
     assert "private response" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        b'package policy\ndefault allow := false\nallow { input.fixture == "unrelated" }\n',
+        b'package policy\ndefault allow := false\nallow if { input.fixture == "unrelated" }\n',
+        b"package policy\n# import rego.v1\ndefault allow := false\n",
+    ],
+)
+def test_policy_without_explicit_rego_v1_import_fails_before_uploads_or_pending_state(registration, policy):
+    source, _, current, state, client = registration
+    current.write_bytes(policy)
+    with pytest.raises(ValueError, match="explicitly import rego.v1"):
+        RECEIVER.install_release(source, current, state, client)
+    assert not client.events
+    assert current.read_bytes() == policy
+    assert client.active_policy == INITIAL_POLICY
+    assert client.resources == {"default/image-key/unrelated": b"keep-existing-key"}
+    assert not Path(str(current) + ".pending.json").exists()
+    assert not Path(str(current) + ".pending.rego").exists()

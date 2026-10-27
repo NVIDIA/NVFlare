@@ -12,8 +12,8 @@ STATE_DIR=${STATE_DIR:-${HOME}/.local/state/nvflare-coco-trustee}
 need_file "$TRUSTEE_PUBLIC_CERT"
 need_file "$ADMIN_TOKEN"
 need_cmd "$KBS_CLIENT"
-# Credentials are opaque to this kit. The existing Trustee validates their
-# signatures, expiry, audience and administration permissions.
+# Credentials are opaque to this kit. Administrative authentication and
+# authorization are enforced by the existing Trustee configuration.
 python3 - "$KBS_URL" <<'URL'
 import sys
 from urllib.parse import urlsplit

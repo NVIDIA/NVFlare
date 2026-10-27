@@ -62,6 +62,7 @@ trusted build commands. Paths in this file resolve relative to this file.
        type: trustee
        kbs_endpoint: https://trustee.example.org:8443
        ca_cert_file: ./credentials/kbs-ca.pem
+       # Required only when this service is selected by bare_metal_cvm.
        admin_token_file: ./credentials/kbs-resource-token.jwt
        attestation_token_endpoint: http://127.0.0.1:8006/aa/token
        attestation_signing_public_key_file: ./credentials/trustee-as-public.pem
@@ -114,6 +115,17 @@ The loopback attestation endpoint is inside a CoCo confidential guest. It is
 not the provisioning host or remote Trustee address. Bare-metal CVM and CoCo
 both select ``attestation.service: trustee`` and therefore consume this same
 object. Trustee settings must not be repeated in participant files.
+
+``admin_token_file`` is required only for a service selected by a bare-metal
+CVM participant, whose builder registers resources. CoCo provisioning does not
+use this credential: omit it from CoCo-only configurations and keep the KBS
+administrative token with the Trustee administrator for release registration.
+If supplied, the file must exist. The KBS TLS CA/bundle, AS signing public key,
+registry TLS CA/bundle, and registry publisher credential files must also exist;
+the registry CA/bundle file is required even if its root is already in system
+trust. Certificate and public-key files come from the corresponding service
+administrator; publisher credentials stay on trusted provisioning infrastructure.
+
 If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts

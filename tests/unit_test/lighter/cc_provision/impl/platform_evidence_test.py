@@ -158,6 +158,18 @@ def test_snp_signed_fields_fail_closed(tmp_path, mutation):
             evidence.verify_snp(tmp_path, "reviewed-snpguest", floors)
 
 
+@pytest.mark.parametrize("permissions", [1 << 18, 1 << 19, (1 << 18) | (1 << 19)])
+def test_snp_signed_policy_rejects_debug_and_migration_permissions(tmp_path, permissions):
+    floors = prepare_report(tmp_path)
+    report = snp_report()
+    report[0x08:0x10] = permissions.to_bytes(8, "little")
+    (tmp_path / "attestation-report.bin").write_bytes(report)
+    with patch.object(evidence.subprocess, "run") as verifier:
+        with pytest.raises(ValueError, match="disable debug and migration-agent"):
+            evidence.verify_snp(tmp_path, "reviewed-snpguest", floors)
+    assert verifier.call_count == 3
+
+
 def test_snp_optional_certificate_fetch_still_verifies_chain_and_report(tmp_path):
     floors = prepare_report(tmp_path)
     with patch.object(evidence.subprocess, "run") as verifier:

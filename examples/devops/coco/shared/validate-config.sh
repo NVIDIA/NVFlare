@@ -25,7 +25,7 @@ validate_private_root() {
 # Registry endpoints are independent of Trustee and may use any TLS port.
 validate_registry_host() {
     local endpoint=$1 host port
-    [[ $endpoint =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]] || config_error 'Set REGISTRY_HOST to a hostname with an optional port, without a scheme or path.'
+    [[ $endpoint =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]] || config_error 'Set REGISTRY_ENDPOINT to a hostname with an optional port, without a scheme or path.'
     host=${endpoint%%:*}
     validate_service_host "$host"
     if [[ $endpoint == *:* ]]; then

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Offline publication checks; never executes deployment stages or uses the network."""
+"""Developer checks for a Git source checkout; never executes deployment stages or uses the network."""
 
 import argparse
 import ast
@@ -36,12 +36,20 @@ def main():
         raise SystemExit("Python 3.11+ is required")
     # Include newly added source and omit pending deletions without modifying
     # the index. Ignored deployment inputs and credentials stay outside checks.
-    entries = subprocess.check_output(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."],
-        cwd=ROOT,
-        text=True,
-    ).split("\0")
+    try:
+        entries = subprocess.check_output(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).split("\0")
+    except OSError:
+        raise SystemExit("Git is required for package validation; install Git and run from an NVFlare source checkout.")
+    except subprocess.CalledProcessError:
+        raise SystemExit("Package validation requires an NVFlare Git source checkout; archive copies are unsupported.")
     names = sorted({name for name in entries if name and ((ROOT / name).exists() or (ROOT / name).is_symlink())})
+    if not {"validate-package.py", "README.md"} <= set(names):
+        raise SystemExit("Package sources are excluded from Git; run validation from an NVFlare Git source checkout.")
     for name in names:
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or str(path) != name:

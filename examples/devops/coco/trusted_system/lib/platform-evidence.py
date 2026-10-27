@@ -216,6 +216,9 @@ def verify_snp(directory, verifier_path, floors, fetch_certificates=False):
             [str(verifier_path), "verify", "attestation", str(snapshot_certs), str(snapshot_report), "--tcb"],
         ):
             subprocess.run(command, check=True, timeout=300)
+    policy = int.from_bytes(report[0x08:0x10], "little")
+    if policy & ((1 << 19) | (1 << 18)):
+        raise ValueError("Verified SNP guest policy must disable debug and migration-agent permissions")
     tcb = report[0x180:0x188]
     if any(tcb[2:6]):
         raise ValueError("Reserved signed REPORTED_TCB bytes are nonzero")

@@ -36,14 +36,23 @@ The configuration describes the existing worker:
 
 For SNP, fill the four independent `SNP_MIN_REPORTED_TCB_*` floors for bootloader,
 TEE, SNP firmware, and microcode. Each is a decimal integer from 0 through 255.
+Choose these minima from an independently maintained platform security baseline,
+not merely the worker's reported versions. A zero floor imposes no lower bound
+on that component; an all-zero set provides no minimum-TCB protection. Capture
+also rejects signed SNP policies that permit debugging or a migration agent.
+SNP certificate retrieval uses HTTPS to AMD KDS and relies on the verifier's
+system CA trust; capture does not independently pin the AMD root certificate.
 For TDX, provide the compatible DCAP verifier wrapper. Use trusted preinstalled
 verifier executables from the operator's tool environment. Verifiers check fresh
-evidence signatures/collateral and the selected platform's security baseline.
+evidence signatures/collateral and the configured platform constraints.
 
 The selected worker needs Python 3.11+ with PyYAML, Bash, kubectl, skopeo,
 OpenSSL, iproute2's `ip`, containerd's `ctr`, and the separate CRI client `crictl`.
-`crictl` must be executable in the effective PATH of `sudo python3`, not only in
-the caller's shell; capture checks this before caching or launching the collector.
+The interpreter selected by `sudo python3` must also be Python 3.11+ and able
+to import the capture helper and its NVFlare dependencies from this checkout.
+`crictl` must be executable in that interpreter's effective PATH, not only in
+the caller's shell. Capture checks the privileged interpreter, helper imports,
+and `crictl` before creating output, caching images, or launching the collector.
 Capture uses `sudo ctr` to cache the image and `sudo python3` to inspect its
 QEMU process. The kubeconfig
 must permit reading the selected Node, creating the temporary namespace, Pod,

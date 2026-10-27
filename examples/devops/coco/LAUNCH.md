@@ -21,9 +21,23 @@ kubectl get -f "$POD" -o wide
 
 Invoking the helper authorizes applying the Pod. It validates the manifest,
 performs a server dry run, applies the received file, and waits for readiness.
+It checks supported runtime and image/policy structure, not sender identity or
+an independently supplied registry allowlist.
 
 Keep the generated image digest, command, InitData, resources, and security
 context together. Do not change them to work around an attestation failure.
+
+## Optional Pod digest check
+
+If you already have an independently known SHA-256 for the intended manifest,
+pass it as the second argument:
+
+~~~bash
+bash coco/50-launch-handoff.sh "$POD" "$EXPECTED_POD_SHA256"
+~~~
+
+This check is optional. A digest calculated from the received file itself does
+not establish its origin.
 
 ## Check NVFlare startup
 

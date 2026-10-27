@@ -83,8 +83,20 @@ For release registration, also set `CURRENT_RESOURCE_POLICY_FILE` in
 policy. The API cannot retrieve its bytes. Use the same canonical export path
 for successive installations; the installer updates it after confirmed writes.
 
+**Reusing a release name with a stale or recreated policy export is unsupported.**
+Duplicate-release checks use the local export; the installer does not check
+Trustee for existing release resources. If that export omits an existing release,
+registration can overwrite its image key, signing public key, and image policy,
+disrupting workloads that use that release. Installing an incomplete policy can
+also remove authorization for unrelated releases. Use a unique name for each new
+release and retain the complete current export and any pending recovery files.
+If these files are lost or stale, reconcile them with the active Trustee
+configuration before registering another release.
+
 The export must include the full current policy and all unrelated existing rules,
-and must already use Rego v1 syntax. **Rego v0 is unsupported and must not be used.**
+and must already use Rego v1 syntax with an explicit `import rego.v1` line.
+**Rego v0 is unsupported and must not be used.** The installer rejects a missing
+v1 import before uploading resources; this is not a complete Rego syntax check.
 If the existing service uses Rego v0, migrate and validate that policy externally
 before exporting it and registering a handoff. The installer merges Rego v1
 release rules; it does not translate legacy policy syntax.
@@ -96,9 +108,27 @@ bash service/12-install-trusted-service-handoff.sh "$HANDOFF"
 
 The installer consumes the directory directly, validates the release, installs
 its resources, and merges its rule into the complete policy while retaining
-unrelated releases. Deliver image keys only to Trustee administration.
+unrelated releases. Success records that the resource uploads and policy update
+were accepted by the API; it does not read back release-resource bytes or the
+active policy. Reference readback above is a separate check. Verify actual key
+release and NVFlare operation after launch. Deliver image keys only to Trustee
+administration.
 
 An uncertain policy write leaves pending recovery files beside the canonical
 export. Retry the same handoff after resolving the cause; another release is
 blocked until the pending update is reconciled. Launch only after registration
 succeeds, following [Pod launch](LAUNCH.md).
+
+## Optional handoff digest check
+
+If you already have an independently known SHA-256 for the intended
+`SHA256SUMS` file, pass it as the second argument:
+
+~~~bash
+bash service/12-install-trusted-service-handoff.sh "$HANDOFF" "$EXPECTED_MANIFEST_SHA256"
+~~~
+
+This check is optional. Bundled checksums detect inconsistent payloads, not
+sender identity. Replacing the entire handoff and its checksum manifest can
+authorize a different workload; supplying the intended handoff remains the
+trusted administrator's responsibility.

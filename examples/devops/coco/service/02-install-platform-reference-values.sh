@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-[[ $# -ge 1 && $# -le 2 && ( ${2:-} == "" || ${2:-} == --verify-only || ${2:-} == --approve-platform-reference-values ) ]] || {
+[[ $# -ge 1 && $# -le 2 && ( ${2:-} == "" || ${2:-} == --verify-only ) ]] || {
     echo "Usage: $0 VALUES.json [--verify-only]" >&2; exit 2;
 }
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)

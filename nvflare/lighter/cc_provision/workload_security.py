@@ -378,8 +378,8 @@ def decode_initdata(encoded):
 
 
 def validate_workload_pod(pod, expected_context, command, *, runtime_class="kata-qemu-nvidia-gpu-snp"):
-    # The expected runtime comes from the trusted provisioning configuration,
-    # never from the generated Pod. Existing deployment callers retain SNP/GPU.
+    # Provisioning callers supply the configured runtime. The launch helper
+    # validates the runtime selected in the received Pod without an independent pin.
     runtime_gpu = {
         "kata-qemu-nvidia-gpu-snp": True,
         "kata-qemu-snp": False,

@@ -279,7 +279,7 @@ def test_privileged_crictl_failure_stops_before_inspection_cache_or_namespace(tm
         patch.object(workflow.subprocess, "run", side_effect=error) as command,
         patch.object(workflow, "collect") as collect,
     ):
-        with pytest.raises(ValueError, match="crictl in the PATH used by sudo python3"):
+        with pytest.raises(ValueError, match=r"Capture requires Python 3\.11\+"):
             workflow.capture(config, output)
     command.assert_called_once()
     assert command.call_args.args[0][:3] == ["sudo", "python3", "-c"]
@@ -312,5 +312,42 @@ def test_crictl_probe_checks_the_effective_sudo_python_path(tmp_path, monkeypatc
         if available_to_sudo:
             workflow.require_capture_tools()
         else:
-            with pytest.raises(ValueError, match="crictl in the PATH used by sudo python3"):
+            with pytest.raises(ValueError, match=r"Capture requires Python 3\.11\+"):
                 workflow.require_capture_tools()
+
+
+@pytest.mark.parametrize("failure", ["old-python", "helper-import"])
+def test_privileged_interpreter_failures_stop_capture_before_side_effects(tmp_path, monkeypatch, failure):
+    probe = workflow.require_capture_tools
+    output, config, _, _, calls = capture_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(workflow, "require_capture_tools", probe)
+    helper_root = tmp_path / "probe-helper"
+    (helper_root / "lib").mkdir(parents=True)
+    (helper_root / "capture-running-launch.py").write_text("import missing_capture_dependency\n")
+    runtime = workflow.runtime_api()
+    monkeypatch.setattr(workflow, "runtime_api", lambda: runtime)
+    monkeypatch.setattr(workflow, "HERE", helper_root / "lib")
+    run = subprocess.run
+    diagnostics = []
+
+    def effective_sudo(command, **kwargs):
+        program = command[3]
+        if failure == "old-python":
+            program = "import sys; sys.version_info = (3, 10)\n" + program
+        try:
+            return run([sys.executable, "-c", program, *command[4:]], **kwargs)
+        except subprocess.CalledProcessError as error:
+            diagnostics.append(error.stderr)
+            raise
+
+    with (
+        patch.object(workflow.subprocess, "run", side_effect=effective_sudo),
+        patch.object(workflow, "collect") as collect,
+    ):
+        with pytest.raises(ValueError, match=r"Capture requires Python 3\.11\+"):
+            workflow.capture(config, output)
+    expected = "Python 3.11+ is required" if failure == "old-python" else "missing_capture_dependency"
+    assert len(diagnostics) == 1 and expected in diagnostics[0]
+    collect.assert_not_called()
+    assert not calls
+    assert not output.exists()

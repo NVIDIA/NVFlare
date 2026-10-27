@@ -163,7 +163,10 @@ def merge_policy(current, fragment, release):
     if re.search(r"^\s*(package|import|default)\b", fragment, re.MULTILINE):
         raise ValueError("Release fragment contains a forbidden top-level declaration")
     if not re.search(r"^\s*import\s+rego\.v1\s*(?:#.*)?$", text, re.MULTILINE):
-        text = re.sub(r"(^\s*package\s+policy[^\n]*\n)", r"\1import rego.v1\n", text, count=1, flags=re.MULTILINE)
+        raise ValueError(
+            "Current resource policy must explicitly import rego.v1; "
+            "migrate and validate Rego v0 policies before registration"
+        )
     return (text.rstrip() + "\n\n" + fragment.lstrip()).encode()
 
 

@@ -354,13 +354,18 @@ def require_capture_tools():
         "sudo",
         "python3",
         "-c",
-        "import shutil,sys; sys.exit(0 if shutil.which('crictl') else 1)",
+        "import runpy,shutil,sys\n"
+        "if sys.version_info < (3, 11): raise SystemExit('Python 3.11+ is required')\n"
+        "runpy.run_path(sys.argv[1])\n"
+        "if not shutil.which('crictl'): raise SystemExit('crictl is required')\n",
+        str(HERE.parent / "capture-running-launch.py"),
     ]
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         raise ValueError(
-            "Capture requires crictl in the PATH used by sudo python3; check privileged command access before retrying"
+            "Capture requires Python 3.11+ with the capture helper's dependencies and crictl in the PATH used by "
+            "sudo python3; check the privileged interpreter and command access before retrying"
         ) from error
 
 

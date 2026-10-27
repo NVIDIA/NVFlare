@@ -698,9 +698,10 @@ Secure services and trusted-side interfaces
        credentials; remote clients may still reach administrative request
        parsers on the public HTTPS front end.
      - **Assets:** KBS resources/policies, AS/TLS keys, registry content, and
-       backups. KBS administrative authentication and the configured ``KBS``
-       audience checks protect administrative calls; registry publishing uses
-       separate authorization. OS/container administrators remain trusted.
+       backups. The existing Trustee configuration enforces administrative
+       authentication and authorization; this example consumes opaque credentials
+       and does not validate their audience. Registry publishing uses separate
+       authorization. OS/container administrators remain trusted.
      - The TLS proxy forwards KBS routes; administrative routes are not
        guaranteed a separate private listener. Protect credentials and
        management access independently of CoCo IT. A valid privileged identity
@@ -824,7 +825,11 @@ The provisioning node coordinates two distinct direct file handoffs:
 CoCo IT uses the existing authorized runtime and receives only final Pod YAML.
 It has no authority to update reference values. Handoff files are accepted
 as supplied; format checks and locally recorded checksums do not automatically
-establish a sender's identity or the transferred file's origin.
+establish a sender's identity or the transferred file's origin. Trusted recipients
+are responsible for supplying the intended files. Replacement of an entire
+handoff and its checksum manifest can authorize a different workload; the direct
+handoff workflow does not detect that substitution. Optional independently known
+digests can check supplied bytes, but are not required by this workflow.
 
 SNP verification
 ----------------

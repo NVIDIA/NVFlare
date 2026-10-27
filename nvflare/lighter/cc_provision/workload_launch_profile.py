@@ -233,6 +233,8 @@ def main():
     if args.sha256:
         require(bool(re.fullmatch(r"[0-9a-f]{64}", args.sha256)), "invalid launch profile SHA-256")
         require(received_sha256 == args.sha256, "launch profile SHA-256 mismatch")
+    # The optional expected digest was checked above. This second-read check
+    # detects local file changes during validation; it does not authenticate origin.
     profile = load_profile(args.profile, received_sha256, args.runtime, args.kata_version)
     if args.pod:
         validate_pod(profile, read_pod(args.pod), require_policy=args.require_policy)

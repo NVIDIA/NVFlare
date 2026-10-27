@@ -71,8 +71,25 @@ Use the CPU/GPU pair from [README](../README.md) and a matching capture profile.
 Set a new release name for each participant/image/key/policy change. Paths in
 each CC file resolve beside that file; its Dockerfile resolves from its context.
 
-The AS signing public key differs from the KBS TLS certificate. Supply it as
-`trustee-as-public.pem`. Keep publishing credentials outside image contexts.
+A registry endpoint without a port uses HTTPS port 443. Image references retain
+the supplied endpoint spelling; use the same `host[:port]` spelling in project,
+registry authentication, and policy configuration throughout each release.
+
+Prepare these existing files before provisioning. Paths below are examples
+from `cc_project.yml`; change them to your supplied files. Relative paths resolve
+beside that configuration file.
+
+| Input | Example path | Purpose and source |
+| --- | --- | --- |
+| Trustee `ca_cert_file` | `../admin/public/trustee.crt` | KBS TLS CA certificate/bundle from its administrator; embedded for guest HTTPS trust. |
+| `attestation_signing_public_key_file` | `./trustee-as-public.pem` | AS signing public key from its administrator; verifies signed attestation results and differs from the KBS TLS certificate. |
+| Registry `ca_cert_file` | `../admin/public/registry-ca.crt` | Registry TLS CA certificate/bundle from its administrator. This file is required even when the CA is already in system trust; an existing trust bundle can be supplied. |
+| `publisher_username_file` / `publisher_password_file` | `../admin/secrets/registry/username` / `../admin/secrets/registry/password` | Existing publisher credentials from the registry administrator; keep private and outside image contexts. |
+
+CoCo provisioning does not use `admin_token_file`; omit it. Keep the KBS
+administrative token on the Trustee administration machine for subsequent
+[release registration](../TRUSTEE.md#after-provisioning-register-each-workload-release).
+
 The guest-local AA token API stays inside the guest; its raw response contains
 private key material and must not become application output.
 

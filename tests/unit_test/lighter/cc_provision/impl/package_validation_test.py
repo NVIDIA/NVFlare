@@ -14,6 +14,7 @@
 
 """Validate source-file boundaries without modifying the user's index."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -64,3 +65,33 @@ def test_working_tree_validation_rejects_untracked_symlinks(tmp_path):
     )
     assert result.returncode != 0
     assert "Source must contain regular files: linked.md" in result.stderr
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="CoCo package validation requires Python 3.11+")
+@pytest.mark.parametrize("case", ["missing-git", "archive", "ignored-copy"])
+def test_working_tree_validation_reports_unsupported_sources(tmp_path, case):
+    repo = tmp_path / "repo"
+    source = repo / "copy"
+    source.mkdir(parents=True)
+    shutil.copyfile(SOURCE / "validate-package.py", source / "validate-package.py")
+    (source / "README.md").write_text("Package source\n")
+    env = os.environ.copy()
+    if case == "missing-git":
+        env["PATH"] = str(tmp_path / "no-tools")
+        expected = "Git is required for package validation"
+    elif case == "archive":
+        expected = "requires an NVFlare Git source checkout"
+    else:
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".gitignore").write_text("copy/\n")
+        expected = "Package sources are excluded from Git"
+    result = subprocess.run(
+        [sys.executable, str(source / "validate-package.py")],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "Validated" not in result.stdout

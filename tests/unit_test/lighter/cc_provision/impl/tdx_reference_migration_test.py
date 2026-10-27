@@ -121,10 +121,11 @@ else:
     return role, env, state, updates
 
 
-def run_update(role, env, values, mode="--approve-platform-reference-values"):
-    return subprocess.run(
-        ["bash", str(role / STAGE), str(values), mode], env=env, capture_output=True, text=True, timeout=10
-    )
+def run_update(role, env, values, mode=None):
+    arguments = ["bash", str(role / STAGE), str(values)]
+    if mode is not None:
+        arguments.append(mode)
+    return subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=10)
 
 
 def test_reference_update_preserves_other_tee_and_local_installation_configuration(tmp_path, service):
@@ -170,3 +171,26 @@ def test_verify_only_reads_existing_references_without_api_writes(tmp_path, serv
     assert result.returncode == 0, result.stderr
     assert state.read_bytes() == before
     assert not updates.exists()
+
+
+@pytest.mark.parametrize(
+    "script, option",
+    [
+        ("02-install-platform-reference-values.sh", "--approve-platform-reference-values"),
+        ("02g-install-gpu-reference-values.sh", "--approve-gpu-reference-values"),
+    ],
+)
+def test_removed_approval_flags_fail_before_reading_values_or_service_configuration(tmp_path, script, option):
+    role = tmp_path / "service"
+    role.mkdir()
+    shutil.copyfile(COCO / "service" / script, role / script)
+    result = subprocess.run(
+        ["bash", str(role / script), str(tmp_path / "missing-values.json"), option],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 2
+    assert "Usage:" in result.stderr
+    assert "No such file" not in result.stderr
+    assert sorted(path.name for path in role.iterdir()) == [script]

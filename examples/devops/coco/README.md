@@ -74,10 +74,19 @@ no GPU Operator. TDX remains experimental pending complete hardware acceptance.
 
 `nvflare provision` generates the Trustee release handoff; it does not install
 that handoff automatically. The received files are used directly. Keep image
-keys and credentials with their intended trusted recipients.
+keys and credentials with their intended trusted recipients. The direct handoff
+workflow assumes recipients supply the intended files; bundled checksums check
+consistency, not sender identity. See the [Trustee handoff checks](TRUSTEE.md#optional-handoff-digest-check)
+and [Pod digest check](LAUNCH.md#optional-pod-digest-check) for optional inputs.
 
 For the security model and peer-proof protocol, see the
 [CoCo security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
 
 For upstream platform, service, and tool documentation, see the CC user guide's
 [official component references](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/getting_started.html#cc-official-references).
+
+## Developer package check
+
+`python3 validate-package.py` checks public source files in a Git checkout using
+Python 3.11+ and Git. It is a developer check, not a deployment step, and does not
+support archive or non-Git copies. Ignored deployment inputs remain outside it.
