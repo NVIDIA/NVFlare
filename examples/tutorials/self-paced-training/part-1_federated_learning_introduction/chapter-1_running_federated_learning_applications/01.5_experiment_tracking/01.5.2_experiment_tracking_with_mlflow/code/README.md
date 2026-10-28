@@ -9,7 +9,7 @@ python -m pip install mlflow
 python job.py
 ```
 
-To browse the results, open the [notebook](../experiment_tracking_mlflow.ipynb), run its **Open MLflow UI** cell, and click the browser link. The cell launches MLflow with the same database used by the job. Select the latest site runs and view the histories of `global_accuracy_before_train`, `local_accuracy_after_train`, and `local_train_loss` against the round step. Loss can continue decreasing after accuracy reaches 100%. Stop the UI with the notebook toolbar's **Stop/Interrupt** button when finished.
+To browse the results, open the [notebook](../experiment_tracking_mlflow.ipynb), run its **Open MLflow UI** cell, and click the browser link. The cell launches MLflow with the same database used by the job. Select the latest site runs and view the histories of `global_accuracy_before_train`, `local_accuracy_after_train`, and `local_train_loss` using the chart's built-in **X-axis → Step** setting. The client sends the round via `step=incoming.current_round`; MLflow stores it with each measurement, so it is not a run attribute or a separate `global_step` metric. Loss can continue decreasing after accuracy reaches 100%. Stop the UI with the notebook toolbar's **Stop/Interrupt** button when finished.
 
 This section is self-contained: [job.py](job.py) defines its Recipe, [client.py](client.py) runs at each site, and [model.py](model.py) and [prepare_data.py](prepare_data.py) define its model and synthetic dataset. The training and evaluation functions are directly in the client script. Edit these files to explore this lesson's variation.
 
