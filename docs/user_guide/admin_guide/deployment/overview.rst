@@ -192,7 +192,8 @@ to ``/etc/hosts`` with the internal IP and the hostname.
    backing filesystem as part of server IT setup.
 
    Disk-backed aggregation (``enable_disk_aggregation=True``) also needs a writable, disk-backed server workspace.
-   Reserve space for incoming client models and saved checkpoints.
+   Reserve temporary-directory space for incoming client models, and workspace space for aggregation output
+   and saved checkpoints.
 
 .. _starting_fl_clients:
 
