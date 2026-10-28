@@ -19,6 +19,42 @@ Set up the attestation and key backend first using
 certificates, reference-value installation, and the `trustee` credentials
 used by Vault Build.
 
+## Recommended combined workflow
+
+For a site where one authorized operator holds the required acceptance, Trustee,
+and release credentials, the normal workflow is three commands:
+
+1. `cvmctl build` screens the host, constructs and finalizes the generic CVM,
+   runs the acceptance adapter, signs approval, enables the bundle in Trustee,
+   and optionally publishes the signed generic artifact.
+2. `cvmctl vault` seals every requested application delivery, uploads its key,
+   packages it, and optionally publishes every signed OCI artifact.
+3. `cvmctl run` authenticates one delivery, materializes it, and launches it on
+   a matching runtime host.
+
+```sh
+sudo ./cvmctl build config/cvm_profile.yml \
+  --quote-probe /usr/local/sbin/site_tdx_quote_probe \
+  --acceptance-runner /usr/local/sbin/site_acceptance_runner \
+  --approval-key /secure/acceptance-signing.key \
+  --install-config /srv/trustee/production-admin.json \
+  --publish registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
+  --cosign-key /secure/release-signing.key
+
+sudo ./cvmctl vault config/vault_build.yml \
+  --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
+  --cosign-key /secure/release-signing.key
+```
+
+The integrated path preserves every gate: production Trustee installation and
+publication require the accepted bundle's signed approval, and integrated
+publication always requires Cosign. Omit the corresponding options when separate
+operators own those credentials. The detailed commands in this guide support
+that role separation, deferred measurement on another host, offline delivery,
+and recovery after a completed intermediate step. The quote probe in the example
+is TDX-only; omit it for SNP, whose host preflight checks SNP devices and kernel
+capabilities directly.
+
 ## 1. Prepare the build host
 
 Run from `nvflare/lighter/cc/image_builder` on an Ubuntu 26.04 SNP or TDX host.
@@ -495,7 +531,9 @@ reference measurements, and leaves the finalized bundle unapproved. This
 separation is required because the exact manifest must exist before its candidate
 vault and hardware matrix can be run. A site that already has a complete trusted
 adapter may use `--acceptance-runner` and `--approval-key` to automate the same
-post-finalization flow.
+post-finalization flow. It can also pass `--install-config`, `--publish`, and
+`--cosign-key` to enable and release the approved result in the same invocation;
+the command stops before those actions when acceptance fails.
 
 Construction uses a disposable SSH key and a loopback-only forwarded port on the
 trusted build host. The temporary port reservation is released before QEMU binds
@@ -936,6 +974,16 @@ Build a fresh vault for this application release and site:
 sudo ./cvmctl vault config/vault_build.yml
 ```
 
+To publish the completed deliveries in the same operation, add a Cosign private
+key and a destination template. `{artifact}` is required when the vault targets
+more than one platform:
+
+```sh
+sudo ./cvmctl vault config/vault_build.yml \
+  --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
+  --cosign-key /secure/release-signing.key
+```
+
 For the isolated HTTP lab registry, use a digest reference such as
 `registry.example.org:5000/cvm/cpu@sha256:<manifest-digest>` and explicitly opt in:
 
@@ -1072,7 +1120,8 @@ authenticated channel:
 sha256sum target/vault_0123456789ab4def8123456789abcdef/vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar
 ```
 
-For a registry delivery, publish the exact OCI layout with ORAS:
+When publication was not combined with `cvmctl vault`, publish the exact OCI
+layout with the lower-level command:
 
 ```sh
 ./cvmctl publish \

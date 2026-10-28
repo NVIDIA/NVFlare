@@ -27,10 +27,14 @@ Run from the builder directory after preparing those inputs:
 
    sudo ./cvmctl build
 
-The command detects the target platform, builds and measures the generic image,
-and invokes the configured site acceptance runner. Use
-``./cvmctl build --help`` for explicit platform selection, deferred measurement
-and other build options. Production use requires approval of the exact bundle.
+The command detects and screens the target platform, builds and measures the
+generic image, and invokes the configured site acceptance runner. An authorized
+operator can add ``--install-config``, ``--publish``, and ``--cosign-key`` to
+enable the approved result in Trustee and publish its signed OCI artifact in the
+same invocation. The command stops before those actions if acceptance or approval
+fails. Use ``./cvmctl build --help`` for explicit platform selection, a TDX quote
+probe, deferred measurement, and other build options. Production use requires
+approval of the exact bundle.
 
 Configure the existing CoCo Trustee using the :github_nvflare_link:`Trustee guide
 <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>`. Guest KBS clients and Trustee

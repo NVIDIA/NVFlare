@@ -26,12 +26,14 @@ an acceptance-only vault from the exact unapproved manifest that can later be
 approved; it never creates production approval by itself.
 Both reusable CVM bundles and final CVM-plus-vault deliveries are emitted as OCI
 image-layout tar files. They can be moved offline or published to a registry.
-Use `./cvmctl publish` for registry publication (optionally signing the digest
-with `--cosign-key`) and `./cvmctl pull` to materialize either a local OCI tar or
-an immutable registry digest. `pull` authenticates the publisher through
-`--archive-sha256` or `--cosign-key`; skipping that check requires an explicit
-`--allow-unverified`. Add `--diagnostics DIR` before any command to retain
-stderr of failed commands that never handle secrets.
+The normal workflow uses `build`, `vault`, and `run`; each command combines the
+safe consecutive operations for its role. The lower-level `finalize`,
+`acceptance-report`, `admin`, `publish`, and `pull` commands remain available for
+separate trust roles, offline transfer, and recovery. Publisher authentication
+uses `--archive-sha256` for a local artifact or `--cosign-key` for a registry
+artifact; skipping it requires an explicit `--allow-unverified`. Add
+`--diagnostics DIR` before any command to retain stderr of failed commands that
+never handle secrets.
 
 This builder is part of NVFlare at `nvflare/lighter/cc/image_builder`.
 Run the commands below from this directory in a source checkout. NVFlare
@@ -102,11 +104,62 @@ They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
 values. A bare `sudo ./cvmctl build` reads that profile and auto-detects the one
 local target platform; no platform argument is required.
 
+## Recommended three-command workflow
+
+An authorized operator can complete each lifecycle stage without manually
+chaining its internal steps. Stage 1 screens the host, constructs and finalizes
+the generic CVM, runs the trusted acceptance adapter, signs its approval, enables
+the approved bundle in Trustee, and publishes the signed OCI artifact:
+
+```sh
+sudo ./cvmctl build config/cvm_profile.yml \
+  --quote-probe /usr/local/sbin/site_tdx_quote_probe \
+  --acceptance-runner /usr/local/sbin/site_acceptance_runner \
+  --approval-key /secure/acceptance-signing.key \
+  --install-config /srv/trustee/production-admin.json \
+  --publish registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
+  --cosign-key /secure/release-signing.key
+```
+
+The command stops at the first failed gate. It never enables an unapproved
+production bundle or publishes an unsigned artifact. Omit `--install-config` or
+`--publish` when those credentials belong to another role; the command prints
+the output needed by that operator. `--quote-probe` is the TDX signed-quote
+smoke test; omit it for an SNP build, whose host screening uses the SNP devices
+and kernel capabilities directly.
+
+Stage 2 seals every requested platform delivery and publishes each signed
+artifact. A multi-platform destination must contain `{artifact}`, which expands
+to the generated artifact name without `.oci.tar`:
+
+```sh
+sudo ./cvmctl vault config/vault_build.yml \
+  --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
+  --cosign-key /secure/release-signing.key
+```
+
+Give runtime operators the immutable digest references printed by that command.
+They can authenticate, materialize, and launch a delivery in one operation:
+
+```sh
+sudo ./cvmctl run \
+  registry.example.org/cvm/deliveries/vault_DEPLOYMENT_intel_tdx@sha256:DIGEST \
+  --cosign-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/site-1
+```
+
+`run` remains attached to the launcher and returns when QEMU exits. Use `pull`
+followed by the printed absolute launch command when transfer and launch must be
+separate, or use the advanced commands below when construction, acceptance,
+Trustee administration, and release signing are assigned to different people.
+
 ## Stage 1: build once per platform and profile version
 
 ```sh
-# One target: construct, finalize, run acceptance, and sign the approval in one call.
-sudo ./cvmctl build --approval-key inputs/acceptance-signing.key
+# One target: screen, construct, finalize, run acceptance, and sign approval.
+sudo ./cvmctl build \
+  --acceptance-runner /usr/local/sbin/site_acceptance_runner \
+  --approval-key inputs/acceptance-signing.key
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvmctl build config/cvm_profile.yml -p amd_sev_snp --defer-measurements

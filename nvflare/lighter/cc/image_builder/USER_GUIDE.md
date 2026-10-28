@@ -36,7 +36,35 @@ Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
 
-## 2. Materialize the delivery artifact
+## 2. Authenticate, materialize, and launch
+
+Use `cvmctl run` for the normal runtime workflow. It authenticates the
+publisher, validates every OCI descriptor and layer digest, materializes the
+private delivery directory, and invokes its included launcher. For a signed
+registry artifact:
+
+```sh
+artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+sudo ./cvmctl run "$artifact" \
+  --cosign-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+For an offline archive, authenticate the checksum received through the
+publisher's authenticated channel:
+
+```sh
+sudo ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
+  --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+`run` stays attached to the launcher and returns when QEMU exits. Repeat
+`--gpu PCI_ADDRESS` for explicit GPU placement or use `--cvm-bundle PATH` for
+the advanced shared-bundle override. The launcher still performs every host,
+manifest, vault, and TEE check described below.
+
+## 3. Materialize without launching
 
 Use `./cvmctl pull` to authenticate the publisher, validate every OCI descriptor
 and layer digest, and materialize a private directory. A local tar needs the
@@ -103,7 +131,11 @@ OCI digest validation detects corruption and substitution within a selected
 artifact. The signature or the published archive digest establishes who selected
 that digest.
 
-## 3. Launch CVM
+Use this split workflow when transfer and launch belong to different roles,
+when the host should stage content before a maintenance window, or while
+recovering from a completed materialization step.
+
+## 4. Launch a materialized CVM
 
 Use the absolute launch command printed by `cvmctl pull`. Do not first `cd` as an
 unprivileged user: the materialized directory is intentionally root-only.
@@ -153,7 +185,7 @@ Writes under `/` use the RAM-backed overlay and count against
 separate `/tmp` tmpfs do not consume that limit. Use `df -h /cow` in the guest to
 inspect it.
 
-## 4. Connect to the application
+## 5. Connect to the application
 
 Only configured ports are forwarded and admitted by the guest firewall. For the
 sample vault:
@@ -181,7 +213,7 @@ read-only by QEMU, the guest mount, and the container bind mount. Treat all
 sidecar content as public and untrusted; keep secrets and confidential logs in
 `/vault`.
 
-## 5. Shutdown CVM
+## 6. Shutdown CVM
 
 From another shell in the same delivery directory, run:
 
@@ -209,7 +241,7 @@ holding this delivery's `vault.qcow2` (for example with `sudo lsof /path/to/vaul
 verify its command line and disk paths, stop that process, and confirm its locks
 are released before reusing the delivery.
 
-## 6. Keep vault attachment exclusive
+## 7. Keep vault attachment exclusive
 
 One `vault.qcow2` file may be attached to only one CVM at a time. A second launch
 of the same inode is refused. You may copy a delivery after its CVM is fully
