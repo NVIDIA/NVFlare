@@ -41,13 +41,17 @@ Bare-metal CVM checklist
 #. On TDX, configure ``qgsd`` port 4050, the collateral service, platform
    registration, and a signed-quote smoke test. On SNP, run ``cvmctl preflight
    host --platform amd_sev_snp --firmware PATH``; add ``--gpu`` for an installed
-   GPU target.
-#. Prepare the generic bundle, collect references on trusted target hardware,
-   complete the acceptance matrix, and approve a newly versioned production
-   profile. The checked-in candidate cannot be relabeled as production.
-#. Build an uncompressed ``application.tar``, size the vault, provision, and
-   seal the application-specific vault. Launch only the immutable delivered
-   artifact.
+   GPU target and ``--snp-vcek-store PATH`` to verify the exact offline
+   collateral entry used by Trustee.
+#. Run the combined ``cvmctl build`` path with the trusted acceptance runner,
+   approval key, and, when the same role owns them, Trustee install and release
+   signing options. Use the split commands only for role separation or
+   cross-host measurement. The checked-in candidate cannot be relabeled as
+   production.
+#. Build an uncompressed ``application.tar``, size the vault, and provision.
+   Provisioning invokes ``cvmctl vault`` for each protected participant; a
+   direct builder workflow can call it with publication options. Launch the
+   immutable delivery with ``cvmctl run``.
 #. After a failed launch, inspect the fixed ``phase=`` identifier and the newest
    retained ``applog-history`` image before retrying.
 

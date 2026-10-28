@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Check host TDX prerequisites before constructing an application image."""
+"""Check TDX or SNP host prerequisites before constructing an application image."""
 
 import configparser
 import os
+import re
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from cryptography import x509
 
 from ..common.errors import BuildError, require
 
@@ -88,7 +92,39 @@ def check_gpu_host(sysfs=SYSFS):
     print(f"GPU host screening passed for {len(devices)} assignable NVIDIA display device(s).")
 
 
-def check_snp_host(firmware, *, gpu=False, procfs=PROCFS, sysfs=SYSFS, devfs=DEVFS):
+def snp_vcek_paths(store, vcek_url):
+    """Return the upstream Trustee offline-store paths for one SNP host URL."""
+    parsed = urlparse(vcek_url.strip())
+    hwid = Path(parsed.path).name.lower()
+    require(parsed.scheme == "https" and re.fullmatch(r"[0-9a-f]{128}", hwid), "snphost returned an invalid VCEK URL")
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    components = []
+    for short, parameter in (("bl", "blSPL"), ("tee", "teeSPL"), ("snp", "snpSPL"), ("ucode", "ucodeSPL")):
+        values = query.get(parameter)
+        require(values and len(values) == 1 and values[0].isdigit(), "VCEK URL lacks a valid " + parameter)
+        components.append(f"{short}{int(values[0]):02d}")
+    values = query.get("fmcSPL")
+    if values:
+        require(len(values) == 1 and values[0].isdigit(), "VCEK URL has an invalid fmcSPL")
+        components.append(f"fmc{int(values[0]):02d}")
+    host = Path(store).expanduser().resolve() / hwid
+    return host / ("_".join(components) + "_vcek.der"), host / "vcek.der"
+
+
+def check_snp_vcek_store(store, vcek_url):
+    """Require a parseable certificate at the exact upstream offline-store key."""
+    preferred, legacy = snp_vcek_paths(store, vcek_url)
+    certificate = preferred if preferred.is_file() else legacy
+    require(certificate.is_file(), f"Offline VCEK is missing; expected {preferred} (or legacy {legacy})")
+    try:
+        x509.load_der_x509_certificate(certificate.read_bytes())
+    except (OSError, ValueError):
+        raise BuildError("Offline VCEK is not a valid DER X.509 certificate: " + str(certificate)) from None
+    print(f"Offline SNP collateral is present at {certificate}.")
+    return certificate
+
+
+def check_snp_host(firmware, *, gpu=False, vcek_store=None, procfs=PROCFS, sysfs=SYSFS, devfs=DEVFS):
     """Check SEV-SNP firmware, CPU, KVM, device, IOMMU and optional GPU gates."""
     firmware = Path(firmware)
     require(firmware.is_file(), "SNP OVMF firmware is missing")
@@ -103,16 +139,30 @@ def check_snp_host(firmware, *, gpu=False, procfs=PROCFS, sysfs=SYSFS, devfs=DEV
     require(any((Path(sysfs) / "kernel/iommu_groups").glob("*")), "IOMMU groups are missing; enable AMD IOMMU in BIOS")
     if gpu:
         check_gpu_host(sysfs)
+    if vcek_store is not None:
+        try:
+            result = subprocess.run(
+                ["snphost", "show", "vcek-url"],
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except OSError:
+            raise BuildError("Install snphost to verify the offline VCEK store") from None
+        require(result.returncode == 0 and result.stdout.strip(), "snphost could not derive this host's VCEK URL")
+        check_snp_vcek_store(vcek_store, result.stdout.strip())
     print("AMD SEV-SNP host prerequisites passed.")
     return True
 
 
-def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False):
+def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, snp_vcek_store=None):
     """Check platform prerequisites; return whether attestation was exercised."""
     require(platform in ("intel_tdx", "amd_sev_snp"), "Unsupported host preflight platform")
     if platform == "amd_sev_snp":
         require(quote_probe is None, "SNP host preflight does not accept a TDX quote probe")
-        return check_snp_host(firmware, gpu=gpu)
+        return check_snp_host(firmware, gpu=gpu, vcek_store=snp_vcek_store)
+    require(snp_vcek_store is None, "--snp-vcek-store applies only to amd_sev_snp")
     firmware = Path(firmware)
     require(firmware.is_file(), "TDVF firmware is missing")
     require(

@@ -29,10 +29,10 @@ to the configured KBS.
 The delivery's vault capacity is selected and sealed at build time. It must hold
 both the retained Docker archive and the expanded Docker layers, plus application
 files and runtime writes. If more capacity is needed, rebuild the vault using the
-sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build); do not resize a
+sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery); do not resize a
 sealed delivery in place.
 
-Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
+Obtain the platform's `.oci.tar` from `cvmctl vault` or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
 
@@ -91,7 +91,7 @@ everything needed to launch:
 
 ### From an OCI layout tar
 
-Vault Build generates the archive's deployment ID automatically. Use the filename
+`cvmctl vault` generates the archive's deployment ID automatically. Use the filename
 provided by the builder; the ID below is illustrative. The `--output` folder is
 an operator-selected local name and is materialized as a root-only directory.
 
@@ -197,7 +197,7 @@ curl http://127.0.0.1:8080/
 Forwarded ports listen on all host IPv4 interfaces by default, so other machines
 can reach the application. Pass `--bind-address ADDRESS` to `launch_cvm.sh` to
 listen on one host address only, and use the host firewall for source networks.
-Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault build
+Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from `cvmctl vault`
 confine the allowed ports to address ranges when configured.
 
 The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
@@ -205,7 +205,7 @@ the measured root's `/usr/bin` and system runtime libraries appear read-only at
 `/host/bin` and `/host/lib` only when the vault was built with
 `container.host_bin: true`. The container starts with a reduced
 capability set, `no-new-privileges` and a process limit; see
-[BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
+[BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery) for the `container` options.
 Only `/vault` is encrypted and authenticated at rest. `/applog` is
 the CVM's clear output-only channel, intended for logs the operator must read
 without a key. `/user_config` and `/user_data` are clear operator inputs enforced

@@ -147,6 +147,34 @@ class ProfileTests(unittest.TestCase):
             with self.subTest(platform=platform), self.assertRaisesRegex(BuildError, "Invalid platform"):
                 load_profile_set(path, approved=False)
 
+    def test_snp_finalize_checks_approved_tcb_before_writing_bundle(self):
+        directory = self.candidate("amd_sev_snp")
+        pending = directory / "cvm_manifest.pending.json"
+        manifest = read_json(pending)
+        manifest["dev_mode"] = False
+        references = {"snp_bootloader": [1]}
+        write_json(directory / "reference_values.json", references)
+        manifest["sha256"]["reference_values.json"] = digest_file(directory / "reference_values.json")
+        write_json(pending, manifest)
+        evidence = self.root / "snp-evidence.json"
+        report = {
+            "platform": "amd_sev_snp",
+            "measurements": {"snp.measurement": "0" * 96},
+        }
+        write_json(evidence, report)
+        with (
+            patch.object(builder, "verify_reference"),
+            patch.object(builder, "require_approved_snp_tcb", side_effect=BuildError("unapproved SNP TCB")) as approved,
+            patch.object(builder, "compose", return_value="package policy\n"),
+            patch.object(builder, "verify_bundle"),
+            self.assertRaisesRegex(BuildError, "unapproved SNP TCB"),
+        ):
+            builder.finalize(directory, evidence, package=False)
+        approved.assert_called_once()
+        self.assertEqual(approved.call_args.args[0], report)
+        self.assertEqual(approved.call_args.args[1]["snp_bootloader"], [1])
+        self.assertFalse((directory / "cvm_manifest.json").exists())
+
     def test_different_profile_versions_cannot_be_finalized_or_loaded_together(self):
         builder.finalize(self.candidate("amd_sev_snp"), package=False)
         path = self.root / "profile_set.json"

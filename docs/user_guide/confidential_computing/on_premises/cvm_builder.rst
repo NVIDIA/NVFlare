@@ -11,6 +11,12 @@ the builder location in the project's single ``cc_project.yml``. This page
 covers the mode-specific operator workflow; it does not define a second
 provisioning schema.
 
+The operator flow is linear: build and approve the generic CVM once with
+``cvmctl build``; run ``nvflare provision``, which invokes ``cvmctl vault`` for
+each protected participant; then authenticate and launch each delivery with
+``cvmctl run``. Lower-level finalize, approval, publish, and pull commands are
+for split roles, cross-host measurement, offline transfer, and recovery.
+
 Prepare the worker
 ------------------
 

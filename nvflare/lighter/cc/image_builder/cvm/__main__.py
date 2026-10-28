@@ -33,6 +33,7 @@ from .common.io import read_json, write_json
 from .common.linux import enable_diagnostics
 from .host.preflight import check_host
 from .trustee import admin
+from .trustee.bootstrap import create_deployment_receipt, issue_admin_token
 from .trustee.client import delete_resource, resource_role_acl
 from .trustee.import_references import import_references
 from .trustee.inspect_tcb import inspect_tcb
@@ -93,6 +94,7 @@ def build_preflight(args):
         args.quote_probe,
         platform=platform,
         gpu=profile["gpu"] == "nvidia_cc",
+        snp_vcek_store=args.snp_vcek_store,
     )
     if platform == "intel_tdx" and not quote_checked:
         print(
@@ -209,7 +211,13 @@ def acceptance_report(args):
 
 
 def host_preflight(args):
-    if not check_host(args.firmware, args.quote_probe, platform=args.platform, gpu=args.gpu):
+    if not check_host(
+        args.firmware,
+        args.quote_probe,
+        platform=args.platform,
+        gpu=args.gpu,
+        snp_vcek_store=args.snp_vcek_store,
+    ):
         print(
             "Quote generation NOT checked. Run --quote-probe with a site smoke test before building. "
             "Check collateral access and multi-package platform registration if quotes are empty.",
@@ -236,6 +244,11 @@ def parser():
     stage1.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
     stage1.add_argument(
         "--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote during preflight"
+    )
+    stage1.add_argument(
+        "--snp-vcek-store",
+        type=Path,
+        help="upstream Trustee offline-store vcek directory accessible from this SNP host",
     )
     stage1.add_argument("--acceptance-runner", help="trusted executable called as RUNNER BUNDLE REPORT")
     stage1.add_argument(
@@ -342,6 +355,40 @@ def parser():
     approval.add_argument("evidence")
     approval.add_argument("--signing-key", required=True, help="Ed25519 private key of the acceptance authority")
     approval.set_defaults(handler=approve)
+    token = actions.add_parser("token", help="mint a short-lived native Trustee administration token")
+    token.add_argument("--private-key", required=True, help="Ed25519 key trusted by the KBS admin identity provider")
+    token.add_argument("--role", required=True, help="cvm-policy, cvm-resources, or a bundle-scoped resource role")
+    token.add_argument("--output", required=True)
+    token.add_argument("--issuer", default="cvm-builder")
+    token.add_argument("--audience", default="coco-trustee")
+    token.add_argument("--lifetime", type=int, default=3600, help="seconds, at most 2592000 (30 days)")
+    token.set_defaults(
+        handler=lambda a: print(
+            f"Trustee token: {issue_admin_token(a.private_key, a.role, a.output, issuer=a.issuer, audience=a.audience, lifetime=a.lifetime)}"
+        )
+    )
+    receipt = actions.add_parser("deployment-receipt", help="record a tested native Trustee deployment")
+    receipt.add_argument("trustee_build", help="JSON emitted by cvmctl provenance for the deployed KBS binary")
+    receipt.add_argument("kbs_config", help="exact JSON configuration used by the deployed KBS")
+    receipt.add_argument("--policy", action="append", required=True, help="installed immutable AS policy as NAME=FILE")
+    receipt.add_argument("--policy-selection-tested", action="store_true")
+    receipt.add_argument("--unauthorized-administration-denied", action="store_true")
+    receipt.add_argument("--output", required=True)
+    receipt.set_defaults(
+        handler=lambda a: print(
+            "Trustee deployment receipt: "
+            + str(
+                create_deployment_receipt(
+                    a.trustee_build,
+                    a.kbs_config,
+                    a.policy,
+                    a.output,
+                    policy_selection_tested=a.policy_selection_tested,
+                    unauthorized_administration_denied=a.unauthorized_administration_denied,
+                )
+            )
+        )
+    )
     install = actions.add_parser("install")
     install.add_argument("config", help="administration JSON; production requires approval_public_keys")
     install.add_argument("bundle")
@@ -383,6 +430,11 @@ def parser():
     host.add_argument("--firmware", type=Path, required=True)
     host.add_argument("--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote")
     host.add_argument("--gpu", action="store_true", help="also screen an installed NVIDIA confidential-GPU host")
+    host.add_argument(
+        "--snp-vcek-store",
+        type=Path,
+        help="upstream Trustee offline-store vcek directory accessible from this SNP host",
+    )
     host.set_defaults(handler=host_preflight)
     trustee = checks.add_parser("trustee")
     trustee.set_defaults(handler=lambda a: check_trustee())

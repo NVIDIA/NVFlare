@@ -1,13 +1,17 @@
 # Build a CVM bundle and application vault
 
-> **Candidate profile only (checked 2026-10-26).** The checked-in
+> **Candidate profile only (checked 2026-10-28).** The checked-in
 > `cpu-2026.09-r5` profile has `production_ready: false` because its pinned
-> kernel/storage combination did not pass the dm-integrity corruption-read
-> acceptance case. Production approval rejects this exact profile. For a
+> kernel `7.0.0-31-generic` passed the formerly failing post-scan corruption
+> case in the rc4 and rc5 runs. The full current-source production matrix and a
+> signed approval are still incomplete, so production approval rejects this
+> exact profile. Kernel qualification is part of an exact profile and cannot be
+> inferred from one passing test. For a
 > non-TEE evaluation, start with the
 > [30-minute dev-mode walkthrough](README.md#30-minute-dev-mode-walkthrough).
-> Production use requires a newly versioned profile and complete hardware
-> acceptance; do not change this profile's flag in place.
+> Production use requires a newly versioned exact manifest and complete hardware
+> acceptance; no alternate kernel pin is prescribed by this repository. Do not
+> change this profile's flag in place.
 
 The generic CVM contains Ubuntu, the container runtime, attestation code, and the
 vault unlock path. Build it once for each platform and profile version, then reuse
@@ -15,11 +19,12 @@ it for every compatible application. Build a new vault for every application
 release and site.
 
 Set up the attestation and key backend first using
-[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md). It covers existing CoCo deployment configuration, test
-certificates, reference-value installation, and the `trustee` credentials
-used by Vault Build.
+[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md). It covers both a standalone upstream
+Trustee deployment and a CoCo-managed upstream Trustee service, trust identities,
+reference-value installation, deployment receipts, and the scoped credentials
+used by `cvmctl vault`.
 
-## Recommended combined workflow
+## Normal build, seal, and run flow
 
 For a site where one authorized operator holds the required acceptance, Trustee,
 and release credentials, the normal workflow is three commands:
@@ -44,6 +49,11 @@ sudo ./cvmctl build config/cvm_profile.yml \
 sudo ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
   --cosign-key /secure/release-signing.key
+
+sudo ./cvmctl run \
+  registry.example.org/cvm/deliveries/vault_DEPLOYMENT_PLATFORM@sha256:DIGEST \
+  --cosign-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/site-1
 ```
 
 The integrated path preserves every gate: production Trustee installation and
@@ -53,7 +63,9 @@ operators own those credentials. The detailed commands in this guide support
 that role separation, deferred measurement on another host, offline delivery,
 and recovery after a completed intermediate step. The quote probe in the example
 is TDX-only; omit it for SNP, whose host preflight checks SNP devices and kernel
-capabilities directly.
+capabilities directly. Sections 1, 2, 4, and 5 explain this normal path. Section
+3 and the lower-level commands are for split roles, cross-host measurement,
+offline transfer, and recovery.
 
 ## 1. Prepare the build host
 
@@ -186,6 +198,30 @@ AMD KDS can return HTTP 429 during repeated VCEK retrieval. Use bounded
 exponential backoff and cache an authenticated VCEK only for its exact chip and
 TCB identity according to site policy; do not disable certificate validation or
 retry in a tight loop.
+
+Production SNP acceptance requires
+`test_snp_offline_collateral_works_without_kds`. Configure Trustee v0.22's
+upstream `OfflineStore`, fetch one VCEK for each physical host and TCB, and mount
+the store at
+`/opt/confidential-containers/attestation-service/kds-store/vcek`. The preferred
+filename is
+`<lowercase-hwid>/bl<BL>_tee<TEE>_snp<SNP>_ucode<UCODE>[_fmc<FMC>]_vcek.der`,
+with each component zero-padded to two digits. Obtain the exact URL on the SNP
+host and optionally verify that a locally accessible store contains the matching
+DER certificate:
+
+```sh
+sudo snphost show vcek-url
+sudo ./cvmctl preflight host --platform amd_sev_snp \
+  --firmware /usr/share/ovmf/OVMF.amdsev.fd \
+  --snp-vcek-store /opt/confidential-containers/attestation-service/kds-store/vcek
+```
+
+The store check proves that a parseable certificate exists under the exact
+upstream key. The offline-KDS acceptance test still has to prove that Trustee
+validates and uses it while AMD KDS egress is blocked. Update the store after a
+host is added, its firmware/TCB changes, or a VCEK is revoked. See the pinned
+[upstream offline VCEK guide](https://github.com/confidential-containers/trustee/blob/v0.22.0/attestation-service/docs/amd-offline-certificate-cache.md).
 
 Authenticate the Ubuntu 26.04 cloud-image checksum before using the base image.
 The signing keys come from `ubuntu-cloudimage-keyring`, installed through the
@@ -417,12 +453,13 @@ reported it.
 Transfer the discovery records securely and stop the temporary TD afterward.
 Changing approved references, firmware or other contract inputs requires a new
 `profile_version`, fresh construction/finalization and approval, and the isolated
-policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-install-references-and-policies).
+policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#7-install-references-and-policies).
 
 ### SNP reference inputs and finalization
 
 SNP uses the deferred build, transfer and finalization workflow in
-[Advanced CVM Build](#3-advanced-cvm-build). Finalization measures the exact CVM
+[Split-role and cross-host build](#3-split-role-and-cross-host-build).
+Finalization measures the exact CVM
 and adds its launch measurement to the reference file. It does not discover or
 approve the platform's TCB versions or guest-policy settings.
 
@@ -508,36 +545,36 @@ run `inspect-tcb` on this SNP evidence.
 
 A finalized bundle is still unapproved. Continue with
 [exact-manifest acceptance and approval](#21-exact-manifest-acceptance-and-approval)
-and [Trustee reference installation](TRUSTEE_GUIDE.md#6-install-references-and-policies).
+and [Trustee reference installation](TRUSTEE_GUIDE.md#7-install-references-and-policies).
 Acceptance verifies the real attestation against the approved TCB and policy;
 finalization alone does not establish trust or create `approval.json`. Candidate
 acceptance keeps vault encryption and attestation checks enabled. Changing
 approved inputs requires a new profile version, construction and approval.
 
-## 2. Simple CVM Build
+## 2. Build and approve the reusable CVM
 
 [config/cvm_profile.yml](config/cvm_profile.yml) is the default, complete Ubuntu
 26.04 profile. Update the KBS URL and site-owned trust files, and assign a new
-`profile_version` when any generic input changes. Then run one command on the
-target SNP or TDX host:
+`profile_version` when any generic input changes. Use the `cvmctl build` command
+from the normal workflow to construct, finalize, accept, approve, enable, and
+optionally publish the bundle in one operation.
+
+When acceptance or Trustee administration belongs to another operator, run the
+construction/finalization portion alone and hand off its output:
 
 ```sh
 sudo ./cvmctl build
 ```
 
-The builder reads the default profile, auto-detects the local platform,
-constructs the application-neutral CVM, boots the exact result to collect
-reference measurements, and leaves the finalized bundle unapproved. This
-separation is required because the exact manifest must exist before its candidate
-vault and hardware matrix can be run. A site that already has a complete trusted
-adapter may use `--acceptance-runner` and `--approval-key` to automate the same
-post-finalization flow. It can also pass `--install-config`, `--publish`, and
-`--cosign-key` to enable and release the approved result in the same invocation;
-the command stops before those actions when acceptance fails.
+This reduced invocation reads the default profile, auto-detects the local
+platform, constructs the application-neutral CVM, boots the exact result to
+collect reference measurements, and deliberately leaves the finalized bundle
+unapproved. The receiving acceptance operator continues with §2.1. Hardware
+reference collection alone is never approval.
 
 Construction uses a disposable SSH key and a loopback-only forwarded port on the
 trusted build host. The temporary port reservation is released before QEMU binds
-it, and SSH host-key checking is disabled for the disposable guest. Run Stage 1 on
+it, and SSH host-key checking is disabled for the disposable guest. Run reusable CVM construction on
 a host without untrusted local users; it carries no application vault keys. A
 port collision fails the build, and production approval still requires the exact
 bundle's acceptance report.
@@ -586,16 +623,20 @@ policy ID, quote-generation socket, and storage profile. Do not put an NVFlare
 startup kit or `cc_params.yml` in this profile. NVFlare provisioning owns them
 and may supply its output later as application content.
 
-Stage 1 rejects a CPU-only profile whose client links `libnvat.so.1`, and rejects
+The reusable CVM build rejects a CPU-only profile whose client links
+`libnvat.so.1`, and rejects
 a GPU profile whose client does not. Keep the CPU and GPU binaries and provenance
 records at distinct paths so preparing one profile cannot silently change the
 other profile's attestation dependencies.
 
-`production_ready: false` is deliberate: the checked-in kernel/storage pins
-failed the recorded production gate. Such a manifest can be built and tested,
-but `admin approve` rejects it. After selecting corrected pins, create a new
-profile version and set `production_ready: true` to make that exact manifest
-eligible for acceptance. The signed, complete report remains a separate gate.
+`production_ready: false` is deliberate. Kernel `7.0.0-31-generic` passed the
+post-scan corruption test in the rc4 and rc5 runs, superseding the failure of
+that case recorded in September. The complete current-source acceptance matrix
+has not been recorded for `cpu-2026.09-r5`, so `admin approve` still rejects it.
+There is no corrected kernel pin to substitute solely for that resolved test.
+Create a new profile version, run the complete matrix for its exact manifest,
+and set `production_ready: true` only for the reviewed profile intended to be
+eligible for approval. The signed, complete report remains a separate gate.
 
 ### 2.1 Exact-manifest acceptance and approval
 
@@ -709,7 +750,7 @@ unknown, failed, and incomplete evidence. Revoke the acceptance vault's key
 resource and remove the isolated candidate delivery after the run; production
 vaults must be built without `--candidate` from the newly approved artifact.
 
-The reusable Stage 1 staging tree and OCI deliverable are:
+The reusable CVM staging tree and OCI deliverable are:
 
 ```text
 target/cvm_<profile_version>/
@@ -729,7 +770,7 @@ The `.oci.tar` is the generic CVM deliverable. It is a standard OCI image layout
 with artifact type `application/vnd.nvidia.cvm.bundle.v1`; it contains the platform
 bundle and a single-platform `profile_set.json`. Build it once per
 platform/profile version. The directory is retained as a build workspace. The
-final application delivery is created by the Vault Build below.
+final application delivery is created by `cvmctl vault` below.
 
 `profile_set.json` is generated by the builder. It records `profile_version`
 once at the top level, the shared runtime `contract`, and a `bundles` map keyed
@@ -738,7 +779,7 @@ by `amd_sev_snp` or `intel_tdx`. Each bundle entry has only `build_id` and
 beside `profile_set.json`; there is no configurable `path`. Each CVM manifest
 retains its own top-level `profile_version`, which must match the profile set.
 
-## 3. Advanced CVM Build
+## 3. Split-role and cross-host build
 
 Use the multi-step workflow to construct for several platforms or when the
 construction machine is different from the target TEE host. Select a platform
@@ -783,7 +824,7 @@ platform in the profile. Every platform bundle must have the same generic
 contract. Use
 `./cvmctl admin retire ADMIN_JSON BUILD_ID` to retire a bundle.
 
-When the finalized platform artifacts return to the central Vault Build site,
+When the finalized platform artifacts return to the central sealing site,
 materialize the first one and merge each additional platform. Merge verifies the
 profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
@@ -798,7 +839,7 @@ updates the combined `profile_set.json`:
 Set `cvm_image: ../target/final_cvm_cpu-2026.09-r5` in
 `config/vault_build.yml` to use that aggregated folder.
 
-## 4. Vault Build
+## 4. Seal an application delivery
 
 Configure the shared key endpoint once in [cvm_project.yml](cvm_project.yml)
 at your project root. The checked-in file uses paths under the builder's `inputs/`:
@@ -815,7 +856,7 @@ approval:
 ```
 
 Use your actual HTTPS endpoint and scoped resource-administration token from
-[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-use-native-trustee-resource-administration).
+[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-use-native-trustee-resource-administration).
 The optional expiry window defaults to seven days and warns before either that
 token or a reviewed RVPS reference enters the window.
 
@@ -873,7 +914,7 @@ safety_margin = max(2 GiB, 20% of peak_content)
 usable_vault_bytes >= peak_content + safety_margin + expected_runtime_writes
 ```
 
-Vault Build estimates `extracted_archive_bytes` from the logical size of every
+`cvmctl vault` estimates `extracted_archive_bytes` from the logical size of every
 archive member. It conservatively treats 90 percent of the configured raw drive
 after the LUKS header as usable for this comparison, reserving the rest for
 LUKS2, dm-integrity, ext4 metadata, and filesystem-reserved space. Round the raw
@@ -882,7 +923,7 @@ LUKS2, dm-integrity, ext4 metadata, and filesystem-reserved space. Round the raw
 `expected_runtime_writes` includes container logs, caches, downloaded models and
 anything written below `/vault/application/runtime` or
 `/vault/application/data`. Increase the margin for images with high layer
-expansion or workloads whose write volume is uncertain. Vault Build scans every
+expansion or workloads whose write volume is uncertain. `cvmctl vault` scans every
 saved-image layer chain that `docker load` will import and rejects a configured
 vault below its startup estimate; repeated blobs under different parent chains
 are counted separately. The check reserves the safety margin but cannot predict
@@ -1008,7 +1049,7 @@ rules. The upstream client collects raw evidence using NVIDIA's `libnvat` SDK bi
 and includes it in the same KBS transaction as the CPU quote.
 Trustee calls NRAS and authenticates its signed EAT; the generated AS GPU policy
 compares every nested value in `required-claims` and driver/VBIOS versions against
-RVPS approvals before KBS can release the vault key. Stage 1 validates
+RVPS approvals before KBS can release the vault key. The reusable CVM build validates
 that the policy requires secure boot, disabled debug mode, successful
 measurements, valid report/RIM certificate and OCSP state, verified signatures,
 matching driver/VBIOS RIMs and no VBIOS-index conflict. Adding constraints is
@@ -1021,7 +1062,7 @@ version and measurement checks remain mandatory in `required-claims`.
 
 The default expects `inputs/libnvat.so.1` plus `inputs/nvat_build.json`.
 The selector-capable client patch pins the NVAT 2026.06.09 source, which builds
-library version 1.2.2 with soname 1. Stage 1 checks the clean source revision,
+library version 1.2.2 with soname 1. The reusable CVM build checks the clean source revision,
 build environment and binary digest in the provenance record. Evidence
 collection and verification use CoCo's code.
 
@@ -1086,9 +1127,9 @@ rebuilding the CVM, regenerating its references, and repeating acceptance and
 approval for the resulting bundle. Existing deployed images do not pick up a
 host-side source update.
 
-## 5. Deliverables
+## 5. Publish or transfer the delivery
 
-Vault Build prints its generated deployment ID and staging folder. For example,
+`cvmctl vault` prints its generated deployment ID and staging folder. For example,
 an ID of `0123456789ab4def8123456789abcdef` produces:
 
 ```text
@@ -1108,7 +1149,7 @@ to a registry. Its artifact type is
 already-approved generic CVM bytes so a registry can deduplicate it across
 applications. A second layer holds the sealed application vault, clear directional sidecars,
 delivery manifest, launch scripts and host launcher modules. Materializing the
-artifact produces the complete `cvm_bundle/` layout; no separate Stage 1 download
+artifact produces the complete `cvm_bundle/` layout; no separate generic-CVM download
 is required. The adjacent platform directory contains the same staged contents
 for inspection and is not the distributed artifact.
 
@@ -1146,7 +1187,7 @@ cosign sign --key /secure/release-signing.key \
   registry.example.org/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST
 ```
 
-The same `./cvmctl publish` command can publish a Stage 1 CVM `.oci.tar` when
+The same `./cvmctl publish` command can publish a generic CVM `.oci.tar` when
 another build site needs that reusable bundle.
 
 Rebuild the vault when the application image, application files, site, or

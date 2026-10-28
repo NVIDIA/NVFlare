@@ -23,6 +23,13 @@ runs the complete Trustee plus hardware matrix and writes the report used by
 [exact-manifest approval procedure](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval)
 before using a new generic image here.
 
+The normal lifecycle is: create and approve each reusable generic image once
+with `cvmctl build`; run `nvflare provision` below, which invokes `cvmctl vault`
+for the protected participants; then launch each authenticated delivery on its
+matching TEE host with `cvmctl run`. Use the lower-level finalize, approval,
+publish, and pull commands only when those operations belong to separate roles
+or hosts.
+
 Then run:
 
 ```bash

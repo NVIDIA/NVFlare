@@ -187,7 +187,9 @@ class CliTests(unittest.TestCase):
                         "--publish-plain-http",
                     ]
                 )
-            preflight.assert_called_once_with(Path("tdvf.fd"), Path("quote-probe"), platform="intel_tdx", gpu=False)
+            preflight.assert_called_once_with(
+                Path("tdvf.fd"), Path("quote-probe"), platform="intel_tdx", gpu=False, snp_vcek_store=None
+            )
             build.assert_called_once_with(
                 "profile.yml",
                 "intel_tdx",
@@ -333,7 +335,7 @@ class CliTests(unittest.TestCase):
             self.assertRaises(SystemExit) as error,
         ):
             cli.main(["preflight", "host", "--firmware", "tdvf.fd"])
-        check.assert_called_once_with(Path("tdvf.fd"), None, platform="intel_tdx", gpu=False)
+        check.assert_called_once_with(Path("tdvf.fd"), None, platform="intel_tdx", gpu=False, snp_vcek_store=None)
         self.assertEqual(error.exception.code, 2)
 
     def test_approval_repackages_only_after_successful_validation(self):

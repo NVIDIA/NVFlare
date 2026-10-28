@@ -57,7 +57,14 @@ from cvm.common.contracts import (
     validate_resource,
 )
 from cvm.common.errors import BuildError
-from cvm.common.evidence import require_approved_tdx_tcb, serial_evidence, serial_frames, tdx_tcb
+from cvm.common.evidence import (
+    require_approved_snp_tcb,
+    require_approved_tdx_tcb,
+    serial_evidence,
+    serial_frames,
+    snp_tcb,
+    tdx_tcb,
+)
 from cvm.common.firewall import firewall_rules
 from cvm.common.io import canonical, read_json
 from cvm.common.linux import memory_file, validate_core_policy
@@ -153,6 +160,42 @@ class BindingTests(unittest.TestCase):
         for name in candidate:
             with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
                 require_approved_tdx_tcb(evidence, dict(references, **{name: ["0" * len(candidate[name])]}))
+
+    @staticmethod
+    def snp_evidence():
+        nonce = b"n" * 64
+        report = bytearray(1184)
+        struct.pack_into("<I", report, 0, 3)
+        policy = (1 << 17) | (1 << 16) | (1 << 20) | (2 << 8) | 1
+        struct.pack_into("<Q", report, 8, policy)
+        struct.pack_into("<Q", report, 64, 3)
+        report[80:144] = nonce
+        reported_tcb = 4 | (5 << 8) | (6 << 48) | (7 << 56)
+        struct.pack_into("<Q", report, 384, reported_tcb)
+        return {
+            "platform": "amd_sev_snp",
+            "report": base64.b64encode(report).decode(),
+            "nonce": base64.b64encode(nonce).decode(),
+            "measurements": measurements("amd_sev_snp", report),
+        }
+
+    def test_snp_reference_boot_requires_approved_tcb_and_policy(self):
+        evidence = self.snp_evidence()
+        candidate = snp_tcb(evidence)
+        references = {name: [value] if name in SNP_LISTS else value for name, value in candidate.items()}
+        require_approved_snp_tcb(evidence, references)
+        for name, value in candidate.items():
+            replacement = [value + 1] if name in SNP_LISTS else (not value if name in SNP_BOOLS else value + 1)
+            with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
+                require_approved_snp_tcb(evidence, dict(references, **{name: replacement}))
+
+    def test_snp_reference_boot_rejects_forbidden_policy_bits(self):
+        evidence = self.snp_evidence()
+        report = bytearray(base64.b64decode(evidence["report"]))
+        struct.pack_into("<Q", report, 8, struct.unpack_from("<Q", report, 8)[0] | (1 << 19))
+        evidence["report"] = base64.b64encode(report).decode()
+        with self.assertRaisesRegex(BuildError, "debug or migration"):
+            snp_tcb(evidence)
 
     def test_piped_core_collectors_are_rejected_for_secret_children(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -27,6 +27,7 @@ GUEST_MODULES = (
     "common.luks",
     "common.measurements",
     "common.evidence",
+    "common.references",
     "common.gpu_claims",
     "common.validation",
     "common.services",
