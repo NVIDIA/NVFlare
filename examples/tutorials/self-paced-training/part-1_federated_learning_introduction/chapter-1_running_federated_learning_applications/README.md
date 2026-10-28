@@ -38,7 +38,7 @@ python -m ipykernel install --user --name nvflare-chapter1 --display-name 'NVFla
 python -m jupyterlab
 ```
 
-Use **NVFlare Self-Paced Training** in Jupyter and run each notebook from top to bottom. Executable cells launch training or export jobs, show their output, and then inspect the results. They use `sys.executable` so the commands run with the notebook kernel's Python environment. You can also run the example scripts from a terminal with that environment activated.
+Use **NVFlare Self-Paced Training** in Jupyter and run each notebook from top to bottom. Executable cells launch training or export jobs, show their output, and then inspect the results. Each notebook's initialization cell puts the kernel's environment first on `PATH`, so `!python job.py` uses that environment and matches the terminal command `python job.py`. You can also run the example scripts from a terminal with that environment activated.
 
 ## Run each section's example
 
@@ -65,7 +65,7 @@ chapter-1_running_federated_learning_applications/
 
 | Section | Local example and variation |
 | --- | --- |
-| [First run](01.1_running_federated_learning_job/code) | Basic FedAvg recipe and final evaluation |
+| [First run](01.1_running_federated_learning_job/code) | Define and run a FedAvg recipe; read its evaluation summary |
 | [Convert local training](01.2_convert_deep_learning_to_federated_learning/code) | `train.py`, a training-only `client.py`, and `client_evaluate.py` |
 | [Server customization](01.3_server_side_customization/code) | Stopping, model selection, and persistence settings |
 | [Client customization](01.4_client_side_customization/code) | Different training arguments per site |
@@ -92,6 +92,6 @@ The tracking labs explain how to open their UIs in a separate terminal. MLflow u
 
 ## Completion and remaining edition work
 
-Complete the [recap exercise](01.8_recap/recap.ipynb): configure a site, inspect the exported recipe, run it, and explain the saved model's evaluation using its artifacts and logs.
+Complete the [recap exercise](01.8_recap/recap.ipynb): configure a site, inspect the exported recipe, run it, and explain the final model's evaluation in the run summary.
 
 The [existing videos](video.md) teach the original Job API edition. They require new recordings to match this Recipe API revision. Updates to other chapters, full-course validation, and learner review proceed separately and do not block review of this chapter.
