@@ -93,6 +93,8 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
     _safe_workspace_child_path,
     _sanitize_container_name,
 )
+from nvflare.utils.job_launcher_utils import get_resource_manager_spec
+from tests.timing_utils import isolate_time
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -370,7 +372,8 @@ class TestDockerJobHandleTerminate:
         assert h.terminal_state is None
         assert h.poll() == JobReturnCode.UNKNOWN
 
-    def test_failed_stop_waits_through_query_errors_until_container_exits(self):
+    def test_failed_stop_waits_through_query_errors_until_container_exits(self, monkeypatch):
+        isolate_time(monkeypatch, "nvflare.app_opt.job_launcher.docker_launcher")
         dc = _make_docker_client()
         container = _make_container("running")
         container.stop.side_effect = _APIError("stop failed")
@@ -1761,6 +1764,7 @@ class TestDockerJobLauncherStudyRuntime:
 
         assert "device_requests" not in dc.containers.run.call_args[1]
 
+    @pytest.mark.parametrize("legacy_count", [None, 1, 2])
     @pytest.mark.parametrize("managed", [True, False])
     @pytest.mark.parametrize("source", ["site", "study"])
     @pytest.mark.parametrize(
@@ -1771,7 +1775,7 @@ class TestDockerJobLauncherStudyRuntime:
             {"DeviceIDs": ["1"], "Capabilities": [["gpu"]]},
         ],
     )
-    def test_gpu_defaults_are_reserved_before_launch(self, tmp_path, source, gpu_request, managed):
+    def test_gpu_defaults_are_reserved_before_launch(self, tmp_path, source, gpu_request, managed, legacy_count):
         from nvflare.private.admin_defs import Message
         from nvflare.private.defs import RequestHeader, TrainingTopic
         from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
@@ -1802,15 +1806,22 @@ class TestDockerJobLauncherStudyRuntime:
         engine.new_context.return_value = resource_ctx
         engine.fire_event.side_effect = launcher.handle_event
         meta = _make_job_meta(study="study-a")
+        if legacy_count is not None:
+            meta["resource_spec"] = {"site-1": {"process": {"num_of_gpus": legacy_count}}}
         allocated = []
         count = 2 if gpu_request.get("Count") == -1 else 1
         for _ in range(2 // count):
-            check = Message(topic=TrainingTopic.CHECK_RESOURCE, body={})
+            check = Message(topic=TrainingTopic.CHECK_RESOURCE, body=get_resource_manager_spec(meta, "site-1"))
             check.set_header(RequestHeader.JOB_META, meta)
             reply = CheckResourceProcessor().process(check, engine)
             if not managed:
                 assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
                 assert "GPU capacity not configured" in reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+                return
+            if legacy_count is not None and legacy_count != count:
+                assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
+                assert "GPU count mismatch" in reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+                assert not manager.reserved_resources
                 return
             if allocated and gpu_request.get("DeviceIDs"):
                 assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
