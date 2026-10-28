@@ -314,6 +314,7 @@ def test_median_aggregator_requires_accuracy_metric(lesson):
         aggregator.accept_model(FLModel(params={"w": 1.0}, params_type=ParamsType.FULL))
 
 
+@pytest.mark.skipif(importlib.util.find_spec("mlflow") is None, reason="MLflow is not installed")
 @pytest.mark.parametrize("lesson", ["mlflow"], indirect=True)
 def test_mlflow_store_is_beside_job_script(lesson, tmp_path):
     module = lesson("job")
