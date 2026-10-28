@@ -15,105 +15,36 @@
 import json
 import logging
 import os
-import subprocess
 import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import numpy as np
 import pytest
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import TaskResultReceipt
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
     TaskLauncherError,
     TaskLaunchError,
-    TaskLaunchRequest,
     TaskResourceRequest,
     TaskSettlementError,
     UnsupportedTaskResourceError,
 )
 from nvflare.app_opt.job_launcher.slurm.config import (
-    SLURM_CHILD_PROCESS_ENV,
     CommandResult,
     LookupStatus,
     QueryResult,
     SlurmLauncherError,
     SlurmProtocolError,
-    SlurmRecord,
     SubmissionResult,
 )
-from nvflare.app_opt.job_launcher.slurm.task_launcher import (
-    SlurmTaskLauncher,
-    SlurmTaskManager,
-    _batch_script,
-    _SlurmTaskBackend,
-)
+from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, TaskSlurmRecord
-from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
-from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap
-from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
-from tests.unit_test.private.fed.conftest import isolated_fobs  # noqa: F401
-
-
-def _query(state=None):
-    return (
-        QueryResult(LookupStatus.FOUND, (SlurmRecord("42", state),)) if state else QueryResult(LookupStatus.NOT_FOUND)
-    )
-
-
-def _accounting(state="COMPLETED", step="COMPLETED", **kwargs):
-    records = [TaskSlurmRecord("42", state, **kwargs)]
-    if step:
-        records.append(TaskSlurmRecord("42.batch", step))
-    return QueryResult(LookupStatus.FOUND, tuple(records))
-
-
-def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", **launcher_args):
-    root = tmp_path / "workspace"
-    root.mkdir(mode=0o700)
-    (root / "startup").mkdir()
-    (root / "local").mkdir()
-    (root / job_id).mkdir()
-    launcher = _SlurmTaskBackend(
-        workspace_path=str(root),
-        shared_filesystem=True,
-        cgroup_enforced=True,
-        sbatch_directives={"account": "site-account", "partition": "task-compute", "time": "00:05:00"},
-        cancel_timeout=0.1,
-        poll_interval=0.001,
-        **launcher_args,
-    )
-    adapter = Mock()
-    adapter.accounting_probe.return_value = CommandResult(0, "", "")
-    adapter.submit.return_value = SubmissionResult(CommandResult(0, "42\n", ""), "42")
-    adapter.active_by_id.return_value = _query()
-    adapter.task_accounting.return_value = _accounting()
-    # Inject only the transport. Exercise real manager initialization/files.
-    launcher.manager.adapter = adapter
-    launcher.manager.initialize()
-    # Advance a deterministic clock on each access, keeping most tests instant.
-    ticks = iter(range(1, 1000000))
-    launcher.manager._monotonic = lambda: next(ticks) * 0.002
-    monkeypatch.setenv(SLURM_CHILD_PROCESS_ENV, "1")
-    monkeypatch.setenv("SLURM_JOB_ID", "7")
-    launch_request = TaskLaunchRequest(
-        job_id,
-        "site-1",
-        "task-1",
-        "attempt-1",
-        (sys.executable, "-V"),
-        cwd=str(root / job_id),
-        resources=TaskResourceRequest(gpu_count=gpu_count),
-    )
-    return launcher, adapter, launch_request
+from nvflare.private.fed.task_worker.artifacts import IncompleteTaskArtifactError
+from nvflare.private.fed.task_worker.supervisor import TaskSupervisor
+from tests.slurm_test_utils import _accounting, _backend, _query, _supervisor_case
 
 
 @pytest.fixture(params=(0, 1), ids=("cpu", "gpu"))
@@ -455,59 +386,10 @@ def test_check_filesystem_fails_before_submit(backend, monkeypatch):
     adapter.submit.assert_not_called()
 
 
-def test_batch_quoting_and_environment_are_explicit(backend, monkeypatch):
-    launcher, adapter, request = backend
-    output = Path(request.cwd, "command.json")
-    malicious = "literal $(touch injected); 'quoted'\nnext"
-    code = "import json,os,sys; open(sys.argv[1],'w').write(json.dumps([sys.argv[2],dict(os.environ)]))"
-    request = replace(
-        request,
-        argv=(sys.executable, "-c", code, str(output), malicious),
-        environment={"PATH": "/usr/bin:/bin", "SETTING": malicious},
-    )
-    script = Path(request.cwd, "batch.sh")
-    script.write_text(_batch_script(request, "export SETTING='site runtime'"))
-    subprocess.run(
-        ["/bin/bash", str(script)],
-        check=True,
-        timeout=20,
-        env={"SLURM_JOB_ID": "42", "CJ_PRIVATE": "not forwarded", "CUDA_VISIBLE_DEVICES": "7", "SLURM_JWT": "secret"},
-    )
-    argument, environment = json.loads(output.read_text())
-    assert argument == malicious
-    assert environment["SETTING"] == "site runtime"
-    assert environment["SLURM_JOB_ID"] == "42"
-    assert environment["CUDA_VISIBLE_DEVICES"] == ("7" if request.resources.gpu_count else "")
-    assert "CJ_PRIVATE" not in environment
-    assert "SLURM_JWT" not in environment
-    assert not Path(request.cwd, "injected").exists()
-
-
 def _cli(response):
     runner = Mock(return_value=CommandResult(0, response, ""))
     adapter = SlurmTaskCliAdapter({"sacct": "/usr/bin/sacct"}, os.getuid(), logging.getLogger("test"), runner=runner)
     return adapter, runner
-
-
-@pytest.mark.parametrize("visibility,returncode", [("2", 0), (None, 102)])
-def test_gpu_worker_requires_allocation_visibility(backend, visibility, returncode):
-    _, _, request = backend
-    output = Path(request.cwd, "gpu-environment.json")
-    code = "import os,sys; open(sys.argv[1],'w').write(os.environ['CUDA_VISIBLE_DEVICES'])"
-    request = replace(
-        request, argv=(sys.executable, "-c", code, str(output)), resources=TaskResourceRequest(gpu_count=1)
-    )
-    script = Path(request.cwd, "gpu-batch.sh")
-    script.write_text(_batch_script(request, ""))
-    environment = {"SLURM_JOB_ID": "42"}
-    if visibility is not None:
-        environment["CUDA_VISIBLE_DEVICES"] = visibility
-    completed = subprocess.run(["/bin/bash", str(script)], env=environment, capture_output=True, timeout=20)
-    assert completed.returncode == returncode
-    if returncode == 0:
-        assert output.read_text() == visibility
-    else:
-        assert not output.exists()
 
 
 def test_accounting_checks_identity_and_every_step():
@@ -550,77 +432,6 @@ def test_duplicate_accounting_rejects_requeue_or_job_id_recycling():
         adapter.task_accounting("42", "name", "marker", 1)
 
 
-def _supervisor_case(backend, *, write_result=True):
-    launcher, adapter, request = backend
-    identity = TaskAttemptIdentity(*request.identity[:3], "train", request.attempt_id)
-    store = FileTaskArtifactStore(str(Path(request.cwd, "artifacts")))
-    bootstrap = WorkerBootstrap(
-        identity,
-        store.root_dir,
-        launcher.manager.config.workspace_path,
-        {"path": "nvflare.app_common.np.np_trainer.NPTrainer", "args": {"delta": 2}},
-    )
-    run_dir = Path(request.cwd)
-    (run_dir / "app_site-1" / "config").mkdir(parents=True)
-    (run_dir / "meta.json").write_text("{}")
-    script = "from nvflare.private.fed.task_worker.worker import run_worker; import sys; run_worker(sys.argv[1])"
-
-    def submit(argv, timeout):
-        if write_result:
-            environment = {"SLURM_JOB_ID": "42"}
-            if request.resources.gpu_count:
-                # Simulate allocation visibility only. NPTrainer is a simple
-                # CPU application; real GPU compute needs deployed qualification.
-                environment["CUDA_VISIBLE_DEVICES"] = "0"
-            completed = subprocess.run(["/bin/bash", argv[-1]], timeout=30, capture_output=True, env=environment)
-            assert completed.returncode == 0, completed.stderr.decode()
-        return SubmissionResult(CommandResult(0, "42", ""), "42")
-
-    adapter.submit.side_effect = submit
-
-    def factory(attempt, path):
-        return replace(
-            request,
-            argv=(sys.executable, "-c", script, path),
-            environment={"PYTHONPATH": os.getcwd(), "PATH": os.environ["PATH"]},
-        )
-
-    return (
-        identity,
-        store,
-        dict(
-            bootstrap=bootstrap,
-            store=store,
-            input_payload=DXO(DataKind.WEIGHTS, {"numpy_key": np.ones(3)}).to_shareable(),
-            runtime_root=str(run_dir / "runtime"),
-            launcher=launcher,
-            abort_signal=Signal(),
-            request_factory=factory,
-            options=TaskSupervisorOptions(poll_interval=0.001, settlement_timeout=0.1),
-        ),
-    )
-
-
-@pytest.mark.usefixtures("isolated_fobs")
-def test_real_worker_result_survives_mock_scheduler_settlement_and_receipt(backend):
-    launcher, adapter, _ = backend
-    identity, store, arguments = _supervisor_case(backend)
-    supervisor = TaskSupervisor()
-    outcome = supervisor.run(**arguments)
-    assert outcome.execution_status.succeeded
-    np.testing.assert_array_equal(from_shareable(outcome.result).data["numpy_key"], np.full(3, 3.0))
-    assert Path(store.attempt_dir(identity), "result.fobs").exists()
-    assert not supervisor.owns_execution
-    # Lost receipt resends the committed result and does not resubmit sbatch.
-    supervisor.record_receipt(identity, TaskResultReceipt.RETRY)
-    supervisor.read_saved_result(identity)
-    assert adapter.submit.call_count == 1
-    supervisor.record_receipt(identity, TaskResultReceipt.RECEIVED)
-    assert not Path(store.attempt_dir(identity), "result.fobs").exists()
-    assert Path(store.attempt_dir(identity), "completion.json").exists()
-    assert all(Path(handle.job_dir, "scheduler.jsonl").exists() for handle in launcher.manager._handles.values())
-
-
 @pytest.mark.usefixtures("isolated_fobs")
 def test_incomplete_result_is_not_published_after_allocation_release(backend):
     identity, store, arguments = _supervisor_case(backend, write_result=False)
@@ -629,31 +440,6 @@ def test_incomplete_result_is_not_published_after_allocation_release(backend):
         supervisor.run(**arguments)
     assert Path(store.attempt_dir(identity), "input.fobs").exists()
     assert not supervisor.owns_execution
-
-
-@pytest.mark.usefixtures("isolated_fobs")
-def test_end_run_during_active_result_reader_retains_payloads(backend):
-    identity, store, arguments = _supervisor_case(backend)
-    supervisor = TaskSupervisor()
-    reading, proceed = threading.Event(), threading.Event()
-    original = store.read_result
-
-    def blocked_read(identity):
-        reading.set()
-        assert proceed.wait(10)
-        return original(identity)
-
-    store.read_result = blocked_read
-    with ThreadPoolExecutor() as pool:
-        future = pool.submit(supervisor.run, **arguments)
-        try:
-            assert reading.wait(20)
-            supervisor.end_run()
-            assert Path(store.attempt_dir(identity), "result.fobs").exists()
-        finally:
-            proceed.set()
-        assert future.result(timeout=10).aborted
-    assert Path(store.attempt_dir(identity), "result.fobs").exists()
 
 
 def test_long_cancel_backs_off_queries_and_does_not_repeat_acknowledged_scancel(backend, monkeypatch):
@@ -712,3 +498,89 @@ def test_ambiguous_or_malformed_marker_lookup_cannot_select_an_allocation(rows):
     adapter._run = Mock(return_value=CommandResult(0, rows.format(uid=os.getuid()), ""))
     with pytest.raises(SlurmProtocolError):
         adapter.task_by_marker("name", "marker", 5)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Invalid partition name specified",
+        "Invalid account or account/partition combination specified",
+        "Invalid qos specification",
+        "Requested node configuration is not available",
+        "Invalid generic resource (gres) specification",
+        "Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+    ],
+)
+def test_definitive_sbatch_rejection_settles_with_scheduler_diagnostic(backend, reason):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(
+        CommandResult(1, "", f"sbatch: error: Batch job submission failed: {reason}\n")
+    )
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    handle = failure.value.handle
+    status = handle.poll()
+    assert status.settled
+    assert not status.succeeded
+    assert reason in status.failure_reason and reason in str(failure.value)
+    assert not launcher.manager._handles
+    assert Path(handle.job_dir, "identity.json").exists()
+    adapter.task_by_marker.assert_not_called()
+    adapter.cancel.assert_not_called()
+
+
+def test_cluster_suffix_cancels_and_waits_for_target_cluster_settlement(backend):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(CommandResult(0, "42;other", ""), "42", "other")
+    adapter.for_cluster.return_value = adapter
+    adapter.cancel_suffix.return_value = QueryResult(LookupStatus.FOUND)
+    adapter.active_by_id.return_value = _query("RUNNING")
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    adapter.cancel_suffix.assert_called_once_with("42", "other", timeout=launcher.manager.config.cancel_timeout)
+    assert not failure.value.handle.poll().settled
+    adapter.active_by_id.return_value = _query()
+    adapter.task_accounting.return_value = _accounting("CANCELLED", step=None)
+    assert failure.value.handle.poll().settled
+    adapter.for_cluster.assert_called_with("other")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        CommandResult(1, "", "sbatch: error: Batch job submission failed: Socket timed out on send/recv operation"),
+        CommandResult(
+            None, "", "sbatch: error: Batch job submission failed: Invalid partition name specified", timed_out=True
+        ),
+        CommandResult(
+            1, "", "sbatch: error: Batch job submission failed: Invalid partition name specified\nSocket timed out"
+        ),
+        CommandResult(1, "", "unknown plugin error"),
+        CommandResult(
+            1, "unparseable output", "sbatch: error: Batch job submission failed: Invalid partition name specified"
+        ),
+    ],
+)
+def test_nondefinitive_submission_failure_remains_owned(backend, command):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(command)
+    adapter.task_by_marker.return_value = _query()
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    assert not failure.value.handle.poll().settled
+    assert launcher.manager._handles
+    assert str(command.returncode) in str(failure.value) or command.timed_out
+
+
+def test_foreign_cluster_queries_and_cancellation_never_use_local_identity():
+    adapter = SlurmTaskCliAdapter({k: "/usr/bin/" + k for k in ("squeue", "sacct", "scancel")}, os.getuid(), Mock())
+    adapter._runner = Mock(return_value=CommandResult(0, "", ""))
+    remote = adapter.for_cluster("other")
+    remote.active_by_id("42", "name", "marker", 1)
+    remote.task_accounting("42", "name", "marker", 1)
+    remote.cancel("42", 1)
+    assert adapter._runner.call_count == 3
+    for call in adapter._runner.call_args_list:
+        assert "--clusters=other" in call.args[0]
+        assert "--local" not in call.args[0]
+    assert not hasattr(adapter, "_cleanup_cluster")

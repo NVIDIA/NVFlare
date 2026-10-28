@@ -93,6 +93,8 @@ def _resolve_resources(
     sandbox: str,
     site_pending_timeout: float,
     spec: dict,
+    *,
+    allow_zero_gpus=False,
 ) -> JobResources:
     spec = _mapping_or_empty(spec, f"Slurm spec for site '{site_name}'")
     unknown = set(spec) - _JOB_SLURM_KEYS
@@ -111,7 +113,7 @@ def _resolve_resources(
         return None if value is None else _require_int(value, name)
 
     raw_gpus = spec.get("gpus_per_node")
-    gpus_per_node = None if raw_gpus is None else _require_int(raw_gpus, "gpus_per_node", 0)
+    gpus_per_node = None if raw_gpus is None else _require_int(raw_gpus, "gpus_per_node", 0 if allow_zero_gpus else 1)
     portable = get_portable_resource_spec(job_meta, site_name)
     portable_total = portable.get("num_of_gpus")
     if portable_total is not None:
@@ -120,7 +122,7 @@ def _resolve_resources(
         raise SlurmLauncherError("num_of_gpus must equal nodes * gpus_per_node when both are specified")
     if nodes > 1 and portable_total and gpus_per_node is None:
         raise SlurmLauncherError("multi-node GPU jobs require explicit gpus_per_node")
-    if gpus_per_node is None and portable_total is not None:
+    if gpus_per_node is None and portable_total is not None and (portable_total or allow_zero_gpus):
         gpus_per_node = portable_total
 
     cpus_per_node = optional_int("cpus_per_node")
@@ -438,6 +440,8 @@ class SlurmJobLauncher(JobLauncherSpec):
         custom_paths = (workspace.get_app_custom_dir(job_id), workspace.get_site_custom_dir())
         return os.pathsep.join(dict.fromkeys(path for path in custom_paths if path and os.path.isdir(path)))
 
+    allow_zero_gpus = False
+
     def _build_launch_plan(self, job_meta: dict, fl_ctx: FLContext, *, runtime=None) -> LaunchPlan:
         if not isinstance(job_meta, dict):
             raise SlurmLauncherError("job_meta must be a mapping")
@@ -501,6 +505,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             sandbox,
             self.config.pending_timeout,
             spec=job_spec,
+            allow_zero_gpus=self.allow_zero_gpus,
         )
         additional_node_command, node_app_dir = _resolve_additional_node_command(
             job_spec,

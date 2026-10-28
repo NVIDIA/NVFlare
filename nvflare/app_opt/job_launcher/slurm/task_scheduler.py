@@ -14,6 +14,7 @@
 """Task-specific accounting; resident JobLauncher queries remain unchanged."""
 
 import re
+from copy import copy
 from dataclasses import dataclass
 
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -33,7 +34,60 @@ class TaskSlurmRecord(SlurmRecord):
     derived_exit_signal: int = 0
 
 
+# Exact controller rejection diagnostics from SchedMD's slurm_errno.c.
+# Transport errors, unknown/plugin messages and any returned allocation ID
+# remain ambiguous, even when sbatch exits nonzero.
+_REJECTION_REASONS = frozenset(
+    {
+        "Invalid partition name specified",
+        "Invalid account or account/partition combination specified",
+        "Invalid qos specification",
+        "Requested node configuration is not available",
+        "Invalid generic resource (gres) specification",
+        "Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+    }
+)
+
+
+def submission_was_rejected(submission):
+    command = submission.command
+    if (
+        submission.job_id
+        or submission.cluster
+        or command.timed_out
+        or command.stdout.strip()
+        or command.returncode is None
+        or command.returncode <= 0
+    ):
+        return False
+    reasons = []
+    for line in command.stderr.splitlines():
+        if not line.strip():
+            continue
+        prefix = "sbatch: error: Batch job submission failed: "
+        if line.startswith(prefix) and line[len(prefix) :] in _REJECTION_REASONS:
+            reasons.append(line[len(prefix) :])
+        elif re.fullmatch(r"sbatch: error: invalid partition specified: [^\r\n]+", line):
+            reasons.append("Invalid partition name specified")
+        else:
+            return False
+    return bool(reasons)
+
+
 class SlurmTaskCliAdapter(_SlurmCliAdapter):
+    def for_cluster(self, cluster):
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", cluster):
+            raise SlurmProtocolError("invalid Slurm cleanup cluster")
+        adapter = copy(self)
+        adapter._cleanup_cluster = cluster
+        return adapter
+
+    def _run(self, argv, timeout):
+        cluster = getattr(self, "_cleanup_cluster", None)
+        if cluster:
+            argv = [argv[0], f"--clusters={cluster}", *(a for a in argv[1:] if a != "--local")]
+        return super()._run(argv, timeout)
+
     def task_by_marker(self, job_name: str, marker: str, timeout: float) -> QueryResult:
         """Recover one live allocation after a lost sbatch reply, only for cleanup."""
         command = self._run(

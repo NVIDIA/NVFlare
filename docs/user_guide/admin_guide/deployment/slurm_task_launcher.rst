@@ -63,6 +63,11 @@ CPU and GPU task profiles
 Both profiles are required. The task request selects resources independently
 of the CJ: ``gpu_count=0`` submits ``--gres=none``; a positive count submits
 ``--gres=gpu:<count>`` and receives device visibility from that allocation.
+Explicitly clearing GRES is limited to this task-capable profile. Existing
+resident ``ClientSlurmJobLauncher``/``ServerSlurmJobLauncher`` behavior is
+unchanged: portable zero GPU metadata adds no GRES option, and native
+``gpus_per_node: 0`` remains invalid. Clusters without a GRES plugin have not
+been qualified for the experimental task profile's ``--gres=none`` option.
 CPU/memory requests, cancellation, immutable result handoff, receipt retention
 and whole-allocation settlement apply to both. The CJ's result upload must not
 hold a task GPU allocation.
@@ -267,6 +272,7 @@ In the canonical site resources file, select the exact matching pair::
           "cj_cpu_cores": 1,
           "cj_memory_mb": 1024,
           "cj_gpu_count": 0,
+          "task_shutdown_timeout": 30,
           "sbatch_directives": {"account": "site-account", "partition": "cpu"}
         }
       }],
@@ -357,15 +363,52 @@ After a successful cancellation acknowledgement, the adapter observes release
 without repeatedly issuing ``scancel``. CP continues cleanup after the CJ
 closes its proxy or disappears, independently of the CJ shutdown deadline.
 
-If sbatch throws, times out, returns an invalid response or reports another
-cluster, ``TaskLaunchError.handle`` retains the unresolved execution. The
-CP periodically looks for one live allocation with the exact task name,
-UID and ownership comment. A unique local match is bound only for cleanup
-and cancelled; no compute retry or normal execution adoption occurs. An
-empty lookup cannot prove that a delayed submission will never appear.
-Missing, duplicate or unsupported identities remain owned for operator
-reconciliation and confirmed release before manual retention cleanup. It never cancels other jobs by a broad name,
-deletes launch evidence or retries the same attempt automatically.
+An ``sbatch`` rejection settles as a failed attempt when the command exits
+nonzero, has no stdout or allocation identity, has not timed out, and every
+stderr line is an explicitly recognized rejection diagnostic. The allowlist
+covers invalid partition, account, QoS, unavailable node configuration,
+invalid GRES and accounting/QoS policy limits. The scheduler error text is
+retained in the failure status and diagnostics; no worker result is expected.
+Unknown/plugin diagnostics, transport failures (including ``Socket timed
+out``), and replies containing a job ID never qualify as definitive rejection.
+
+If sbatch throws, times out or returns an invalid response,
+``TaskLaunchError.handle`` retains the unresolved execution. CP periodically
+looks for one live allocation with the exact task name, UID and ownership
+comment. A unique local match is bound only for cleanup and cancelled; no
+compute retry or normal execution adoption occurs. An empty lookup cannot
+prove that a delayed submission will never appear. A returned cluster suffix
+also fails launch, but CP cancels that exact job in the named cluster and
+checks ownership, controller absence and accounting there until settlement.
+It does not adopt the foreign allocation for execution.
+
+At ``SYSTEM_END``, ``ClientSlurmTaskJobLauncher.task_shutdown_timeout`` bounds
+the total join of CP task owners (default 30 seconds). Expiry logs each held
+job, task, attempt, execution ID and failure reason. Cleanup continues while
+CP remains alive; expiry does not mark work settled or release its resources.
+CP crash/restart recovery is not implemented.
+
+For an otherwise stuck attempt, an operator can record an explicit release
+attestation on the CP host after checking the scheduler/controller and ruling
+out both live and delayed submissions. Use the exact identity from
+``identity.json`` and the current execution ID from ``scheduler.jsonl``::
+
+    python -m nvflare.app_opt.job_launcher.slurm.task_reconcile \
+      --workspace /shared/private/site-1 \
+      --job-id JOB --site-name site-1 --task-id TASK --attempt-id ATTEMPT \
+      --execution-id 'slurm:local:unresolved:ATTEMPT_HASH' \
+      --reason 'Scheduler administrator confirmed no live or delayed allocation' \
+      --confirm-no-active-allocation
+
+This writes an exclusive ``operator-release.json`` record with the identity,
+reason, UID and timestamp. The live CP owner accepts only a matching current
+execution identity, reports failure, and retains scripts and evidence. A stale
+or malformed record cannot release the attempt or prevent normal scheduler
+cleanup. This administrative override is not scheduler proof and must not be
+used merely because a query is unavailable. It is absent from the CJ Cell
+API; the current bare profile still requires trusted same-UID workloads.
+It does not reconstruct an owner after CP restart. No broad-name cancellation,
+automatic evidence deletion or same-attempt retry is performed.
 
 Shared integration contract
 ---------------------------
@@ -402,6 +445,7 @@ From this checkout, using an environment with project test dependencies::
 
     python -m pytest tests/unit_test/app_opt/job_launcher/slurm_task_launcher_test.py tests/unit_test/app_opt/job_launcher/slurm_task_integration_test.py -q
     python -m pytest tests/unit_test/app_opt/job_launcher/slurm_*_test.py -q
+    python -m pytest tests/integration_test/fast/slurm_task_worker_test.py tests/integration_test/fast/slurm_task_session_test.py -q
     python -m pytest tests/unit_test/private/fed/task_worker -q
     ./runtest.sh -s --skip-install
 

@@ -50,7 +50,7 @@ def main():
                         "time": "00:20:00",
                     }
                 },
-                "server": {"slurm": {"gpus_per_node": 0}},
+                "server": {"slurm": {"gpus_per_node": None}},
             }
         }
     else:

@@ -90,15 +90,15 @@ def test_qualification_exports_bound_server_and_compute_allocations(
                     "num_of_gpus": 0,
                 }
             resources = cj._cj_resources_for_job(submitted, site)
-            plan = replace(_plan(tmp_path, resources=resources), site_name=site)
+            plan = replace(_plan(tmp_path, resources=resources), site_name=site, clear_gres=True)
             argv = _submission_argv(plan, str(tmp_path), "cj", "cj", _config(tmp_path))
             assert ("--mem=1536M" if resource_format == "portable" else "--mem=1024M") in argv
             assert ("--cpus-per-task=2" if resource_format == "portable" else "--cpus-per-task=1") in argv
             assert "--gres=none" in argv
     for site in ("server", "site-1", "site-2"):
         spec = get_job_launcher_spec(submitted, site, "slurm")
-        resources = _resolve_resources(submitted, site, "none", 120, spec)
-        plan = replace(_plan(tmp_path, resources=resources), site_name=site)
+        resources = _resolve_resources(submitted, site, "none", 120, spec, allow_zero_gpus=site != "server")
+        plan = replace(_plan(tmp_path, resources=resources), site_name=site, clear_gres=site != "server")
         argv = _submission_argv(plan, str(tmp_path), "probe", "probe", _config(tmp_path))
         # An omitted --mem inherited the scheduler's all-node default and
         # prevented CJs/parents from running together in the first campaign.
@@ -107,7 +107,10 @@ def test_qualification_exports_bound_server_and_compute_allocations(
         assert ("--cpus-per-task=2" if portable_client else "--cpus-per-task=1") in argv
         assert "--time=00:20:00" in argv
         expected_gpus = 0 if site == "server" else gpu_count
-        assert (f"--gres=gpu:{expected_gpus}" if expected_gpus else "--gres=none") in argv
+        if site == "server":
+            assert not any(arg.startswith("--gres=") for arg in argv)
+        else:
+            assert (f"--gres=gpu:{expected_gpus}" if expected_gpus else "--gres=none") in argv
         expected_job_gpus = gpu_count if portable_client and lifetime == "job" else 0
         assert get_resource_manager_spec(submitted, site).get("num_of_gpus", 0) == expected_job_gpus
 

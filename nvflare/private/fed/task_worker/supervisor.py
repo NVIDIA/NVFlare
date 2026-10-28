@@ -305,6 +305,11 @@ class TaskSupervisor:
                         f"{status.failure_reason or status.termination_signal or status.exit_code} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
                     ) from e
+                if status.failure_reason:
+                    raise IncompleteTaskArtifactError(
+                        f"task worker {identity.attempt_id} failed: {status.failure_reason} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
                 raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
