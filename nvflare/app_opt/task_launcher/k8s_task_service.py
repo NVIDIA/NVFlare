@@ -107,6 +107,12 @@ class _Job:
             self.released = True
         self.wake.set()
 
+    def wait_for_settlement(self, timeout):
+        # The owner forgets the job only after every accepted/in-flight launch
+        # has settled. A replacement can then install a fresh capability.
+        self.thread.join(timeout)
+        return not self.thread.is_alive()
+
     def observe_cj(self):
         with self.lock:
             name, uid, released = self.cj_name, self.cj_uid, self.released

@@ -33,8 +33,9 @@ from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.private.defs import CellChannel
+from nvflare.private.defs import CellChannel, RequestHeader
 from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
@@ -161,13 +162,23 @@ class TaskWorkerExecutor(Executor):
             self.system_panic("task worker settlement is unconfirmed; retaining ownership and stopping the job", fl_ctx)
 
     @staticmethod
-    def _identity(task_name, fl_ctx):
+    def _attempt_id(fl_ctx):
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        launch_id = ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID)
+        if launch_id and isinstance(attempt_id, str) and attempt_id:
+            # The server assignment survives CJ recovery; each physical worker
+            # needs a fresh identity for exclusive artifacts and checkpoint commits.
+            return hashlib.sha256(json.dumps([launch_id, attempt_id]).encode()).hexdigest()
+        return attempt_id
+
+    @classmethod
+    def _identity(cls, task_name, fl_ctx):
         return TaskAttemptIdentity(
             fl_ctx.get_job_id(),
             fl_ctx.get_identity_name(),
             fl_ctx.get_prop(FLContextKey.TASK_ID),
             task_name,
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
+            cls._attempt_id(fl_ctx),
         )
 
     @staticmethod
@@ -356,7 +367,7 @@ class TaskWorkerExecutor(Executor):
             fl_ctx.get_identity_name(),
             fl_ctx.get_prop(FLContextKey.TASK_ID),
             fl_ctx.get_prop(FLContextKey.TASK_NAME),
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
+            self._attempt_id(fl_ctx),
         )
         if actual != expected:
             return

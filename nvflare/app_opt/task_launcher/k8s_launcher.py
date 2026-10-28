@@ -48,7 +48,11 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     validate_dns_name,
     validate_startup_secret_name,
 )
-from nvflare.app_opt.job_launcher.k8s_pod import build_pod_manifest, get_container_waiting_failure
+from nvflare.app_opt.job_launcher.k8s_pod import (
+    build_pod_manifest,
+    get_container_waiting_failure,
+    pod_shutdown_confirmed,
+)
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
 from nvflare.private.fed.task_worker.protocol import _open_directory, read_bootstrap
@@ -535,29 +539,6 @@ class K8sTaskHandle(TaskHandleSpec):
         )
         self._delete_sent = True
 
-    def _shutdown_confirmed(self, pod):
-        if not pod.spec.node_name:
-            # Read after DELETE: an unbound, deleting pod cannot be scheduled.
-            return bool(pod.metadata.deletion_timestamp)
-        if pod.status.phase not in ("Succeeded", "Failed") or pod.status.reason in ("NodeLost", "Shutdown"):
-            return False
-        sandbox_down = any(
-            condition.type == "PodReadyToStartContainers" and condition.status == "False"
-            for condition in (pod.status.conditions or [])
-        )
-        containers = [
-            *(pod.spec.containers or []),
-            *(pod.spec.init_containers or []),
-            *(pod.spec.ephemeral_containers or []),
-        ]
-        statuses = [
-            *(pod.status.container_statuses or []),
-            *(pod.status.init_container_statuses or []),
-            *(pod.status.ephemeral_container_statuses or []),
-        ]
-        terminated = {status.name for status in statuses if status.state and status.state.terminated is not None}
-        return sandbox_down and bool(containers) and all(container.name in terminated for container in containers)
-
     def read_logs(self):
         """Bounded API log tail, cached before removal; worker file logs live on PVC."""
         with self._lock:
@@ -639,7 +620,7 @@ class K8sTaskHandle(TaskHandleSpec):
                             _request_timeout=self.launcher.request_timeout,
                         )
                         self._identify(pod)
-                if self._shutdown_confirmed(pod):
+                if pod_shutdown_confirmed(pod):
                     self._release_authorized = True
                     self.read_logs()
                     finalizers = pod.metadata.finalizers or []

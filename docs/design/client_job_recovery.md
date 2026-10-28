@@ -5,8 +5,8 @@ resource reservation, and persistent job workspace. The replacement uses normal
 `GET_TASK` delivery: the unchanged server resends an outstanding assignment with
 its existing task and attempt IDs. User code restores its own checkpoint.
 
-Implemented for Process, Docker, and Slurm. Kubernetes is deferred because its
-current CJ workspace is ephemeral. CP and the server must remain running.
+Implemented for Process, Docker, Slurm, and Kubernetes CJs using the persistent
+jobs PVC profile. Ephemeral Kubernetes workspaces cannot recover. CP and the server must remain running.
 Hierarchical federation recovery is outside this feature's scope. Intermediate
 CJs retain their existing failure behavior because replacement cannot restore
 their in-memory child-result receipts; automatic recovery is limited to leaf CJs.
@@ -63,6 +63,7 @@ and consecutive-attempt limit.
 | Process | The launcher-owned CJ has exited, its process group is absent, and no external-trainer launch bootstrap remains. |
 | Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
 | Slurm | Accounting reports COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY, or PREEMPTED, and the allocation has left the active queue. |
+| Kubernetes | The same CJ Pod UID has confirmed container/sandbox shutdown, its PVC workspace finished initialization, and all CP-owned task workers have settled. |
 
 Normal success, STOPPED teardown, cancellation, configuration errors, and unsafe
 component failures do not trigger recovery. Missing accounting, node loss, backend
@@ -90,6 +91,23 @@ manager is introduced.
 Slurm/container recovery assumes training remains inside the managed allocation
 or container. CP is the restart owner; independent scheduler/container requeue
 policies must not compete with it.
+
+Kubernetes recovery uses the existing persistent jobs profile: task-mode CJs use
+it automatically; resident CJs need the site's `persist_resident_workspaces` setting.
+CP waits for shutdown and task cleanup for the task launcher's existing
+`cleanup_timeout` (60 seconds for resident CJs). Missing Pods, node loss, API errors,
+or cleanup timeout do not authorize recovery. The old task capability is closed;
+the replacement receives a new capability, Pod name, credential Secret and launch ID.
+It mounts the same verified job/site directory without copying CP's older files over
+checkpoints. The initialization record is written after a complete workspace download;
+images predating that record cannot recover automatically. CP restart adoption remains
+unsupported, and retained directories are never adopted just because they exist.
+
+Physical task-worker attempt IDs include the CJ launch identity so an outstanding
+server assignment can run again without reusing the previous worker's files or
+checkpoint commit identity. Server task/attempt IDs and committed task checkpoints
+remain shared across CJ launches. CP keeps cleaning up unsettled workers
+even if the recovery cleanup deadline expires and the logical job fails.
 
 ## Task and checkpoint boundaries
 

@@ -707,6 +707,48 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
         adapter.handle_event(EventType.END_RUN, context)
 
 
+def test_replacement_cj_separates_attempt_artifacts_and_keeps_checkpoint(native_task, monkeypatch):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.defs import RequestHeader
+
+    root, custom, context, _ = native_task
+    script = """
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous}))
+"""
+    for generation in range(2):
+        monkeypatch.setattr(ConfigService, "_var_values", {})
+        monkeypatch.setattr(ConfigService, "_var_dict", {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"})
+        policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "artifact_cleanup": "retain"})
+        adapter, data = _adapter(custom, context, policy, script=script)
+        try:
+            result = adapter.execute("train", data, context, Signal())
+            assert FLModelUtils.from_shareable(result).metrics["previous"] == generation
+            identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
+            adapter.supervisor.record_receipt = Mock(wraps=adapter.supervisor.record_receipt)
+            context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+            context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+            adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
+            adapter.supervisor.record_receipt.assert_called_once_with(identity, TaskResultReceipt.RECEIVED)
+        finally:
+            adapter.handle_event(EventType.END_RUN, context)
+    # Redelivery retains the server assignment, but cannot reuse old worker files.
+    assert context.get_prop(FLContextKey.TASK_ID) == "task-1"
+    assert context.get_prop(FLContextKey.TASK_ATTEMPT_ID) == "attempt-1"
+    completions = list(root.rglob("completion.json"))
+    assert len(completions) == 2
+    assert len({path.parent.name for path in completions}) == 2
+    assert {json.loads(path.read_text())["identity"]["task_id"] for path in completions} == {"task-1"}
+    assert len(list(root.rglob("*.checkpoint"))) == 1
+
+
 @pytest.mark.parametrize("event", [EventType.END_RUN, EventType.ABORT_TASK])
 def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_false_panic(
     native_task, monkeypatch, event

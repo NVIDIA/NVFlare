@@ -198,7 +198,7 @@ def test_lost_reply_cancel_fences_delayed_launch_before_acquisition(control):
 
 
 def test_cp_retains_and_cancels_a_create_returning_after_cj_exit(control):
-    _, api, request, _, service, owner, client = control
+    backend, api, request, cell, service, owner, client = control
     entered, release = threading.Event(), threading.Event()
 
     def block_create():
@@ -210,15 +210,25 @@ def test_cp_retains_and_cancels_a_create_returning_after_cj_exit(control):
     handle = client.launch(request)
     assert entered.wait(2)
     owner.release()  # CP may now tear down CJ without losing the in-flight create.
+    assert not owner.wait_for_settlement(0)
     assert service.jobs["job"] is owner
     release.set()
     eventually(lambda: "delete" in api.calls)
     assert not owner.attempts[(request.task_id, request.attempt_id)].status.settled
+    assert not owner.wait_for_settlement(0)
+    with pytest.raises(ValueError, match="already owns"):
+        service.add_job(backend, "job", "site-1", "replacement-token")
     api.finish(exit_code=143)
-    owner.thread.join(2)
+    assert owner.wait_for_settlement(2)
     assert api.deleted
     assert "job" not in service.jobs
     assert not owner.thread.is_alive()
+    replacement = service.add_job(backend, "job", "site-1", "replacement-token")
+    try:
+        assert raw(cell).get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    finally:
+        replacement.release()
+        assert replacement.wait_for_settlement(2)
 
 
 def test_cj_death_cancels_workers_without_cj_rpc(control):

@@ -73,6 +73,8 @@ ENV_WORKSPACE_OWNER_FQCN = "NVFL_WORKSPACE_OWNER_FQCN"
 ENV_WORKSPACE_TRANSFER_TOKEN = "NVFL_WORKSPACE_TRANSFER_TOKEN"
 
 WORKSPACE_TRANSFER_CHANNEL = "workspace_transfer"
+ENV_PERSISTENT_WORKSPACE = "NVFLARE_PERSISTENT_WORKSPACE"
+WORKSPACE_READY_FILE = ".nvflare_workspace_ready"
 TOPIC_PREPARE_DOWNLOAD = "prepare_download"
 TOPIC_PUBLISH_RESULTS = "publish_results"
 
@@ -683,6 +685,20 @@ def _install_job_cert(args) -> None:
         write_job_cert(_run_dir(args.workspace, args.job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
 
 
+def workspace_download_complete(workspace_root: str, job_id: str) -> bool:
+    try:
+        # CP reads a job-writable PVC: neither a symlink nor a pipe may turn
+        # this bounded readiness check into an unrelated read or a blocked CP.
+        fd = os.open(os.path.join(workspace_root, WORKSPACE_READY_FILE), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            return False
+        with os.fdopen(fd, encoding="utf-8") as stream:
+            return stream.read(len(job_id) + 1) == job_id
+    except (OSError, UnicodeError):
+        return False
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -694,6 +710,14 @@ def download_workspace(args, secure_mode: bool) -> None:
     os.makedirs(args.workspace, exist_ok=True)
     # the bootstrap cell authenticates with the job credential, so install it before creating the cell
     _install_job_cert(args)
+    persistent = os.environ.get(ENV_PERSISTENT_WORKSPACE) == "1"
+    ready_file = os.path.join(args.workspace, WORKSPACE_READY_FILE)
+    if persistent and os.path.lexists(ready_file):
+        if not workspace_download_complete(args.workspace, args.job_id):
+            raise RuntimeError("persistent workspace initialization record does not match this job")
+        # CP has already confirmed the previous CJ and its workers exited.
+        # Downloading again could overwrite their checkpoints with CP's old copy.
+        return
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
@@ -714,6 +738,9 @@ def download_workspace(args, secure_mode: bool) -> None:
         with zipfile.ZipFile(bundle_path) as zf:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
+        if persistent:
+            with open(ready_file, "w", encoding="utf-8") as stream:
+                stream.write(args.job_id)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

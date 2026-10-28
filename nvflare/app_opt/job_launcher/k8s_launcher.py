@@ -22,6 +22,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from abc import abstractmethod
 from datetime import datetime
 from enum import Enum
@@ -44,6 +45,7 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     ensure_manifest_mapping,
     get_container_waiting_failure,
     normalize_image_pull_secrets,
+    pod_shutdown_confirmed,
 )
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -56,9 +58,11 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     study_runtime_file_path,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
+    ENV_PERSISTENT_WORKSPACE,
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
+    workspace_download_complete,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
@@ -324,8 +328,13 @@ class K8sJobHandle(JobHandleSpec):
         self.terminal_state = None
         self.terminal_return_code = None
         self.task_owner = None
+        self.pod_uid = None
+        self.workspace_reservation = None
+        self._restart_ready = False
+        self._termination_requested = False
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
+        self._raw_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
         self.api_instance = api_instance
         self.namespace = namespace
@@ -400,6 +409,7 @@ class K8sJobHandle(JobHandleSpec):
         self.credential_secret_name = None
 
     def terminate(self):
+        self._termination_requested = True
         # Fence task admission before deleting CJ. CP retains worker cleanup.
         if self.task_owner is not None:
             self.task_owner.close()
@@ -700,6 +710,42 @@ class K8sJobHandle(JobHandleSpec):
                 return
             time.sleep(POLL_INTERVAL)
 
+    def can_restart(self):
+        if (
+            self._termination_requested
+            or self.terminal_state != JobState.TERMINATED
+            or not self.pod_uid
+            or not self.workspace_reservation
+        ):
+            return False
+        if self._restart_ready:
+            return True
+        directory, _, _ = self.workspace_reservation
+        if not workspace_download_complete(directory, self._raw_job_id):
+            return False
+        # Reuse the task backend's cleanup bound; resident CJs get the same
+        # default. A timeout never authorizes overlapping checkpoint writers.
+        timeout = self.task_owner.backend.cleanup_timeout if self.task_owner is not None else 60.0
+        deadline = time.monotonic() + timeout
+        while not self._termination_requested:
+            try:
+                pod = self.api_instance.read_namespaced_pod(
+                    name=self.pod_name, namespace=self.namespace, _request_timeout=10.0
+                )
+                if pod.metadata.uid != self.pod_uid or pod.status.reason in ("NodeLost", "Shutdown"):
+                    return False
+                if pod_shutdown_confirmed(pod) and (self.task_owner is None or self.task_owner.wait_for_settlement(0)):
+                    self._restart_ready = True
+                    return True
+            except Exception as error:
+                self.logger.warning("cannot confirm CJ shutdown for recovery: %s", type(error).__name__)
+                return False
+            if time.monotonic() >= deadline:
+                self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
+                return False
+            time.sleep(POLL_INTERVAL)
+        return False
+
 
 class K8sJobLauncher(JobLauncherSpec):
     def __init__(
@@ -927,6 +973,13 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobConstants.JOB_ID} in job_meta")
         job_id = uuid4_to_rfc1123(raw_job_id)
         pod_name = job_pod_name(job_id, site_name)
+        previous = fl_ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE)
+        if previous is not None:
+            if not isinstance(previous, K8sJobHandle) or previous.job_id != job_id or not previous.can_restart():
+                raise ValueError("Kubernetes recovery requires the confirmed previous job handle")
+            # Completed Pods may remain for diagnostics; each execution and its
+            # credential Secret need a new name while the logical job stays put.
+            pod_name = f"{pod_name[:50].rstrip('-')}-{uuid.uuid4().hex[:12]}"
         workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is None:
             raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
@@ -1145,7 +1198,10 @@ class K8sJobLauncher(JobLauncherSpec):
                 transfer_token=workspace_transfer_token,
                 workspace_reservations=workspace_reservations,
                 startup_secret_name=startup_secret_name,
+                previous_handle=previous,
             )
+            if workspace_reservations:
+                job_handle.workspace_reservation = workspace_reservations[0]
             job_handle.pod_manifest = pod_manifest
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
@@ -1155,6 +1211,7 @@ class K8sJobLauncher(JobLauncherSpec):
             )
             pod_create_attempted = True
             created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            job_handle.pod_uid = created_pod.metadata.uid
             if job_handle.task_owner is not None:
                 job_handle.task_owner.attach_cj(pod_name, created_pod.metadata.uid)
             if credential_secret_name:
@@ -1163,7 +1220,7 @@ class K8sJobLauncher(JobLauncherSpec):
             # A transport/5xx error can hide a successful create. Keep its
             # workspace fenced; a later empty read is not proof it never ran.
             rejected = getattr(e, "status", None) in {400, 401, 403, 404, 405, 413, 415, 422, 429}
-            if created_pod is None and (not pod_create_attempted or rejected):
+            if previous is None and created_pod is None and (not pod_create_attempted or rejected):
                 for directory, device, inode in workspace_reservations:
                     self._discard_empty_workspace(directory, device, inode)
             workspace_transfer.remove_job(raw_job_id)
@@ -1314,6 +1371,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         transfer_token=None,
         workspace_reservations=None,
         startup_secret_name=None,
+        previous_handle=None,
     ):
         if self.job_workspace_pvc is None or (execution_lifetime == "job" and not self.persist_resident_workspaces):
             return
@@ -1352,7 +1410,9 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             or len([mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]) != 1
         ):
             raise ValueError("the jobs PVC may only be mounted through the assigned job subPath")
-        mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
+        mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name, previous_handle)
+        container["env"] = [item for item in container.get("env", []) if item["name"] != ENV_PERSISTENT_WORKSPACE]
+        container["env"].append({"name": ENV_PERSISTENT_WORKSPACE, "value": "1"})
         if workspace_reservations is not None:
             directory = os.path.join(self.job_workspace_pvc_root, mounts[0]["subPath"])
             info = os.stat(directory, follow_symlinks=False)
@@ -1399,11 +1459,12 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         cell = fl_ctx.get_engine().cell
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
 
-    def _prepare_workspace_subpath(self, job_id, site_name):
+    def _prepare_workspace_subpath(self, job_id, site_name, previous_handle=None):
         subpath = job_workspace_subpath(job_id, site_name)
         # CP explicitly mounts the same PVC. Create a fresh, owned job subtree
         # instead of relying on kubelet-created subPath directory permissions.
-        # Never reuse retained data after a CJ/CP restart or failed launch.
+        # Only CP's confirmed previous handle can authorize CJ recovery. A
+        # retained directory alone never authorizes adoption after CP restart.
         from nvflare.app_opt.task_launcher.k8s_launcher import check_posix_storage
 
         root = self.job_workspace_pvc_root
@@ -1418,6 +1479,15 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         if os.path.islink(parent) or os.path.realpath(parent) != parent:
             raise ValueError("job workspace parent must be a real directory on the configured PVC")
         directory = os.path.join(root, subpath)
+        if previous_handle is not None:
+            info = os.stat(directory, follow_symlinks=False)
+            if (
+                previous_handle.workspace_reservation != (directory, info.st_dev, info.st_ino)
+                or os.path.realpath(directory) != directory
+                or not previous_handle.can_restart()
+            ):
+                raise ValueError("persistent workspace differs from the confirmed previous execution")
+            return subpath
         try:
             os.mkdir(directory, mode=0o700)
         except FileExistsError as error:

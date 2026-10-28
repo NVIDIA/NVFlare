@@ -24,6 +24,13 @@ private CP workspace PVC and a separate jobs PVC, with one job/site subPath per
 CJ and its workers. Task mode requires durable storage; resident jobs stay
 ephemeral unless ``persist_resident_workspaces`` is enabled explicitly.
 
+Persistent CJs support `automatic CJ recovery <../../../design/client_job_recovery.md>`_
+with the existing ``max_cj_restart_failures`` setting (default 3). Recovery waits
+for confirmed CJ shutdown and settlement of every CP-owned worker before starting
+a replacement on the same job/site subtree. It preserves checkpoints and avoids
+repeating workspace download. Use updated images for both CP and CJ; older CJ
+images do not write the workspace initialization record required for recovery.
+
 CJ and workers have no Kubernetes API token. CJ sends bounded commands to CP
 using a per-job capability token; CP fixes the Pod manifest and admits one
 unsettled attempt per job. Pod deletion alone does not prove settlement: CP uses
@@ -71,7 +78,8 @@ configured mount in both pods. Configure CP's ``job_workspace_pvc_root`` as its
 explicit mount of ``job_workspace_pvc``. CP creates
 ``nvflare-tasks/<sha256(job,site)>`` with mode 0700 and verifies its numeric owner;
 CJ and workers mount that subtree at the CJ's ``workspace_mount_path`` / worker's
-``workspace_root``. Existing subtrees fail rather than being reset or adopted.
+``workspace_root``. Existing subtrees fail rather than being reset or adopted,
+except when the running CP authorizes recovery of its confirmed previous CJ.
 CP, CJ and workers must share the configured nonroot UID; configure matching
 numeric groups and volume permissions. No chown or privileged helper is used.
 The storage driver must permit these directory and fsGroup operations.

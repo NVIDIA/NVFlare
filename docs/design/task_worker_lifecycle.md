@@ -26,11 +26,12 @@ resources or reject unsupported requirements before compute.
 Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
 admits at most one unsettled attempt per job. Worker memory, optimizer state and
 executor instances do not survive an assignment. Application-selected checkpoint
-files can survive. Process CJ recovery can replace a failed CJ only after its job
-handle confirms termination. This Kubernetes profile does not opt into CJ restart:
-its CP still fences unsettled attempts and refuses retained subtree adoption.
-Persistent files alone do not provide CP restart adoption, physical task retry or
-distributed training.
+files can survive. CJ recovery can replace a failed CJ only after its job handle
+confirms termination. Kubernetes also requires the persistent jobs profile and
+settlement of all CP-owned workers. Replacement CJs preserve the assignment and
+checkpoints but derive fresh physical worker attempt IDs from the CJ launch ID.
+See [CJ recovery](client_job_recovery.md) for its bounds. Persistent files alone
+do not provide CP restart adoption, physical task retry or distributed training.
 
 Four separate facts govern the lifecycle:
 
@@ -395,9 +396,10 @@ Additional CJ dataset volumes are not automatically inherited by task workers.
 Persistent job subtrees are retained after success as well as failure. Operators
 budget capacity, archive and remove them only after the job, runtimes, in-flight
 creates and readers/uploads are quiescent. Reusing an existing job/site subtree
-fails instead of adopting or overwriting it. Definitive pre-create/API rejection
+fails instead of adopting or overwriting it, except for CJ recovery authorized by
+the same CP's confirmed previous execution. Definitive pre-create/API rejection
 removes only a freshly reserved, unchanged empty directory; ambiguous outcomes keep
-their storage fence. There is no automatic subtree collector or Kubernetes CJ/CP recovery.
+their storage fence. There is no automatic subtree collector or CP restart adoption.
 
 ## Deadlines and failure handling
 

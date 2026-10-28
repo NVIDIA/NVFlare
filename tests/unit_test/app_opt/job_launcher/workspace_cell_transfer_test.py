@@ -24,8 +24,10 @@ import pytest
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     BOOTSTRAP_CONNECT_TIMEOUT,
+    ENV_PERSISTENT_WORKSPACE,
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
+    WORKSPACE_READY_FILE,
     WorkspaceTransferManager,
     _bootstrap_auth_identity_map,
     _bootstrap_credentials,
@@ -39,6 +41,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     make_workspace_transfer_fqcn,
     upload_results,
     upload_results_on_shutdown,
+    workspace_download_complete,
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -546,7 +549,9 @@ class TestWorkspaceBootstrapHelpers:
         with pytest.raises(RuntimeError, match=ENV_WORKSPACE_TRANSFER_TOKEN):
             download_workspace(args, secure_mode=False)
 
-    def test_download_workspace_extracts_bundle(self, monkeypatch):
+    @pytest.mark.parametrize("persistent", [False, True])
+    def test_download_workspace_extracts_bundle(self, monkeypatch, persistent):
+        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1" if persistent else "0")
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             zip_path = os.path.join(tmp, "workspace.zip")
             _make_zip(
@@ -588,6 +593,34 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["transfer_token"] == "token-1"
             assert os.path.exists(os.path.join(ws_root, "local", "resources.json"))
             assert os.path.exists(os.path.join(ws_root, JOB_ID, "app", "config", "config_train.json"))
+            config_path = os.path.join(ws_root, JOB_ID, "app", "config", "config_train.json")
+            _write_file(config_path, b"updated on the PVC")
+            download_workspace(args, secure_mode=False)
+            with open(config_path, "rb") as stream:
+                assert stream.read() == (b"updated on the PVC" if persistent else b'{"rounds":3}')
+            assert len(fake_cell.requests) == (1 if persistent else 2)
+            assert os.path.exists(os.path.join(ws_root, WORKSPACE_READY_FILE)) == persistent
+
+    def test_persistent_download_refuses_a_mismatched_initialization_record(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "cp")
+        monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token")
+        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1")
+        (tmp_path / WORKSPACE_READY_FILE).write_text("another-job")
+        with pytest.raises(RuntimeError, match="initialization record"):
+            download_workspace(SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID), secure_mode=False)
+
+    @pytest.mark.parametrize("kind", ["symlink", "pipe", "directory"])
+    def test_workspace_initialization_record_must_be_a_regular_file(self, tmp_path, kind):
+        record = tmp_path / WORKSPACE_READY_FILE
+        if kind == "symlink":
+            other = tmp_path / "other"
+            other.write_text(JOB_ID)
+            record.symlink_to(other)
+        elif kind == "pipe":
+            os.mkfifo(record)
+        else:
+            record.mkdir()
+        assert not workspace_download_complete(str(tmp_path), JOB_ID)
 
     def test_upload_results_noop_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN, raising=False)
