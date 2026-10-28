@@ -23,7 +23,7 @@ from copy import deepcopy
 
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
-from nvflare.collab.async_workflow import AsyncEngine, AsyncEvent, AsyncResult, _positive_int
+from nvflare.collab.async_engine import AsyncEngine, AsyncEvent, AsyncResult, _positive_int
 from nvflare.collab.recipe import CollabRecipe
 
 

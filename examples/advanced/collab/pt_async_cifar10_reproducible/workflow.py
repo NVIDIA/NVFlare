@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pt_async_cifar10_reproducible.disk_storage import DiskResultStore, DiskSnapshotStore
 
 from nvflare.collab import collab
+from nvflare.collab.async_engine import AsyncEngine
 from nvflare.collab.async_recipe import AsyncWorkflow
-from nvflare.collab.async_workflow import AsyncEngine
 from nvflare.collab.recipe import CollabRecipe
 
 

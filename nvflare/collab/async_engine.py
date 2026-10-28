@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Framework-independent buffered asynchronous training.
+"""Framework-independent async assignment and aggregation engine.
 
 The engine is single-owner: invoke dispatch/accept on one workflow thread.
 Adapters own model arithmetic; no runtime or ML framework is imported here.

@@ -6,6 +6,29 @@ existing controller, executor, serialization and execution environments.
 [CIFAR-10](../../examples/advanced/collab/pt_async_cifar10/README.md) demonstrate
 the same core workflow with example-owned model helpers.
 
+## Component scope
+
+| Component | Owns | Responsibilities supplied elsewhere |
+| --- | --- | --- |
+| [async_recipe.py](../../nvflare/collab/async_recipe.py): `AsyncRecipe` and `AsyncWorkflow` | Recipe configuration/export; Collab client calls; actual-arrival dispatch/result delivery; bounded readers/queues; timeout/abort cleanup; invoking application hooks. | Numerical acceptance/publication belongs to the engine. Data, model operations and artifacts are supplied by the application. |
+| [async_engine.py](../../nvflare/collab/async_engine.py): `AsyncEngine` and server-local records/interfaces | Assignment IDs, active bases and versions; K/B/O capacity and contribution budget; result/weight validation; exact-base deltas; buffered publication; update-transform context. | Collab RPCs, execution environments, result arrival timing, framework-specific arithmetic and research policies. |
+| Example model helpers: [NumPy](../../examples/advanced/collab/numpy_async/job.py) and [PyTorch](../../examples/advanced/collab/pt_async_cifar10/model.py) | Model snapshots, shape/dtype/finite checks, differences, update application, and non-floating buffer rules. | Assignment scheduling, transport, training and experiment storage. |
+| Application and client | Dataset/shards, model construction, local training and optimizer state; evaluation, metrics and artifacts through application hooks. | Core assignment/version accounting and buffered aggregation. |
+| [Research workflow](../../examples/advanced/collab/pt_async_cifar10_reproducible/workflow.py) and its example helpers | `ResearchRecipe`, logical reservations, predefined replay, worker reuse, seed streams, held results and append-only disk checkpoints. | Shared acceptance/aggregation math and Collab call/lifecycle implementation come from core. Sampled FedRevive phase scheduling remains follow-up work. |
+
+`AsyncRecipe` builds `AsyncWorkflow`, which invokes `AsyncEngine`. The actual
+Collab workflow lives with the recipe; the engine is independent of Collab
+execution and tensor frameworks. Both production and research use the same
+numerical acceptance/publication path. Research may choose when to submit or
+accept work and where to keep bases/results; core never imports the examples.
+
+The engine module also defines `Assignment`, `AsyncResult`, `AcceptedUpdate`,
+`AsyncEvent`, and the `AsyncModelAdapter` interface. They describe server-local
+state and hook inputs, and introduce no additional wire format. Normal consumers
+import `AsyncRecipe` from `nvflare.collab`; alternative orchestration can import
+`AsyncEngine` from `nvflare.collab.async_engine`. Protected workflow methods are
+implementation reuse points rather than a public scheduler/storage plugin API.
+
 ## Use and deployment
 
 ```python
@@ -59,7 +82,7 @@ plus the current model/accumulator. Applications own any evaluation histories.
 Do not mutate borrowed model states, including in client training; create a local
 model/copy before in-place updates.
 
-`AsyncModelAdapter` is a small structural interface in `async_workflow.py`:
+`AsyncModelAdapter` is a small structural interface in `async_engine.py`:
 `snapshot`, `validate`, `difference`, and `apply`. Operations leave inputs
 unchanged; `apply` must return a new state. NumPy's concrete helper lives in
 `numpy_async/job.py`; PyTorch's lives in `pt_async_cifar10/model.py`. They validate

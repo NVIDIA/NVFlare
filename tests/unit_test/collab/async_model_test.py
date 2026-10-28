@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
+from nvflare.collab.async_engine import AsyncEngine, AsyncResult
 
 torch = pytest.importorskip("torch")
 from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter

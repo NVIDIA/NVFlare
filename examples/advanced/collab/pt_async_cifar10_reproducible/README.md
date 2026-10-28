@@ -79,7 +79,10 @@ recipe = ResearchRecipe(
 same when using these helpers in another job. They can be copied or adapted
 independently; they are example APIs rather than installed SDK guarantees.
 See the [core contracts](../../../../docs/design/async_recipe.md) for
-numerical contracts, ownership, deployment and failure behavior.
+numerical contracts, ownership, deployment and failure behavior. The
+[component scope table](../../../../docs/design/async_recipe.md#component-scope)
+identifies what belongs in the core recipe, core engine, model helpers and this
+research workflow.
 
 ## Replay semantics
 

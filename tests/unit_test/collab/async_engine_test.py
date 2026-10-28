@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
-from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
+from nvflare.collab.async_engine import AsyncEngine, AsyncResult
 
 
 def model(value):

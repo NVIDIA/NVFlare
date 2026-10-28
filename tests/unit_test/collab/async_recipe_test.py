@@ -205,7 +205,7 @@ class Block:
             raise ImportError('optional dependency blocked')
 sys.meta_path.insert(0, Block())
 from nvflare.collab import AsyncRecipe
-from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
+from nvflare.collab.async_engine import AsyncEngine, AsyncResult
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 """
     subprocess.run([sys.executable, "-c", code], check=True)
