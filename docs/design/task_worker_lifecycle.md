@@ -16,8 +16,11 @@ deployment commands and troubleshooting; it is not required to understand this d
 | Task worker | No separate task runtime. | Constructs compute, executes one assignment, finalizes and exits. |
 | Server Job (SJ) | Issues assignments and receives results. | Uses the same assignment and result-receipt protocol. |
 
-The current site profile uses one backend throughout CP, CJ and workers: Process
-uses processes; Kubernetes uses Pods. CPU or GPU is an independent resource choice
+Task mode requires an explicit scheduler-backed site profile: Kubernetes uses
+Pods; Slurm integration is developed separately. Local Process and Docker task
+backends are deferred. Process/Docker **job** mode, including external-process
+Client API scripts, is unchanged. There is no default local task launcher and no
+silent fallback from task to job lifetime. CPU or GPU is an independent resource choice
 within a capable backend. Site configuration selects the backend and its authority;
 a job cannot supply runtime credentials, accounts, namespace or arbitrary mounts.
 Export validates resource shape; the receiving backend must enforce the requested
@@ -145,10 +148,8 @@ Kubernetes enforces each worker's Pod requests/limits. Two CPU CJs at the same s
 can stay resident while their workers successively use one available GPU.
 Kubernetes chooses scheduling and fairness; there is no round-robin guarantee.
 Unsupported licenses, custom resource-manager claims and per-GPU memory quotas
-must be enforced or rejected, never silently discarded. The current Process path
-rejects unenforceable compute CPU/memory and custom claims before launching a
-normalized task CJ and again before execution. It has no implicit CPU/memory
-limiter, Kubernetes coordinator defaults or GPU allocation ledger.
+must be enforced or rejected, never silently discarded. A local Process or Docker
+site rejects task lifetime; GPU visibility alone is not exclusive resource admission.
 
 ## Application and site configuration
 
@@ -196,12 +197,21 @@ fresh task worker; use explicit native checkpoints or job lifetime.
 
 Only canonical site `local/resources.json` (or its default fallback) supplies
 `task_execution`. Jobs cannot select the internal adapter, launcher, environment
-policy or task state. A Process site can configure:
+policy or task state. A Kubernetes site can configure:
 
 ```json
 {
   "task_execution": {
-    "environment_variables": ["TRAINING_SECRET"],
+    "launcher": {
+      "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+      "args": {
+        "namespace": "site-1",
+        "image": "registry.example/nvflare-training:2.10",
+        "workspace_root": "/workspace",
+        "workspace_pvc": "site-workspace",
+        "worker_service_account": "task-worker"
+      }
+    },
     "worker_timeout": 600,
     "settlement_timeout": 10,
     "poll_interval": 0.05,
@@ -211,21 +221,25 @@ policy or task state. A Process site can configure:
 }
 ```
 
-Process workers receive the framework allow-list plus approved environment names;
-federation credentials, API bootstrap and arbitrary GPU visibility are excluded.
-Native worker environments come from trusted backend configuration, rather than
-Process-style forwarding. CPU workers mask GPU visibility; GPU-capable backends
+The example above is only the task-policy section; the operator guide supplies
+the matching ClientK8sJobLauncher, PVC and service-account configuration.
+Worker environments come from trusted backend configuration. Forwarding arbitrary
+CJ environment variables is rejected; federation credentials and API bootstrap
+cannot be inherited by workers. CPU workers mask GPU visibility; GPU-capable backends
 arrange devices through their resource binding. `artifact_cleanup: "retain"`
 keeps attempts. Optional positive `max_payload_bytes` applies consistently to
 input, bootstrap policy and output, including all referenced tensor files.
 
 ## Backend ownership and physical settlement
 
-Both backends use `task_worker_process`. Process scope requires an explicit live
-parent PID greater than one and an owned process group; native scope does not
-mistake CJ for the worker's OS parent and supports PID 1. Process supervision
-requires Linux or macOS with Python 3.13+ waitid/WNOWAIT. CJ owns Process group
-cleanup; this profile does not promise independent CP cleanup after abrupt CJ death.
+The shared `task_worker_process` entry point runs a process **inside** a native
+Pod or allocation. Its name does not mean a local Process task backend. Native
+scope has no local CJ parent PID and supports PID 1. Keep this entry point, the
+worker runtime and supervisor when adding scheduler-backed launchers.
+
+Local process-group launch utilities live only under `tests/` for isolated
+worker/supervisor contract tests. They are not installed as an NVFlare backend
+and are not proof of Kubernetes or Slurm deployment qualification.
 
 In Kubernetes, the CJ's K8sTaskLauncher is a tokenless CellNet proxy. Before CJ
 starts, CP installs a backend bound to canonical site policy and admitted job/site

@@ -61,7 +61,7 @@ def define_parser() -> argparse.ArgumentParser:
         "--execution_lifetime",
         choices=("job", "task"),
         default="job",
-        help="Keep client compute for the job, or start a fresh CPU worker for each task.",
+        help="Keep client compute for the job, or export task workers for a configured Kubernetes/Slurm site.",
     )
 
     return parser

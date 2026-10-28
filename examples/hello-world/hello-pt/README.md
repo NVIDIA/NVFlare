@@ -233,11 +233,14 @@ the preparation command in its error log. This happens after the simulator start
 to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
-To compare compute lifetimes with the same initial weights and training order:
+Local simulation uses job lifetime. Process/Docker task mode is deferred.
+To compare compute lifetimes, export a task job and run it on a configured
+scheduler-backed site (Kubernetes; Slurm integration is separate), using the same
+initial weights and training order:
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731
-CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task
+python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task --export
 ```
 
 PyTorch thread settings are unchanged by default; pass `--torch_threads 1` explicitly

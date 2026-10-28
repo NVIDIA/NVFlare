@@ -1771,3 +1771,24 @@ class TestDockerJobLauncherStudyRuntime:
         with pytest.raises(ValueError, match="Kubernetes-only"):
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("coordinator", [{}, {"num_of_cpus": 0.25, "memory": "512Mi"}, {"num_of_gpus": 1}])
+def test_local_task_mode_rejected_before_docker_access(coordinator):
+    launcher = _make_launcher()
+    context = MagicMock()
+    context.get_identity_name.return_value = "site-1"
+    with patch.object(launcher, "_get_docker_client") as connect:
+        with pytest.raises(ValueError, match="Docker task execution is deferred"):
+            launcher.launch_job({"cj_resource_spec": {"site-1": coordinator}}, context)
+    connect.assert_not_called()
+
+
+def test_local_job_mode_still_delegates_to_docker_launcher():
+    launcher = _make_launcher()
+    context = MagicMock()
+    context.get_identity_name.return_value = "site-1"
+    meta = {"resource_spec": {"site-1": {"num_of_gpus": 1}}}
+    with patch.object(DockerJobLauncher, "launch_job", return_value="job-handle") as launch:
+        assert launcher.launch_job(meta, context) == "job-handle"
+    launch.assert_called_once_with(meta, context)

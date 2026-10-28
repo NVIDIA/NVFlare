@@ -299,11 +299,13 @@ class FedJobConfig:
         shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
-        if gpu and any(
+        if any(
             app.client_app and app.client_app.additional_params.get("execution_lifetime", "job") == "task"
             for app in self.fed_apps.values()
         ):
-            raise ValueError("task lifetime currently supports CPU Process execution without simulator GPU assignments")
+            raise ValueError(
+                "local Process task execution is deferred; simulator requires job lifetime. Export task jobs for a Kubernetes/Slurm site"
+            )
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
             warn_on_potential_secrets_in_job_dir(job_root, job_name=self.job_name)

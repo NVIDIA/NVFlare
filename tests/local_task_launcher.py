@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Local process-group backend for disposable task execution.
+"""Test-only local process harness for shared worker/supervisor contract tests.
+
+Not shipped in nvflare or selectable by production site configuration. Native
+backend tests still own scheduler admission and settlement qualification.
 
 The owned execution scope is one POSIX process group. The command may launch
 any number of ranks inside that group. Moving descendants into another group,
@@ -535,3 +538,45 @@ class ProcessTaskLauncher(TaskLauncherSpec):
                 f"task launch failed after acquiring {handle.execution_id}; execution settled during cleanup", handle
             ) from e
         return handle
+
+
+# Direct test injection only. Production from_config/from_workspace accepts
+# exact scheduler-backed classes and cannot select this helper.
+def local_policy(**kwargs):
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+    class LocalPolicy(TaskExecutionPolicy):
+        def worker_environment(self):
+            allowed = {
+                "PATH",
+                "PYTHONPATH",
+                "PYTHONHOME",
+                "PYTHONNOUSERSITE",
+                "PYTHONHASHSEED",
+                "VIRTUAL_ENV",
+                "HOME",
+                "LANG",
+                "LC_ALL",
+                "TMPDIR",
+                "TMP",
+                "TEMP",
+                "LD_LIBRARY_PATH",
+                "DYLD_LIBRARY_PATH",
+                "DYLD_FALLBACK_LIBRARY_PATH",
+                "NVFLARE_SECURE_LOGGING",
+                "FL_LOG_LEVEL",
+            }
+            environment = {
+                name: value for name, value in os.environ.items() if name in allowed | set(self.environment_variables)
+            }
+            environment.update(
+                {
+                    "CUDA_VISIBLE_DEVICES": "",
+                    "HIP_VISIBLE_DEVICES": "",
+                    "NVIDIA_VISIBLE_DEVICES": "none",
+                    "ROCR_VISIBLE_DEVICES": "",
+                }
+            )
+            return environment
+
+    return LocalPolicy(ProcessTaskLauncher(), **kwargs)

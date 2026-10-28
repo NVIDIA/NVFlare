@@ -854,6 +854,13 @@ class DockerJobLauncher(JobLauncherSpec):
 
 
 class ClientDockerJobLauncher(DockerJobLauncher):
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        from nvflare.utils.job_launcher_utils import has_cj_resource_spec
+
+        if has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
+            raise ValueError("local Docker task execution is deferred; use job lifetime or a Kubernetes/Slurm site")
+        return super().launch_job(job_meta, fl_ctx)
+
     def get_module_args(self, job_args: dict) -> dict:
         return _job_args_dict(job_args, get_client_job_args(include_exe_module=False, include_set_options=False))
 

@@ -13,6 +13,8 @@
 # limitations under the License.
 """Task execution launch backends."""
 
-from .process_launcher import ProcessTaskLauncher
+"""Task launch contracts live in nvflare.apis.task_launcher_spec.
 
-__all__ = ["ProcessTaskLauncher"]
+Scheduler-backed implementations live in nvflare.app_opt. Local Process and
+Docker task execution are deferred; their job launchers remain supported.
+"""

@@ -38,10 +38,10 @@ from nvflare.apis.task_launcher_spec import (
     TaskLaunchRequest,
     TaskSettlementError,
 )
-from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, read_bootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
+from tests.local_task_launcher import ProcessTaskLauncher
 
 SETTLED = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
 UNSETTLED = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0)
@@ -787,7 +787,7 @@ main()
             identity.site_name,
             identity.task_id,
             identity.attempt_id,
-            (*argv, "--bootstrap", bootstrap_path, "--parent_pid", str(os.getpid())),
+            (*argv, "--bootstrap", bootstrap_path, "--execution_scope", "native"),
             environment={"PYTHONPATH": str(repo_root)},
             cwd=str(repo_root),
         )

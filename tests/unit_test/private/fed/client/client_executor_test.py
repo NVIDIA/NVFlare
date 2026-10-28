@@ -1219,7 +1219,7 @@ def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
 
     context = MagicMock()
     context.get_identity_name.return_value = "site-1"
-    with pytest.raises(ValueError, match="Process CJ cannot enforce"):
+    with pytest.raises(ValueError, match="Process task execution is deferred"):
         ClientProcessJobLauncher().get_command({"cj_resource_spec": {"site-1": budget}}, context)
 
 
@@ -1227,13 +1227,12 @@ def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
     "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
 )
 def test_process_task_compute_requirements_fail_before_starting_cj(compute):
-    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
     from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 
     context = Mock()
     context.get_identity_name.return_value = "site-1"
     with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command") as command:
-        with pytest.raises(UnsupportedTaskResourceError):
+        with pytest.raises(ValueError):
             ClientProcessJobLauncher().get_command(
                 {"resource_spec": {"@default": compute}, "cj_resource_spec": {"site-1": {}}}, context
             )
