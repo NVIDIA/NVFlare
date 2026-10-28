@@ -170,3 +170,19 @@ class TestConfigIndex:
         assert key_index.value == "data.csv"
         key_index = result["other_path"]
         assert key_index.value is None
+
+
+def test_json_indexing_preserves_resource_keys_and_application_values(tmp_path):
+    import json
+
+    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
+    from nvflare.tool.job.config.config_indexer import load_pyhocon_conf
+
+    original = {
+        "@default": {"@ALL": 1},
+        "nested": [{"@ALL": "α ${literal}", "windows\\path": 2, 'a"b': 3, "line\nkey": 4, "devices": [0, 1]}],
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(original))
+    config, _ = load_pyhocon_conf(path.name, str(tmp_path))
+    assert PyhoconConfig(config).to_dict() == original

@@ -12,6 +12,9 @@ and [AGENTS.md](AGENTS.md) for agent rules. PR requirements and human approvals 
   against surrounding code in a separate pass; require a trigger, consequence, and file/line
   evidence. Names alone are not evidence. Separate unrelated pre-existing bugs from PR findings.
 - Check relevant `CLAUDE.md` conventions and whether the change makes existing guidance stale.
+- For test changes, apply the [test placement and authoring rules](tests/README.md#choosing-the-test-layer)
+  and their review checklist. Verify the asserted regression would fail promptly, that failure paths
+  release owned workers, and that moved tests retain actual CI execution and coverage.
 - Check the linked GitHub issue and CI status per `CONTRIBUTING.md`; disclose unavailable context.
 - Scale validation to impact: documentation/link checks for prose, targeted behavior tests for
   code, and deeper failure-path and security checks for distributed execution or sensitive changes.

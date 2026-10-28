@@ -16,11 +16,20 @@ import json
 import os
 import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConnPropKey,
+    FLContextKey,
+    ReservedKey,
+    RunProcessKey,
+    SystemConfigs,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode
@@ -32,10 +41,12 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, new_cell_message
+from nvflare.job_config.task_execution import get_client_execution_lifetime
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.job_launcher_utils import has_cj_resource_spec, validate_cj_execution_lifetime
 
 from .client_status import ClientStatus, get_status_message
 
@@ -48,10 +59,20 @@ REPORTABLE_JOB_FAILURES = {
 }
 
 _ABORT_REQUESTED_KEY = "_abort_requested"
+_RESTART_KEY = "_restart"
+
+
+@dataclass
+class _JobRestart:
+    launcher: JobLauncherSpec
+    meta: dict
+    args: dict
+    launch_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    attempts: int = 0  # Replacement launches since the last successful initialization.
 
 
 class _PendingJobHandle(JobHandleSpec):
-    """Hold an abort request until a launcher returns the real job handle."""
+    """Hold abort intent until a launcher publishes or returns the real handle."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -60,8 +81,14 @@ class _PendingJobHandle(JobHandleSpec):
 
     def attach(self, job_handle: JobHandleSpec) -> bool | None:
         with self._lock:
+            if self._job_handle is not None:
+                if self._job_handle is not job_handle:
+                    raise RuntimeError("launcher published a different job handle")
+                return None
             self._job_handle = job_handle
-            return self._pending_heartbeat_cleanup
+            heartbeat_cleanup = self._pending_heartbeat_cleanup
+            self._pending_heartbeat_cleanup = None
+            return heartbeat_cleanup
 
     def terminate(self, heartbeat_cleanup=False):
         with self._lock:
@@ -90,6 +117,11 @@ class _PendingJobHandle(JobHandleSpec):
         if job_handle is None:
             raise RuntimeError("cannot wait for a pending job handle before it is attached")
         return job_handle.wait()
+
+    def can_restart(self):
+        with self._lock:
+            job_handle = self._job_handle
+        return job_handle is not None and job_handle.can_restart() is True
 
 
 class ClientExecutor(ABC):
@@ -195,6 +227,11 @@ class JobExecutor(ClientExecutor):
         self.job_query_timeout = ConfigService.get_float_var(
             name="job_query_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
         )
+        self.max_cj_restart_failures = ConfigService.get_int_var(
+            name="max_cj_restart_failures", conf=SystemConfigs.APPLICATION_CONF, default=3
+        )
+        if self.max_cj_restart_failures < 0:
+            raise ValueError("max_cj_restart_failures must be nonnegative")
 
     def start_app(
         self,
@@ -232,6 +269,7 @@ class JobExecutor(ClientExecutor):
         for meta_key in (
             JobMetaKey.JOB_ID.value,
             JobMetaKey.RESOURCE_SPEC.value,
+            JobMetaKey.CJ_RESOURCE_SPEC.value,
             JobMetaKey.JOB_LAUNCHER_SPEC.value,
             JobMetaKey.SCOPE.value,
             JobMetaKey.STUDY.value,
@@ -241,6 +279,9 @@ class JobExecutor(ClientExecutor):
                 raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
             if meta_key in deployed_job_meta:
                 job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if has_cj_resource_spec(job_meta, client.client_name):
+            client_config = ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id))
+            validate_cj_execution_lifetime(job_meta, client.client_name, get_client_execution_lifetime(client_config))
         if deployed_job_meta.get(AppValidationKey.BYOC, False):
             job_meta[AppValidationKey.BYOC] = True
         else:
@@ -265,6 +306,8 @@ class JobExecutor(ClientExecutor):
             command_options += " " + t
         command_options += " print_conf=True"
         args.set.append("print_conf=True")
+        fl_ctx.remove_prop(FLContextKey.ARGS, force_removal=True)
+        fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
 
         # Job process args are the same for all job launchers! Letting each job launcher compute the job
         # args would be error-prone and would require access to internal server components (e.g. cell).
@@ -296,7 +339,7 @@ class JobExecutor(ClientExecutor):
             if parent_conn_sec:
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
-        fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
+        restart = _JobRestart(job_launcher, copy.deepcopy(job_meta), job_args)
         pending_handle = _PendingJobHandle()
         with self.lock:
             if job_id in self.run_processes:
@@ -305,26 +348,16 @@ class JobExecutor(ClientExecutor):
                 RunProcessKey.JOB_HANDLE: pending_handle,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
                 _ABORT_REQUESTED_KEY: False,
+                _RESTART_KEY: restart,
             }
+
         try:
-            job_handle = job_launcher.launch_job(job_meta, fl_ctx)
-            if job_handle is None:
-                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+            self._launch_job(job_id, restart, pending_handle, fl_ctx)
         except BaseException:
             with self.lock:
                 if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
                     self.run_processes.pop(job_id, None)
             raise
-
-        heartbeat_cleanup = pending_handle.attach(job_handle)
-        if heartbeat_cleanup is not None:
-            self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
-
-        self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
-
-        fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
-        engine = fl_ctx.get_engine()
-        engine.fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
 
         client.multi_gpu = False
 
@@ -333,6 +366,50 @@ class JobExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace, fl_ctx),
         )
         thread.start()
+
+    def _launch_job(self, job_id, restart, pending_handle, fl_ctx):
+        job_args = dict(restart.args)
+        launch_option = f"{RequestHeader.CJ_LAUNCH_ID}={restart.launch_id}"
+        flag, options = job_args[JobProcessArgs.OPTIONS]
+        job_args[JobProcessArgs.OPTIONS] = (flag, f"{options} {launch_option}")
+        # Container launchers take their --set list from ARGS instead of JOB_PROCESS_ARGS.
+        args = copy.copy(fl_ctx.get_prop(FLContextKey.ARGS))
+        args.set = [option for option in args.set if not option.startswith(f"{RequestHeader.CJ_LAUNCH_ID}=")]
+        args.set.append(launch_option)
+        fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
+        # CP may have refreshed its registration while the previous allocation ran.
+        for key, value in (
+            (JobProcessArgs.AUTH_TOKEN, self.client.token),
+            (JobProcessArgs.TOKEN_SIGNATURE, self.client.token_signature),
+            (JobProcessArgs.SSID, self.client.ssid),
+        ):
+            job_args[key] = (job_args[key][0], value)
+        fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+
+        def register_handle(job_handle):
+            heartbeat_cleanup = pending_handle.attach(job_handle)
+            if heartbeat_cleanup is not None:
+                self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+
+        # Publish created runtimes before scheduling waits on initial and
+        # replacement launches, so an abort can reclaim an unscheduled CJ.
+        fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
+        try:
+            job_handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
+        if job_handle is None:
+            raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+        try:
+            register_handle(job_handle)
+            self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
+            fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
+            fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
+        except BaseException:
+            # Once launched, retain ownership until the worker has exited.
+            job_handle.terminate()
+            job_handle.wait()
+            raise
 
     def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         engine = fl_ctx.get_engine()
@@ -345,10 +422,19 @@ class JobExecutor(ClientExecutor):
 
         return job_launcher[0]
 
-    def notify_job_status(self, job_id, job_status):
-        run_process = self.run_processes.get(job_id)
-        if run_process:
-            run_process[RunProcessKey.STATUS] = job_status
+    def notify_job_status(self, job_id, job_status, launch_id=None):
+        with self.lock:
+            run_process = self.run_processes.get(job_id)
+            if not run_process or run_process.get(RunProcessKey.STATUS) == ClientStatus.STOPPED:
+                return
+            restart = run_process.get(_RESTART_KEY)
+            if restart:
+                # Older CJs and custom launchers may omit the launch ID.
+                if launch_id is not None and launch_id != restart.launch_id:
+                    return  # delayed notification from an earlier physical execution
+                if job_status == ClientStatus.READY:
+                    restart.attempts = 0
+            run_process[RunProcessKey.STATUS] = ClientStatus.STARTED if job_status == ClientStatus.READY else job_status
 
     def _job_fqcn(self, job_id: str):
         return FQCN.join([self.client.cell.get_fqcn(), job_id])
@@ -607,7 +693,15 @@ class JobExecutor(ClientExecutor):
         Args:
             job_id: the job_id
         """
-        process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+        with self.lock:
+            process = self.run_processes.get(job_id, {})
+            process_status = process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+            restart = process.get(_RESTART_KEY)
+            job_handle = process.get(RunProcessKey.JOB_HANDLE)
+        if restart and (restart.attempts or job_handle.poll() not in (None, JobReturnCode.UNKNOWN)):
+            # There is no live task to notify while its CJ is being replaced.
+            self.abort_app(job_id)
+            return
         if process_status == ClientStatus.STARTED:
             data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
             request = new_cell_message({}, data)
@@ -620,6 +714,39 @@ class JobExecutor(ClientExecutor):
             )
             self.logger.debug("abort_task sent")
 
+    def _restart_job(self, job_id, job_handle, return_code, fl_ctx):
+        # A replacement cannot reconstruct an intermediate CJ's child-result receipts.
+        if not fl_ctx.get_prop(ReservedKey.IS_LEAF, True):
+            return False
+        if not self.max_cj_restart_failures or return_code not in (
+            JobReturnCode.EXECUTION_ERROR,
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+        ):
+            return False
+        if job_handle.can_restart() is not True:
+            return False
+        with self.lock:
+            process = self.run_processes.get(job_id, {})
+            restart = process.get(_RESTART_KEY)
+            if (
+                not restart
+                or process.get(_ABORT_REQUESTED_KEY)
+                or process.get(RunProcessKey.STATUS) == ClientStatus.STOPPED
+            ):
+                return False
+            if restart.attempts >= self.max_cj_restart_failures:
+                self.logger.error(f"job {job_id}: exhausted {restart.attempts} consecutive failed CJ restarts")
+                return False
+            restart.attempts += 1
+            restart.launch_id = uuid.uuid4().hex
+            pending_handle = _PendingJobHandle()
+            process[RunProcessKey.JOB_HANDLE] = pending_handle
+            process[RunProcessKey.STATUS] = ClientStatus.STARTING
+        self.logger.info(f"job {job_id}: restarting CJ (attempt {restart.attempts}/{self.max_cj_restart_failures})")
+        self._launch_job(job_id, restart, pending_handle, fl_ctx)
+        return True
+
     def _wait_child_process_finish(
         self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx
     ):
@@ -627,14 +754,24 @@ class JobExecutor(ClientExecutor):
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         run_dir = Workspace.run_dir_path(workspace, job_id)
         try:
-            if job_handle:
+            while job_handle:
                 job_handle.wait()
+                return_code = get_return_code(job_handle, job_id, workspace, self.logger)
+                try:
+                    if not self._restart_job(job_id, job_handle, return_code, fl_ctx):
+                        break
+                except Exception as e:
+                    # A submission exception may mean the backend accepted the job.
+                    # Without a handle proving otherwise, never submit again.
+                    self.logger.error(f"job {job_id}: cannot restart CJ: {secure_format_exception(e)}")
+                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                    break
+                job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
         finally:
-            # the job process is gone, or never started: its credential is dead either way
+            # Keep the same job credential throughout replacement; remove it only
+            # when this logical job finishes. Checkpoints and application files stay.
             remove_job_cert(run_dir)
         if job_handle:
-            return_code = get_return_code(job_handle, job_id, workspace, self.logger)
-
             with self.lock:
                 process = self.run_processes.get(job_id, {})
                 process_status = process.get(RunProcessKey.STATUS)
