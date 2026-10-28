@@ -62,6 +62,19 @@ def test_supported_runtime_mapping(runtime, tee, gpu, count):
     assert target["config_name"] == "configuration-" + runtime.removeprefix("kata-") + ".toml"
 
 
+@pytest.mark.parametrize(
+    "runtime,cpu_tee,gpu",
+    [
+        ("kata-qemu-snp", "snp", "none"),
+        ("kata-qemu-nvidia-gpu-snp", "snp", "nvidia"),
+        ("kata-qemu-tdx", "tdx", "none"),
+        ("kata-qemu-nvidia-gpu-tdx", "tdx", "nvidia"),
+    ],
+)
+def test_existing_v4_profiles_accept_legacy_cpu_tee_names(runtime, cpu_tee, gpu):
+    assert API["require_runtime_target"]({"cpu_tee": cpu_tee, "gpu": gpu}, runtime) == API["runtime_target"](runtime)
+
+
 @pytest.mark.parametrize("runtime", [None, True, 1, "", "kata-qemu-tdx-gpu", "kata-qemu-snp-extra"])
 def test_unknown_runtime_is_not_inferred_from_its_name(runtime):
     with pytest.raises(ValueError, match="Unsupported confidential RuntimeClass"):

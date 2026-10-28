@@ -31,6 +31,9 @@ from cvm.common.errors import BuildError
 from cvm.common.io import write_json
 from cvm.host.launcher import (
     GRACEFUL_SHUTDOWN_SECONDS,
+    QEMU_KILL_SECONDS,
+    QEMU_TERMINATE_SECONDS,
+    SHUTDOWN_WAIT_SECONDS,
     find_bundle,
     gpu_devices,
     graceful_stop,
@@ -95,6 +98,35 @@ class LauncherTests(unittest.TestCase):
             ):
                 self.assertIsNone(preserve_applog(directory, applog))
             self.assertEqual(list((directory / "applog-history").iterdir()), [])
+
+    def test_applog_history_setup_failure_does_not_block_launch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            with (
+                patch("cvm.host.launcher.Path.mkdir", side_effect=OSError("no inodes")),
+                self.assertWarnsRegex(RuntimeWarning, "continuing launch"),
+            ):
+                self.assertIsNone(preserve_applog(directory, applog))
+
+    def test_applog_history_symlink_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            outside = directory / "outside"
+            outside.mkdir()
+            (directory / "applog-history").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(BuildError, "Unsafe applog history directory"):
+                preserve_applog(directory, applog)
+
+    def test_shutdown_default_accounts_for_both_grace_periods_and_qemu_cleanup(self):
+        self.assertGreater(
+            SHUTDOWN_WAIT_SECONDS,
+            GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS + QEMU_KILL_SECONDS,
+        )
 
     def test_duplicate_launch_preserves_the_live_qmp_socket(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -70,6 +70,16 @@ def test_collector_handoff_does_not_require_a_checksum(tmp_path, supplied):
     assert actual == workflow.digest(env["COLLECTOR_METADATA_FILE"])
 
 
+def test_existing_collector_metadata_accepts_legacy_cpu_tee_name(tmp_path):
+    metadata, env = collector(tmp_path)
+    metadata["cpu_tee"] = "snp"
+    path = Path(env["COLLECTOR_METADATA_FILE"])
+    path.write_text(json.dumps(metadata))
+    env["COLLECTOR_METADATA_SHA256"] = workflow.digest(path)
+
+    assert workflow.load_collector(env) == metadata
+
+
 @pytest.mark.parametrize("supplied", ["A" * 64, "b" * 63, 123, False, 0])
 def test_malformed_supplied_collector_checksum_is_rejected(tmp_path, supplied):
     _, env = collector(tmp_path)

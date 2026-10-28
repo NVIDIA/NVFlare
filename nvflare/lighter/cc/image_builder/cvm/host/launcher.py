@@ -60,8 +60,11 @@ GPU_PREF64_RESERVE = "256G"
 GRACEFUL_SHUTDOWN_SECONDS = 60
 
 
-# shutdown_cvm.sh waits for the graceful window plus QEMU termination.
-SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS + 60
+# Once shutdown_cvm.sh has waited for its first graceful window, the launcher
+# gets one final graceful window before bounded terminate/kill cleanup.
+QEMU_TERMINATE_SECONDS = 30
+QEMU_KILL_SECONDS = 10
+SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS + QEMU_KILL_SECONDS + 20
 
 
 # Preserve a small, bounded set of the clear applog disk images. The guest
@@ -524,14 +527,15 @@ def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
     directory, applog = Path(directory), Path(applog)
     history = directory / "applog-history"
     require(not history.is_symlink(), "Unsafe applog history directory")
-    history.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(history, 0o700)
-    archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
-    for expired in archives[: max(0, len(archives) - limit + 1)]:
-        expired.unlink()
-    target = history / f"applog-{time.time_ns()}.qcow2"
-    temporary = history / ("." + target.name + ".tmp")
+    temporary = None
     try:
+        history.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(history, 0o700)
+        archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
+        for expired in archives[: max(0, len(archives) - limit + 1)]:
+            expired.unlink()
+        target = history / f"applog-{time.time_ns()}.qcow2"
+        temporary = history / ("." + target.name + ".tmp")
         try:
             subprocess.run(
                 ["cp", "--reflink=auto", "--sparse=always", "--", str(applog), str(temporary)],
@@ -547,7 +551,9 @@ def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
         os.chmod(temporary, 0o600)
         os.replace(temporary, target)
     except (OSError, subprocess.CalledProcessError):
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
         warnings.warn(
             "Could not preserve the previous clear applog disk; continuing launch without a new history copy",
             RuntimeWarning,
@@ -659,10 +665,10 @@ def run_vm(command, directory, *, qmp=None):
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
-                    process.wait(timeout=30)
+                    process.wait(timeout=QEMU_TERMINATE_SECONDS)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait(timeout=10)
+                    process.wait(timeout=QEMU_KILL_SECONDS)
             try:
                 if state_path.is_file():
                     state = read_json(state_path)
