@@ -21,8 +21,8 @@ import subprocess
 import tempfile
 
 import grpc
-import jsonc as json
 
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.utils.process_utils import popen_in_new_session
 
 

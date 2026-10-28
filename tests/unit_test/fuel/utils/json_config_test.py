@@ -24,6 +24,8 @@ from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
     [
         ('// note\n{"x": "${PRIVATE_VALUE}"} /* note */', {"x": "${PRIVATE_VALUE}"}),
         ('{"x": [1,],} // final comment', {"x": [1]}),
+        ("[1, /* trailing */ 2, // trailing\r\n]", [1, 2]),
+        ('[",]", ",}", "/* literal */",]', [",]", ",}", "/* literal */"]),
         (
             '{"url": "https://example.test/*literal*/", "quote": "\\"//literal"}',
             {"url": "https://example.test/*literal*/", "quote": '"//literal'},
@@ -34,10 +36,31 @@ def test_comments_do_not_change_string_values(text, expected):
     assert JsonConfigLoader().load_config_from_str(text).to_dict() == expected
 
 
-@pytest.mark.parametrize("text", ["{/* unfinished", 'include "private.conf"', '{"x": "unfinished}'])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{/* unfinished",
+        'include "private.conf"',
+        '{"x": "unfinished}',
+        "[1// c\n2]",
+        "[1/* c */2]",
+        "[,]",
+        "{,}",
+        "[1,,]",
+    ],
+)
 def test_invalid_json_is_rejected(text):
     with pytest.raises(ValueError):
         JsonConfigLoader().load_config_from_str(text)
+
+
+def test_comments_preserve_error_locations():
+    text = '{\n/* first line\nsecond line */\n"x": invalid\n}'
+    with pytest.raises(json.JSONDecodeError) as error:
+        JsonConfigLoader().load_config_from_str(text)
+    assert error.value.pos == text.index("invalid")
+    assert error.value.lineno == 4
+    assert error.value.colno == 6
 
 
 class TestJsonConfig:

@@ -16,7 +16,7 @@ import os
 import shutil
 import sys
 
-import jsonc as json
+from nvflare.fuel.utils import json_config_loader as json
 
 from .check_rule import CheckAddressBinding, CheckWriting
 from .package_checker import PackageChecker

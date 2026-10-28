@@ -15,8 +15,7 @@
 import os
 from abc import ABC, abstractmethod
 
-import jsonc as json
-
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.tool.package_checker.utils import (
     NVFlareConfig,
     NVFlareRole,

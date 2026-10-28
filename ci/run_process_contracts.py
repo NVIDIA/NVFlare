@@ -27,6 +27,7 @@ TESTS = (
     "tests/integration_test/fast/cell_session_mtls_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",
+    "tests/integration_test/fast/json_config_parser_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",

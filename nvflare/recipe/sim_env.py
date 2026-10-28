@@ -18,13 +18,13 @@ import time
 import warnings
 from typing import Optional
 
-import jsonc
 from pydantic import BaseModel, model_validator
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
+from nvflare.fuel.utils import json_config_loader as json_config
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, run_context, summary_header
@@ -177,7 +177,7 @@ class SimEnv(ExecEnv):
         resources = {"format_version": 2}
         if os.path.exists(target_file):
             with open(target_file) as f:
-                resources = jsonc.load(f)
+                resources = json_config.load(f)
             if not isinstance(resources, dict):
                 raise ValueError(f"Simulator resources file must contain a JSON object: {target_file}")
 

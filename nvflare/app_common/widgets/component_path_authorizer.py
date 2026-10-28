@@ -18,8 +18,6 @@ import threading
 from enum import Enum
 from typing import Optional
 
-import jsonc as json
-
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
@@ -27,6 +25,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.widgets.widget import Widget
 

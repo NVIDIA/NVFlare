@@ -41,7 +41,6 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-import jsonc
 import yaml
 
 from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
@@ -57,6 +56,7 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils import json_config_loader as json_config
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
 from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_DIR_NAME,
@@ -132,7 +132,7 @@ def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: st
     for resource_config_name in _RESOURCE_CONFIG_NAMES:
         try:
             with open(os.path.join(local_dir, resource_config_name), "rt") as f:
-                resource_config = jsonc.load(f)
+                resource_config = json_config.load(f)
         except FileNotFoundError:
             continue
         except Exception as e:
@@ -549,7 +549,7 @@ def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
         return None
     try:
         with open(path, encoding="utf-8") as fh:
-            data = jsonc.load(fh)
+            data = json_config.load(fh)
     except (OSError, json.JSONDecodeError) as ex:
         logger.warning("failed to load %s: %s", path, secure_format_exception(ex))
         return None

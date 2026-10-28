@@ -15,11 +15,52 @@
 import json
 from typing import Dict, Optional
 
-import jsonc
-
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
+
+
+def loads(text):
+    """Parse JSON with comments and trailing commas without changing source positions."""
+    result = list(text)
+    pos = 0
+    in_string = False
+    comma = None
+    previous = ""
+    while pos < len(text):
+        char = text[pos]
+        if in_string:
+            if char == "\\":
+                pos += 2
+                continue
+            if char == '"':
+                in_string = False
+        elif text.startswith("//", pos):
+            while pos < len(text) and text[pos] not in "\r\n":
+                result[pos] = " "
+                pos += 1
+            continue
+        elif text.startswith("/*", pos):
+            end = text.find("*/", pos + 2)
+            if end < 0:
+                raise json.JSONDecodeError("Unterminated comment", text, pos)
+            for index in range(pos, end + 2):
+                if text[index] not in "\r\n":
+                    result[index] = " "
+            pos = end + 2
+            continue
+        elif char not in " \t\r\n":
+            if char in "}]" and comma is not None:
+                result[comma] = " "
+            comma = pos if char == "," and previous not in "[{:," else None
+            previous = char
+            in_string = char == '"'
+        pos += 1
+    return json.loads("".join(result))
+
+
+def load(file):
+    return loads(file.read())
 
 
 class JsonConfig(Config):
@@ -47,7 +88,7 @@ class JsonConfigLoader(ConfigLoader):
 
     def load_config_from_str(self, config_str: str) -> Config:
         try:
-            conf = jsonc.loads(config_str)
+            conf = loads(config_str)
             return JsonConfig(conf)
         except Exception as e:
             self.logger.error("Error loading config: {}".format(secure_format_exception(e)))
@@ -59,7 +100,7 @@ class JsonConfigLoader(ConfigLoader):
     def _from_file(self, path) -> Dict:
         with open(path, "r", encoding="utf-8") as file:
             try:
-                return jsonc.load(file)
+                return load(file)
             except Exception as e:
                 self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
                 raise e

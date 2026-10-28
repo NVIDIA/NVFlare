@@ -22,8 +22,6 @@ import sys
 import warnings
 from typing import List, Optional, Union
 
-import jsonc
-
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -42,6 +40,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils import json_config_loader as json_config
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
@@ -108,7 +107,7 @@ def require_signed_jobs(workspace: Workspace, startup_config: str = WorkspaceCon
                             "can be altered by other local users (TOCTOU risk)",
                             startup_config,
                         )
-                    cfg = jsonc.load(f)
+                    cfg = json_config.load(f)
             except BaseException:
                 if fd != -1:
                     os.close(fd)

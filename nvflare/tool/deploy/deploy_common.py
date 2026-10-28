@@ -21,11 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 
-import jsonc
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import NameOID
 
+from nvflare.fuel.utils import json_config_loader as json_config
 from nvflare.tool.cli_output import output_error_message, print_human
 
 RUNTIME_DOCKER = "docker"
@@ -386,7 +386,7 @@ def _load_json_file(path: Path, label: str) -> dict[str, Any]:
         _fail("INVALID_KIT", f"Missing {label}: {path}", "Provide a valid startup kit.")
     try:
         with path.open("rt", encoding="utf-8") as f:
-            data = jsonc.load(f)
+            data = json_config.load(f)
     except Exception as ex:
         _fail("INVALID_KIT", f"Failed to parse {label}: {ex}", "Fix the startup kit JSON.")
     if not isinstance(data, dict):

@@ -22,10 +22,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
-import jsonc
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
+from nvflare.fuel.utils import json_config_loader as json_config
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.job_client_const import CONFIG_CONF
 
@@ -244,7 +244,7 @@ def _is_admin_startup_kit(startup_kit_dir: Path) -> bool:
         return True
 
     try:
-        config = jsonc.loads((startup_kit_dir / "startup" / "fed_admin.json").read_text())
+        config = json_config.loads((startup_kit_dir / "startup" / "fed_admin.json").read_text())
     except Exception:
         return False
 
