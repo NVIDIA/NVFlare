@@ -135,7 +135,6 @@ class FLContextKey:
     TASK_ID = ReservedKey.TASK_ID
     TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
-    TASK_WORKFLOW = "__task_workflow__"  # Request-local snapshot of the issuing workflow.
     EVENT_ID = ReservedKey.EVENT_ID
     EVENT_ORIGIN = ReservedKey.EVENT_ORIGIN
     EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
