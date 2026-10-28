@@ -3,7 +3,7 @@
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!  
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
 
-> **NVFlare 2.10 course update:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) now uses the Recipe API and has been validated against the 2.10 development branch. Other sections are being migrated and reviewed incrementally; consult each section's README for its validation status. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available for the original notebooks and videos.
+> **NVFlare 2.10 course update:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) uses the Recipe API and requires NVFlare 2.10. Other sections are being migrated incrementally; consult each section's README for its migration status. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available for the original notebooks and videos.
 
 ---
 
@@ -143,7 +143,7 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
 
 ## Getting Started
 
-- Start with the validated [Running Federated Learning Applications guide](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) for the Recipe API and 2.10 environment setup.
+- Start with the [Running Federated Learning Applications guide](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) for the Recipe API and 2.10 environment setup.
 - Check each other section's migration status before using its notebooks with 2.10.
 - Refer to the official [NVIDIA FLARE documentation](https://nvflare.readthedocs.io/) for deeper dives and troubleshooting.
 

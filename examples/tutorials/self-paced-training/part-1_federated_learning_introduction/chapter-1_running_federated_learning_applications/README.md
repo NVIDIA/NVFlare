@@ -1,8 +1,8 @@
 # Running Federated Learning Applications
 
-This development revision targets **NVFlare 2.10** and uses the **Recipe API throughout**. Start with the [introduction](01.0_introduction/introduction.ipynb), then [setup](01.1_running_federated_learning_job/setup.ipynb) and the [first run](01.1_running_federated_learning_job/running_pytorch_fl_job.ipynb).
+These lessons use the **Recipe API** and require **NVFlare 2.10**. Start with the [introduction](01.0_introduction/introduction.ipynb), then [setup](01.1_running_federated_learning_job/setup.ipynb) and the [first run](01.1_running_federated_learning_job/running_pytorch_fl_job.ipynb).
 
-This chapter has been validated against the NVFlare 2.10 development branch and is ready for independent review. Other chapters are being migrated and reviewed separately. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) preserves the original notebooks and videos.
+Other chapters are being migrated separately. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) preserves the original notebooks and videos.
 
 ## Environment: development and published editions
 
