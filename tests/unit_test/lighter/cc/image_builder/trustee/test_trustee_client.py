@@ -35,6 +35,7 @@ from cvm.trustee.admin import install, retire
 from cvm.trustee.client import (
     MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
     NoRedirect,
+    admin_token,
     api,
     delete_resource,
     encode,
@@ -117,7 +118,12 @@ class TrusteeClientTests(unittest.TestCase):
         self.token = self.root / "admin.jwt"
         self.token_value = unsigned_token()
         self.token.write_text(self.token_value + "\n")
-        self.config = {"url": "https://trustee.test:8443", "ca": "ca.pem", "admin_token_file": str(self.token)}
+        self.config = {
+            "url": "https://trustee.test:8443",
+            "ca": "ca.pem",
+            "admin_token_file": str(self.token),
+            "expiry_warning_seconds": 0,
+        }
         self.resource = resource_path("bundle-1", "intel_tdx", bytes(32))
 
     def test_expired_or_long_lived_preissued_tokens_are_refused_before_any_request(self):
@@ -142,6 +148,12 @@ class TrusteeClientTests(unittest.TestCase):
                 upload_resource(self.config, self.resource, b"a" * 64)
             opener.assert_not_called()
             self.assertNotIn(token, str(error.exception))
+
+    def test_preissued_token_warns_before_configured_expiry_window(self):
+        now = int(time.time())
+        self.token.write_text(unsigned_token(iat=now, exp=now + 60) + "\n")
+        with self.assertWarnsRegex(RuntimeWarning, "expires within"):
+            admin_token(dict(self.config, expiry_warning_seconds=120), now=now)
         # A token issued for exactly the maximum lifetime remains usable.
         self.token.write_text(unsigned_token(iat=now, exp=now + MAX_ADMIN_TOKEN_LIFETIME_SECONDS) + "\n")
         with patch("cvm.trustee.client.api") as request:

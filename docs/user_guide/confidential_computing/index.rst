@@ -93,3 +93,4 @@ shared provisioning configuration; it is not the introductory guide.
    on_premises/index
    azure/index
    deployment
+   operations

@@ -17,6 +17,7 @@
 import hashlib
 import json
 import time
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -185,6 +186,14 @@ def install(config, directory, candidate=False):
             ),
             "RVPS approvals are expired or lack an expiry",
         )
+        warning_window = config.get("expiry_warning_seconds", 7 * 86400)
+        require(type(warning_window) is int and warning_window >= 0, "Invalid reference expiry warning window")
+        if expected_refs and min(expirations[name] for name in expected_refs) - time.time() <= warning_window:
+            warnings.warn(
+                "One or more RVPS references expire within the configured warning window; renew reviewed records",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         for name, expected in expected_refs.items():
             actual = refs[name]
             if name in TCB_NAMES:

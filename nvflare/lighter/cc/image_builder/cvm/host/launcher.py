@@ -22,6 +22,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import struct
@@ -60,6 +61,12 @@ GRACEFUL_SHUTDOWN_SECONDS = 60
 
 # shutdown_cvm.sh waits for the graceful window plus QEMU termination.
 SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS + 60
+
+
+# Preserve a small, bounded set of the clear applog disk images. The guest
+# reformats the live disk on every boot, so the launcher must snapshot it before
+# reattaching it or a failed run's only diagnostic record is lost.
+APPLOG_HISTORY_LIMIT = 3
 
 
 def normalize_pci(address):
@@ -490,6 +497,35 @@ def graceful_stop(process, qmp, timeout=GRACEFUL_SHUTDOWN_SECONDS):
         pass
 
 
+def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
+    """Copy the previous clear applog disk before the guest reformats it."""
+    require(type(limit) is int and limit > 0, "Invalid applog retention limit")
+    directory, applog = Path(directory), Path(applog)
+    history = directory / "applog-history"
+    require(not history.is_symlink(), "Unsafe applog history directory")
+    history.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(history, 0o700)
+    target = history / f"applog-{time.time_ns()}.qcow2"
+    try:
+        subprocess.run(
+            ["cp", "--reflink=auto", "--sparse=always", "--", str(applog), str(target)],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        # GNU cp preserves sparsity and uses CoW when possible. The portable
+        # fallback keeps the same contents for non-Linux unit/development hosts.
+        shutil.copyfile(applog, target)
+    os.chmod(target, 0o600)
+    archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
+    for expired in archives[:-limit]:
+        expired.unlink()
+    print(f"Preserved previous applog disk: {target}")
+    return target
+
+
 def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
     directory = Path(directory).resolve()
     delivery = read_json(directory / "vault_manifest.json")
@@ -526,6 +562,7 @@ def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
             fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise BuildError("Vault is already attached; wait for the previous CVM to exit") from None
+        preserve_applog(directory, disks[1])
         # Only the vault owner may replace its stale control socket. A rejected
         # duplicate launch must preserve the running guest's shutdown channel.
         qmp.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

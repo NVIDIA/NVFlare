@@ -173,7 +173,10 @@ class CoCoAuthorizer(CCAuthorizer):
                         continue
                     if name == "cpu_tee":
                         if not isinstance(value, str) or value not in CPU_TRUST_VECTORS:
-                            raise ValueError("Invalid workload cpu_tee pin")
+                            raise ValueError(
+                                "Invalid workload cpu_tee pin: use Trustee EAR evidence type 'tdx' or 'snp'; "
+                                "participant-level cpu_tee uses 'intel_tdx' or 'amd_sev_snp'"
+                            )
                         continue
                     length = 64 if name == "init_data" else 96
                     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):

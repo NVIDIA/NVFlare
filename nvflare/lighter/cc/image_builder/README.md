@@ -1,5 +1,13 @@
 # CVM Builder
 
+> **Candidate profile only (checked 2026-10-26).** The checked-in
+> `cpu-2026.09-r5` profile has `production_ready: false`. Its pinned
+> kernel/storage combination did not pass the dm-integrity corruption-read
+> acceptance case, so production approval deliberately refuses it. Use the
+> [dev-mode walkthrough](#30-minute-dev-mode-walkthrough) for evaluation. A
+> production deployment requires a new `profile_version` whose exact pins pass
+> the complete hardware acceptance matrix; do not relabel this profile.
+
 All builder and administration commands use `./cvmctl <command>` (or
 `python3 -m cvm` from this directory). Run `./cvmctl --help` for the command list
 and `./cvmctl <command> --help` for options. The wrapper selects
@@ -68,6 +76,8 @@ kernel/module enablement, explicit QGS vsock configuration, the selected
 PCS/PCCS service's credentials and platform registration, and a signed-quote
 smoke test. Then [discover and approve TCB references](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references).
 An active QGS service or a local TDREPORT alone does not establish working remote attestation.
+For SNP, the same section documents firmware enablement, KVM/device/IOMMU
+preflight, KDS throttling, and optional installed-GPU screening.
 
 Install the builder requirements with pip or uv:
 
@@ -297,7 +307,7 @@ and filesystem mount; the clear sidecars are mounted afterward with fixed access
 stores live in the vault; first-load completion is recorded only after the expected
 image exists. A failed integrity monitor, failed periodic appraisal, or revoked key
 stops the workload and powers off the guest.
-Bootstrap and periodic appraisal queue allowlisted metadata for an independent, bounded audit writer. Journal, console or `/applog/attestation.log` I/O cannot defer revocation; records may be dropped. PID 1 enforces a phase deadline even if the main supervisor stalls. Token, key and application values are never audit fields. `/applog` is reformatted without a journal at every boot; copy public logs off before restarting.
+Bootstrap and periodic appraisal queue allowlisted metadata for an independent, bounded audit writer. Journal, console or `/applog/attestation.log` I/O cannot defer revocation; records may be dropped. PID 1 enforces a phase deadline even if the main supervisor stalls. Token, key and application values are never audit fields. `/applog` is reformatted without a journal at every boot; the host launcher automatically preserves the three newest prior applog disk images before relaunch.
 
 The container receives `/vault/application` read-only, its `runtime/` and `data/`
 subdirectories writable, `/applog`, `/user_config` (read-only) and `/user_data`
@@ -373,6 +383,43 @@ Existing deliveries remain self-contained. The source fingerprint still covers
 all construction sources, provisioning logic, payload lists and launch assets.
 
 ## Development and validation
+
+### 30-minute dev-mode walkthrough
+
+This path exercises the two-stage build and launch flow on an x86-64 Linux host
+without TEE hardware or Trustee. It produces a separate `dev-` profile and an
+unencrypted development vault. With the base image, dependencies, and Docker
+application image already available, the walkthrough is intended to fit a
+30-minute evaluation window.
+
+```sh
+cd nvflare/lighter/cc/image_builder
+mkdir -p inputs target
+docker save my-application:release -o inputs/application.tar
+
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+profile = yaml.safe_load(Path("config/cvm_profile.yml").read_text())
+profile["profile_version"] = "dev-local"
+Path("inputs/cvm_profile-dev.yml").write_text(yaml.safe_dump(profile, sort_keys=False))
+
+vault = yaml.safe_load(Path("config/vault_build.yml").read_text())
+vault["cvm_image"] = "../target/cvm_dev-local"
+vault["docker_archive"] = "application.tar"
+Path("inputs/vault_build-dev.yml").write_text(yaml.safe_dump(vault, sort_keys=False))
+PY
+
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build \
+  inputs/cvm_profile-dev.yml -p intel_tdx --dev
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault \
+  inputs/vault_build-dev.yml --dev
+```
+
+Use the `Launch:` command printed by the vault build. The `--dev` switches are
+mandatory on both stages. Dev artifacts cannot be approved, combined with a
+production bundle, or used as evidence of TEE/KBS behavior.
 
 Use a separate `dev-` profile plus `--dev` on both builders for an unencrypted
 development vault and plain VM. Do not provide Trustee administration credentials to a dev

@@ -35,6 +35,7 @@ from cvm.host.launcher import (
     gpu_devices,
     graceful_stop,
     launch,
+    preserve_applog,
     qemu_command,
     qmp_powerdown,
     qmp_socket_path,
@@ -68,6 +69,20 @@ DISKS = [f"/disk-{i}" for i in range(5)]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_previous_applog_is_preserved_with_bounded_retention(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            outputs = []
+            for index in range(5):
+                applog.write_bytes(f"run-{index}".encode())
+                outputs.append(preserve_applog(directory, applog, limit=3))
+            retained = sorted((directory / "applog-history").glob("*.qcow2"))
+            self.assertEqual(len(retained), 3)
+            self.assertEqual([path.read_bytes() for path in retained], [b"run-2", b"run-3", b"run-4"])
+            self.assertTrue(all(path.stat().st_mode & 0o777 == 0o600 for path in retained))
+            self.assertTrue(all(not path.exists() for path in outputs[:2]))
+
     def test_duplicate_launch_preserves_the_live_qmp_socket(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

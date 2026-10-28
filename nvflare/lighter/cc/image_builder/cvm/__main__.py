@@ -112,7 +112,7 @@ def acceptance_report(args):
 
 
 def host_preflight(args):
-    if not check_host(args.firmware, args.quote_probe):
+    if not check_host(args.firmware, args.quote_probe, platform=args.platform, gpu=args.gpu):
         print(
             "Quote generation NOT checked. Run --quote-probe with a site smoke test before building. "
             "Check collateral access and multi-package platform registration if quotes are empty.",
@@ -239,8 +239,10 @@ def parser():
     preflight = commands.add_parser("preflight", help="check host or Trustee prerequisites")
     checks = preflight.add_subparsers(required=True)
     host = checks.add_parser("host")
+    host.add_argument("--platform", choices=PLATFORMS, default="intel_tdx")
     host.add_argument("--firmware", type=Path, required=True)
     host.add_argument("--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote")
+    host.add_argument("--gpu", action="store_true", help="also screen an installed NVIDIA confidential-GPU host")
     host.set_defaults(handler=host_preflight)
     trustee = checks.add_parser("trustee")
     trustee.set_defaults(handler=lambda a: check_trustee())

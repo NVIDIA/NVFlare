@@ -2,6 +2,9 @@
 
 This example uses the unified confidential-computing provisioning interface to
 build a TDX server and an AMD SEV-SNP client with an NVIDIA confidential GPU.
+For the documented starting point, use the
+[single-platform CPU-only example](cpu_only/README.md); return here when the
+federation requires a mixed CPU/GPU topology.
 
 The project-wide [`cc_project.yml`](cc_project.yml) contains the Trustee,
 approval, and trusted CVM Builder settings. Each protected participant selects

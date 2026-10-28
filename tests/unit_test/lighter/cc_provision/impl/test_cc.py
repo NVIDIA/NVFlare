@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import hashlib
 import json
 import shlex
 import shutil
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -29,11 +31,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
 from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE, AZCVMAuthorizer
 from nvflare.app_opt.confidential_computing.cc_manager import CCManager
-from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
+from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
-from nvflare.lighter.cc_provision.impl.cc_packager import CCPackager
+from nvflare.lighter.cc_provision.impl.cc_packager import (
+    MAX_KBS_POLICY_BYTES,
+    CCPackager,
+    _check_coco_release_available,
+)
 from nvflare.lighter.cc_provision.impl.coco import CoCoDeployment
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
@@ -49,6 +55,47 @@ from nvflare.lighter.utils import verify_folder_signature
 def _write(path, value):
     path.write_text(yaml.safe_dump(value, sort_keys=False))
     return path
+
+
+class _PolicyResponse:
+    def __init__(self, value):
+        self.value = value
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self, limit):
+        assert limit == MAX_KBS_POLICY_BYTES + 1
+        return self.value
+
+
+@pytest.mark.parametrize("collision", [False, True])
+def test_coco_release_collision_is_checked_before_publication(tmp_path, collision):
+    token = tmp_path / "admin.jwt"
+    token.write_text("header.payload.signature")
+    service = {
+        "kbs_endpoint": "https://trustee.example.com:8443",
+        "ca_cert_file": str(tmp_path / "ca.pem"),
+        "admin_token_file": str(token),
+    }
+    marker = b"wo_site_v1_expected_initdata" if collision else b"package policy\ndefault allow := false"
+    opener = Mock()
+    opener.open.return_value = _PolicyResponse(marker)
+    with (
+        patch("nvflare.lighter.cc_provision.impl.cc_packager.ssl.create_default_context", return_value=object()),
+        patch("nvflare.lighter.cc_provision.impl.cc_packager.urllib.request.build_opener", return_value=opener),
+    ):
+        if collision:
+            with pytest.raises(ValueError, match="already exists.*before image publication"):
+                _check_coco_release_available(service, "site-v1")
+        else:
+            _check_coco_release_available(service, "site-v1")
+    request = opener.open.call_args.args[0]
+    assert request.full_url == "https://trustee.example.com:8443/kbs/v0/resource-policy"
+    assert request.get_header("Authorization") == "Bearer header.payload.signature"
 
 
 def _azure_project(tmp_path, participant=None, project_config=None):
@@ -397,6 +444,19 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
 
 
+def test_participant_cpu_names_are_normalized_in_workload_constraints(tmp_path):
+    project = _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["workload_constraints"]["site-1"]["cpu_tee"] = "amd_sev_snp"
+    _write(path, config)
+
+    builder = CCBuilder()
+    builder.initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+    assert builder.plans["site-1"].internal["workload_constraints"]["site-1"]["cpu_tee"] == "snp"
+
+
 def test_gpu_tee_defaults_missing_client_capacity_to_one(tmp_path):
     project = _coco_project(tmp_path)
 
@@ -644,6 +704,28 @@ def test_optional_admin_token_still_requires_existing_file(tmp_path):
         load_project_config(tmp_path / "cc_project.yml")
 
 
+def test_project_config_warns_before_parseable_admin_token_expiry(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 1060}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.warns(RuntimeWarning, match="expires within"):
+        _warn_jwt_expiry(token, 120, now=1000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _warn_jwt_expiry(token, 30, now=1000)
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "604800", True])
+def test_project_config_rejects_invalid_expiry_warning_window(tmp_path, value):
+    _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["expiry_warning_seconds"] = value
+    _write(path, config)
+    with pytest.raises(ValueError, match="expiry_warning_seconds"):
+        load_project_config(path)
+
+
 def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypatch):
     _coco_project(tmp_path)
     home = tmp_path / "home"
@@ -676,6 +758,7 @@ def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypat
     service = project_config["attestation_services"]["trustee"]
     assert service["ca_cert_file"] == str(credentials / "ca.pem")
     assert service["admin_token_file"] == str(credentials / "admin.jwt")
+    assert service["expiry_warning_seconds"] == 7 * 86400
     assert service["attestation_signing_public_key_file"] == str(credentials / "as.pem")
     assert project_config["approval"]["public_key_files"] == [str(credentials / "approval.pub")]
     assert project_config["container_registries"]["workloads"]["ca_cert_file"] == str(credentials / "registry-ca.pem")
@@ -737,6 +820,7 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
                         "kbs_endpoint": endpoint,
                         "ca_cert_file": "ca.pem",
                         "admin_token_file": "admin.jwt",
+                        "expiry_warning_seconds": 604800,
                         "token_expiration_seconds": 100,
                     },
                 ),
@@ -785,6 +869,7 @@ def test_bare_metal_rejects_maximum_age_without_delivery_headroom(
                 "kbs_endpoint": "https://trustee.example:8443",
                 "ca_cert_file": "ca.pem",
                 "admin_token_file": "admin.jwt",
+                "expiry_warning_seconds": 604800,
                 "token_expiration_seconds": maximum_token_age,
             }
         ),
@@ -985,7 +1070,10 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
         [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()],
         CCPackager(),
     )
-    with patch("nvflare.lighter.cc_provision.impl.cc_packager.subprocess.run", side_effect=runner):
+    with (
+        patch("nvflare.lighter.cc_provision.impl.cc_packager._check_coco_release_available"),
+        patch("nvflare.lighter.cc_provision.impl.cc_packager.subprocess.run", side_effect=runner),
+    ):
         ctx = provisioner.provision(project)
 
     assert ctx[CtxKey.PROVISION_SUCCESS] is True, ctx.get_errors()

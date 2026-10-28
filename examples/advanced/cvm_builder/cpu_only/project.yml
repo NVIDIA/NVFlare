@@ -1,0 +1,30 @@
+api_version: 3
+name: cvm_cpu_only
+description: Minimal AMD SEV-SNP CPU-only CVM federation
+cc_project_config: cc_project.yml
+
+participants:
+  - name: server.example.com
+    type: server
+    org: example
+    fed_learn_port: 8002
+    admin_port: 8003
+    cc_config: cc_server.yml
+  - name: site-1
+    type: client
+    org: example
+    cc_config: cc_site-1.yml
+  - name: admin@example.com
+    type: admin
+    org: example
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+
+packager:
+  path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager

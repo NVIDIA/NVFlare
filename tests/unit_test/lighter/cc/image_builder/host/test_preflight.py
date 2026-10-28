@@ -19,10 +19,29 @@ import unittest
 from pathlib import Path
 
 from cvm.common.errors import BuildError
-from cvm.host.preflight import check_qgs_config
+from cvm.host.preflight import check_qgs_config, check_snp_host
 
 
 class PreflightTests(unittest.TestCase):
+    def test_snp_preflight_checks_cpu_module_device_iommu_and_firmware(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            procfs, sysfs, devfs = root / "proc", root / "sys", root / "dev"
+            procfs.mkdir()
+            (sysfs / "module/kvm_amd/parameters").mkdir(parents=True)
+            (sysfs / "kernel/iommu_groups/1").mkdir(parents=True)
+            devfs.mkdir()
+            firmware = root / "OVMF.amdsev.fd"
+            firmware.touch()
+            (procfs / "cpuinfo").write_text("vendor_id : AuthenticAMD\nflags : sev sev_es sev_snp\n")
+            (sysfs / "module/kvm_amd/parameters/sev_snp").write_text("Y\n")
+            (devfs / "sev").touch()
+            self.assertTrue(check_snp_host(firmware, procfs=procfs, sysfs=sysfs, devfs=devfs))
+
+            (sysfs / "module/kvm_amd/parameters/sev_snp").write_text("N\n")
+            with self.assertRaisesRegex(BuildError, "BIOS"):
+                check_snp_host(firmware, procfs=procfs, sysfs=sysfs, devfs=devfs)
+
     def test_headerless_and_sectioned_qgs_configs(self):
         for content in (
             "# Intel QGS\nport = 4050\nnumber_threads = 4\n",

@@ -1,6 +1,6 @@
 # Folder containing profile_set.json, or an immutable generic CVM registry reference.
-cvm_image: ../target/cvm_cpu-2026.09
-# cvm_image: registry.example.org/cvm/cpu-2026.09@sha256:<64-hex-manifest-digest>
+cvm_image: ../target/cvm_cpu-2026.09-r5
+# cvm_image: registry.example.org/cvm/cpu-2026.09-r5@sha256:<64-hex-manifest-digest>
 docker_archive: ../inputs/application.tar
 image_id: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 # Optional: omit to build for every platform available in cvm_image.

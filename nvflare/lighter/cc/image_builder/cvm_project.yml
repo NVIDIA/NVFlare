@@ -5,6 +5,7 @@ trustee:
   url: https://trustee.example.org:8443
   ca: ./inputs/kbs-ca.pem
   admin_token_file: ./inputs/kbs-resource-token.jwt
+  expiry_warning_seconds: 604800
 # Acceptance authorities. A generic CVM bundle is production-approved only when
 # its approval.json carries an Ed25519 signature by one of these public keys.
 approval:

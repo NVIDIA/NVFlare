@@ -1,5 +1,14 @@
 # Build a CVM bundle and application vault
 
+> **Candidate profile only (checked 2026-10-26).** The checked-in
+> `cpu-2026.09-r5` profile has `production_ready: false` because its pinned
+> kernel/storage combination did not pass the dm-integrity corruption-read
+> acceptance case. Production approval rejects this exact profile. For a
+> non-TEE evaluation, start with the
+> [30-minute dev-mode walkthrough](README.md#30-minute-dev-mode-walkthrough).
+> Production use requires a newly versioned profile and complete hardware
+> acceptance; do not change this profile's flag in place.
+
 The generic CVM contains Ubuntu, the container runtime, attestation code, and the
 vault unlock path. Build it once for each platform and profile version, then reuse
 it for every compatible application. Build a new vault for every application
@@ -45,6 +54,11 @@ Follow the [Intel host setup guide](https://cc-enabling.trustedservices.intel.co
 for host enablement and the collateral service selected by your site.
 
 For TDX, complete these steps before a full build:
+
+Apply for the selected Intel collateral or Tiber Trust service account while
+hardware is being procured. Account approval and multi-package platform
+registration can take longer than the software installation; do not leave this
+dependency until the quote smoke test.
 
 1. Enable `nohibernate kvm_intel.tdx=1` in the host kernel command line and reboot.
    Instead of the `kvm_intel.tdx=1` argument, you may configure
@@ -113,6 +127,29 @@ For the plain construction VM and SNP, verify the packaged firmware paths:
 test -r /usr/share/ovmf/OVMF.fd
 test -r /usr/share/ovmf/OVMF.amdsev.fd
 ```
+
+For an SNP target, enable SEV, SEV-ES, SEV-SNP, and the IOMMU in firmware,
+reboot, and run the host preflight before construction or hardware acceptance:
+
+```sh
+sudo ./cvmctl preflight host --platform amd_sev_snp \
+  --firmware /usr/share/ovmf/OVMF.amdsev.fd
+```
+
+The check requires an AMD CPU advertising ``sev_snp``, enabled
+``kvm_amd.sev_snp``, host ``/dev/sev``, and populated IOMMU groups. Use
+``--gpu`` on an installed GPU target to require an assignable NVIDIA display
+device, working driver/VBIOS inventory, and the confidential-computing status
+interface. These checks screen a host; signed evidence, current KDS collateral,
+approved references, and negative acceptance still determine qualification.
+Before procuring a GPU, obtain the vendor's confidential-computing support
+statement for the exact SKU and VBIOS and confirm that its RIM and the selected
+driver/attester combination are available.
+
+AMD KDS can return HTTP 429 during repeated VCEK retrieval. Use bounded
+exponential backoff and cache an authenticated VCEK only for its exact chip and
+TCB identity according to site policy; do not disable certificate validation or
+retry in a tight loop.
 
 Authenticate the Ubuntu 26.04 cloud-image checksum before using the base image.
 The signing keys come from `ubuntu-cloudimage-keyring`, installed through the
@@ -374,6 +411,30 @@ Configuration values correspond to `platform_smt_enabled`,
 a separately qualified profile requires otherwise. The exact reference schema is
 [`cvm/common/references.py`](cvm/common/references.py).
 
+The following worked mapping uses the public, signature-verified upstream
+Trustee v0.22 SNP test report pinned by this repository. It demonstrates field
+translation only; these values and that guest measurement do **not** approve a
+deployment host. From the authenticated ``snp`` evidence object:
+
+| Verified report claim | Reviewed reference entry |
+|---|---|
+| `reported_tcb_bootloader: 10` | `"snp_bootloader": [10]` |
+| `reported_tcb_microcode: 25` | `"snp_microcode": [25]` |
+| `reported_tcb_snp: 23` | `"snp_snp_svn": [23]` |
+| `reported_tcb_tee: 0` | `"snp_tee_svn": [0]` |
+| `platform_smt_enabled: true` | `"snp_smt_enabled": true` |
+| `platform_tsme_enabled: false` | `"snp_tsme_enabled": false` |
+| `policy_single_socket: false` | `"snp_single_socket": false` |
+| `policy_smt_allowed: true` | `"snp_smt_allowed": true` |
+| `policy_abi_major: 0` | `"snp_guest_abi_major": 0` |
+| `policy_abi_minor: 0` | `"snp_guest_abi_minor": 0` |
+
+The source and authenticated evidence digest are recorded in
+`tests/unit_test/lighter/cc/image_builder/fixtures/snp_trustee_v022.json`.
+For a real platform, repeat the signature, challenge, endorsement, collateral,
+TCB, debug, and migration checks and record the reviewed values. Do not copy the
+example. Finalization adds the exact new guest's launch measurement separately.
+
 `--defer-measurements` still validates these approved inputs. An empty object,
 placeholder TCB values or the test fixtures are not a bootstrap procedure. Do not
 put `snp_launch_measurement` in the initial input; finalization generates it.
@@ -464,7 +525,7 @@ vcpus: 4
 memory_gib: 8
 # root_overlay_max_mib is optional and defaults to 4096 here.
 kernel_version: 7.0.0-31-generic
-kbs_url: https://kbs.example.org:8443
+kbs_url: https://trustee.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 attestation_policy: attestation_policy.rego
@@ -709,6 +770,7 @@ trustee:
   url: https://trustee.example.org:8443
   ca: ./inputs/kbs-ca.pem
   admin_token_file: ./inputs/kbs-resource-token.jwt
+  expiry_warning_seconds: 604800
 approval:
   public_keys:
     - ./inputs/acceptance-signing.pub
@@ -716,6 +778,9 @@ approval:
 
 Use your actual HTTPS endpoint and scoped resource-administration token from
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-use-native-trustee-resource-administration).
+The optional expiry window defaults to seven days and warns before either that
+token or a reviewed RVPS reference enters the window.
+
 `approval.public_keys` names the acceptance authorities; a generic CVM bundle is
 usable for a production vault only when its `approval.json` is signed by one of
 them.

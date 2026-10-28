@@ -21,6 +21,7 @@ import ssl
 import time
 import urllib.error
 import urllib.request
+import warnings
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -39,6 +40,7 @@ RESOURCE_ROLE = "cvm-resources"
 # A leaked resource token can replace or delete every key its role may reach.
 # Refuse long-lived tokens so rotation stays a habit rather than an emergency.
 MAX_ADMIN_TOKEN_LIFETIME_SECONDS = 30 * 86400
+DEFAULT_EXPIRY_WARNING_SECONDS = 7 * 86400
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -82,6 +84,14 @@ def admin_token(config, now=None):
         exp - iat <= MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
         "Trustee administration token lifetime exceeds 30 days; issue a short-lived token",
     )
+    warning_window = config.get("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
+    require(type(warning_window) is int and warning_window >= 0, "Invalid credential expiry warning window")
+    if exp - now <= warning_window:
+        warnings.warn(
+            "Trustee administration token expires within the configured warning window; rotate it before deployment",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return token
 
 

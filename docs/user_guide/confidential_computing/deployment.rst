@@ -64,6 +64,7 @@ trusted build commands. Paths in this file resolve relative to this file.
        ca_cert_file: ./credentials/kbs-ca.pem
        # Required only when this service is selected by bare_metal_cvm.
        admin_token_file: ./credentials/kbs-resource-token.jwt
+       expiry_warning_seconds: 604800
        attestation_token_endpoint: http://127.0.0.1:8006/aa/token
        attestation_signing_public_key_file: ./credentials/trustee-as-public.pem
        token_expiration_seconds: 300
@@ -73,6 +74,8 @@ trusted build commands. Paths in this file resolve relative to this file.
        get_token_request_timeout_seconds: 45
        # Optional verifier policy shared by bare-metal CVM and CoCo.
        proof_iat_leeway_seconds: 180
+       # Trustee EAR evidence names are tdx/snp here. Participant cpu_tee uses
+       # intel_tdx/amd_sev_snp; provisioning also normalizes those aliases here.
        workload_constraints:
          server:
            cpu_tee: tdx
@@ -115,7 +118,6 @@ The loopback attestation endpoint is inside a CoCo confidential guest. It is
 not the provisioning host or remote Trustee address. Bare-metal CVM and CoCo
 both select ``attestation.service: trustee`` and therefore consume this same
 object. Trustee settings must not be repeated in participant files.
-
 ``admin_token_file`` is required only for a service selected by a bare-metal
 CVM participant, whose builder registers resources. CoCo provisioning does not
 use this credential: omit it from CoCo-only configurations and keep the KBS
@@ -126,6 +128,9 @@ the registry CA/bundle file is required even if its root is already in system
 trust. Certificate and public-key files come from the corresponding service
 administrator; publisher credentials stay on trusted provisioning infrastructure.
 
+``expiry_warning_seconds`` defaults to seven days. Provisioning warns when the
+parseable administration JWT enters that window; CVM publication applies the
+same window to reviewed RVPS references.
 If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts
@@ -175,30 +180,12 @@ Workload sources form a closed enum:
 Bare-metal CVM
 --------------
 
-.. code-block:: yaml
+Start with the :github_nvflare_link:`single-platform CPU-only example
+<examples/advanced/cvm_builder/cpu_only/README.md>`. The mixed TDX/SNP GPU
+example is an advanced topology.
 
-   schema_version: 1
-   cc_deployment_mode: bare_metal_cvm
-   cpu_tee: intel_tdx
-   gpu_tee: none
-   attestation:
-     service: trustee
-   workload:
-     source:
-       type: docker_archive
-       path: /srv/nvflare/images/application.tar
-   bare_metal_cvm:
-     cvm_image: oci://registry.example.org/cvm/tdx@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-     storage:
-       vault_size_gib: 32  # Example only; calculate for the image and workload.
-       applog_size_gib: 1
-       user_config_size_gib: 1
-       user_data_size_gib: 1
-     network:
-       allowed_in_ports: []
-       allowed_out_ports: [8443]
-       allowed_in_cidrs: []
-       allowed_out_cidrs: []
+.. literalinclude:: ../../../examples/advanced/cvm_builder/cpu_only/cc_server.yml
+   :language: yaml
 
 ``cvm_image`` is an immutable registry reference or a pulled CVM directory.
 Its approved contract must match ``cpu_tee`` and ``gpu_tee``. The application
@@ -222,24 +209,8 @@ key release remains a separate Trustee authorization decision.
 CoCo
 ----
 
-.. code-block:: yaml
-
-   schema_version: 1
-   cc_deployment_mode: coco
-   cpu_tee: amd_sev_snp
-   gpu_tee: nvidia_cc
-   attestation:
-     service: trustee
-   workload:
-     source:
-       type: docker_build
-       context: ./site-1
-       dockerfile: Dockerfile
-   coco:
-     release_name: site-1-v1
-     registry: coco_workloads
-     registry_repository: workloads/site-1
-     platform_config_file: ../admin/platform.env
+.. literalinclude:: ../../../examples/devops/coco/provision/cc_site-1.yml
+   :language: yaml
 
 ``registry`` selects the project-level registry; ``registry_repository`` is
 only its repository path. ``platform_config_file`` supplies the captured

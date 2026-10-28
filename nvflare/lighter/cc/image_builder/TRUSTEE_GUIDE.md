@@ -101,7 +101,7 @@ The AS key is P-256 because the CVM profile validates ES256 tokens.
 umask 077
 export TRUSTEE_PKI="$HOME/workspace/cvm-trustee-pki"
 export CVM_BUILDER_SOURCE="$PWD"
-export TRUSTEE_DNS=kbs.example.org
+export TRUSTEE_DNS=trustee.example.org
 mkdir -p "$TRUSTEE_PKI"
 cd "$TRUSTEE_PKI"
 for authority in ca as-ca; do
@@ -306,9 +306,10 @@ Configure the build worker's `cvm_project.yml`:
 
 ```yaml
 trustee:
-  url: https://kbs.example.org:8443
+  url: https://trustee.example.org:8443
   ca: ./credentials/kbs-ca.pem
   admin_token_file: ./credentials/kbs-resource-token.jwt
+  expiry_warning_seconds: 604800
 ```
 
 The token file contains only the signed JWT, with restricted file permissions.
@@ -316,7 +317,9 @@ Paths resolve relative to this YAML. Stage 2 checks the token syntax and lifetim
 locally before retrieving the generic image or sealing a vault, then reads and
 checks it again when uploading the 64-byte key with
 `POST /kbs/v0/resource/keys/<build_id>/<binding_id>`. Operators may therefore
-rotate a still-valid token during a long build. Guest retrieval still requires
+rotate a still-valid token during a long build. Set `expiry_warning_seconds` to
+the maintenance lead time (seven days by default) and rotate the token or
+reviewed RVPS records before a denial. Guest retrieval still requires
 successful attestation and resource policy authorization; administration
 credentials are never delivered to guests.
 
@@ -393,7 +396,7 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
 
 ```json
 {
-  "url": "https://kbs.example.org:8443",
+  "url": "https://trustee.example.org:8443",
   "ca": "/etc/cvm-trustee/pki/ca.pem",
   "admin_private_key": "/protected/kbs-admin.key",
   "admin_role": "cvm-policy",

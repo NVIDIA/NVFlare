@@ -123,11 +123,18 @@ follow :ref:`cc_deployment` for the shared provisioning configuration. Select
 ``bare_metal_cvm``, ``coco``, or ``azure_cc`` in each protected participant's
 ``cc_config``, and define shared services in ``cc_project_config``.
 
+Create confidential-computing projects with CLI provisioning. The Dashboard's
+legacy project record does not generate ``cc_config``, Trustee policy, or a
+protected deployment artifact and therefore does not expose a CC control.
+
 Use the chosen mode's guide for building or creating the protected artifacts,
 approval, distribution, and launch. Validate the selected platform and workload,
 including the required attestation and denial behavior, before approving the
 deployment for use. Keep configuration support, successful functional runs, and
 security acceptance as separate claims.
+
+Follow :ref:`cc_operations` for the linear checklist, shared terminology,
+failure table, and Day-2 rebuild decisions across all three modes.
 
 .. _cc_official_references:
 

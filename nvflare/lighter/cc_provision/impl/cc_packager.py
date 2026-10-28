@@ -18,8 +18,11 @@ import hashlib
 import json
 import shlex
 import shutil
+import ssl
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import yaml
@@ -28,9 +31,12 @@ from cryptography.hazmat.primitives import serialization
 from nvflare.lighter.cc_provision.deployment import CCArtifact, CCDeploymentResult
 from nvflare.lighter.cc_provision.impl.coco_packager import CoCoPlanPackager
 from nvflare.lighter.cc_provision.impl.coco_release import coco_runtime_class
+from nvflare.lighter.cc_provision.workload_release import policy_prefix
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Packager
 from nvflare.lighter.utils import verify_folder_signature
+
+MAX_KBS_POLICY_BYTES = 16 * 1024 * 1024
 
 
 def _sha256(path):
@@ -41,11 +47,50 @@ def _sha256(path):
     return digest.hexdigest()
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # Never forward the KBS credential to another endpoint.
+
+
+def _check_coco_release_available(service, release_name, timeout=15):
+    """Fail before registry publication when a release is already in the shared KBS policy."""
+    token = Path(service["admin_token_file"]).read_text().strip()
+    if not token or any(character.isspace() for character in token):
+        raise ValueError("Trustee administration token is empty or malformed")
+    request = urllib.request.Request(
+        service["kbs_endpoint"].rstrip("/") + "/kbs/v0/resource-policy",
+        headers={"Authorization": "Bearer " + token},
+    )
+    try:
+        context = ssl.create_default_context(cafile=service["ca_cert_file"])
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            _NoRedirect(),
+            urllib.request.HTTPSHandler(context=context),
+        )
+        with opener.open(request, timeout=timeout) as response:
+            policy = response.read(MAX_KBS_POLICY_BYTES + 1)
+    except urllib.error.HTTPError as error:
+        error.close()
+        raise ValueError(f"Cannot check shared Trustee release namespace: KBS returned HTTP {error.code}") from None
+    except (OSError, urllib.error.URLError, TimeoutError):
+        raise ValueError("Cannot check shared Trustee release namespace before image publication") from None
+    if len(policy) > MAX_KBS_POLICY_BYTES:
+        raise ValueError("Shared Trustee resource policy exceeds the prepublication check limit")
+    marker = (policy_prefix(release_name) + "_expected_initdata").encode()
+    if marker in policy:
+        raise ValueError(
+            f"CoCo release name {release_name} already exists in the shared Trustee; "
+            "choose a unique project/release name before image publication"
+        )
+
+
 def package_coco_plan(plan, private_kit, public_output, ctx):
     """Run the reviewed CoCo release pipeline for one normalized plan."""
 
     tools = plan.internal["build_tools"]
     project_path = plan.attestation_service.config_path
+    _check_coco_release_available(plan.attestation_service.values, plan.mode_config["release_name"])
     packager = CoCoPlanPackager(tools.get("build_timeout_seconds", 3600))
     owner = private_kit.parent
     request, runner = packager.prepare(owner, plan)

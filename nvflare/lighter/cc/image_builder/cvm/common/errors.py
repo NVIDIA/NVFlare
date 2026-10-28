@@ -23,6 +23,19 @@ class ConfigurationError(BuildError):
     """A configuration diagnostic containing schema names, never input values."""
 
 
+STARTUP_PHASES = frozenset(("verity", "attestation", "key_release", "vault_identity", "payload_authentication"))
+
+
+class StartupPhaseError(BuildError):
+    """A fixed startup phase identifier that never includes untrusted data."""
+
+    def __init__(self, phase):
+        if phase not in STARTUP_PHASES:
+            raise ValueError("Invalid startup phase")
+        self.phase = phase
+        super().__init__(phase)
+
+
 def require_config(condition, message):
     """Use only fixed messages or schema-defined field names, never user values."""
     if not condition:

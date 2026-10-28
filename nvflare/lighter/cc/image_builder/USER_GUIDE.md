@@ -1,5 +1,11 @@
 # Run a CVM with an application vault
 
+The launcher preserves the previous clear applog disk before every relaunch in
+`applog-history/applog-<timestamp>.qcow2` beside the delivery. It retains the
+three newest images with mode 0600. Inspect a retained image on a trusted host,
+for example with `guestmount -a applog-history/FILE.qcow2 -m /dev/sda MOUNT_DIR`.
+Copy any required record elsewhere before more than three later launches.
+
 Each platform/application delivery is an OCI artifact containing its complete
 reusable generic CVM bundle plus one application vault. The OCI manifest has a
 reusable CVM layer and a deployment-specific vault/runtime layer. A local OCI

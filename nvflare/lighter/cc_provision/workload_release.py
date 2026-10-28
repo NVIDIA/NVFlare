@@ -90,6 +90,15 @@ def required_vectors(cpu_tee, gpu):
     return vectors
 
 
+def policy_prefix(release):
+    """Return the reviewed Rego identifier prefix for one validated release name."""
+    require(
+        isinstance(release, str) and re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release) and len(release) <= 63,
+        "invalid release_name",
+    )
+    return "wo_" + release.replace("-", "_")
+
+
 def build_authorization(runtime, release, image, args, digest, paths):
     cpu_tee, gpu = target_for_runtime(runtime)
     vectors = required_vectors(cpu_tee, gpu)
@@ -161,7 +170,7 @@ def render_fragment(authorization, template, *, legacy=False):
     auth = validate_authorization(authorization)
     if legacy:
         require(auth["cpu_tee"] == "snp" and auth["gpu"] == "nvidia", "legacy fragments are SNP+GPU only")
-    prefix = "wo_" + re.sub(r"[^a-z0-9_]", "_", auth["release_name"])
+    prefix = policy_prefix(auth["release_name"])
 
     def compact(value):
         return json.dumps(value, separators=(",", ":"))
