@@ -267,9 +267,7 @@ class AsyncEngine:
         self.adapter.validate(delta, zero_delta)
         if self.update_observer is not None:
             self.update_observer(update)
-        prepare = getattr(self.adapter, "prepare_for_aggregation", None)
-        accumulation_delta = prepare(delta) if callable(prepare) else delta
-        self._buffer.add(accumulation_delta, weight, str(assignment.assignment_id), assignment.base_version)
+        self._buffer.add(delta, weight, str(assignment.assignment_id), assignment.base_version)
         del self.active[assignment.assignment_id]
         self.accepted_count += 1
         if self.buffered_count < self.buffer_size:

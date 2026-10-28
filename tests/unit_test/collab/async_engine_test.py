@@ -139,16 +139,27 @@ def test_invalid_result_is_fail_fast_without_partial_acceptance(case):
     assert not run.active
 
 
-def test_delta_transform_does_not_reconstruct_unscaled_full_model():
-    seen = []
+def test_delta_transform_reconstructs_original_full_model_only_on_demand(monkeypatch):
+    seen, calls = [], []
+    adapter = NumpyModelAdapter()
+    apply = adapter.apply
+
+    def record_apply(model, delta, scale):
+        calls.append(scale)
+        return apply(model, delta, scale)
+
+    monkeypatch.setattr(adapter, "apply", record_apply)
     run = engine(
-        initial_model={"w": np.array([60000], dtype=np.float16)},
+        model_adapter=adapter,
         num_updates=1,
         num_active_jobs=1,
-        server_lr=0.1,
-        update_transform=lambda update: seen.append(update.staleness) or update.delta,
+        server_lr=0.5,
+        update_transform=lambda update: seen.append(update) or {"w": update.delta["w"] * 0.5},
     )
     job = run.dispatch(["a"])[0]
-    assert run.accept(job, AsyncResult(0, 0, {"w": np.array([10000], dtype=np.float16)}, is_delta=True))
-    assert run.model["w"].item() == float(np.float16(61000))
-    assert seen == [0]
+    assert run.accept(job, AsyncResult(0, 0, {"w": np.array([4], dtype=np.float32)}, is_delta=True))
+    assert run.model["w"].item() == 11
+    assert calls == [0.5]  # publication only; the transform needs no full model
+    np.testing.assert_array_equal(seen[0].returned_model["w"], [14])
+    assert seen[0].returned_model is seen[0].returned_model
+    assert calls == [0.5, 1.0]  # reconstruct the original upload once, then cache

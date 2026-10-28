@@ -87,10 +87,10 @@ model/copy before in-place updates.
 unchanged; `apply` must return a new state. NumPy's concrete helper lives in
 `numpy_async/job.py`; PyTorch's lives in `pt_async_cifar10/model.py`. They validate
 keys/shapes/dtypes/finite values, aggregate floating entries, and preserve
-non-floating global buffers. PT snapshots are detached CPU tensors. Basic examples
-use float32. Their optional `prepare_for_aggregation` widens low-precision deltas
-before weighting, then publication restores the original dtype. There is no
-overflow-recovery policy or mandatory tensor-framework dependency in core.
+non-floating global buffers. PT snapshots are detached CPU tensors. The async
+examples use float32 and expose no precision setting. Aggregation uses the supplied
+dtype through the existing weighted helper; core adds no precision conversion or
+overflow-recovery policy and has no mandatory tensor-framework dependency.
 
 ## Application and update hooks
 

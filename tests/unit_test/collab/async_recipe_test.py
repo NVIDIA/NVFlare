@@ -31,6 +31,7 @@ from nvflare.collab import AsyncRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.proxy import Proxy
+from nvflare.collab.async_engine import AsyncEngine, AsyncResult
 from nvflare.collab.async_recipe import AsyncWorkflow
 
 from ._direct_dispatcher import _DirectDispatcher
@@ -250,6 +251,25 @@ def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_p
             sys.modules.pop(name, None)
             if previous is not None:
                 sys.modules[name] = previous
+
+
+def test_cifar_adapter_owns_cpu_snapshots_and_preserves_nonfloating_buffers():
+    torch = pytest.importorskip("torch")
+    from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter
+
+    initial = {"w": torch.tensor([10.0], requires_grad=True), "counter": torch.tensor(5)}
+    engine = AsyncEngine(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
+    initial["w"].detach().fill_(99)
+    a, b = engine.dispatch(["a", "b"])
+    first = {"w": torch.tensor([12.0]), "counter": torch.tensor(99)}
+    second = {"w": torch.tensor([16.0]), "counter": torch.tensor(100)}
+    assert not engine.accept(a, AsyncResult(a.assignment_id, 0, first, {"num_steps": 1}))
+    first["w"].fill_(999)
+    assert engine.accept(b, AsyncResult(b.assignment_id, 0, second, {"num_steps": 3}))
+    assert engine.model["w"].item() == 15
+    assert engine.model["counter"].item() == 5
+    assert not engine.model["w"].requires_grad
+    assert engine.model["w"].device.type == "cpu"
 
 
 def test_cifar_training_keeps_optimizer_scheduler_and_num_steps(monkeypatch, tmp_path):
