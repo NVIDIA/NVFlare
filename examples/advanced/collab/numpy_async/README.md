@@ -14,7 +14,7 @@ supplies initial weights. `AsyncRecipe` handles assignments, versions, buffering
 and lifecycle; `NumpyModelAdapter` handles arithmetic. `--num-updates` counts
 global publications. Results use the normal Collab run result mechanism.
 
-See [the contracts](../../../../docs/design/async_recipe.md) for independent
+See [the async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst) for independent
 imports, application hooks, weighting, transformations, and failure behavior.
 
 Each successful run saves `schedule.json` and `final_weights.npy`. Actual arrival

@@ -77,9 +77,9 @@ recipe = ResearchRecipe(
 `job.py` explicitly bundles this package for server and client export. Do the
 same when using these helpers in another job. They can be copied or adapted
 independently; they are example APIs rather than installed SDK guarantees.
-See the [core contracts](../../../../docs/design/async_recipe.md) for
+See the [async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst) for
 numerical contracts, ownership, deployment and failure behavior. The
-[component scope table](../../../../docs/design/async_recipe.md#component-scope)
+[component scope table](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst#component-scope)
 identifies what belongs in the core recipe, core engine, model helpers and this
 research workflow.
 

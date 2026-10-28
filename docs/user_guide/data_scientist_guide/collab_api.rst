@@ -318,6 +318,18 @@ Client API / Job Recipe API path:
   site's Cell configured with certificates; without that, the call raises
   rather than falling back to a non-secure transport.
 
+Buffered Async Training
+-----------------------
+
+Use ``AsyncRecipe`` for reusable buffered training in actual client arrival
+order. Supply a client, application hooks and model operations; the recipe owns
+assignment tracking, K/B/O scheduling and weighted aggregation.
+
+.. toctree::
+   :maxdepth: 1
+
+   async_recipe
+
 Examples
 --------
 

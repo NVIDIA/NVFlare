@@ -131,6 +131,9 @@ The server computes each client delta relative to that assignment's base
 model, weights updates by local training steps, and applies the FedBuff average
 with `--server-lr` to match the existing FedAvg example.
 
+See the [async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst)
+for configuration, client contracts, application hooks, and component scope.
+
 ## Job Recipe Code
 
 `job.py` constructs an `AsyncRecipe` with a published client trainer,

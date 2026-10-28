@@ -36,7 +36,7 @@ class AsyncWorkflow:
     states must not be mutated. The published client protocol is
     train(assignment_ids, model_version, global_model, logical_assignments),
     returning (model, metrics, metadata). No retry or remote cancellation is
-    provided. See docs/design/async_recipe.md for deployment and ownership.
+    provided. See docs/user_guide/data_scientist_guide/async_recipe.rst for deployment and ownership.
     """
 
     _engine_class = AsyncEngine
