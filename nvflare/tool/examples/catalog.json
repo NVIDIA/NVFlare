@@ -107,6 +107,10 @@
     "source_path": "examples/advanced/codon-fm",
     "category": "advanced"
   },
+  "collab-async-research": {
+    "source_path": "examples/advanced/collab/async_research",
+    "category": "advanced"
+  },
   "collab-llm-sft": {
     "source_path": "examples/advanced/collab/pt_llm_sft",
     "category": "advanced"

@@ -116,8 +116,9 @@ model version.
 
 ## Server-Side Workflow
 
-`Cifar10AsyncAggregator.execute()` uses `@collab.main` as the server workflow
-entry point. It:
+`AsyncRecipe` runs the shared `AsyncWorkflow.execute()` entry point, marked
+with `@collab.main`. `Cifar10AsyncApplication` supplies model/evaluation/artifact
+hooks. The shared workflow:
 
 1. fills $K$ physical client-job slots;
 2. invokes selected clients with a nonblocking Collab group call;
@@ -221,33 +222,18 @@ server evaluates every saved version on that common test set. Deferring
 evaluation prevents evaluation work from changing client completion order,
 open-slot timing, staleness, or the asynchronous participation sequence.
 
-## Seeds and reproducible replay
+## Seeds and arrival timing
 
 `--split-seed` controls the prepared shards; `--setup-seed` controls initial
-model weights; model construction now honors it instead of resetting to the
-model class's default. `--run-seed` now supplies an assignment-specific client training
-seed through reusable `SeedPolicy`/`SeededTrainArgs` components. It does not
-select the default actual arrival order.
+model weights. `--run-seed` sets the server-side RNG after model setup. Client
+training uses ordinary persistent loaders, optimizer and scheduler state; this
+example does not impose per-assignment RNG scopes or replay.
 
-Each seeded assignment uses an isolated Python/NumPy/PyTorch RNG scope and a
-separate DataLoader generator for sampling. Worker RNGs are initialized from
-that generator; seeded workers are recreated per assignment. SGD momentum and
-the cosine scheduler remain persistent on the same client. This changes the
-previous implicit training random stream to an explicit per-assignment stream.
-
-For a small reproducible schedule, combine fixed seeds with predefined replay:
-
-```bash
-python job.py --num-clients 2 --num-active-jobs 2 --num-rounds 4 --buffer-size 1 \
-    --min-open-slots 1 --run-seed 10 --arrival-sequence 1 0 3 2
-```
-
-The server writes `schedule.jsonl`, including assignment IDs, logical/physical
-clients, model bases and selected training seeds. Reuse the same K/B/O, data,
-initial state, seeds, training settings and numerical environment when comparing
-runs. RNG control does not guarantee deterministic GPU operations or restore
-client state after a restart. See the [seed contracts](../../../../docs/design/async_recipe.md#reusable-seed-policy)
-for independent streams, PyTorch helpers, seed overrides, and current limits.
+Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
+observed assignment IDs, physical/logical clients and base versions. For fixed
+replay and assignment seed helpers, see the separate
+[async research example](../async_research/README.md). Its client contract can
+be adopted explicitly when building a reproducible training experiment.
 
 ## Outputs
 

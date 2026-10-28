@@ -93,7 +93,7 @@ class Cifar10AsyncApplication:
         tensorboard_dir = os.path.join(self._run_dir, "tensorboard")
         os.makedirs(tensorboard_dir, exist_ok=True)
         self._writer = SummaryWriter(log_dir=tensorboard_dir)
-        # A new run records only its own dispatch/accept sequence and seeds.
+        # Start a fresh trace for this run.
         with open(os.path.join(self._run_dir, "schedule.jsonl"), "w"):
             pass
         self.logger.info(f"TensorBoard logs: {tensorboard_dir}")

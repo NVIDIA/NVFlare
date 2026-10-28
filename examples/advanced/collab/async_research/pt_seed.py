@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Optional PyTorch RNG helpers; importing SeedPolicy alone needs no torch."""
+"""Research PyTorch RNG helpers; importing SeedPolicy alone needs no torch."""
 
 import random
 import threading
@@ -21,7 +21,7 @@ from contextlib import contextmanager
 import numpy as np
 import torch
 
-from nvflare.collab.seed_policy import _check_seed
+from .seed_policy import _check_seed
 
 # These libraries expose process-global RNGs. Serialize cooperating scopes;
 # unrelated threads must not use those global RNGs concurrently with a scope.

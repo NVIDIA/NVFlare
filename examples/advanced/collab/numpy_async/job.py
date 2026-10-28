@@ -23,8 +23,6 @@ import numpy as np
 
 from nvflare.collab import AsyncRecipe, collab
 from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
-from nvflare.collab.async_scheduling import ReplayScheduler
-from nvflare.collab.seed_policy import SeededTrainArgs, SeedPolicy
 from nvflare.recipe import SimEnv
 
 
@@ -47,25 +45,17 @@ class ArrayApplication:
 
 class ArrayClient:
     @collab.publish
-    def train(self, assignment_ids, model_version, global_model, logical_assignments, train_seeds=None):
+    def train(self, assignment_ids, model_version, global_model, logical_assignments):
         metadata = {
             "assignment_id": assignment_ids[collab.site_name],
             "model_version": model_version,
             "logical_name": logical_assignments[collab.site_name],
         }
-        if train_seeds is None:
-            updated = {key: value + 1 for key, value in global_model.items()}
-        else:
-            seed = train_seeds[collab.site_name]
-            metadata["train_seed"] = seed
-            rng = SeedPolicy(seed).numpy_rng("local_update")
-            updated = {
-                key: value + rng.normal(size=value.shape).astype(value.dtype) for key, value in global_model.items()
-            }
+        updated = {key: value + 1 for key, value in global_model.items()}
         return updated, {}, metadata
 
 
-def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1, arrival_sequence=None, run_seed=None):
+def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
     return AsyncRecipe(
         job_name="numpy_async",
         application=ArrayApplication(),
@@ -77,8 +67,6 @@ def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1, a
         min_open_slots=min_open_slots,
         min_clients=num_clients,
         call_timeout=30,
-        scheduler=ReplayScheduler(arrival_sequence) if arrival_sequence is not None else None,
-        train_kwargs=SeededTrainArgs(SeedPolicy(run_seed)) if run_seed is not None else None,
     )
 
 
@@ -88,20 +76,8 @@ def main():
     parser.add_argument("--num-updates", type=int, default=4)
     parser.add_argument("--buffer-size", type=int, default=2)
     parser.add_argument("--min-open-slots", type=int, default=1)
-    parser.add_argument(
-        "--arrival-sequence",
-        type=int,
-        nargs="+",
-        default=None,
-        help="Replay assignment IDs in this order (num-updates * buffer-size entries)",
-    )
-    parser.add_argument(
-        "--run-seed", type=int, default=None, help="Use reproducible random local deltas instead of constant deltas"
-    )
     args = parser.parse_args()
-    recipe = make_recipe(
-        args.num_clients, args.num_updates, args.buffer_size, args.min_open_slots, args.arrival_sequence, args.run_seed
-    )
+    recipe = make_recipe(args.num_clients, args.num_updates, args.buffer_size, args.min_open_slots)
     run = recipe.execute(SimEnv(num_clients=args.num_clients))
     print("Job status:", run.get_status())
     print("Results:", run.get_result())

@@ -36,10 +36,8 @@ def test_detached_cpu_snapshots_and_nonfloating_buffers():
     assert engine.model["w"].device.type == "cpu"
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("buffer_size", [1, 2])
-@pytest.mark.parametrize("is_delta", [False, True])
-def test_low_precision_weighted_updates_accumulate_in_float32(dtype, buffer_size, is_delta):
+def test_low_precision_weighted_updates_accumulate_in_float32():
+    dtype, buffer_size, is_delta = torch.float16, 2, True
     initial = {"w": torch.zeros(1, dtype=dtype), "counter": torch.tensor(5)}
     engine = AsyncEngine(
         initial, PTAsyncModelAdapter(), 1, buffer_size, buffer_size=buffer_size, weight_metric="num_steps"

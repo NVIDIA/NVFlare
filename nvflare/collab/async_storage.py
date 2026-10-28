@@ -31,10 +31,10 @@ class SnapshotStore(Protocol):
         """Borrow the retained model; loading may materialize offloaded state."""
 
     def release(self, handle):
-        """Release one assignment reference, reclaiming storage at last use."""
+        """End assignment ownership; durable stores may retain checkpoint files."""
 
     def close(self):
-        """Release all remaining storage, including after failure."""
+        """Release run resources, including after failure; durable artifacts may remain."""
 
 
 class MemorySnapshotStore:
@@ -67,14 +67,14 @@ class ResultStore(Protocol):
 
     put/take/close run on the workflow thread. release can also run on a result
     reader after abort and must be thread-safe, including after close. take()
-    transfers ownership to the caller; it may materialize an offloaded payload.
+    transfers ownership to the caller; a durable checkpoint may remain on disk.
     """
 
     def put(self, assignment_id, result):
         """Take ownership of one completed result."""
 
     def take(self, assignment_id):
-        """Remove and return the result selected by the scheduler."""
+        """Return the selected result, materializing from storage when needed."""
 
     def release(self, result):
         """Release a taken/discarded result, including lazy backing files."""

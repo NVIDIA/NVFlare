@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Stateless, named random streams reusable without a Collab runtime.
+"""Research seed streams, usable without a Collab runtime.
 
 Seed derivation never consumes a generator or changes process RNG state.
 Only SeededTrainArgs adapts the policy to the asynchronous train protocol.

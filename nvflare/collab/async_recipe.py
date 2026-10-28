@@ -203,8 +203,8 @@ class AsyncWorkflow:
                 pool.shutdown(wait=False, cancel_futures=False)
 
             cleanup.callback(stop_readers)
-            # Physical completion frees a worker before logical acceptance in
-            # virtual schedules. Keep these domains separate; K counts both.
+            # A custom scheduler may hold completed results. Keep physical
+            # calls separate from assignments still awaiting acceptance.
             inflight = {}
             completed = {}
             submitted = set()
@@ -278,8 +278,8 @@ class AsyncWorkflow:
                         dispatch_available()
                         self._hook("on_model", engine.model, engine.version)
                     continue
-                # A simulated phase can unlock work without yielding an upload.
-                # Route that work before deciding there is no physical progress.
+                # A scheduling decision can unlock work without yielding a
+                # result. Retry dispatch before declaring that progress stopped.
                 dispatch_available()
                 if not inflight:
                     raise RuntimeError("async workflow cannot make progress")
@@ -303,35 +303,24 @@ class AsyncWorkflow:
 
 
 class AsyncRecipe(CollabRecipe):
-    """Buffered asynchronous Collab training with explicit application/model adapters.
+    """Buffered asynchronous training over CollabAPI.
 
-    K=num_active_jobs, B=buffer_size, O=min_open_slots. Use K=B=O for a
-    synchronous boundary. No KD or tensor framework is imported by this recipe.
-    Optional extension points are explicit constructor arguments:
-      scheduler: AsyncScheduler controlling reservations, worker routing, and
-        result acceptance. Default ArrivalOrderScheduler uses actual arrivals;
-        ReplayScheduler supports reproducible logical schedules with K greater
-        than physical worker count. A scheduler can also own simulated time.
-      train_kwargs: importable callable(ScheduledCall) -> dict of extra train
-        keyword arguments, e.g. per-assignment train_seeds. The four standard
-        train arguments and server-owned assignment identity remain mandatory.
-      snapshot_store: SnapshotStore retaining exact assignment bases; the
-        default shares in-memory states by version. Handles never go on wire.
-      result_store: ResultStore owning early results until scheduled acceptance;
-        the default uses RAM. Custom stores can offload/materialize payloads.
-      update_transform: callable(AcceptedUpdate) -> delta. It sees the uploaded
-        model, assignment base, current model/version, metrics and metadata,
-        so teacher buffers, class proxies and KD can stay independent modules.
-        Optional initialize()/close() manage transform-owned resources.
+    K=num_active_jobs, B=buffer_size, O=min_open_slots; K=B=O gives a
+    synchronous boundary. Defaults accept actual arrivals, with one call per
+    physical client. application.initialize() supplies the initial model;
+    optional on_model/on_update/on_event/on_finish/close hooks own artifacts.
 
-    Application on_update(update) observes each validated arrival before
-    accumulation; on_event(event) records lightweight dispatch/accept traces.
-    All scheduling, transformation and application hooks run on one thread.
-    Store release(result) may also run on a reader thread during abort cleanup.
-    Components must be importable and reconstructible from constructor args
-    for job export. See docs/design/async_recipe.md for ownership and examples.
-    Other runtime options are forwarded to CollabRecipe. min_clients defaults
-    to the scheduler's required_workers(K), or K for the default scheduler.
+    model_adapter owns arithmetic. update_transform is an optional callable
+    receiving AcceptedUpdate and returning a replacement delta; optional
+    initialize()/close() hooks manage its resources. train_kwargs(call) can
+    supply extra client train arguments. scheduler, snapshot_store and
+    result_store accept components implementing the corresponding protocols;
+    defaults use arrival order and bounded in-memory storage.
+
+    Components must be importable and reconstructible for job export. All
+    hooks run on the workflow thread except late-result store release during
+    cleanup. Other options pass to CollabRecipe; min_clients defaults to the
+    scheduler's required_workers(K), or K. See docs/design/async_recipe.md.
     """
 
     def __init__(

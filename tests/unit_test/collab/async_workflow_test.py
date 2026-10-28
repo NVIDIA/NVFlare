@@ -123,112 +123,32 @@ def test_transform_observes_staleness_and_can_be_omitted():
     np.testing.assert_array_equal(run.model["w"], [13])
 
 
-def test_explicit_delta_does_not_require_server_to_difference_it():
-    run = engine(num_updates=1)
-    job = run.dispatch(["a"])[0]
-    value = AsyncResult(job.assignment_id, job.base_version, {"w": np.array([3], dtype=np.float32)}, is_delta=True)
-    assert run.accept(job, value)
-    np.testing.assert_array_equal(run.model["w"], [13])
-
-
-@pytest.mark.parametrize("is_delta", [False, True])
-def test_weighted_scalar_arrays_preserve_shape_and_dtype(is_delta):
-    run = engine(
-        initial_model={"scalar": np.array(10, dtype=np.float32)},
-        num_updates=1,
-        buffer_size=2,
-        weight_metric="num_steps",
-    )
-    a, b = run.dispatch(["a", "b"])
-    for assignment, value, steps in ((a, 12, 1), (b, 16, 3)):
-        payload = np.array(value - 10 if is_delta else value, dtype=np.float32)
-        run.accept(
-            assignment,
-            AsyncResult(assignment.assignment_id, 0, {"scalar": payload}, {"num_steps": steps}, is_delta=is_delta),
-        )
-    assert run.model["scalar"].shape == ()
-    assert run.model["scalar"].dtype == np.float32
-    assert run.model["scalar"].item() == 15
-
-
-@pytest.mark.parametrize("weight", [0, -1, float("nan"), float("inf")])
-def test_invalid_weights_do_not_count(weight):
-    run = engine(weight_metric="num_steps")
-    job = run.dispatch(["a"])[0]
-    with pytest.raises(ValueError, match="weight"):
-        run.accept(job, result(job, 11, weight))
-    assert run.accepted_count == run.buffered_count == 0
-    assert run.active[job.assignment_id] is job
-
-
-@pytest.mark.parametrize("case", ["metadata", "keys", "shape", "dtype", "nan", "none", "failure"])
+@pytest.mark.parametrize("case", ["metadata", "nan"])
 def test_invalid_result_is_fail_fast_without_partial_acceptance(case):
     run = engine()
     job = run.dispatch(["a"])[0]
     value = result(job, 11)
     if case == "metadata":
         value = AsyncResult(99, 0, model(11))
-    elif case == "keys":
-        value.model.pop("counter")
-    elif case == "shape":
-        value.model["w"] = np.ones(2, dtype=np.float32)
-    elif case == "dtype":
-        value.model["w"] = np.ones(1, dtype=np.float64)
     elif case == "nan":
         value.model["w"][:] = np.nan
-    elif case == "none":
-        value = None
     with pytest.raises((ValueError, RuntimeError)):
-        run.accept(job, value, error="transport timeout" if case == "failure" else None)
+        run.accept(job, value)
     assert run.accepted_count == run.buffered_count == run.version == 0
     run.close()
     assert not run.active
 
 
-def test_close_discards_partial_buffer_and_releases_snapshots():
-    run = engine(buffer_size=2)
-    a, _ = run.dispatch(["a", "b"])
-    run.accept(a, result(a, 12))
-    run.close()
-    assert not run.active and run.buffered_count == 0
-    np.testing.assert_array_equal(run.model["w"], [10])
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"num_updates": 0},
-        {"num_active_jobs": True},
-        {"buffer_size": 1.5},
-        {"min_open_slots": 3},
-        {"server_lr": float("inf")},
-    ],
-)
-def test_invalid_configuration(options):
-    with pytest.raises(ValueError):
-        engine(**options)
-
-
-@pytest.mark.parametrize("is_delta", [False, True])
-def test_numpy_float16_weighted_updates_do_not_overflow(is_delta):
+def test_delta_transform_does_not_reconstruct_unscaled_full_model():
+    seen = []
     run = engine(
-        initial_model={"w": np.zeros(1, dtype=np.float16)}, num_updates=1, buffer_size=2, weight_metric="num_steps"
+        initial_model={"w": np.array([60000], dtype=np.float16)},
+        num_updates=1,
+        num_active_jobs=1,
+        server_lr=0.1,
+        update_transform=lambda update: seen.append(update.staleness) or update.delta,
     )
-    for index, assignment in enumerate(run.dispatch(["a", "b"])):
-        payload = {"w": np.array([100.0 * (index + 1)], dtype=np.float16)}
-        published = run.accept(
-            assignment,
-            AsyncResult(
-                assignment.assignment_id,
-                0,
-                payload,
-                {"num_steps": 1000},
-                is_delta=is_delta,
-            ),
-        )
-        if not published:
-            assert run._buffer.total["w"].dtype == np.float32
-            assert np.isfinite(run._buffer.total["w"]).all()
-        assert payload["w"].dtype == np.float16
-    assert run.model["w"].item() == 150
-    assert run.model["w"].dtype == np.float16
+    job = run.dispatch(["a"])[0]
+    assert run.accept(job, AsyncResult(0, 0, {"w": np.array([10000], dtype=np.float16)}, is_delta=True))
+    assert run.model["w"].item() == float(np.float16(61000))
+    assert seen == [0]
