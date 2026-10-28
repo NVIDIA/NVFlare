@@ -28,12 +28,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.integration_test.fast.server_transit_e2e_test import (
-    _mark_server_transit,
-    _queue_result,
-    _run_relay,
-    _wait_for_connection,
-)
+from tests.cell_transit_test_utils import _mark_server_transit, _queue_result, _run_relay, _wait_for_connection
 from tests.timing_utils import stop_processes
 
 _CHANNEL = "traffic_counter_test"

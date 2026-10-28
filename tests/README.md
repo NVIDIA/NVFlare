@@ -32,6 +32,13 @@ The existing lightweight CI-checker suites in `tests/ci/` must keep working in
 their declared minimal environment. Shared test fixtures must not eagerly import
 NVFlare or optional ML dependencies into such checks.
 
+Keep reusable factories, fakes and process targets in non-collected support modules
+(for example, `tests/*_test_utils.py`), not in another collected test module.
+Declare shared fixtures in the nearest common `conftest.py` and let pytest discover
+them; do not import a parent `conftest.py`. Tests must run independently without
+another suite first importing a mock target or registering fixtures. Import the
+mock target explicitly and patch that object when lazy module loading matters.
+
 ## Unit test structure and commands
 
 Mirror the production package under `tests/unit_test/`. For example,
