@@ -79,7 +79,6 @@ class Cifar10AsyncApplication:
         self._eval_model = None
         self._writer = None
         self._test_history = []
-        self._eval_snapshot_dir = None
         self._run_dir = None
 
     def _new_model(self):
@@ -93,6 +92,8 @@ class Cifar10AsyncApplication:
         tensorboard_dir = os.path.join(self._run_dir, "tensorboard")
         os.makedirs(tensorboard_dir, exist_ok=True)
         self._writer = SummaryWriter(log_dir=tensorboard_dir)
+        self._eval_snapshot_dir = os.path.join(self._run_dir, "eval_snapshots")
+        os.makedirs(self._eval_snapshot_dir, exist_ok=True)
         # Start a fresh trace for this run.
         with open(os.path.join(self._run_dir, "schedule.jsonl"), "w"):
             pass
@@ -142,12 +143,6 @@ class Cifar10AsyncApplication:
             json.dump(self._test_history, history_file, indent=2)
         return accuracy
 
-    def _save_eval_snapshot(self) -> None:
-        if self._eval_snapshot_dir is None:
-            self._eval_snapshot_dir = os.path.join(self._run_dir, "eval_snapshots")
-            os.makedirs(self._eval_snapshot_dir, exist_ok=True)
-        torch.save(self._global_model, os.path.join(self._eval_snapshot_dir, f"model_version_{self._model_version}.pt"))
-
     def _evaluate_snapshots(self) -> None:
         self.logger.info(f"evaluating {self.num_rounds + 1} saved global model versions on the server")
         for model_version in range(self.num_rounds + 1):
@@ -163,9 +158,7 @@ class Cifar10AsyncApplication:
         return initial
 
     def on_model(self, model, version):
-        self._global_model = model
-        self._model_version = version
-        self._save_eval_snapshot()
+        torch.save(model, os.path.join(self._eval_snapshot_dir, f"model_version_{version}.pt"))
         if (
             version
             and self.checkpoint_interval
@@ -191,4 +184,3 @@ class Cifar10AsyncApplication:
     def close(self):
         if self._writer:
             self._writer.close()
-        self._global_model = None

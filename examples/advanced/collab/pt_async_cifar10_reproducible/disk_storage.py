@@ -12,72 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Append-only local checkpoints for research replay; no reference counting."""
+"""Append-only local checkpoints for the research example."""
 
 import pickle
 from pathlib import Path
 
-from nvflare.collab import collab
+
+def load_checkpoint(path):
+    # Only load run-owned local checkpoints, never client-supplied file paths.
+    with Path(path).open("rb") as stream:
+        return pickle.load(stream)
 
 
-class _DiskStore:
-    directory_name = None
+class DiskStore:
+    """One file per identity in a fresh directory; reads retain every file."""
 
-    def __init__(self, root_dir: str | None = None):
-        self.root_dir = root_dir
-        self._directory = None
+    def __init__(self, directory):
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        if any(self.directory.iterdir()):
+            raise FileExistsError(f"Research artifacts already exist in {self.directory}; use a fresh directory")
 
-    def initialize(self):
-        if self.root_dir is None:
-            run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
-            directory = run_dir / self.directory_name
-        else:
-            directory = Path(self.root_dir)
-        directory.mkdir(parents=True, exist_ok=True)
-        if any(directory.iterdir()):
-            raise FileExistsError(f"Research artifacts already exist in {directory}; use a fresh directory")
-        self._directory = directory
+    def path(self, identity):
+        return self.directory / f"{identity:08d}.pkl"
 
-    def _path(self, identity):
-        return self._directory / f"{identity:08d}.pkl"
-
-    @staticmethod
-    def _save(path, value):
-        # These are run-owned local checkpoints, not client-supplied file paths.
-        with path.open("wb") as stream:
+    def put(self, identity, value):
+        with self.path(identity).open("xb") as stream:
             pickle.dump(value, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
-    @staticmethod
-    def _load(path):
-        with Path(path).open("rb") as stream:
-            return pickle.load(stream)
-
-
-class DiskSnapshotStore(_DiskStore):
-    """One immutable file per base version; assignment handles are file paths."""
-
-    directory_name = "assignment_bases"
-
-    def retain(self, version, model, adapter):
-        path = self._path(version)
-        if not path.exists():
-            self._save(path, adapter.snapshot(model))
-        return str(path)
-
-    def load(self, handle):
-        return self._load(handle)
-
-
-class DiskResultStore(_DiskStore):
-    """Persist each raw Collab result by ID; acceptance reloads it from disk."""
-
-    directory_name = "assignment_results"
-
-    def put(self, assignment_id, result):
-        path = self._path(assignment_id)
-        if path.exists():
-            raise ValueError(f"Result {assignment_id} was already stored")
-        self._save(path, result)
-
-    def take(self, assignment_id):
-        return self._load(self._path(assignment_id))
+    def load(self, identity):
+        return load_checkpoint(self.path(identity))

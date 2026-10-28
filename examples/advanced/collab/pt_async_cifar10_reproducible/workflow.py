@@ -15,11 +15,11 @@
 """Research-owned replay and disk bookkeeping over the shared async engine."""
 
 import queue
-from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from pt_async_cifar10_reproducible.disk_storage import DiskResultStore, DiskSnapshotStore
+from pt_async_cifar10_reproducible.disk_storage import DiskStore, load_checkpoint
 
 from nvflare.collab import collab
 from nvflare.collab.async_engine import AsyncEngine
@@ -40,7 +40,7 @@ class DiskAssignment:
 
     @property
     def base_model(self):
-        return DiskSnapshotStore._load(self.base_path)
+        return load_checkpoint(self.base_path)
 
 
 class ResearchEngine(AsyncEngine):
@@ -48,35 +48,26 @@ class ResearchEngine(AsyncEngine):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.snapshots = DiskSnapshotStore()
-        self.snapshots.initialize()
-
-    def dispatch(self, available_clients):
-        if len(set(available_clients)) != len(available_clients):
-            raise ValueError("available client names must be unique")
-        busy = {assignment.client_name for assignment in self.active.values()}
-        names = [name for name in available_clients if name not in busy]
-        return self._reserve(names, names)
+        self.run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
+        self.bases = DiskStore(self.run_dir / "assignment_bases")
 
     def reserve(self, logical_names, metadata=None):
-        if any(not isinstance(name, str) or not name for name in logical_names):
-            raise ValueError("logical names must be nonempty strings")
-        if metadata is not None and (
-            len(metadata) != len(logical_names) or any(not isinstance(m, dict) for m in metadata)
-        ):
-            raise ValueError("metadata must contain a dictionary per logical assignment")
-        return self._reserve(logical_names, [None] * len(logical_names), metadata)
-
-    def _reserve(self, logical_names, client_names, metadata=None):
+        # ReplayScheduler validates the complete name/metadata sequences once.
+        count = min(len(logical_names), self.available_slots)
+        if not count:
+            return []
+        path = self.bases.path(self.version)
+        if not path.exists():
+            # Pickling the immutable current state needs no additional snapshot.
+            self.bases.put(self.version, self.model)
         assignments = []
-        for index in range(min(len(logical_names), self.available_slots)):
-            path = self.snapshots.retain(self.version, self.model, self.adapter)
+        for index in range(count):
             assignment = DiskAssignment(
                 self._next_id,
-                client_names[index],
+                None,
                 logical_names[index],
                 self.version,
-                path,
+                str(path),
                 deepcopy(metadata[index]) if metadata else {},
             )
             self._next_id += 1
@@ -89,7 +80,7 @@ class ResearchWorkflow(AsyncWorkflow):
     """Own fixed replay, optional train arguments, and retained disk results.
 
     Core supplies Collab calls, lifecycle and numerical acceptance. This example
-    owns logical reservations, worker reuse, held results and scheduler horizons.
+    owns logical reservations, worker reuse and results held for replay.
     """
 
     def __init__(
@@ -124,31 +115,17 @@ class ResearchWorkflow(AsyncWorkflow):
         self.scheduler = scheduler
         self.train_kwargs = train_kwargs
 
-    def _create_engine(self, initial):
-        return ResearchEngine(
-            initial,
-            self.model_adapter,
-            self.num_updates,
-            self.num_active_jobs,
-            self.buffer_size,
-            self.min_open_slots,
-            self.server_lr,
-            self.weight_metric,
-            self.update_transform,
-            update_observer=getattr(self.application, "on_update", None),
-        )
+    _engine_class = ResearchEngine
 
     def _run(self, engine, names, submit, outcomes):
         scheduler = self.scheduler
-        with ExitStack() as cleanup:
-            cleanup.callback(scheduler.close)
-            results = DiskResultStore()
-            results.initialize()
+        try:
+            results = DiskStore(engine.run_dir / "assignment_results")
             scheduler.initialize(engine, names)
             inflight, completed, submitted = {}, {}, set()
 
             def dispatch():
-                if engine.finished or scheduler.finished:
+                if engine.finished:
                     return
                 for call in scheduler.dispatch():
                     assignment = call.assignment
@@ -165,18 +142,16 @@ class ResearchWorkflow(AsyncWorkflow):
                     submitted.add(identity)
                     self._emit("dispatch", assignment, engine.version, call.client_name)
 
-            while not engine.finished and not scheduler.finished:
+            while not engine.finished:
                 if collab.is_aborted:
                     raise RuntimeError("async workflow aborted")
                 dispatch()
                 identity = scheduler.next_result()
-                if scheduler.finished:
-                    break
                 if identity is not None:
                     call = completed.pop(identity, None)
                     if call is None:
                         raise ValueError("scheduler selected an incomplete result")
-                    result = results.take(identity)
+                    result = results.load(identity)
                     version = engine.version
                     published = engine.accept(call.assignment, self._normalize(result, call.assignment))
                     submitted.remove(identity)
@@ -186,9 +161,6 @@ class ResearchWorkflow(AsyncWorkflow):
                         dispatch()
                         self._hook("on_model", engine.model, engine.version)
                     continue
-                # A simulated phase may unlock another call without accepting a
-                # result yet. Process that work before waiting for physical I/O.
-                dispatch()
                 if not inflight:
                     raise RuntimeError("async workflow cannot make progress")
                 try:
@@ -204,6 +176,8 @@ class ResearchWorkflow(AsyncWorkflow):
                 results.put(assignment.assignment_id, result)
                 completed[assignment.assignment_id] = call
                 scheduler.on_result(call)
+        finally:
+            scheduler.close()
 
 
 class ResearchRecipe(CollabRecipe):
@@ -241,5 +215,5 @@ class ResearchRecipe(CollabRecipe):
             update_transform,
             call_timeout,
         )
-        collab_options.setdefault("min_clients", scheduler.required_workers(num_active_jobs))
+        collab_options.setdefault("min_clients", 1)
         super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)

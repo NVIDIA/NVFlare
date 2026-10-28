@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run asynchronous CIFAR-10 training with ``CollabRecipe``.
+"""Run asynchronous CIFAR-10 training with ``AsyncRecipe``.
 
 From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 

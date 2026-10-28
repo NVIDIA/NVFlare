@@ -111,16 +111,6 @@ def load_model_params(model: nn.Module, params: dict[str, torch.Tensor], target_
     return model
 
 
-def add_update_to_params(
-    params: dict[str, torch.Tensor], update: dict[str, torch.Tensor], scale: float = 1.0
-) -> dict[str, torch.Tensor]:
-    with torch.no_grad():
-        return {
-            name: value.detach().clone() + scale * update[name] if name in update else value.detach().clone()
-            for name, value in params.items()
-        }
-
-
 class PTModelAdapter:
     """Keep detached CPU snapshots; average floating entries only.
 

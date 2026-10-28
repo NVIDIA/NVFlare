@@ -131,9 +131,26 @@ class AcceptedUpdate:
         return self.current_version - self.assignment.base_version
 
 
-def _positive_int(name, value):
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{name} must be a positive integer")
+def _validate_options(
+    num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+):
+    """Share early recipe validation with standalone engine construction."""
+    for name, value in (
+        ("num_updates", num_updates),
+        ("num_active_jobs", num_active_jobs),
+        ("buffer_size", buffer_size),
+        ("min_open_slots", min_open_slots),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    if min_open_slots > num_active_jobs:
+        raise ValueError("min_open_slots cannot exceed num_active_jobs")
+    if not math.isfinite(server_lr) or server_lr <= 0:
+        raise ValueError("server_lr must be finite and positive")
+    if weight_metric is not None and (not isinstance(weight_metric, str) or not weight_metric):
+        raise ValueError("weight_metric must be a nonempty string or None")
+    if update_transform is not None and not callable(update_transform):
+        raise TypeError("update_transform must be callable")
 
 
 class AsyncEngine:
@@ -158,21 +175,9 @@ class AsyncEngine:
         update_transform=None,
         update_observer=None,
     ):
-        for name, value in (
-            ("num_updates", num_updates),
-            ("num_active_jobs", num_active_jobs),
-            ("buffer_size", buffer_size),
-            ("min_open_slots", min_open_slots),
-        ):
-            _positive_int(name, value)
-        if min_open_slots > num_active_jobs:
-            raise ValueError("min_open_slots cannot exceed num_active_jobs")
-        if not math.isfinite(server_lr) or server_lr <= 0:
-            raise ValueError("server_lr must be finite and positive")
-        if weight_metric is not None and (not isinstance(weight_metric, str) or not weight_metric):
-            raise ValueError("weight_metric must be a nonempty string or None")
-        if update_transform is not None and not callable(update_transform):
-            raise TypeError("update_transform must be callable")
+        _validate_options(
+            num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+        )
         self.adapter = model_adapter
         self.model = model_adapter.snapshot(initial_model)
         model_adapter.validate(self.model, self.model)
@@ -230,7 +235,7 @@ class AsyncEngine:
         weights must be finite and strictly positive.
         """
         current = self.active.get(assignment.assignment_id)
-        if self._closed or current is None or current.assignment_id != assignment.assignment_id:
+        if self._closed or current is None:
             return False
         assignment = current
         if error is not None:

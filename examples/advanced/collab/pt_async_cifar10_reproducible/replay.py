@@ -32,14 +32,13 @@ class ReplayScheduler:
     count (K may exceed physical workers). Its entries name each assignment in
     dispatch order, including repeated logical clients. Per-assignment metadata
     can carry training seeds or experimental controls to a train_kwargs builder.
-    Without logical_sequence, dispatch uses the ordinary physical-site policy.
     Replay fixes acceptance and assignment bases; it does not simulate time.
     """
 
     def __init__(
         self,
         arrival_sequence: list[int],
-        logical_sequence: list[str] | None = None,
+        logical_sequence: list[str],
         assignment_metadata: list[dict] | None = None,
     ):
         self.arrival_sequence = arrival_sequence
@@ -50,9 +49,6 @@ class ReplayScheduler:
         self._ready = set()
         self._cursor = 0
 
-    def required_workers(self, num_active_jobs):
-        return 1 if self.logical_sequence is not None else num_active_jobs
-
     def initialize(self, engine, client_names):
         total = engine.num_updates * engine.buffer_size
         if (
@@ -61,38 +57,22 @@ class ReplayScheduler:
             or set(self.arrival_sequence) != set(range(total))
         ):
             raise ValueError("arrival_sequence must permute the complete assignment-ID budget")
-        if self.logical_sequence is None:
-            if self.assignment_metadata is not None:
-                raise ValueError("assignment_metadata requires logical_sequence")
-            if len(client_names) < engine.num_active_jobs:
-                raise ValueError("num_active_jobs exceeds available clients")
-            self.engine = engine
-            self._available = list(client_names)
-        else:
-            if len(self.logical_sequence) != total or any(
-                not isinstance(n, str) or not n for n in self.logical_sequence
-            ):
-                raise ValueError("logical_sequence must name every assignment")
-            if self.assignment_metadata is not None and (
-                len(self.assignment_metadata) != total or any(not isinstance(m, dict) for m in self.assignment_metadata)
-            ):
-                raise ValueError("assignment_metadata must contain a dictionary for every assignment")
-            if not client_names:
-                raise ValueError("replay requires at least one physical worker")
-            self.engine = engine
-            self._available = list(client_names)
+        if len(self.logical_sequence) != total or any(not isinstance(n, str) or not n for n in self.logical_sequence):
+            raise ValueError("logical_sequence must name every assignment")
+        if self.assignment_metadata is not None and (
+            len(self.assignment_metadata) != total or any(not isinstance(m, dict) for m in self.assignment_metadata)
+        ):
+            raise ValueError("assignment_metadata must contain a dictionary for every assignment")
+        if not client_names:
+            raise ValueError("replay requires at least one physical worker")
+        self.engine = engine
+        self._available = list(client_names)
         self._cursor = 0
         self._reserved = 0
         self._ready.clear()
         self._pending.clear()
 
     def dispatch(self):
-        if self.logical_sequence is None:
-            calls = []
-            for assignment in self.engine.dispatch(self._available):
-                self._available.remove(assignment.client_name)
-                calls.append(ScheduledCall(assignment, assignment.client_name))
-            return calls
         end = self._reserved + self.engine.num_active_jobs
         metadata = None if self.assignment_metadata is None else self.assignment_metadata[self._reserved : end]
         assignments = self.engine.reserve(self.logical_sequence[self._reserved : end], metadata)
@@ -105,8 +85,7 @@ class ReplayScheduler:
 
     def on_result(self, call):
         self._ready.add(call.assignment.assignment_id)
-        if self.logical_sequence is not None:
-            self._available.append(call.client_name)
+        self._available.append(call.client_name)
 
     def next_result(self):
         if self._cursor == len(self.arrival_sequence):
@@ -119,14 +98,9 @@ class ReplayScheduler:
     def on_accept(self, assignment):
         self._ready.remove(assignment.assignment_id)
         self._cursor += 1
-        if self.logical_sequence is None:
-            self._available.append(assignment.client_name)
-
-    @property
-    def finished(self):
-        return False
 
     def close(self):
         self._available.clear()
         self._pending.clear()
         self._ready.clear()
+        self.engine = None

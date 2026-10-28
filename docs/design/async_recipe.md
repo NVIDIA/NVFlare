@@ -118,7 +118,8 @@ workflow thread and must leave borrowed states unchanged.
 The [reproducible example](../../examples/advanced/collab/pt_async_cifar10_reproducible/README.md)
 owns `ResearchRecipe`, its workflow, replay, logical reservations, seed helpers,
 and append-only disk checkpoints. It reuses core numerical acceptance and
-protected engine/call/run implementation methods; these are not a general
+the protected `_engine_class` and `_run` implementation points while sharing
+engine construction, Collab calls and lifecycle. These are not a general
 scheduler/storage plugin API. Core imports no research module. Model-specific
 helpers and the research API remain examples, outside the installed SDK.
 

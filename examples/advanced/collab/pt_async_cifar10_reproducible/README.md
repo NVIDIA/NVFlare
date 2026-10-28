@@ -41,10 +41,9 @@ NumPy deltas. The run directory keeps every artifact on disk. No dataset or PyTo
 | `schedule.jsonl` | Dispatch/accept records appended immediately, including training seeds. |
 | `final_weights.npy` | Final NumPy weights. |
 
-`DiskSnapshotStore` writes a base once per version and returns a file path.
-`DiskResultStore` writes results by assignment ID and reloads them at acceptance.
-There are no reference counts, cached snapshot dictionaries, or artifact deletion
-on acceptance/cleanup. Model arrays are materialized only while needed for calls
+A small `DiskStore` writes bases once per version and results once per assignment
+ID. Assignment handles are file paths; acceptance reloads raw results. Reads
+retain every file, without an in-memory model cache or reference counts. Model arrays are materialized only while needed for calls
 and aggregation; the current model/accumulator still live in RAM. All checkpoints
 remain available for inspection even after failure. Use a fresh workspace for
 each experiment; existing artifacts are never reused silently. Keep enough disk
@@ -89,9 +88,9 @@ research workflow.
 `arrival_sequence` must permute the complete `num_updates * buffer_size` ID
 budget and be compatible with K/O. Early results wait for their acceptance turn;
 errors still stop the workflow immediately. Impossible orders raise an error.
-Without `logical_sequence`, K must fit the physical pool and each site's client
-state is preserved. With it, jobs receive their base at reservation time, before
-a worker is available; physical workers can be reused while results wait.
+`logical_sequence` names every assignment. Jobs receive their base at reservation
+time, before a worker is available; physical workers can be reused while results
+wait. K may exceed the physical pool.
 Clients must keep persistent optimizer/data state by logical identity, or reset
 it per assignment. The demonstration uses stateless local updates.
 
@@ -138,22 +137,16 @@ devices/software versions, nor restore optimizer state after restart.
 
 ## FedRevive follow-up
 
-The research scheduler implements `required_workers(K)`, `initialize(engine,
-names)`, `dispatch()`, `on_result(call)`, `next_result()`, `on_accept(assignment)`,
-`finished`, and `close()`. Calls use `ScheduledCall` from this example's
-`replay.py`. Only ResearchWorkflow accepts results; ResearchEngine reserves
-logical jobs and inherits core capacity/budget and numerical rules. Core's
-engine only dispatches physical assignments.
+`ReplayScheduler` reserves logical jobs, dispatches `ScheduledCall` records and
+selects ready results in the recorded order. `ResearchWorkflow` accepts them
+through the shared engine. It selects `ResearchEngine` through the protected
+`_engine_class` attribute and reuses core engine construction, Collab calls and
+lifecycle. The research engine adds disk bases; numerical acceptance stays in core.
 
-Download/train/upload phase events and a `finished` time horizon can be added
-here. A phase may unlock another call while an earlier upload is held; the
-research workflow retries dispatch before waiting. Keep RPC completion separate
-from simulated time, order equal-time events deterministically, and record any
-virtual clock in event metadata. A horizon discards partial aggregation.
-
-DiskSnapshotStore and DiskResultStore are simple local file helpers owned by
-the research workflow, not core storage plugins. Teacher/KD components attach
-via the shared `update_transform`; no algorithm imports enter core.
+Sampled download/train/upload phases, virtual clocks and time horizons belong to
+the later FedRevive migration. Implement those policies in this example when
+needed. The current replay stops at the configured publication budget. Teacher/KD
+components attach through `update_transform`.
 
 FedRevive's reference linear training-seed mapping differs from this example's
 hash mapping. Preserve its recorded seed values and generator algorithms during

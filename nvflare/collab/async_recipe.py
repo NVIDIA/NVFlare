@@ -23,7 +23,7 @@ from copy import deepcopy
 
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
-from nvflare.collab.async_engine import AsyncEngine, AsyncEvent, AsyncResult, _positive_int
+from nvflare.collab.async_engine import AsyncEngine, AsyncEvent, AsyncResult, _validate_options
 from nvflare.collab.recipe import CollabRecipe
 
 
@@ -39,6 +39,8 @@ class AsyncWorkflow:
     provided. See docs/design/async_recipe.md for deployment and ownership.
     """
 
+    _engine_class = AsyncEngine
+
     def __init__(
         self,
         application,
@@ -52,23 +54,11 @@ class AsyncWorkflow:
         update_transform=None,
         call_timeout: float = 3600.0,
     ):
-        for name, value in (
-            ("num_updates", num_updates),
-            ("num_active_jobs", num_active_jobs),
-            ("buffer_size", buffer_size),
-            ("min_open_slots", min_open_slots),
-        ):
-            _positive_int(name, value)
-        if min_open_slots > num_active_jobs:
-            raise ValueError("min_open_slots cannot exceed num_active_jobs")
+        _validate_options(
+            num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+        )
         if not math.isfinite(call_timeout) or call_timeout <= 0:
             raise ValueError("call_timeout must be finite and positive")
-        if not math.isfinite(server_lr) or server_lr <= 0:
-            raise ValueError("server_lr must be finite and positive")
-        if weight_metric is not None and (not isinstance(weight_metric, str) or not weight_metric):
-            raise ValueError("weight_metric must be a nonempty string or None")
-        if update_transform is not None and not callable(update_transform):
-            raise TypeError("update_transform must be callable")
         if not callable(getattr(application, "initialize", None)):
             raise TypeError("application must provide initialize()")
         self.application = application
@@ -89,7 +79,7 @@ class AsyncWorkflow:
 
     @staticmethod
     def _normalize(result, assignment):
-        if result is None or isinstance(result, AsyncResult):
+        if result is None:
             return result
         model, metrics, metadata = result
         if metadata["logical_name"] != assignment.logical_name:
@@ -104,7 +94,7 @@ class AsyncWorkflow:
         )
 
     def _create_engine(self, initial):
-        return AsyncEngine(
+        return self._engine_class(
             initial,
             self.model_adapter,
             self.num_updates,
@@ -139,7 +129,7 @@ class AsyncWorkflow:
         orchestration while reusing Collab transport, cleanup and aggregation.
         They are implementation hooks, not a scheduler/storage plugin API.
         """
-        stopped = threading.Event()
+        stopped = False
         outcome_lock = threading.Lock()
         outcomes = queue.Queue(maxsize=len(names) or 1)
         pool = ThreadPoolExecutor(max_workers=max(1, len(names)), thread_name_prefix="async_results")
@@ -154,16 +144,10 @@ class AsyncWorkflow:
                 error = results.failures.get(client_name)
             except Exception as exc:
                 error = exc
-            while not stopped.is_set():
-                with outcome_lock:
-                    if stopped.is_set():
-                        return
-                    try:
-                        outcomes.put_nowait((client_name, assignment_id, result, error))
-                        return
-                    except queue.Full:
-                        pass
-                stopped.wait(0.1)
+            with outcome_lock:
+                if not stopped:
+                    # One outstanding call per worker bounds queued outcomes.
+                    outcomes.put_nowait((client_name, assignment_id, result, error))
 
         def submit(client_name, assignment, **kwargs):
             results = collab.get_clients([client_name])(blocking=False, timeout=self.call_timeout).train(
@@ -179,7 +163,7 @@ class AsyncWorkflow:
             yield submit, outcomes
         finally:
             with outcome_lock:
-                stopped.set()
+                stopped = True
                 while not outcomes.empty():
                     outcomes.get_nowait()
             # Drain existing ResultQueues to their Collab timeout. Local cleanup

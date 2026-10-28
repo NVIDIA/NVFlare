@@ -99,7 +99,6 @@ def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
         num_active_jobs=num_clients,
         buffer_size=buffer_size,
         min_open_slots=min_open_slots,
-        min_clients=num_clients,
         call_timeout=30,
     )
 
