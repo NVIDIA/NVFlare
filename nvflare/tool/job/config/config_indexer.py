@@ -68,6 +68,20 @@ def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigT
     return config_file_path, config, excluded_list, key_indices
 
 
+def _quote_resource_keys(value):
+    # Pyhocon.from_dict treats keys as paths and drops an unquoted @ prefix.
+    # Preserve reserved resource defaults/site markers without changing its
+    # existing interpretation of other application keys or escaping values.
+    if isinstance(value, dict):
+        return {
+            f'"{key}"' if isinstance(key, str) and key.startswith("@") else key: _quote_resource_keys(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_quote_resource_keys(child) for child in value]
+    return value
+
+
 def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
     """Loads config using pyhocon."""
     try:
@@ -77,7 +91,7 @@ def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple
             if temp_conf.format == ConfigFormat.PYHOCON:
                 config: ConfigTree = temp_conf.conf
             else:
-                config: ConfigTree = CF.from_dict(temp_conf.to_dict())
+                config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
         else:
             raise ValueError(f"Config is None for file:'{config_file_path}'.")
 

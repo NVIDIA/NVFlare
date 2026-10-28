@@ -22,8 +22,6 @@ import os
 import re
 import shutil
 import stat
-import struct
-import threading
 import time
 import uuid
 from contextlib import contextmanager, nullcontext
@@ -42,10 +40,8 @@ _CHUNK_SIZE = 1024 * 1024
 _MAX_RECORD_BYTES = 1024 * 1024
 _INPUT_KIND = "input"
 _RESULT_KIND = "result"
-_ANALYTICS_KIND = "analytics"
 _CHECKPOINT_KIND = "checkpoint"
 _CHECKPOINT_INPUT_KIND = "checkpoint_input"
-_RECORD_SIZE = struct.Struct("!Q")
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -313,7 +309,7 @@ class ArtifactReference:
     sha256: str
 
     def __post_init__(self):
-        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _ANALYTICS_KIND, _CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND):
+        if self.kind not in (_INPUT_KIND, _RESULT_KIND, _CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND):
             raise ValueError("invalid artifact kind")
         suffix = "bin" if self.kind in (_CHECKPOINT_KIND, _CHECKPOINT_INPUT_KIND) else "fobs"
         if self.file_name != f"{self.kind}.{suffix}":
@@ -417,7 +413,6 @@ class FileTaskArtifactStore:
         _require_payload_limit(max_payload_bytes)
         self.root_dir = os.path.realpath(root_dir)
         self.max_payload_bytes = max_payload_bytes
-        self._analytics_lock = threading.Lock()
 
     def attempt_dir(self, identity: TaskAttemptIdentity) -> str:
         if not isinstance(identity, TaskAttemptIdentity):
@@ -459,7 +454,7 @@ class FileTaskArtifactStore:
         directory = self.attempt_dir(identity)
         if any(name.startswith(("result.T", ".result.T")) for name in os.listdir(directory)):
             raise FileExistsError("attempt already contains worker artifacts")
-        for name in ("result.fobs", "analytics.fobs", "completion.json", "failure.json"):
+        for name in ("result.fobs", "completion.json", "failure.json"):
             if os.path.lexists(os.path.join(directory, name)):
                 raise FileExistsError("attempt already contains worker artifacts")
         _write_json_exclusive(directory, "worker.json", {"identity": identity.to_dict(), "worker_pid": os.getpid()})
@@ -723,56 +718,6 @@ class FileTaskArtifactStore:
         if previous_payload is not None and previous_payload != payload_path:
             _remove_checkpoint_payload(previous_payload)
 
-    def write_analytics_record(self, stream, record: dict):
-        """Snapshot one log call into a disk spool without retaining its values."""
-        require_eager_shareable(Shareable(record))
-        with self._analytics_lock:
-            encoded = fobs.dumps(record, max_value_size=_CHUNK_SIZE, fobs_ctx={"native": True})
-            size = _RECORD_SIZE.pack(len(encoded))
-            if self.max_payload_bytes is not None and stream.tell() + len(size) + len(encoded) > self.max_payload_bytes:
-                raise ValueError("artifact payload is too large")
-            stream.write(size)
-            stream.write(encoded)
-            stream.flush()
-
-    def write_analytics(self, identity: TaskAttemptIdentity, stream) -> ArtifactReference | None:
-        """Seal the disk spool without decoding records in the worker."""
-        with self._analytics_lock:
-            try:
-                if stream.tell() == 0:
-                    return None
-                stream.seek(0)
-                return self._write_payload_stream(
-                    identity, _ANALYTICS_KIND, lambda output: shutil.copyfileobj(stream, output, _CHUNK_SIZE)
-                )
-            finally:
-                stream.close()
-
-    def read_analytics(self, identity: TaskAttemptIdentity, completion: TaskCompletion) -> list:
-        if completion.identity != identity:
-            raise ValueError("invalid or stale task completion identity")
-        config = completion.diagnostics.get("analytics")
-        if config is None:
-            return []
-        reference = ArtifactReference.from_dict(config)
-        if reference.kind != _ANALYTICS_KIND:
-            raise ValueError("analytics reference has the wrong artifact kind")
-        records = []
-        with self._verified_payload(identity, reference) as stream:
-            while stream.tell() < reference.size:
-                header = stream.read(_RECORD_SIZE.size)
-                if len(header) != _RECORD_SIZE.size:
-                    raise ValueError("analytics artifact has an incomplete record size")
-                size = _RECORD_SIZE.unpack(header)[0]
-                if size == 0 or size > reference.size - stream.tell():
-                    raise ValueError("analytics artifact has an invalid record size")
-                record = fobs.loads(stream.read(size), fobs_ctx={"native": True})
-                if not isinstance(record, dict):
-                    raise ValueError("analytics artifact must contain records")
-                require_eager_shareable(Shareable(record))
-                records.append(record)
-        return records
-
     def read_completion(self, identity: TaskAttemptIdentity) -> TaskCompletion:
         self._check_identity(identity)
         completion = TaskCompletion.from_dict(_read_json(os.path.join(self.attempt_dir(identity), "completion.json")))
@@ -845,7 +790,6 @@ class FileTaskArtifactStore:
                 "input.json",
                 "input.fobs",
                 "result.fobs",
-                "analytics.fobs",
                 "checkpoint_input.json",
                 "checkpoint_input.bin",
                 "checkpoint.pending",

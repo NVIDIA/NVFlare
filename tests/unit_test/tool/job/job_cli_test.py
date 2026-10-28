@@ -200,3 +200,59 @@ class TestJobCLI:
 
         with pytest.raises(SystemExit):
             parser.parse_args(["job", "submit", "--submit-token", token])
+
+
+@pytest.mark.parametrize("extension", ["json", "conf", "yml", "yaml"])
+@pytest.mark.parametrize("override", [False, True])
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_path, extension, override, lifetime):
+    import shutil
+
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.utils.job_launcher_utils import (
+        get_cj_resource_spec,
+        get_portable_resource_spec,
+        get_resource_manager_spec,
+    )
+
+    source = tmp_path / "source"
+    config = source / "app" / "config"
+    config.mkdir(parents=True)
+    meta = {
+        "name": "resources",
+        "min_clients": 1,
+        "deploy_map": {"app": ["@ALL"]},
+        "resource_spec": {
+            "@default": {"num_of_cpus": 1, "memory": "2Gi", "num_of_gpus": 3},
+            "server": {"num_of_gpus": 0},
+        },
+        "launcher_spec": {"default": {"k8s": {"image": "site/cj"}}},
+    }
+    if lifetime == "task":
+        meta["cj_resource_spec"] = {"@default": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}, "@ALL": {}}
+    if extension in {"json", "conf"}:
+        text = json.dumps(meta)
+    else:
+        import yaml
+
+        text = yaml.safe_dump(meta)
+    (source / f"meta.{extension}").write_text(text)
+    (config / "config_fed_server.json").write_text(json.dumps({"format_version": 2, "workflows": []}))
+    (config / "config_fed_client.json").write_text(
+        json.dumps({"format_version": 3 if lifetime == "task" else 2, "execution_lifetime": lifetime, "executors": []})
+    )
+    submitted = tmp_path / "submitted"
+    shutil.copytree(source, submitted)
+    args = argparse.Namespace(job_folder=str(source))
+    if override:
+        args.config_file = [[f"meta.{extension}", "min_clients=2"]]
+    job_cli.prepare_job_config(args, ["app"], str(submitted))
+    actual = ConfigService.load_config_dict(str(submitted / f"meta.{extension}"))
+    expected = dict(meta, min_clients=2 if override else 1)
+    assert actual == expected
+    assert get_portable_resource_spec(actual, "site-1") == {"num_of_cpus": 1, "memory": "2Gi", "num_of_gpus": 3}
+    assert get_portable_resource_spec(actual, "server")["num_of_gpus"] == 0
+    assert get_resource_manager_spec(actual, "site-1") == ({} if lifetime == "task" else {"num_of_gpus": 3})
+    if lifetime == "task":
+        assert get_cj_resource_spec(actual, "site-1") == {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
+    assert ConfigService.load_config_dict(str(source / f"meta.{extension}")) == meta

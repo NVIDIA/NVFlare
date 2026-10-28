@@ -33,26 +33,6 @@ from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSuper
 from tests.task_supervisor_test_utils import RUNNING, SETTLED, UNSETTLED, _attempt, _payload, _records
 
 
-def test_result_and_analytics_reads_follow_confirmed_settlement(tmp_path):
-    supervisor = TaskSupervisor()
-    attempt, handle = _attempt(tmp_path)
-    store = attempt["store"]
-    events = []
-    read_result, read_analytics = store.read_result, store.read_analytics
-    handle.wait_for_settlement.side_effect = lambda **_: events.append("settled") or SETTLED
-    store.read_result = lambda identity: (events.append("result"), read_result(identity))[1]
-    store.read_analytics = lambda *args: (events.append("analytics"), read_analytics(*args))[1]
-
-    outcome = supervisor.run(**attempt)
-
-    assert outcome.result["value"] == 2
-    assert outcome.completion.identity == outcome.identity
-    assert not outcome.aborted
-    assert events == ["settled", "result", "analytics"]
-    assert [r["event"] for r in _records(attempt)] == ["launched", "settled", "validated"]
-    assert supervisor._active is None
-
-
 @pytest.mark.parametrize("fault", ["none", "payload", "completion", "released", "unknown"])
 def test_saved_result_requires_the_original_retained_validated_completion(tmp_path, fault):
     supervisor = TaskSupervisor()
@@ -353,7 +333,7 @@ def test_cancellation_failure_is_terminal_ownership_problem(tmp_path, cancel_fai
     assert _payload(attempt).exists()
 
 
-@pytest.mark.parametrize("corruption", ["digest", "identity", "pid", "analytics", "missing_completion"])
+@pytest.mark.parametrize("corruption", ["digest", "identity", "pid", "missing_completion"])
 def test_completion_validation_failures_preserve_evidence(tmp_path, corruption):
     supervisor = TaskSupervisor()
     attempt, handle = _attempt(tmp_path)
@@ -370,9 +350,6 @@ def test_completion_validation_failures_preserve_evidence(tmp_path, corruption):
             completion_path.write_text(json.dumps(record))
         elif corruption == "pid":
             handle.process_group_id = record["worker_pid"] + 1
-        elif corruption == "analytics":
-            record["diagnostics"]["analytics"] = record["result"]
-            completion_path.write_text(json.dumps(record))
         else:
             completion_path.unlink()
         return handle
@@ -644,3 +621,63 @@ def test_tensor_resend_retains_files_and_closed_receipt_preserves_active_mapping
         assert torch.equal(load(sender.produce_item(0))["w"], torch.arange(4.0))
     finally:
         sender.release()
+
+
+def test_result_read_follows_confirmed_settlement(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    store = attempt["store"]
+    events = []
+    read_result = store.read_result
+    handle.wait_for_settlement.side_effect = lambda **_: events.append("settled") or SETTLED
+    store.read_result = lambda identity: (events.append("result"), read_result(identity))[1]
+
+    outcome = supervisor.run(**attempt)
+
+    assert outcome.result["value"] == 2
+    assert outcome.completion.identity == outcome.identity
+    assert not outcome.aborted
+    assert events == ["settled", "result"]
+    assert [r["event"] for r in _records(attempt)] == ["launched", "settled", "validated"]
+    assert supervisor._active is None
+
+
+@pytest.mark.parametrize("receipt", [TaskResultReceipt.RECEIVED, TaskResultReceipt.TASK_CLOSED])
+@pytest.mark.parametrize("readers", [1, 2])
+@pytest.mark.parametrize("read_failure", [False, True])
+def test_saved_result_readers_hold_payloads_without_holding_compute(tmp_path, receipt, readers, read_failure):
+    supervisor = TaskSupervisor()
+    first, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**first)
+    reading, proceed = threading.Barrier(readers + 1), threading.Event()
+    read_result = first["store"].read_result
+
+    def blocked_read(identity):
+        reading.wait(timeout=5)
+        assert proceed.wait(5)
+        if read_failure:
+            raise OSError("saved result read failed")
+        return read_result(identity)
+
+    first["store"].read_result = Mock(side_effect=blocked_read)
+    with ThreadPoolExecutor(max_workers=readers) as pool:
+        replays = [pool.submit(supervisor.read_saved_result, outcome.identity) for _ in range(readers)]
+        try:
+            reading.wait(timeout=5)
+            assert supervisor.record_receipt(outcome.identity, receipt)
+            supervisor.cleanup_job_payloads()
+            assert _payload(first).exists()
+            second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+            next_outcome = supervisor.run(**second)
+            supervisor.record_receipt(next_outcome.identity, TaskResultReceipt.RECEIVED)
+            assert not _payload(second).exists()
+            assert _payload(first).exists()
+        finally:
+            proceed.set()
+        for replay in replays:
+            if read_failure:
+                with pytest.raises(OSError, match="saved result read failed"):
+                    replay.result(timeout=5)
+            else:
+                assert replay.result(timeout=5)["value"] == 2
+    assert _payload(first).exists() is read_failure

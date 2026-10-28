@@ -107,7 +107,7 @@ main()
             identity.site_name,
             identity.task_id,
             identity.attempt_id,
-            (*argv, "--bootstrap", bootstrap_path),
+            (*argv, "--bootstrap", bootstrap_path, "--parent_pid", str(os.getpid())),
             environment={"PYTHONPATH": str(repo_root)},
             cwd=str(repo_root),
         )

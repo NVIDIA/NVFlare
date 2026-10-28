@@ -96,7 +96,11 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
         params_transfer_type=transfer,
         task_script_args=["--label", "two words", "${secret:TASK_TEST_SECRET}"],
     )
+    fire_event = context.get_engine().fire_event
+    seen_during_attempt = []
+    fire_event.side_effect = lambda *_args: seen_during_attempt.append(adapter.supervisor.owns_execution)
     result = adapter.execute("train", data, context, Signal())
+    assert seen_during_attempt == [True, True], "metrics reach the job over the cell while the attempt is still owned"
     dxo = from_shareable(result)
     np.testing.assert_array_equal(dxo.data["w"], [2, 3] if transfer == "FULL" else [1, 1])
     assert result.get_header(AppConstants.CURRENT_ROUND) == 3
@@ -110,11 +114,13 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert (metrics["site"], metrics["job"]) == ("site-1", "job-1")
     assert metrics["metadata"][FLMetaKey.JOB_ID] == "job-1"
     assert metrics["metadata"][FLMetaKey.SITE_NAME] == "site-1"
-    assert context.get_engine().fire_event.call_count > 0
     identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
     payload = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
     files = list(payload.rglob("result.fobs"))
     assert len(files) == 1
+    assert not list(payload.rglob("analytics.fobs")), "metrics are messages, never files"
+    worker_fqcn = read_bootstrap(payload / identity.attempt_id / "bootstrap.json").cell_session["worker_fqcn"]
+    assert worker_fqcn.startswith(context.get_engine().get_cell().get_fqcn() + ".task_worker_")
     context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
     adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
@@ -273,7 +279,6 @@ Path(paths["output"]).write_text(str(previous + 1))
 flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pid": os.getpid()}))
 """
     adapter, data = _adapter(custom, context, policy, script=script)
-    replay = adapter._replay_analytics = Mock(wraps=adapter._replay_analytics)
     launch = policy.launcher.launch_task = Mock(wraps=policy.launcher.launch_task)
 
     def execute(number):
@@ -287,16 +292,16 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
         before = checkpoint.read_bytes()
         assert execute(1).metrics == first.metrics
         assert checkpoint.read_bytes() == before
-        assert (launch.call_count, replay.call_count) == (1, 1)
+        assert launch.call_count == 1
         second = execute(2)
         assert second.metrics["previous"] == 1
         before = checkpoint.read_bytes()
         assert execute(1).metrics == first.metrics
         assert checkpoint.read_bytes() == before
         assert execute(2).metrics == second.metrics
-        assert (launch.call_count, replay.call_count) == (2, 2)
+        assert launch.call_count == 2
         assert execute(3).metrics["previous"] == 2
-        assert (launch.call_count, replay.call_count) == (3, 3)
+        assert launch.call_count == 3
     finally:
         adapter.handle_event(EventType.END_RUN, context)
 
@@ -424,7 +429,7 @@ flare.send(FLModel(metrics={"decoded": model.meta["custom"].value}))
 
 
 @pytest.mark.parametrize("write_failure", [None, "result", "analytics"])
-def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, write_failure):
+def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, request, write_failure):
     import nvflare.client.api as client_api
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.private.fed.client.client_api_task_runner import bind_client_task_context
@@ -432,6 +437,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
         FileTaskArtifactStore,
         TaskAttemptIdentity,
         WorkerBootstrap,
+        cell_session,
         worker,
         write_bootstrap,
     )
@@ -463,14 +469,29 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     data.set_header(AppConstants.CURRENT_ROUND, 3)
     store.write_input(identity, data)
     path = store.bootstrap_path(identity)
-    write_bootstrap(path, WorkerBootstrap(identity, store.root_dir, str(root), _config()["executors"][0]["executor"]))
+    # The worker runs in this process and joins the fixture's Client Job cell.
+    records = []
+    on_analytics = records.append
+    if write_failure == "analytics":
+        on_analytics = Mock(side_effect=ValueError("the Client Job rejected the metric"))
+    cj_cell = context.get_engine().get_cell()
+    cell_session.listen(cj_cell, "localhost")
+    session = cell_session.CellWorkerSession(cj_cell, on_analytics)
+    request.addfinalizer(session.close)
+    spec = _config()["executors"][0]["executor"]
+    write_bootstrap(
+        path, WorkerBootstrap(identity, store.root_dir, str(root), spec, cell_session=session.bootstrap_fields())
+    )
     if write_failure is not None:
-        method = "stage_result" if write_failure == "result" else "write_analytics_record"
-        monkeypatch.setattr(FileTaskArtifactStore, method, Mock(side_effect=OSError("cannot persist task output")))
-        with pytest.raises(OSError, match="cannot persist task output"):
+        error, match = OSError, "cannot persist task output"
+        if write_failure == "result":
+            monkeypatch.setattr(FileTaskArtifactStore, "stage_result", Mock(side_effect=OSError(match)))
+        else:
+            error, match = RuntimeError, "the Client Job rejected the metric"
+        with pytest.raises(error, match=match):
             worker.run_worker(path, context_binding=bind_client_task_context)
         assert not Path(store.attempt_dir(identity), "completion.json").exists()
-        assert store.read_failure(identity)["error_type"] == "OSError"
+        assert store.read_failure(identity)["error_type"] == error.__name__
         return
 
     stage_result = FileTaskArtifactStore.stage_result
@@ -486,7 +507,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     read_payload = FileTaskArtifactStore._read_payload
 
     def read_input_only(artifact_store, attempt, reference):
-        assert reference.kind == "input", "the worker must not reload its saved result or analytics"
+        assert reference.kind == "input", "the worker must not reload its saved result"
         return read_payload(artifact_store, attempt, reference)
 
     monkeypatch.setattr(FileTaskArtifactStore, "stage_result", stage_once)
@@ -498,10 +519,10 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_payload)
     result, completion = store.read_result(identity)
     np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])
-    assert "analytics" in completion.diagnostics
-    records = store.read_analytics(identity, completion)
-    assert len(records) == 1
-    assert from_shareable(records[0]["data"]).data["track_value"] == 0.75
+    assert "analytics" not in completion.diagnostics, "metrics are messages, never files"
+    scalar, image = (from_shareable(record).data["track_value"] for record in records)
+    assert scalar == 0.75
+    assert isinstance(image, np.ndarray) and image.shape == (1024, 1024) and not image.any()
     handler.assert_not_called()
 
 

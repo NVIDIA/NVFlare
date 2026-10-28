@@ -166,6 +166,14 @@ def test_cj_cell_uses_job_credential_in_both_tls_roles(monkeypatch):
     assert credentials[DriverParams.SERVER_KEY.value] == "job.key"
 
 
+def test_cells_under_the_cj_authenticate_as_the_job_and_cp_cells_are_unchanged(monkeypatch):
+    """Task workers join the job cell with its own credential; the CP keeps per-child identities."""
+    cj = _create_cell_credentials(monkeypatch, "job-1", _JOB_ARGS)
+    assert cj["auth_identity_map"]["site-1.job-1"] == cj["auth_identity"]
+    cp = _create_cell_credentials(monkeypatch, None, _SITE_ARGS)
+    assert set(cp["auth_identity_map"]) == {"site-1"}
+
+
 @pytest.fixture
 def probe_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(upgrade.MainProcessMonitor, "_stopping", False)

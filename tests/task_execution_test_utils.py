@@ -18,6 +18,7 @@
 import argparse
 import json
 import os
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -82,6 +83,10 @@ def _configure(tmp_path, config, authorizer=None):
 def native_task(tmp_path, monkeypatch, isolated_fobs):
     if not hasattr(os, "waitid"):
         pytest.skip("CPU Process task execution requires waitid/WNOWAIT")
+    from nvflare.fuel.f3.cellnet.cell import Cell
+    from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+    from nvflare.fuel.f3.stats_pool import StatsPoolManager
+
     nvflare_fobs_initialize()
     register_framework_decomposers("numpy", "numpy")
     root = tmp_path / "workspace"
@@ -94,25 +99,35 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1]))
     monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
     workspace = Workspace(str(root), site_name="site-1")
-    cell = SimpleNamespace(decode_pass_through_topics=set())
-    context = FLContext()
-    context.set_prop(
-        ReservedKey.ENGINE,
-        SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
-        private=True,
-        sticky=True,
-    )
-    for key, value in (
-        (ReservedKey.RUN_NUM, "job-1"),
-        (ReservedKey.IDENTITY_NAME, "site-1"),
-        (FLContextKey.WORKSPACE_OBJECT, workspace),
-        (FLContextKey.TASK_ID, "task-1"),
-        (FLContextKey.TASK_NAME, "train"),
-        (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
-    ):
-        context.set_prop(key, value, private=True, sticky=True)
-    policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
-    return root, custom, context, policy
+    # Workers join the Client Job cell, so the executor needs a real one; it connects nowhere itself.
+    # A unique name keeps it clear of cells other tests in this process may leave behind, and the
+    # process-wide tables that stop() leaves alone are restored afterwards.
+    original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.start()
+    try:
+        context = FLContext()
+        context.set_prop(
+            ReservedKey.ENGINE,
+            SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
+            private=True,
+            sticky=True,
+        )
+        for key, value in (
+            (ReservedKey.RUN_NUM, "job-1"),
+            (ReservedKey.IDENTITY_NAME, "site-1"),
+            (FLContextKey.WORKSPACE_OBJECT, workspace),
+            (FLContextKey.TASK_ID, "task-1"),
+            (FLContextKey.TASK_NAME, "train"),
+            (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
+        ):
+            context.set_prop(key, value, private=True, sticky=True)
+        policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
+        yield root, custom, context, policy
+    finally:
+        cell.stop()
+        CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
+        StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
 
 
 SCRIPT = """
@@ -125,6 +140,8 @@ flare.init()
 while flare.is_running():
     model = flare.receive()
     flare.log("accuracy", 0.75, AnalyticsDataType.SCALAR, global_step=model.current_round)
+    # Larger than the download-reference threshold: must travel inline over the session.
+    flare.log("image", np.zeros((1024, 1024), dtype=np.float32), AnalyticsDataType.IMAGE, global_step=0)
     result = FLModel(params={"w": model.params["w"] + 1},
         metrics={"pid": os.getpid(), "main_thread": threading.current_thread() is threading.main_thread(),
                  "argv": sys.argv[1:], "site": flare.get_site_name(), "job": flare.get_job_id(),

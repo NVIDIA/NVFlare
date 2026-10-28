@@ -2309,3 +2309,75 @@ def test_prepare_rejects_non_string_optional_config_values(tmp_path, capsys, con
     assert "INVALID_CONFIG" in err
     assert expected in err
     assert not output.exists()
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+@pytest.mark.parametrize("jobs_claim", [None, "site-1-jobs", "nvflws"])
+def test_client_chart_mounts_separate_jobs_pvc_and_rejects_private_claim(tmp_path, capsys, jobs_claim):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(kit, output, {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    command = [
+        shutil.which("helm"),
+        "template",
+        "site-1",
+        str(output / "helm_chart"),
+        "--show-only",
+        "templates/client-deployment.yaml",
+    ]
+    if jobs_claim:
+        command += ["--set-string", "persistence.jobs.claimName=" + jobs_claim]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if jobs_claim == "nvflws":
+        assert result.returncode != 0
+        assert "must differ from the private CP workspace claim" in result.stderr
+        return
+    assert result.returncode == 0, result.stderr
+    spec = yaml.safe_load(result.stdout)["spec"]["template"]["spec"]
+    claims = {
+        v["name"]: v["persistentVolumeClaim"]["claimName"] for v in spec["volumes"] if "persistentVolumeClaim" in v
+    }
+    assert claims["workspace"] == "nvflws"
+    if jobs_claim:
+        assert claims == {"workspace": "nvflws", "job-workspaces": jobs_claim}
+        mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+        assert mounts["workspace"] == "/var/tmp/nvflare/workspace"
+        assert mounts["job-workspaces"] == "/mnt/nvflare-jobs"
+    else:
+        assert claims == {"workspace": "nvflws"}
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+@pytest.mark.parametrize(
+    "mount_path",
+    [
+        "/",
+        "relative",
+        "/var/tmp/nvflare/workspace",
+        "/var/tmp/nvflare/workspace/.",
+        "/var/tmp/nvflare/workspace/local",
+        "/var/tmp/nvflare",
+    ],
+)
+def test_client_chart_rejects_jobs_mount_over_private_workspace(tmp_path, capsys, mount_path):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(kit, output, {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    result = subprocess.run(
+        [
+            shutil.which("helm"),
+            "template",
+            "site-1",
+            str(output / "helm_chart"),
+            "--set-string",
+            "persistence.jobs.claimName=site-1-jobs",
+            "--set-string",
+            "persistence.jobs.mountPath=" + mount_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "must be a dedicated absolute directory" in result.stderr
