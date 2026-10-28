@@ -53,6 +53,8 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 - Perform federated statistics for both image and tabular data
 - Convert PyTorch Lightning and traditional ML code to federated learning workflows with NVIDIA FLARE
 - Use the NVIDIA FLARE Client API for advanced customization
+- Run and export Recipe API examples with progress logging
+- Build custom workflows with the [Collab API](./part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.6_collab_api/collab_api.ipynb)
 
 ### [Federated Learning System](./part-2_federated_learning_system/part-2_introduction.ipynb)
 

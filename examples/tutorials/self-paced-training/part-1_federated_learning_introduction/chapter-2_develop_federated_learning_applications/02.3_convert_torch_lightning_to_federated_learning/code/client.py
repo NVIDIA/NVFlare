@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 
 import filelock
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from lit_net import LitNet
+from model import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset, random_split
 
 # (1) import nvflare lightning client API
 import nvflare.client.lightning as flare
@@ -35,8 +36,10 @@ transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5
 
 
 class CIFAR10DataModule(LightningDataModule):
-    def __init__(self, data_dir: str = DATASET_PATH, batch_size: int = BATCH_SIZE):
+    def __init__(self, site_index, num_clients, data_dir: str = DATASET_PATH, batch_size: int = 64):
         super().__init__()
+        self.site_index = site_index
+        self.num_clients = num_clients
         self.data_dir = data_dir
         self.batch_size = batch_size
 
@@ -54,7 +57,12 @@ class CIFAR10DataModule(LightningDataModule):
             cifar_full = torchvision.datasets.CIFAR10(
                 root=self.data_dir, train=True, download=False, transform=transform
             )
-            self.cifar_train, self.cifar_val = random_split(cifar_full, [0.8, 0.2])
+            local_data = Subset(cifar_full, range(self.site_index, len(cifar_full), self.num_clients))
+            # Keep the first run short; increase this limit for a full experiment.
+            local_data = Subset(local_data, range(min(1000, len(local_data))))
+            self.cifar_train, self.cifar_val = random_split(
+                local_data, [0.8, 0.2], generator=torch.Generator().manual_seed(7)
+            )
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test" or stage == "predict":
@@ -76,12 +84,16 @@ class CIFAR10DataModule(LightningDataModule):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_clients", type=int, default=2)
+    args = parser.parse_args()
     model = LitNet()
-    cifar10_dm = CIFAR10DataModule()
-    trainer = Trainer(max_epochs=1, devices=1, accelerator="gpu" if torch.cuda.is_available() else "cpu")
+    trainer = Trainer(max_epochs=1, devices=1, accelerator="cpu", enable_progress_bar=False, enable_checkpointing=False)
 
     # (2) patch the lightning trainer
     flare.patch(trainer)
+    site_index = int(flare.get_site_name().split("-")[-1]) - 1
+    cifar10_dm = CIFAR10DataModule(site_index, args.num_clients)
 
     while flare.is_running():
         # (3) receives FLModel from NVFlare
@@ -98,14 +110,6 @@ def main():
         # perform local training starting with the received global model
         print("--- train new model ---")
         trainer.fit(model, datamodule=cifar10_dm)
-
-        # test local model
-        print("--- test new model ---")
-        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
-
-        # get predictions
-        print("--- prediction with new best model ---")
-        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
 
 
 if __name__ == "__main__":

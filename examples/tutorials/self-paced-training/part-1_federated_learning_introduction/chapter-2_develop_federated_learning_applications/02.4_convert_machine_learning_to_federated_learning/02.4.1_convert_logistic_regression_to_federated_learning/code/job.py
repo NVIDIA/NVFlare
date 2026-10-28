@@ -27,7 +27,7 @@ if __name__ == "__main__":
         num_rounds=num_rounds,
         damping_factor=0.8,
         num_features=13,
-        train_script="src/newton_raphson_train.py",
+        train_script="client.py",
         train_args=f"--data_root {data_root}",
         launch_external_process=True,
     )
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Execute the recipe in simulation environment
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    env = SimEnv(num_clients=n_clients, workspace_root="/tmp/nvflare/chapter2/lr", log_config="progress")
     run = recipe.execute(env)
     result_location = run.get_result()
     print(f"Result location: {result_location}")
