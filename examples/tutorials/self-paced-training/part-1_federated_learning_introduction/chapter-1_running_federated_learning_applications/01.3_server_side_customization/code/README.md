@@ -16,7 +16,7 @@ Compare with the built-in step-weighted averaging, using the same clients:
 python job.py --aggregation fedavg
 ```
 
-Both runs keep the same round limit, stopping policy, and model persistence. `--num_rounds`, `--stop_accuracy`, and `--patience` change those settings. To see early stopping immediately and its reason in the console, use `python job.py --stop_accuracy 0 --log_config full`. Progress mode shows round progress and the final summary; detailed stopping messages are in `server/log.txt` under the workspace.
+Both runs keep the same round limit, stopping policy, and model persistence. `--num_rounds`, `--stop_accuracy`, and `--patience` change those settings. To see early stopping immediately and its reason in the console, use `python job.py --stop_accuracy 0 --log_config concise`. Progress mode shows round progress and the final summary; detailed stopping messages are in `server/log.txt` under the workspace.
 
 This section is self-contained: [job.py](job.py) defines its recipe and selects the server aggregator, [client.py](client.py) runs at each site, and [model.py](model.py) and [prepare_data.py](prepare_data.py) define its model and synthetic dataset. The training and evaluation functions are directly in the client script. Client training code does not change when you switch aggregators.
 
