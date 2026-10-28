@@ -22,8 +22,46 @@ from pathlib import Path
 import numpy as np
 
 from nvflare.collab import AsyncRecipe, collab
-from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
 from nvflare.recipe import SimEnv
+
+
+class NumpyModelAdapter:
+    """Average floating arrays; preserve non-floating buffers from the current model.
+
+    Full states must have identical keys, shapes and dtypes. Deltas contain only
+    floating entries. All methods return owned arrays and leave inputs untouched.
+    """
+
+    def snapshot(self, model):
+        return {name: np.array(value, copy=True) for name, value in model.items()}
+
+    def validate(self, model, reference):
+        if model.keys() != reference.keys():
+            raise ValueError("model keys do not match reference")
+        for name, value in model.items():
+            base = reference[name]
+            if not isinstance(value, np.ndarray) or value.shape != base.shape or value.dtype != base.dtype:
+                raise ValueError(f"incompatible model entry: {name}")
+            if not np.isfinite(value).all():
+                raise ValueError(f"non-finite model entry: {name}")
+
+    def difference(self, model, base):
+        return {
+            name: np.asarray(value - base[name])
+            for name, value in model.items()
+            if np.issubdtype(value.dtype, np.floating)
+        }
+
+    def prepare_for_aggregation(self, delta):
+        """Widen float16 deltas before weighting and running accumulation."""
+        return {name: value.astype(np.float32) if value.dtype == np.float16 else value for name, value in delta.items()}
+
+    def apply(self, model, delta, scale):
+        result = self.snapshot(model)
+        for name, value in delta.items():
+            result[name] = np.asarray(result[name] + scale * value, dtype=result[name].dtype)
+        self.validate(result, model)
+        return result
 
 
 class ArrayApplication:
@@ -60,7 +98,7 @@ def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
         job_name="numpy_async",
         application=ArrayApplication(),
         client=ArrayClient(),
-        model_adapter=NumpyAsyncModelAdapter(),
+        model_adapter=NumpyModelAdapter(),
         num_updates=num_updates,
         num_active_jobs=num_clients,
         buffer_size=buffer_size,

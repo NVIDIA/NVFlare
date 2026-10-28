@@ -17,12 +17,12 @@ import pytest
 from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
 
 torch = pytest.importorskip("torch")
-from nvflare.collab.async_models.pytorch import PTAsyncModelAdapter
+from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter
 
 
 def test_detached_cpu_snapshots_and_nonfloating_buffers():
     initial = {"w": torch.tensor([10.0], requires_grad=True), "counter": torch.tensor(5)}
-    engine = AsyncEngine(initial, PTAsyncModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
+    engine = AsyncEngine(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
     initial["w"].detach().fill_(99)
     a, b = engine.dispatch(["a", "b"])
     first = {"w": torch.tensor([12.0]), "counter": torch.tensor(99)}
@@ -39,9 +39,7 @@ def test_detached_cpu_snapshots_and_nonfloating_buffers():
 def test_low_precision_weighted_updates_accumulate_in_float32():
     dtype, buffer_size, is_delta = torch.float16, 2, True
     initial = {"w": torch.zeros(1, dtype=dtype), "counter": torch.tensor(5)}
-    engine = AsyncEngine(
-        initial, PTAsyncModelAdapter(), 1, buffer_size, buffer_size=buffer_size, weight_metric="num_steps"
-    )
+    engine = AsyncEngine(initial, PTModelAdapter(), 1, buffer_size, buffer_size=buffer_size, weight_metric="num_steps")
     assignments = engine.dispatch([f"site-{i}" for i in range(buffer_size)])
     for index, assignment in enumerate(assignments):
         payload = {"w": torch.tensor([100.0 * (index + 1)], dtype=dtype)}

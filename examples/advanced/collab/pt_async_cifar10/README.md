@@ -38,7 +38,7 @@ For a source checkout, install that checkout from its repository root with
 pt_async_cifar10/
 ├── async_aggregator.py  # CIFAR model, evaluation, and artifact hooks
 ├── trainer.py           # Published client-side local training
-├── model.py             # FedAvg ModerateCNN and state helpers
+├── model.py             # FedAvg ModerateCNN, state and arithmetic helpers
 ├── cifar10_data.py      # Local CIFAR-10 download and Dirichlet splitter
 ├── prepare_data.sh      # Standalone CIFAR-10 download entry point
 ├── job.py               # AsyncRecipe CLI and simulator wiring
@@ -134,7 +134,7 @@ with `--server-lr` to match the existing FedAvg example.
 ## Job Recipe Code
 
 `job.py` constructs an `AsyncRecipe` with a published client trainer,
-`PTAsyncModelAdapter`, and CIFAR evaluation/artifact hooks. The recipe owns
+`PTModelAdapter`, and CIFAR evaluation/artifact hooks. The recipe owns
 assignment tracking, K/B/O scheduling, and step-weighted buffered aggregation.
 `async_aggregator.py` contains only the model/evaluation hooks. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate

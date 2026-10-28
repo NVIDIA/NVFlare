@@ -67,7 +67,7 @@ class SeedPolicy:
 
 
 class SeededTrainArgs:
-    """Use with AsyncRecipe(train_kwargs=...) to seed logical assignments.
+    """Use with ResearchRecipe(train_kwargs=...) to seed logical assignments.
 
     An explicit assignment.metadata['train_seed'] takes precedence (trace
     replay). Otherwise derive it from logical identity and assignment ID. Stamp

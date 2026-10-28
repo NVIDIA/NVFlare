@@ -17,7 +17,7 @@
 import numpy as np
 import pytest
 
-from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
+from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
 
 
@@ -28,7 +28,7 @@ def model(value):
 def engine(**kwargs):
     options = dict(
         initial_model=model(10),
-        model_adapter=NumpyAsyncModelAdapter(),
+        model_adapter=NumpyModelAdapter(),
         num_updates=3,
         num_active_jobs=2,
         buffer_size=1,

@@ -15,11 +15,17 @@
 """Research-only fixed-order replay, independent of physical RPC timing."""
 
 from collections import deque
+from dataclasses import dataclass
+from typing import Any
 
-from nvflare.collab.async_scheduling import ArrivalOrderScheduler, ScheduledCall
+
+@dataclass(frozen=True)
+class ScheduledCall:
+    assignment: Any
+    client_name: str
 
 
-class ReplayScheduler(ArrivalOrderScheduler):
+class ReplayScheduler:
     """Accept a predefined assignment-ID sequence regardless of RPC completion.
 
     Supply logical_sequence to reserve logical jobs independently of worker
@@ -36,10 +42,10 @@ class ReplayScheduler(ArrivalOrderScheduler):
         logical_sequence: list[str] | None = None,
         assignment_metadata: list[dict] | None = None,
     ):
-        super().__init__()
         self.arrival_sequence = arrival_sequence
         self.logical_sequence = logical_sequence
         self.assignment_metadata = assignment_metadata
+        self._available = []
         self._pending = deque()
         self._ready = set()
         self._cursor = 0
@@ -58,7 +64,10 @@ class ReplayScheduler(ArrivalOrderScheduler):
         if self.logical_sequence is None:
             if self.assignment_metadata is not None:
                 raise ValueError("assignment_metadata requires logical_sequence")
-            super().initialize(engine, client_names)
+            if len(client_names) < engine.num_active_jobs:
+                raise ValueError("num_active_jobs exceeds available clients")
+            self.engine = engine
+            self._available = list(client_names)
         else:
             if len(self.logical_sequence) != total or any(
                 not isinstance(n, str) or not n for n in self.logical_sequence
@@ -79,7 +88,11 @@ class ReplayScheduler(ArrivalOrderScheduler):
 
     def dispatch(self):
         if self.logical_sequence is None:
-            return super().dispatch()
+            calls = []
+            for assignment in self.engine.dispatch(self._available):
+                self._available.remove(assignment.client_name)
+                calls.append(ScheduledCall(assignment, assignment.client_name))
+            return calls
         end = self._reserved + self.engine.num_active_jobs
         metadata = None if self.assignment_metadata is None else self.assignment_metadata[self._reserved : end]
         assignments = self.engine.reserve(self.logical_sequence[self._reserved : end], metadata)
@@ -107,9 +120,13 @@ class ReplayScheduler(ArrivalOrderScheduler):
         self._ready.remove(assignment.assignment_id)
         self._cursor += 1
         if self.logical_sequence is None:
-            super().on_accept(assignment)
+            self._available.append(assignment.client_name)
+
+    @property
+    def finished(self):
+        return False
 
     def close(self):
-        super().close()
+        self._available.clear()
         self._pending.clear()
         self._ready.clear()

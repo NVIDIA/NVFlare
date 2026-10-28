@@ -19,13 +19,11 @@ Adapters own model arithmetic; no runtime or ML framework is imported here.
 """
 
 import math
-from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any, Callable, Protocol
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-from nvflare.collab.async_storage import MemorySnapshotStore
 
 
 class AsyncModelAdapter(Protocol):
@@ -46,26 +44,31 @@ class AsyncModelAdapter(Protocol):
 
 @dataclass(frozen=True)
 class Assignment:
-    """Server-owned logical job and an exact, read-only starting snapshot.
+    """Server-local identity and an immutable model reference until acceptance.
 
-    client_name is a physical site for dispatch(), or None for reserve().
-    ScheduledCall binds an unbound job to its worker without changing its base.
-    base_model is borrowed and valid only until acceptance/cleanup. Metadata
-    carries run controls such as assignment seeds; it is not a wire envelope.
+    The adapter returns a new state for each publication, so assignments from
+    the same version safely share a base without copying or reference counts.
     """
 
     assignment_id: int
-    client_name: str | None
+    client_name: str
     logical_name: str
     base_version: int
-    snapshot: Any = field(repr=False)
-    snapshot_store: Any = field(repr=False)
+    base_model: dict = field(repr=False)
     metadata: dict = field(default_factory=dict)
 
-    @property
-    def base_model(self):
-        """Borrow the exact base, loading it on demand from the snapshot store."""
-        return self.snapshot_store.load(self.snapshot)
+
+@dataclass(frozen=True)
+class AsyncEvent:
+    """Lightweight application trace; no model states are retained."""
+
+    phase: str
+    assignment_id: int
+    logical_name: str
+    client_name: str
+    base_version: int
+    current_version: int
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -153,7 +156,6 @@ class AsyncEngine:
         server_lr: float = 1.0,
         weight_metric: str | None = None,
         update_transform=None,
-        snapshot_store=None,
         update_observer=None,
     ):
         for name, value in (
@@ -181,7 +183,6 @@ class AsyncEngine:
         self.server_lr = server_lr
         self.weight_metric = weight_metric
         self.update_transform = update_transform
-        self.snapshot_store = snapshot_store if snapshot_store is not None else MemorySnapshotStore()
         self.update_observer = update_observer
         self.version = 0
         self.accepted_count = 0
@@ -198,55 +199,24 @@ class AsyncEngine:
     def buffered_count(self):
         return self._buffer.get_len()
 
-    def dispatch(self, available_clients: list[str]) -> list[Assignment]:
-        """Reserve idle clients in supplied order, sharing one immutable snapshot.
+    @property
+    def available_slots(self):
+        """Capacity allowed by K/O and the exact remaining contribution budget."""
+        slots = self.num_active_jobs - len(self.active)
+        if self._closed or self.finished or slots < self.min_open_slots:
+            return 0
+        remaining = self.num_updates * self.buffer_size - self.accepted_count - len(self.active)
+        return min(slots, remaining)
 
-        Logical names default to physical names. A caller may supply a selection
-        policy by ordering/subsetting available_clients before dispatch.
-        """
-        if self._closed or self.finished:
-            return []
+    def dispatch(self, available_clients: list[str]) -> list[Assignment]:
+        """Reserve physical clients in order, sharing the current immutable state."""
         if len(set(available_clients)) != len(available_clients):
             raise ValueError("available client names must be unique")
         busy = {assignment.client_name for assignment in self.active.values()}
         clients = [name for name in available_clients if name not in busy]
-        return self._reserve(clients, clients, None)
-
-    def reserve(self, logical_names: list[str], metadata: list[dict] | None = None) -> list[Assignment]:
-        """Reserve logical jobs before assigning physical workers.
-
-        A scheduler owns logical eligibility, including overlapping uploads for
-        one logical client. K/O and the exact contribution budget remain engine
-        invariants. Repeated logical names are allowed; IDs remain unique.
-        """
-        if any(not isinstance(name, str) or not name for name in logical_names):
-            raise ValueError("logical names must be nonempty strings")
-        if metadata is not None and (
-            len(metadata) != len(logical_names) or any(not isinstance(m, dict) for m in metadata)
-        ):
-            raise ValueError("metadata must contain a dictionary per logical assignment")
-        return self._reserve(logical_names, [None] * len(logical_names), metadata)
-
-    def _reserve(self, logical_names, client_names, metadata):
-        if self._closed or self.finished:
-            return []
-        slots = self.num_active_jobs - len(self.active)
-        if slots < self.min_open_slots:
-            return []
-        remaining = self.num_updates * self.buffer_size - self.accepted_count - len(self.active)
-        count = min(len(logical_names), slots, remaining)
         assignments = []
-        for index in range(count):
-            snapshot = self.snapshot_store.retain(self.version, self.model, self.adapter)
-            assignment = Assignment(
-                self._next_id,
-                client_names[index],
-                logical_names[index],
-                self.version,
-                snapshot,
-                self.snapshot_store,
-                deepcopy(metadata[index]) if metadata else {},
-            )
+        for name in clients[: self.available_slots]:
+            assignment = Assignment(self._next_id, name, name, self.version, self.model)
             self._next_id += 1
             self.active[assignment.assignment_id] = assignment
             assignments.append(assignment)
@@ -301,7 +271,6 @@ class AsyncEngine:
         accumulation_delta = prepare(delta) if callable(prepare) else delta
         self._buffer.add(accumulation_delta, weight, str(assignment.assignment_id), assignment.base_version)
         del self.active[assignment.assignment_id]
-        self.snapshot_store.release(assignment.snapshot)
         self.accepted_count += 1
         if self.buffered_count < self.buffer_size:
             return False
@@ -313,7 +282,4 @@ class AsyncEngine:
         """Release outstanding bases and partial accumulation; do not publish a partial version."""
         self._closed = True
         self.active.clear()
-        try:
-            self.snapshot_store.close()
-        finally:
-            self._buffer.reset_stats()
+        self._buffer.reset_stats()

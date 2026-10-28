@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Seeded logical replay using the standard AsyncRecipe and SimEnv."""
+"""Example-owned reproducible replay using the shared engine and SimEnv."""
 
 import argparse
 import json
@@ -20,12 +20,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from pt_async_cifar10_reproducible.disk_storage import DiskResultStore, DiskSnapshotStore
+from pt_async_cifar10_reproducible.model import NumpyModelAdapter
 from pt_async_cifar10_reproducible.replay import ReplayScheduler
 from pt_async_cifar10_reproducible.seed_policy import SeededTrainArgs, SeedPolicy
+from pt_async_cifar10_reproducible.workflow import ResearchRecipe
 
-from nvflare.collab import AsyncRecipe, collab
-from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
+from nvflare.collab import collab
 from nvflare.recipe import SimEnv
 
 
@@ -80,7 +80,7 @@ def make_recipe(run_seed=10):
     # and assignment seeds are independent of physical completion timing.
     order = [2, 0, 1, 3]
     logical = ["alice", "bob", "alice", "carol"]
-    recipe = AsyncRecipe(
+    recipe = ResearchRecipe(
         job_name="collab_pt_async_cifar10_reproducible",
         client=ResearchClient(),
         application=ResearchApplication(
@@ -93,12 +93,10 @@ def make_recipe(run_seed=10):
                 "logical_sequence": logical,
             }
         ),
-        model_adapter=NumpyAsyncModelAdapter(),
+        model_adapter=NumpyModelAdapter(),
         num_updates=4,
         num_active_jobs=3,
         scheduler=ReplayScheduler(order, logical),
-        snapshot_store=DiskSnapshotStore(),
-        result_store=DiskResultStore(),
         train_kwargs=SeededTrainArgs(SeedPolicy(run_seed)),
         call_timeout=30,
     )

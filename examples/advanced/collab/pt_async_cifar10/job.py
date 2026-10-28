@@ -24,10 +24,10 @@ import argparse
 from pathlib import Path
 
 from async_aggregator import Cifar10AsyncApplication
+from model import PTModelAdapter
 from trainer import Cifar10Trainer
 
 from nvflare.collab import AsyncRecipe
-from nvflare.collab.async_models.pytorch import PTAsyncModelAdapter
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_async_cifar10"
@@ -137,7 +137,7 @@ def make_recipe(args) -> AsyncRecipe:
     recipe = AsyncRecipe(
         job_name=JOB_NAME,
         application=application,
-        model_adapter=PTAsyncModelAdapter(),
+        model_adapter=PTModelAdapter(),
         num_updates=args.num_rounds,
         num_active_jobs=num_active_jobs,
         buffer_size=args.buffer_size,

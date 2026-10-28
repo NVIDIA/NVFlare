@@ -12,39 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab adapter and recipe for the standalone asynchronous engine."""
+"""Buffered actual-arrival training over the existing Collab runtime."""
 
 import math
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
-from nvflare.collab.async_scheduling import ArrivalOrderScheduler, AsyncEvent
-from nvflare.collab.async_storage import MemoryResultStore, MemorySnapshotStore
-from nvflare.collab.async_workflow import AsyncEngine, AsyncResult, _positive_int
+from nvflare.collab.async_workflow import AsyncEngine, AsyncEvent, AsyncResult, _positive_int
 from nvflare.collab.recipe import CollabRecipe
 
 
 class AsyncWorkflow:
-    """Execute scheduled asynchronous training using the published train protocol.
+    """Accept actual arrivals, retaining assignment bases until acceptance.
 
-    application.initialize() returns the initial model. Optional hooks are
-    on_model(model, version) (initial and each publication),
-    on_finish(model, version) (after completion), on_update(update),
-    on_event(event), and close() (always).
-    Hooks and update_transform run on the main workflow thread. They must not
-    mutate borrowed model states. The application owns evaluation/artifacts.
-
-    Clients publish train(assignment_ids, model_version, global_model,
-    logical_assignments). They return a tuple
-    (model, metrics, metadata), with assignment_id/model_version/logical_name.
-    Scheduling, extra train arguments, and model storage are replaceable.
-    No automatic retry or remote cancellation is claimed. A timed-out call can
-    still be running remotely; failure stops the workflow and closes admission.
+    application.initialize() returns the initial model. Optional on_model,
+    on_update, on_event, on_finish and close hooks own application artifacts.
+    Hooks and update_transform run on the workflow thread; borrowed model
+    states must not be mutated. The published client protocol is
+    train(assignment_ids, model_version, global_model, logical_assignments),
+    returning (model, metrics, metadata). No retry or remote cancellation is
+    provided. See docs/design/async_recipe.md for deployment and ownership.
     """
 
     def __init__(
@@ -59,10 +51,6 @@ class AsyncWorkflow:
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
-        scheduler=None,
-        train_kwargs=None,
-        snapshot_store=None,
-        result_store=None,
     ):
         for name, value in (
             ("num_updates", num_updates),
@@ -92,13 +80,7 @@ class AsyncWorkflow:
         self.server_lr = server_lr
         self.weight_metric = weight_metric
         self.update_transform = update_transform
-        if train_kwargs is not None and not callable(train_kwargs):
-            raise TypeError("train_kwargs must be callable")
         self.call_timeout = call_timeout
-        self.scheduler = scheduler
-        self.train_kwargs = train_kwargs
-        self.snapshot_store = snapshot_store
-        self.result_store = result_store
 
     def _hook(self, name, *args):
         hook = getattr(self.application, name, None)
@@ -121,206 +103,147 @@ class AsyncWorkflow:
             metadata=metadata,
         )
 
-    @collab.main
-    def execute(self):
+    def _create_engine(self, initial):
+        return AsyncEngine(
+            initial,
+            self.model_adapter,
+            self.num_updates,
+            self.num_active_jobs,
+            self.buffer_size,
+            self.min_open_slots,
+            self.server_lr,
+            self.weight_metric,
+            self.update_transform,
+            update_observer=getattr(self.application, "on_update", None),
+        )
+
+    def _emit(self, phase, assignment, version, client_name=None):
+        self._hook(
+            "on_event",
+            AsyncEvent(
+                phase,
+                assignment.assignment_id,
+                assignment.logical_name,
+                client_name or assignment.client_name,
+                assignment.base_version,
+                version,
+                deepcopy(assignment.metadata),
+            ),
+        )
+
+    @contextmanager
+    def _calls(self, names):
+        """Bound result readers and queued payloads by the physical worker pool.
+
+        The protected call/engine/run methods let an example own additional
+        orchestration while reusing Collab transport, cleanup and aggregation.
+        They are implementation hooks, not a scheduler/storage plugin API.
+        """
         stopped = threading.Event()
         outcome_lock = threading.Lock()
-        names = sorted(client.name for client in collab.clients)
         outcomes = queue.Queue(maxsize=len(names) or 1)
-        scheduler = self.scheduler if self.scheduler is not None else ArrivalOrderScheduler()
-        result_store = self.result_store if self.result_store is not None else MemoryResultStore()
-        snapshot_store = self.snapshot_store if self.snapshot_store is not None else MemorySnapshotStore()
+        pool = ThreadPoolExecutor(max_workers=max(1, len(names)), thread_name_prefix="async_results")
 
-        def optional(target, name, *args):
-            hook = getattr(target, name, None)
-            if hook is not None:
-                return hook(*args)
-
-        def watch(call, results):
-            result = None
-            error = None
-            transferred = False
+        def watch(client_name, assignment_id, results):
+            result, error = None, None
             try:
-                try:
-                    for site, value in results:
-                        if site != call.client_name:
-                            raise ValueError("unexpected result source")
-                        result = value
-                    error = results.failures.get(call.client_name)
-                except Exception as exc:
-                    error = exc
-                while not stopped.is_set():
-                    with outcome_lock:
-                        if stopped.is_set():
-                            return
-                        try:
-                            outcomes.put_nowait((call, result, error))
-                            transferred = True
-                            return
-                        except queue.Full:
-                            pass
-                    stopped.wait(0.1)
-            finally:
-                if not transferred:
-                    result_store.release(result)
+                for site, value in results:
+                    if site != client_name:
+                        raise ValueError("unexpected result source")
+                    result = value
+                error = results.failures.get(client_name)
+            except Exception as exc:
+                error = exc
+            while not stopped.is_set():
+                with outcome_lock:
+                    if stopped.is_set():
+                        return
+                    try:
+                        outcomes.put_nowait((client_name, assignment_id, result, error))
+                        return
+                    except queue.Full:
+                        pass
+                stopped.wait(0.1)
 
+        def submit(client_name, assignment, **kwargs):
+            results = collab.get_clients([client_name])(blocking=False, timeout=self.call_timeout).train(
+                {client_name: assignment.assignment_id},
+                assignment.base_version,
+                assignment.base_model,
+                {client_name: assignment.logical_name},
+                **kwargs,
+            )
+            pool.submit(watch, client_name, assignment.assignment_id, results)
+
+        try:
+            yield submit, outcomes
+        finally:
+            with outcome_lock:
+                stopped.set()
+                while not outcomes.empty():
+                    outcomes.get_nowait()
+            # Drain existing ResultQueues to their Collab timeout. Local cleanup
+            # cannot cancel remote training; readers discard subsequent replies.
+            pool.shutdown(wait=False, cancel_futures=False)
+
+    def _run(self, engine, names, submit, outcomes):
+        if len(names) < self.num_active_jobs:
+            raise ValueError("num_active_jobs exceeds available clients")
+        available = list(names)
+
+        def dispatch():
+            for assignment in engine.dispatch(available):
+                available.remove(assignment.client_name)
+                submit(assignment.client_name, assignment)
+                self._emit("dispatch", assignment, engine.version)
+
+        while not engine.finished:
+            if collab.is_aborted:
+                raise RuntimeError("async workflow aborted")
+            dispatch()
+            try:
+                client_name, identity, result, error = outcomes.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            assignment = engine.active[identity]
+            version = engine.version
+            published = engine.accept(assignment, self._normalize(result, assignment), error=error)
+            available.append(client_name)
+            self._emit("accept", assignment, version)
+            if published:
+                dispatch()  # Refill before application evaluation/artifact work.
+                self._hook("on_model", engine.model, engine.version)
+
+    @collab.main
+    def execute(self):
+        names = sorted(client.name for client in collab.clients)
         with ExitStack() as cleanup:
             cleanup.callback(self._hook, "close")
-            cleanup.callback(optional, self.update_transform, "close")
-            cleanup.callback(scheduler.close)
-            cleanup.callback(result_store.close)
-            cleanup.callback(snapshot_store.close)
+            transform_close = getattr(self.update_transform, "close", None)
+            if transform_close is not None:
+                cleanup.callback(transform_close)
             initial = self.application.initialize()
             initial = collab.get_prop(ContextKey.RESULT, initial)
-            optional(self.update_transform, "initialize")
-            optional(snapshot_store, "initialize")
-            optional(result_store, "initialize")
-            engine = AsyncEngine(
-                initial,
-                self.model_adapter,
-                self.num_updates,
-                self.num_active_jobs,
-                self.buffer_size,
-                self.min_open_slots,
-                self.server_lr,
-                self.weight_metric,
-                self.update_transform,
-                snapshot_store,
-                update_observer=getattr(self.application, "on_update", None),
-            )
+            transform_init = getattr(self.update_transform, "initialize", None)
+            if transform_init is not None:
+                transform_init()
+            engine = self._create_engine(initial)
             cleanup.callback(engine.close)
-            scheduler.initialize(engine, names)
-            pool = ThreadPoolExecutor(max_workers=max(1, len(names)), thread_name_prefix="async_results")
-
-            def stop_readers():
-                with outcome_lock:
-                    stopped.set()
-                    while not outcomes.empty():
-                        _, result, _ = outcomes.get_nowait()
-                        result_store.release(result)
-                # Queued readers still drain their ResultQueues and release late
-                # offloaded payloads. Cancellation would bypass that cleanup.
-                pool.shutdown(wait=False, cancel_futures=False)
-
-            cleanup.callback(stop_readers)
-            # A custom scheduler may hold completed results. Keep physical
-            # calls separate from assignments still awaiting acceptance.
-            inflight = {}
-            completed = {}
-            submitted = set()
-
-            def emit(phase, call, version):
-                assignment = call.assignment
-                self._hook(
-                    "on_event",
-                    AsyncEvent(
-                        phase,
-                        assignment.assignment_id,
-                        assignment.logical_name,
-                        call.client_name,
-                        assignment.base_version,
-                        version,
-                        deepcopy(assignment.metadata),
-                        getattr(scheduler, "time", None),
-                    ),
-                )
-
-            def dispatch_available():
-                if engine.finished or scheduler.finished:
-                    return
-                for call in scheduler.dispatch():
-                    assignment = call.assignment
-                    if call.client_name not in names or call.client_name in inflight:
-                        raise ValueError("scheduler selected an unavailable physical worker")
-                    if (
-                        engine.active.get(assignment.assignment_id) is not assignment
-                        or assignment.assignment_id in submitted
-                    ):
-                        raise ValueError("scheduler selected an unreserved or already submitted assignment")
-                    kwargs = self.train_kwargs(call) if self.train_kwargs is not None else {}
-                    if not isinstance(kwargs, dict):
-                        raise TypeError("train_kwargs must return a dictionary")
-                    results = collab.get_clients([call.client_name])(blocking=False, timeout=self.call_timeout).train(
-                        {call.client_name: assignment.assignment_id},
-                        assignment.base_version,
-                        assignment.base_model,
-                        {call.client_name: assignment.logical_name},
-                        **kwargs,
-                    )
-                    inflight[call.client_name] = call
-                    submitted.add(assignment.assignment_id)
-                    pool.submit(watch, call, results)
-                    emit("dispatch", call, engine.version)
-
             self._hook("on_model", engine.model, engine.version)
-            while not engine.finished and not scheduler.finished:
-                if collab.is_aborted:
-                    raise RuntimeError("async workflow aborted")
-                dispatch_available()
-                assignment_id = scheduler.next_result()
-                if scheduler.finished:
-                    break
-                if assignment_id is not None:
-                    call = completed.pop(assignment_id, None)
-                    if call is None:
-                        raise ValueError("scheduler selected an incomplete result")
-                    result = result_store.take(assignment_id)
-                    acceptance_version = engine.version
-                    try:
-                        published = engine.accept(call.assignment, self._normalize(result, call.assignment))
-                    finally:
-                        result_store.release(result)
-                    submitted.remove(assignment_id)
-                    scheduler.on_accept(call.assignment)
-                    emit("accept", call, acceptance_version)
-                    if published:
-                        # Preserve publication/refill semantics before evaluation.
-                        dispatch_available()
-                        self._hook("on_model", engine.model, engine.version)
-                    continue
-                # A scheduling decision can unlock work without yielding a
-                # result. Retry dispatch before declaring that progress stopped.
-                dispatch_available()
-                if not inflight:
-                    raise RuntimeError("async workflow cannot make progress")
-                try:
-                    call, result, error = outcomes.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-                inflight.pop(call.client_name)
-                if error is not None or result is None:
-                    result_store.release(result)
-                    raise RuntimeError(f"assignment {call.assignment.assignment_id} failed: {error or 'no result'}")
-                try:
-                    result_store.put(call.assignment.assignment_id, result)
-                except Exception:
-                    result_store.release(result)
-                    raise
-                completed[call.assignment.assignment_id] = call
-                scheduler.on_result(call)
+            with self._calls(names) as (submit, outcomes):
+                self._run(engine, names, submit, outcomes)
             self._hook("on_finish", engine.model, engine.version)
             return engine.model
 
 
 class AsyncRecipe(CollabRecipe):
-    """Buffered asynchronous training over CollabAPI.
+    """Actual-arrival Collab training: K active jobs, B updates, O refill slots.
 
-    K=num_active_jobs, B=buffer_size, O=min_open_slots; K=B=O gives a
-    synchronous boundary. Defaults accept actual arrivals, with one call per
-    physical client. application.initialize() supplies the initial model;
-    optional on_model/on_update/on_event/on_finish/close hooks own artifacts.
-
-    model_adapter owns arithmetic. update_transform is an optional callable
-    receiving AcceptedUpdate and returning a replacement delta; optional
-    initialize()/close() hooks manage its resources. train_kwargs(call) can
-    supply extra client train arguments. scheduler, snapshot_store and
-    result_store accept components implementing the corresponding protocols;
-    defaults use arrival order and bounded in-memory storage.
-
-    Components must be importable and reconstructible for job export. All
-    hooks run on the workflow thread except late-result store release during
-    cleanup. Other options pass to CollabRecipe; min_clients defaults to the
-    scheduler's required_workers(K), or K. See docs/design/async_recipe.md.
+    K=B=O gives a synchronous boundary. application supplies model/artifact
+    hooks; model_adapter supplies framework-specific arithmetic. An optional
+    update_transform modifies accepted deltas. No replay, seed policy or storage
+    configuration is part of this recipe. Other options pass to CollabRecipe;
+    min_clients defaults to K. Components must be reconstructible for export.
     """
 
     def __init__(
@@ -337,10 +260,6 @@ class AsyncRecipe(CollabRecipe):
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
-        scheduler=None,
-        train_kwargs=None,
-        snapshot_store=None,
-        result_store=None,
         **collab_options,
     ):
         workflow = AsyncWorkflow(
@@ -354,12 +273,6 @@ class AsyncRecipe(CollabRecipe):
             weight_metric,
             update_transform,
             call_timeout,
-            scheduler,
-            train_kwargs,
-            snapshot_store,
-            result_store,
         )
-        collab_options.setdefault(
-            "min_clients", num_active_jobs if scheduler is None else scheduler.required_workers(num_active_jobs)
-        )
+        collab_options.setdefault("min_clients", num_active_jobs)
         super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)

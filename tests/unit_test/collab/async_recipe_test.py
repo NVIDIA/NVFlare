@@ -25,12 +25,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 from nvflare.apis.signal import Signal
 from nvflare.collab import AsyncRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
 from nvflare.collab.async_recipe import AsyncWorkflow
 
 from ._direct_dispatcher import _DirectDispatcher
@@ -97,7 +97,7 @@ def _execute(application, clients, *, abort=None, **options):
     signal = abort or Signal()
     settings = dict(num_updates=2, num_active_jobs=len(clients), call_timeout=0.5)
     settings.update(options)
-    workflow = AsyncWorkflow(application, NumpyAsyncModelAdapter(), **settings)
+    workflow = AsyncWorkflow(application, NumpyModelAdapter(), **settings)
     server = ServerApp(workflow)
     server._abort_signal = signal
     previous = get_call_context()
@@ -180,7 +180,7 @@ def test_recipe_export_round_trip_loads_application_and_adapter(tmp_path, monkey
     assert server["path"] == "nvflare.collab.async_recipe.AsyncWorkflow"
     assert server["args"]["application"]["path"].endswith("ArrayApplication")
     assert server["args"]["num_updates"] == 3
-    assert server["args"]["model_adapter"]["path"].endswith("NumpyAsyncModelAdapter")
+    assert server["args"]["model_adapter"]["path"].endswith("NumpyModelAdapter")
     from nvflare.fuel.utils.component_builder import ComponentBuilder
 
     class Builder(ComponentBuilder):
@@ -206,7 +206,7 @@ class Block:
 sys.meta_path.insert(0, Block())
 from nvflare.collab import AsyncRecipe
 from nvflare.collab.async_workflow import AsyncEngine, AsyncResult
-from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
+from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 """
     subprocess.run([sys.executable, "-c", code], check=True)
 

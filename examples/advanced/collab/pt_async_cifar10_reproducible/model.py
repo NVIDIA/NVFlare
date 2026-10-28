@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""NumPy model operations for the asynchronous engine (no PyTorch dependency)."""
+"""NumPy model arithmetic for the standalone research smoke example."""
 
 import numpy as np
 
 
-class NumpyAsyncModelAdapter:
+class NumpyModelAdapter:
     """Average floating arrays; preserve non-floating buffers from the current model.
 
     Full states must have identical keys, shapes and dtypes. Deltas contain only

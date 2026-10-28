@@ -52,10 +52,6 @@ class _DiskStore:
         with Path(path).open("rb") as stream:
             return pickle.load(stream)
 
-    def close(self):
-        # No persistent file handles; retain all artifacts for inspection/replay.
-        pass
-
 
 class DiskSnapshotStore(_DiskStore):
     """One immutable file per base version; assignment handles are file paths."""
@@ -71,10 +67,6 @@ class DiskSnapshotStore(_DiskStore):
     def load(self, handle):
         return self._load(handle)
 
-    def release(self, handle):
-        # Research keeps every base, so no per-assignment lifetime tracking.
-        pass
-
 
 class DiskResultStore(_DiskStore):
     """Persist each raw Collab result by ID; acceptance reloads it from disk."""
@@ -89,7 +81,3 @@ class DiskResultStore(_DiskStore):
 
     def take(self, assignment_id):
         return self._load(self._path(assignment_id))
-
-    def release(self, result):
-        # take() returns an ordinary payload; files survive acceptance/cleanup.
-        pass

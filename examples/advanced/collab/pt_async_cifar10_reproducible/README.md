@@ -5,11 +5,11 @@ This is the research-reproducibility companion to the
 `pt_async_cifar10` naming and places the extended components in a separate
 `pt_async_cifar10_reproducible` package.
 
-This example composes the production `AsyncRecipe` with fixed arrival replay,
-logical clients over fewer physical workers, and isolated assignment seeds.
-These implementations live here, outside the installed `nvflare` package.
-The core recipe has no dependency on them. Omitting `scheduler` and
-`train_kwargs` restores the standard actual-arrival behavior.
+`ResearchRecipe` owns fixed arrival replay, logical clients over fewer physical
+workers, assignment seeds and append-only disk checkpoints. Its workflow reuses
+the core numerical engine, Collab calls and lifecycle. These research options
+are example-level APIs; production `AsyncRecipe` always uses actual arrivals and
+direct base-model references. Both paths share update/aggregation arithmetic.
 
 ## Run
 
@@ -63,25 +63,23 @@ a separate research unit-test matrix.
 With this directory's parent on the Python path:
 
 ```python
-from pt_async_cifar10_reproducible.disk_storage import DiskSnapshotStore, DiskResultStore
 from pt_async_cifar10_reproducible.replay import ReplayScheduler
 from pt_async_cifar10_reproducible.seed_policy import SeedPolicy, SeededTrainArgs
-from nvflare.collab import AsyncRecipe
+from pt_async_cifar10_reproducible.workflow import ResearchRecipe
 
-recipe = AsyncRecipe(
+recipe = ResearchRecipe(
     job_name="experiment", application=MyApplication(), client=SeededClient(),
     model_adapter=MyAdapter(), num_updates=4, num_active_jobs=3,
     scheduler=ReplayScheduler([2, 0, 1, 3], ["alice", "bob", "alice", "carol"]),
     train_kwargs=SeededTrainArgs(SeedPolicy(10)),
-    snapshot_store=DiskSnapshotStore(), result_store=DiskResultStore(),
 )
 ```
 
 `job.py` explicitly bundles this package for server and client export. Do the
 same when using these helpers in another job. They can be copied or adapted
 independently; they are example APIs rather than installed SDK guarantees.
-See the [core contracts](../../../../docs/design/async_recipe.md) for extension
-ports, ownership, deployment and failure behavior.
+See the [core contracts](../../../../docs/design/async_recipe.md) for
+numerical contracts, ownership, deployment and failure behavior.
 
 ## Replay semantics
 
@@ -109,8 +107,8 @@ Retain one to advance its stream; requesting another restarts it. Use separate
 stream names for training, data, delays, probes and KD so ablations do not
 consume unrelated randomness.
 
-`SeededTrainArgs` supplies `train_seeds={physical_site: seed}` through the core
-train-argument port and records the seed in assignment metadata. An explicit
+`SeededTrainArgs` supplies `train_seeds={physical_site: seed}` through the research
+workflow and records the seed in assignment metadata. An explicit
 `metadata["train_seed"]` overrides derivation. The published client must accept
 and apply that argument. Importing a helper alone enables no behavior.
 
@@ -137,12 +135,22 @@ devices/software versions, nor restore optimizer state after restart.
 
 ## FedRevive follow-up
 
-The research harness can implement download/train/upload phase events through
-`AsyncScheduler`, with a simulated clock and `finished` time horizon. Logical
-release during upload can unlock another reservation; keep RPC completion
-separate from simulated time and use deterministic equal-time tie breakers.
-The append-only disk stores implement the core storage ports. Teacher/KD
-components attach via `update_transform`; no algorithm imports enter the core.
+The research scheduler implements `required_workers(K)`, `initialize(engine,
+names)`, `dispatch()`, `on_result(call)`, `next_result()`, `on_accept(assignment)`,
+`finished`, and `close()`. Calls use `ScheduledCall` from this example's
+`replay.py`. Only ResearchWorkflow accepts results; ResearchEngine reserves
+logical jobs and inherits core capacity/budget and numerical rules. Core's
+engine only dispatches physical assignments.
+
+Download/train/upload phase events and a `finished` time horizon can be added
+here. A phase may unlock another call while an earlier upload is held; the
+research workflow retries dispatch before waiting. Keep RPC completion separate
+from simulated time, order equal-time events deterministically, and record any
+virtual clock in event metadata. A horizon discards partial aggregation.
+
+DiskSnapshotStore and DiskResultStore are simple local file helpers owned by
+the research workflow, not core storage plugins. Teacher/KD components attach
+via the shared `update_transform`; no algorithm imports enter core.
 
 FedRevive's reference linear training-seed mapping differs from this example's
 hash mapping. Preserve its recorded seed values and generator algorithms during
