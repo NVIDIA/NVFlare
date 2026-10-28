@@ -15,11 +15,14 @@
 import datetime
 import json
 import os
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import Mock
 
+import psutil
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -34,6 +37,7 @@ from nvflare.fuel.sec.admin_cert_provider import (
 )
 from nvflare.fuel.sec.step_ca_admin_cert import (
     DEFAULT_STEP_CA_REQUEST_NAME,
+    _run_step,
     obtain_step_ca_admin_cert_files,
     validate_step_ca_admin_cert_config,
 )
@@ -125,16 +129,13 @@ def _fake_step(
     key_src=None,
     command_log=None,
     exit_code=None,
-    sleep=None,
 ):
     fake_step = tmp_path / "step"
     fake_step.write_text(
         "\n".join(
             [
                 "#!/usr/bin/env python3",
-                "import json, os, shutil, sys, time",
-                "if os.environ.get('NVFLARE_TEST_STEP_SLEEP'):",
-                "    time.sleep(float(os.environ['NVFLARE_TEST_STEP_SLEEP']))",
+                "import json, os, shutil, sys",
                 "if os.environ.get('NVFLARE_TEST_STEP_EXIT'):",
                 "    raise SystemExit(int(os.environ['NVFLARE_TEST_STEP_EXIT']))",
                 "if os.environ.get('NVFLARE_TEST_STEP_COMMAND_LOG'):",
@@ -158,8 +159,6 @@ def _fake_step(
         monkeypatch.setenv("NVFLARE_TEST_STEP_COMMAND_LOG", str(command_log))
     if exit_code is not None:
         monkeypatch.setenv("NVFLARE_TEST_STEP_EXIT", str(exit_code))
-    if sleep is not None:
-        monkeypatch.setenv("NVFLARE_TEST_STEP_SLEEP", str(sleep))
     return fake_step
 
 
@@ -598,20 +597,24 @@ def test_step_ca_source_rejects_non_finite_command_timeout(value):
         )
 
 
-def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
-    _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
-    fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
+@pytest.mark.parametrize(
+    "cleanup_error", [None, psutil.NoSuchProcess(123), psutil.AccessDenied(123), PermissionError()]
+)
+def test_step_ca_source_preserves_timeout_during_cleanup(monkeypatch, cleanup_error):
+    process = Mock(pid=123)
+    process.wait.side_effect = [subprocess.TimeoutExpired(["step"], 0.01), 0]
+    inspection = Mock()
+    inspection.children.return_value = []
+    inspection.children.side_effect = cleanup_error
+    monkeypatch.setattr(subprocess, "Popen", Mock(return_value=process))
+    monkeypatch.setattr(psutil, "Process", Mock(return_value=inspection))
 
-    with pytest.raises(AdminCertProviderError, match="timed out"):
-        obtain_step_ca_admin_cert_files(
-            config={
-                "ca_url": "https://step-ca.example.com",
-                "provisioner": "nvflare-admin-oidc",
-                "step_bin": str(fake_step),
-                "command_timeout": 0.01,
-            },
-            root_ca_file=str(root_ca_path),
-        )
+    with pytest.raises(AdminCertProviderError, match="timed out after 0.01 seconds"):
+        _run_step(["step"], timeout=0.01)
+
+    process.kill.assert_called_once_with()
+    process.wait.assert_any_call(timeout=0.01)
+    assert process.wait.call_count == 2
 
 
 def test_step_ca_source_reports_unexecutable_step_binary(tmp_path):
