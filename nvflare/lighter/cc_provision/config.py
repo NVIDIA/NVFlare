@@ -26,7 +26,9 @@ from typing import Any, Dict, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
+from nvflare.app_opt.confidential_computing.trustee_claims import normalize_cpu_tee
 from nvflare.lighter import utils
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import DEFAULT_EXPIRY_WARNING_SECONDS
 from nvflare.lighter.cc_provision.deployment import (
     CPUTEE,
     GPUTEE,
@@ -62,7 +64,7 @@ LEGACY_FIELDS = {
 CLASS_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 REPOSITORY = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*")
 DNS_LABEL = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
-DEFAULT_EXPIRY_WARNING_SECONDS = 7 * 86400
+_WARNED_TOKEN_EXPIRATIONS = set()
 
 
 def _warn_jwt_expiry(path, warning_window, now=None):
@@ -75,7 +77,12 @@ def _warn_jwt_expiry(path, warning_window, now=None):
         return
     if type(expiration) not in (int, float):
         return
-    if expiration - (time.time() if now is None else now) <= warning_window:
+    warning_key = (str(Path(path).resolve()), expiration)
+    if (
+        expiration - (time.time() if now is None else now) <= warning_window
+        and warning_key not in _WARNED_TOKEN_EXPIRATIONS
+    ):
+        _WARNED_TOKEN_EXPIRATIONS.add(warning_key)
         warnings.warn(
             "Trustee administration token expires within the configured warning window; rotate it before provisioning",
             RuntimeWarning,
@@ -434,7 +441,7 @@ def load_participant_config(config_path: Path, project_config: Mapping[str, Any]
     except (ValueError, TypeError):
         raise ValueError("cc_deployment_mode must be bare_metal_cvm, coco, or azure_cc") from None
     try:
-        cpu = CPUTEE(config["cpu_tee"])
+        cpu = CPUTEE(normalize_cpu_tee(config["cpu_tee"]))
     except (ValueError, TypeError):
         raise ValueError("cpu_tee must be intel_tdx or amd_sev_snp") from None
     try:

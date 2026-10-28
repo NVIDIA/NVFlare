@@ -40,11 +40,23 @@ CPU_TEE_EVIDENCE_TYPES = {
 }
 
 
+LEGACY_CPU_TEE_ALIASES = {
+    "tdx": "intel_tdx",
+    "snp": "amd_sev_snp",
+}
+
+
+def normalize_cpu_tee(cpu_tee):
+    """Return the public CPU TEE name while accepting 2.9 upgrade aliases."""
+
+    return LEGACY_CPU_TEE_ALIASES.get(cpu_tee, cpu_tee)
+
+
 def cpu_evidence_type_for_tee(cpu_tee):
     """Translate an NVFlare CPU TEE name to Trustee's signed evidence key."""
 
     try:
-        return CPU_TEE_EVIDENCE_TYPES[cpu_tee]
+        return CPU_TEE_EVIDENCE_TYPES[normalize_cpu_tee(cpu_tee)]
     except (KeyError, TypeError):
         raise ValueError("Unsupported CPU TEE: use intel_tdx or amd_sev_snp") from None
 

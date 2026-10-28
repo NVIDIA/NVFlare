@@ -98,6 +98,12 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, "DER X.509"):
                 check_snp_vcek_store(root, self.VCEK_URL)
 
+    def test_snp_offline_store_rejects_non_ascii_tcb_numbers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            url = self.VCEK_URL.replace("blSPL=2", "blSPL=²")
+            with self.assertRaisesRegex(BuildError, "valid blSPL"):
+                snp_vcek_paths(directory, url)
+
     def test_snp_preflight_can_require_offline_store(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -124,3 +130,19 @@ class PreflightTests(unittest.TestCase):
                     devfs=devfs,
                 )
             check.assert_called_once_with(root / "vcek", self.VCEK_URL)
+
+    def test_snp_preflight_rejects_turin_until_trustee_exposes_fmc(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            procfs, sysfs, devfs = root / "proc", root / "sys", root / "dev"
+            procfs.mkdir()
+            (sysfs / "module/kvm_amd/parameters").mkdir(parents=True)
+            (sysfs / "kernel/iommu_groups/1").mkdir(parents=True)
+            devfs.mkdir()
+            firmware = root / "OVMF.amdsev.fd"
+            firmware.touch()
+            (procfs / "cpuinfo").write_text("vendor_id : AuthenticAMD\ncpu family : 26\nflags : sev sev_es sev_snp\n")
+            (sysfs / "module/kvm_amd/parameters/sev_snp").write_text("Y\n")
+            (devfs / "sev").touch()
+            with self.assertRaisesRegex(BuildError, "Turin.*FMC"):
+                check_snp_host(firmware, procfs=procfs, sysfs=sysfs, devfs=devfs)

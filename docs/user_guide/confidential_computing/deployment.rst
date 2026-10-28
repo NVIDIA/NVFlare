@@ -161,7 +161,10 @@ Every ``cc_config`` starts with these fields:
      service: trustee
    class_allow_list: []
 
-``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. ``gpu_tee`` is ``none`` or
+``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. The 2.9 reader accepts the
+former ``tdx`` and ``snp`` spellings in existing configurations and v2
+workload-authorization files, normalizes them in memory, and emits only the
+canonical names. ``gpu_tee`` is ``none`` or
 ``nvidia_cc`` and also controls the peer attestation GPU requirement. An empty
 ``class_allow_list`` adds no custom classes; it never
 means unrestricted. Entries must be complete reviewed Python class paths.

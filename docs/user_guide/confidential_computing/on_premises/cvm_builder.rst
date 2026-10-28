@@ -92,7 +92,7 @@ CVM build ID, platform, and vault resource identity. It contains no credentials
 or private staging paths. Distribute the complete ``.oci.tar`` and checksum
 through an authenticated channel. A direct builder workflow can publish each
 signed delivery during ``cvmctl vault`` with ``--publish`` and
-``--cosign-key``. NVFlare provisioning leaves publication as a separate release
+``--cosign-signing-key``. NVFlare provisioning leaves publication as a separate release
 step with ``cvmctl publish`` because its provisioner does not hold the release
 signing key.
 

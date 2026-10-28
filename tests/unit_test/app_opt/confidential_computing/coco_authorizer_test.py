@@ -62,9 +62,8 @@ def test_cpu_tee_names_translate_only_at_the_trustee_wire_boundary():
     for cpu_tee, cpu_type in CPU_TEE_EVIDENCE_TYPES.items():
         assert cpu_evidence_type_for_tee(cpu_tee) == cpu_type
         assert cpu_tee_for_evidence_type(cpu_type) == cpu_tee
-    for old_name in ("tdx", "snp"):
-        with pytest.raises(ValueError):
-            cpu_evidence_type_for_tee(old_name)
+    assert cpu_evidence_type_for_tee("tdx") == "tdx"
+    assert cpu_evidence_type_for_tee("snp") == "snp"
 
 
 @pytest.fixture(params=[("rsa", "snp"), ("ec", "snp"), ("rsa", "tdx"), ("ec", "tdx")])
@@ -261,8 +260,6 @@ def test_tdx_cannot_satisfy_snp_measurement_constraint(material):
         {"site-1": {"other": "a" * 64}},
         {"site-1": {"init_data": "not-hex"}},
         {"site-1": {"cpu_tee": "sample"}},
-        {"site-1": {"cpu_tee": "tdx"}},
-        {"site-1": {"cpu_tee": "snp"}},
         {"site-1": {"cpu_tee": True}},
         {"site-1": {"cpu_tee": "TDX"}},
         {"site-1": {"gpu_required": None}},
@@ -283,6 +280,20 @@ def test_malformed_workload_constraints_fail_at_construction(material, pins):
     _, _, _, generate, _ = material
     with pytest.raises(ValueError):
         generate(workload_constraints=pins)
+
+
+@pytest.mark.parametrize("alias,canonical", [("tdx", "intel_tdx"), ("snp", "amd_sev_snp")])
+def test_legacy_cpu_tee_constraint_alias_is_normalized_at_construction(material, alias, canonical):
+    _, _, verifier, _, _ = material
+    public_key = verifier.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    checked = CoCoAuthorizer(
+        trustee_public_key=public_key,
+        audience=verifier.audience,
+        workload_constraints={"site-1": {"cpu_tee": alias}},
+    )
+    assert checked.workload_constraints == {"site-1": {"cpu_tee": canonical}}
 
 
 @pytest.mark.parametrize("cpu_tee,cpu_type", [("amd_sev_snp", "snp"), ("intel_tdx", "tdx")])

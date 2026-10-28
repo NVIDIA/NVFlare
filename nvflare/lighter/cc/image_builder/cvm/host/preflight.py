@@ -101,11 +101,14 @@ def snp_vcek_paths(store, vcek_url):
     components = []
     for short, parameter in (("bl", "blSPL"), ("tee", "teeSPL"), ("snp", "snpSPL"), ("ucode", "ucodeSPL")):
         values = query.get(parameter)
-        require(values and len(values) == 1 and values[0].isdigit(), "VCEK URL lacks a valid " + parameter)
+        require(
+            values and len(values) == 1 and re.fullmatch(r"[0-9]+", values[0]),
+            "VCEK URL lacks a valid " + parameter,
+        )
         components.append(f"{short}{int(values[0]):02d}")
     values = query.get("fmcSPL")
     if values:
-        require(len(values) == 1 and values[0].isdigit(), "VCEK URL has an invalid fmcSPL")
+        require(len(values) == 1 and re.fullmatch(r"[0-9]+", values[0]), "VCEK URL has an invalid fmcSPL")
         components.append(f"fmc{int(values[0]):02d}")
     host = Path(store).expanduser().resolve() / hwid
     return host / ("_".join(components) + "_vcek.der"), host / "vcek.der"
@@ -131,6 +134,11 @@ def check_snp_host(firmware, *, gpu=False, vcek_store=None, procfs=PROCFS, sysfs
     cpuinfo = (Path(procfs) / "cpuinfo").read_text()
     flags = set(cpuinfo.replace(":", " ").split())
     require("AuthenticAMD" in cpuinfo and "sev_snp" in flags, "Host CPU does not advertise AMD SEV-SNP")
+    families = {int(value) for value in re.findall(r"^cpu family\s*:\s*(\d+)\s*$", cpuinfo, re.MULTILINE)}
+    require(
+        0x1A not in families,
+        "AMD Turin SNP is not supported by the pinned Trustee v0.22 policy because it does not expose FMC SPL",
+    )
     require(
         _enabled(Path(sysfs) / "module/kvm_amd/parameters/sev_snp"),
         "Enable SEV-SNP in BIOS and kvm_amd, then reboot and verify kvm_amd.sev_snp=Y",

@@ -27,7 +27,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from ..common.contracts import identifier, validate_resource
+from ..common.contracts import DEFAULT_EXPIRY_WARNING_SECONDS, identifier, validate_resource
 from ..common.errors import BuildError, require
 from ..common.io import canonical
 
@@ -40,7 +40,7 @@ RESOURCE_ROLE = "cvm-resources"
 # A leaked resource token can replace or delete every key its role may reach.
 # Refuse long-lived tokens so rotation stays a habit rather than an emergency.
 MAX_ADMIN_TOKEN_LIFETIME_SECONDS = 30 * 86400
-DEFAULT_EXPIRY_WARNING_SECONDS = 7 * 86400
+_WARNED_TOKEN_EXPIRATIONS = set()
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -86,7 +86,9 @@ def admin_token(config, now=None):
     )
     warning_window = config.get("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
     require(type(warning_window) is int and warning_window >= 0, "Invalid credential expiry warning window")
-    if exp - now <= warning_window:
+    warning_key = (str(Path(config["admin_token_file"]).resolve()), exp)
+    if exp - now <= warning_window and warning_key not in _WARNED_TOKEN_EXPIRATIONS:
+        _WARNED_TOKEN_EXPIRATIONS.add(warning_key)
         warnings.warn(
             "Trustee administration token expires within the configured warning window; rotate it before deployment",
             RuntimeWarning,

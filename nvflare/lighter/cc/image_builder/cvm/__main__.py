@@ -58,10 +58,12 @@ def publish_generated(root, destination, plain_http, cosign_key, names=None):
 
     if not destination:
         if cosign_key:
-            raise BuildError("--cosign-key requires --publish")
+            raise BuildError("--cosign-signing-key requires --publish")
         return []
     if not cosign_key:
-        raise BuildError("Combined publication requires --cosign-key; use cvmctl publish for an unsigned lab copy")
+        raise BuildError(
+            "Combined publication requires --cosign-signing-key; use cvmctl publish for an unsigned lab copy"
+        )
     root = Path(root).resolve()
     recorded = read_json(root / "oci_artifacts.json")["artifacts"]
     artifacts = sorted(recorded if names is None else names)
@@ -108,9 +110,9 @@ def build(args):
     if args.publish_plain_http and not args.publish:
         raise BuildError("--publish-plain-http requires --publish")
     if args.cosign_key and not args.publish:
-        raise BuildError("--cosign-key requires --publish")
+        raise BuildError("--cosign-signing-key requires --publish")
     if args.publish and not args.cosign_key:
-        raise BuildError("Combined publication requires --cosign-key")
+        raise BuildError("Combined publication requires --cosign-signing-key")
     build_preflight(args)
     result = cvm.build(
         args.config,
@@ -138,26 +140,31 @@ def build(args):
 
 def build_vault(args):
     if args.cosign_key and not args.publish:
-        raise BuildError("--cosign-key requires --publish")
+        raise BuildError("--cosign-signing-key requires --publish")
     if args.publish and not args.cosign_key:
-        raise BuildError("Combined publication requires --cosign-key")
+        raise BuildError("Combined publication requires --cosign-signing-key")
     result = vault.build(args.config, args.output, args.candidate, args.dev, args.plain_http, args.project_config)
     print(f"Vault staging: {result}")
-    for name in sorted(read_json(result / "oci_artifacts.json")["artifacts"]):
+    artifacts = read_json(result / "oci_artifacts.json")["artifacts"]
+    for name in sorted(artifacts):
         print(f"OCI artifact: {result / name}")
+        print(f"Archive SHA-256: {artifacts[name]['archive_sha256']}")
     publish_generated(result, args.publish, args.plain_http, args.cosign_key)
 
 
 def materialize(args, *, merge=False):
+    allow_unverified = getattr(args, "allow_unverified", False)
     local = Path(args.source).expanduser().is_file()
     if local:
-        if args.archive_sha256 is None and not args.allow_unverified:
+        if args.archive_sha256 is None and not allow_unverified:
             raise BuildError(
                 "Local OCI archives require --archive-sha256 from the publisher's authenticated channel, "
                 "or an explicit --allow-unverified"
             )
-    elif args.cosign_key is None and not args.allow_unverified:
-        raise BuildError("Registry artifacts require --cosign-key for signature verification, or --allow-unverified")
+    elif args.cosign_key is None and not allow_unverified:
+        raise BuildError(
+            "Registry artifacts require --cosign-verification-key for signature verification, or --allow-unverified"
+        )
     output, descriptor, config = oci.materialize(
         args.source,
         args.output,
@@ -167,7 +174,7 @@ def materialize(args, *, merge=False):
         cosign_key=args.cosign_key,
     )
     print(f"Materialized {descriptor['artifactType']} {descriptor['digest']} at {output}")
-    if args.allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
+    if allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
         print("Publisher authentication was skipped; the digest alone does not identify who selected it.")
     return output, descriptor, config
 
@@ -186,7 +193,11 @@ def run_delivery(args):
     launch_directory = config.get("launch_directory")
     if not isinstance(launch_directory, str) or not launch_directory:
         raise BuildError("Artifact is not a runnable CVM delivery")
-    launcher = output / launch_directory / "launch_cvm.sh"
+    output = output.resolve()
+    launch_root = (output / launch_directory).resolve()
+    if launch_root.parent != output:
+        raise BuildError("Materialized delivery has an unsafe launch directory")
+    launcher = launch_root / "launch_cvm.sh"
     if not launcher.is_file():
         raise BuildError("Materialized delivery does not contain its launcher")
     command = [str(launcher)]
@@ -267,7 +278,12 @@ def parser():
     stage1.add_argument(
         "--publish-plain-http", action="store_true", help="allow an unencrypted test registry for --publish"
     )
-    stage1.add_argument("--cosign-key", help="Cosign private key required to sign a combined publication")
+    stage1.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key required to sign a combined publication",
+    )
     stage1.set_defaults(handler=build)
 
     finalize = commands.add_parser("finalize", help="measure a previously constructed bundle")
@@ -288,7 +304,12 @@ def parser():
         metavar="REGISTRY_REFERENCE",
         help="publish after sealing; use {artifact} in the reference when more than one platform is built",
     )
-    stage2.add_argument("--cosign-key", help="Cosign private key required to sign a combined publication")
+    stage2.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key required to sign a combined publication",
+    )
     stage2.set_defaults(handler=build_vault)
 
     acceptance = commands.add_parser(
@@ -311,7 +332,12 @@ def parser():
     materialize.add_argument("--merge", action="store_true", help="add a finalized platform to an existing profile")
     materialize.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
     materialize.add_argument("--archive-sha256", help="published SHA-256 of a local .oci.tar (authenticated channel)")
-    materialize.add_argument("--cosign-key", help="cosign public key that must have signed the registry digest")
+    materialize.add_argument(
+        "--cosign-verification-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign public key that must have signed the registry digest",
+    )
     materialize.add_argument(
         "--allow-unverified",
         action="store_true",
@@ -324,11 +350,11 @@ def parser():
     run.add_argument("--output")
     run.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
     run.add_argument("--archive-sha256", help="published SHA-256 of a local .oci.tar (authenticated channel)")
-    run.add_argument("--cosign-key", help="Cosign public key that must have signed the registry digest")
     run.add_argument(
-        "--allow-unverified",
-        action="store_true",
-        help="skip publisher authentication (lab use only; digests alone do not identify the publisher)",
+        "--cosign-verification-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign public key that must have signed the registry digest",
     )
     run.add_argument("--cvm-bundle", help="override the delivery's embedded generic CVM bundle")
     run.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
@@ -341,7 +367,12 @@ def parser():
     publish.add_argument("source")
     publish.add_argument("destination")
     publish.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    publish.add_argument("--cosign-key", help="cosign private key used to sign the published immutable digest")
+    publish.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key used to sign the published immutable digest",
+    )
     publish.set_defaults(
         handler=lambda a: print(
             f"Published: {oci.publish(a.source, a.destination, a.plain_http, cosign_key=a.cosign_key)}"
@@ -371,8 +402,16 @@ def parser():
     receipt.add_argument("trustee_build", help="JSON emitted by cvmctl provenance for the deployed KBS binary")
     receipt.add_argument("kbs_config", help="exact JSON configuration used by the deployed KBS")
     receipt.add_argument("--policy", action="append", required=True, help="installed immutable AS policy as NAME=FILE")
-    receipt.add_argument("--policy-selection-tested", action="store_true")
-    receipt.add_argument("--unauthorized-administration-denied", action="store_true")
+    receipt.add_argument(
+        "--policy-selection-tested",
+        action="store_true",
+        help="operator attestation that live policy-selection acceptance passed",
+    )
+    receipt.add_argument(
+        "--unauthorized-administration-denied",
+        action="store_true",
+        help="operator attestation that the live unauthorized-administration negative test passed",
+    )
     receipt.add_argument("--output", required=True)
     receipt.set_defaults(
         handler=lambda a: print(

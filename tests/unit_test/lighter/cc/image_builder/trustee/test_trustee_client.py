@@ -22,6 +22,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -33,6 +34,7 @@ from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose, merge
 from cvm.trustee.admin import install, retire
 from cvm.trustee.client import (
+    _WARNED_TOKEN_EXPIRATIONS,
     MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
     NoRedirect,
     admin_token,
@@ -152,7 +154,11 @@ class TrusteeClientTests(unittest.TestCase):
     def test_preissued_token_warns_before_configured_expiry_window(self):
         now = int(time.time())
         self.token.write_text(unsigned_token(iat=now, exp=now + 60) + "\n")
+        _WARNED_TOKEN_EXPIRATIONS.clear()
         with self.assertWarnsRegex(RuntimeWarning, "expires within"):
+            admin_token(dict(self.config, expiry_warning_seconds=120), now=now)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             admin_token(dict(self.config, expiry_warning_seconds=120), now=now)
         # A token issued for exactly the maximum lifetime remains usable.
         self.token.write_text(unsigned_token(iat=now, exp=now + MAX_ADMIN_TOKEN_LIFETIME_SECONDS) + "\n")

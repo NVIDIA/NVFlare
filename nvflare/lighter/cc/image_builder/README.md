@@ -34,8 +34,9 @@ The normal workflow uses `build`, `vault`, and `run`; each command combines the
 safe consecutive operations for its role. The lower-level `finalize`,
 `acceptance-report`, `admin`, `publish`, and `pull` commands remain available for
 separate trust roles, offline transfer, and recovery. Publisher authentication
-uses `--archive-sha256` for a local artifact or `--cosign-key` for a registry
-artifact; skipping it requires an explicit `--allow-unverified`. Add
+uses `--archive-sha256` for a local artifact or `--cosign-verification-key` for
+a registry artifact. `run` always requires one of those authenticated inputs;
+the separate `pull` command permits an explicit lab-only `--allow-unverified`. Add
 `--diagnostics DIR` before any command to retain stderr of failed commands that
 never handle secrets.
 
@@ -139,7 +140,11 @@ local target platform; no platform argument is required.
 ## Normal three-command flow
 
 An authorized operator can complete the lifecycle without chaining lower-level
-commands. `build` screens the host, constructs and finalizes the generic CVM,
+commands. Production normally separates build, acceptance-signing, Trustee
+administration, and registry-publishing roles. Use the combined options only
+when one operator is explicitly authorized to hold all of those credentials;
+otherwise transfer the printed output to the role that runs the corresponding
+lower-level command. `build` screens the host, constructs and finalizes the generic CVM,
 runs the trusted acceptance adapter, signs its approval, enables
 the approved bundle in Trustee, and publishes the signed OCI artifact:
 
@@ -150,7 +155,7 @@ sudo ./cvmctl build config/cvm_profile.yml \
   --approval-key /secure/acceptance-signing.key \
   --install-config /srv/trustee/production-admin.json \
   --publish registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 ```
 
 The command stops at the first failed gate. It never enables an unapproved
@@ -167,7 +172,7 @@ to the generated artifact name without `.oci.tar`:
 ```sh
 sudo ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 ```
 
 Give runtime operators the immutable digest references printed by that command.
@@ -176,7 +181,7 @@ They can authenticate, materialize, and launch a delivery in one operation:
 ```sh
 sudo ./cvmctl run \
   registry.example.org/cvm/deliveries/vault_DEPLOYMENT_intel_tdx@sha256:DIGEST \
-  --cosign-key /etc/cvm/release-signing.pub \
+  --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/site-1
 ```
 
@@ -248,7 +253,7 @@ docker image inspect --format '{{.Id}}' "$image"
 docker save --output inputs/application.tar "$image"
 sudo ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 ```
 
 `cvm_image` is an approved local profile directory or an immutable generic-CVM
@@ -330,6 +335,7 @@ import yaml
 
 profile = yaml.safe_load(Path("config/cvm_profile.yml").read_text())
 profile["profile_version"] = "dev-local"
+profile["attestation_policy"] = "../config/attestation_policy.rego"
 Path("inputs/cvm_profile-dev.yml").write_text(yaml.safe_dump(profile, sort_keys=False))
 
 vault = yaml.safe_load(Path("config/vault_build.yml").read_text())
@@ -345,16 +351,15 @@ sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault \
   inputs/vault_build-dev.yml --dev
 ```
 
-Copy the `OCI artifact:` path printed by `vault`, then launch it through the
-same runtime command used in production:
+Copy the `OCI artifact:` path and `Archive SHA-256:` value printed by `vault`,
+then launch it through the same authenticated runtime command used in production:
 
 ```sh
-sudo ./cvmctl run ARTIFACT_PATH --allow-unverified \
+sudo ./cvmctl run ARTIFACT_PATH --archive-sha256 PRINTED_ARCHIVE_SHA256 \
   --output /srv/cvm/dev-local
 ```
 
-Skipping publisher authentication is appropriate only for this isolated dev
-artifact. The `--dev` switches are mandatory on both build commands. Dev
+The `--dev` switches are mandatory on both build commands. Dev
 artifacts cannot be approved, combined with a production bundle, or used as
 evidence of TEE/KBS behavior.
 

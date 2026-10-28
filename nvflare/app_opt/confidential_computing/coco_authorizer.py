@@ -43,6 +43,7 @@ from .trustee_claims import (
     TRUST_VECTOR,
     cpu_evidence_type,
     cpu_tee_for_evidence_type,
+    normalize_cpu_tee,
     normalized_init_data,
 )
 
@@ -151,6 +152,7 @@ class CoCoAuthorizer(CCAuthorizer):
         if workload_constraints is not None:
             if not isinstance(workload_constraints, dict) or not workload_constraints:
                 raise ValueError("workload_constraints must be a non-empty site mapping")
+            normalized_constraints = {}
             for site, pins in workload_constraints.items():
                 if (
                     not isinstance(site, str)
@@ -168,6 +170,9 @@ class CoCoAuthorizer(CCAuthorizer):
                     }
                 ):
                     raise ValueError("Invalid site workload constraints")
+                pins = dict(pins)
+                if "cpu_tee" in pins:
+                    pins["cpu_tee"] = normalize_cpu_tee(pins["cpu_tee"])
                 tdx_pins = any(name.startswith("tdx_") for name in pins)
                 if ("measurement" in pins and (tdx_pins or pins.get("cpu_tee") == "intel_tdx")) or (
                     tdx_pins and pins.get("cpu_tee") == "amd_sev_snp"
@@ -185,7 +190,8 @@ class CoCoAuthorizer(CCAuthorizer):
                     length = 64 if name == "init_data" else 96
                     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):
                         raise ValueError(f"Invalid workload {name} pin")
-            workload_constraints = {site: dict(pins) for site, pins in workload_constraints.items()}
+                normalized_constraints[site] = pins
+            workload_constraints = normalized_constraints
         self.workload_constraints = workload_constraints
         self.site_name = site_name
         self.token_url = token_url

@@ -28,6 +28,7 @@ import socket
 import struct
 import subprocess
 import time
+import warnings
 from pathlib import Path
 
 from ..artifacts.bundle import verify_bundle
@@ -258,6 +259,7 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
     pid = state.get("launcher_pid")
     start = state.get("launcher_start")
     require(type(pid) is int and type(start) is int, "Invalid launcher runtime state")
+    qmp_requested = False
     try:
         active = _process_start(pid) == start
     except FileNotFoundError:
@@ -272,9 +274,13 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
         # launcher signal is the fallback for a missing or unresponsive QMP
         # channel and still owns the bounded cleanup path in run_vm().
         qmp_powerdown(qmp_socket_path(directory))
+        qmp_requested = True
     except (OSError, ValueError, BuildError):
         os.kill(pid, signal.SIGTERM)
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    deadline = started + timeout
+    graceful_deadline = min(deadline, started + GRACEFUL_SHUTDOWN_SECONDS)
+    signaled = not qmp_requested
     while time.monotonic() < deadline:
         try:
             if _process_start(pid) != start:
@@ -292,7 +298,15 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
                 pass
             else:
                 return
+        if not signaled and time.monotonic() >= graceful_deadline:
+            # QMP only confirms that the virtual power button was delivered.
+            # Wake the validated launcher if the guest ignored it so run_vm()
+            # performs its bounded terminate/kill cleanup and releases locks.
+            os.kill(pid, signal.SIGTERM)
+            signaled = True
         time.sleep(0.2)
+    if not signaled:
+        os.kill(pid, signal.SIGTERM)
     raise BuildError("Timed out waiting for the CVM to stop")
 
 
@@ -512,23 +526,34 @@ def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
     require(not history.is_symlink(), "Unsafe applog history directory")
     history.mkdir(mode=0o700, exist_ok=True)
     os.chmod(history, 0o700)
-    target = history / f"applog-{time.time_ns()}.qcow2"
-    try:
-        subprocess.run(
-            ["cp", "--reflink=auto", "--sparse=always", "--", str(applog), str(target)],
-            check=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        # GNU cp preserves sparsity and uses CoW when possible. The portable
-        # fallback keeps the same contents for non-Linux unit/development hosts.
-        shutil.copyfile(applog, target)
-    os.chmod(target, 0o600)
     archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
-    for expired in archives[:-limit]:
+    for expired in archives[: max(0, len(archives) - limit + 1)]:
         expired.unlink()
+    target = history / f"applog-{time.time_ns()}.qcow2"
+    temporary = history / ("." + target.name + ".tmp")
+    try:
+        try:
+            subprocess.run(
+                ["cp", "--reflink=auto", "--sparse=always", "--", str(applog), str(temporary)],
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            # GNU cp preserves sparsity and uses CoW when possible. The portable
+            # fallback keeps the same contents for non-Linux unit/development hosts.
+            shutil.copyfile(applog, temporary)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, target)
+    except (OSError, subprocess.CalledProcessError):
+        temporary.unlink(missing_ok=True)
+        warnings.warn(
+            "Could not preserve the previous clear applog disk; continuing launch without a new history copy",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
     print(f"Preserved previous applog disk: {target}")
     return target
 

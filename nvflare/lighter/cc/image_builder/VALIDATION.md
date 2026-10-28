@@ -313,8 +313,10 @@ resource roles, a root-only lock directory, `--diagnostics`, git-ignored
 New operator inputs: `inputs/kbs_client_cpu_build.json` from `cvmctl provenance`,
 an Ed25519 acceptance signing key pair, `approval.public_keys` in
 `cvm_project.yml`, `approval_public_keys` in the administration configuration,
-`--signing-key` for `admin approve`, and `--archive-sha256`/`--cosign-key` (or an
-explicit `--allow-unverified`) for `cvmctl pull`. Existing `approval.json` files
+`--signing-key` for `admin approve`, and
+`--archive-sha256`/`--cosign-verification-key` (or an explicit
+`--allow-unverified`) for `cvmctl pull`. `cvmctl run` never permits the
+unauthenticated override. Existing `approval.json` files
 are unsigned and no longer count as approval.
 
 A follow-up review found and fixed four regressions:

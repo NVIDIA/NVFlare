@@ -71,8 +71,6 @@ def test_target_authentication_contract(runtime):
     [
         ("schema", "other"),
         ("cpu_tee", "sgx"),
-        ("cpu_tee", "tdx"),
-        ("cpu_tee", "snp"),
         ("gpu", "amd"),
         ("init_data_sha256", "ab" * 48),
         ("init_data_claim", "0" * 64),
@@ -89,6 +87,16 @@ def test_malformed_authorization_rejected(runtime, field, value):
     auth[field] = value
     with pytest.raises(ValueError):
         release.validate_authorization(auth)
+
+
+@pytest.mark.parametrize(
+    "alias,canonical,runtime",
+    [("tdx", "intel_tdx", "kata-qemu-tdx"), ("snp", "amd_sev_snp", "kata-qemu-nvidia-gpu-snp")],
+)
+def test_legacy_cpu_tee_alias_is_normalized_in_release_authorization(alias, canonical, runtime):
+    auth = authorization(runtime)
+    auth["cpu_tee"] = alias
+    assert release.validate_authorization(auth)["cpu_tee"] == canonical
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)

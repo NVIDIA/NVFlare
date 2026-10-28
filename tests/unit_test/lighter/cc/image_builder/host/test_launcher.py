@@ -83,6 +83,19 @@ class LauncherTests(unittest.TestCase):
             self.assertTrue(all(path.stat().st_mode & 0o777 == 0o600 for path in retained))
             self.assertTrue(all(not path.exists() for path in outputs[:2]))
 
+    def test_applog_copy_failure_does_not_block_launch_or_leave_a_partial_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            with (
+                patch("cvm.host.launcher.subprocess.run", side_effect=subprocess.CalledProcessError(1, "cp")),
+                patch("cvm.host.launcher.shutil.copyfile", side_effect=OSError("disk full")),
+                self.assertWarnsRegex(RuntimeWarning, "continuing launch"),
+            ):
+                self.assertIsNone(preserve_applog(directory, applog))
+            self.assertEqual(list((directory / "applog-history").iterdir()), [])
+
     def test_duplicate_launch_preserves_the_live_qmp_socket(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -559,6 +572,30 @@ class LauncherTests(unittest.TestCase):
                     patch("cvm.host.launcher.os.kill", side_effect=remove_state) as kill,
                 ):
                     shutdown(delivery)
+                kill.assert_called_once_with(123, signal.SIGTERM)
+
+    def test_shutdown_signals_validated_launcher_when_guest_ignores_qmp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            delivery = Path(temporary) / "delivery"
+            runtime = Path(temporary) / "run"
+            delivery.mkdir()
+            with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": str(runtime)}):
+                state = runtime_state_path(delivery)
+                state.parent.mkdir()
+                write_json(state, {"launcher_pid": 123, "launcher_start": 456})
+
+                def remove_state(pid, sent_signal):
+                    self.assertEqual((pid, sent_signal), (123, signal.SIGTERM))
+                    state.unlink()
+
+                with (
+                    patch("cvm.host.launcher._process_start", return_value=456),
+                    patch("cvm.host.launcher.qmp_powerdown") as powerdown,
+                    patch("cvm.host.launcher.GRACEFUL_SHUTDOWN_SECONDS", 0),
+                    patch("cvm.host.launcher.os.kill", side_effect=remove_state) as kill,
+                ):
+                    shutdown(delivery, timeout=1)
+                powerdown.assert_called_once_with(qmp_socket_path(delivery))
                 kill.assert_called_once_with(123, signal.SIGTERM)
 
 

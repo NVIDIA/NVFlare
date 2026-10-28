@@ -41,7 +41,16 @@ from cvm.runtime.systemd import notify
 
 class BootstrapTests(unittest.TestCase):
     def test_startup_failures_expose_only_fixed_phase_identifiers(self):
-        for phase in ("attestation", "key_release", "vault_identity", "payload_authentication"):
+        for phase in (
+            "configuration",
+            "network",
+            "time_sync",
+            "attestation",
+            "key_release",
+            "vault_identity",
+            "payload_authentication",
+            "supervision",
+        ):
             with self.subTest(phase=phase):
                 with self.assertRaises(StartupPhaseError) as error:
                     with bootstrap.startup_phase(phase):

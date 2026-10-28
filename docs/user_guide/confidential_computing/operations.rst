@@ -138,9 +138,19 @@ Troubleshooting by symptom
    * - Symptom
      - First check and next action
      - Diagnostic source
+   * - ``phase=configuration``
+     - Check the measured runtime configuration and root-only runtime-state
+       directory before investigating Trustee.
+     - Retained CVM applog; ``runtime.json``
+   * - ``phase=network``
+     - Check the measured nftables table, learned DNS resolvers, and configured
+       bootstrap egress.
+     - Retained CVM applog; host network configuration
+   * - ``phase=time_sync``
+     - Check NTS reachability and clock convergence before attestation.
+     - Retained CVM applog; chrony sources
    * - ``phase=attestation`` or no Trustee token
-     - Check DNS for the Trustee host, KBS/AS TLS, NTS reachability and clock
-       convergence, then platform collateral egress.
+     - Check DNS for the Trustee host, KBS/AS TLS, and platform collateral egress.
      - Retained CVM applog; Trustee AS logs
    * - ``phase=key_release``
      - Check the immutable resource path, release policy, admin/JWT expiry, and
@@ -154,6 +164,10 @@ Troubleshooting by symptom
      - Check dm-integrity, manifest identity, application archive identity, and
        measured service files. Do not bypass the failing check.
      - Retained applog; acceptance result
+   * - ``phase=supervision``
+     - Check proof renewal, workload lifecycle, vault closure, and containment
+       diagnostics after successful startup.
+     - Retained applog; CVM audit records
    * - TDX quote stops after about 168 hours
      - Match the cache-expiry and collateral error sequence, coordinate a
        ``qgsd`` restart, then run a fresh challenge-bound quote test.

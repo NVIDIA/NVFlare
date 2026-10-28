@@ -32,12 +32,14 @@ if __package__:
         CPU_TRUST_VECTORS,
         TRUST_VECTOR,
         cpu_evidence_type_for_tee,
+        normalize_cpu_tee,
     )
 else:
     _claims = runpy.run_path(str(Path(__file__).resolve().parent / "trustee_claims.py"))
     TRUST_VECTOR, CPU_TRUST_VECTORS = _claims["TRUST_VECTOR"], _claims["CPU_TRUST_VECTORS"]
     CPU_TEE_EVIDENCE_TYPES = _claims["CPU_TEE_EVIDENCE_TYPES"]
     cpu_evidence_type_for_tee = _claims["cpu_evidence_type_for_tee"]
+    normalize_cpu_tee = _claims["normalize_cpu_tee"]
 
 RUNTIME_TARGETS = {
     "kata-qemu-nvidia-gpu-snp": ("amd_sev_snp", "nvidia"),
@@ -83,6 +85,7 @@ def target_for_runtime(runtime):
 
 
 def init_data_claim(cpu_tee, digest):
+    cpu_tee = normalize_cpu_tee(cpu_tee)
     require(cpu_tee in CPU_TEE_EVIDENCE_TYPES, "unsupported CPU TEE")
     require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest), "invalid SHA-256 InitData digest")
     # deps/verifier/src/tdx/{mod,claims}.rs at Trustee 338610fbfed57b66c61a8a3a60e0e4386bdce793.
@@ -90,6 +93,7 @@ def init_data_claim(cpu_tee, digest):
 
 
 def required_vectors(cpu_tee, gpu):
+    cpu_tee = normalize_cpu_tee(cpu_tee)
     require(cpu_tee in CPU_TEE_EVIDENCE_TYPES and gpu in ("none", "nvidia"), "unsupported CPU/GPU target")
     vectors = {"cpu0": dict(CPU_TRUST_VECTORS[cpu_evidence_type_for_tee(cpu_tee)])}
     if gpu == "nvidia":
@@ -137,6 +141,8 @@ def validate_authorization(authorization):
         require(auth.pop("snp_init_data_encoding_in_trustee_v0_21") == "lowercase-hex", "unexpected SNP encoding")
         digest = auth.pop("snp_init_data_sha256")
         auth.update(schema=V2, cpu_tee="amd_sev_snp", gpu="nvidia", init_data_sha256=digest, init_data_claim=digest)
+    else:
+        auth["cpu_tee"] = normalize_cpu_tee(auth["cpu_tee"])
     release = auth["release_name"]
     require(
         isinstance(release, str) and re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release) and len(release) <= 63,

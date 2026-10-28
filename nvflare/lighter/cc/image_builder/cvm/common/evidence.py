@@ -66,6 +66,15 @@ def snp_tcb(evidence):
     """Return the SNP TCB and launch configuration from verified local evidence."""
     verify_reference("amd_sev_snp", evidence)
     report = base64.b64decode(evidence["report"], validate=True)
+    version = struct.unpack_from("<I", report, 0)[0]
+    require(
+        version >= 3,
+        "SNP report v2 does not identify the CPU generation; use a v3 or later report for TCB approval",
+    )
+    require(
+        report[0x188] != 0x1A,
+        "AMD Turin SNP is not supported by the pinned Trustee v0.22 policy because it does not expose FMC SPL",
+    )
     policy = struct.unpack_from("<Q", report, 8)[0]
     platform_info = struct.unpack_from("<Q", report, 64)[0]
     reported_tcb = struct.unpack_from("<Q", report, 384)[0]

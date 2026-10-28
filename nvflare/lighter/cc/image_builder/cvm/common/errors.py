@@ -23,7 +23,19 @@ class ConfigurationError(BuildError):
     """A configuration diagnostic containing schema names, never input values."""
 
 
-STARTUP_PHASES = frozenset(("verity", "attestation", "key_release", "vault_identity", "payload_authentication"))
+STARTUP_PHASES = frozenset(
+    (
+        "configuration",
+        "network",
+        "time_sync",
+        "verity",
+        "attestation",
+        "key_release",
+        "vault_identity",
+        "payload_authentication",
+        "supervision",
+    )
+)
 
 
 class StartupPhaseError(BuildError):

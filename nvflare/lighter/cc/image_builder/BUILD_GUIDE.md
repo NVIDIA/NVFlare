@@ -44,15 +44,15 @@ sudo ./cvmctl build config/cvm_profile.yml \
   --approval-key /secure/acceptance-signing.key \
   --install-config /srv/trustee/production-admin.json \
   --publish registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 
 sudo ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 
 sudo ./cvmctl run \
   registry.example.org/cvm/deliveries/vault_DEPLOYMENT_PLATFORM@sha256:DIGEST \
-  --cosign-key /etc/cvm/release-signing.pub \
+  --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/site-1
 ```
 
@@ -480,6 +480,11 @@ The TCB lists correspond to verified Trustee `snp.reported_tcb_bootloader`,
 Configuration values correspond to `platform_smt_enabled`,
 `platform_tsme_enabled`, `policy_single_socket`, `policy_smt_allowed`,
 `policy_abi_major` and `policy_abi_minor`. Keep debug and migration disabled.
+AMD Turin is not supported by the pinned Trustee v0.22 contract. Its verifier
+checks FMC SPL against the VCEK but does not expose `reported_tcb_fmc` to the
+attestation policy, so host preflight and finalization reject family `0x1a`.
+Add Turin only with a separately reviewed Trustee revision that exposes and
+policy-pins FMC SPL.
 `snp_single_socket` must match the build profile; keep both values `false` unless
 a separately qualified profile requires otherwise. The exact reference schema is
 [`cvm/common/references.py`](cvm/common/references.py).
@@ -1022,7 +1027,7 @@ more than one platform:
 ```sh
 sudo ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
-  --cosign-key /secure/release-signing.key
+  --cosign-signing-key /secure/release-signing.key
 ```
 
 For the isolated HTTP lab registry, use a digest reference such as

@@ -5,6 +5,9 @@ The launcher preserves the previous clear applog disk before every relaunch in
 three newest images with mode 0600. Inspect a retained image on a trusted host,
 for example with `guestmount -a applog-history/FILE.qcow2 -m /dev/sda MOUNT_DIR`.
 Copy any required record elsewhere before more than three later launches.
+The launcher removes the oldest retained copy before creating the next one. If
+the new best-effort copy still fails, it removes the partial file, warns, and
+continues; clear-log retention never blocks the CVM from starting.
 
 Each platform/application delivery is an OCI artifact containing its complete
 reusable generic CVM bundle plus one application vault. The OCI manifest has a
@@ -46,7 +49,7 @@ registry artifact:
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 sudo ./cvmctl run "$artifact" \
-  --cosign-key /etc/cvm/release-signing.pub \
+  --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
 
@@ -69,7 +72,8 @@ manifest, vault, and TEE check described below.
 Use `./cvmctl pull` to authenticate the publisher, validate every OCI descriptor
 and layer digest, and materialize a private directory. A local tar needs the
 `--archive-sha256` value the publisher sent through an authenticated channel; a
-registry reference needs the `--cosign-key` that signed the digest. Skipping
+registry reference needs the `--cosign-verification-key` matching the key that
+signed the digest. Skipping
 publisher authentication requires an explicit `--allow-unverified` and is for
 isolated labs only. Its platform directory contains both manifests and
 everything needed to launch:
@@ -113,7 +117,7 @@ the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl pull "$artifact" --cosign-key /etc/cvm/release-signing.pub \
+sudo ./cvmctl pull "$artifact" --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
 

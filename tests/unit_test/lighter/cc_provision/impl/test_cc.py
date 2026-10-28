@@ -615,6 +615,21 @@ def test_config_loaders_expose_declaring_paths(tmp_path):
     assert normalized["config_path"] == tmp_path / "cc_server.yml"
 
 
+@pytest.mark.parametrize("alias,canonical", [("tdx", CPUTEE.INTEL_TDX), ("snp", CPUTEE.AMD_SEV_SNP)])
+def test_participant_cpu_tee_upgrade_alias_is_normalized(tmp_path, alias, canonical):
+    _coco_project(tmp_path)
+    participant_path = tmp_path / "cc_site.yml"
+    participant = yaml.safe_load(participant_path.read_text())
+    participant["cpu_tee"] = alias
+    participant["gpu_tee"] = "none"
+    _write(participant_path, participant)
+
+    project_config = load_project_config(tmp_path / "cc_project.yml")
+    normalized = load_participant_config(participant_path, project_config)
+
+    assert normalized["cpu_tee"] is canonical
+
+
 def test_coco_does_not_require_admin_token_with_unused_cvm_tools_or_service(tmp_path):
     _coco_project(tmp_path)
     config_path = tmp_path / "cc_project.yml"
@@ -669,6 +684,7 @@ def test_project_config_warns_before_parseable_admin_token_expiry(tmp_path):
         _warn_jwt_expiry(token, 120, now=1000)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
+        _warn_jwt_expiry(token, 120, now=1000)
         _warn_jwt_expiry(token, 30, now=1000)
 
 

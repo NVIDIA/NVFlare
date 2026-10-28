@@ -238,22 +238,25 @@ def time_sync(max_tries=30, *, initialize=False):
 
 
 def bootstrap():
-    with startup_phase("attestation"):
+    with startup_phase("configuration"):
         config = read_json(CONFIG)
         STATE.mkdir(mode=0o700, exist_ok=True)
         dev = Path("/etc/cvm/dev_mode").exists()
-        # Reference launches have no vault disk. Emit their frames before disk waits.
+    # Reference launches have no vault disk. Emit their frames before disk waits.
+    with startup_phase("attestation"):
         reference()
-        if not dev:
+    if not dev:
+        with startup_phase("network"):
             run(["nft", "list", "table", "inet", "cvm"], timeout=5)
             # Narrow the measured bootstrap rules to the resolvers this boot learned
             # before the first KBS contact; the measured file cannot know them.
             firewall([], config["bootstrap_egress"], resolvers=discovered_resolvers())
+        with startup_phase("time_sync"):
             time_sync(max_tries=CLOCK_INITIAL_SYNC_TRIES, initialize=True)
     mount_vault(config, dev=dev)
     with startup_phase("payload_authentication"):
         units = finish_bootstrap(config, dev=dev)
-    with startup_phase("attestation"):
+    with startup_phase("supervision"):
         supervise(config, units, STATE)
 
 

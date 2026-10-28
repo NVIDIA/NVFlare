@@ -32,7 +32,7 @@ Run from the builder directory after preparing those inputs:
 The command detects and screens the target platform, builds and measures the
 generic image, invokes the selected site acceptance runner, and signs the
 approval. An authorized
-operator can add ``--install-config``, ``--publish``, and ``--cosign-key`` to
+operator can add ``--install-config``, ``--publish``, and ``--cosign-signing-key`` to
 enable the approved result in Trustee and publish its signed OCI artifact in the
 same invocation. The command stops before those actions if acceptance or approval
 fails. Use ``./cvmctl build --help`` for explicit platform selection, a TDX quote

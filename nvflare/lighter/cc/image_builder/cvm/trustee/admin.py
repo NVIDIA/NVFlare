@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from ..artifacts.bundle import load_public_keys, verify_approval, verify_bundle
-from ..common.contracts import identifier
+from ..common.contracts import DEFAULT_EXPIRY_WARNING_SECONDS, identifier
 from ..common.errors import BuildError, require
 from ..common.io import canonical, digest_file, is_sha256, read_json, write_json
 from ..common.linux import lock
@@ -186,7 +186,7 @@ def install(config, directory, candidate=False):
             ),
             "RVPS approvals are expired or lack an expiry",
         )
-        warning_window = config.get("expiry_warning_seconds", 7 * 86400)
+        warning_window = config.get("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
         require(type(warning_window) is int and warning_window >= 0, "Invalid reference expiry warning window")
         if expected_refs and min(expirations[name] for name in expected_refs) - time.time() <= warning_window:
             warnings.warn(

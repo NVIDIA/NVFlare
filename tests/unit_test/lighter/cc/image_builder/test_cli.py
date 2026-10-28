@@ -17,6 +17,7 @@
 import contextlib
 import io
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -274,7 +275,12 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             (output / "oci_artifacts.json").write_text(
-                json.dumps({"schema_version": 1, "artifacts": {"vault_deployment_intel_tdx.oci.tar": {}}})
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "artifacts": {"vault_deployment_intel_tdx.oci.tar": {"archive_sha256": "a" * 64}},
+                    }
+                )
             )
             with (
                 patch.object(cli.vault, "build", return_value=output),
@@ -363,7 +369,7 @@ class CliTests(unittest.TestCase):
             result = (Path(directory) / "out", {"artifactType": "t", "digest": "sha256:" + "b" * 64}, {})
             for argv, message in (
                 (["pull", str(archive)], "--archive-sha256"),
-                (["pull", registry], "--cosign-key"),
+                (["pull", registry], "--cosign-verification-key"),
             ):
                 stderr = io.StringIO()
                 with (
@@ -382,7 +388,7 @@ class CliTests(unittest.TestCase):
             ):
                 cli.main(["pull", str(archive), "--archive-sha256", "c" * 64])
                 self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": "c" * 64, "cosign_key": None})
-                cli.main(["pull", registry, "--cosign-key", "release.pub", "--output", "out"])
+                cli.main(["pull", registry, "--cosign-verification-key", "release.pub", "--output", "out"])
                 self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": "release.pub"})
                 cli.main(["pull", str(archive), "--allow-unverified"])
                 self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": None})
@@ -423,7 +429,7 @@ class CliTests(unittest.TestCase):
                     [
                         "run",
                         registry,
-                        "--cosign-key",
+                        "--cosign-verification-key",
                         "release.pub",
                         "--output",
                         str(output),
@@ -445,7 +451,7 @@ class CliTests(unittest.TestCase):
             )
             run.assert_called_once_with(
                 [
-                    str(launcher),
+                    str(launcher.resolve()),
                     "--cvm-bundle",
                     "/opt/cvm/profile/intel_tdx",
                     "--gpu",
@@ -469,9 +475,93 @@ class CliTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()),
                 self.assertRaises(SystemExit) as error,
             ):
-                cli.main(["run", "bundle.oci.tar", "--allow-unverified"])
+                cli.main(
+                    [
+                        "run",
+                        "registry.example/cvm/bundle@sha256:" + "a" * 64,
+                        "--cosign-verification-key",
+                        "release.pub",
+                    ]
+                )
             self.assertEqual(error.exception.code, 1)
             run.assert_not_called()
+
+    def test_run_has_no_unverified_execution_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "delivery.oci.tar"
+            archive.touch()
+            with (
+                patch.object(cli.oci, "materialize") as materialize,
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(["run", str(archive), "--allow-unverified"])
+            self.assertEqual(error.exception.code, 2)
+            materialize.assert_not_called()
+
+            with (
+                patch.object(cli.oci, "materialize") as materialize,
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(["run", str(archive)])
+            self.assertEqual(error.exception.code, 1)
+            materialize.assert_not_called()
+
+    def test_run_rejects_an_unsafe_launch_directory_after_materialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = (
+                Path(directory) / "delivery",
+                {"artifactType": cli.oci.DELIVERY_ARTIFACT_TYPE, "digest": "sha256:" + "b" * 64},
+                {"launch_directory": "../outside"},
+            )
+            with (
+                patch.object(cli.oci, "materialize", return_value=result),
+                patch.object(cli.subprocess, "run") as run,
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(
+                    [
+                        "run",
+                        "registry.example/cvm/app@sha256:" + "a" * 64,
+                        "--cosign-verification-key",
+                        "release.pub",
+                    ]
+                )
+            self.assertEqual(error.exception.code, 1)
+            run.assert_not_called()
+
+    def test_run_launcher_failure_is_reported_without_a_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "delivery"
+            launcher = output / "intel_tdx" / "launch_cvm.sh"
+            launcher.parent.mkdir(parents=True)
+            launcher.touch()
+            result = (
+                output,
+                {"artifactType": cli.oci.DELIVERY_ARTIFACT_TYPE, "digest": "sha256:" + "b" * 64},
+                {"launch_directory": "intel_tdx"},
+            )
+            stderr = io.StringIO()
+            with (
+                patch.object(cli.oci, "materialize", return_value=result),
+                patch.object(cli.subprocess, "run", side_effect=subprocess.CalledProcessError(1, [str(launcher)])),
+                contextlib.redirect_stderr(stderr),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(
+                    [
+                        "run",
+                        "registry.example/cvm/app@sha256:" + "a" * 64,
+                        "--cosign-verification-key",
+                        "release.pub",
+                    ]
+                )
+            self.assertEqual(error.exception.code, 1)
+            self.assertIn("returned non-zero exit status", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_admin_acl_prints_a_bundle_scoped_resource_role(self):
         stdout = io.StringIO()

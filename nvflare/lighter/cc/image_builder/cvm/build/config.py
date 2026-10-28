@@ -26,7 +26,13 @@ from urllib.parse import urlparse
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, minimum_proof_lifetime
+from ..common.contracts import (
+    DEFAULT_EXPIRY_WARNING_SECONDS,
+    HEADER_BYTES,
+    PLATFORMS,
+    STORAGE_PROFILE,
+    minimum_proof_lifetime,
+)
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
@@ -665,7 +671,7 @@ def project(build_config, project_config=None):
         and set(service) <= trustee_required | {"expiry_warning_seconds"},
         "Project trustee requires url, ca and admin_token_file; expiry_warning_seconds is optional",
     )
-    warning_window = service.setdefault("expiry_warning_seconds", 7 * 86400)
+    warning_window = service.setdefault("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
     require_config(
         type(warning_window) is int and warning_window >= 0,
         "Project trustee expiry_warning_seconds must be a nonnegative integer",

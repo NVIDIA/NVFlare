@@ -197,6 +197,14 @@ class BindingTests(unittest.TestCase):
         with self.assertRaisesRegex(BuildError, "debug or migration"):
             snp_tcb(evidence)
 
+    def test_snp_reference_boot_rejects_turin_until_trustee_exposes_fmc(self):
+        evidence = self.snp_evidence()
+        report = bytearray(base64.b64decode(evidence["report"]))
+        report[0x188] = 0x1A
+        evidence["report"] = base64.b64encode(report).decode()
+        with self.assertRaisesRegex(BuildError, "Turin.*FMC"):
+            snp_tcb(evidence)
+
     def test_piped_core_collectors_are_rejected_for_secret_children(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "core_pattern"
