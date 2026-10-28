@@ -176,9 +176,15 @@ set the client's GPU count in the provisioning project:
     capacity:
       num_of_gpus: 2
 
+For existing Docker GPU sites using ``PassthroughResourceManager``, reprovision
+with this capacity and run ``nvflare deploy prepare`` again before restarting
+the client. Without configured GPU capacity, GPU requests are declined during scheduling.
+
 ``nvflare deploy prepare`` preserves the client's existing ``GPUResourceManager``
-capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Each job requests
-its GPU count through ``resource_spec[site].num_of_gpus``. The manager reserves IDs
+capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Jobs can inherit
+``docker_kwargs.device_requests`` from their study, or the launcher's site defaults.
+An explicit ``resource_spec[site].num_of_gpus`` overrides these defaults, including
+zero to decline GPUs. The manager resolves the effective request and reserves IDs
 before launch, defers jobs when capacity is occupied, and uses its existing
 cancellation, expiration, and job-completion cleanup.
 
@@ -190,9 +196,11 @@ when starting its Docker parent:
   CUDA_VISIBLE_DEVICES=2,3 bash startup/start_docker.sh
 
 Without a mask, the configured GPU count selects indices starting at zero.
+Host-independent pools require integer indices; UUID and MIG masks are rejected.
 Exclusive mode reserves each device's full budget, using one bookkeeping unit
 when no memory budget was configured. Process mode keeps its existing
 memory-sharing policy unless explicitly configured for exclusive allocation.
+An explicit nonzero memory budget still limits the memory a job may request.
 
 Docker receives the reserved IDs through ``DeviceIDs``. The existing no-op
 ``PassthroughResourceConsumer`` replaces the process-mode consumer, so the parent

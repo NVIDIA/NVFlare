@@ -116,11 +116,13 @@ class GPUResourceManager(AutoCleanResourceManager):
         if not isinstance(exclusive, bool):
             raise ValueError("exclusive must be a bool")
         self.exclusive = exclusive
-        self.mem_per_gpu_in_GiB = (mem_per_gpu_in_GiB or 1) if exclusive else mem_per_gpu_in_GiB
+        self.mem_per_gpu_in_GiB = mem_per_gpu_in_GiB
 
         resource_gpu_ids = list(range(num_of_gpus))
         if ignore_host:
             visible_gpu_ids = _get_cuda_visible_device_indices()
+            if num_of_gpus and visible_gpu_ids is None and CUDA_VISIBLE_DEVICES in os.environ:
+                raise ValueError("CUDA_VISIBLE_DEVICES must contain integer GPU indices when ignore_host=True")
             if visible_gpu_ids is not None:
                 if num_of_gpus > len(visible_gpu_ids):
                     raise ValueError("num_of_gpus exceeds the CUDA_VISIBLE_DEVICES pool")
@@ -153,7 +155,8 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         self.num_gpu_key = num_gpu_key
         self.gpu_mem_key = gpu_mem_key
-        resources = {i: GPUResource(gpu_id=i, gpu_memory=self.mem_per_gpu_in_GiB) for i in resource_gpu_ids}
+        gpu_memory = (mem_per_gpu_in_GiB or 1) if exclusive else mem_per_gpu_in_GiB
+        resources = {i: GPUResource(gpu_id=i, gpu_memory=gpu_memory) for i in resource_gpu_ids}
 
         super().__init__(resources=resources, expiration_period=expiration_period)
 
@@ -170,12 +173,20 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         is_resource_enough = False
         num_gpu = resource_requirement[self.num_gpu_key]
-        gpu_mem = self.mem_per_gpu_in_GiB if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
+        gpu_mem = (self.mem_per_gpu_in_GiB or 1) if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
         if num_gpu == 0:
             return True
+        if (
+            self.exclusive
+            and self.mem_per_gpu_in_GiB
+            and resource_requirement.get(self.gpu_mem_key, 0) > self.mem_per_gpu_in_GiB
+        ):
+            return False
 
         satisfied = 0
-        for k in self.resources:
+        for k in dict.fromkeys(resource_requirement.get("gpu_ids", self.resources)):
+            if k not in self.resources:
+                return False
             r: GPUResource = self.resources[k]
             if r.memory >= gpu_mem:
                 satisfied += 1
@@ -193,12 +204,12 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         reserved_resources = {}
         num_gpu = resource_requirement[self.num_gpu_key]
-        gpu_mem = self.mem_per_gpu_in_GiB if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
+        gpu_mem = (self.mem_per_gpu_in_GiB or 1) if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
         if num_gpu == 0:
             return reserved_resources
 
         reserved = 0
-        for k in self.resources:
+        for k in dict.fromkeys(resource_requirement.get("gpu_ids", self.resources)):
             r: GPUResource = self.resources[k]
             if r.memory >= gpu_mem:
                 r.memory -= gpu_mem

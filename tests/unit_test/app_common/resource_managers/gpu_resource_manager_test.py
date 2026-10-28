@@ -42,6 +42,41 @@ def test_exclusive_pool_uses_process_mode_mask_without_host_access(monkeypatch):
     assert manager.check_resources(first_req, ctx)[0]
 
 
+@pytest.mark.parametrize("budget,requested,enough", [(16, 32, False), (16, 16, True), (16, 0, True), (0, 32, True)])
+def test_exclusive_memory_admission(budget, requested, enough):
+    manager = GPUResourceManager(1, budget, ignore_host=True, exclusive=True)
+    requirement = {NUM_GPU_KEY: 1, GPU_MEM_KEY: requested}
+    ctx = FLContext()
+    available, token = manager.check_resources(requirement, ctx)
+    assert available is enough
+    assert manager.mem_per_gpu_in_GiB == budget
+    if enough:
+        allocation = manager.allocate_resources(requirement, token, ctx)
+        assert allocation == {0: budget or 1}
+        assert not manager.check_resources(requirement, ctx)[0]
+        manager.free_resources(allocation, token, ctx)
+        assert manager.check_resources(requirement, ctx)[0]
+
+
+@pytest.mark.parametrize("mask", ["GPU-selected-device", "MIG-GPU-selected-device/1/0", "0,GPU-selected-device"])
+def test_host_independent_pool_rejects_unsupported_masks(monkeypatch, mask):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    with pytest.raises(ValueError, match="integer GPU indices"):
+        GPUResourceManager(1, 0, ignore_host=True, exclusive=True)
+
+
+def test_pinned_gpu_request_waits_for_that_device():
+    manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
+    ctx = FLContext()
+    requirement = {NUM_GPU_KEY: 1, "gpu_ids": [3]}
+    enough, token = manager.check_resources(requirement, ctx)
+    assert enough
+    assert manager.allocate_resources(requirement, token, ctx) == {3: 1}
+    assert not manager.check_resources(requirement, ctx)[0]
+    assert manager.check_resources({NUM_GPU_KEY: 1}, ctx)[0]
+    assert not manager.check_resources({NUM_GPU_KEY: 1, "gpu_ids": [7]}, ctx)[0]
+
+
 class MockEngine:
     def __init__(self, run_name="exp1"):
         self.fl_ctx_mgr = FLContextManager(
