@@ -31,6 +31,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.utils.job_cert_utils import JobCertIssuer
+from tests.timing_utils import stop_processes
 
 _CHANNEL = "ws_bootstrap_test"
 _TOPIC = "echo"
@@ -167,7 +168,7 @@ def parent(tmp_path_factory):
         yield root_url, pki, reject_q
     finally:
         stop_ev.set()
-        proc.join(15)
+        stop_processes(proc)
 
 
 def _bootstrap(parent, cert_name, wait):
@@ -180,7 +181,7 @@ def _bootstrap(parent, cert_name, wait):
     try:
         result = result_q.get(timeout=wait + 30)
     finally:
-        proc.join(15)
+        stop_processes(proc)
     assert "error" not in result, result.get("error")
     return result
 

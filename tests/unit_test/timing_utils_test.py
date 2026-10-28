@@ -12,12 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
 from types import SimpleNamespace
 
 import pytest
 
-from tests.timing_utils import CheckedThread, ManualClock, isolate_time, join_thread, wait_for
+from tests.timing_utils import (
+    WAIT_TIMEOUT,
+    CheckedThread,
+    ManualClock,
+    ObservedLock,
+    ThreadGroup,
+    isolate_time,
+    join_thread,
+    stop_processes,
+    wait_for,
+)
 
 
 def test_clock_patch_does_not_change_stdlib_or_unrelated_workers(monkeypatch):
@@ -60,3 +71,115 @@ def test_missing_worker_completion_is_not_accepted():
     thread = SimpleNamespace(name="blocked worker", join=lambda timeout: None, is_alive=lambda: True)
     with pytest.raises(AssertionError, match="blocked worker did not stop"):
         join_thread(thread, timeout=0)
+
+
+def test_thread_group_releases_and_joins_workers_when_body_fails():
+    release = threading.Event()
+    completed = threading.Event()
+
+    def work():
+        assert release.wait(WAIT_TIMEOUT)
+        completed.set()
+
+    with pytest.raises(ValueError, match="test body failed"):
+        with ThreadGroup(release) as workers:
+            thread = workers.start(work)
+            raise ValueError("test body failed")
+
+    assert completed.is_set()
+    assert not thread.is_alive()
+
+
+def test_thread_group_joins_other_workers_before_reporting_a_worker_error():
+    release = threading.Event()
+    completed = threading.Event()
+
+    def fail():
+        raise ValueError("background failure")
+
+    with pytest.raises(ValueError, match="background failure"):
+        with ThreadGroup(release) as workers:
+            workers.start(fail)
+            other = workers.start(lambda: (release.wait(WAIT_TIMEOUT), completed.set()))
+    assert completed.is_set()
+    assert not other.is_alive()
+
+
+def test_observed_lock_requires_an_actual_failed_acquisition():
+    lock = ObservedLock()
+    with ThreadGroup() as workers:
+        with lock:
+            # Thread creation alone must not be accepted as proof of contention.
+            assert not lock.blocked.is_set()
+
+            def acquire():
+                with lock:
+                    pass
+
+            workers.start(acquire)
+            assert lock.blocked.wait(WAIT_TIMEOUT)
+
+
+@pytest.mark.parametrize("raw_lock", [threading.Lock, threading.RLock])
+def test_observed_lock_preserves_nonblocking_and_reentrant_behavior(raw_lock):
+    lock = ObservedLock(raw_lock())
+    assert lock.acquire(blocking=False)
+    try:
+        acquired_again = lock.acquire(blocking=False)
+        assert acquired_again is (raw_lock is threading.RLock)
+        if acquired_again:
+            lock.release()
+    finally:
+        lock.release()
+
+
+def test_stop_processes_escalates_only_for_owned_survivors():
+    calls = []
+
+    class Child:
+        pid = 123
+        alive = True
+
+        def is_alive(self):
+            return self.alive
+
+        def join(self, timeout):
+            calls.append("join")
+
+        def terminate(self):
+            calls.append("terminate")
+
+        def kill(self):
+            calls.append("kill")
+            self.alive = False
+
+    child = Child()
+    stop_processes(child, timeout=0)
+    assert calls == ["join", "terminate", "join", "kill", "join"]
+    assert not child.is_alive()
+
+
+def test_stop_processes_attempts_other_children_after_a_cleanup_error():
+    closed = []
+
+    class Child:
+        pid = 123
+        alive = True
+
+        def is_alive(self):
+            return self.alive
+
+        def join(self, timeout):
+            pass
+
+        def terminate(self):
+            raise RuntimeError("terminate failed")
+
+        def kill(self):
+            closed.append(self)
+            self.alive = False
+
+    first, second = Child(), Child()
+    with pytest.raises(RuntimeError, match="terminate failed"):
+        stop_processes(first, second, timeout=0)
+    assert closed == [first, second]
