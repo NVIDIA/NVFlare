@@ -962,7 +962,10 @@ def _isolate_communication_config(monkeypatch):
 @pytest.mark.parametrize("owner", ["site-1", "server"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
 @pytest.mark.parametrize("security", ["mtls", "clear"])
-def test_downloaded_site_security_replaces_bootstrap_defaults(tmp_path, monkeypatch, owner, extension, security):
+@pytest.mark.parametrize("job_override", [False, True])
+def test_downloaded_site_security_replaces_bootstrap_defaults(
+    tmp_path, monkeypatch, owner, extension, security, job_override
+):
     # Even unstarted configuration probes register Cells and statistics pools.
     monkeypatch.setattr(CoreCell, "ALL_CELLS", {})
     monkeypatch.setattr(StatsPoolManager, "pools", {})
@@ -985,7 +988,23 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(tmp_path, monkeypa
     if extension == "yaml":
         text = f"max_message_size: 16777216\ninternal:\n  scheme: tcp\n  resources:\n    host: {owner}\n    port: 8102\n    connection_security: {security}\n"
     bundle = tmp_path / "bundle.zip"
-    _make_zip(str(bundle), {f"local/comm_config.{extension}": text.encode()})
+    entries = {f"local/comm_config.{extension}": text.encode()}
+    if job_override:
+        # A secure launch creates the job credential directory before the site
+        # config is extracted. The job's own config must never shadow the site.
+        shadow = {
+            "internal": {
+                "scheme": "tcp",
+                "resources": {
+                    "host": "job-override",
+                    "port": 9001,
+                    "connection_security": "clear" if security == "mtls" else "mtls",
+                },
+            },
+            "max_message_size": 1024,
+        }
+        entries[f"{JOB_ID}/app/config/comm_config.json"] = json.dumps(shadow).encode()
+    _make_zip(str(bundle), entries)
     fake = _FakeCell(
         fqcn=owner, reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1", "sha256": _hash_file(str(bundle))})
     )
@@ -995,10 +1014,15 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(tmp_path, monkeypa
     monkeypatch.setattr(
         "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
     )
-    args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID)
+    args = SimpleNamespace(
+        workspace=str(tmp_path / "workspace"),
+        job_id=JOB_ID,
+        job_cert_pem="cert" if job_override else None,
+        job_key_pem="key" if job_override else None,
+    )
     job_cell = None
     try:
-        download_workspace(args, secure_mode=False)
+        download_workspace(args, secure_mode=job_override)
         # Normal startup initialization still follows the download. Repeating it
         # cannot repair a CommConfigurator that cached the bootstrap defaults.
         ConfigService.initialize(section_files={}, config_path=[args.workspace])
