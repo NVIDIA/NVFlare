@@ -23,6 +23,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.timing_utils import stop_processes
+
 torch = pytest.importorskip("torch")
 
 dist_available = torch.distributed.is_available()
@@ -338,14 +340,11 @@ def _run_2process_scenario(tmp_path, strategy, scenario):
         ctx.Process(target=_worker, args=(rank, init_path, output_dir, strategy, scenario, result_queue))
         for rank in range(2)
     ]
-    for proc in procs:
-        proc.start()
-    for proc in procs:
-        proc.join(timeout=30)
-    for proc in procs:
-        if proc.is_alive():
-            proc.terminate()
-            proc.join(timeout=5)
+    try:
+        for proc in procs:
+            proc.start()
+    finally:
+        stop_processes(*procs, timeout=30)
     assert all(proc.exitcode == 0 for proc in procs)
 
     results = []

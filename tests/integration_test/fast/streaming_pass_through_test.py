@@ -55,19 +55,29 @@ Tests:
 """
 
 import json
+import os
+import subprocess
+import sys
+import threading
 import uuid
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
+from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, DownloadService
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey, dots
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, _RefKey
 from nvflare.fuel.utils.fobs.lobs import dump_to_bytes, load_from_bytes
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.timing_utils import wait_for
+from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, join_thread, wait_for
 
 
 def _register_numpy():
@@ -318,3 +328,109 @@ class TestPassThroughE2E:
 
         result = load_from_bytes(forwarded_bytes, fobs_ctx={FOBSContextKey.CELL: subproc})
         assert torch.equal(result["weight"], expected)
+
+
+def _late_update_shutdown_worker():
+    """Exercise the fatal server-job adapter in a disposable interpreter."""
+    _register_numpy()
+    url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
+    cells = []
+    chunk_received = threading.Event()
+    release_chunk = threading.Event()
+    callback_entered = threading.Event()
+    responses = []
+    try:
+        server = Cell("server", url, secure=False, credentials={}, create_internal_listener=True)
+        cells.append(server)
+        server.start()
+        parent_url = wait_for(server.get_internal_listener_url, message="server listener did not start")
+        job = Cell("server.job-1", url, secure=False, credentials={}, parent_url=parent_url)
+        cells.append(job)
+        job.start()
+        source = Cell("site-3", url, secure=False, credentials={})
+        cells.append(source)
+        source.start()
+        wait_for(
+            lambda: server.is_cell_connected("site-3") and server.is_cell_connected("server.job-1"),
+            message="late-update cells did not connect",
+        )
+
+        def submit_update(request):
+            callback_entered.set()
+            return make_reply(ReturnCode.OK)
+
+        job.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND, topic=ServerCommandNames.SUBMIT_UPDATE, cb=submit_update
+        )
+        job.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.GET_TASK,
+            cb=lambda request: make_reply(ReturnCode.OK, body="alive"),
+        )
+        send_request = job.send_request
+
+        def pause_download(*args, **kwargs):
+            reply = send_request(*args, **kwargs)
+            if kwargs.get("channel") == OBJ_DOWNLOADER_CHANNEL:
+                chunk_received.set()
+                release_chunk.wait()
+            return reply
+
+        def send_update():
+            responses.append(
+                source.send_request(
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=ServerCommandNames.SUBMIT_UPDATE,
+                    target=job.get_fqcn(),
+                    request=new_cell_message(headers={}, payload={"weights": np.ones(1024, dtype=np.float32)}),
+                    timeout=WAIT_TIMEOUT,
+                )
+            )
+
+        with patch.object(job, "send_request", side_effect=pause_download), ThreadGroup(release_chunk) as workers:
+            sender = workers.start(send_update)
+            assert chunk_received.wait(WAIT_TIMEOUT), "late result never entered a real object download"
+            # The first two clients have already finished the final round. The
+            # server now shuts down while this third result is being decoded.
+            DownloadService.shutdown()
+            release_chunk.set()
+            join_thread(sender)
+
+        assert responses[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+        assert not callback_entered.is_set(), "a cancelled payload reached the application"
+        response = source.send_request(
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.GET_TASK,
+            target=job.get_fqcn(),
+            request=new_cell_message(headers={}),
+            timeout=WAIT_TIMEOUT,
+        )
+        assert response.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert response.payload == "alive"
+        print("late-update shutdown cancelled safely; server job remains alive", flush=True)
+    finally:
+        release_chunk.set()
+        DownloadService.shutdown()
+        for cell in reversed(cells):
+            cell.stop()
+            CoreCell.ALL_CELLS.pop(cell.get_fqcn(), None)
+
+
+@pytest.mark.timeout(70)
+def test_late_result_download_during_shutdown_does_not_exit_server_job():
+    root = Path(__file__).resolve().parents[3]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import runpy, sys; runpy.run_path(sys.argv[1])['_late_update_shutdown_worker']()",
+            str(Path(__file__).resolve()),
+        ],
+        cwd=root,
+        env={**os.environ, "PYTHONPATH": str(root)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "late-update shutdown cancelled safely; server job remains alive" in result.stdout
