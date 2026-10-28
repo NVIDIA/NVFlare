@@ -18,8 +18,8 @@ import argparse
 import logging
 
 import torch
-from data import SyntheticImageDataset, stable_seed
 from model import create_model
+from prepare_data import SyntheticImageDataset, stable_seed
 from torch.utils.data import DataLoader
 
 import nvflare.client as flare

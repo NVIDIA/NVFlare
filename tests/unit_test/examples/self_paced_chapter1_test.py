@@ -73,7 +73,7 @@ def lesson(monkeypatch, request, tmp_path):
 def test_site_and_split_data_are_reproducible_and_distinct(lesson):
     import torch
 
-    dataset = lesson("data").SyntheticImageDataset
+    dataset = lesson("prepare_data").SyntheticImageDataset
     first = dataset("site-1", "train", 200)
     repeated = dataset("site-1", "train", 200)
     other_site = dataset("site-2", "train", 200)
@@ -167,7 +167,7 @@ def test_client_recipe_exports_distinct_arguments_for_each_site(lesson, tmp_path
         executor = config["executors"][0]["executor"]
         assert executor["args"]["task_script_args"] == arguments
         assert executor["args"]["task_script_path"] == "client.py"
-        for module in ("client.py", "model.py", "data.py"):
+        for module in ("client.py", "model.py", "prepare_data.py"):
             assert (job / app / "custom" / module).is_file()
 
 
@@ -215,7 +215,7 @@ def test_section_exports_its_own_client_and_dependencies(lesson, tmp_path):
         executor = config["executors"][0]["executor"]
         assert executor["args"]["task_script_path"] == "client.py"
         custom = path.parent.parent / "custom"
-        for name in ("client.py", "model.py", "data.py"):
+        for name in ("client.py", "model.py", "prepare_data.py"):
             assert (custom / name).is_file()
             assert (custom / name).read_bytes() == (Path.cwd() / name).read_bytes()
 
