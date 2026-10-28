@@ -35,6 +35,7 @@ from decent_vla.runtime import wire
 
 PLAN_KEY = "decent_vla_plan"
 META_KEY = "decent_vla_meta"
+ERROR_KEY = "decent_vla_error"  # a client's report that its round failed
 
 # Precision for floating tensors crossing the nvflare boundary — BOTH ways.
 # Resolved from ``fl.wire_dtype`` via runtime/wire.py, the single table shared
@@ -140,7 +141,7 @@ def round_flmodel(state: dict[str, torch.Tensor], plan: RoundPlan):
     )
 
 
-def update_to_flmodel(update: ClientUpdate, consume: bool = False):
+def update_to_flmodel(update: ClientUpdate, consume: bool = False, round_num: int | None = None):
     """Client -> server FLModel: delta params at the DELTA wire dtype + meta.
 
     ClientUpdate.metrics may mix numbers and strings — numbers travel in
@@ -154,6 +155,8 @@ def update_to_flmodel(update: ClientUpdate, consume: bool = False):
 
     nums: dict[str, Any] = {}
     strs: dict[str, Any] = {"num_samples": str(update.num_samples), "client_id": update.client_id}
+    if round_num is not None:
+        strs["round"] = str(round_num)  # lets the server drop a reply that arrives in another round
     for k, v in update.metrics.items():
         (nums if isinstance(v, (int, float)) else strs)[k] = v
     return FLModel(
@@ -164,6 +167,53 @@ def update_to_flmodel(update: ClientUpdate, consume: bool = False):
     )
 
 
+def copy_reply(model):
+    """A new FLModel sharing `model`'s arrays (no tensor copy).
+
+    `flare.send()` sets the sent model's params to None once it has serialized
+    them, so a reply that may have to be sent again is kept as a copy.
+    """
+    import copy
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    return FLModel(
+        params=dict(model.params),
+        params_type=model.params_type,
+        metrics=dict(model.metrics or {}),
+        meta=copy.deepcopy(model.meta),
+    )
+
+
+def error_flmodel(client_id: str, round_num: int, message: str):
+    """Client -> server reply for a round that failed: no params, the error in meta.
+
+    Replying keeps the client's Client-API loop alive for the server's retry
+    and the next round, and puts the client's error in the server log.
+    """
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    return FLModel(
+        params={},
+        metrics={},
+        meta={ERROR_KEY: {"client_id": client_id, "round": round_num, "message": message}},
+    )
+
+
+def reply_round(model) -> int | None:
+    """The round a client reply answers, if the client stamped it."""
+    value = ((getattr(model, "meta", None) or {}).get(META_KEY) or {}).get("round")
+    return None if value is None else int(value)
+
+
+def reply_error(model) -> str | None:
+    """The error message of a failed-round reply, or None for anything else."""
+    err = (getattr(model, "meta", None) or {}).get(ERROR_KEY)
+    if not err:
+        return None
+    return str(err.get("message", err)) if isinstance(err, dict) else str(err)
+
+
 def flmodel_to_update(model, consume: bool = False) -> ClientUpdate:
     """Client reply FLModel -> ClientUpdate. `consume=True` drains
     `model.params` as it decodes (see `np_to_state`) — safe for a per-round
@@ -171,6 +221,7 @@ def flmodel_to_update(model, consume: bool = False) -> ClientUpdate:
     meta = dict(model.meta.get(META_KEY, {}))
     num_samples = int(meta.pop("num_samples"))
     client_id = str(meta.pop("client_id", ""))
+    meta.pop("round", None)
     metrics: dict[str, Any] = dict(model.metrics or {})
     metrics.update(meta)
     return ClientUpdate(

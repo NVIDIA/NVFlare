@@ -53,7 +53,7 @@ class Communicator(Protocol):
         self, state: dict[str, torch.Tensor], plan: RoundPlan
     ) -> None: ...
     def collect_updates(
-        self, expected: list[str], timeout_s: float | None
+        self, expected: list[str], timeout_s: float | None, min_responses: int | None = None
     ) -> list[ClientUpdate]: ...
     # ----- client side -----
     def receive_round(self) -> tuple[dict[str, torch.Tensor], RoundPlan]: ...
@@ -78,8 +78,9 @@ class LocalCommunicator:
         self._state, self._plan = state, plan
 
     def collect_updates(
-        self, expected: list[str], timeout_s: float | None = None
+        self, expected: list[str], timeout_s: float | None = None, min_responses: int | None = None
     ) -> list[ClientUpdate]:
+        # Sequential in-process clients always all reply, so min_responses has nothing to cut short.
         assert self._plan is not None, "broadcast_state must precede collect_updates"
         updates = []
         for cid in expected:

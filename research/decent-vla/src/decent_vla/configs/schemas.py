@@ -119,6 +119,10 @@ class NVFlareConfig:
                                                  # "site-" maps a conventionally-provisioned site-{i+1} to c{i}
     launch_external_process: bool = False       # run the client script in a subprocess (CellPipe) instead of
                                                  # in-process — for training loops needing their own process
+    wait_time_after_min_received: int = 10      # with fl.min_clients below the clients selected: once that many
+                                                 # have answered, seconds to wait for the rest before the round
+                                                 # closes (FLARE's ScatterAndGather default). The round closes
+                                                 # sooner if every client answers.
     memory_gc_rounds: int = 1                   # run gc.collect()+malloc_trim() every N server rounds
                                                  # (0 = never). NVFlare puts this cleanup on its CONCRETE
                                                  # workflows (BaseFedAvg._maybe_cleanup_memory); a custom

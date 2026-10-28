@@ -43,7 +43,7 @@ def site_of(cid: str, site_prefix: str) -> str:
 
 
 class NVFlareCommunicator:
-    """Server-side Communicator over ModelController.send_model_and_wait."""
+    """Server-side Communicator over ModelController.broadcast_model (blocking)."""
 
     def __init__(self, controller: ModelController, num_clients: int, site_prefix: str = "",
                  nvf_cfg=None):
@@ -97,14 +97,25 @@ class NVFlareCommunicator:
         except Exception as exc:  # never let bookkeeping kill a 24h run
             log.warning("memory cleanup skipped (%s)", exc)
 
-    def collect_updates(self, expected, timeout_s=None) -> list[ClientUpdate]:
+    def _reply_site(self, m) -> str | None:
+        """The site a reply came from (FLARE names it; our meta is the fallback)."""
+        meta = m.meta or {}
+        if meta.get("client_name"):
+            return meta["client_name"]
+        ours = meta.get(codec.META_KEY) or meta.get(codec.ERROR_KEY) or {}
+        cid = ours.get("client_id")
+        return site_of(cid, self.site_prefix) if cid else None
+
+    def collect_updates(self, expected, timeout_s=None, min_responses=None) -> list[ClientUpdate]:
         state, plan = self._pending
         # Send ONLY to the expected clients: the round loop's retry passes the
         # *missing* subset, and re-training clients that already responded
         # would double-step their persistent optimizer state within one round.
         import math
+        import time
 
         targets = [site_of(cid, self.site_prefix) for cid in expected]
+        need = min(min_responses, len(targets)) if min_responses else len(targets)
         data = codec.round_flmodel(state, plan)
         # Release our handles before blocking for replies. `_pending` in
         # particular must not survive the round: once round_loop rebinds
@@ -114,40 +125,91 @@ class NVFlareCommunicator:
         # so clearing it here is safe.
         del state
         self._pending = None
-        results = self.controller.send_model_and_wait(
-            task_name="train",
-            data=data,
-            targets=targets,
-            # nvflare Tasks take integer seconds and treat 0 as "never time
-            # out", so ceil rather than truncate: int(0.5)==0 would silently
-            # turn a sub-second fl.round_timeout_s into an infinite wait.
-            timeout=math.ceil(timeout_s) if timeout_s else 0,  # 0 = wait forever
-        )
+
+        def usable(m) -> bool:
+            if m is None or not m.params or codec.META_KEY not in (m.meta or {}):
+                return False
+            # A reply stamped with another round (one FLARE delivered after its
+            # task closed) must not be aggregated into this one.
+            return codec.reply_round(m) in (None, plan.round_num)
+
+        # The round loop's quorum goes to FLARE as min_responses, so FLARE stops
+        # waiting once enough clients answer (plus wait_time_after_min_received
+        # for the rest, as FLARE's ScatterAndGather does) instead of waiting for
+        # every target. But FLARE counts every answer, a failed one too, so a
+        # wait can end before `need` usable updates are in. Then wait again for
+        # the clients that have not answered, asking only for the shortfall. A
+        # client still training gets the round again and answers it with its
+        # stored reply (client.client_main), not with a second training pass.
+        grace = int(getattr(self._nvf_cfg, "wait_time_after_min_received", 10)) if self._nvf_cfg else 10
+        deadline = time.monotonic() + timeout_s if timeout_s else None
+        pending, results = list(targets), []
+        rejected = getattr(self.controller, "rejected_replies", [])
+        while pending:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                break
+            rejected.clear()
+            # broadcast_model(blocking=True) is send_model_and_wait plus the grace period.
+            got = self.controller.broadcast_model(
+                task_name="train",
+                data=data,
+                targets=pending,
+                min_responses=min(need - sum(map(usable, results)), len(pending)),
+                # nvflare Tasks take integer seconds and treat 0 as "never time
+                # out", so ceil rather than truncate: int(0.5)==0 would silently
+                # turn a sub-second fl.round_timeout_s into an infinite wait.
+                timeout=math.ceil(remaining) if remaining else 0,  # 0 = wait forever
+                wait_time_after_min_received=grace,
+                blocking=True,
+            )
+            results += got
+            answered = {self._reply_site(m) for m in got if m is not None}
+            # Replies FLARE rejected (an error code, e.g. from a client script that
+            # died) never reach `got` but did count toward min_responses.
+            for site, rc in list(rejected):
+                log.warning("nvflare: %s failed round %d (%s)", site, plan.round_num, rc)
+                answered.add(site)
+            if not answered & set(pending):
+                break  # timed out or aborted: no pending client answered
+            pending = [t for t in pending if t not in answered]
+            if sum(map(usable, results)) >= need:
+                break
         del data  # the broadcast envelope is dead once the round has returned
-        # A client that errors mid-round yields no usable FLModel; skip
-        # anything without our meta payload and let the round loop's
-        # min_clients/retry handle the resulting partial result.
+        # A client whose round failed replies with an error (codec.ERROR_KEY)
+        # and no params; FLARE-level errors are dropped before they get here
+        # (ignore_result_error=True). Both count as missing, and the round
+        # loop's min_clients/retry decides what happens next.
+        for m in results:
+            err = codec.reply_error(m)
+            if err:
+                log.warning("nvflare: %s failed round %d: %s",
+                            self._reply_site(m) or "a client", plan.round_num, err)
         # Decode destructively: the reply's numpy payload and the decoded
         # tensors would otherwise both be reachable (the controller keeps its
         # results list for the round). Nothing reads a reply's params again.
-        updates = [
-            codec.flmodel_to_update(m, consume=True)
-            for m in results
-            if m is not None and m.params and codec.META_KEY in (m.meta or {})
-        ]
-        self._cleanup_memory(plan)
-        updates = [u for u in updates if u.client_id in set(expected)]
-        seen: set[str] = set()
-        for u in updates:
-            if u.client_id in seen:
+        seen: dict[str, str] = {}  # cid -> site of its first reply
+        updates = []
+        for m in results:
+            if not usable(m):
+                continue
+            site, cid = self._reply_site(m), (m.meta[codec.META_KEY] or {}).get("client_id")
+            if cid in seen:
+                if seen[cid] == site:
+                    # The same site twice in one round (a reply FLARE delivered
+                    # into the next wait): keep the first.
+                    log.warning("nvflare: dropped a second reply from %s for round %d", site, plan.round_num)
+                    continue
                 raise RuntimeError(
-                    f"nvflare: duplicate client_id {u.client_id!r} in round replies — "
+                    f"nvflare: duplicate client_id {cid!r} in round replies — "
                     f"two sites resolved to the same cid (check site names / "
                     f"fl.nvflare.site_prefix); a duplicate shard would be silently "
                     f"double-counted in aggregation"
                 )
-            seen.add(u.client_id)
-        return updates
+            seen[cid] = site
+            updates.append(codec.flmodel_to_update(m, consume=True))
+        self._cleanup_memory(plan)
+        return [u for u in updates if u.client_id in set(expected)]
 
     def receive_round(self):  # pragma: no cover
         raise RuntimeError("server-side communicator")
@@ -166,28 +228,48 @@ class DecentVLAController(ModelController):
     """The job's server workflow. Ctor args must stay JSON-serializable —
     the job config re-instantiates the controller from them on the server.
 
-    `config_path`, `output_dir` and `workdir` are absolutized at job-build
-    time because simulator/POC server processes run from a workspace cwd,
-    not the repo.
+    `config_path` names the run config packaged in the job (see
+    `job.build_job`) and resolves against this app's `config/` folder.
+    `output_dir` and `workdir` are the submitting host's paths and are set
+    only for simulator runs, which execute on that host; a deployed job
+    leaves them unset and uses site paths (`client.apply_site_paths`).
     """
 
     def __init__(self, config_path: str, output_dir: str | None = None, workdir: str | None = None):
         # persistor_id="" skips BaseModelController's persistor lookup — model
         # init/persistence is decent-vla's job (bootstrap backend + our own
         # server_round_*.pt), not a LearnablePersistor's.
-        super().__init__(persistor_id="")
+        # ignore_result_error=True: FLARE drops a failed client reply instead of
+        # aborting the job (its default aborts once one error makes min_responses
+        # unreachable). The round loop is then the only place that decides what
+        # a missing reply means: min_clients, one retry, then RoundFailure.
+        super().__init__(persistor_id="", ignore_result_error=True)
         self.config_path = config_path
         self.output_dir = output_dir
         self.workdir = workdir
+        self.rejected_replies: list[tuple[str, str]] = []
+
+    def _accept_train_result(self, client_name, result, fl_ctx, is_unknown_task=False):
+        # BaseModelController hook (nvflare 2.8.1). A reply FLARE rejects never
+        # reaches the results list, yet it counts toward min_responses, so the
+        # communicator has to know that this client answered.
+        accepted = super()._accept_train_result(
+            client_name=client_name, result=result, fl_ctx=fl_ctx, is_unknown_task=is_unknown_task
+        )
+        if not accepted and not is_unknown_task:
+            self.rejected_replies.append((client_name, str(result.get_return_code())))
+        return accepted
 
     def run(self):
-        from decent_vla.configs import load_run_config
-        from decent_vla.runtime.nvflare.client import restore_workdir
+        from pathlib import Path
 
-        restore_workdir(self.workdir, log=log)
-        cfg = load_run_config(self.config_path)
-        if self.output_dir:
-            cfg.fl.output_dir = self.output_dir
+        from decent_vla.runtime.nvflare.client import apply_site_paths, load_job_config
+
+        job_id = self.fl_ctx.get_job_id()
+        workspace = self.engine.get_workspace()
+        cfg = load_job_config(Path(workspace.get_app_config_dir(job_id)) / self.config_path)
+        apply_site_paths(cfg, run_dir=workspace.get_run_dir(job_id), workdir=self.workdir,
+                         output_dir=self.output_dir, log=log)
         codec.set_wire_dtype(cfg.fl.wire_dtype)
         log.info(
             "nvflare server: %d clients x %d rounds (strategy %s) -> %s",

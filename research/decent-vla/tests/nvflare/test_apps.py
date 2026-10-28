@@ -153,6 +153,114 @@ def test_client_loop_trains_and_persists_state(run_cfg_path, fake_nvflare):
     assert client_session._STATES["c0"].global_step == 4
 
 
+def test_client_replays_a_repeated_round(run_cfg_path, fake_nvflare):
+    """The server sends a round again when a reply was late or lost. The client
+    already trained it, so it sends the stored reply back instead of training
+    again (which would step its warm optimizer twice for one update)."""
+    import numpy as np
+
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.client import client_main
+
+    state = _bootstrap_state(run_cfg_path)
+    raw = yaml.safe_load(run_cfg_path.read_text())
+    raw["fl"]["round_timeout_s"] = 60  # a resend can happen, so replies are kept
+    run_cfg_path.write_text(yaml.safe_dump(raw))
+    flare = fake_nvflare.client
+    for r in (0, 0, 1):
+        plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+        flare.incoming.append(codec.round_flmodel(state, plan))
+
+    client_main(str(run_cfg_path))
+
+    assert len(flare.sent) == 3
+    first, again, _ = flare.sent
+    assert first.params and set(first.params) == set(again.params)
+    assert all(np.array_equal(first.params[k], again.params[k]) for k in first.params)
+    assert client_session._STATES["c0"].global_step == 4  # 2 rounds x 2 steps, not 3 x 2
+
+
+def test_client_reports_a_failed_round_and_keeps_serving(run_cfg_path, fake_nvflare, monkeypatch):
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.client import client_main
+
+    real = client_session.handle_round
+
+    def flaky(cid, config_path, global_state, plan, configure=None):
+        if plan.round_num == 0:
+            raise ValueError("client c0 round 0 trained 0 of 2 planned steps")
+        return real(cid, config_path, global_state, plan, configure=configure)
+
+    monkeypatch.setattr(client_session, "handle_round", flaky)
+    state = _bootstrap_state(run_cfg_path)
+    flare = fake_nvflare.client
+    for r in (0, 1):
+        plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+        flare.incoming.append(codec.round_flmodel(state, plan))
+
+    client_main(str(run_cfg_path))
+
+    failed, trained = flare.sent
+    assert "trained 0 of 2" in codec.reply_error(failed)
+    assert not failed.params
+    assert codec.reply_error(trained) is None
+    assert codec.flmodel_to_update(trained).client_id == "c0"
+
+
+def test_client_keeps_no_reply_when_no_resend_can_happen(run_cfg_path, fake_nvflare):
+    """Without fl.round_timeout_s or fl.min_clients the server waits for every
+    client, so the last reply (a full delta) is not kept; a repeated round,
+    which should not occur, gets an error instead of a second training pass."""
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.client import client_main
+
+    state = _bootstrap_state(run_cfg_path)
+    flare = fake_nvflare.client
+    for r in (0, 0):
+        plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+        flare.incoming.append(codec.round_flmodel(state, plan))
+
+    client_main(str(run_cfg_path))
+
+    assert "no stored reply" in codec.reply_error(flare.sent[1])
+    assert client_session._STATES["c0"].global_step == 2
+
+
+def test_client_that_cannot_start_answers_with_its_error(run_cfg_path, fake_nvflare, monkeypatch):
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.client import client_main
+
+    def broken(*args, **kwargs):
+        raise FileNotFoundError("DECENT_VLA_WORKDIR '/nope' does not exist on this site")
+
+    monkeypatch.setattr(client_session, "load_session", broken)
+    state = _bootstrap_state(run_cfg_path)
+    flare = fake_nvflare.client
+    for r in (0, 1):
+        plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+        flare.incoming.append(codec.round_flmodel(state, plan))
+
+    client_main(str(run_cfg_path))
+
+    assert len(flare.sent) == 2
+    assert all("cannot start: FileNotFoundError" in codec.reply_error(m) for m in flare.sent)
+
+
+def test_client_rejects_a_round_older_than_its_last(run_cfg_path, fake_nvflare):
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.client import client_main
+
+    state = _bootstrap_state(run_cfg_path)
+    flare = fake_nvflare.client
+    for r in (1, 0):
+        plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+        flare.incoming.append(codec.round_flmodel(state, plan))
+
+    client_main(str(run_cfg_path))
+
+    assert "older than this client's last round 1" in codec.reply_error(flare.sent[1])
+
+
 def _bootstrap_state(run_cfg_path):
     from decent_vla.configs import load_run_config
     from decent_vla.runtime.builders import build_backend_factory, resolve_device
@@ -173,8 +281,8 @@ def test_collect_updates_sends_only_to_expected(run_cfg_path):
     class Ctrl:
         sent: list[list[str]] = []
 
-        def send_model_and_wait(self, task_name="train", data=None, targets=None,
-                                min_responses=None, timeout=0):
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
             Ctrl.sent.append(list(targets))
             return router(task_name, data, targets, timeout)
 
@@ -197,8 +305,8 @@ def test_collect_updates_rounds_timeout_up_to_whole_seconds(run_cfg_path):
     timeouts = []
 
     class Ctrl:
-        def send_model_and_wait(self, task_name="train", data=None, targets=None,
-                                min_responses=None, timeout=0):
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
             timeouts.append(timeout)
             return router(task_name, data, targets, timeout)
 
@@ -221,13 +329,15 @@ def test_collect_updates_rejects_duplicate_client_ids(run_cfg_path):
     class DuplicateCtrl:
         """Both sites resolve to cid c0 (a naming bug): every reply stamps c0."""
 
-        def send_model_and_wait(self, task_name="train", data=None, targets=None,
-                                min_responses=None, timeout=0):
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
             gs, plan = codec.flmodel_to_round(data)
             replies = []
-            for _ in targets:
+            for site in targets:
                 up = client_session.handle_round("c0", str(run_cfg_path), gs, plan)
-                replies.append(codec.update_to_flmodel(up))
+                reply = codec.update_to_flmodel(up)
+                reply.meta["client_name"] = site  # FLARE names the sender
+                replies.append(reply)
             return replies
 
     comm = NVFlareCommunicator(DuplicateCtrl(), num_clients=2)
@@ -247,10 +357,10 @@ def test_collect_updates_skips_malformed_replies(run_cfg_path, fake_nvflare):
     router = LoopbackRouter(run_cfg_path)
 
     class HalfBrokenCtrl:
-        def send_model_and_wait(self, task_name="train", data=None, targets=None,
-                                min_responses=None, timeout=0):
-            good = router(task_name, data, ["c0"], timeout)
-            return good + [FLModel(params=None), None]
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
+            good = router(task_name, data, [t for t in targets if t == "c0"], timeout)
+            return good + ([FLModel(params=None), None] if "c1" in targets else [])
 
     comm = NVFlareCommunicator(HalfBrokenCtrl(), num_clients=2)
     plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=0)
@@ -259,23 +369,153 @@ def test_collect_updates_skips_malformed_replies(run_cfg_path, fake_nvflare):
     assert [u.client_id for u in updates] == ["c0"]
 
 
-def test_restore_workdir_makes_config_relative_paths_work(tmp_path, monkeypatch):
-    """nvflare processes run from a workspace cwd; restore_workdir puts them
-    back at the submission cwd so config-relative paths (the local-mode
-    operational contract) keep working. Missing dir only warns."""
+def test_collect_updates_waits_past_failed_replies(run_cfg_path, fake_nvflare):
+    """FLARE counts a failed reply toward min_responses, so a wait can end before
+    the quorum of usable updates is in. The communicator waits again for the
+    clients that have not answered, asking only for the shortfall."""
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.controller import NVFlareCommunicator
+
+    router = LoopbackRouter(run_cfg_path)
+    calls = []
+
+    class Ctrl:
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
+            calls.append((list(targets), min_responses, wait_time_after_min_received))
+            if "c1" in targets:  # c1 fails fast; FLARE returns at the first answer
+                return [codec.error_flmodel("c1", 0, "RuntimeError: boom")]
+            return router(task_name, data, targets, timeout)
+
+    from decent_vla.configs.schemas import NVFlareConfig
+
+    comm = NVFlareCommunicator(Ctrl(), num_clients=2, nvf_cfg=NVFlareConfig(wait_time_after_min_received=7))
+    plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=0)
+    comm.broadcast_state(_bootstrap_state(run_cfg_path), plan)
+    updates = comm.collect_updates(expected=["c0", "c1"], min_responses=1)
+
+    # Each wait asks for the shortfall, with the configured grace period.
+    assert calls == [(["c0", "c1"], 1, 7), (["c0"], 1, 7)]
+    assert [u.client_id for u in updates] == ["c0"]
+
+
+def test_collect_updates_counts_replies_flare_rejected(run_cfg_path):
+    """A reply FLARE rejects (an error code from a dead client script) never
+    reaches the results but counts toward min_responses: the controller
+    records it, so the communicator waits on for the clients still training."""
+    from decent_vla.runtime.nvflare.controller import NVFlareCommunicator
+
+    router = LoopbackRouter(run_cfg_path)
+    calls = []
+
+    class Ctrl:
+        rejected_replies: list = []
+
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
+            calls.append(list(targets))
+            if "c1" in targets:  # c1's script died: FLARE got TASK_ABORTED and dropped it
+                self.rejected_replies.append(("c1", "TASK_ABORTED"))
+                return []
+            return router(task_name, data, targets, timeout)
+
+    comm = NVFlareCommunicator(Ctrl(), num_clients=2)
+    plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=0)
+    comm.broadcast_state(_bootstrap_state(run_cfg_path), plan)
+    updates = comm.collect_updates(expected=["c0", "c1"], min_responses=1)
+
+    assert calls == [["c0", "c1"], ["c0"]]
+    assert [u.client_id for u in updates] == ["c0"]
+
+
+def test_collect_updates_drops_replies_from_another_round_and_repeats(run_cfg_path, fake_nvflare):
+    from decent_vla.runtime.nvflare import codec
+    from decent_vla.runtime.nvflare.controller import NVFlareCommunicator
+
+    state = _bootstrap_state(run_cfg_path)
+
+    class Ctrl:
+        def broadcast_model(self, task_name="train", data=None, targets=None, min_responses=None,
+                            timeout=0, wait_time_after_min_received=0, blocking=True):
+            gs, plan = codec.flmodel_to_round(data)
+            replies = []
+            for cid, rnd in (("c0", plan.round_num - 1), ("c1", plan.round_num), ("c1", plan.round_num)):
+                up = client_session.handle_round(cid, str(run_cfg_path), gs, plan)
+                reply = codec.update_to_flmodel(up, round_num=rnd)
+                reply.meta["client_name"] = cid
+                replies.append(reply)
+            return replies
+
+    comm = NVFlareCommunicator(Ctrl(), num_clients=2)
+    plan = RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=1)
+    comm.broadcast_state(state, plan)
+    updates = comm.collect_updates(expected=["c0", "c1"], min_responses=1)
+
+    # c0's reply answers round 0, and c1's second reply repeats its first.
+    assert [u.client_id for u in updates] == ["c1"]
+    assert "round" not in updates[0].metrics
+
+
+def test_load_job_config_resolves_packaged_files(run_cfg_path, tmp_path):
+    from decent_vla.runtime.nvflare.client import load_job_config
+
+    raw = yaml.safe_load(run_cfg_path.read_text())
+    raw["backend"]["extra"] = {"train_config_path": "pipeline.yaml"}
+    (tmp_path / "pipeline.yaml").write_text("x: 1\n")
+    cfg_path = tmp_path / "decent_vla_run.yaml"
+    cfg_path.write_text(yaml.safe_dump(raw))
+    cfg = load_job_config(cfg_path)
+    assert cfg.backend.extra["train_config_path"] == str(tmp_path / "pipeline.yaml")
+
+
+def test_site_paths_of_a_simulator_job_restore_the_submitting_host(run_cfg_path, tmp_path, monkeypatch):
     import os
 
-    from decent_vla.runtime.nvflare.client import restore_workdir
+    from decent_vla.configs import load_run_config
+    from decent_vla.runtime.nvflare.client import apply_site_paths
 
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    monkeypatch.chdir(workspace)
-    restore_workdir(str(tmp_path))
+    cfg = load_run_config(run_cfg_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "submit").mkdir()
+    apply_site_paths(cfg, run_dir=tmp_path / "run", workdir=str(tmp_path / "submit"), output_dir="/abs/out")
+    assert os.getcwd() == str(tmp_path / "submit")
+    assert cfg.fl.output_dir == "/abs/out"
+
+
+def test_site_paths_of_a_deployed_job_stay_on_the_site(run_cfg_path, tmp_path, monkeypatch):
+    """A deployed job carries no host paths: a relative output folder goes under
+    the job's run folder; DECENT_VLA_WORKDIR is the site's root for relative
+    data paths, and a wrong one is an error, not a silent fallback."""
+    import os
+
+    from decent_vla.configs import load_run_config
+    from decent_vla.runtime.nvflare.client import apply_site_paths
+
+    cfg = load_run_config(run_cfg_path)
+    cfg.fl.output_dir = "outputs/run"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DECENT_VLA_WORKDIR", raising=False)
+    apply_site_paths(cfg, run_dir=tmp_path / "job")
+    assert cfg.fl.output_dir == str(tmp_path / "job" / "outputs" / "run")
     assert os.getcwd() == str(tmp_path)
-    restore_workdir(None)  # no-op
-    assert os.getcwd() == str(tmp_path)
-    restore_workdir(str(tmp_path / "nope"))  # warns, keeps cwd
-    assert os.getcwd() == str(tmp_path)
+
+    (tmp_path / "site").mkdir()
+    monkeypatch.setenv("DECENT_VLA_WORKDIR", str(tmp_path / "site"))
+    cfg.fl.output_dir = "/shared/out"  # an absolute output folder is kept
+    apply_site_paths(cfg, run_dir=tmp_path / "job")
+    assert os.getcwd() == str(tmp_path / "site")
+    assert cfg.fl.output_dir == "/shared/out"
+
+    monkeypatch.setenv("DECENT_VLA_WORKDIR", str(tmp_path / "nope"))
+    with pytest.raises(FileNotFoundError, match="DECENT_VLA_WORKDIR"):
+        apply_site_paths(cfg, run_dir=tmp_path / "job")
+
+
+def test_controller_leaves_client_errors_to_the_round_loop(run_cfg_path):
+    """FLARE's default aborts the job once one error makes min_responses
+    unreachable; the controller turns that off so the round loop decides."""
+    ctrl = _controller(run_cfg_path)
+    assert ctrl.init_kwargs.get("ignore_result_error") is True
 
 
 # ---------------------------------------------------------------- controller runs
@@ -347,8 +587,8 @@ def test_retry_resends_to_missing_client_only(run_cfg_path):
 
     class DropC1FirstRouter(LoopbackRouter):
         """First send never yields c1's reply; later calls behave normally —
-        the round loop's missing-only retry must succeed without re-training
-        c0 (which would double-step its warm optimizer)."""
+        the resend must go to c1 only, without re-training c0 (which would
+        double-step its warm optimizer)."""
 
         def __init__(self, cfg_path):
             super().__init__(cfg_path)

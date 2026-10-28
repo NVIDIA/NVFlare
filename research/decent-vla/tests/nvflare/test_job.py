@@ -47,26 +47,99 @@ def run_cfg(tmp_path):
     return make
 
 
-def test_build_job_wires_controller_and_script_runner(run_cfg):
-    from decent_vla.configs import load_run_config  # noqa: F401
-    from decent_vla.runtime.nvflare import client_script
+def test_build_job_ships_its_files_and_no_host_paths(run_cfg):
+    """An exported job names only files inside itself: the packaged run config
+    and client script. No submitter path reaches the server or the clients."""
     from decent_vla.runtime.nvflare.controller import DecentVLAController
-    from decent_vla.runtime.nvflare.job import build_job
+    from decent_vla.runtime.nvflare.job import CLIENT_SCRIPT, RUN_CONFIG, JobConfigFiles, build_job, staged_job
 
     cfg, p = run_cfg()
-    job = build_job(cfg, str(p))
+    with staged_job(str(p)) as staged:
+        stage, config_files = staged
+        assert sorted(f.name for f in stage.iterdir()) == sorted([CLIENT_SCRIPT, RUN_CONFIG])
+        assert config_files == [RUN_CONFIG]
+        job = build_job(cfg, staged)
 
     assert job.min_clients == 2
-    (ctrl,) = job.server_components
+    assert job.app_packages == ["decent_vla"]  # no partial copy of the package in custom/
+    ctrl, server_files = job.server_components
     assert isinstance(ctrl, DecentVLAController)
-    assert ctrl.config_path == str(p.resolve())
-    assert ctrl.output_dir == str(Path(cfg.fl.output_dir).resolve())
-    assert ctrl.workdir == str(Path.cwd())
-    (runner,) = job.client_components
-    assert runner.kwargs["script"] == str(Path(client_script.__file__).resolve())
-    assert runner.kwargs["script_args"] == f"--config {p.resolve()} --workdir {Path.cwd()}"
+    assert (ctrl.config_path, ctrl.output_dir, ctrl.workdir) == (RUN_CONFIG, None, None)
+    client_files, runner = job.client_components
+    # The run config goes in config/ (JobConfigFiles), the script in custom/ (ScriptRunner).
+    assert isinstance(server_files, JobConfigFiles) and isinstance(client_files, JobConfigFiles)
+    assert server_files.paths == client_files.paths == [str(stage / RUN_CONFIG)]
+    assert runner.kwargs["script"] == CLIENT_SCRIPT
+    assert runner.kwargs["script_args"] == f"--config {RUN_CONFIG}"
     assert runner.kwargs["launch_external_process"] is False
     assert runner.kwargs["params_transfer_type"] == "FULL"
+
+
+def test_build_job_for_the_simulator_carries_this_hosts_paths(run_cfg):
+    from decent_vla.runtime.nvflare.job import RUN_CONFIG, build_job, staged_job
+
+    cfg, p = run_cfg()
+    with staged_job(str(p)) as staged:
+        job = build_job(cfg, staged, workdir="/submit/cwd", output_dir="/submit/out")
+    ctrl, _ = job.server_components
+    assert (ctrl.output_dir, ctrl.workdir) == ("/submit/out", "/submit/cwd")
+    _, runner = job.client_components
+    assert runner.kwargs["script_args"] == f"--config {RUN_CONFIG} --workdir /submit/cwd"
+
+
+def test_job_min_sites_follow_the_quorum(run_cfg):
+    """FLARE aborts a job once fewer than its min_sites are alive; that limit
+    is the round loop's quorum, not every client."""
+    from decent_vla.runtime.nvflare.job import build_job, staged_job
+
+    cfg, p = run_cfg()
+    cfg.fl.min_clients = 1
+    with staged_job(str(p)) as staged:
+        job = build_job(cfg, staged)
+    assert job.min_clients == 1
+
+
+def test_staged_job_leaves_out_submit_side_settings(run_cfg, tmp_path):
+    from decent_vla.runtime.nvflare.job import RUN_CONFIG, staged_job
+
+    cfg, p = run_cfg({"env": "export", "job_dir": str(tmp_path / "jobs"), "workspace": str(tmp_path / "ws")})
+    with staged_job(str(p)) as (stage, _):
+        packaged = yaml.safe_load((stage / RUN_CONFIG).read_text())
+    assert packaged["fl"]["nvflare"] == {"env": "export"}
+
+
+def test_staged_job_packages_the_files_the_config_names(tmp_path, monkeypatch):
+    import os
+
+    from decent_vla.runtime.nvflare.job import RUN_CONFIG, staged_job
+
+    (tmp_path / "examples").mkdir()
+    pipeline = tmp_path / "examples" / "pipeline.yaml"
+    pipeline.write_text("policy: {type: smolvla}\n")
+    cfg = tmp_path / "examples" / "run.yaml"
+    cfg.write_text(yaml.safe_dump({"name": "t", "backend": {
+        "name": "lerobot", "extra": {"train_config_path": "examples/pipeline.yaml", "dtype": "bfloat16"}}}))
+    monkeypatch.chdir(tmp_path)  # relative paths in a run config resolve against the cwd
+
+    with staged_job(str(cfg)) as (stage, config_files):
+        assert config_files == [RUN_CONFIG, "pipeline.yaml"]
+        assert os.getcwd() == str(stage)
+        assert (stage / "pipeline.yaml").read_text() == pipeline.read_text()
+        packaged = yaml.safe_load((stage / RUN_CONFIG).read_text())
+        assert packaged["backend"]["extra"] == {"train_config_path": "pipeline.yaml", "dtype": "bfloat16"}
+    assert os.getcwd() == str(tmp_path)
+    assert not stage.exists()
+
+
+def test_staged_job_rejects_a_missing_packaged_file(tmp_path, monkeypatch):
+    from decent_vla.runtime.nvflare.job import staged_job
+
+    cfg = tmp_path / "run.yaml"
+    cfg.write_text(yaml.safe_dump({"backend": {"name": "lerobot", "extra": {"train_config_path": "nope.yaml"}}}))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError, match="train_config_path"):
+        with staged_job(str(cfg)):
+            pass
 
 
 def test_run_simulator_defaults(run_cfg):

@@ -201,9 +201,11 @@ def _collect_with_retry(
         responded = {u.client_id for u in updates}
         return sorted(cid for cid in expected if cid not in responded)
 
+    # min_responses tells a transport that waits for replies (NVFlare) how many to
+    # wait for, so the quorum it enforces is this loop's, not "every target".
     t0 = time.time()
     communicator.broadcast_state(state, plan)
-    updates = communicator.collect_updates(expected, timeout_s)
+    updates = communicator.collect_updates(expected, timeout_s, min_responses=need)
     if len(updates) >= need:
         return updates
     missing = _missing(updates)
@@ -214,7 +216,9 @@ def _collect_with_retry(
 
     t0 = time.time()
     communicator.broadcast_state(state, plan)
-    updates = updates + communicator.collect_updates(missing, timeout_s)
+    # The retry only has to make up the shortfall; replies already collected count.
+    updates = updates + communicator.collect_updates(
+        missing, timeout_s, min_responses=min(need - len(updates), len(missing)))
     if len(updates) >= need:
         return updates
     missing = _missing(updates)

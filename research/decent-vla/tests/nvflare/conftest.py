@@ -19,7 +19,9 @@ nvflare. Only the symbols our codec/controller/client/job modules touch.
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
+from pathlib import Path
 
 import pytest
 
@@ -53,22 +55,55 @@ class FakeFLModel:
         self.meta = meta if meta is not None else {}
 
 
+class FakeWorkspace:
+    """The two nvflare Workspace lookups the controller makes."""
+
+    def __init__(self, root):
+        self.root = Path(root)
+
+    def get_run_dir(self, job_id):
+        return str(self.root / job_id)
+
+    def get_app_config_dir(self, job_id):
+        return str(self.root / job_id / "app_server" / "config")
+
+
+class FakeEngine:
+    def __init__(self, workspace):
+        self._workspace = workspace
+
+    def get_workspace(self):
+        return self._workspace
+
+
+class FakeFLContext:
+    def get_job_id(self):
+        return "simulate_job"
+
+
 class FakeModelController:
     """Base-class double for nvflare's ModelController.
 
-    Real send_model_and_wait ships FLModels over gRPC; tests attach a
+    Real broadcast_model ships FLModels over gRPC; tests attach a
     `loopback` callable that routes them to the client side in-process.
-    `sent` records the target lists of every call (subset-send assertions).
+    `sent` records the target lists of every call (subset-send assertions),
+    `min_responses` the quorum each call asked for.
     """
 
     def __init__(self, *args, persistor_id: str = "persistor", **kwargs):
         self.persistor_id = persistor_id
+        self.init_kwargs = kwargs
         self.loopback = None
         self.sent: list[list[str]] = []
+        self.min_responses: list = []
+        self.fl_ctx = FakeFLContext()
+        self.engine = FakeEngine(FakeWorkspace(Path(tempfile.gettempdir()) / "fake-nvflare-workspace"))
 
-    def send_model_and_wait(self, task_name="train", data=None, targets=None,
-                            min_responses=None, timeout=0):
+    def broadcast_model(self, data=None, task_name="train", targets=None, min_responses=None,
+                        timeout=0, wait_time_after_min_received=0, blocking=True, callback=None):
+        assert blocking, "the communicator waits for replies"
         self.sent.append(list(targets))
+        self.min_responses.append(min_responses)
         assert self.loopback is not None, "test must attach a loopback router"
         return self.loopback(task_name, data, targets, timeout)
 
@@ -94,7 +129,10 @@ class FakeFlareClient(types.ModuleType):
         return self.incoming.pop(0)
 
     def send(self, model):
-        self.sent.append(model)
+        # Like nvflare's flare.send(): the model's params are dropped once sent.
+        self.sent.append(FakeFLModel(params=dict(model.params or {}), params_type=model.params_type,
+                                     metrics=model.metrics, meta=model.meta))
+        model.params = None
 
     def get_site_name(self):
         return self.site_name
@@ -117,7 +155,11 @@ class FakeFedJob:
         self.client_components: list = []
         self.sim_calls: list[dict] = []
         self.exported: list[str] = []
+        self.app_packages: list[str] = []
         FakeFedJob.instances.append(self)
+
+    def set_app_packages(self, app_packages):
+        self.app_packages = list(app_packages)
 
     def to_server(self, comp):
         self.server_components.append(comp)

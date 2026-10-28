@@ -14,26 +14,31 @@
 
 """Entry script NVFlare's ScriptRunner ships to each client site.
 
-ScriptRunner copies this FILE into the job folder and executes it inside the
-client (in-process executor by default), so it must stay a standalone script:
-argparse + a main guard, everything else delegated to the installed
-decent_vla package.
+`job.build_job` packages this FILE into the job app's `custom/` folder (the
+run config goes in the app's `config/` folder), and NVFlare executes it inside
+the client: in-process by default, or as `python3 -u custom/client_script.py`
+in a subprocess. So it must stay a standalone script: argparse + a main guard,
+everything else delegated to the installed decent_vla package.
 """
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="decent-vla nvflare client")
-    parser.add_argument("--config", default=None, help="run config YAML (fallback: DECENT_VLA_CONFIG)")
-    parser.add_argument("--workdir", default=None, help="job-submission cwd to restore")
+    parser.add_argument("--config", default=None,
+                        help="run config YAML, relative to the app's config/ folder (fallback: DECENT_VLA_CONFIG)")
+    parser.add_argument("--workdir", default=None,
+                        help="simulator runs only: the submitting host's cwd to restore")
     args = parser.parse_args()
 
     from decent_vla.runtime.nvflare.client import client_main
 
-    client_main(args.config, workdir=args.workdir)
+    # This file sits in <app>/custom/.
+    client_main(args.config, app_dir=str(Path(__file__).resolve().parent.parent), workdir=args.workdir)
 
 
 if __name__ == "__main__":

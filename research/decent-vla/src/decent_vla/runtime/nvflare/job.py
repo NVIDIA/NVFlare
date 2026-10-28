@@ -20,10 +20,21 @@ is confined to this module — re-verify here when bumping the nvflare pin.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
+import yaml
+
 log = logging.getLogger(__name__)
+
+# Names of the files the job ships: the client script goes in each app's
+# custom/ folder, the run config (and the files it names) in config/.
+CLIENT_SCRIPT = "client_script.py"
+RUN_CONFIG = "decent_vla_run.yaml"
 
 
 def client_ids(cfg) -> list[str]:
@@ -35,29 +46,100 @@ def _workspace(cfg) -> str:
     return str(Path(nv.workspace or (Path(cfg.fl.output_dir) / "nvflare_workspace")).resolve())
 
 
-def build_job(cfg, config_path: str):
-    """FedJob: DecentVLAController on the server, the Client-API script on clients."""
+@contextlib.contextmanager
+def staged_job(config_path: str):
+    """Stage every file the job ships, by the name it has inside the job, and
+    run the block from that folder. Yields (stage folder, config file names).
+
+    The job carries its own run config, the files that config names
+    (`client.PACKAGED_KEYS`, rewritten to bare names) and the client script,
+    so a deployed site needs neither the source tree nor the submitter's
+    paths. FedJob resolves relative resource names against the cwd both when
+    the job is built and when it is exported, so both happen in here.
+    """
+    from decent_vla.runtime.nvflare import client_script
+    from decent_vla.runtime.nvflare.client import PACKAGED_KEYS
+
+    raw = yaml.safe_load(Path(config_path).read_text()) or {}
+    extra = (raw.get("backend") or {}).get("extra") or {}
+    # Where the job folder and the simulator workspace go is the submitter's
+    # business; the sites never read it.
+    for key in ("job_dir", "workspace"):
+        ((raw.get("fl") or {}).get("nvflare") or {}).pop(key, None)
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="decent_vla_job_") as stage:
+        config_files = [RUN_CONFIG]
+        for key in PACKAGED_KEYS:
+            value = extra.get(key)
+            if not value:
+                continue
+            # Relative paths in a run config resolve against the cwd, as in local mode.
+            src = Path(cwd, value)
+            if not src.is_file():
+                raise FileNotFoundError(f"backend.extra.{key}={value!r}: no such file under {cwd}")
+            if src.name in (RUN_CONFIG, CLIENT_SCRIPT):
+                raise ValueError(f"backend.extra.{key}: {src.name!r} is a reserved name in the job")
+            shutil.copy(src, Path(stage, src.name))
+            extra[key] = src.name
+            config_files.append(src.name)
+        Path(stage, RUN_CONFIG).write_text(yaml.safe_dump(raw, sort_keys=False))
+        shutil.copy(client_script.__file__, Path(stage, CLIENT_SCRIPT))
+        os.chdir(stage)
+        try:
+            yield Path(stage), config_files
+        finally:
+            os.chdir(cwd)
+
+
+class JobConfigFiles:
+    """FedJob component that puts files in the app's config/ folder.
+
+    Not in custom/: `nvflare job submit` parses and rewrites every .yaml,
+    .json and .conf file under custom/, but in config/ only its own
+    config_fed_* files.
+    """
+
+    def __init__(self, paths: list[str]):
+        self.paths = list(paths)
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        for path in self.paths:
+            job.add_file_source(path, None, "config", ctx)
+
+
+def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None,
+              output_dir: str | None = None):
+    """FedJob: DecentVLAController on the server, the Client-API script on clients.
+
+    Call inside `staged_job`, with what it yields. A simulator job runs on this
+    host, so it is given this host's cwd (`workdir`) and absolute output folder;
+    a job exported for deployment gets neither and carries no host paths (sites
+    use `client.apply_site_paths`).
+    """
     from nvflare.client.config import ExchangeFormat, TransferType
     from nvflare.job_config.api import FedJob
     from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
-    from decent_vla.runtime.nvflare import client_script
     from decent_vla.runtime.nvflare.controller import DecentVLAController
 
-    abs_config = str(Path(config_path).resolve())
-    abs_out = str(Path(cfg.fl.output_dir).resolve())
-    # The submission cwd travels with the job: nvflare processes run from a
-    # workspace cwd, and restoring this makes config-relative paths (e.g.
-    # backend.extra.train_config_path) behave as they do under local mode.
-    workdir = str(Path.cwd())
-    job = FedJob(name=cfg.name or "decent-vla", min_clients=cfg.data.num_clients)
-    job.to_server(
-        DecentVLAController(config_path=abs_config, output_dir=abs_out, workdir=workdir)
-    )
+    # min_clients is the job's min_sites: FLARE aborts the job once fewer sites
+    # are alive, so it follows the round loop's quorum.
+    job = FedJob(name=cfg.name or "decent-vla", min_clients=cfg.fl.min_clients or cfg.data.num_clients)
+    # Sites run the installed decent_vla package. Without this FedJob copies the
+    # sources of the controller's module and its imports into custom/, a partial
+    # package beside the installed one.
+    job.set_app_packages(["decent_vla"])
+    stage, config_files = staged
+    configs = [str(stage / name) for name in config_files]
+    job.to_server(DecentVLAController(config_path=RUN_CONFIG, output_dir=output_dir, workdir=workdir))
+    job.to_server(JobConfigFiles(configs))
+    job.to_clients(JobConfigFiles(configs))
     job.to_clients(
         ScriptRunner(
-            script=str(Path(client_script.__file__).resolve()),
-            script_args=f"--config {abs_config} --workdir {workdir}",
+            # A name inside the job: in-process mode finds it in custom/, and
+            # external-process mode runs `python3 -u custom/client_script.py`.
+            script=CLIENT_SCRIPT,
+            script_args=f"--config {RUN_CONFIG}" + (f" --workdir {workdir}" if workdir else ""),
             launch_external_process=cfg.fl.nvflare.launch_external_process,
             # NUMPY end-to-end + FULL transfer = the Client API applies no
             # framework conversion or diffing; params are exactly what our
@@ -144,24 +226,39 @@ def run_simulator(cfg, config_path: str) -> None:
     (Adam moments survive only via fl.persist_client_state then).
     """
     nv = cfg.fl.nvflare
-    job = build_job(cfg, config_path)
     cids = client_ids(cfg)
     groups = check_gpu_map(nv.gpu, len(cids))
     if groups:
         log.info("nvflare simulator: %d clients over GPU groups %s (one client per group)",
                  len(cids), groups)
-    job.simulator_run(
-        _workspace(cfg),
-        clients=cids,
-        threads=nv.threads or len(cids),
-        gpu=nv.gpu,
-    )
+    workspace = _workspace(cfg)
+    workdir, output_dir = os.getcwd(), str(Path(cfg.fl.output_dir).resolve())
+    with staged_job(config_path) as staged:
+        job = build_job(cfg, staged, workdir=workdir, output_dir=output_dir)
+        job.simulator_run(
+            workspace,
+            clients=cids,
+            threads=nv.threads or len(cids),
+            gpu=nv.gpu,
+        )
 
 
 def export_job(cfg, config_path: str) -> Path:
     """Write a standard NVFlare job folder for POC/provisioned submission."""
     nv = cfg.fl.nvflare
     job_dir = Path(nv.job_dir or (Path(cfg.fl.output_dir) / "nvflare_job")).resolve()
-    job = build_job(cfg, config_path)
-    job.export_job(str(job_dir))
+    if cfg.fl.round_timeout_s is None:
+        log.warning(
+            "fl.round_timeout_s is not set: a required client that stops answering stalls its "
+            "round forever. Set it for a deployment."
+        )
+    if not Path(cfg.fl.output_dir).is_absolute():
+        log.warning(
+            "fl.output_dir is relative, so each site writes under the job's own folder: a "
+            "resubmitted job gets a new folder and starts again from round 0. Set an absolute "
+            "fl.output_dir to resume."
+        )
+    with staged_job(config_path) as staged:
+        job = build_job(cfg, staged)
+        job.export_job(str(job_dir))
     return job_dir

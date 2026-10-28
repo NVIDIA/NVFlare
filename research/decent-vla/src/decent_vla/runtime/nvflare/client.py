@@ -17,20 +17,26 @@
 The loop runs inside ONE process for the whole job (in-process executor,
 launch_once), so the warm ClientState in `runtime/client_session.py` —
 backend, Adam moments, stepping scheduler, cycling dataloader — genuinely
-persists across rounds: LocalRunner parity by construction. Config travels
-via --config (ScriptRunner script_args) with the DECENT_VLA_CONFIG env var
-as fallback; identity comes from the nvflare site name.
+persists across rounds: LocalRunner parity by construction. The run config
+travels inside the job (`job.build_job` packages it into the app's `config/`
+folder) and is named by --config; identity comes from the nvflare site name.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import traceback
+from pathlib import Path
 
 from decent_vla.runtime import client_session
 from decent_vla.runtime.nvflare import codec
 
 log = logging.getLogger(__name__)
+
+# Files a run config names that `job.build_job` packages next to it (keys of
+# backend.extra). In the packaged config each is the file's bare name.
+PACKAGED_KEYS = ("train_config_path",)
 
 
 def _configure(cfg) -> None:
@@ -38,25 +44,54 @@ def _configure(cfg) -> None:
         codec.set_wire_dtype(cfg.fl.wire_dtype)
 
 
-def restore_workdir(workdir: str | None, log=log) -> None:
-    """Restore the job-submission cwd inside an nvflare-spawned process.
+def resolve_packaged_paths(cfg, config_dir) -> None:
+    """Point the packaged file references of a job's run config at `config_dir`."""
+    extra = cfg.backend.extra or {}
+    for key in PACKAGED_KEYS:
+        value = extra.get(key)
+        if value and not os.path.isabs(value):
+            extra[key] = str(Path(config_dir) / value)
 
-    Run configs use paths relative to the directory the run is launched from
-    (backend.extra.train_config_path, relative fl.output_dir). NVFlare's
-    simulator/POC processes run from a workspace cwd instead; restoring the
-    submission cwd makes config-relative paths behave identically across
-    runtimes. A missing dir (e.g. a prod site with a different layout) only
-    warns — such deployments must use absolute paths in the config.
+
+def load_job_config(config_path):
+    """Load the run config packaged in a job, with its packaged files resolved."""
+    from decent_vla.configs import load_run_config
+
+    cfg = load_run_config(str(config_path))
+    resolve_packaged_paths(cfg, Path(config_path).parent)
+    return cfg
+
+
+def apply_site_paths(cfg, run_dir, workdir: str | None = None, output_dir: str | None = None,
+                     log=log) -> None:
+    """Point a run's site-local paths (data, outputs) at this site.
+
+    A simulator job runs on the submitting host and carries that host's cwd
+    (`workdir`) and, on the server, its absolute output folder: restore both, so
+    relative paths behave as under local mode.
+
+    A deployed job carries neither. Relative data paths (e.g. GR00T
+    `dataset_paths`) resolve against DECENT_VLA_WORKDIR when the site sets it,
+    otherwise against the process cwd; a relative `fl.output_dir` goes under
+    this job's run folder, so each site keeps its outputs with the job.
     """
-    if not workdir:
+    if workdir:
+        _chdir(workdir, "the submitting host's working directory")
+        if output_dir:
+            cfg.fl.output_dir = output_dir
         return
-    if os.path.isdir(workdir):
-        os.chdir(workdir)
-    else:
-        log.warning(
-            "workdir %s does not exist on this site; config-relative paths "
-            "will resolve against %s", workdir, os.getcwd()
-        )
+    site_workdir = os.environ.get("DECENT_VLA_WORKDIR")
+    if site_workdir:
+        _chdir(site_workdir, "DECENT_VLA_WORKDIR")
+    if not os.path.isabs(cfg.fl.output_dir):
+        cfg.fl.output_dir = str(Path(run_dir) / cfg.fl.output_dir)
+    log.info("site paths: cwd %s, outputs %s", os.getcwd(), cfg.fl.output_dir)
+
+
+def _chdir(path: str, what: str) -> None:
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"{what} {path!r} does not exist on this site")
+    os.chdir(path)
 
 
 def cid_from_site(site_name: str, site_prefix: str) -> str:
@@ -81,52 +116,127 @@ def cid_from_site(site_name: str, site_prefix: str) -> str:
     return f"c{int(site_name[len(site_prefix):]) - 1}"
 
 
-def resolve_config_path(arg: str | None) -> str:
+def resolve_config_path(arg: str | None, config_dir: str | None = None) -> str:
     path = arg or os.environ.get("DECENT_VLA_CONFIG")
     if not path:
         raise SystemExit(
             "nvflare client: no run config — pass --config or set DECENT_VLA_CONFIG"
         )
+    if config_dir and not os.path.isabs(path):
+        path = os.path.join(config_dir, path)
     return path
 
 
-def client_main(config_arg: str | None = None, workdir: str | None = None) -> None:
-    """The multi-round Client-API loop (blocks until the server ends the job)."""
+def client_main(config_arg: str | None = None, app_dir: str | None = None,
+                workdir: str | None = None) -> None:
+    """The multi-round Client-API loop (blocks until the server ends the job).
+
+    `app_dir` is this site's job app folder: `custom/` holds the client
+    script, `config/` the packaged run config, and the job's run folder is its
+    parent (`<run_dir>/app_<site>`). `workdir` is set only for simulator runs.
+    """
     import nvflare.client as flare
 
-    restore_workdir(workdir, log=log)
-    config_path = resolve_config_path(config_arg)
-    flare.init()
-    cfg, *_ = client_session.load_session(config_path, configure=_configure)
-    cid = cid_from_site(flare.get_site_name(), cfg.fl.nvflare.site_prefix)
+    config_path = resolve_config_path(config_arg, str(Path(app_dir) / "config") if app_dir else None)
+    run_dir = Path(app_dir).parent if app_dir else Path.cwd()
 
+    def configure(cfg) -> None:
+        _configure(cfg)
+        resolve_packaged_paths(cfg, Path(config_path).parent)
+        apply_site_paths(cfg, run_dir=run_dir, workdir=workdir, log=log)
+
+    flare.init()
+    # A client that cannot start (missing data or weights, a bad site path)
+    # still answers every round, with its error, rather than ending the
+    # Client-API loop: the server then sees why it is missing.
+    startup_error = None
+    try:
+        cfg, *_ = client_session.load_session(config_path, configure=configure)
+        cid = cid_from_site(flare.get_site_name(), cfg.fl.nvflare.site_prefix)
+    except Exception as exc:
+        log.error("nvflare client %s: cannot start\n%s", flare.get_site_name(), traceback.format_exc())
+        cid, startup_error = flare.get_site_name(), f"cannot start: {type(exc).__name__}: {exc}"
+
+    # The reply to the last finished round, kept until the next round arrives.
+    # The server sends a round again when a reply was late or lost (FLARE drops
+    # a reply that arrives after its task timed out), or when it stopped
+    # waiting at its quorum while this client was still training; either way
+    # the client trained, and training again would step the warm optimizer,
+    # scheduler and data iterator twice for one accepted update. So the same
+    # round gets the stored reply back. Both cases need fl.round_timeout_s or
+    # fl.min_clients; without either the server waits for every client and the
+    # reply (one delta at the wire dtype) is not kept.
+    keep_replies = startup_error is None and (
+        cfg.fl.round_timeout_s is not None or cfg.fl.min_clients is not None
+    )
+    done: tuple[int, object] | None = None
     while flare.is_running():
         input_model = flare.receive()
         if input_model is None:
             break
-        global_state, plan = codec.flmodel_to_round(input_model)
+        try:
+            global_state, plan = codec.flmodel_to_round(input_model)
+        except Exception as exc:
+            log.error("nvflare client %s: cannot decode the round\n%s", cid, traceback.format_exc())
+            del input_model
+            flare.send(codec.error_flmodel(cid, -1, f"cannot decode the round: {type(exc).__name__}: {exc}"))
+            continue
         # Free the FLModel envelope as soon as its params are decoded: the
         # decoded tensors can share its numpy buffers, so holding both names
         # keeps one payload alive under two references.
         del input_model
+        if startup_error:
+            del global_state
+            flare.send(codec.error_flmodel(cid, plan.round_num, startup_error))
+            continue
+        if done is not None and plan.round_num <= done[0]:
+            del global_state
+            if plan.round_num < done[0]:
+                why = f"round {plan.round_num} is older than this client's last round {done[0]}"
+            elif done[1] is None:
+                why = f"round {plan.round_num} again, and no stored reply to send"
+            else:
+                why = None
+                log.warning(
+                    "nvflare client %s: round %d again (its reply was late or lost); "
+                    "sending the stored reply instead of training again", cid, plan.round_num,
+                )
+                flare.send(codec.copy_reply(done[1]))
+            if why:
+                flare.send(codec.error_flmodel(cid, plan.round_num, why))
+            continue
+        done = None  # the server has moved on; that reply can no longer be asked for
         log.info(
             "nvflare client %s: round %d (%d local steps)",
             cid, plan.round_num, plan.local_steps,
         )
-        update = client_session.handle_round(
-            cid, config_path, global_state, plan, configure=_configure
-        )
+        try:
+            update = client_session.handle_round(
+                cid, config_path, global_state, plan, configure=configure
+            )
+        except Exception as exc:
+            # Report the failure instead of ending the loop: the client stays
+            # available for the server's retry and later rounds, and the
+            # server's round loop decides (min_clients, retry, RoundFailure).
+            log.error("nvflare client %s: round %d failed\n%s", cid, plan.round_num,
+                      traceback.format_exc())
+            del global_state
+            flare.send(codec.error_flmodel(cid, plan.round_num, f"{type(exc).__name__}: {exc}"))
+            continue
         # `global_state` is dead the moment the delta exists — release it before
         # encoding so the inbound broadcast and the outbound delta don't overlap.
         del global_state
-        # Encode destructively, then send and drop. WITHOUT these deletes the
-        # previous round's `update`, `global_state` and `input_model` stay bound
-        # across the loop boundary and remain live through the NEXT round's
+        # Encode destructively, then send. WITHOUT these deletes the previous
+        # round's `update`, `global_state` and `input_model` stay bound across
+        # the loop boundary and remain live through the NEXT round's
         # flare.receive() — measured at ~29 GB of dead payload per client at
         # pi0.5's 3.62B params, i.e. most of the reason this plane could not fit
         # in 125 GB of host RAM. `consume=True` additionally keeps the fp32 delta
-        # from coexisting with its fp16 wire copy.
-        out = codec.update_to_flmodel(update, consume=True)
+        # from coexisting with its fp16 wire copy. Only the wire copy is kept,
+        # in `done`, and only when a resend can happen.
+        out = codec.update_to_flmodel(update, consume=True, round_num=plan.round_num)
         del update
+        # flare.send() drops out.params, so the kept reply is a copy (sharing the arrays).
+        done = (plan.round_num, codec.copy_reply(out) if keep_replies else None)
         flare.send(out)
         del out, plan

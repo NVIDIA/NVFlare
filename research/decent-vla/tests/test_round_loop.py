@@ -89,7 +89,7 @@ def test_lean_drain_returns_cached_device_blocks(monkeypatch):
 
 def test_min_clients_enforced():
     class TolerantComm(LocalCommunicator):
-        def collect_updates(self, expected, timeout_s=None):
+        def collect_updates(self, expected, timeout_s=None, min_responses=None):
             # c1 "dies" silently on every attempt
             return super().collect_updates(
                 [cid for cid in expected if cid != "c1"], timeout_s)
@@ -107,7 +107,7 @@ def test_retry_warnings_name_missing_clients(caplog):
     import logging
 
     class TolerantComm(LocalCommunicator):
-        def collect_updates(self, expected, timeout_s=None):
+        def collect_updates(self, expected, timeout_s=None, min_responses=None):
             # c1 and c2 die silently on every attempt
             return super().collect_updates(
                 [cid for cid in expected if cid not in ("c1", "c2")], timeout_s)
@@ -124,9 +124,31 @@ def test_retry_warnings_name_missing_clients(caplog):
     assert all("missing clients: ['c1', 'c2']" in w for w in warnings)
 
 
+def test_quorum_is_passed_to_the_communicator():
+    """A transport that waits for replies must wait for the round loop's quorum,
+    and the retry only for the shortfall."""
+    asked = []
+
+    class RecordingComm(LocalCommunicator):
+        def collect_updates(self, expected, timeout_s=None, min_responses=None):
+            asked.append((list(expected), min_responses))
+            # c1 and c2 die silently on every attempt
+            return super().collect_updates(
+                [cid for cid in expected if cid not in ("c1", "c2")], timeout_s)
+
+    comm = RecordingComm(client_fn=_delta_client_fn)
+    with pytest.raises(RoundFailure):
+        run_rounds(strategy=_CountingStrategy(), communicator=comm,
+                   initial_state={"w": torch.zeros(2)}, client_ids=["c0", "c1", "c2", "c3"],
+                   loop_cfg=RoundLoopConfig(num_rounds=1, local_steps=1, min_clients=3))
+    # First attempt: quorum 3 of all four. Retry: c0 and c3 answered, so 1 more
+    # is needed from the two missing clients.
+    assert asked == [(["c0", "c1", "c2", "c3"], 3), (["c1", "c2"], 1)]
+
+
 def test_min_clients_relaxed_allows_partial():
     class TolerantComm(LocalCommunicator):
-        def collect_updates(self, expected, timeout_s=None):
+        def collect_updates(self, expected, timeout_s=None, min_responses=None):
             return super().collect_updates(
                 [cid for cid in expected if cid != "c1"], timeout_s)
 
@@ -208,7 +230,7 @@ def test_retry_only_reruns_missing_clients():
             super().__init__(client_fn)
             self._attempt = 0
 
-        def collect_updates(self, expected, timeout_s=None):
+        def collect_updates(self, expected, timeout_s=None, min_responses=None):
             self._attempt += 1
             if self._attempt == 1:      # c1 "dies" on the first attempt only
                 expected = [cid for cid in expected if cid != "c1"]

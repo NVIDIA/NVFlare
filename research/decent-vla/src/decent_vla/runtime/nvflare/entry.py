@@ -68,9 +68,11 @@ def run_from_cli(cfg, config_path: str, resume: str | None = None) -> None:
             f"nvflare job folder written to {job_dir}\n"
             f"Submit it to a running federation, e.g.:\n"
             f"  nvflare poc prepare -c {' '.join(nvjob.client_ids(cfg))} && nvflare poc start\n"
-            f"  nvflare job submit -j {job_dir}\n"
-            f"(clients need this repo + the run config at the same paths, and the\n"
-            f"site names must map to c0..cN-1 — see fl.nvflare.site_prefix)"
+            f"  nvflare job submit -j {job_dir}/{cfg.name or 'decent-vla'}\n"
+            f"The job carries its run config; every site needs decent-vla installed\n"
+            f"(pip install -e .) and its own data and model weights. Site names must\n"
+            f"map to c0..cN-1 (see fl.nvflare.site_prefix); outputs go under each\n"
+            f"site's job folder unless fl.output_dir is absolute."
         )
         raise SystemExit(0)
     else:

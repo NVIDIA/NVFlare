@@ -68,7 +68,8 @@ decent-vla/
 |-- examples/                      # run configs: the paper's runs on NVFlare, their smoke versions, mock runs
 |-- configs/libero_heldout_8.json  # held-out LIBERO task split
 |-- scripts/                       # environment setup, data preparation, LIBERO evaluation, CPU smoke run
-`-- tests/                         # unit tests, run in the SmolVLA and π0.5 environment; NVFlare is faked
+`-- tests/                         # unit tests, run in the SmolVLA and π0.5 environment; NVFlare is faked,
+    `-- nvflare_real/              #   except here: exported jobs run in the real NVFlare simulator
 ```
 
 - `examples/<policy>_libero_<recipe>[_<algorithm>]_nvflare.yaml` is one run of the paper: policy, what is federated,
@@ -184,6 +185,32 @@ Checkpoints are kept, not pruned. One `server_round_NNNN.pt` takes about 16 GB f
 FedAdam), 0.5 GB for π0.5 LoRA, 1.5 GB for SmolVLA, 6.2 GB for the GR00T action head and 1.5 GB with LoRA, so a
 full π0.5 run needs about 200 GB of disk (about 500 GB with FedAdam).
 
+**Run on a federation.** With `fl.nvflare.env: export` in the config, `decent-vla train` writes an NVFlare job
+folder instead of running the simulator. Submit it to a running federation (POC or provisioned):
+
+```bash
+decent-vla train --config <config with fl.nvflare.env: export>
+nvflare job submit -j outputs/<config name>/nvflare_job/<config name>
+```
+
+- The job carries its run config, the lerobot training config that the run config names, and the client script.
+  Every site needs this folder installed (`pip install -e .`, see [Setup](#setup)) and its own copy of the data and
+  model weights. Download them before starting the site, not inside the first run.
+- Name the sites `c0` … `cN-1`, or set `fl.nvflare.site_prefix: site-` for sites `site-1` … `site-N`.
+- A relative `fl.output_dir` is created inside each site's job folder. When the job ends, the FLARE server archives
+  its job folder into its job store: get the checkpoints with `nvflare job download <job id>`, or set an absolute
+  `fl.output_dir` to keep them on the server's disk (better for large models). A resubmitted job gets a new folder,
+  so only a run with an absolute `fl.output_dir` resumes from its checkpoints.
+- Relative data paths, such as the GR00T `dataset_paths`, resolve against the folder that each site sets in the
+  `DECENT_VLA_WORKDIR` environment variable.
+- Set `fl.round_timeout_s`. A round needs `fl.min_clients` updates (default: every selected client), and NVFlare
+  stops the job if fewer sites than that stay connected. Once that many clients have answered, the server waits
+  `fl.nvflare.wait_time_after_min_received` seconds (default 10) for the others. A client whose round fails reports the error and stays in the federation; the server asks the missing
+  clients once more, then stops the run with `RoundFailure` if the round is still short. With `fl.round_timeout_s`
+  or `fl.min_clients` set, each client keeps its last update in memory, and a client asked again for a round it has
+  finished sends that update instead of training twice.
+- `fl.nvflare.launch_external_process: true` runs each client's training in a subprocess.
+
 **Evaluate SmolVLA and π0.5.** `scripts/eval_libero.sh` exports a checkpoint to a lerobot policy folder and runs
 `lerobot-eval` on LIBERO with the paper's protocol (all four suites, 10 episodes per task, replanning every 10 steps):
 
@@ -214,26 +241,35 @@ To reproduce the paper's protocol, evaluate the checkpoints of rounds 20, 40, 60
 
 Short runs of every configuration, following this README from environment setup to LIBERO evaluation: federated
 training through the NVFlare simulator, aggregation, checkpointing and evaluation, for each policy, recipe and
-algorithm.
+algorithm. Exported jobs also ran outside the simulator: in NVFlare's POC mode and on a federation of two machines.
 
-- **Revision:** the code in this folder. The unit tests, the mock federation and the GR00T evaluation ran on the final
-  code, and so did a repeat of the `smolvla_libero_lora_nvflare_smoke` training (completed; mean client loss 3.1257
-  in round 1, 2.7178 in round 2). The smoke trainings in the table below, the SmolVLA and π0.5 evaluations and the
-  missing-checkpoint check ran on earlier versions. The changes since then do not alter what those runs do: a
-  missing `--ckpt` now raises, unused packages left the GR00T evaluation package list, settings the code did not
-  apply are rejected when the config loads (every example config still loads), and fixes went into paths those runs
-  do not use (personalized evaluation, the evaluation cache, the single-GPU local runner, zero-step rounds).
+- **Revision:** the code in this folder. On the final code: the unit tests, the tests against the real NVFlare
+  simulator, the mock federation, the POC and two-machine runs, and a repeat of the
+  `smolvla_libero_lora_nvflare_smoke` training (completed; mean client loss 3.1230 in round 1, 2.7898 in round 2).
+  The other smoke trainings in the table below, the LIBERO evaluations and the missing-checkpoint check ran on
+  earlier versions. Changes since then: the NVFlare job carries its config files, passes the round's quorum to
+  NVFlare and handles failed and repeated rounds (tested on the final code as above); a missing `--ckpt` raises;
+  unused packages left the GR00T evaluation package list; settings the code did not apply are rejected when the
+  config loads (every example config still loads); and fixes went into paths those runs do not use (personalized
+  evaluation, the evaluation cache, the single-GPU local runner, zero-step rounds).
 - **Environment:** Isambard-AI, NVIDIA GH200 120GB nodes (aarch64), driver 580.178.04, one node per run.
   - SmolVLA and π0.5 environment: Python 3.12.13, torch 2.7.1+cu128, lerobot 0.5.2 (commit `8515d456`),
     NVFlare 2.8.1, transformers 5.5.4, peft 0.21.2.
   - GR00T training environment: Python 3.10.20, torch 2.7.1+cu128, Isaac-GR00T `65cc4a19` with
     `scripts/isaac_gr00t_pyav.patch`, NVFlare 2.8.1, transformers 4.57.3, peft 0.17.1.
   - GR00T evaluation environment: Python 3.10.20, torch 2.7.1+cu128, robosuite 1.4.0, MuJoCo 3.8.1.
+
+  The unit tests, the POC and two-machine runs and the smoke repeat ran on two workstations, connected over a VPN:
+  2× NVIDIA RTX PRO 6000 Blackwell (driver 580.173.02) and 2× RTX 4090 (driver 570.172.08), Ubuntu 22.04,
+  Python 3.12.13, torch 2.10.0+cu128, lerobot commit `8515d456`, NVFlare 2.8.1, transformers 5.5.4, peft 0.21.2.
 - **Commands and results:**
 
 | Check | Command | Result |
 |---|---|---|
-| Unit tests | `python -m pytest tests --basetemp=/tmp/dvla-pytest` (SmolVLA and π0.5 environment) | 408 passed; one cache test needs sub-second file times, so its temporary files go on local disk, not Lustre |
+| Unit tests | `python -m pytest tests` (SmolVLA and π0.5 environment) | 435 passed, including the 7 below; on Lustre, add `--basetemp=/tmp/dvla-pytest`: one cache test needs sub-second file times |
+| Exported jobs in the real NVFlare simulator | `python -m pytest tests/nvflare_real` | 7 passed: a job moved away from its source configs runs; the external-process client runs; a failing client, a silent client and a client whose script died do not stop the rounds when `min_clients` allows; an unreachable quorum stops the run with `RoundFailure`; a late reply is sent again, not trained again |
+| POC federation, mock model | `nvflare poc prepare -n 2`, `nvflare poc start`, `nvflare job submit -j <exported job>` | completed with the source configs removed; `nvflare job download` returned the checkpoint. With `min_clients: 1`, killing site-2 during round 3 left rounds 3 to 8 with one update each, and the job completed; with every client required, the same kill stopped the job with `RoundFailure` after one retry |
+| Two-machine federation | provisioned server and site-1 on one workstation, site-2 on the other; `smolvla_libero_lora_nvflare_smoke.yaml` exported with `site_prefix: site-`, a round timeout and `batch_size: 16` | completed in 86 s: both clients returned an update in both rounds (mean client loss 2.8156, then 3.0500); checkpoints fetched with `nvflare job download`. At batch size 64, site-2's 24 GB GPU ran out of memory: site-2 reported the error, the server retried once and stopped the run with `RoundFailure` |
 | Mock federation on CPU | `bash scripts/smoke_nvflare.sh` | passed: 2 clients, 2 rounds, checkpoint written and evaluated |
 | Federated training | `decent-vla train --config examples/<config>_smoke.yaml` | all 8 configs completed; see below |
 | LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <config> <checkpoint>` | ran end to end: 10 episodes each, 0% success (SmolVLA 208 s, π0.5 453 s) |
@@ -259,8 +295,9 @@ The evaluations ran `libero_spatial` with one episode per task (10 episodes) on 
 round 2; after 40 local steps per client the policies do not yet solve the tasks, so these runs check that export,
 policy loading, simulation and scoring work, not the success rate.
 
-- **Limitations:** the runs exercise the NVFlare simulator only; the code has not been tested outside it. They use
-  2 clients and 2 rounds; the full-scale numbers in [Expected Results](#expected-results) are from our paper.
+- **Limitations:** outside the simulator, jobs ran on one machine (POC, mock model) and on two machines (SmolVLA
+  LoRA); π0.5 and GR00T ran in the simulator only. The runs use 2 clients and 2 rounds; the full-scale numbers in
+  [Expected Results](#expected-results) are from our paper.
 
 ## Expected Results
 
