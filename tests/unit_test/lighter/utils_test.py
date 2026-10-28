@@ -221,8 +221,7 @@ def test_generate_cert_rejects_duplicate_extra_extensions():
         )
 
 
-def create_folder(tmp_path):
-    tmp_dir = str(tmp_path / "signed_folder")
+def create_folder(tmp_dir):
     for folder in folders:
         os.makedirs(os.path.join(tmp_dir, folder))
         for file in files:
@@ -238,41 +237,41 @@ def tamper_one_file(folder):
 
 
 def update_and_sign_one_folder(folder, pri_key, cert, tmp_path):
-    tmp_dir = str(tmp_path / "updated_folder")
-    os.makedirs(tmp_dir)
+    tmp_dir = tmp_path / "updated"
+    tmp_dir.mkdir()
     new_folder = os.path.join(tmp_dir, "new_folder")
     shutil.move(folder, new_folder)
     with open(os.path.join(tmp_dir, "test_file"), "wt") as f:
         f.write("fail case")
-    server_crt_path = tmp_path / "server.crt"
-    server_crt_path.write_bytes(serialize_cert(cert))
-    sign_folders(tmp_dir, pri_key, str(server_crt_path), max_depth=1)
+    server_crt = tmp_path / "server.crt"
+    server_crt.write_bytes(serialize_cert(cert))
+    sign_folders(tmp_dir, pri_key, server_crt, max_depth=1)
     return tmp_dir
 
 
 def prepare_folders(tmp_path):
     root_cert, client_pri_key, client_cert, server_pri_key, server_cert = get_test_certs()
-    folder = create_folder(tmp_path)
-    client_crt_path = tmp_path / "client.crt"
-    root_ca_path = tmp_path / "root.crt"
-    client_crt_path.write_bytes(serialize_cert(client_cert))
-    root_ca_path.write_bytes(serialize_cert(root_cert))
-    sign_folders(folder, client_pri_key, str(client_crt_path))
-    return folder, str(root_ca_path), server_pri_key, server_cert
+    folder = create_folder(tmp_path / "original")
+    client_crt = tmp_path / "client.crt"
+    root_crt = tmp_path / "root.crt"
+    client_crt.write_bytes(serialize_cert(client_cert))
+    root_crt.write_bytes(serialize_cert(root_cert))
+    sign_folders(folder, client_pri_key, client_crt)
+    return folder, root_crt, server_pri_key, server_cert
 
 
 class TestSignFolder:
     def test_verify_folder(self, tmp_path):
-        folder, root_ca_path, server_pri_key, server_cert = prepare_folders(tmp_path)
-        assert verify_folder_signature(folder, root_ca_path) is True
+        folder, root_crt, _, _ = prepare_folders(tmp_path)
+        assert verify_folder_signature(folder, root_crt) is True
         tamper_one_file(folder)
-        assert verify_folder_signature(folder, root_ca_path) is False
+        assert verify_folder_signature(folder, root_crt) is False
 
     def test_verify_updated_folder(self, tmp_path):
-        folder, root_ca_path, server_pri_key, server_cert = prepare_folders(tmp_path)
-        assert verify_folder_signature(folder, root_ca_path) is True
+        folder, root_crt, server_pri_key, server_cert = prepare_folders(tmp_path)
+        assert verify_folder_signature(folder, root_crt) is True
         folder = update_and_sign_one_folder(folder, server_pri_key, server_cert, tmp_path)
-        assert verify_folder_signature(folder, root_ca_path) is True
+        assert verify_folder_signature(folder, root_crt) is True
 
     def _get_participant(self, name, participants):
         for p in participants:

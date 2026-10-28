@@ -61,7 +61,7 @@ from nvflare.apis.storage import (
 )
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
@@ -1079,7 +1079,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             with engine.new_context() as fl_ctx:
                 job_status = job_runner.abort_before_start(job_id, fl_ctx)
                 if job_status is job_runner.STARTING:
-                    message = f"Job {job_id} is starting; retry abort."
+                    message = f"Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
                     conn.append_error(message, meta=make_meta(MetaStatusValue.ERROR, message))
                     return
                 if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:

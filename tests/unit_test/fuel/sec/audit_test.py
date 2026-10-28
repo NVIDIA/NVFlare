@@ -15,6 +15,7 @@
 import threading
 
 from nvflare.fuel.sec.audit import Auditor, AuditService
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 
 def test_auditor_ignores_events_after_close(tmp_path):
@@ -36,7 +37,7 @@ def test_close_waits_for_admitted_job_event():
 
         def write(self, _line):
             write_entered.set()
-            assert release_write.wait(timeout=1.0)
+            assert release_write.wait(WAIT_TIMEOUT)
 
         def flush(self):
             assert not self.closed
@@ -46,19 +47,14 @@ def test_close_waits_for_admitted_job_event():
 
     auditor = Auditor.__new__(Auditor)
     auditor.audit_file = BlockingFile()
-    auditor._lock = threading.Lock()
+    auditor._lock = ObservedLock()
 
-    writer = threading.Thread(target=auditor.add_job_event, args=("job-1",))
-    writer.start()
-    assert write_entered.wait(timeout=1.0)
-
-    closer = threading.Thread(target=lambda: (auditor.close(), close_finished.set()))
-    closer.start()
-    assert not close_finished.wait(timeout=0.05)
-
-    release_write.set()
-    writer.join(timeout=1.0)
-    closer.join(timeout=1.0)
+    with ThreadGroup(release_write) as workers:
+        workers.start(auditor.add_job_event, "job-1")
+        assert write_entered.wait(WAIT_TIMEOUT)
+        workers.start(lambda: (auditor.close(), close_finished.set()))
+        assert auditor._lock.blocked.wait(WAIT_TIMEOUT), "close never contended with the admitted write"
+        assert not close_finished.is_set()
     assert close_finished.is_set()
     assert auditor.audit_file is None
 

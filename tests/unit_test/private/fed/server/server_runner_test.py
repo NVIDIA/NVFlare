@@ -478,8 +478,14 @@ def test_get_task_cookies_preserve_attempt_for_existing_job_based_clients():
 
 
 @pytest.mark.parametrize("filter_workflow", [None, "filter-replacement-workflow"])
-def test_fresh_task_data_filter_preserves_issued_workflow_for_lost_ack_after_transition(filter_workflow):
+@pytest.mark.parametrize("workflow_storage", ["missing", "sticky", "nonsticky"])
+def test_fresh_task_data_filter_preserves_issued_workflow_for_lost_ack_after_transition(
+    filter_workflow, workflow_storage, caplog
+):
     runner, assignment, fl_ctx = _fenced_runner()
+    # The server registers the active workflow as private/sticky at startup.
+    if workflow_storage != "missing":
+        fl_ctx.set_prop(FLContextKey.WORKFLOW, runner.current_wf.id, private=True, sticky=workflow_storage == "sticky")
     runner._processing_tasks = {}
     runner._processing_tasks_lock = threading.Lock()
     runner.config.task_data_filters = {}
@@ -505,7 +511,11 @@ def test_fresh_task_data_filter_preserves_issued_workflow_for_lost_ack_after_tra
     assert reply is filtered
     assert reply.get_cookie(ReservedHeaderKey.WORKFLOW) == "workflow"
     assert reply.get_task_attempt_id() == assignment.attempt_id
+    assert fl_ctx.get_prop(FLContextKey.WORKFLOW) == "workflow"
+    assert fl_ctx.get_prop_detail(FLContextKey.WORKFLOW)["sticky"] == (workflow_storage == "sticky")
     assert FLContextKey.WORKFLOW not in fl_ctx.get_all_public_props()
+    assert FLContextKey.WORKFLOW not in reply.get_peer_context().get_all_public_props()
+    assert "cannot change to" not in caplog.text
 
     # Both existing job clients and task clients echo the assignment cookie jar.
     # This must retain the original issuing workflow after the server moves on.
@@ -523,6 +533,53 @@ def test_fresh_task_data_filter_preserves_issued_workflow_for_lost_ack_after_tra
     result_filters.assert_called_once()
     assignment.task.result_received_cb.assert_called_once()
     runner.current_wf.controller.communicator.process_submission.assert_not_called()
+
+
+@pytest.mark.parametrize("filter_workflow", [None, "filter-replacement-workflow"])
+@pytest.mark.parametrize("replace_payload", [False, True])
+def test_task_workflow_survives_transition_during_output_filter(filter_workflow, replace_payload, caplog):
+    runner, assignment, initial_ctx = _fenced_runner()
+    manager = initial_ctx.get_prop(ReservedKey.MANAGER)
+    initial_ctx.set_prop(FLContextKey.WORKFLOW, runner.current_wf.id, private=True, sticky=True)
+    fl_ctx = manager.new_context()
+    fl_ctx.set_prop(ReservedKey.ENGINE, MagicMock(spec=ServerEngineSpec), private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+    runner._processing_tasks = {}
+    runner._processing_tasks_lock = threading.Lock()
+    runner.config.task_data_filters = {}
+    runner.config.task_request_interval = 1.0
+    request = Shareable()
+    request.set_peer_context(initial_ctx.get_peer_context())
+    request.set_header(ServerCommandKey.FL_CLIENT, assignment.client)
+    assigned = Shareable({"assigned": True})
+    assigned.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, assignment.attempt_id)
+
+    def filter_task(*_args, **_kwargs):
+        # Filtering runs outside wf_lock, so the next workflow can start here.
+        runner.current_wf = SimpleNamespace(id="next", controller=MagicMock())
+        manager.new_context().set_prop(FLContextKey.WORKFLOW, "next", private=True, sticky=True)
+        filtered = Shareable({"filtered": True}) if replace_payload else assigned
+        filtered.set_cookie_jar({})
+        if filter_workflow is not None:
+            filtered.add_cookie(ReservedHeaderKey.WORKFLOW, filter_workflow)
+        return filtered
+
+    with (
+        patch.object(
+            runner.current_wf.controller.communicator,
+            "process_task_request",
+            return_value=("train", assignment.id, assigned),
+        ),
+        patch("nvflare.private.fed.server.server_runner.apply_filters", side_effect=filter_task),
+        patch("nvflare.private.fed.server.server_runner.add_job_audit_event"),
+    ):
+        reply = GetTaskCommand().process(request, fl_ctx)
+
+    assert reply.get_cookie(ReservedHeaderKey.WORKFLOW) == "workflow"
+    assert reply.get_task_attempt_id() == assignment.attempt_id
+    assert fl_ctx.get_prop(FLContextKey.WORKFLOW) == "next"
+    assert manager.new_context().get_prop(FLContextKey.WORKFLOW) == "next"
+    assert "cannot change to" not in caplog.text
 
 
 def test_missing_required_attempt_does_not_downgrade_to_legacy_unknown_handler():

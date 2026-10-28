@@ -10,6 +10,7 @@ Deployment Guide
    :maxdepth: 1
 
    overview
+   certificate_models
    operation
    containerized_deployment
    slurm_job_launcher
