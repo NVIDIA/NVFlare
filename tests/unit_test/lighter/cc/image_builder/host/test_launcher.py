@@ -516,7 +516,30 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(command.count("pcie-root-port,id=gpu2,bus=pcie.0,chassis=2,slot=2,pref64-reserve=256G"), 1)
         self.assertIn('{"qom-type": "iommufd", "id": "iommufd0"}', command)
 
-    def test_shutdown_signals_only_validated_launcher_state(self):
+    def test_shutdown_requests_powerdown_only_for_validated_launcher_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            delivery = Path(temporary) / "delivery"
+            runtime = Path(temporary) / "run"
+            delivery.mkdir()
+            with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": str(runtime)}):
+                state = runtime_state_path(delivery)
+                state.parent.mkdir()
+                write_json(state, {"launcher_pid": 123, "launcher_start": 456})
+
+                def remove_state(path):
+                    self.assertEqual(path, qmp_socket_path(delivery))
+                    state.unlink()
+
+                with (
+                    patch("cvm.host.launcher._process_start", return_value=456),
+                    patch("cvm.host.launcher.qmp_powerdown", side_effect=remove_state) as powerdown,
+                    patch("cvm.host.launcher.os.kill") as kill,
+                ):
+                    shutdown(delivery)
+                powerdown.assert_called_once_with(qmp_socket_path(delivery))
+                kill.assert_not_called()
+
+    def test_shutdown_signals_validated_launcher_when_qmp_is_unavailable(self):
         with tempfile.TemporaryDirectory() as temporary:
             delivery = Path(temporary) / "delivery"
             runtime = Path(temporary) / "run"
@@ -532,9 +555,11 @@ class LauncherTests(unittest.TestCase):
 
                 with (
                     patch("cvm.host.launcher._process_start", return_value=456),
-                    patch("cvm.host.launcher.os.kill", side_effect=remove_state),
+                    patch("cvm.host.launcher.qmp_powerdown", side_effect=OSError("QMP unavailable")),
+                    patch("cvm.host.launcher.os.kill", side_effect=remove_state) as kill,
                 ):
                     shutdown(delivery)
+                kill.assert_called_once_with(123, signal.SIGTERM)
 
 
 if __name__ == "__main__":

@@ -266,7 +266,14 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
         path.unlink(missing_ok=True)
         require_detached(directory)
         raise BuildError("No CVM is running for this vault directory") from None
-    os.kill(pid, signal.SIGTERM)
+    try:
+        # Ask the validated QEMU instance to power down directly so a normal
+        # operator-requested shutdown remains a successful launcher exit.  A
+        # launcher signal is the fallback for a missing or unresponsive QMP
+        # channel and still owns the bounded cleanup path in run_vm().
+        qmp_powerdown(qmp_socket_path(directory))
+    except (OSError, ValueError, BuildError):
+        os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
