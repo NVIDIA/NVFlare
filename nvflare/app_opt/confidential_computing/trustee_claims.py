@@ -49,6 +49,8 @@ LEGACY_CPU_TEE_ALIASES = {
 def normalize_cpu_tee(cpu_tee):
     """Return the public CPU TEE name while accepting 2.9 upgrade aliases."""
 
+    if not isinstance(cpu_tee, str):
+        return cpu_tee
     return LEGACY_CPU_TEE_ALIASES.get(cpu_tee, cpu_tee)
 
 

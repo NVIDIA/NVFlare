@@ -531,9 +531,11 @@ def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
     try:
         history.mkdir(mode=0o700, exist_ok=True)
         os.chmod(history, 0o700)
-        archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
-        for expired in archives[: max(0, len(archives) - limit + 1)]:
-            expired.unlink()
+        # A host crash can interrupt the copy before the atomic rename. Remove
+        # such incomplete files on the next launch; they are never valid logs.
+        for stale in history.glob(".applog-*.qcow2.tmp"):
+            with contextlib.suppress(OSError):
+                stale.unlink()
         target = history / f"applog-{time.time_ns()}.qcow2"
         temporary = history / ("." + target.name + ".tmp")
         try:
@@ -550,6 +552,11 @@ def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
             shutil.copyfile(applog, temporary)
         os.chmod(temporary, 0o600)
         os.replace(temporary, target)
+        # Retire an old archive only after the new copy is durable at its final
+        # name. A failed copy therefore never consumes retained history.
+        archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
+        for expired in archives[: max(0, len(archives) - limit)]:
+            expired.unlink()
     except (OSError, subprocess.CalledProcessError):
         if temporary is not None:
             with contextlib.suppress(OSError):

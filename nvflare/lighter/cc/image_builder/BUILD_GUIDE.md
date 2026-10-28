@@ -469,6 +469,12 @@ platform: check the report signature and endorsements, challenge binding,
 collateral validity, TCB status and guest policy. A decoded report alone is not
 approval. Put these ten fields in `inputs/approved-tcb-references.json`:
 
+CVM Builder deliberately requires SNP attestation report version 3 or later for
+production finalization. Version 2 does not identify the CPU generation needed
+to apply generation-specific TCB policy, including the Trustee v0.22 Turin
+restriction below. Upgrade the host firmware if it still emits version 2
+reports; CVM Builder does not accept those reports as approval evidence.
+
 | Reference fields | Required types |
 |---|---|
 | `snp_bootloader`, `snp_microcode`, `snp_snp_svn`, `snp_tee_svn` | Nonempty lists of approved integers from 0 through 255 |

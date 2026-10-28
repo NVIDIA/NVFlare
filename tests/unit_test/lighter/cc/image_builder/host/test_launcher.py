@@ -91,13 +91,35 @@ class LauncherTests(unittest.TestCase):
             directory = Path(temporary)
             applog = directory / "applog.qcow2"
             applog.write_bytes(b"public log")
+            history = directory / "applog-history"
+            history.mkdir()
+            retained = []
+            for index in range(3):
+                archive = history / f"applog-{index}.qcow2"
+                archive.write_bytes(f"old-{index}".encode())
+                retained.append(archive)
             with (
                 patch("cvm.host.launcher.subprocess.run", side_effect=subprocess.CalledProcessError(1, "cp")),
                 patch("cvm.host.launcher.shutil.copyfile", side_effect=OSError("disk full")),
                 self.assertWarnsRegex(RuntimeWarning, "continuing launch"),
             ):
                 self.assertIsNone(preserve_applog(directory, applog))
-            self.assertEqual(list((directory / "applog-history").iterdir()), [])
+            self.assertEqual(sorted(history.iterdir()), retained)
+
+    def test_applog_copy_removes_partial_archive_left_by_a_crash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            history = directory / "applog-history"
+            history.mkdir()
+            stale = history / ".applog-1.qcow2.tmp"
+            stale.write_bytes(b"partial")
+
+            target = preserve_applog(directory, applog)
+
+            self.assertFalse(stale.exists())
+            self.assertEqual(target.read_bytes(), b"public log")
 
     def test_applog_history_setup_failure_does_not_block_launch(self):
         with tempfile.TemporaryDirectory() as temporary:

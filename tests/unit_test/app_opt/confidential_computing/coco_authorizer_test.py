@@ -282,6 +282,12 @@ def test_malformed_workload_constraints_fail_at_construction(material, pins):
         generate(workload_constraints=pins)
 
 
+def test_unhashable_cpu_tee_constraint_uses_configuration_error(material):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="Invalid workload cpu_tee pin"):
+        generate(workload_constraints={"site-1": {"cpu_tee": ["snp"]}})
+
+
 @pytest.mark.parametrize("alias,canonical", [("tdx", "intel_tdx"), ("snp", "amd_sev_snp")])
 def test_legacy_cpu_tee_constraint_alias_is_normalized_at_construction(material, alias, canonical):
     _, _, verifier, _, _ = material

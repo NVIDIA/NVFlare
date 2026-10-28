@@ -112,7 +112,10 @@ PCS/PCCS service's credentials and platform registration, and a signed-quote
 smoke test. Then [discover and approve TCB references](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references).
 An active QGS service or a local TDREPORT alone does not establish working remote attestation.
 For SNP, the same section documents firmware enablement, KVM/device/IOMMU
-preflight, KDS throttling, and optional installed-GPU screening.
+preflight, KDS throttling, and optional installed-GPU screening. Production SNP
+finalization requires attestation report version 3 or later so CPU-generation
+specific TCB policy can be enforced; hosts that emit version 2 reports require a
+firmware update before they can be qualified.
 
 Install the builder requirements with pip or uv:
 
