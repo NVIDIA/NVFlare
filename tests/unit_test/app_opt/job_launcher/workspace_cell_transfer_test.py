@@ -1020,9 +1020,11 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(
         job_cert_pem="cert" if job_override else None,
         job_key_pem="key" if job_override else None,
     )
+    ConfigService.add_section("existing", {"marker": "kept"})
     job_cell = None
     try:
         download_workspace(args, secure_mode=job_override)
+        assert ConfigService.get_section("existing") == {"marker": "kept"}
         # Normal startup initialization still follows the download. Repeating it
         # cannot repair a CommConfigurator that cached the bootstrap defaults.
         ConfigService.initialize(section_files={}, config_path=[args.workspace])
