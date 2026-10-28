@@ -165,26 +165,40 @@ continue to use their configured launcher, usually process mode.
 GPU Assignment
 --------------
 
-The Docker launcher assigns distinct GPUs to concurrent jobs with the default
-``PassthroughResourceManager``. Each job requests its count through
-``resource_spec[site].num_of_gpus``. The launcher selects unused devices and waits
-when they are occupied; waiting jobs can be aborted normally.
-
-GPU jobs require a device pool in the Docker runtime config:
+GPU clients use the same GPU capacity configuration as process mode. For example,
+set the client's GPU count in the provisioning project:
 
 .. code-block:: yaml
 
-  job_launcher:
-    gpu_ids: [0, 1, 2, 3]
+  - name: site-1
+    type: client
+    org: nvidia
+    capacity:
+      num_of_gpus: 2
 
-List the device indices or GPU UUIDs from the Docker daemon's host that this
-parent may use. CPU-only deployments can omit ``gpu_ids``. The parent does not
-need GPU access or run discovery containers. The resource manager and resource
-consumer configuration does not need to change. The launcher remembers each job's
-assigned IDs and releases them when its container exits. Allocations are held in
-parent memory: stop existing job containers before restarting the parent. Use
-disjoint pools for parents sharing a host. GPU assignment does not coordinate
-with independently launched workloads.
+``nvflare deploy prepare`` preserves the client's existing ``GPUResourceManager``
+capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Each job requests
+its GPU count through ``resource_spec[site].num_of_gpus``. The manager reserves IDs
+before launch, defers jobs when capacity is occupied, and uses its existing
+cancellation, expiration, and job-completion cleanup.
+
+To restrict a client to a specific subset, use the process-mode environment mask
+when starting its Docker parent:
+
+.. code-block:: shell
+
+  CUDA_VISIBLE_DEVICES=2,3 bash startup/start_docker.sh
+
+Without a mask, the configured GPU count selects indices starting at zero.
+Exclusive mode reserves each device's full budget, using one bookkeeping unit
+when no memory budget was configured. Process mode keeps its existing
+memory-sharing policy unless explicitly configured for exclusive allocation.
+
+Docker receives the reserved IDs through ``DeviceIDs``. The existing no-op
+``PassthroughResourceConsumer`` replaces the process-mode consumer, so the parent
+does not query GPUs or change ``CUDA_VISIBLE_DEVICES``. Allocations remain in
+client memory: stop job containers before restarting the parent, and configure
+disjoint pools for clients sharing a host.
 
 
 Mounting Site Data into Job Containers

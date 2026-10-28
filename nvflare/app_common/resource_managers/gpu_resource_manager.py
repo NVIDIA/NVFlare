@@ -21,7 +21,7 @@ from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_t
 CUDA_VISIBLE_DEVICES = "CUDA_VISIBLE_DEVICES"
 
 
-def _get_cuda_visible_device_indices(host_gpu_ids: list[int]) -> Optional[list[int]]:
+def _get_cuda_visible_device_indices(host_gpu_ids: Optional[list[int]] = None) -> Optional[list[int]]:
     """Gets visible nvidia-smi GPU indices from CUDA_VISIBLE_DEVICES.
 
     NVIDIA CUDA also supports GPU UUID and MIG identifiers in CUDA_VISIBLE_DEVICES. Those are not interpreted here
@@ -45,7 +45,7 @@ def _get_cuda_visible_device_indices(host_gpu_ids: list[int]) -> Optional[list[i
             gpu_id = int(item)
         except ValueError:
             return None
-        if gpu_id not in host_gpu_ids:
+        if gpu_id < 0 or (host_gpu_ids is not None and gpu_id not in host_gpu_ids):
             break
         if gpu_id not in seen:
             gpu_ids.append(gpu_id)
@@ -79,6 +79,7 @@ class GPUResourceManager(AutoCleanResourceManager):
         gpu_mem_key: str = "mem_per_gpu_in_GiB",
         expiration_period: Union[int, float] = 30,
         ignore_host: bool = False,
+        exclusive: bool = False,
     ):
         """Resource manager for GPUs.
 
@@ -93,6 +94,7 @@ class GPUResourceManager(AutoCleanResourceManager):
             ignore_host: Whether to skip validation against GPUs present on the local host. Set to True in
                 environments where the NVFlare process runs on a node without GPUs (for example, some
                 Kubernetes deployments) but GPU resources are managed externally.
+            exclusive: Reserve the full configured memory budget per device, so jobs cannot share a GPU.
         """
         if not isinstance(num_of_gpus, int):
             raise ValueError(f"num_of_gpus should be of type int, but got {type(num_of_gpus)}.")
@@ -111,9 +113,19 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         if not isinstance(ignore_host, bool):
             raise ValueError(f"ignore_host should be of type bool, but got {type(ignore_host)}.")
+        if not isinstance(exclusive, bool):
+            raise ValueError("exclusive must be a bool")
+        self.exclusive = exclusive
+        self.mem_per_gpu_in_GiB = (mem_per_gpu_in_GiB or 1) if exclusive else mem_per_gpu_in_GiB
 
         resource_gpu_ids = list(range(num_of_gpus))
-        if not ignore_host:
+        if ignore_host:
+            visible_gpu_ids = _get_cuda_visible_device_indices()
+            if visible_gpu_ids is not None:
+                if num_of_gpus > len(visible_gpu_ids):
+                    raise ValueError("num_of_gpus exceeds the CUDA_VISIBLE_DEVICES pool")
+                resource_gpu_ids = visible_gpu_ids[:num_of_gpus]
+        else:
             if num_of_gpus > 0:
                 host_gpu_ids = get_host_gpu_ids()
                 managed_host_gpu_ids = _get_managed_host_gpu_ids(host_gpu_ids)
@@ -141,7 +153,7 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         self.num_gpu_key = num_gpu_key
         self.gpu_mem_key = gpu_mem_key
-        resources = {i: GPUResource(gpu_id=i, gpu_memory=mem_per_gpu_in_GiB) for i in resource_gpu_ids}
+        resources = {i: GPUResource(gpu_id=i, gpu_memory=self.mem_per_gpu_in_GiB) for i in resource_gpu_ids}
 
         super().__init__(resources=resources, expiration_period=expiration_period)
 
@@ -158,7 +170,7 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         is_resource_enough = False
         num_gpu = resource_requirement[self.num_gpu_key]
-        gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
+        gpu_mem = self.mem_per_gpu_in_GiB if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
         if num_gpu == 0:
             return True
 
@@ -181,7 +193,7 @@ class GPUResourceManager(AutoCleanResourceManager):
 
         reserved_resources = {}
         num_gpu = resource_requirement[self.num_gpu_key]
-        gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
+        gpu_mem = self.mem_per_gpu_in_GiB if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
         if num_gpu == 0:
             return reserved_resources
 

@@ -32,6 +32,7 @@ from nvflare.tool.deploy.deploy_common import (
     DOCKER_START_SH,
     FED_CLIENT_JSON,
     FED_SERVER_JSON,
+    GPU_RESOURCE_MANAGER,
     RESOURCES_JSON_DEFAULT,
     ROLE_SERVER,
     RUNTIME_DOCKER,
@@ -40,6 +41,7 @@ from nvflare.tool.deploy.deploy_common import (
     _ensure_study_runtime_template,
     _fail,
     _internal_resources,
+    _load_json_file,
     _load_or_default_comm_config,
     _mapping,
     _optional_mapping,
@@ -64,7 +66,7 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_allowed_keys(parent, {"docker_image", "network", "internal_connection_security"}, "parent")
     _validate_allowed_keys(
         job_launcher,
-        {"default_python_path", "default_job_env", "default_job_container_kwargs", "gpu_ids"},
+        {"default_python_path", "default_job_env", "default_job_container_kwargs"},
         "job_launcher",
     )
     _required_str(parent, "docker_image", "parent")
@@ -79,8 +81,6 @@ def validate_config(config: dict[str, Any]) -> None:
         _required_str(parent, "network", "parent")
     _optional_str(job_launcher, "default_python_path", "job_launcher")
     _optional_mapping(job_launcher, "default_job_env", "job_launcher")
-    if "gpu_ids" in job_launcher and not isinstance(job_launcher["gpu_ids"], list):
-        _fail("INVALID_CONFIG", "job_launcher.gpu_ids must be a list.", "Specify GPU indices or UUIDs for GPU jobs.")
     default_kwargs = _optional_mapping(job_launcher, "default_job_container_kwargs", "job_launcher")
     if default_kwargs:
         reserved = DOCKER_RESERVED_KWARGS & set(default_kwargs)
@@ -107,9 +107,20 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
         "default_job_container_kwargs": job_launcher.get("default_job_container_kwargs") or {},
         "default_job_env": job_launcher.get("default_job_env") or {},
     }
-    if "gpu_ids" in job_launcher:
-        launcher_args["gpu_ids"] = job_launcher["gpu_ids"]
-    _patch_resources(kit_info.kit_dir, "docker_launcher", launcher_path, launcher_args)
+    resource_manager = None
+    resource_consumer = None
+    if kit_info.role != ROLE_SERVER:
+        resources = _load_json_file(kit_info.kit_dir / "local" / RESOURCES_JSON_DEFAULT, RESOURCES_JSON_DEFAULT)
+        for component in resources.get("components", []):
+            if component.get("id") == "resource_manager" and component.get("path") == GPU_RESOURCE_MANAGER:
+                args = component.get("args") or {}
+                if args.get("num_of_gpus", 0) > 0:
+                    resource_manager = {**component, "args": {**args, "ignore_host": True, "exclusive": True}}
+                    resource_consumer = "nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer"
+                break
+    _patch_resources(
+        kit_info.kit_dir, "docker_launcher", launcher_path, launcher_args, resource_manager, resource_consumer
+    )
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, WORKSPACE_MOUNT_PATH)
     _patch_comm_config_for_docker(kit_info.kit_dir, connection_security)

@@ -16,7 +16,6 @@ import logging
 import os
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -110,7 +109,6 @@ def _make_launcher(cls=None, workspace="/ws", **kwargs):
     if cls is None:
         cls = ClientDockerJobLauncher
 
-    kwargs.setdefault("gpu_ids", [0, 1, 2, 3])
     dc = _make_docker_client()
     with patch("docker.from_env", return_value=dc):
         launcher = cls.__new__(cls)
@@ -299,14 +297,12 @@ class TestDockerJobHandleTerminalState:
         dc.containers.get.side_effect = _NotFound()
         container = MagicMock()
         container.wait.return_value = {"StatusCode": 0}
-        on_exit = MagicMock()
-        h = _make_handle(docker_client=dc, container=container, watch_exit=True, on_exit=on_exit)
+        h = _make_handle(docker_client=dc, container=container, watch_exit=True)
 
         h.wait()
 
         assert h.terminal_state == JobReturnCode.SUCCESS
         assert h.poll() == JobReturnCode.SUCCESS
-        on_exit.assert_called_once()
 
     def test_auto_removed_container_is_unknown_until_wait_watcher_finishes(self):
         dc = _make_docker_client()
@@ -566,7 +562,7 @@ def _make_fl_ctx(
     num_of_gpus=None,
     workspace_obj=None,
     secure_mode=False,
-    job_handle_callback=None,
+    allocated_resources=None,
 ):
     if workspace_obj is None:
         workspace_obj = _make_workspace_obj()
@@ -587,7 +583,7 @@ def _make_fl_ctx(
         FLContextKey.WORKSPACE_OBJECT: workspace_obj,
         FLContextKey.ARGS: SimpleNamespace(set=set_list) if set_list is not None else None,
         FLContextKey.SECURE_MODE: secure_mode,
-        FLContextKey.JOB_HANDLE_CALLBACK: job_handle_callback,
+        FLContextKey.ALLOCATED_RESOURCES: allocated_resources,
     }.get(key)
 
     return fl_ctx, job_args
@@ -611,129 +607,6 @@ def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resourc
 
 
 class TestDockerJobLauncherLaunchJob:
-    def test_gpu_jobs_require_explicit_pool_but_cpu_jobs_do_not(self):
-        launcher = _make_launcher(gpu_ids=None)
-        dc = launcher._docker_client
-        fl_ctx, _ = _make_fl_ctx()
-        with pytest.raises(RuntimeError, match="GPU jobs require gpu_ids"):
-            launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), fl_ctx)
-        dc.containers.run.assert_not_called()
-        dc.containers.run.return_value = _make_container("running")
-        dc.containers.get.return_value = _make_container("running")
-        launcher.launch_job(_make_job_meta(), fl_ctx)
-        dc.containers.run.assert_called_once()
-
-    @pytest.mark.parametrize("completion", ["poll", "wait", "terminate"])
-    def test_passthrough_jobs_get_distinct_devices_and_reuse_finished_devices(self, completion):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        containers = []
-
-        def run(image, **kwargs):
-            container = _make_container("running")
-            container.id = kwargs["name"]
-            container.attrs["HostConfig"] = {"DeviceRequests": kwargs["device_requests"]}
-            containers.append(container)
-            return container
-
-        dc.containers.run.side_effect = run
-        dc.containers.get.side_effect = lambda container_id: next(c for c in containers if c.id == container_id)
-        handles = []
-        with patch.object(DockerJobHandle, "_start_exit_watcher"):
-            for job_id, count in [("job-a", 2), ("job-b", 1)]:
-                fl_ctx, _ = _make_fl_ctx()
-                handles.append(
-                    launcher.launch_job(_make_job_meta(job_id=job_id, docker_spec={"num_of_gpus": count}), fl_ctx)
-                )
-            assert [c.attrs["HostConfig"]["DeviceRequests"][0]["DeviceIDs"] for c in containers] == [["0", "1"], ["2"]]
-            if completion != "terminate":
-                containers[0].status = "exited"
-            getattr(handles[0], completion)()
-            fl_ctx, _ = _make_fl_ctx()
-            launcher.launch_job(_make_job_meta(job_id="job-c", docker_spec={"num_of_gpus": 2}), fl_ctx)
-        assert containers[2].attrs["HostConfig"]["DeviceRequests"][0]["DeviceIDs"] == ["0", "1"]
-        dc.containers.list.assert_not_called()
-
-    def test_waiting_for_gpu_capacity_can_be_aborted(self):
-        launcher = _make_launcher(gpu_ids=[0])
-        dc = launcher._docker_client
-        dc.containers.run.return_value = _make_container("running")
-        dc.containers.get.return_value = _make_container("running")
-        first_ctx, _ = _make_fl_ctx()
-        with patch.object(DockerJobHandle, "_start_exit_watcher"):
-            launcher.launch_job(_make_job_meta(job_id="job-a", docker_spec={"num_of_gpus": 1}), first_ctx)
-        dc.containers.run.reset_mock()
-        dc.containers.get.reset_mock()
-
-        def abort_on_wait(handle):
-            handle._launch_cancelled.wait = lambda **kwargs: handle.terminate()
-
-        fl_ctx, _ = _make_fl_ctx(job_handle_callback=abort_on_wait)
-        handle = launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), fl_ctx)
-
-        assert handle.poll() == JobReturnCode.ABORTED
-        dc.containers.run.assert_not_called()
-        dc.containers.get.assert_not_called()
-
-    def test_failed_container_creation_releases_gpu_assignment(self):
-        launcher = _make_launcher(gpu_ids=[0])
-        dc = launcher._docker_client
-        dc.containers.run.side_effect = [_APIError("creation failed"), _make_container("running")]
-        dc.containers.get.return_value = _make_container("running")
-        fl_ctx, _ = _make_fl_ctx()
-        with pytest.raises(RuntimeError, match="creation failed"):
-            launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), fl_ctx)
-        assert launcher._gpu_allocations == {}
-        launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), fl_ctx)
-        assert dc.containers.run.call_args.kwargs["device_requests"][0]["DeviceIDs"] == ["0"]
-
-    def test_gpu_pool_limits_assignment_and_rejects_oversized_job(self):
-        launcher = _make_launcher(gpu_ids=[1, 3])
-        dc = launcher._docker_client
-        dc.containers.run.return_value = _make_container("running")
-        dc.containers.get.return_value = _make_container("running")
-        fl_ctx, _ = _make_fl_ctx()
-        launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 2}), fl_ctx)
-        assert dc.containers.run.call_args.kwargs["device_requests"][0]["DeviceIDs"] == ["1", "3"]
-        with pytest.raises(RuntimeError, match="requests 3 GPUs.*pool contains 2"):
-            launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 3}), fl_ctx)
-
-    def test_concurrent_gpu_selection_and_creation_are_atomic(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        containers = []
-        first_creating = threading.Event()
-        finish_first = threading.Event()
-
-        def run(image, **kwargs):
-            if not containers:
-                first_creating.set()
-                assert finish_first.wait(timeout=3)
-            container = _make_container("running")
-            container.id = kwargs["name"]
-            container.attrs["HostConfig"] = {"DeviceRequests": kwargs["device_requests"]}
-            containers.append(container)
-            return container
-
-        dc.containers.run.side_effect = run
-        dc.containers.get.side_effect = lambda container_id: next(c for c in containers if c.id == container_id)
-        with patch.object(DockerJobHandle, "_start_exit_watcher"), ThreadPoolExecutor(max_workers=2) as executor:
-            first_ctx, _ = _make_fl_ctx()
-            first = executor.submit(
-                launcher.launch_job, _make_job_meta(job_id="job-a", docker_spec={"num_of_gpus": 1}), first_ctx
-            )
-            try:
-                assert first_creating.wait(timeout=3)
-                second_ctx, _ = _make_fl_ctx()
-                second = executor.submit(
-                    launcher.launch_job, _make_job_meta(job_id="job-b", docker_spec={"num_of_gpus": 1}), second_ctx
-                )
-            finally:
-                finish_first.set()
-            first.result(timeout=3)
-            second.result(timeout=3)
-        assert {tuple(c.attrs["HostConfig"]["DeviceRequests"][0]["DeviceIDs"]) for c in containers} == {("0",), ("1",)}
-
     def test_launch_raises_if_image_missing_for_configured_site(self):
         launcher = _make_launcher()
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
@@ -1275,13 +1148,13 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1", allocated_resources={1: 1, 3: 1})
         job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": 2})
         launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         device_requests = call_kwargs.get("device_requests")
-        assert device_requests == [{"Count": 0, "DeviceIDs": ["0", "1"], "Capabilities": [["gpu"]]}]
+        assert device_requests == [{"DeviceIDs": ["1", "3"], "Capabilities": [["gpu"]]}]
 
     def test_launch_rejects_job_controlled_device_requests(self):
         launcher = _make_launcher()
@@ -1364,12 +1237,12 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1", allocated_resources={1: 1, 3: 1})
         job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": 2})
         launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        assert call_kwargs.get("device_requests") == [{"Count": 0, "DeviceIDs": ["0", "1"], "Capabilities": [["gpu"]]}]
+        assert call_kwargs.get("device_requests") == [{"DeviceIDs": ["1", "3"], "Capabilities": [["gpu"]]}]
 
     def test_launch_num_of_gpus_mixed_with_mode_keys_ignored(self):
         """num_of_gpus at the site level alongside mode keys (nested format) is treated as nested —
@@ -1400,13 +1273,20 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1", allocated_resources={1: 1, 3: 1})
         job_meta = _make_job_meta(site_name="site-1")
         job_meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
         launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        assert call_kwargs.get("device_requests") == [{"Count": 0, "DeviceIDs": ["0", "1"], "Capabilities": [["gpu"]]}]
+        assert call_kwargs.get("device_requests") == [{"DeviceIDs": ["1", "3"], "Capabilities": [["gpu"]]}]
+
+    def test_launch_rejects_gpu_request_without_allocation(self):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="matching GPUResourceManager allocation"):
+            launcher.launch_job(_make_job_meta(docker_spec={"num_of_gpus": 1}), fl_ctx)
+        launcher._docker_client.containers.run.assert_not_called()
 
     def test_launch_portable_cpu_and_memory(self):
         launcher = _make_launcher(default_job_container_kwargs={"nano_cpus": 1, "mem_limit": 1})
@@ -1814,12 +1694,10 @@ class TestDockerJobLauncherStudyRuntime:
         )
         launcher, dc = self._make_v2_launcher(tmp_path)
 
-        fl_ctx, _ = _make_fl_ctx()
+        fl_ctx, _ = _make_fl_ctx(allocated_resources={3: 1})
         launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 1}), fl_ctx)
 
-        assert dc.containers.run.call_args[1]["device_requests"] == [
-            {"Count": 0, "DeviceIDs": ["0"], "Capabilities": [["gpu"]]}
-        ]
+        assert dc.containers.run.call_args[1]["device_requests"] == [{"DeviceIDs": ["3"], "Capabilities": [["gpu"]]}]
 
     def test_explicit_zero_gpus_drops_study_device_requests(self, tmp_path):
         self._write_study_runtime(
@@ -1839,7 +1717,7 @@ class TestDockerJobLauncherStudyRuntime:
 
         assert "device_requests" not in dc.containers.run.call_args[1]
 
-    def test_unspecified_job_gpus_keep_study_device_requests(self, tmp_path):
+    def test_unspecified_job_gpus_cannot_bypass_resource_manager(self, tmp_path):
         self._write_study_runtime(
             tmp_path,
             "format_version: 2\n"
@@ -1853,11 +1731,9 @@ class TestDockerJobLauncherStudyRuntime:
         launcher, dc = self._make_v2_launcher(tmp_path)
 
         fl_ctx, _ = _make_fl_ctx()
-        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
-
-        assert dc.containers.run.call_args[1]["device_requests"] == [
-            {"Count": 0, "DeviceIDs": ["0", "1", "2", "3"], "Capabilities": [["gpu"]]}
-        ]
+        with pytest.raises(RuntimeError, match="request GPUs through resource_spec"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
 
     def test_docker_kwargs_reserved_key_rejected(self, tmp_path):
         self._write_study_runtime(

@@ -24,6 +24,24 @@ NUM_GPU_KEY = "num_of_gpus"
 GPU_MEM_KEY = "mem_per_gpu_in_GiB"
 
 
+def test_exclusive_pool_uses_process_mode_mask_without_host_access(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,3,5,7")
+    manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
+    ctx = FLContext()
+    first_req = {NUM_GPU_KEY: 2}
+    enough, first_token = manager.check_resources(first_req, ctx)
+    assert enough
+    first = manager.allocate_resources(first_req, first_token, ctx)
+    assert first == {1: 1, 3: 1}
+    enough, second_token = manager.check_resources({NUM_GPU_KEY: 1}, ctx)
+    assert enough
+    second = manager.allocate_resources({NUM_GPU_KEY: 1}, second_token, ctx)
+    assert second == {5: 1}
+    assert manager.check_resources(first_req, ctx) == (False, "")
+    manager.free_resources(first, first_token, ctx)
+    assert manager.check_resources(first_req, ctx)[0]
+
+
 class MockEngine:
     def __init__(self, run_name="exp1"):
         self.fl_ctx_mgr = FLContextManager(

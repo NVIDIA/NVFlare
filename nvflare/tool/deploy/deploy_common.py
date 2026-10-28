@@ -195,7 +195,14 @@ def _port_from_target(target: str | None) -> int | None:
         return None
 
 
-def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launcher_args: dict[str, Any]) -> None:
+def _patch_resources(
+    kit_dir: Path,
+    launcher_id: str,
+    launcher_path: str,
+    launcher_args: dict[str, Any],
+    resource_manager: dict[str, Any] | None = None,
+    resource_consumer: str | None = None,
+) -> None:
     local_dir = kit_dir / "local"
     default_path = local_dir / RESOURCES_JSON_DEFAULT
     resources = _load_json_file(default_path, RESOURCES_JSON_DEFAULT)
@@ -209,12 +216,15 @@ def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launch
     ]
     components[:] = [c for c in components if c.get("id") != "resource_manager"]
     components.append(
-        {
+        resource_manager
+        or {
             "id": "resource_manager",
             "path": PASSTHROUGH_RESOURCE_MANAGER,
             "args": {},
         }
     )
+    if resource_consumer:
+        components.append({"id": "resource_consumer", "path": resource_consumer, "args": {}})
     components.append({"id": launcher_id, "path": launcher_path, "args": launcher_args})
     _write_resources(local_dir, resources)
 
@@ -233,7 +243,7 @@ def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id:
             component, BUILTIN_RESOURCE_MANAGER_PATHS
         ):
             _warn(
-                "deploy prepare replaces component 'resource_manager' with PassthroughResourceManager; "
+                "deploy prepare replaces component 'resource_manager' with generated runtime configuration; "
                 "existing resource manager path/args will not be used by the prepared runtime."
             )
         elif component_id in LAUNCHER_IDS and _launcher_replacement_discards_config(
