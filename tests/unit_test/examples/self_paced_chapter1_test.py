@@ -303,3 +303,20 @@ def test_structure_per_site_variant_exports_both_sites(lesson, tmp_path):
         config = json.loads((folder / app / "config/config_fed_client.json").read_text())
         args = config["executors"][0]["executor"]["args"]["task_script_args"]
         assert args[args.index("--batch_size") + 1] == batch_size
+
+
+@pytest.mark.parametrize("lesson", ["server"], indirect=True)
+def test_median_aggregator_requires_accuracy_metric(lesson):
+    from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+
+    aggregator = lesson("aggregator").MedianAggregator()
+    with pytest.raises(ValueError, match="accuracy"):
+        aggregator.accept_model(FLModel(params={"w": 1.0}, params_type=ParamsType.FULL))
+
+
+@pytest.mark.parametrize("lesson", ["mlflow"], indirect=True)
+def test_mlflow_store_is_beside_job_script(lesson, tmp_path):
+    module = lesson("job")
+    module.create_recipe().export(str(tmp_path / "exported"))
+    text = "".join(path.read_text() for path in (tmp_path / "exported").rglob("*.json"))
+    assert str(Path(module.__file__).resolve().parent / "mlflow.db") in text

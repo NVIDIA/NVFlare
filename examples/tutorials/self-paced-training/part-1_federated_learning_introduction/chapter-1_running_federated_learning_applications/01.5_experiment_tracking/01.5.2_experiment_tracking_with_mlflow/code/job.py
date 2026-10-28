@@ -33,7 +33,7 @@ def create_recipe(num_rounds=20):
     )
     add_final_global_evaluation(recipe)
     # Keep this lesson's local store beside its job script.
-    tracking_uri = "sqlite:///" + str(Path("mlflow.db").resolve())
+    tracking_uri = "sqlite:///" + str(Path(__file__).resolve().parent / "mlflow.db")
     add_experiment_tracking(recipe, "mlflow", {"tracking_uri": tracking_uri})
     return recipe
 

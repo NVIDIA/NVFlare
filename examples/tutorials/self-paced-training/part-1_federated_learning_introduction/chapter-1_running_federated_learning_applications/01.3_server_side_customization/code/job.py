@@ -22,6 +22,8 @@ from model import create_model
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation
 
+NUM_CLIENTS = 3
+
 
 def create_recipe(num_rounds=5, stop_accuracy=80.0, patience=2, aggregation="median"):
     if aggregation not in ("median", "fedavg"):
@@ -29,7 +31,7 @@ def create_recipe(num_rounds=5, stop_accuracy=80.0, patience=2, aggregation="med
     recipe = FedAvgRecipe(
         name="chapter1-custom-server" if aggregation == "median" else "chapter1-custom-server-fedavg",
         model=create_model(),
-        min_clients=3,
+        min_clients=NUM_CLIENTS,
         num_rounds=num_rounds,
         train_script="client.py",
         aggregator=MedianAggregator() if aggregation == "median" else None,
@@ -51,7 +53,7 @@ def main():
     parser.add_argument("--aggregation", choices=("median", "fedavg"), default="median")
     args = parser.parse_args()
     recipe = create_recipe(args.num_rounds, args.stop_accuracy, args.patience, args.aggregation)
-    run = recipe.execute(SimEnv(num_clients=3, log_config="progress"))
+    run = recipe.execute(SimEnv(num_clients=NUM_CLIENTS, log_config="progress"))
     print("Results:", run.get_result())
 
 

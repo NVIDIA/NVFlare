@@ -35,6 +35,8 @@ class MedianAggregator(ModelAggregator):
         """Collect one client's trained model for the current round."""
         if model.params_type != ParamsType.FULL:
             raise ValueError("This example expects full model weights.")
+        if not model.metrics or "accuracy" not in model.metrics:
+            raise ValueError("This example expects an 'accuracy' metric from every client.")
         self.models.append(model)
 
     def aggregate_model(self) -> FLModel:
