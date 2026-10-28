@@ -20,7 +20,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import psutil
 import pytest
@@ -129,13 +129,16 @@ def _fake_step(
     key_src=None,
     command_log=None,
     exit_code=None,
+    sleep=None,
 ):
     fake_step = tmp_path / "step"
     fake_step.write_text(
         "\n".join(
             [
                 "#!/usr/bin/env python3",
-                "import json, os, shutil, sys",
+                "import json, os, shutil, sys, time",
+                "if os.environ.get('NVFLARE_TEST_STEP_SLEEP'):",
+                "    time.sleep(float(os.environ['NVFLARE_TEST_STEP_SLEEP']))",
                 "if os.environ.get('NVFLARE_TEST_STEP_EXIT'):",
                 "    raise SystemExit(int(os.environ['NVFLARE_TEST_STEP_EXIT']))",
                 "if os.environ.get('NVFLARE_TEST_STEP_COMMAND_LOG'):",
@@ -159,6 +162,8 @@ def _fake_step(
         monkeypatch.setenv("NVFLARE_TEST_STEP_COMMAND_LOG", str(command_log))
     if exit_code is not None:
         monkeypatch.setenv("NVFLARE_TEST_STEP_EXIT", str(exit_code))
+    if sleep is not None:
+        monkeypatch.setenv("NVFLARE_TEST_STEP_SLEEP", str(sleep))
     return fake_step
 
 
@@ -597,23 +602,49 @@ def test_step_ca_source_rejects_non_finite_command_timeout(value):
         )
 
 
-@pytest.mark.parametrize(
-    "cleanup_error", [None, psutil.NoSuchProcess(123), psutil.AccessDenied(123), PermissionError()]
-)
-def test_step_ca_source_preserves_timeout_during_cleanup(monkeypatch, cleanup_error):
-    process = Mock(pid=123)
-    process.wait.side_effect = [subprocess.TimeoutExpired(["step"], 0.01), 0]
-    inspection = Mock()
-    inspection.children.return_value = []
-    inspection.children.side_effect = cleanup_error
+def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
+    _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
+    fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
+
+    with pytest.raises(AdminCertProviderError, match="timed out"):
+        obtain_step_ca_admin_cert_files(
+            config={
+                "ca_url": "https://step-ca.example.com",
+                "provisioner": "nvflare-admin-oidc",
+                "step_bin": str(fake_step),
+                "command_timeout": 0.01,
+            },
+            root_ca_file=str(root_ca_path),
+        )
+
+
+def test_step_ca_timeout_kills_login_child_before_parent(monkeypatch):
+    timeout = subprocess.TimeoutExpired(["step"], 0.01)
+    process = MagicMock(pid=123)
+    process.__enter__.return_value = process
+    process.communicate.side_effect = timeout
+
+    def wait(timeout=None):
+        if timeout is not None:
+            raise subprocess.TimeoutExpired(["step"], timeout)
+        return 0
+
+    process.wait.side_effect = wait
+    killed = []
+    child = Mock()
+    child.kill.side_effect = lambda: killed.append("child")
+    process.kill.side_effect = lambda: killed.append("parent")
+    root = Mock()
+    root.children.return_value = [child]
     monkeypatch.setattr(subprocess, "Popen", Mock(return_value=process))
-    monkeypatch.setattr(psutil, "Process", Mock(return_value=inspection))
+    monkeypatch.setattr(psutil, "Process", Mock(return_value=root))
+    monkeypatch.setattr(psutil, "wait_procs", Mock())
 
     with pytest.raises(AdminCertProviderError, match="timed out after 0.01 seconds"):
         _run_step(["step"], timeout=0.01)
 
-    process.kill.assert_called_once_with()
-    process.wait.assert_any_call(timeout=0.01)
+    assert killed == ["child", "parent"]
+    root.children.assert_called_once_with(recursive=True)
     assert process.wait.call_count == 2
 
 
