@@ -18,8 +18,6 @@ import argparse
 import json
 from pathlib import Path
 
-import torch
-
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import add_final_global_evaluation
 
@@ -38,19 +36,17 @@ def main():
         parser.error("--zero-gpu-site requires CUDA task mode without --gpu-oom")
     if args.gpu_oom and (args.device != "cuda" or args.lifetime != "task"):
         parser.error("--gpu-oom requires --device cuda --lifetime task")
-    model = torch.nn.Linear(2, 1)
-    with torch.no_grad():
-        model.weight.zero_()
-        model.bias.zero_()
     name = f"process-{args.device}-{args.lifetime}" + ("-oom" if args.gpu_oom else "")
     if args.zero_gpu_site:
         name += "-zero-" + args.zero_gpu_site
     recipe = FedAvgRecipe(
         name=name,
-        model=model,
+        # A built-in model config uses the site's installed PyTorch. Passing a
+        # live module here makes export recursively package its library sources.
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
         min_clients=2,
         num_rounds=2,
-        train_script=str(Path(__file__).with_name("train.py")),
+        train_script=str(Path(__file__).resolve().parents[2] / "data" / "process_gpu" / "train.py"),
         train_args=(
             ["--device", args.device]
             + (["--gpu-oom"] if args.gpu_oom else [])

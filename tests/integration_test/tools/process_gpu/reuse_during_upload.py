@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
-from tests.integration_test.slow.process_task_gpu_test import _launch, _ready
+from tests.integration_test.tools.process_gpu.cuda_probe import launch_probe, wait_for_probe
 
 
 def main():
@@ -71,11 +71,11 @@ def main():
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     launcher = ProcessTaskLauncher(gpu_devices=devices)
-    probe = _launch(launcher, output / "reuse.json")
+    probe = launch_probe(launcher, output / "reuse.json")
     try:
         if not probe.wait_for_settlement(60).succeeded:
             raise RuntimeError("independent real-CUDA reuse worker failed")
-        facts = _ready(output / "reuse.json")
+        facts = wait_for_probe(output / "reuse.json")
         if facts["visible"] != devices[0]:
             raise RuntimeError("reuse worker did not receive the prior task's exact UUID")
     finally:

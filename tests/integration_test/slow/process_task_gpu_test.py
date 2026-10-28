@@ -20,87 +20,27 @@ The fixture does not reserve GPUs; schedule it only on administrator-assigned id
 
 import json
 import os
-import sys
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psutil
 import pytest
 
-from nvflare.apis.task_launcher_spec import TaskLaunchRequest, TaskResourceRequest
 from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
+from tests.integration_test.tools.process_gpu.cuda_probe import launch_probe as _launch
+from tests.integration_test.tools.process_gpu.cuda_probe import wait_for_probe as _ready
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("NVFLARE_PROCESS_GPU_DEVICES"), reason="requires explicitly scheduled real GPU capacity"
 )
-
-COMPUTE = """
-import json, os, subprocess, sys, time
-from pathlib import Path
-import torch
-output, mode = Path(sys.argv[1]), sys.argv[2]
-torch.set_num_threads(1)
-assert torch.cuda.is_available() and torch.cuda.device_count() == 1
-model = torch.nn.Linear(1, 1, bias=False).cuda()
-optimizer = torch.optim.SGD(model.parameters(), lr=0.2)
-x, y = torch.ones(64, 1, device='cuda'), torch.full((64, 1), 3., device='cuda')
-for _ in range(40):
-    optimizer.zero_grad()
-    loss = (model(x) - y).square().mean()
-    loss.backward()
-    optimizer.step()
-torch.cuda.synchronize()
-assert loss.item() < 1e-4
-torch.save({key: value.cpu() for key, value in model.state_dict().items()}, output.with_suffix('.pt'))
-child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)']) if mode == 'child' else None
-output.write_text(json.dumps(dict(pid=os.getpid(), descendant_pid=child.pid if child else None,
-    visible=os.environ['CUDA_VISIBLE_DEVICES'], loss=loss.item(),
-    allocated_bytes=torch.cuda.max_memory_allocated(), computed_at=time.time())))
-if mode in ('hold', 'child'):
-    time.sleep(120)
-if mode == 'exception':
-    raise RuntimeError('deliberate post-CUDA worker exception')
-if mode == 'abrupt':
-    os._exit(17)
-if mode == 'oom':
-    try:
-        torch.empty(torch.cuda.get_device_properties(0).total_memory + 1, dtype=torch.uint8, device='cuda')
-    except torch.cuda.OutOfMemoryError as error:
-        output.with_suffix('.failure.json').write_text(json.dumps(dict(error_type=type(error).__name__, message=str(error))))
-        raise
-    raise AssertionError('oversized CUDA allocation unexpectedly succeeded')
-"""
 
 
 @pytest.fixture
 def gpu_launcher():
     config = json.loads(Path(os.environ["NVFLARE_PROCESS_GPU_DEVICES"]).read_text())
     return ProcessTaskLauncher(gpu_devices=config["gpu_devices"])
-
-
-def _launch(launcher, output, mode="normal"):
-    return launcher.launch_task(
-        TaskLaunchRequest(
-            "gpu-qualification",
-            "site-probe",
-            "compute",
-            str(uuid.uuid4()),
-            (sys.executable, "-c", COMPUTE, str(output), mode),
-            environment={"PATH": os.environ["PATH"]},
-            resources=TaskResourceRequest(gpu_count=1),
-        )
-    )
-
-
-def _ready(path):
-    deadline = time.monotonic() + 60
-    while not path.exists():
-        assert time.monotonic() < deadline
-        time.sleep(0.05)
-    return json.loads(path.read_text())
 
 
 def _no_live_pid(pid):
@@ -111,7 +51,8 @@ def _no_live_pid(pid):
 
 
 @pytest.mark.timeout(120)
-def test_real_cuda_reuse_while_previous_result_publication_is_blocked(gpu_launcher, tmp_path):
+def test_real_cuda_reuse_while_test_publisher_holds_previous_result(gpu_launcher, tmp_path):
+    # Process-scope test: this thread is a test publisher, not a CJ/server upload.
     first = _launch(gpu_launcher, tmp_path / "first.json")
     try:
         assert first.wait_for_settlement(60).succeeded

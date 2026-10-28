@@ -5,6 +5,13 @@ Check lease ownership, active workloads, duplicate jobs and imported source befo
 running. These tests do not schedule or reserve GPUs and do not exclude other
 processes. Keep unrelated workloads untouched and retain earlier evidence.
 
+The executable qualification tools live in `tests/integration_test/tools/process_gpu/`;
+this data directory contains the submitted training workload. GPU pytest cases live
+in `tests/integration_test/slow/process_task_gpu_test.py` and skip unless an explicit
+device assignment is supplied. Unit tests for the harness itself live in
+`tests/unit_test/integration_test/process_gpu_helpers_test.py`; they do not qualify
+the product's CUDA or publication behavior.
+
 ## Site setup and normal controls
 
 Use the static gpu_devices configuration from the
@@ -24,15 +31,29 @@ task lifetime with `external_process`/`attach` on every backend; job-lifetime
 option. See the profile's mode matrix for its different publication/lifetime
 guarantees and the startup/model/optimizer reload costs.
 
+The built-in linear model is declared as a recipe model config, so the job uses
+the site's installed PyTorch instead of bundling third-party library sources.
+Both sites train toward the same fixed regression target from the server's
+initial model; the final weight and error checks below do not depend on its
+random initialization.
+
+Run from the frozen candidate's repository root and use its matching environment.
+Pin imports to that checkout before exporting or invoking helpers:
+
+```bash
+export PYTHONPATH="$PWD"
+python -c 'import nvflare; print(nvflare.__file__)'
+```
+
 Export and submit these two-client, two-round jobs serially through the existing
 provisioned admin connection:
 
 ```bash
-python tests/integration_test/data/process_gpu/export_job.py --device cpu --lifetime job --output /tmp/process-gpu-jobs
-python tests/integration_test/data/process_gpu/export_job.py --device cpu --lifetime task --output /tmp/process-gpu-jobs
-python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --output /tmp/process-gpu-jobs
-python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --zero-gpu-site site-2 --output /tmp/process-gpu-jobs
-python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime job --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cpu --lifetime job --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cpu --lifetime task --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cuda --lifetime task --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cuda --lifetime task --zero-gpu-site site-2 --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cuda --lifetime job --output /tmp/process-gpu-jobs
 ```
 
 Run both CPU controls and both CUDA/task controls with the task visibility
@@ -58,7 +79,7 @@ actual imports/configuration, process_gpu_compute records and final models.
 Export the real CJ/worker fault case:
 
 ```bash
-python tests/integration_test/data/process_gpu/export_job.py --device cuda --lifetime task --gpu-oom --output /tmp/process-gpu-jobs
+python -m tests.integration_test.tools.process_gpu.export_job --device cuda --lifetime task --gpu-oom --output /tmp/process-gpu-jobs
 ```
 
 Site-1 training requests one tensor larger than the device's total VRAM. This
@@ -78,7 +99,10 @@ NVFLARE_PROCESS_GPU_DEVICES=/approved/path/devices.json python -m pytest -v \
   tests/integration_test/slow/process_task_gpu_test.py
 ```
 
-The suite covers successful reuse before publication finishes; descendant cleanup
+The suite covers successful reuse while a test publisher holds the prior saved
+result; that publisher is a local thread, not the real CJ/server transport.
+The separate deployed publication test below exercises the actual CJ path.
+The scope suite also covers descendant cleanup
 on cancellation and wait timeout; and exception, abrupt exit and actual CUDA OOM,
 each followed by a successful fresh CUDA worker. Framework supervision tests also
 verify that settled OOM failure clears active ownership and an uncertain cleanup
@@ -90,7 +114,7 @@ tests is not evidence of a real CUDA/driver fault.
 Run another CUDA/task job with the explicit test-only hook on owned idle site-1:
 set NVFLARE_PROCESS_GPU_DELAY_ROOT to a fresh evidence directory,
 NVFLARE_PROCESS_GPU_DELAY_SITE=site-1 and NVFLARE_PROCESS_GPU_RETRY_ONCE=1, and add
-only this fixture's cj_hooks directory to that fixture's PYTHONPATH. Other sites
+only `tests/integration_test/tools/process_gpu/cj_hooks` to that fixture's PYTHONPATH. Other sites
 run normally. Never install the hook globally or copy a private kit.
 
 The real CJ pauses its first send after its supervisor returns a settled result.
@@ -99,7 +123,7 @@ waits for a resume marker; it also drops one receipt observation to force a real
 saved-result retry. While it waits, run:
 
 ```bash
-python tests/integration_test/data/process_gpu/reuse_during_upload.py \
+python -m tests.integration_test.tools.process_gpu.reuse_during_upload \
   --devices-config /approved/path/devices.json \
   --runtime-root /owned/site/job/.nvflare/task-execution \
   --compute-root /owned/site/job/process-gpu-models \
