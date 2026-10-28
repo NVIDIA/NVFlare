@@ -23,7 +23,9 @@ class FQN:
 
     @staticmethod
     def normalize(fqn: str) -> str:
-        return fqn.strip()
+        # Pass a non-str through unchanged so validate reports its type, rather than
+        # raising AttributeError here. Callers normalize before they validate.
+        return fqn.strip() if isinstance(fqn, str) else fqn
 
     @staticmethod
     def split(fqn: str) -> List[str]:

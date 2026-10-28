@@ -86,6 +86,16 @@ class TestFQN:
     def test_normalize_then_validate_accepts_padded_names(self, fqn):
         assert FQN.validate(FQN.normalize(fqn)) == ""
 
+    @pytest.mark.parametrize("bad", [None, 42, b"server"])
+    def test_validate_reports_the_type_of_a_non_str(self, bad):
+        assert "must be str" in FQN.validate(bad)
+
+    @pytest.mark.parametrize("bad", [None, 42])
+    def test_normalize_passes_a_non_str_through_for_validate_to_report(self, bad):
+        # Callers normalize before validating, so normalize must not be the place a
+        # bad type raises; validate describes it instead.
+        assert FQN.normalize(bad) is bad
+
 
 class TestFQCN:
     @pytest.mark.parametrize(
