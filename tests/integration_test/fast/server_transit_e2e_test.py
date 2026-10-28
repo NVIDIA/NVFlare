@@ -23,7 +23,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.timing_utils import ManualClock
+from tests.timing_utils import ManualClock, stop_processes
 
 _CHANNEL = "server_transit_test"
 _TOPIC = "ping"
@@ -64,7 +64,8 @@ def _run_server(root_url, status_queue, stop_event):
         cell = CoreCell("server", root_url, secure=False, credentials={})
         cell.start()
         status_queue.put({"ready": True})
-        stop_event.wait(30)
+        # The parent owns teardown; a fixed lifetime can expire during slow setup.
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -80,7 +81,7 @@ def _run_relay(root_url, status_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "server")
         status_queue.put({"parent_url": cell.get_internal_listener_url()})
-        stop_event.wait(30)
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -108,7 +109,7 @@ def _run_destination(parent_url, status_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "relay-1")
         status_queue.put({"ready": True})
-        stop_event.wait(30)
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -204,10 +205,6 @@ def test_non_secure_cross_site_request_and_reply_cross_server_under_shared_relay
         destination_stop.set()
         relay_stop.set()
         server_stop.set()
-        for process in reversed(started_processes):
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        stop_processes(origin, destination, relay, server)
 
     assert all(process.exitcode == 0 for process in started_processes)

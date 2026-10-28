@@ -24,6 +24,8 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import MetaStatusValue, ReplyKeyword
 from tests.timing_utils import isolate_time
 
+pytestmark = pytest.mark.timeout(5)
+
 JOB_ID = "12345678-1234-5678-1234-567812345678"
 STARTING = f"Job {JOB_ID} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
 
