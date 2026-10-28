@@ -20,6 +20,7 @@ import os
 import sys
 import textwrap
 import threading
+import uuid
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -49,6 +50,7 @@ from nvflare.job_config.task_execution import (
     prepare_task_execution,
     validate_task_resources,
 )
+from nvflare.private.fed.client import task_execution_policy as policy_module
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
@@ -71,6 +73,91 @@ def _config(**args):
             }
         ],
     }
+
+
+@pytest.mark.parametrize(
+    "mode,module_name,class_name,gpu_field",
+    [
+        ("k8s", "nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher", "num_of_gpus"),
+        ("slurm", "nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher", "gpus_per_node"),
+    ],
+)
+def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
+    tmp_path, monkeypatch, mode, module_name, class_name, gpu_field
+):
+    class NativeLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise NotImplementedError()
+
+        def validate_site_config(self, site_config):
+            validate(site_config)
+
+    validate = Mock()
+    launcher = NativeLauncher()
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(**{class_name: NativeLauncher}))
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: launcher)
+    imported = []
+    real_import = importlib.import_module
+
+    def selected_import(name):
+        imported.append(name)
+        return real_import(name)
+
+    monkeypatch.setattr(policy_module.importlib, "import_module", selected_import)
+    config = {"launcher": {"path": module_name + "." + class_name}}
+    data = {"task_execution": config, "components": [{"path": "site.CPJobLauncher"}]}
+    path = tmp_path / "resources.json"
+    path.write_text(json.dumps(data))
+    policy = TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: str(path)))
+    validate.assert_called_once_with(data)
+    assert set(imported) == {module_name}
+    assert policy.worker_environment() == {}
+    assert policy.task_resources({"launcher_spec": {"site": {mode: {gpu_field: 1}}}}, "site").gpu_count == 0
+    with pytest.raises(ValueError, match="portable GPUs reserve"):
+        policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
+    with pytest.raises(ValueError, match="trusted backend"):
+        TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
+
+    class Impersonator(NativeLauncher):
+        pass
+
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: Impersonator())
+    with pytest.raises(ValueError, match="supported"):
+        TaskExecutionPolicy.from_config(config)
+
+
+@pytest.mark.parametrize("mode", ["docker", "slurm"])
+@pytest.mark.parametrize("missing", ["backend", "parent", "dependency"])
+def test_native_selection_reports_missing_backend_without_hiding_missing_dependency(monkeypatch, mode, missing):
+    class NativeLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise NotImplementedError()
+
+    module_name, class_name = policy_module._NATIVE_TASK_LAUNCHERS[mode]
+    missing_name = {
+        "backend": module_name,
+        "parent": module_name.rsplit(".", 1)[0],
+        "dependency": "missing_backend_dependency",
+    }[missing]
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: NativeLauncher())
+
+    def unavailable(name):
+        assert name == module_name
+        raise ModuleNotFoundError(name=missing_name)
+
+    monkeypatch.setattr(policy_module.importlib, "import_module", unavailable)
+    config = {"launcher": {"path": module_name + "." + class_name}}
+    expected = ModuleNotFoundError if missing == "dependency" else ValueError
+    with pytest.raises(expected) as error:
+        TaskExecutionPolicy.from_config(config)
+    if missing == "dependency":
+        assert error.value.name == missing_name
+    else:
+        assert "requires a supported" in str(error.value)
 
 
 def test_alias_timeout_and_specs_are_inert_snapshots():
@@ -263,6 +350,10 @@ def test_task_profile_rejects_nested_compute_before_application_import(tmp_path,
 def native_task(tmp_path, monkeypatch, isolated_fobs):
     if not hasattr(os, "waitid"):
         pytest.skip("CPU Process task execution requires waitid/WNOWAIT")
+    from nvflare.fuel.f3.cellnet.cell import Cell
+    from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+    from nvflare.fuel.f3.stats_pool import StatsPoolManager
+
     nvflare_fobs_initialize()
     register_framework_decomposers("numpy", "numpy")
     root = tmp_path / "workspace"
@@ -275,25 +366,35 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[5]))
     monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
     workspace = Workspace(str(root), site_name="site-1")
-    cell = SimpleNamespace(decode_pass_through_topics=set())
-    context = FLContext()
-    context.set_prop(
-        ReservedKey.ENGINE,
-        SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
-        private=True,
-        sticky=True,
-    )
-    for key, value in (
-        (ReservedKey.RUN_NUM, "job-1"),
-        (ReservedKey.IDENTITY_NAME, "site-1"),
-        (FLContextKey.WORKSPACE_OBJECT, workspace),
-        (FLContextKey.TASK_ID, "task-1"),
-        (FLContextKey.TASK_NAME, "train"),
-        (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
-    ):
-        context.set_prop(key, value, private=True, sticky=True)
-    policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
-    return root, custom, context, policy
+    # Workers join the Client Job cell, so the executor needs a real one; it connects nowhere itself.
+    # A unique name keeps it clear of cells other tests in this process may leave behind, and the
+    # process-wide tables that stop() leaves alone are restored afterwards.
+    original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
+    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
+    cell.start()
+    try:
+        context = FLContext()
+        context.set_prop(
+            ReservedKey.ENGINE,
+            SimpleNamespace(get_workspace=lambda: workspace, get_cell=lambda: cell, fire_event=Mock()),
+            private=True,
+            sticky=True,
+        )
+        for key, value in (
+            (ReservedKey.RUN_NUM, "job-1"),
+            (ReservedKey.IDENTITY_NAME, "site-1"),
+            (FLContextKey.WORKSPACE_OBJECT, workspace),
+            (FLContextKey.TASK_ID, "task-1"),
+            (FLContextKey.TASK_NAME, "train"),
+            (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
+        ):
+            context.set_prop(key, value, private=True, sticky=True)
+        policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
+        yield root, custom, context, policy
+    finally:
+        cell.stop()
+        CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
+        StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
 
 
 SCRIPT = """
@@ -306,6 +407,8 @@ flare.init()
 while flare.is_running():
     model = flare.receive()
     flare.log("accuracy", 0.75, AnalyticsDataType.SCALAR, global_step=model.current_round)
+    # Larger than the download-reference threshold: must travel inline over the session.
+    flare.log("image", np.zeros((1024, 1024), dtype=np.float32), AnalyticsDataType.IMAGE, global_step=0)
     result = FLModel(params={"w": model.params["w"] + 1},
         metrics={"pid": os.getpid(), "main_thread": threading.current_thread() is threading.main_thread(),
                  "argv": sys.argv[1:], "site": flare.get_site_name(), "job": flare.get_job_id(),
@@ -372,7 +475,11 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
         params_transfer_type=transfer,
         task_script_args=["--label", "two words", "${secret:TASK_TEST_SECRET}"],
     )
+    fire_event = context.get_engine().fire_event
+    seen_during_attempt = []
+    fire_event.side_effect = lambda *_args: seen_during_attempt.append(adapter.supervisor.owns_execution)
     result = adapter.execute("train", data, context, Signal())
+    assert seen_during_attempt == [True, True], "metrics reach the job over the cell while the attempt is still owned"
     dxo = from_shareable(result)
     np.testing.assert_array_equal(dxo.data["w"], [2, 3] if transfer == "FULL" else [1, 1])
     assert result.get_header(AppConstants.CURRENT_ROUND) == 3
@@ -386,11 +493,13 @@ def test_real_task_script_runs_once_on_main_thread_with_current_round(native_tas
     assert (metrics["site"], metrics["job"]) == ("site-1", "job-1")
     assert metrics["metadata"][FLMetaKey.JOB_ID] == "job-1"
     assert metrics["metadata"][FLMetaKey.SITE_NAME] == "site-1"
-    assert context.get_engine().fire_event.call_count > 0
     identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
     payload = root / "job-1" / ".nvflare" / "task-execution" / "attempts"
     files = list(payload.rglob("result.fobs"))
     assert len(files) == 1
+    assert not list(payload.rglob("analytics.fobs")), "metrics are messages, never files"
+    worker_fqcn = read_bootstrap(payload / identity.attempt_id / "bootstrap.json").cell_session["worker_fqcn"]
+    assert worker_fqcn.startswith(context.get_engine().get_cell().get_fqcn() + ".task_worker_")
     context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
     context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
     adapter.handle_event(EventType.AFTER_SEND_TASK_RESULT, context)
@@ -571,7 +680,6 @@ Path(paths["output"]).write_text(str(previous + 1))
 flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pid": os.getpid()}))
 """
     adapter, data = _adapter(custom, context, policy, script=script)
-    replay = adapter._replay_analytics = Mock(wraps=adapter._replay_analytics)
     launch = policy.launcher.launch_task = Mock(wraps=policy.launcher.launch_task)
 
     def execute(number):
@@ -585,16 +693,16 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous, "pi
         before = checkpoint.read_bytes()
         assert execute(1).metrics == first.metrics
         assert checkpoint.read_bytes() == before
-        assert (launch.call_count, replay.call_count) == (1, 1)
+        assert launch.call_count == 1
         second = execute(2)
         assert second.metrics["previous"] == 1
         before = checkpoint.read_bytes()
         assert execute(1).metrics == first.metrics
         assert checkpoint.read_bytes() == before
         assert execute(2).metrics == second.metrics
-        assert (launch.call_count, replay.call_count) == (2, 2)
+        assert launch.call_count == 2
         assert execute(3).metrics["previous"] == 2
-        assert (launch.call_count, replay.call_count) == (3, 3)
+        assert launch.call_count == 3
     finally:
         adapter.handle_event(EventType.END_RUN, context)
 
@@ -721,6 +829,31 @@ flare.send(FLModel(metrics={"decoded": model.meta["custom"].value}))
         adapter.handle_event(EventType.END_RUN, context)
 
 
+def test_a_receiver_failure_is_logged_as_in_job_lifetime_and_only_unfirable_metrics_are_rejected():
+    """Event dispatch records receiver exceptions instead of raising, for task and job lifetime alike."""
+    from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
+    from nvflare.apis.fl_component import FLComponent
+    from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+    from nvflare.apis.utils.event import fire_event_to_components
+
+    class FailingReceiver(FLComponent):
+        def handle_event(self, event_type, fl_ctx):
+            if event_type == ANALYTIC_EVENT_TYPE:
+                raise RuntimeError("tracking backend is down")
+
+    receiver = FailingReceiver()
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    context = FLContext()
+    engine = SimpleNamespace(fire_event=lambda event, ctx: fire_event_to_components(event, [receiver], ctx))
+    context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=True)
+    metric = create_analytic_dxo(tag="loss", value=0.5, data_type=AnalyticsDataType.SCALAR).to_shareable()
+
+    adapter._fire_analytics(context, metric)
+    assert isinstance(context.get_prop(FLContextKey.EXCEPTIONS)[receiver.name], RuntimeError)
+    with pytest.raises(ValueError, match="DXO Shareable"):
+        adapter._fire_analytics(context, {"not": "a shareable"})
+
+
 def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     from nvflare.apis.fl_constant import ReturnCode
     from nvflare.apis.shareable import make_reply
@@ -750,7 +883,7 @@ def test_receipts_ignore_other_identity_and_retain_filtered_failure():
 
 
 @pytest.mark.parametrize("write_failure", [None, "result", "analytics"])
-def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, write_failure):
+def test_client_api_worker_runs_directly_without_event_dispatch(native_task, monkeypatch, request, write_failure):
     import nvflare.client.api as client_api
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.private.fed.client.client_api_task_runner import bind_client_task_context
@@ -758,6 +891,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
         FileTaskArtifactStore,
         TaskAttemptIdentity,
         WorkerBootstrap,
+        cell_session,
         worker,
         write_bootstrap,
     )
@@ -789,14 +923,29 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     data.set_header(AppConstants.CURRENT_ROUND, 3)
     store.write_input(identity, data)
     path = store.bootstrap_path(identity)
-    write_bootstrap(path, WorkerBootstrap(identity, store.root_dir, str(root), _config()["executors"][0]["executor"]))
+    # The worker runs in this process and joins the fixture's Client Job cell.
+    records = []
+    on_analytics = records.append
+    if write_failure == "analytics":
+        on_analytics = Mock(side_effect=ValueError("the Client Job rejected the metric"))
+    cj_cell = context.get_engine().get_cell()
+    cell_session.listen(cj_cell, "localhost")
+    session = cell_session.CellWorkerSession(cj_cell, on_analytics)
+    request.addfinalizer(session.close)
+    spec = _config()["executors"][0]["executor"]
+    write_bootstrap(
+        path, WorkerBootstrap(identity, store.root_dir, str(root), spec, cell_session=session.bootstrap_fields())
+    )
     if write_failure is not None:
-        method = "stage_result" if write_failure == "result" else "write_analytics_record"
-        monkeypatch.setattr(FileTaskArtifactStore, method, Mock(side_effect=OSError("cannot persist task output")))
-        with pytest.raises(OSError, match="cannot persist task output"):
+        error, match = OSError, "cannot persist task output"
+        if write_failure == "result":
+            monkeypatch.setattr(FileTaskArtifactStore, "stage_result", Mock(side_effect=OSError(match)))
+        else:
+            error, match = RuntimeError, "the Client Job rejected the metric"
+        with pytest.raises(error, match=match):
             worker.run_worker(path, context_binding=bind_client_task_context)
         assert not Path(store.attempt_dir(identity), "completion.json").exists()
-        assert store.read_failure(identity)["error_type"] == "OSError"
+        assert store.read_failure(identity)["error_type"] == error.__name__
         return
 
     stage_result = FileTaskArtifactStore.stage_result
@@ -812,7 +961,7 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     read_payload = FileTaskArtifactStore._read_payload
 
     def read_input_only(artifact_store, attempt, reference):
-        assert reference.kind == "input", "the worker must not reload its saved result or analytics"
+        assert reference.kind == "input", "the worker must not reload its saved result"
         return read_payload(artifact_store, attempt, reference)
 
     monkeypatch.setattr(FileTaskArtifactStore, "stage_result", stage_once)
@@ -824,10 +973,10 @@ def test_client_api_worker_runs_directly_without_event_dispatch(native_task, mon
     monkeypatch.setattr(FileTaskArtifactStore, "_read_payload", read_payload)
     result, completion = store.read_result(identity)
     np.testing.assert_array_equal(from_shareable(result).data["w"], [2.0])
-    assert "analytics" in completion.diagnostics
-    records = store.read_analytics(identity, completion)
-    assert len(records) == 1
-    assert from_shareable(records[0]["data"]).data["track_value"] == 0.75
+    assert "analytics" not in completion.diagnostics, "metrics are messages, never files"
+    scalar, image = (from_shareable(record).data["track_value"] for record in records)
+    assert scalar == 0.75
+    assert isinstance(image, np.ndarray) and image.shape == (1024, 1024) and not image.any()
     handler.assert_not_called()
 
 
@@ -1337,12 +1486,26 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
 
     route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
     unrelated = ("aux", "tensor-message")
-    cell = SimpleNamespace(decode_pass_through_topics={unrelated})
+    # The site's internal settings, as a provisioned kit writes them, name the CP's own listener.
+    site_internal = {"host": "cp-1", "port": 8102, "listen_host": "0", "connection_security": "mtls"}
+    manager = SimpleNamespace(int_scheme="stcp", int_resources=dict(site_internal))
+    cell = SimpleNamespace(
+        decode_pass_through_topics={unrelated},
+        make_internal_listener=Mock(),
+        register_request_cb=Mock(),
+        core_cell=SimpleNamespace(connector_manager=manager),
+    )
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
     adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
     adapter.handle_event(EventType.START_RUN, context)
     assert cell.decode_pass_through_topics == {route, unrelated}
+    # The site's scheme and security, the Process launcher's host, and no fixed port: never the CP's address.
+    cell.make_internal_listener.assert_called_once_with(
+        scheme="stcp", resources={"host": "localhost", "connection_security": "mtls"}
+    )
+    assert manager.int_resources == site_internal, "the site settings are left alone"
+    assert cell.register_request_cb.call_count == 2
     adapter.handle_event(EventType.END_RUN, context)
     assert cell.decode_pass_through_topics == {unrelated}
 
@@ -1394,3 +1557,55 @@ def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_pa
         adapter.resolve_task_data(value, context, abort_signal=Signal())
     assert calls == ["a", "b"]
     assert not scratch.exists()
+
+
+@pytest.mark.parametrize("stage", ["launcher", "listener"])
+def test_start_run_binding_failure_panics_and_preserves_the_actual_error(monkeypatch, stage):
+    context = FLContext()
+    cell = SimpleNamespace(decode_pass_through_topics=set())
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    policy = TaskExecutionPolicy.from_config({})
+    failure = Mock(side_effect=ValueError("owning job resource binding differs"))
+    if stage == "launcher":
+        policy.launcher.handle_event = failure
+    else:
+        from nvflare.private.fed.task_worker import cell_session
+
+        monkeypatch.setattr(cell_session, "listen", failure)
+    adapter = TaskWorkerExecutor({}, (), policy)
+    adapter.system_panic = Mock()
+    with pytest.raises(ValueError, match="resource binding differs"):
+        adapter.handle_event(EventType.START_RUN, context)
+    assert not adapter._started
+    assert adapter._start_error == "owning job resource binding differs"
+    assert not cell.decode_pass_through_topics
+    adapter.system_panic.assert_called_once_with(
+        "task launcher START_RUN failed: owning job resource binding differs", context
+    )
+    with pytest.raises(RuntimeError, match="resource binding differs"):
+        adapter.execute("train", Shareable(), context, Signal())
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 2}, {"memory": "1Gi"}])
+def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="CPU/memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": budget}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )
+
+
+def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
+    policy = TaskExecutionPolicy.from_config({})
+    assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
+
+
+@pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])
+def test_process_task_cannot_drop_compute_resource_manager_requirements(compute):
+    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
+
+    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
+        TaskExecutionPolicy.from_config({}).task_resources(
+            {"resource_spec": {"site-1": compute}, "cj_resource_spec": {"site-1": {}}}, "site-1"
+        )

@@ -175,6 +175,7 @@ class StatisticsConstants(AppConstants):
     STATS_MAX = "max"
     STATS_MIN = "min"
     STATS_FEATURES = "stats_features"
+    STATS_WITHHELD_FEATURES = "stats_withheld_features"
 
     STATS_GLOBAL_MEAN = "global_mean"
     STATS_GLOBAL_COUNT = "global_count"

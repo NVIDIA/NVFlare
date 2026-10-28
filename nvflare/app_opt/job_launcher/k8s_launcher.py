@@ -16,9 +16,11 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import json
 import logging
 import os
 import re
+import threading
 import time
 from abc import abstractmethod
 from datetime import datetime
@@ -35,6 +37,13 @@ from nvflare.apis.job_launcher_spec import (
     JobProcessEnv,
     JobReturnCode,
     add_launcher,
+    publish_job_handle,
+)
+from nvflare.app_opt.job_launcher.k8s_pod import (
+    build_pod_manifest,
+    ensure_manifest_mapping,
+    get_container_waiting_failure,
+    normalize_image_pull_secrets,
 )
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -52,14 +61,64 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.job_config.task_execution import get_client_execution_lifetime, reject_job_gpu_reservation
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
+    get_cj_resource_spec,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
+    has_cj_resource_spec,
+    validate_cj_resource_spec,
 )
+
+ENV_CJ_POD_IP = "NVFLARE_K8S_CJ_POD_IP"
+
+_STARTUP_FEDERATION_LABEL = "nvflare.nvidia.com/startup-federation"
+
+
+def _startup_federation_identity(data):
+    """A label-safe SHA-256 CA fingerprint, or payload identity for unsecured kits."""
+    if data.get("rootCA.pem"):
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+
+        certificate = x509.load_pem_x509_certificate(base64.b64decode(data["rootCA.pem"], validate=True))
+        digest = certificate.fingerprint(hashes.SHA256())
+    else:
+        digest = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).digest()
+    return base64.b32encode(digest).decode("ascii").rstrip("=").lower()
+
+
+def validate_dns_name(name, value):
+    if not isinstance(value, str) or len(value) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", value):
+        raise ValueError(f"{name} must be a DNS label")
+    return value
+
+
+def validate_startup_secret_name(value):
+    # Secret names use DNS subdomains (up to 253 characters), not the shorter
+    # label limit used by namespace and service-account names.
+    label = r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?"
+    if not isinstance(value, str) or len(value) > 253 or not re.fullmatch(rf"{label}(?:\.{label})*", value):
+        raise ValueError("startup_secret_name must be a DNS subdomain of at most 253 characters")
+    return value
+
+
+def job_workspace_subpath(job_id, site_name):
+    """Separate each site's job workspace without embedding untrusted path components."""
+    digest = hashlib.sha256(json.dumps([job_id, site_name]).encode()).hexdigest()
+    return f"nvflare-tasks/{digest}"
+
+
+def task_security_context(uid, gid):
+    for name, value in (("run_as_user", uid), ("run_as_group", gid)):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be an explicit positive numeric ID shared by CJ and workers")
+    return {"runAsUser": uid, "runAsGroup": gid, "runAsNonRoot": True, "fsGroup": gid}
 
 
 class JobState(Enum):
@@ -110,16 +169,6 @@ SCHEDULED_EVENT_FAILURE_MAX_AGE = 60
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
-_PENDING_FAILURE_WAITING_REASONS = {
-    "CreateContainerConfigError",
-    "CreateContainerError",
-    "ErrImagePull",
-    "ErrImageNeverPull",
-    "ImagePullBackOff",
-    "InvalidImageName",
-    "RunContainerError",
-    "CrashLoopBackOff",
-}
 _PENDING_FAILURE_EVENT_REASONS = {
     "BackOff",
     "Failed",
@@ -143,17 +192,6 @@ def _keep_startup_file(fname: str) -> bool:
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
 
 
-def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
-    if image_pull_secrets is None:
-        return []
-    if not isinstance(image_pull_secrets, list):
-        raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
-    for name in image_pull_secrets:
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("image_pull_secrets entries must be non-empty strings")
-    return list(image_pull_secrets)
-
-
 def _normalize_pending_timeout(pending_timeout, field_name="pending_timeout"):
     if pending_timeout is None:
         return None
@@ -168,7 +206,7 @@ def _obj_text(*values) -> str:
     return " ".join(str(v) for v in values if v)
 
 
-def _is_cpu_memory_gpu_shortage(message: str) -> bool:
+def is_cpu_memory_gpu_shortage(message: str) -> bool:
     if not message:
         return False
     for resource_name in re.findall(r"\binsufficient\s+([a-z0-9./_-]+)", message, flags=re.IGNORECASE):
@@ -263,97 +301,6 @@ def study_secret_volume_name(study: str, name: str) -> str:
     return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
-def _ensure_manifest_mapping(parent: dict, key: str, label: str) -> dict:
-    value = parent.get(key)
-    if value is None:
-        value = {}
-        parent[key] = value
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be a dictionary.")
-    return value
-
-
-def _ensure_manifest_containers(spec: dict) -> list[dict]:
-    containers = spec.get("containers")
-    if containers is None:
-        containers = [{}]
-        spec["containers"] = containers
-    if not isinstance(containers, list):
-        raise ValueError("pod spec containers must be a list.")
-    if not containers:
-        containers.append({})
-    for container in containers:
-        if not isinstance(container, dict):
-            raise ValueError("pod spec containers entries must be dictionaries.")
-    return containers
-
-
-def _prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
-    if not isinstance(pod_manifest_template, dict):
-        raise ValueError("pod manifest template must be a dictionary.")
-    kind = pod_manifest_template.get("kind")
-    if kind and kind != "Pod":
-        raise ValueError("pod manifest template must define kind: Pod.")
-    pod_manifest = copy.deepcopy(pod_manifest_template)
-    pod_manifest.setdefault("apiVersion", "v1")
-    pod_manifest["kind"] = "Pod"
-    _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
-    spec = _ensure_manifest_mapping(pod_manifest, "spec", "pod manifest spec")
-    _ensure_manifest_containers(spec)
-    return pod_manifest
-
-
-def _merge_named_items(template_items, job_items, label: str) -> list:
-    if template_items is None:
-        template_items = []
-    if job_items is None:
-        job_items = []
-    if not isinstance(template_items, list) or not isinstance(job_items, list):
-        raise ValueError(f"{label} must be a list.")
-
-    job_items_by_name = {}
-    unnamed_job_items = []
-    for item in job_items:
-        if not isinstance(item, dict):
-            raise ValueError(f"{label} entries must be dictionaries.")
-        name = item.get("name")
-        if isinstance(name, str) and name:
-            job_items_by_name[name] = item
-        else:
-            unnamed_job_items.append(item)
-
-    result = []
-    used_job_item_names = set()
-    for item in template_items:
-        if not isinstance(item, dict):
-            raise ValueError(f"{label} entries must be dictionaries.")
-        name = item.get("name")
-        if name in job_items_by_name:
-            result.append(copy.deepcopy(job_items_by_name[name]))
-            used_job_item_names.add(name)
-        else:
-            result.append(copy.deepcopy(item))
-
-    for name, item in job_items_by_name.items():
-        if name not in used_job_item_names:
-            result.append(copy.deepcopy(item))
-    result.extend(copy.deepcopy(unnamed_job_items))
-    return result
-
-
-def _select_job_container(containers: list[dict], container_name: str, require_main_container: bool = False) -> dict:
-    target_names = {name for name in (container_name, "nvflare_job") if isinstance(name, str) and name}
-    for container in containers:
-        if container.get("name") in target_names:
-            return container
-    if require_main_container and len(containers) > 1:
-        raise ValueError(
-            f"pod_template has multiple containers and none is named one of {sorted(target_names)}; "
-            "mark the main container so study env/secret entries cannot land on a sidecar."
-        )
-    return containers[0]
-
-
 class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
@@ -376,6 +323,7 @@ class K8sJobHandle(JobHandleSpec):
         self.timeout = timeout
         self.terminal_state = None
         self.terminal_return_code = None
+        self.task_owner = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -383,46 +331,8 @@ class K8sJobHandle(JobHandleSpec):
         self.namespace = namespace
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.python_path = python_path
-        self.uses_pod_manifest_template = pod_manifest_template is not None
-        if self.uses_pod_manifest_template:
-            self.pod_manifest = _prepare_pod_manifest_template(pod_manifest_template)
-        else:
-            self.pod_manifest = {
-                "apiVersion": "v1",
-                "kind": "Pod",
-                "metadata": {"name": None},  # set by job_config['name']
-                "spec": {
-                    "containers": None,  # link to container_list
-                    "volumes": None,  # link to volume_list
-                    "restartPolicy": "Never",
-                },
-            }
-        self.volume_list = []
-
-        if self.uses_pod_manifest_template:
-            spec = self.pod_manifest["spec"]
-            self.container_list = spec["containers"]
-            self.job_container = _select_job_container(
-                self.container_list, job_config.get("container_name"), job_config.get("require_main_container", False)
-            )
-        else:
-            self.container_list = [
-                {
-                    "image": None,
-                    "name": None,
-                    "command": [python_path],
-                    "args": None,  # args_list + args_dict + args_sets
-                    "volumeMounts": None,  # volume_mount_list
-                    "imagePullPolicy": "Always",
-                }
-            ]
-            self.job_container = self.container_list[0]
-        command = job_config.get("command")
-        if not command:
-            raise ValueError("job_config must contain a non-empty 'command' key")
-        self.container_args_python_args_list = ["-u", "-m", command]
-        self.container_volume_mount_list = []
-        self._make_manifest(job_config)
+        self.pod_manifest = build_pod_manifest(job_config, python_path, pod_manifest_template)
+        self._job_container_name = job_config.get("container_name", "nvflare_job")
         self._stuck_count = 0
         self._pending_since = None
         # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
@@ -430,79 +340,6 @@ class K8sJobHandle(JobHandleSpec):
         self._last_event_query_failed = False
         self._pending_timer_paused_at = None
         self.logger = logging.getLogger(self.__class__.__name__)
-
-    def _make_manifest(self, job_config):
-        self.container_volume_mount_list.extend(job_config.get("volume_mount_list", []))
-        set_list = job_config.get("set_list")
-        if not set_list:
-            self.container_args_module_args_sets = list()
-        else:
-            self.container_args_module_args_sets = ["--set"] + set_list
-        self.container_args_module_args_dict = job_config.get("module_args") or {}
-        self.container_args_module_args_dict_as_list = list()
-        for k, v in self.container_args_module_args_dict.items():
-            if v is None:
-                continue
-            self.container_args_module_args_dict_as_list.append(k)
-            self.container_args_module_args_dict_as_list.append(str(v))
-        job_volume_list = job_config.get("volume_list", [])
-        metadata = _ensure_manifest_mapping(self.pod_manifest, "metadata", "pod manifest metadata")
-        spec = _ensure_manifest_mapping(self.pod_manifest, "spec", "pod manifest spec")
-        metadata["name"] = job_config.get("name")
-        spec["restartPolicy"] = "Never"
-        if self.uses_pod_manifest_template:
-            spec["volumes"] = _merge_named_items(spec.get("volumes"), job_volume_list, "pod spec volumes")
-        else:
-            self.volume_list.extend(job_volume_list)
-            spec["containers"] = self.container_list
-            spec["volumes"] = self.volume_list
-        image_pull_secrets = _normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
-        if image_pull_secrets:
-            image_pull_secret_refs = [{"name": name} for name in image_pull_secrets]
-            if self.uses_pod_manifest_template:
-                spec["imagePullSecrets"] = _merge_named_items(
-                    spec.get("imagePullSecrets"), image_pull_secret_refs, "pod spec imagePullSecrets"
-                )
-            else:
-                spec["imagePullSecrets"] = image_pull_secret_refs
-        security_context = job_config.get("security_context")
-        if security_context:
-            spec["securityContext"] = security_context
-
-        image = job_config.get("image")
-        if not image:
-            raise ValueError("job_config must contain a non-empty 'image' key")
-        container = self.job_container
-        container["image"] = image
-        container["name"] = job_config.get("container_name", "nvflare_job")
-        container["command"] = [self.python_path]
-        container["args"] = (
-            self.container_args_python_args_list
-            + self.container_args_module_args_dict_as_list
-            + self.container_args_module_args_sets
-        )
-        if self.uses_pod_manifest_template:
-            container.setdefault("imagePullPolicy", "Always")
-            container["volumeMounts"] = _merge_named_items(
-                container.get("volumeMounts"), self.container_volume_mount_list, "container volumeMounts"
-            )
-        else:
-            container["volumeMounts"] = self.container_volume_mount_list
-        # resources now always includes ephemeral-storage; GPU limits are merged
-        # into the same dict only when requested for the job.
-        if job_config.get("resources"):
-            container["resources"] = job_config["resources"]
-        env_vars = {k: v for k, v in job_config.get("env", {}).items() if str(v)}
-        env_items = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
-        env_items.extend(
-            {"name": ref["name"], "valueFrom": {"secretKeyRef": {"name": ref["source"], "key": ref["key"]}}}
-            for ref in job_config.get("secret_env", [])
-        )
-        if env_items:
-            if self.uses_pod_manifest_template:
-                container["env"] = _merge_named_items(container.get("env"), env_items, "container env")
-            else:
-                container["env"] = env_items
 
     def get_manifest(self):
         return copy.deepcopy(self.pod_manifest)
@@ -535,6 +372,8 @@ class K8sJobHandle(JobHandleSpec):
             time.sleep(POLL_INTERVAL)
 
     def _release_job_resources(self) -> None:
+        if self.task_owner is not None:
+            self.task_owner.release()
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
             self.workspace_job_id = ""
@@ -555,12 +394,15 @@ class K8sJobHandle(JobHandleSpec):
             self.api_instance.delete_namespaced_secret(name=self.credential_secret_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) != 404:
-                self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
-        except Exception as e:
-            self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+                self.logger.warning("failed to delete credential Secret")
+        except Exception:
+            self.logger.warning("failed to delete credential Secret")
         self.credential_secret_name = None
 
     def terminate(self):
+        # Fence task admission before deleting CJ. CP retains worker cleanup.
+        if self.task_owner is not None:
+            self.task_owner.close()
         from kubernetes.client.rest import ApiException
 
         try:
@@ -602,7 +444,7 @@ class K8sJobHandle(JobHandleSpec):
     def _record_terminal_state(self, pod, pod_phase):
         self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if self.terminal_state == JobState.TERMINATED:
-            job_container_name = self.job_container["name"]
+            job_container_name = self._job_container_name
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
@@ -778,7 +620,7 @@ class K8sJobHandle(JobHandleSpec):
             reason = getattr(condition, "reason", None)
             message = getattr(condition, "message", None)
             detail = _obj_text(reason, message) or "pod is not scheduled"
-            if _is_cpu_memory_gpu_shortage(detail):
+            if is_cpu_memory_gpu_shortage(detail):
                 return PendingPodAction.WAIT_FOR_RESOURCES, detail
             if reason == "Unschedulable":
                 return PendingPodAction.FAIL, detail
@@ -792,7 +634,7 @@ class K8sJobHandle(JobHandleSpec):
             if event_type != "Warning":
                 continue
             detail = _obj_text(reason, message) or "pod event reported startup issue"
-            if _is_cpu_memory_gpu_shortage(detail):
+            if is_cpu_memory_gpu_shortage(detail):
                 return PendingPodAction.WAIT_FOR_RESOURCES, detail
             if reason == "FailedScheduling":
                 return PendingPodAction.FAIL, detail
@@ -801,16 +643,7 @@ class K8sJobHandle(JobHandleSpec):
         return PendingPodAction.WAIT, ""
 
     def _get_container_waiting_failure(self, status):
-        for container_status in self._get_all_container_statuses(status):
-            waiting = getattr(getattr(container_status, "state", None), "waiting", None)
-            if not waiting:
-                continue
-            reason = getattr(waiting, "reason", None)
-            message = getattr(waiting, "message", None)
-            detail = _obj_text(reason, message) or "container is waiting"
-            if reason in _PENDING_FAILURE_WAITING_REASONS:
-                return detail
-        return ""
+        return get_container_waiting_failure(status)
 
     def _get_event_failure(self, ignore_failed_scheduling=False, now=None):
         now = time.time() if now is None else now
@@ -851,14 +684,6 @@ class K8sJobHandle(JobHandleSpec):
         conditions = getattr(status, "conditions", None)
         return conditions if isinstance(conditions, (list, tuple)) else []
 
-    def _get_all_container_statuses(self, status):
-        result = []
-        for attr_name in ("init_container_statuses", "container_statuses"):
-            statuses = getattr(status, attr_name, None)
-            if isinstance(statuses, (list, tuple)):
-                result.extend(statuses)
-        return result
-
     def wait(self):
         while True:
             if self.terminal_state is not None:
@@ -890,6 +715,7 @@ class K8sJobLauncher(JobLauncherSpec):
         default_python_path: str = None,
         workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
         image_pull_secrets: list[str] = None,
+        startup_secret_name: str = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -901,6 +727,9 @@ class K8sJobLauncher(JobLauncherSpec):
         self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
+        self.startup_secret_name = (
+            None if startup_secret_name is None else validate_startup_secret_name(startup_secret_name)
+        )
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
@@ -914,7 +743,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
-        self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
+        self.image_pull_secrets = normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -934,11 +763,8 @@ class K8sJobLauncher(JobLauncherSpec):
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
-    def _create_or_replace_secret(self, secret_name: str, contents: dict) -> str:
-        """Upsert an Opaque Secret; replaces any existing Secret of the same name.
-
-        contents must be the Secret payload mapping only: {"data": ...} or {"stringData": ...}.
-        """
+    def _create_or_replace_secret(self, secret_name: str, contents: dict, *, federation_identity: str = None) -> str:
+        """Upsert a Secret, checking and version-fencing startup kit ownership."""
         from kubernetes.client.rest import ApiException
 
         secret_body = {
@@ -948,22 +774,64 @@ class K8sJobLauncher(JobLauncherSpec):
             "type": "Opaque",
             **contents,
         }
+        if federation_identity is not None:
+            secret_body["metadata"]["labels"] = {_STARTUP_FEDERATION_LABEL: federation_identity}
         try:
             self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-            self.logger.debug("created Secret %s", secret_name)
+            self.logger.debug("created Secret")
         except ApiException as e:
             if getattr(e, "status", None) != 409:
                 raise
+            if federation_identity is not None:
+                self._replace_startup_secret(secret_body, federation_identity)
+                return secret_name
             try:
                 self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
-                self.logger.debug("replaced Secret %s", secret_name)
+                self.logger.debug("replaced Secret")
             except ApiException as e2:
                 # 409 -> (GC deletes the old Secret) -> replace 404: recreate.
                 if getattr(e2, "status", None) != 404:
                     raise
+                secret_body["metadata"].pop("resourceVersion", None)
                 self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-                self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
+                self.logger.debug("recreated Secret after concurrent deletion")
         return secret_name
+
+    def _replace_startup_secret(self, body, federation_identity):
+        """Retry concurrent same-kit launches while rechecking ownership each time."""
+        from kubernetes.client.rest import ApiException
+
+        name = body["metadata"]["name"]
+        for attempt in range(3):
+            try:
+                try:
+                    existing = self.core_v1.read_namespaced_secret(name=name, namespace=self.namespace)
+                except ApiException as error:
+                    if getattr(error, "status", None) != 404:
+                        raise
+                    body["metadata"].pop("resourceVersion", None)
+                    self.core_v1.create_namespaced_secret(namespace=self.namespace, body=body)
+                    return
+                # Legacy Secrets can be upgraded only after matching their CA
+                # (or unsecured payload). Never trust a name match alone.
+                label = (existing.metadata.labels or {}).get(_STARTUP_FEDERATION_LABEL)
+                identity = label if label is not None else _startup_federation_identity(existing.data or {})
+                if identity != federation_identity:
+                    raise ValueError(
+                        f"startup Secret {name!r} belongs to a different federation; "
+                        "configure a unique startup_secret_name in this namespace"
+                    )
+                if label == federation_identity and existing.data == body["data"]:
+                    return
+                version = existing.metadata.resource_version
+                if not isinstance(version, str) or not version:
+                    raise ValueError("startup Secret ownership cannot be confirmed without resourceVersion")
+                body["metadata"]["resourceVersion"] = version
+                self.core_v1.replace_namespaced_secret(name=name, namespace=self.namespace, body=body)
+                return
+            except ApiException as error:
+                if getattr(error, "status", None) not in (404, 409) or attempt == 2:
+                    raise
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
@@ -978,7 +846,13 @@ class K8sJobLauncher(JobLauncherSpec):
                 with open(os.path.join(startup_dir, fname), "rb") as f:
                     data[fname] = base64.b64encode(f.read()).decode()
 
-        return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
+        # Deployment staging owns nvflare-startup-<site> and projects encoded
+        # keys into CP's full kit. Jobs need a separate public-only kit: never
+        # replace CP's mounted Secret or copy its private keys into a job Pod.
+        name = self.startup_secret_name or f"nvflare-job-startup-{site_name_to_rfc1123(site_name)}"
+        return self._create_or_replace_secret(
+            name, {"data": data}, federation_identity=_startup_federation_identity(data)
+        )
 
     def _ensure_job_credential_secret(self, pod_name: str, credential_env: dict) -> str:
         """Create (or replace) the per-job Secret carrying bootstrap credentials.
@@ -996,9 +870,9 @@ class K8sJobLauncher(JobLauncherSpec):
             self.core_v1.delete_namespaced_secret(name=secret_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) != 404:
-                self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
-        except Exception as e:
-            self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+                self.logger.warning("failed to delete Secret")
+        except Exception:
+            self.logger.warning("failed to delete Secret")
 
     def _own_credential_secret(self, secret_name: str, pod_name: str, pod) -> None:
         """Patch the credential Secret with an ownerReference to its pod so K8s GC deletes it."""
@@ -1007,14 +881,14 @@ class K8sJobLauncher(JobLauncherSpec):
             self.core_v1.patch_namespaced_secret(
                 name=secret_name, namespace=self.namespace, body={"metadata": {"ownerReferences": [owner]}}
             )
-        except Exception as e:
+        except Exception:
             self.logger.warning(
-                f"failed to set ownerReference on Secret {secret_name}: {e}; "
-                f"it will be deleted when the job handle reaches a terminal state"
+                "failed to set ownerReference on credential Secret; "
+                "it will be deleted when the job handle reaches a terminal state"
             )
 
     def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:
-        metadata = _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
+        metadata = ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
         if "namespace" not in metadata:
             return
 
@@ -1030,6 +904,7 @@ class K8sJobLauncher(JobLauncherSpec):
         )
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        execution_lifetime = self.get_execution_lifetime(job_meta, fl_ctx)
         if self.core_v1 is None:
             from kubernetes import config
             from kubernetes.client import Configuration
@@ -1101,7 +976,12 @@ class K8sJobLauncher(JobLauncherSpec):
                 data_mounts = resolve_study_dataset_mounts(
                     self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
                 )
-        job_resource = k8s_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
+        native_resources = k8s_spec
+        if execution_lifetime == "task":
+            # Existing fields describe compute; none leak into the persistent CJ.
+            native_resources = {}
+            portable_spec = self.get_cj_resources(job_meta, site_name)
+        job_resource = native_resources.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -1133,6 +1013,8 @@ class K8sJobLauncher(JobLauncherSpec):
         workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
         credential_secret_name = None
         created_pod = None
+        pod_create_attempted = False
+        workspace_reservations = []
         try:
             startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
 
@@ -1210,11 +1092,11 @@ class K8sJobLauncher(JobLauncherSpec):
                 "limits": {"ephemeral-storage": job_ephemeral_storage},
             }
             for key in ("cpu", "memory"):
-                limit_val = k8s_spec.get(key)
+                limit_val = native_resources.get(key)
                 # cpu_request / memory_request allow request < limit; when absent,
                 # request mirrors the limit so admission webhooks that require
                 # explicit cpu/memory requests (e.g. AKS deployment safeguards) pass.
-                request_val = k8s_spec.get(f"{key}_request", limit_val)
+                request_val = native_resources.get(f"{key}_request", limit_val)
                 if limit_val:
                     resources["limits"][key] = limit_val
                 if request_val:
@@ -1227,8 +1109,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 resources["limits"]["memory"] = portable_spec["memory"]
                 resources["requests"]["memory"] = portable_spec["memory"]
             if job_resource:
-                resources["limits"]["nvidia.com/gpu"] = job_resource
-                resources["requests"]["nvidia.com/gpu"] = job_resource
+                resources["limits"]["nvidia.com/gpu"] = str(job_resource)
+                resources["requests"]["nvidia.com/gpu"] = str(job_resource)
             job_config["resources"] = resources
             if self.security_context:
                 job_config["security_context"] = self.security_context
@@ -1252,27 +1134,53 @@ class K8sJobLauncher(JobLauncherSpec):
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
                 self._replace_pod_manifest_template_namespace(pod_manifest)
+            job_handle.task_owner = self.prepare_job_manifest(
+                pod_manifest,
+                raw_job_id,
+                site_name,
+                workspace_obj,
+                execution_lifetime=execution_lifetime,
+                job_meta=job_meta,
+                fl_ctx=fl_ctx,
+                transfer_token=workspace_transfer_token,
+                workspace_reservations=workspace_reservations,
+                startup_secret_name=startup_secret_name,
+            )
+            job_handle.pod_manifest = pod_manifest
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
                 pod_manifest["metadata"]["name"],
                 self.namespace,
                 job_image,
             )
+            pod_create_attempted = True
             created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            if job_handle.task_owner is not None:
+                job_handle.task_owner.attach_cj(pod_name, created_pod.metadata.uid)
             if credential_secret_name:
                 self._own_credential_secret(credential_secret_name, pod_name, created_pod)
         except Exception as e:
+            # A transport/5xx error can hide a successful create. Keep its
+            # workspace fenced; a later empty read is not proof it never ran.
+            rejected = getattr(e, "status", None) in {400, 401, 403, 404, 405, 413, 415, 422, 429}
+            if created_pod is None and (not pod_create_attempted or rejected):
+                for directory, device, inode in workspace_reservations:
+                    self._discard_empty_workspace(directory, device, inode)
             workspace_transfer.remove_job(raw_job_id)
             if credential_secret_name and created_pod is None:
                 # No pod means no ownerReference, so GC would never collect the Secret.
                 self._delete_secret(credential_secret_name)
             if "job_handle" in locals():
+                if job_handle.task_owner is not None:
+                    job_handle.task_owner.release()
+                job_handle.workspace_job_id = ""
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED
                 job_handle.terminal_return_code = JobReturnCode.EXCEPTION
                 return job_handle
             raise
         try:
+            publish_job_handle(job_handle, fl_ctx)
             entered_running = job_handle.enter_states([JobState.RUNNING])
         except BaseException:
             job_handle.terminate()
@@ -1280,6 +1188,27 @@ class K8sJobLauncher(JobLauncherSpec):
         if not entered_running:
             self.logger.warning(f"unable to enter running phase {job_id}")
         return job_handle
+
+    def _discard_empty_workspace(self, directory, device, inode):
+        try:
+            parent_fd = os.open(os.path.dirname(directory), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                name = os.path.basename(directory)
+                info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if (info.st_dev, info.st_ino) != (device, inode):
+                    return
+                # rmdir refuses symlinks and nonempty workspaces. Never recurse.
+                os.rmdir(name, dir_fd=parent_fd)
+            finally:
+                os.close(parent_fd)
+        except OSError as error:
+            self.logger.warning("retaining job workspace after rejected launch: %s", error)
+
+    def get_execution_lifetime(self, job_meta, fl_ctx):
+        return "job"
+
+    def prepare_job_manifest(self, manifest, job_id, site_name, workspace, **kwargs):
+        """Prepare a job Pod, optionally returning its CP-owned task service record."""
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
@@ -1312,6 +1241,193 @@ def _job_args_dict(job_args: dict, arg_names: list) -> dict:
 
 
 class ClientK8sJobLauncher(K8sJobLauncher):
+    """Launch resident or task CJs with an optional shared persistent jobs workspace."""
+
+    def __init__(
+        self,
+        *args,
+        job_workspace_pvc: str = None,
+        job_workspace_pvc_root: str = None,
+        run_as_user: int = None,
+        run_as_group: int = None,
+        cj_resources: dict = None,
+        persist_resident_workspaces: bool = False,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if cj_resources is not None:
+            validate_cj_resource_spec({"@default": cj_resources})
+        self.cj_resources = {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
+        self.cj_resources.update(cj_resources or {})
+        if not isinstance(persist_resident_workspaces, bool):
+            raise ValueError("persist_resident_workspaces must be a boolean")
+        self.persist_resident_workspaces = persist_resident_workspaces
+        self.job_workspace_pvc = None
+        self.job_workspace_pvc_root = None
+        self.job_security_context = None
+        self._job_storage_lock = threading.Lock()
+        self._job_storage_checked = False
+        settings = (job_workspace_pvc, job_workspace_pvc_root, run_as_user, run_as_group)
+        if all(value is None for value in settings):
+            if persist_resident_workspaces:
+                raise ValueError("persist_resident_workspaces requires the persistent jobs PVC profile")
+            return
+        if any(value is None for value in settings):
+            raise ValueError("persistent job workspaces require PVC, CP mount and numeric UID/GID together")
+        self.job_workspace_pvc = validate_dns_name("job_workspace_pvc", job_workspace_pvc)
+        if not isinstance(job_workspace_pvc_root, str) or not os.path.isabs(job_workspace_pvc_root):
+            raise ValueError("job_workspace_pvc_root must name the CP's explicit mount of the existing jobs PVC")
+        self.job_workspace_pvc_root = os.path.realpath(job_workspace_pvc_root)
+        self.job_security_context = task_security_context(run_as_user, run_as_group)
+
+    def get_cj_resources(self, job_meta, site_name):
+        return {**self.cj_resources, **get_cj_resource_spec(job_meta, site_name)}
+
+    def get_execution_lifetime(self, job_meta, fl_ctx):
+        if self.job_workspace_pvc is None:
+            if has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
+                raise ValueError("task CJ resources require the persistent Kubernetes jobs profile")
+            return "job"
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace is None:
+            return "job"
+        config = ConfigService.load_config_dict(
+            workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID])
+        )
+        lifetime = get_client_execution_lifetime(config)
+        if lifetime == "task":
+            reject_job_gpu_reservation(job_meta, fl_ctx.get_identity_name())
+        elif has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
+            raise ValueError("cj_resource_spec does not match the deployed client execution_lifetime")
+        return lifetime
+
+    def prepare_job_manifest(
+        self,
+        manifest,
+        job_id,
+        site_name,
+        workspace,
+        *,
+        execution_lifetime="job",
+        job_meta=None,
+        fl_ctx=None,
+        transfer_token=None,
+        workspace_reservations=None,
+        startup_secret_name=None,
+    ):
+        if self.job_workspace_pvc is None or (execution_lifetime == "job" and not self.persist_resident_workspaces):
+            return
+
+        spec = manifest["spec"]
+        if (
+            len(spec["containers"]) != 1
+            or spec.get("initContainers")
+            or spec.get("ephemeralContainers")
+            or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
+        ):
+            raise ValueError("the persistent Kubernetes CJ profile requires one isolated container")
+        volumes = [volume for volume in spec["volumes"] if volume["name"] == "workspace-job"]
+        if len(volumes) != 1:
+            raise ValueError("persistent CJ requires the resident workspace-job volume")
+        volumes[0].clear()
+        volumes[0].update(name="workspace-job", persistentVolumeClaim={"claimName": self.job_workspace_pvc})
+        container = spec["containers"][0]
+        mounts = [mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]
+        if len(mounts) != 1 or mounts[0]["mountPath"] != self.workspace_mount_path:
+            raise ValueError("CJ workspace mount differs from the configured durable workspace")
+        if execution_lifetime == "task":
+            from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+            from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskService
+            from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
+
+            policy = TaskExecutionPolicy.from_workspace(workspace)
+            if type(policy.launcher) is not K8sTaskLauncher:
+                raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
+        if (
+            any(
+                volume.get("persistentVolumeClaim", {}).get("claimName") == self.job_workspace_pvc
+                for volume in spec["volumes"]
+                if volume is not volumes[0]
+            )
+            or len([mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job"]) != 1
+        ):
+            raise ValueError("the jobs PVC may only be mounted through the assigned job subPath")
+        mounts[0]["subPath"] = self._prepare_workspace_subpath(job_id, site_name)
+        if workspace_reservations is not None:
+            directory = os.path.join(self.job_workspace_pvc_root, mounts[0]["subPath"])
+            info = os.stat(directory, follow_symlinks=False)
+            workspace_reservations.append((directory, info.st_dev, info.st_ino))
+        container["securityContext"] = {
+            **container.get("securityContext", {}),
+            "privileged": False,
+            "runAsUser": self.job_security_context["runAsUser"],
+            "runAsGroup": self.job_security_context["runAsGroup"],
+            "runAsNonRoot": True,
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+        }
+        spec["securityContext"] = {**spec.get("securityContext", {}), **self.job_security_context}
+        spec["automountServiceAccountToken"] = False
+        if execution_lifetime != "task":
+            return
+        # A worker Pod cannot reach CJ's loopback. Kubernetes, rather than a
+        # job/template environment value, supplies the advertised CJ address.
+        env = [item for item in container.get("env", []) if item["name"] != ENV_CJ_POD_IP]
+        env.append(
+            {
+                "name": ENV_CJ_POD_IP,
+                "valueFrom": {"fieldRef": {"apiVersion": "v1", "fieldPath": "status.podIP"}},
+            }
+        )
+        container["env"] = env
+        if not self.get_cj_resources(job_meta, site_name).get("num_of_gpus"):
+            env = [item for item in container.get("env", []) if item["name"] not in GPU_ENVIRONMENT_NAMES]
+            env.extend(
+                {"name": name, "value": "none" if name == "NVIDIA_VISIBLE_DEVICES" else ""}
+                for name in sorted(GPU_ENVIRONMENT_NAMES)
+            )
+            container["env"] = env
+        spec["serviceAccountName"] = policy.launcher.worker_service_account
+        backend = policy.launcher.create_backend(
+            self.core_v1,
+            os.path.join(self.job_workspace_pvc_root, mounts[0]["subPath"]),
+            job_meta,
+            job_id,
+            site_name,
+            startup_secret_name=startup_secret_name,
+        )
+        cell = fl_ctx.get_engine().cell
+        return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
+
+    def _prepare_workspace_subpath(self, job_id, site_name):
+        subpath = job_workspace_subpath(job_id, site_name)
+        # CP explicitly mounts the same PVC. Create a fresh, owned job subtree
+        # instead of relying on kubelet-created subPath directory permissions.
+        # Never reuse retained data after a CJ/CP restart or failed launch.
+        from nvflare.app_opt.task_launcher.k8s_launcher import check_posix_storage
+
+        root = self.job_workspace_pvc_root
+        if not os.path.isdir(root):
+            raise ValueError("the jobs workspace PVC must already be mounted in CP")
+        with self._job_storage_lock:
+            if not self._job_storage_checked:
+                check_posix_storage(root)
+                self._job_storage_checked = True
+        parent = os.path.join(root, "nvflare-tasks")
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+        if os.path.islink(parent) or os.path.realpath(parent) != parent:
+            raise ValueError("job workspace parent must be a real directory on the configured PVC")
+        directory = os.path.join(root, subpath)
+        try:
+            os.mkdir(directory, mode=0o700)
+        except FileExistsError as error:
+            raise ValueError("job workspace already exists; retained job/site data cannot be reused") from error
+        info = os.stat(directory)
+        if info.st_uid != self.job_security_context["runAsUser"]:
+            self._discard_empty_workspace(directory, info.st_dev, info.st_ino)
+            raise ValueError("CP, CJ and workers must use the same nonroot numeric UID")
+        return subpath
+
     def get_module_args(self, _job_id, fl_ctx: FLContext):
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:

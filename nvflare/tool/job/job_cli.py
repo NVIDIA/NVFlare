@@ -36,12 +36,7 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.cli_arg_utils import get_arg_value
 from nvflare.tool.cli_session import add_startup_kit_selection_args, new_cli_session, new_cli_session_for_args
-from nvflare.tool.job.config.configer import (
-    build_config_file_indices,
-    filter_indices,
-    get_root_index,
-    merge_configs_from_cli,
-)
+from nvflare.tool.job.config.configer import build_config_file_indices, filter_indices, merge_configs_from_cli
 from nvflare.tool.job.job_client_const import (
     CONFIG_FED_CLIENT_CONF,
     CONFIG_FED_SERVER_CONF,
@@ -861,8 +856,9 @@ def save_merged_configs(app_merged_conf, job_folder, tmp_job_dir):
                 rel_file_path = os.path.relpath(file, job_folder)
                 dst_path = os.path.join(tmp_job_dir, rel_file_path)
 
-            root_index = get_root_index(next(iter(key_indices.values()))[0])
-            save_config(root_index.value, dst_path)
+            # The indexed tuple already owns the full, mutated root. A first
+            # leaf can belong to a nested block (especially in sorted YAML).
+            save_config(config, dst_path)
 
 
 def prepare_meta_config(cmd_args, target_template_dir, app_names):

@@ -189,6 +189,9 @@ class FederatedClientBase:
             parent_url = cp_conn_props.get(ConnPropKey.URL)
             parent_conn_sec = cp_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             create_internal_listener = False
+            # Task workers join the job cell with the job's own credential, scoped to this cell and its
+            # descendants, so cells under it authenticate as the job, not as their own leaf name.
+            auth_identity_map[my_fqcn] = client_auth_identity
             if parent_conn_sec:
                 parent_resources = {DriverParams.CONNECTION_SECURITY.value: parent_conn_sec}
         else:
