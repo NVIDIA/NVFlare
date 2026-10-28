@@ -95,6 +95,7 @@ class GPUResourceManager(AutoCleanResourceManager):
                 environments where the NVFlare process runs on a node without GPUs (for example, some
                 Kubernetes deployments) but GPU resources are managed externally.
             exclusive: Reserve the full configured memory budget per device, so jobs cannot share a GPU.
+                With ignore_host=True, a nonempty CUDA_VISIBLE_DEVICES mask selects the pool's integer GPU IDs.
         """
         if not isinstance(num_of_gpus, int):
             raise ValueError(f"num_of_gpus should be of type int, but got {type(num_of_gpus)}.")
@@ -119,15 +120,14 @@ class GPUResourceManager(AutoCleanResourceManager):
         self.mem_per_gpu_in_GiB = mem_per_gpu_in_GiB
 
         resource_gpu_ids = list(range(num_of_gpus))
-        if ignore_host:
+        if ignore_host and exclusive and num_of_gpus and os.environ.get(CUDA_VISIBLE_DEVICES, "").strip():
             visible_gpu_ids = _get_cuda_visible_device_indices()
-            if num_of_gpus and visible_gpu_ids is None and CUDA_VISIBLE_DEVICES in os.environ:
-                raise ValueError("CUDA_VISIBLE_DEVICES must contain integer GPU indices when ignore_host=True")
-            if visible_gpu_ids is not None:
-                if num_of_gpus > len(visible_gpu_ids):
-                    raise ValueError("num_of_gpus exceeds the CUDA_VISIBLE_DEVICES pool")
-                resource_gpu_ids = visible_gpu_ids[:num_of_gpus]
-        else:
+            if visible_gpu_ids is None:
+                raise ValueError("CUDA_VISIBLE_DEVICES must contain integer GPU indices for an exclusive pool")
+            if num_of_gpus > len(visible_gpu_ids):
+                raise ValueError("num_of_gpus exceeds the CUDA_VISIBLE_DEVICES pool")
+            resource_gpu_ids = visible_gpu_ids[:num_of_gpus]
+        elif not ignore_host:
             if num_of_gpus > 0:
                 host_gpu_ids = get_host_gpu_ids()
                 managed_host_gpu_ids = _get_managed_host_gpu_ids(host_gpu_ids)

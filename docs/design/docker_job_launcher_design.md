@@ -129,7 +129,7 @@ CPU-only clients can remove the `resource_consumer` component. GPU clients must 
 
 Study and site GPU defaults are resolved before client resource admission. Jobs can inherit `docker_kwargs.device_requests` from their study without declaring a GPU count. An explicit job GPU count overrides those defaults; zero declines GPUs. Count requests reserve free devices, `Count: -1` reserves the client's entire pool, and numeric `DeviceIDs` reserve those specific devices.
 
-Host-independent GPU pools require integer indices in `CUDA_VISIBLE_DEVICES`; unsupported UUID or MIG masks fail at startup instead of selecting different GPUs. Server job containers retain their existing Docker GPU requests: client resource-manager admission applies only to clients.
+Exclusive host-independent GPU pools use nonempty integer `CUDA_VISIBLE_DEVICES` masks; unsupported UUID or MIG masks fail at startup instead of selecting different GPUs. An empty mask only hides GPUs from the parent and leaves the configured pool unchanged. Existing non-exclusive `ignore_host=True` managers continue to ignore the host mask. Server job containers retain their existing Docker GPU requests: client resource-manager admission applies only to clients.
 
 ### Workspace / Storage
 - SP/CP containers receive a read-write bind mount of the host workspace directory.
@@ -673,8 +673,8 @@ single flag sets everything needed for that mode:
 | `docker` | `DockerJobLauncher` | `GPUResourceManager` for GPU clients; otherwise passthrough | `PassthroughResourceConsumer` for GPU clients | `start_docker.sh` |
 | `k8s` | `K8sJobLauncher` | `PassthroughResourceManager` | none | Helm charts |
 
-The tool removes **both** `GPUResourceManager` and `GPUResourceConsumer` for Docker/K8s mode
-and uses passthrough resource management by default. Docker GPU clients keep `GPUResourceManager` in exclusive, host-independent mode and use a no-op consumer. This is important: `GPUResourceConsumer` sets
+The tool uses passthrough resource management for K8s and CPU-only Docker clients.
+Docker GPU clients keep `GPUResourceManager` in exclusive, host-independent mode and use a no-op consumer. `GPUResourceConsumer` sets
 `CUDA_VISIBLE_DEVICES` in the SP/CP process
 environment, which is correct for process mode (subprocess inherits it) but wrong for
 Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU

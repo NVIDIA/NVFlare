@@ -203,14 +203,19 @@ Start the server from the `examples/docker` directory:
 Wait for the server container to start (`docker inspect --format
 '{{.State.Running}}' server` should print `true`), then start both clients:
 
+For GPU jobs on one host, this example needs four GPUs: the two-GPU capacity in
+`project.yml` is per client. Give the clients disjoint pools as below. On separate
+hosts, each client can use `CUDA_VISIBLE_DEVICES=0,1`. For CPU-only use, set both
+capacities to zero before provisioning and use the CPU job in Step 5.
+
 ```bash
 (
   cd workspace/docker_test_project/prepared/site-1
-  nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
+  CUDA_VISIBLE_DEVICES=0,1 nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
 )
 (
   cd workspace/docker_test_project/prepared/site-2
-  nohup bash startup/start_docker.sh > site-2.log 2>&1 < /dev/null &
+  CUDA_VISIBLE_DEVICES=2,3 nohup bash startup/start_docker.sh > site-2.log 2>&1 < /dev/null &
 )
 ```
 

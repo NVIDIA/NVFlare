@@ -65,6 +65,19 @@ def test_host_independent_pool_rejects_unsupported_masks(monkeypatch, mask):
         GPUResourceManager(1, 0, ignore_host=True, exclusive=True)
 
 
+@pytest.mark.parametrize("mask", ["", "GPU-selected-device", "1,3"])
+def test_ignore_host_keeps_legacy_unmasked_pool(monkeypatch, mask):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    manager = GPUResourceManager(2, 16, ignore_host=True)
+    assert list(manager.resources) == [0, 1]
+
+
+def test_exclusive_pool_allows_empty_parent_mask(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    manager = GPUResourceManager(2, 0, ignore_host=True, exclusive=True)
+    assert list(manager.resources) == [0, 1]
+
+
 def test_pinned_gpu_request_waits_for_that_device():
     manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
     ctx = FLContext()

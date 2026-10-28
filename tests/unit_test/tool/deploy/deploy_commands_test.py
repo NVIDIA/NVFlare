@@ -288,7 +288,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
             },
         },
     )
-    capsys.readouterr()
+    captured = capsys.readouterr()
+    if num_of_gpus:
+        assert "replaces component 'resource_manager'" not in captured.out + captured.err
 
     assert not (kit / "startup" / "start_docker.sh").exists()
     assert (kit / "startup" / "start.sh").exists()

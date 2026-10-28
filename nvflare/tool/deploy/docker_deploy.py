@@ -33,6 +33,7 @@ from nvflare.tool.deploy.deploy_common import (
     FED_CLIENT_JSON,
     FED_SERVER_JSON,
     GPU_RESOURCE_MANAGER,
+    PASSTHROUGH_RESOURCE_CONSUMER,
     RESOURCES_JSON_DEFAULT,
     ROLE_SERVER,
     RUNTIME_DOCKER,
@@ -116,7 +117,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
                 args = component.get("args") or {}
                 if args.get("num_of_gpus", 0) > 0:
                     resource_manager = {**component, "args": {**args, "ignore_host": True, "exclusive": True}}
-                    resource_consumer = "nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer"
+                    resource_consumer = PASSTHROUGH_RESOURCE_CONSUMER
                 break
     _patch_resources(
         kit_info.kit_dir, "docker_launcher", launcher_path, launcher_args, resource_manager, resource_consumer

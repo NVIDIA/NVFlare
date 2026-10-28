@@ -95,14 +95,18 @@ _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
 def _is_gpu_request(request):
-    return any("gpu" in capabilities for capabilities in request.get("Capabilities", []))
+    return any("gpu" in capabilities for capabilities in request.get("capabilities", request.get("Capabilities")) or [])
 
 
 def _get_gpu_request(docker_spec, portable_spec, container_kwargs):
     count = docker_spec.get("num_of_gpus", portable_spec.get("num_of_gpus"))
     if count is not None:
         return {"Count": count, "Capabilities": [["gpu"]]}
-    requests = [request for request in container_kwargs.get("device_requests") or [] if _is_gpu_request(request)]
+    requests = [
+        docker.types.DeviceRequest(**request)
+        for request in container_kwargs.get("device_requests") or []
+        if _is_gpu_request(request)
+    ]
     if len(requests) > 1:
         raise ValueError("Docker GPU allocation requires a single GPU device request")
     return requests[0] if requests else None
@@ -710,6 +714,7 @@ class DockerJobLauncher(JobLauncherSpec):
         # Job count overrides study and site GPU defaults. Client admission reserves
         # the effective request; servers retain Docker's site-owned device selection.
         gpu_request = _get_gpu_request(docker_spec, portable_spec, merged_container_kwargs)
+        count = 0
         if gpu_request is not None:
             count = len(gpu_request.get("DeviceIDs") or []) or gpu_request.get("Count", 0)
             requests = [r for r in merged_container_kwargs.get("device_requests") or [] if not _is_gpu_request(r)]
@@ -721,12 +726,12 @@ class DockerJobLauncher(JobLauncherSpec):
                     gpu_request = {**gpu_request, "DeviceIDs": [str(i) for i in allocation]}
                     gpu_request.pop("Count", None)
                 requests.append(gpu_request)
-            else:
-                environment["NVIDIA_VISIBLE_DEVICES"] = "void"
             if requests:
                 merged_container_kwargs["device_requests"] = requests
             else:
                 merged_container_kwargs.pop("device_requests", None)
+        if not count:
+            environment["NVIDIA_VISIBLE_DEVICES"] = "void"
         if "num_of_cpus" in portable_spec:
             merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
         if "memory" in portable_spec:
@@ -856,10 +861,9 @@ class DockerJobLauncher(JobLauncherSpec):
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):
                 self.logger.warning(f"container {container_name} did not reach RUNNING state for job {job_id}")
-        except BaseException:
+        except Exception:
+            self.logger.exception(f"error waiting for container {container_name} to start")
             job_handle.terminate()
-            job_handle.wait()
-            raise
 
         # Always return a handle — caller detects failure via poll()
         return job_handle
@@ -878,7 +882,9 @@ class DockerJobLauncher(JobLauncherSpec):
                 )
                 resources = fl_ctx.get_prop(FLContextKey.CLIENT_RESOURCE_SPECS)
                 if request is not None:
-                    ids = request.get("DeviceIDs") or []
+                    ids = [int(gpu_id) for gpu_id in request.get("DeviceIDs") or []]
+                    if len(ids) != len(set(ids)):
+                        raise ValueError("Docker GPU DeviceIDs must contain distinct devices")
                     count = len(ids) or request.get("Count", 0)
                     manager = fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER)
                     if count and (not isinstance(manager, GPUResourceManager) or not manager.resources):
@@ -890,7 +896,7 @@ class DockerJobLauncher(JobLauncherSpec):
                         raise ValueError("GPU count mismatch between Docker and the resource manager request")
                     resources["num_of_gpus"] = count
                     if ids:
-                        resources["gpu_ids"] = [int(gpu_id) for gpu_id in ids]
+                        resources["gpu_ids"] = ids
             except Exception as e:
                 fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, str(e), private=True, sticky=False)
 

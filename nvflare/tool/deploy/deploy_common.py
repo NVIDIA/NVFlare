@@ -62,6 +62,9 @@ SLURM_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.slurm.ServerSlurmJobLaunch
 PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
 PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
 GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
+PASSTHROUGH_RESOURCE_CONSUMER = (
+    "nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer"
+)
 LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher", "slurm_launcher"}
 BUILTIN_LAUNCHER_PATHS = {
     DOCKER_CLIENT_LAUNCHER,
@@ -74,7 +77,7 @@ BUILTIN_LAUNCHER_PATHS = {
     PROCESS_SERVER_LAUNCHER,
 }
 BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
-BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
+BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER, PASSTHROUGH_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 _STUDY_RUNTIME_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / STUDY_RUNTIME_YAML
 
@@ -210,7 +213,11 @@ def _patch_resources(
     if not isinstance(components, list):
         _fail("INVALID_KIT", "resources.json.default components must be a list.", "Fix the startup kit resources file.")
 
-    _warn_for_replaced_components(components, launcher_id, launcher_path)
+    _warn_for_replaced_components(
+        [c for c in components if not (resource_manager and c.get("id") == "resource_manager")],
+        launcher_id,
+        launcher_path,
+    )
     components[:] = [
         c for c in components if c.get("id") not in LAUNCHER_IDS and c.get("id") not in RESOURCE_CONSUMER_IDS
     ]
