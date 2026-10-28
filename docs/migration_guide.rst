@@ -175,6 +175,24 @@ Impact:
 For whole local PoC lifecycle control, use the PoC start/stop flow instead of
 the general system admin API.
 
+FLARE API Abort of a Starting Job
+---------------------------------
+
+On the current ``main`` branch, :meth:`Session.abort_job<nvflare.fuel.flare_api.api_spec.SessionSpec.abort_job>`
+retries for up to 30 seconds when the server replies that the job is still
+starting ("is starting; retry abort."). Previously this reply raised
+``InternalError`` immediately.
+
+Impact:
+
+- Callers no longer need their own retry loop around ``abort_job`` for a job
+  that was just submitted. This includes the Recipe ``Run.abort()``, the POC and
+  production environments, and the ``nvflare job abort`` command.
+- A call can now block for up to 30 seconds before raising if the job is still
+  starting, for example while another thread holds the same ``Run`` lock.
+- All other errors, including authorization failures, are raised immediately and
+  are not retried. Existing handlers for them continue to work unchanged.
+
 CLI Startup Kit Resolution Change
 ---------------------------------
 
