@@ -42,7 +42,7 @@ def main():
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument("--client-script", choices=("client.py", "client_evaluate.py"), default="client.py")
     args = parser.parse_args()
-    run = create_recipe(args.num_rounds, args.client_script).execute(SimEnv(num_clients=2))
+    run = create_recipe(args.num_rounds, args.client_script).execute(SimEnv(num_clients=2, log_config="progress"))
     print("Results:", run.get_result())
 
 

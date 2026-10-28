@@ -82,6 +82,8 @@ cd 01.1_running_federated_learning_job/code
 python job.py
 ```
 
+All section jobs use progress logging by default. For detailed console output, run `python job.py --log_config full`. The final run summary shows evaluation results and output locations in either mode.
+
 When moving to another section, open its notebook and run its cells in order. The notebook selects that section's `code` directory and identifies the result paths. Its README also gives terminal commands. The introduction and experiment-tracking overview link to the hands-on sections.
 
 The examples use 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. They are offline workflow exercises, not benchmarks. Local SGD state is reset every round. Clients report actual optimizer-step counts for aggregation and evaluate received weights before training; final evaluation measures the persisted checkpoint separately.

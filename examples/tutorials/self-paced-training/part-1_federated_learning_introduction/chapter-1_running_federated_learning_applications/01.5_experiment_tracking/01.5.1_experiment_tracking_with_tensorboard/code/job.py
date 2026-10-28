@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
     parser.add_argument("--num_rounds", type=int, default=3)
     args = parser.parse_args()
-    run = create_recipe(args.num_rounds).execute(SimEnv(num_clients=2))
+    run = create_recipe(args.num_rounds).execute(SimEnv(num_clients=2, log_config="progress"))
     print("Results:", run.get_result())
 
 

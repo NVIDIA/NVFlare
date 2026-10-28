@@ -1,6 +1,6 @@
 # Inspect execution logs
 
-`client.py` uses a Python logger for local training messages. Choose the console detail with the Recipe logging option.
+`client.py` uses a Python logger for local training messages. Progress logging is the default; use the Recipe logging option to choose another console view, such as `--log_config full`.
 
 Complete the course [setup](../../01.1_running_federated_learning_job/setup.ipynb), then run from this `code` directory:
 

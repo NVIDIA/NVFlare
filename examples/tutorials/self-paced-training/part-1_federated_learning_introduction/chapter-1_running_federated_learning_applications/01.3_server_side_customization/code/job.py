@@ -46,7 +46,7 @@ def main():
     parser.add_argument("--patience", type=int, default=2)
     args = parser.parse_args()
     recipe = create_recipe(args.num_rounds, args.stop_accuracy, args.patience)
-    run = recipe.execute(SimEnv(num_clients=2))
+    run = recipe.execute(SimEnv(num_clients=2, log_config="progress"))
     print("Results:", run.get_result())
 
 

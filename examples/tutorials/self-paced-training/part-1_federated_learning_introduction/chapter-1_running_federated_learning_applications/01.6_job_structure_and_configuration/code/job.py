@@ -46,7 +46,11 @@ def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
     parser.add_argument("--per-site", action="store_true")
     args = parser.parse_args()
-    env = SimEnv(clients=["site-1", "site-2"]) if args.per_site else SimEnv(num_clients=2)
+    env = (
+        SimEnv(clients=["site-1", "site-2"], log_config="progress")
+        if args.per_site
+        else SimEnv(num_clients=2, log_config="progress")
+    )
     run = create_recipe(args.per_site).execute(env)
     print("Results:", run.get_result())
 

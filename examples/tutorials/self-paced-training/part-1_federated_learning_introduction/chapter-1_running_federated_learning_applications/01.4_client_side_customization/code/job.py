@@ -40,5 +40,5 @@ def create_recipe():
 
 
 if __name__ == "__main__":
-    run = create_recipe().execute(SimEnv(clients=["site-1", "site-2"]))
+    run = create_recipe().execute(SimEnv(clients=["site-1", "site-2"], log_config="progress"))
     print("Results:", run.get_result())

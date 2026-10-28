@@ -5,7 +5,7 @@ Configure the maximum rounds, stopping accuracy, patience, and best-model filena
 Complete the course [setup](../../01.1_running_federated_learning_job/setup.ipynb), then run from this `code` directory:
 
 ```bash
-python job.py --log_config progress
+python job.py
 ```
 
 This section is self-contained: [job.py](job.py) defines its Recipe, [client.py](client.py) runs at each site, and [model.py](model.py) and [data.py](data.py) define its model and synthetic dataset. The training and evaluation functions are directly in the client script. Edit these files to explore this lesson's variation.
