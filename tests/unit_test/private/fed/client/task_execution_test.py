@@ -172,9 +172,24 @@ def test_alias_timeout_and_specs_are_inert_snapshots():
 
 
 @pytest.mark.parametrize("mode", ["external_process", "attach"])
-def test_task_script_rejects_other_modes(mode):
-    with pytest.raises(ValueError, match="in_process"):
-        prepare_task_execution(_config(execution_mode=mode))
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+def test_external_sessions_keep_job_lifetime_and_explain_task_worker_placement(mode, lifetime):
+    config = _config(execution_mode=mode)
+    config["execution_lifetime"] = lifetime
+    args = config["executors"][0]["executor"]["args"]
+    del args["task_script_path"]
+    if mode == "external_process":
+        args.update(command=["/separate/env/bin/python", "train.py"], launch_once=False)
+    original = json.dumps(config, sort_keys=True)
+    if lifetime == "job":
+        assert prepare_task_execution(config) is None
+    else:
+        with pytest.raises(ValueError, match="in_process Client API inside the disposable worker") as error:
+            prepare_task_execution(config)
+        assert "on every backend" in str(error.value)
+        assert "ScriptRunner" in str(error.value)
+        assert "use job lifetime" in str(error.value)
+    assert json.dumps(config, sort_keys=True) == original
 
 
 @pytest.mark.parametrize("field", ["task_execution", "task_launcher", "task_state"])

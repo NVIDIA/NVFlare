@@ -16,6 +16,12 @@ deployment commands and troubleshooting; it is not required to understand this d
 | Task worker | No separate task runtime. | Constructs compute, executes one assignment, finalizes and exits. |
 | Server Job (SJ) | Issues assignments and receives results. | Uses the same assignment and result-receipt protocol. |
 
+Job-lifetime Client API `external_process` with `launch_once=False` already starts
+a fresh trainer for each task. Task lifetime additionally requires durable result
+staging and confirmed settlement of the entire owned compute scope before CJ
+publishes; retransmitting saved output must not require a live trainer. A fresh
+interpreter alone does not establish those guarantees.
+
 The current site profile uses one backend throughout CP, CJ and workers: Process
 uses processes; Kubernetes uses Pods. CPU or GPU is an independent resource choice
 within a capable backend. Site configuration selects the backend and its authority;
@@ -171,6 +177,14 @@ which must initialize from local data on every assignment. Filters, widgets,
 receivers and privacy processing remain in CJ. Custom decomposers are registered
 in both runtimes before decoding; that does not move compute into CJ.
 
+For task lifetime, Client API `in_process` means inside the disposable worker.
+Ordinary Python scripts run directly there, using a default ScriptRunner or
+recipe plus `execution_lifetime="task"`. The site chooses Process or a native
+launcher; the application does not insert a separate local trainer for any backend.
+Worker startup, imports, CUDA initialization and model/optimizer restoration repeat
+for each assignment. Resident job mode is preferable when retaining expensive
+model/environment state is more valuable than releasing compute between tasks.
+
 Workers construct authorized inert executor/component specifications directly,
 using `initialize`, `execute` and `finalize`. Finalization also runs after partial
 initialization or failure, although forced termination cannot guarantee it.
@@ -195,10 +209,17 @@ the complete file remains available for diagnosis. The first failure retains its
 type, message and diagnostic path; a later cleanup failure cannot replace it.
 
 SCAFFOLD clients do not restore their control variates between workers and are
-rejected. Local-model submission, external/attach Client API sessions and the
-resident Collab RPC service use job lifetime. Global-only cross-site evaluation
-is supported. Lightning's in-memory `restore_state=True` cache cannot restore a
-fresh task worker; use explicit native checkpoints or job lifetime.
+rejected. Local-model submission and the resident Collab RPC service use job
+lifetime. Shared task validation currently rejects external_process/attach Client
+API sessions on every backend. Supporting arbitrary external commands, separate
+environments or torchrun requires a shared task-worker command path with inherited
+resources, owned process-tree cancellation, durable output and settlement before
+publication; this is follow-up scope under #5434, not a fundamental incompatibility.
+Attach remains externally owned unless a separate contract is defined. Global-only
+cross-site evaluation is supported. Lightning's in-memory `restore_state=True`
+cache cannot restore a fresh task worker; use explicit native checkpoints or job
+lifetime. See the [Process profile](process_task_gpu_profile.md#choose-the-execution-lifetime)
+for the lifetime/mode matrix and a minimal recipe.
 
 Only canonical site `local/resources.json` (or its default fallback) supplies
 `task_execution`. Jobs cannot select the internal adapter, launcher, environment

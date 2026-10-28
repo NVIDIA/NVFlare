@@ -70,9 +70,11 @@ def _fill_additional_node_command(job: FedJob, target: str, command: list[str], 
 class ScriptRunner:
     """Adds a Client API training script to a FedJob.
 
-    Transport is selected by the site's Cell driver configuration. The runner only
-    selects whether the trainer runs in the Client Job process or in a process owned
-    and launched by NVFlare.
+    Transport is selected by the site's Cell driver configuration. With job
+    lifetime, in_process runs in the Client Job and external_process runs in an
+    NVFlare-owned trainer process. With task lifetime, in_process runs directly
+    in the disposable worker selected by the site's backend. Task lifetime
+    currently rejects external_process on every backend.
     """
 
     def __init__(
@@ -103,7 +105,9 @@ class ScriptRunner:
             framework: Trainer-native parameter representation.
             server_expected_format: Parameter representation expected by the server.
             params_transfer_type: Whether the trainer returns FULL parameters or a DIFF.
-            launch_once: Launch once per job or once per task in ``external_process`` mode.
+            launch_once: Launch once per job or once per task in job-lifetime
+                ``external_process`` mode. False already gives each task a fresh trainer;
+                it does not select the task-lifetime staged-result/settlement contract.
             launch_timeout: Maximum time for the external trainer to initialize and connect.
             shutdown_timeout: External-process orderly-exit wait. This also feeds several
                 accepted-result cleanup bounds in ``ClientAPIExecutor``. The default zero skips

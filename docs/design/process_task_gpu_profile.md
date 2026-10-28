@@ -6,6 +6,74 @@ schedule GPUs, reserve capacity, track memory budgets, exclude other processes,
 or guarantee free memory or a compute share. Device placement and contention
 policy belong to the site administrator or an external scheduler.
 
+## Choose the execution lifetime
+
+The application chooses job or task lifetime; the site chooses the launcher.
+`in_process` describes where the Client API runs relative to its executor. In
+task lifetime that executor is inside the disposable worker, not inside CJ.
+Process executes an ordinary Python task script directly in that worker. The
+Kubernetes implementation and Slurm task-launcher work use the same worker
+contract within their native execution scope, without a local Popen trainer.
+
+| Lifetime / Client API mode | Where the script runs | Current support |
+| --- | --- | --- |
+| `job` / `in_process` | Inside the resident CJ. | Existing behavior; preserves in-memory state between assignments. |
+| `job` / `external_process`, `launch_once=True` | An NVFlare-owned trainer kept across assignments. | Existing behavior. |
+| `job` / `external_process`, `launch_once=False` | A fresh NVFlare-owned trainer for each task. | Existing behavior; does not select task lifetime. |
+| `job` / `attach` | An externally managed trainer connected to CJ. | Existing behavior; the trainer's lifetime remains externally owned. |
+| `task` / `in_process` | Directly inside the disposable worker selected by the site. | Supported Python script path; Process GPU qualification is described below. |
+| `task` / `external_process` or `attach` | No launch. | Rejected by shared export and worker validation for every backend. |
+
+Job lifetime already offers a fresh interpreter through `external_process` with
+`launch_once=False`. Task lifetime adds the shared durable handoff: validate the
+staged result, confirm settlement of the entire owned compute scope, and only then
+publish through CJ. Saved-result retransmission needs no live trainer. Local
+completion, server receipt and algorithm acceptance remain separate facts. A
+job-lifetime external trainer can remain alive while its lazy result is transferred;
+it does not acquire the task-lifetime settlement-before-publication guarantee.
+
+Fresh workers repeat interpreter/library startup, CUDA initialization, model
+construction and parameter loading on each assignment. Optimizer state must be
+recreated or explicitly checkpointed and restored; it is not retained in memory.
+Staging output also adds I/O. Prefer resident job mode when keeping a large model
+or optimizer in memory, reusing an expensive environment, or maintaining a live
+session matters more than releasing compute between tasks.
+
+For an ordinary Python Client API script, use the existing recipe defaults and
+select only the lifetime:
+
+```python
+import torch
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+recipe = FedAvgRecipe(
+    name="process-task",
+    model=torch.nn.Linear(2, 1),
+    min_clients=2,
+    train_script="train.py",
+    execution_lifetime="task",
+)
+recipe.export("/tmp/process-task-jobs")
+```
+
+The recipe's default `in_process` ScriptRunner packages the script for direct
+worker execution. `FedJob(execution_lifetime="task")` with a default ScriptRunner
+is the equivalent lower-level export path. GPU counts and site device visibility
+are configured separately below. Do not add `launch_external_process=True`, an
+external command, or an internal worker executor for this path. Unsupported
+external commands are rejected; they are never converted into scripts or silently
+changed to job lifetime.
+
+Arbitrary commands, separate Python environments and `torchrun` in task lifetime
+are a shared parity gap tracked under [#5434](https://github.com/NVIDIA/NVFlare/issues/5434).
+A follow-up must launch the command from the shared task worker within the site's
+owned execution scope, inherit its allocation/environment, cancel its process tree,
+stage durable output and confirm full settlement before CJ publishes. Process,
+Kubernetes and Slurm need the same contract. Removing the current guards or adding
+a Process-only command launcher would not supply those guarantees. Attach remains
+externally owned/resident unless a separate ownership contract is designed. Docker
+task support is deferred; existing Docker job support is unchanged.
+
 ## Configuration and responsibility
 
 Configure the canonical site local/resources.json (or a supported HOCON/YAML or

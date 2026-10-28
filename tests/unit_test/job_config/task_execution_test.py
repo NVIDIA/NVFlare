@@ -25,6 +25,7 @@ from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.job_config.task_execution import prepare_task_execution
 from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -55,6 +56,22 @@ def test_export_preserves_job_default_and_supports_task_lifetime(tmp_path):
     assert config["components"][0]["id"] == "converter"
     assert "execution_scope" not in config["components"][0]
     assert config["executors"][0]["executor"]["path"].endswith(".ClientAPIExecutor")
+
+
+def test_default_script_runner_exports_direct_task_worker_without_a_trainer_command(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("pass\n")
+    job = _job("task")
+    job.to_clients(ScriptRunner(script=str(script), script_args=["--label", "two words"]))
+    job.export_job(str(tmp_path / "export"))
+    config = json.loads((tmp_path / "export" / job.name / "app" / "config" / "config_fed_client.json").read_text())
+    plan = prepare_task_execution(config)
+    args = plan.executors[0].executor["args"]
+    assert config["execution_lifetime"] == "task"
+    assert args["execution_mode"] == "in_process"
+    assert args["task_script_path"] == "train.py"
+    assert args["task_script_args"] == ["--label", "two words"]
+    assert "command" not in args
 
 
 def test_export_preserves_gpu_requests_for_receiving_site_admission(tmp_path):

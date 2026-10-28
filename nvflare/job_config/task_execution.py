@@ -232,7 +232,10 @@ def prepare_task_execution(client_config):
         if path == CLIENT_API_EXECUTOR_PATH:
             if args.get("execution_mode") != "in_process":
                 raise ValueError(
-                    "task lifetime requires in_process Client API; external_process/attach use job lifetime"
+                    "task lifetime requires in_process Client API inside the disposable worker; "
+                    "external_process/attach are currently unsupported in task lifetime on every backend. "
+                    "Use ScriptRunner or a recipe's default in_process mode for Python task scripts; "
+                    "use job lifetime for external_process/attach"
                 )
             result_timeout = _timeout("result_wait_timeout", args.get("result_wait_timeout"))
         elif path == STATISTICS_EXECUTOR_PATH:

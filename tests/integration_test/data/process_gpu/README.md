@@ -15,6 +15,15 @@ task controls. Set a finite task worker_timeout so hung workers have a bounded
 execution budget. Use real YAML for one task control and HOCON for another to
 exercise actual CP startup and CJ policy, authorization and logging readers.
 
+The exporter uses the existing FedAvgRecipe and sets only `execution_lifetime`
+for the lifecycle choice. Its default Client API `in_process` script runs directly
+inside the disposable task worker; no extra external trainer or internal executor
+configuration is needed. The site still chooses Process. Shared validation rejects
+task lifetime with `external_process`/`attach` on every backend; job-lifetime
+`external_process` with `launch_once=False` remains the existing fresh-trainer
+option. See the profile's mode matrix for its different publication/lifetime
+guarantees and the startup/model/optimizer reload costs.
+
 Export and submit these two-client, two-round jobs serially through the existing
 provisioned admin connection:
 
