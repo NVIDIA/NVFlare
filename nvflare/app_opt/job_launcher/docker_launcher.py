@@ -41,7 +41,14 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
@@ -320,7 +327,7 @@ class DockerJobHandle(JobHandleSpec):
             return self.docker_client.containers.get(self.container_id)
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found")
-            if self._exit_watcher is None or self._exit_watch_done.is_set():
+            if self._is_terminating() or self._exit_watcher is None or self._exit_watch_done.is_set():
                 self._set_terminal_state(JobReturnCode.ABORTED)
             return None
         except docker.errors.APIError as e:
@@ -332,12 +339,12 @@ class DockerJobHandle(JobHandleSpec):
 
     def _resolve_terminal_return_code(self, container) -> JobReturnCode:
         """Get the final JobReturnCode from a terminal container using exit code."""
-        if container.status == DockerStatus.DEAD or self._is_terminating():
+        if container.status == DockerStatus.DEAD:
             return JobReturnCode.ABORTED
         # EXITED: read actual exit code from container attrs
         self._exit_confirmed = True
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
-        return _exit_code_to_return_code(exit_code)
+        return JobReturnCode.ABORTED if self._is_terminating() else _exit_code_to_return_code(exit_code)
 
     def can_restart(self):
         return self._exit_confirmed and not self._is_terminating()
@@ -370,39 +377,36 @@ class DockerJobHandle(JobHandleSpec):
         return JobReturnCode.UNKNOWN
 
     def wait(self):
-        """Block until the container reaches a terminal state."""
-        while True:
-            if self._get_terminal_state() is not None:
-                return
+        """Wait for observed exit/removal; an API error never proves exit."""
+        while self.poll() == JobReturnCode.UNKNOWN:
+            if self._is_terminating():
+                # A cancellation request can fail before reaching Docker. Keep
+                # retrying it while ownership is retained by the caller.
+                self.terminate()
+                if self._get_terminal_state() is not None:
+                    return
             if self._exit_watcher is not None and not self._exit_watch_done.is_set():
                 self._exit_watch_done.wait(timeout=1)
-                continue
-            container = self._get_container()
-            if container is None:
+            else:
                 time.sleep(1)
-                continue
-            if container.status in TERMINAL_STATUSES:
-                self._set_terminal_state(self._resolve_terminal_return_code(container))
-                self._remove_container()
-                return
-            time.sleep(1)
 
     def terminate(self):
-        """Stop and remove the container; retain ownership until its exit is confirmed."""
+        """Request cancellation; mark terminal only after confirmed removal."""
         if self._get_terminal_state() is None:
             self._set_terminating()
         try:
             container = self.docker_client.containers.get(self.container_id)
             container.stop(timeout=0)
-            self._set_terminal_state(JobReturnCode.ABORTED)
             container.remove(force=True)
         except docker.errors.NotFound:
-            self.logger.info(f"container {self.container_name} not found during termination; assuming terminated")
-            self._set_terminal_state(JobReturnCode.ABORTED)
+            self.logger.info(f"container {self.container_name} not found during termination")
         except docker.errors.APIError as e:
             self.logger.error(f"error terminating container {self.container_name}: {e}")
+            return
         except Exception as e:
             self.logger.error(f"unexpected error terminating container {self.container_name}: {e}")
+            return
+        self._set_terminal_state(JobReturnCode.ABORTED)
 
     def enter_states(self, states_to_enter: list) -> bool:
         """Poll until the container enters one of the target states.
@@ -873,11 +877,15 @@ class DockerJobLauncher(JobLauncherSpec):
         )
 
         try:
+            publish_job_handle(job_handle, fl_ctx)
             if not job_handle.enter_states([DockerStatus.RUNNING]):
                 self.logger.warning(f"container {container_name} did not reach RUNNING state for job {job_id}")
         except Exception:
             self.logger.exception(f"error waiting for container {container_name} to start")
             job_handle.terminate()
+        except BaseException:
+            job_handle.terminate()
+            raise
 
         # Always return a handle — caller detects failure via poll()
         return job_handle

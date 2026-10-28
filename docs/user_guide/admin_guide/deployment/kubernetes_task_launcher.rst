@@ -61,6 +61,36 @@ Do not clear an unresolved finalizer solely to remove a stuck Pod. Verify runtim
 shutdown before operator reconciliation after CP loss, node loss or missing
 settlement evidence. No timeout or subsequent 404 substitutes for that proof.
 
+Job Pod settlement
+------------------
+
+The shared Kubernetes job launcher applies the same shutdown requirement to
+client and server job Pods in both job and task modes. Each Pod carries the
+``nvflare.nvidia.com/job-settlement`` finalizer. Cancellation sends a
+UID-preconditioned DELETE, then keeps the job registration, credentials and
+resource reservation while observing shutdown. A successful DELETE request,
+transport error or unexplained 404 does not release ownership.
+
+For a scheduled Pod, settlement requires shutdown evidence for every regular,
+init and ephemeral container, plus the
+``PodReadyToStartContainers=False`` condition showing the sandbox has stopped.
+Containers must be terminated, except that a failed non-restartable init
+container in a ``Never`` Pod can prove later init and regular containers never
+started. That exception also requires explicit waiting status without a runtime
+ID or restart history. Generic waiting snapshots, missing status and PodGC
+node-loss transitions do not qualify. An unscheduled Pod can
+settle after deletion is observed while it remains unbound. After proving
+shutdown, the launcher removes only its own finalizer using UID and
+resource-version checks; cancellation also waits for confirmed Pod removal.
+Completed job Pods remain available for inspection as before.
+
+The client and server parent accounts need ``patch`` on ``pods`` in their job
+namespace to remove this finalizer. The bundled Helm Roles include it. Update
+custom Roles before upgrading; otherwise stopped Pods remain fenced. Parents
+must remain alive for cleanup. If a parent or node is lost, verify the runtime
+has stopped before manually removing its finalizer or releasing reservations.
+There is no timeout-based release or automatic adoption after parent restart.
+
 Site prerequisites
 ------------------
 

@@ -703,7 +703,7 @@ class JobExecutor(ClientExecutor):
             job_handle.terminate(heartbeat_cleanup=True)
         else:
             job_handle.terminate()
-        self.logger.info(f"run ({job_id}): child worker process terminated")
+        self.logger.info(f"run ({job_id}): child worker termination requested")
 
     def abort_task(self, job_id):
         """Aborts the client executing task.

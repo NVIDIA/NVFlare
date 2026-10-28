@@ -401,13 +401,24 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             time.sleep(0.1)
 
         if job_handle is not None:
-            try:
-                job_handle.terminate()
-                self.logger.debug(f"job {job_id}: terminated job handle after abort cleanup")
-            except Exception as e:
-                self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
+            while True:
+                try:
+                    job_handle.terminate()
+                except Exception as e:
+                    self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
+                try:
+                    # Cancellation is request-only. Keep the SJ registered if
+                    # its backend cannot yet confirm that execution stopped.
+                    job_handle.wait()
+                    break
+                except Exception as e:
+                    self.logger.error(f"job {job_id}: abort settlement unconfirmed: {secure_format_exception(e)}")
+                    time.sleep(1.0)
+            self.logger.debug(f"job {job_id}: job handle settled after abort cleanup")
         with self.lock:
-            self.run_processes.pop(job_id, None)
+            current = self.run_processes.get(job_id)
+            if job_handle is None or (current and current.get(RunProcessKey.JOB_HANDLE) is job_handle):
+                self.run_processes.pop(job_id, None)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():

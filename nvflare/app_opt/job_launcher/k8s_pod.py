@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Stateless Kubernetes Pod construction and startup diagnostics shared by launchers."""
+"""Stateless Kubernetes Pod construction and lifecycle evidence shared by launchers."""
 
 import copy
 
@@ -244,3 +244,73 @@ def get_container_waiting_failure(status):
                 message = getattr(waiting, "message", None)
                 return " ".join(str(value) for value in (reason, message) if value) or "container is waiting"
     return ""
+
+
+def pod_shutdown_confirmed(pod):
+    """Require kubelet/container evidence, or an unbound deleting Pod."""
+    if not pod.spec.node_name:
+        return bool(pod.metadata.deletion_timestamp)
+    if pod.status.phase not in ("Succeeded", "Failed") or pod.status.reason in ("NodeLost", "Shutdown"):
+        return False
+    conditions = pod.status.conditions or []
+    # PodGC can mark an API-stale snapshot Failed after Node deletion while the
+    # isolated runtime still executes. That controller transition is not native
+    # shutdown evidence, even if an old sandbox condition is False.
+    if any(c.type == "DisruptionTarget" and c.reason == "DeletionByPodGC" for c in conditions):
+        return False
+    sandbox_down = any(
+        condition.type == "PodReadyToStartContainers" and condition.status == "False" for condition in conditions
+    )
+    containers = [
+        *(pod.spec.containers or []),
+        *(pod.spec.init_containers or []),
+        *(pod.spec.ephemeral_containers or []),
+    ]
+    statuses = [
+        *(pod.status.container_statuses or []),
+        *(pod.status.init_container_statuses or []),
+        *(pod.status.ephemeral_container_statuses or []),
+    ]
+    by_name = {status.name: status for status in statuses}
+    blocked = set()
+    if getattr(pod.spec, "restart_policy", None) == "Never":
+        for index, container in enumerate(pod.spec.init_containers or []):
+            status = by_name.get(container.name)
+            state = getattr(status, "state", None)
+            terminated = getattr(state, "terminated", None)
+            if (
+                getattr(container, "restart_policy", None) != "Always"
+                and terminated is not None
+                and isinstance(terminated.exit_code, int)
+                and terminated.exit_code != 0
+            ):
+                # A failed non-restartable init in a Never Pod prevents later
+                # init and all regular containers from ever starting. Generic
+                # Waiting/no-ID snapshots alone cannot establish that fact.
+                blocked.update(c.name for c in (pod.spec.init_containers or [])[index + 1 :])
+                blocked.update(c.name for c in pod.spec.containers or [])
+                break
+    stopped = {
+        status.name for status in statuses if _container_stopped(status, allow_never_started=status.name in blocked)
+    }
+    return sandbox_down and bool(containers) and all(container.name in stopped for container in containers)
+
+
+def _container_stopped(status, allow_never_started=False):
+    state = status.state
+    if state is None:
+        return False
+    if state.terminated is not None:
+        return True
+    # Kubelet leaves containers Waiting when an earlier init container failed.
+    # Only accept explicit never-started evidence, alongside terminal Pod phase
+    # and sandbox teardown above; absent status is never enough.
+    return (
+        allow_never_started
+        and getattr(state, "waiting", None) is not None
+        and getattr(state, "running", None) is None
+        and not getattr(status, "container_id", None)
+        and getattr(status, "restart_count", 0) in (None, 0)
+        and getattr(status, "started", False) is not True
+        and getattr(getattr(status, "last_state", None), "terminated", None) is None
+    )

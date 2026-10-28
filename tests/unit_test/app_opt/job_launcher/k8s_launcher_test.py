@@ -16,11 +16,13 @@ import copy
 import json
 import logging
 import os
+import ssl
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from urllib3.exceptions import MaxRetryError, NewConnectionError, ReadTimeoutError, SSLError
 
 try:
     import kubernetes.utils.quantity as _k8s_quantity
@@ -81,6 +83,7 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobRet
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     JOB_RETURN_CODE_MAPPING,
+    JOB_SETTLEMENT_FINALIZER,
     POD_STATE_MAPPING,
     WORKSPACE_MOUNT_PATH,
     ClientK8sJobLauncher,
@@ -131,7 +134,26 @@ def _make_job_config(**overrides):
 
 
 def _make_api_instance():
-    return MagicMock()
+    api = MagicMock()
+    api.create_namespaced_pod.return_value = _make_pod_response(PodPhase.RUNNING.value)
+    api.read_namespaced_pod.return_value = _make_pod_response(PodPhase.RUNNING.value)
+
+    def delete(**kwargs):
+        # This fixture simulates kubelet shutdown after deletion. The settlement
+        # regressions below use a separate API whose containers keep running.
+        stopped = _make_pod_response(PodPhase.FAILED.value)
+        stopped.metadata.uid = api.read_namespaced_pod.return_value.metadata.uid
+        stopped.metadata.deletion_timestamp = "deleting"
+        stopped.metadata.finalizers = [JOB_SETTLEMENT_FINALIZER]
+        api.read_namespaced_pod.side_effect = None
+        api.read_namespaced_pod.return_value = stopped
+
+    def release_finalizer(**kwargs):
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404)
+
+    api.delete_namespaced_pod.side_effect = delete
+    api.patch_namespaced_pod.side_effect = release_finalizer
+    return api
 
 
 def _make_condition(type_, status, reason=None, message=None):
@@ -161,13 +183,29 @@ def _make_terminated_container_status(name, exit_code):
 
 
 def _make_pod_response(phase=PodPhase.PENDING.value, conditions=None, node_name=None, container_statuses=None):
-    resp = Mock()
-    resp.status.phase = phase
-    resp.status.conditions = conditions or []
-    resp.status.node_name = node_name
-    resp.status.container_statuses = container_statuses or []
-    resp.status.init_container_statuses = []
-    return resp
+    terminal = phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value)
+    if terminal:
+        node_name = node_name or "node-1"
+        if conditions is None:
+            conditions = [_make_condition("PodReadyToStartContainers", "False")]
+        if container_statuses is None:
+            container_statuses = [_make_terminated_container_status("container-test-job-123", 0)]
+    container = SimpleNamespace(name="container-test-job-123")
+    return SimpleNamespace(
+        metadata=SimpleNamespace(
+            uid="owned-cj-uid", labels={}, finalizers=[], resource_version="1", deletion_timestamp=None
+        ),
+        spec=SimpleNamespace(node_name=node_name, containers=[container], init_containers=[], ephemeral_containers=[]),
+        status=SimpleNamespace(
+            phase=phase,
+            reason=None,
+            conditions=conditions or [],
+            node_name=node_name,
+            container_statuses=container_statuses or [],
+            init_container_statuses=[],
+            ephemeral_container_statuses=[],
+        ),
+    )
 
 
 def _make_resource_pending_pod(resource="cpu"):
@@ -218,6 +256,7 @@ def _make_handle(job_id="job-1", api=None, cfg=None, **kwargs):
         cfg = _make_job_config()
     handle = K8sJobHandle(job_id, api, cfg, **kwargs)
     handle.job_id = job_id
+    handle.bind_pod(_make_pod_response())
     return handle
 
 
@@ -572,24 +611,21 @@ class TestK8sJobHandle:
     # -- poll -----------------------------------------------------------------
     def test_poll_returns_unknown_when_running(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.RUNNING.value
+        resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.UNKNOWN
 
     def test_poll_returns_success_when_succeeded(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.SUCCESS
 
     def test_poll_returns_aborted_when_failed(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.FAILED.value
+        resp = _make_pod_response(PodPhase.FAILED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.ABORTED
@@ -603,8 +639,7 @@ class TestK8sJobHandle:
 
     def test_poll_removes_workspace_job_on_terminal_state(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
@@ -612,46 +647,60 @@ class TestK8sJobHandle:
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
     # -- terminate ------------------------------------------------------------
-    def test_terminate_deletes_pod_and_sets_terminated(self):
+    def test_terminate_requests_delete_without_claiming_shutdown(self):
         api = _make_api_instance()
         handle = _make_handle(api=api)
         handle.terminate()
-        api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="default", grace_period_seconds=0)
-        assert handle.terminal_state == JobState.TERMINATED
+        api.delete_namespaced_pod.assert_called_once_with(
+            name="job-1",
+            namespace="default",
+            body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+            _request_timeout=5,
+        )
+        assert handle.terminal_state is None
 
-    def test_terminate_sets_terminated_on_404(self):
+    def test_terminate_retains_ownership_on_404(self):
         api = _make_api_instance()
         api.delete_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
         handle = _make_handle(api=api)
         handle.terminate()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
 
-    def test_terminate_sets_terminated_on_non_404_api_error(self):
+    def test_terminate_retains_ownership_on_non_404_api_error(self):
         api = _make_api_instance()
         api.delete_namespaced_pod.side_effect = _FakeApiException(status=500, reason="Internal")
         handle = _make_handle(api=api)
         handle.terminate()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
 
-    def test_terminate_sets_terminated_on_network_error(self):
+    def test_terminate_retains_ownership_on_network_error(self):
         api = _make_api_instance()
         api.delete_namespaced_pod.side_effect = ConnectionError("network unreachable")
         handle = _make_handle(api=api)
         handle.terminate()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
 
     def test_terminate_custom_namespace(self):
         api = _make_api_instance()
         handle = _make_handle(api=api, namespace="custom-ns")
         handle.terminate()
-        api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="custom-ns", grace_period_seconds=0)
+        api.delete_namespaced_pod.assert_called_once_with(
+            name="job-1",
+            namespace="custom-ns",
+            body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+            _request_timeout=5,
+        )
 
     def test_terminate_uses_pod_name_when_supplied(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), pod_name="job-1-site-1")
+        handle.bind_pod(_make_pod_response())
         handle.terminate()
         api.delete_namespaced_pod.assert_called_once_with(
-            name="job-1-site-1", namespace="default", grace_period_seconds=0
+            name="job-1-site-1",
+            namespace="default",
+            body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+            _request_timeout=5,
         )
         assert handle.job_id == "job-1"
         assert handle.pod_name == "job-1-site-1"
@@ -669,27 +718,26 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         assert handle._query_phase() is None
 
-    def test_query_phase_sets_terminal_state_on_not_found(self):
+    def test_query_phase_retains_owner_on_unexplained_not_found(self):
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
         handle = _make_handle(api=api)
 
-        assert handle._query_phase() == PodPhase.UNKNOWN.value
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle._query_phase() is None
+        assert handle.terminal_state is None
 
     def test_query_phase_uses_pod_name_when_supplied(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.RUNNING.value
+        resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.return_value = resp
         handle = K8sJobHandle("job-1", api, _make_job_config(), pod_name="job-1-site-1")
+        handle.bind_pod(_make_pod_response())
         assert handle._query_phase() == PodPhase.RUNNING.value
-        api.read_namespaced_pod.assert_called_once_with(name="job-1-site-1", namespace="default")
+        api.read_namespaced_pod.assert_called_once_with(name="job-1-site-1", namespace="default", _request_timeout=5)
 
     def test_query_phase_returns_none_when_phase_missing(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = None
+        resp = _make_pod_response(None)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle._query_phase() is None
@@ -778,6 +826,7 @@ class TestK8sJobHandle:
         api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
         handle = _make_handle(api=api)
 
+        handle._shutdown_proved = True
         handle.wait()
 
         assert handle.terminal_state == JobState.TERMINATED
@@ -785,8 +834,7 @@ class TestK8sJobHandle:
 
     def test_wait_persists_succeeded_terminal_state(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -794,8 +842,7 @@ class TestK8sJobHandle:
 
     def test_wait_persists_terminated_terminal_state(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.FAILED.value
+        resp = _make_pod_response(PodPhase.FAILED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -838,8 +885,7 @@ class TestK8sJobHandle:
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -847,8 +893,7 @@ class TestK8sJobHandle:
 
     def test_wait_removes_workspace_job_on_terminal_state(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
@@ -865,9 +910,10 @@ class TestK8sJobHandle:
 
         handle.wait()
 
-        assert api.read_namespaced_pod.call_count == 2
+        assert api.read_namespaced_pod.call_count == 4
         api.delete_namespaced_pod.assert_called_once()
         assert handle.terminal_state == JobState.TERMINATED
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     def test_terminate_removes_workspace_job(self):
@@ -875,7 +921,8 @@ class TestK8sJobHandle:
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
         handle.terminate()
-        handle.terminate()
+        ws_transfer.remove_job.assert_not_called()
+        handle.wait()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
     def test_manual_terminate_poll_returns_aborted(self):
@@ -884,12 +931,13 @@ class TestK8sJobHandle:
 
         handle.terminate()
 
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        handle.wait()
         assert handle.poll() == JobReturnCode.ABORTED
 
     def test_poll_honors_preserved_return_code_when_observed_state_becomes_terminal(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.FAILED.value
+        resp = _make_pod_response(PodPhase.FAILED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.terminal_return_code = JobReturnCode.EXCEPTION
@@ -902,6 +950,7 @@ class TestK8sJobHandle:
         api.read_namespaced_pod.return_value = _make_resource_pending_pod()
         handle = _make_handle(api=api, pending_timeout=0)
 
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
         api.delete_namespaced_pod.assert_called_once()
@@ -921,6 +970,7 @@ class TestK8sJobHandle:
         )
         handle = _make_handle(api=api, pending_timeout=120)
 
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
         api.delete_namespaced_pod.assert_called_once()
@@ -929,45 +979,41 @@ class TestK8sJobHandle:
     # -- enter_states ---------------------------------------------------------
     def test_enter_states_returns_true_when_state_matches(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.RUNNING.value
+        resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is True
 
     def test_enter_states_accepts_single_state(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states(JobState.SUCCEEDED) is True
 
     def test_enter_states_returns_false_on_timeout(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.PENDING.value
+        resp = _make_pod_response(PodPhase.PENDING.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=0)
         assert handle.enter_states([JobState.RUNNING]) is False
 
     def test_enter_states_terminates_on_timeout(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.PENDING.value
+        resp = _make_pod_response(PodPhase.PENDING.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=0)
         handle.enter_states([JobState.RUNNING])
         api.delete_namespaced_pod.assert_called_once()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
 
     def test_enter_states_timeout_poll_returns_exception(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.PENDING.value
+        resp = _make_pod_response(PodPhase.PENDING.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=0)
         handle.enter_states([JobState.RUNNING])
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -990,9 +1036,11 @@ class TestK8sJobHandle:
         api.delete_namespaced_pod.assert_called_once_with(
             name="pending-resource-pod",
             namespace="nvflare-test",
-            grace_period_seconds=0,
+            body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+            _request_timeout=5,
         )
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1007,7 +1055,8 @@ class TestK8sJobHandle:
 
         api.read_namespaced_pod.assert_called_once()
         api.delete_namespaced_pod.assert_called_once()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1029,6 +1078,7 @@ class TestK8sJobHandle:
             field_selector="involvedObject.name=job-1",
         )
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1052,6 +1102,7 @@ class TestK8sJobHandle:
 
         api.read_namespaced_pod.assert_called_once()
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1069,6 +1120,7 @@ class TestK8sJobHandle:
         assert handle.enter_states([JobState.RUNNING]) is False
 
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1097,6 +1149,7 @@ class TestK8sJobHandle:
         assert handle.enter_states([JobState.RUNNING]) is False
 
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1104,8 +1157,7 @@ class TestK8sJobHandle:
         mock_time.time.side_effect = [0.0, 0.0, 1.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [_make_pod_response(), running_resp]
         _set_pod_events(
             api,
@@ -1127,8 +1179,7 @@ class TestK8sJobHandle:
             conditions=[_make_condition("PodScheduled", "True")],
             container_statuses=[_make_waiting_container_status("ContainerStatusUnknown")],
         )
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [unknown_waiting, running_resp]
         handle = _make_handle(api=api, timeout=10, pending_timeout=0)
 
@@ -1151,6 +1202,7 @@ class TestK8sJobHandle:
         assert handle.enter_states([JobState.RUNNING]) is False
 
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1168,6 +1220,7 @@ class TestK8sJobHandle:
         assert handle.enter_states([JobState.RUNNING]) is False
 
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1175,8 +1228,7 @@ class TestK8sJobHandle:
         mock_time.time.side_effect = [120.0, 120.0, 121.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [_make_container_creating_pod(), running_resp]
         _set_pod_events(
             api,
@@ -1193,8 +1245,7 @@ class TestK8sJobHandle:
         mock_time.time.side_effect = [0.0, 0.0, 1.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [_make_container_creating_pod(), running_resp]
         api.list_namespaced_event.side_effect = _FakeApiException(status=500, reason="Internal")
         handle = _make_handle(api=api, timeout=10, pending_timeout=0)
@@ -1205,8 +1256,7 @@ class TestK8sJobHandle:
 
     def test_enter_states_returns_false_on_terminal_pod_phase(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.FAILED.value
+        resp = _make_pod_response(PodPhase.FAILED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -1214,8 +1264,7 @@ class TestK8sJobHandle:
 
     def test_enter_states_returns_false_on_succeeded_when_waiting_for_running(self):
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -1226,6 +1275,7 @@ class TestK8sJobHandle:
         api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
         handle = _make_handle(api=api, timeout=None, pending_timeout=120)
 
+        handle._shutdown_proved = True
         assert handle.enter_states([JobState.RUNNING]) is False
         assert handle.terminal_state == JobState.TERMINATED
         api.delete_namespaced_pod.assert_not_called()
@@ -1239,17 +1289,17 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api, timeout=None, pending_timeout=2)
 
         assert handle.enter_states([JobState.RUNNING]) is False
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
         assert api.read_namespaced_pod.call_count == 1
         api.delete_namespaced_pod.assert_called_once()
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
     def test_enter_states_does_not_count_api_errors_as_pending(self, mock_sleep):
         api = _make_api_instance()
         pending_resp = _make_resource_pending_pod()
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [
             pending_resp,
             _FakeApiException(status=500, reason="Internal"),
@@ -1280,7 +1330,8 @@ class TestK8sJobHandle:
 
         assert api.read_namespaced_pod.call_count == 4
         api.delete_namespaced_pod.assert_called_once()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
@@ -1288,8 +1339,7 @@ class TestK8sJobHandle:
         mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        running_resp = Mock()
-        running_resp.status.phase = PodPhase.RUNNING.value
+        running_resp = _make_pod_response(PodPhase.RUNNING.value)
         api.read_namespaced_pod.side_effect = [
             _make_pod_response(),
             _make_pod_response(),
@@ -1343,7 +1393,10 @@ class TestK8sJobHandle:
 
         assert api.read_namespaced_pod.call_count == 5
         api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state is None
+        handle.wait()
         assert handle.terminal_state == JobState.TERMINATED
+        handle.wait()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     def test_enter_states_raises_on_invalid_state(self):
@@ -1373,7 +1426,7 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api, timeout=10)
         handle.enter_states([JobState.RUNNING])
         api.delete_namespaced_pod.assert_called_once()
-        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.terminal_state is None
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_wall_clock_not_fired_when_timeout_none(self, mock_time):
@@ -1382,8 +1435,7 @@ class TestK8sJobHandle:
         mock_time.time.return_value = 9999.0
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.SUCCEEDED.value
+        resp = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=None)
         handle.enter_states([JobState.RUNNING])
@@ -1397,8 +1449,7 @@ class TestK8sJobHandle:
         mock_time.sleep = Mock()
         api = _make_api_instance()
         resp_creating = _make_container_creating_pod()
-        resp_succeeded = Mock()
-        resp_succeeded.status.phase = PodPhase.SUCCEEDED.value
+        resp_succeeded = _make_pod_response(PodPhase.SUCCEEDED.value)
         api.read_namespaced_pod.side_effect = [resp_creating, resp_succeeded]
         handle = _make_handle(api=api, timeout=10)
         result = handle.enter_states([JobState.RUNNING])
@@ -1801,7 +1852,7 @@ class TestK8sJobLauncherLaunchJob:
         mock_yaml.safe_load.return_value = study_data_pvc_dict
         self.mock_open = mock_open
         self.mock_yaml = mock_yaml
-        mock_api = MagicMock()
+        mock_api = _make_api_instance()
         mock_core_cls.return_value = mock_api
         self.mock_transfer_cls = mock_transfer_cls
         mock_transfer = MagicMock()
@@ -1827,8 +1878,8 @@ class TestK8sJobLauncherLaunchJob:
         return launcher, mock_api
 
     def _prime_running(self, mock_api):
-        resp = Mock()
-        resp.status.phase = PodPhase.RUNNING.value
+        resp = _make_pod_response(PodPhase.RUNNING.value)
+        mock_api.create_namespaced_pod.return_value = resp
         mock_api.read_namespaced_pod.return_value = resp
 
     # -- return value ---------------------------------------------------------
@@ -1898,7 +1949,9 @@ class TestK8sJobLauncherLaunchJob:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert handle.job_id == _EXPECTED_JOB_ID
             assert handle.pod_name == _EXPECTED_POD_NAME
-            mock_api.read_namespaced_pod.assert_called_once_with(name=_EXPECTED_POD_NAME, namespace="test-ns")
+            mock_api.read_namespaced_pod.assert_called_once_with(
+                name=_EXPECTED_POD_NAME, namespace="test-ns", _request_timeout=5
+            )
         finally:
             _exit_patches(patches)
 
@@ -1993,13 +2046,17 @@ class TestK8sJobLauncherLaunchJob:
             meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["pending_timeout"] = 0
             handle = launcher.launch_job(meta, _make_launch_fl_ctx())
 
-            assert handle.terminal_state == JobState.TERMINATED
+            assert handle.terminal_state is None
+            mock_api.read_namespaced_pod.assert_called_once_with(
+                name=_EXPECTED_POD_NAME, namespace="test-ns", _request_timeout=5
+            )
+            handle.wait()
             assert handle.poll() == JobReturnCode.EXCEPTION
-            mock_api.read_namespaced_pod.assert_called_once_with(name=_EXPECTED_POD_NAME, namespace="test-ns")
             mock_api.delete_namespaced_pod.assert_called_once_with(
                 name=_EXPECTED_POD_NAME,
                 namespace="test-ns",
-                grace_period_seconds=0,
+                body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+                _request_timeout=5,
             )
         finally:
             _exit_patches(patches)
@@ -2038,9 +2095,14 @@ class TestK8sJobLauncherLaunchJob:
             if abort_before_publish:
                 executor.abort_app(_JOB_UUID)
             handle = launcher.launch_job(_make_launch_job_meta(), context)
+            assert handle.poll() == JobReturnCode.UNKNOWN
+            handle.wait()
             assert handle.poll() == JobReturnCode.ABORTED
             mock_api.delete_namespaced_pod.assert_called_once_with(
-                name=_EXPECTED_POD_NAME, namespace="test-ns", grace_period_seconds=0
+                name=_EXPECTED_POD_NAME,
+                namespace="test-ns",
+                body={"preconditions": {"uid": "owned-cj-uid"}, "gracePeriodSeconds": 0},
+                _request_timeout=5,
             )
             self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
             if abort_before_publish:
@@ -2190,7 +2252,7 @@ spec:
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["metadata"]["name"] == _EXPECTED_POD_NAME
-            assert manifest["metadata"]["labels"] == {"from-template": "true"}
+            assert manifest["metadata"]["labels"]["from-template"] == "true"
             assert manifest["spec"]["serviceAccountName"] == "custom-sa"
             assert manifest["spec"]["nodeSelector"] == {"accelerator": "gpu"}
             assert manifest["spec"]["restartPolicy"] == "Never"
@@ -2252,7 +2314,7 @@ spec:
             template_path.parent.mkdir(parents=True, exist_ok=True)
             template_path.write_text(text, encoding="utf-8")
         self._mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
-        mock_api = MagicMock()
+        mock_api = _make_api_instance()
         mock_core_cls.return_value = mock_api
         self.mock_transfer_cls = mock_transfer_cls
         mock_transfer = MagicMock()
@@ -3411,22 +3473,103 @@ spec:
 
     # -- create_namespaced_pod failure paths ----------------------------------
 
-    def test_network_error_on_create_returns_handle_with_terminal_state(self):
-        """Non-ApiException (e.g. network timeout) must not leave terminal_state=None."""
+    @pytest.mark.parametrize("denied", [False, True])
+    def test_admission_response_is_not_cut_off_by_cleanup_request_timeout(self, denied):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+
+        def admission(**kwargs):
+            timeout = kwargs.get("_request_timeout")
+            if timeout is not None and timeout <= 8:
+                raise ReadTimeoutError(Mock(), "/api/v1/pods", "admission is still evaluating")
+            if denied:
+                raise _FakeApiException(status=403, reason="admission denied")
+            return _make_pod_response(PodPhase.RUNNING.value)
+
+        mock_api.create_namespaced_pod.side_effect = admission
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            if denied:
+                assert handle.poll() == JobReturnCode.EXCEPTION
+                self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            else:
+                assert handle.pod_uid == "owned-cj-uid"
+                assert handle._query_phase() == PodPhase.RUNNING.value
+                self.mock_transfer.remove_job.assert_not_called()
+            assert "_request_timeout" not in mock_api.create_namespaced_pod.call_args.kwargs
+        finally:
+            _exit_patches(patches)
+
+    @pytest.mark.parametrize("wrapped", [False, True])
+    def test_certificate_verification_failure_releases_unused_owner(self, wrapped):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        error = ssl.SSLCertVerificationError(1, "certificate verify failed")
+        if wrapped:
+            error = MaxRetryError(Mock(), "/api/v1/pods", SSLError(error))
+        mock_api.create_namespaced_pod.side_effect = error
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.poll() == JobReturnCode.EXCEPTION
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            mock_api.read_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_ssl_error_without_handshake_proof_retains_cleanup_owner(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.create_namespaced_pod.side_effect = MaxRetryError(Mock(), "/api/v1/pods", SSLError("reply lost"))
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.poll() == JobReturnCode.UNKNOWN
+            self.mock_transfer.remove_job.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_network_error_on_create_retains_unsettled_handle(self):
+        """An ambiguous create keeps its credentials and published cleanup owner."""
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         mock_api.create_namespaced_pod.side_effect = ConnectionError("network unreachable")
         try:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert isinstance(handle, K8sJobHandle)
-            assert handle.terminal_state == JobState.TERMINATED
+            assert handle.terminal_state is None
+            assert handle.poll() == JobReturnCode.UNKNOWN
+            self.mock_transfer.remove_job.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_connection_refused_before_create_request_releases_unused_owner(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        connection = Mock()
+        error = MaxRetryError(connection, "/api/v1/pods", NewConnectionError(connection, "connection refused"))
+        mock_api.create_namespaced_pod.side_effect = error
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert handle.poll() == JobReturnCode.EXCEPTION
             self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            mock_api.read_namespaced_pod.assert_not_called()
+            mock_api.delete_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_read_timeout_after_create_request_retains_cleanup_owner(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.create_namespaced_pod.side_effect = ReadTimeoutError(Mock(), "/api/v1/pods", "reply lost")
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.poll() == JobReturnCode.UNKNOWN
+            self.mock_transfer.remove_job.assert_not_called()
         finally:
             _exit_patches(patches)
 
     def test_network_error_on_create_does_not_call_terminate_api(self):
-        """Pod was never created; no delete API call should be made."""
+        """An unmatched Pod is never deleted after an ambiguous create."""
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         mock_api.create_namespaced_pod.side_effect = ConnectionError("network unreachable")
@@ -3444,7 +3587,7 @@ spec:
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             # read_namespaced_pod is the backing call for _query_phase / enter_states
-            mock_api.read_namespaced_pod.assert_not_called()
+            mock_api.read_namespaced_pod.assert_called_once()
         finally:
             _exit_patches(patches)
 
@@ -3598,7 +3741,9 @@ class TestK8sCredentialTransport:
         launcher, mock_api = TestK8sJobLauncherLaunchJob._setup(self, patches)
         TestK8sJobLauncherLaunchJob._prime_running(self, mock_api)
         created_pod = Mock()
-        created_pod.metadata.uid = "pod-uid-123"
+        created_pod.metadata.uid = "owned-cj-uid"
+        created_pod.metadata.finalizers = [JOB_SETTLEMENT_FINALIZER]
+        created_pod.metadata.deletion_timestamp = None
         mock_api.create_namespaced_pod.return_value = created_pod
         return launcher, mock_api
 
@@ -3708,7 +3853,7 @@ class TestK8sCredentialTransport:
             patch_call = mock_api.patch_namespaced_secret.call_args
             assert patch_call.kwargs["name"] == _EXPECTED_CRED_SECRET_NAME
             assert patch_call.kwargs["body"]["metadata"]["ownerReferences"] == [
-                {"apiVersion": "v1", "kind": "Pod", "name": _EXPECTED_POD_NAME, "uid": "pod-uid-123"}
+                {"apiVersion": "v1", "kind": "Pod", "name": _EXPECTED_POD_NAME, "uid": "owned-cj-uid"}
             ]
             call_names = [name for name, _args, _kwargs in mock_api.mock_calls]
             assert call_names.index("create_namespaced_pod") < call_names.index("patch_namespaced_secret")
@@ -3734,13 +3879,12 @@ class TestK8sCredentialTransport:
             assert handle.credential_secret_name == _EXPECTED_CRED_SECRET_NAME
             mock_api.delete_namespaced_secret.assert_not_called()
 
-            succeeded = Mock()
-            succeeded.status.phase = PodPhase.SUCCEEDED.value
+            succeeded = _make_pod_response(PodPhase.SUCCEEDED.value)
             mock_api.read_namespaced_pod.return_value = succeeded
             assert handle.poll() == JobReturnCode.SUCCESS
 
             mock_api.delete_namespaced_secret.assert_called_once_with(
-                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns", _request_timeout=5
             )
             assert handle.credential_secret_name is None
             handle.poll()
@@ -3754,8 +3898,10 @@ class TestK8sCredentialTransport:
         try:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
             handle.terminate()
+            mock_api.delete_namespaced_secret.assert_not_called()
+            handle.wait()
             mock_api.delete_namespaced_secret.assert_called_once_with(
-                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns", _request_timeout=5
             )
         finally:
             _exit_patches(patches)
@@ -3854,7 +4000,9 @@ def _mock_job_workspace_owner(monkeypatch, launcher):
 
 def _exited_cj(handle, sandbox_down=True, exit_code=137):
     return SimpleNamespace(
-        metadata=SimpleNamespace(uid=handle.pod_uid, deletion_timestamp=None),
+        metadata=SimpleNamespace(
+            uid=handle.pod_uid, deletion_timestamp=None, finalizers=[], labels={}, resource_version="1"
+        ),
         spec=SimpleNamespace(
             node_name="node-1",
             containers=[SimpleNamespace(name=handle._job_container_name)],
@@ -3949,7 +4097,8 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         from kubernetes.client.rest import ApiException
 
         api.create_namespaced_pod.side_effect = ApiException(status=create_status)
-    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    api.create_namespaced_pod.return_value = _make_pod_response(PodPhase.RUNNING.value)
+    api.read_namespaced_pod.return_value = _make_pod_response(PodPhase.RUNNING.value)
     launcher.startup_secret_name = "federation-a.site-1"
     launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
     launcher._own_credential_secret = Mock()
@@ -4057,8 +4206,9 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     assert handle.can_restart()
     old_handle = handle
     fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, old_handle, private=True, sticky=False)
-    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    api.read_namespaced_pod.return_value = _make_pod_response(PodPhase.RUNNING.value)
     api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-2"
+    api.read_namespaced_pod.return_value.metadata.uid = "cj-uid-2"
     if cleanup_status:
         api.delete_namespaced_pod.side_effect = _FakeApiException(status=cleanup_status)
     with (
@@ -4313,17 +4463,12 @@ def test_client_task_settings_must_be_complete(missing):
 
 @pytest.mark.parametrize("phase", ["Unknown", "Pending"])
 def test_never_started_task_cj_is_terminated_and_cp_owner_retains_cleanup(phase):
-    api = Mock()
-    api.read_namespaced_pod.return_value = SimpleNamespace(
-        status=SimpleNamespace(
-            phase=phase,
-            conditions=[SimpleNamespace(type="PodScheduled", status="True")],
-            container_statuses=[
-                SimpleNamespace(
-                    state=SimpleNamespace(waiting=SimpleNamespace(reason="ImagePullBackOff", message="pull failed"))
-                )
-            ],
-        )
+    api = _make_api_instance()
+    api.read_namespaced_pod.return_value = _make_pod_response(
+        phase=phase,
+        node_name="node-1",
+        conditions=[_make_condition("PodScheduled", "True")],
+        container_statuses=[_make_waiting_container_status("ImagePullBackOff", "pull failed")],
     )
     handle = _make_handle(api=api)
     owner = handle.task_owner = Mock()
@@ -4698,3 +4843,438 @@ def test_startup_override_refuses_deployment_private_kit(tmp_path, startup_ca):
     with pytest.raises(ValueError, match="unique startup_secret_name"):
         launcher._ensure_startup_secret(_TASK_SITE, str(tmp_path))
     api.replace_namespaced_secret.assert_not_called()
+
+
+class _SettlementPodAPI:
+    """A Pod remains readable during deletion until its finalizer is removed."""
+
+    def __init__(self, manifest, scheduled=True):
+        self.calls = []
+        self.errors = {}
+        self.pod = SimpleNamespace(
+            metadata=SimpleNamespace(
+                uid="owned-cj-uid",
+                resource_version="1",
+                deletion_timestamp=None,
+                labels=copy.deepcopy(manifest["metadata"].get("labels", {})),
+                finalizers=list(manifest["metadata"].get("finalizers", [])),
+            ),
+            spec=SimpleNamespace(
+                restart_policy="Never",
+                node_name="node-1" if scheduled else None,
+                containers=[SimpleNamespace(name=c["name"]) for c in manifest["spec"]["containers"]],
+                init_containers=[],
+                ephemeral_containers=[],
+            ),
+            status=SimpleNamespace(
+                phase="Running" if scheduled else "Pending",
+                reason=None,
+                conditions=[SimpleNamespace(type="PodReadyToStartContainers", status="True")],
+                container_statuses=[],
+                init_container_statuses=[],
+                ephemeral_container_statuses=[],
+            ),
+        )
+        self.delete_namespaced_secret = Mock()
+
+    def read_namespaced_pod(self, **kwargs):
+        assert kwargs["_request_timeout"] == 5
+        self.calls.append("read")
+        if self.errors.get("read"):
+            raise self.errors["read"]
+        if self.pod is None:
+            raise _FakeApiException(status=404)
+        return copy.deepcopy(self.pod)
+
+    def delete_namespaced_pod(self, *, body=None, **kwargs):
+        assert kwargs["_request_timeout"] == 5
+        self.calls.append("delete")
+        if self.errors.get("delete"):
+            raise self.errors["delete"]
+        if self.pod is None:
+            raise _FakeApiException(status=404)
+        if body["preconditions"]["uid"] != self.pod.metadata.uid:
+            raise _FakeApiException(status=409)
+        self.pod.metadata.deletion_timestamp = "deleting"
+        self.pod.metadata.resource_version = str(int(self.pod.metadata.resource_version) + 1)
+
+    def patch_namespaced_pod(self, *, body, **kwargs):
+        assert kwargs["_request_timeout"] == 5
+        self.calls.append("patch")
+        if self.errors.get("patch"):
+            raise self.errors["patch"]
+        assert body[:3] == [
+            {"op": "test", "path": "/metadata/uid", "value": self.pod.metadata.uid},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.pod.metadata.resource_version},
+            {"op": "test", "path": "/metadata/finalizers", "value": self.pod.metadata.finalizers},
+        ]
+        self.pod.metadata.finalizers = body[3]["value"]
+        if self.pod.metadata.deletion_timestamp and not self.pod.metadata.finalizers:
+            self.pod = None
+
+    def stop(self):
+        self.pod.status.phase = "Failed"
+        self.pod.status.conditions = [SimpleNamespace(type="PodReadyToStartContainers", status="False")]
+        self.pod.status.container_statuses = [
+            SimpleNamespace(name=c.name, state=SimpleNamespace(terminated=SimpleNamespace(exit_code=137)))
+            for c in self.pod.spec.containers
+        ]
+
+
+def _make_settlement_handle(scheduled=True, finalizer=True):
+    handle = K8sJobHandle("job-1", None, _make_job_config(), credential_secret_name="owned-job-credential")
+    api = _SettlementPodAPI(handle.get_manifest(), scheduled)
+    if not finalizer:
+        api.pod.metadata.finalizers = []
+    handle.api_instance = api
+    handle.bind_pod(api.pod)
+    handle.task_owner = Mock()
+    handle.workspace_transfer = Mock()
+    handle.workspace_job_id = "job-1"
+    return handle, api
+
+
+def _assert_job_ownership_retained(handle, api):
+    assert handle.terminal_state is None
+    handle.task_owner.release.assert_not_called()
+    handle.workspace_transfer.remove_job.assert_not_called()
+    api.delete_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [_FakeApiException(status=500), ConnectionError("API reply lost")])
+def test_k8s_failed_cancel_waits_for_shutdown_and_retries(monkeypatch, error):
+    handle, api = _make_settlement_handle()
+    transfer = handle.workspace_transfer
+    api.errors["delete"] = error
+    handle.terminate()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    steps = []
+
+    def recover(_delay):
+        _assert_job_ownership_retained(handle, api)
+        steps.append(True)
+        if len(steps) == 1:
+            api.errors.clear()
+        elif len(steps) == 2:
+            assert api.pod.status.phase == "Running"
+            api.stop()
+
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep", recover)
+    handle.wait()
+    assert len(steps) == 3
+    assert handle.poll() == JobReturnCode.ABORTED
+    handle.task_owner.release.assert_called_once()
+    transfer.remove_job.assert_called_once_with("job-1")
+    api.delete_namespaced_secret.assert_called_once()
+
+
+def test_k8s_delete_acknowledgement_does_not_settle_a_running_cj():
+    handle, api = _make_settlement_handle()
+    handle.terminate()
+    assert api.pod.metadata.deletion_timestamp
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert "patch" not in api.calls
+    _assert_job_ownership_retained(handle, api)
+    api.stop()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert api.pod is None
+    _assert_job_ownership_retained(handle, api)
+    assert handle.poll() == JobReturnCode.ABORTED
+    handle.task_owner.release.assert_called_once()
+
+
+def test_k8s_cancel_read_outage_keeps_credentials_and_ownership():
+    handle, api = _make_settlement_handle()
+    handle.terminate()
+    api.errors["read"] = _FakeApiException(status=503)
+    for _ in range(3):
+        assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    assert "patch" not in api.calls
+    api.errors.clear()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    api.stop()
+    handle.wait()
+    handle.task_owner.release.assert_called_once()
+
+
+@pytest.mark.parametrize("kind", ["missing", "replaced"])
+def test_k8s_unexplained_missing_or_replaced_cj_does_not_release_ownership(kind):
+    handle, api = _make_settlement_handle()
+    if kind == "missing":
+        api.pod = None
+    else:
+        api.pod.metadata.uid = "replacement-cj-uid"
+    handle.terminate()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    assert "patch" not in api.calls
+
+
+@pytest.mark.parametrize("status", [409, 503])
+def test_k8s_finalizer_failure_retains_owner_until_removal_is_observed(status):
+    handle, api = _make_settlement_handle()
+    handle.terminate()
+    api.stop()
+    api.errors["patch"] = _FakeApiException(status=status)
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert api.pod is not None
+    _assert_job_ownership_retained(handle, api)
+    api.errors.clear()
+    handle.wait()
+    assert api.pod is None
+    handle.task_owner.release.assert_called_once()
+
+
+def test_k8s_unscheduled_cj_can_be_cancelled_without_starting():
+    handle, api = _make_settlement_handle(scheduled=False)
+    handle.terminate()
+    handle.wait()
+    assert api.pod is None
+    assert handle.poll() == JobReturnCode.ABORTED
+
+
+def test_k8s_failed_phase_without_shutdown_evidence_does_not_release_owner():
+    handle, api = _make_settlement_handle()
+    api.pod.status.phase = "Failed"
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    api.stop()
+    api.pod.status.reason = "NodeLost"
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    api.pod.status.reason = None
+    assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+    handle.task_owner.release.assert_called_once()
+
+
+def test_operator_removal_after_node_loss_unblocks_bound_job_handle():
+    handle, api = _make_settlement_handle()
+    api.pod.status.phase = "Failed"
+    api.pod.status.reason = "NodeLost"
+    api.pod.metadata.deletion_timestamp = "podgc"
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    # The operator verified runtime shutdown and removed the observed finalizer.
+    api.pod = None
+    assert handle.poll() == JobReturnCode.ABORTED
+    handle.task_owner.release.assert_called_once()
+
+
+def test_operator_removal_after_accepted_delete_unblocks_bound_job_handle():
+    handle, api = _make_settlement_handle()
+    handle.terminate()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    api.pod = None
+    assert handle.poll() == JobReturnCode.ABORTED
+    handle.task_owner.release.assert_called_once()
+
+
+def test_404_without_observed_settlement_finalizer_keeps_owner():
+    handle, api = _make_settlement_handle(finalizer=False)
+    handle.terminate()
+    assert handle._delete_sent
+    assert not handle._settlement_finalizer_seen
+    api.pod = None
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+
+
+@pytest.mark.parametrize("cancellation", [False, True])
+def test_missing_sandbox_shutdown_condition_is_logged_once(caplog, cancellation):
+    handle, api = _make_settlement_handle()
+    if cancellation:
+        handle.terminate()
+    api.stop()
+    api.pod.status.conditions = []
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert caplog.text.count("missing PodReadyToStartContainers=False") == 1
+
+
+@pytest.mark.parametrize("failure", ["exception", "missing-return", "server-abort"])
+def test_executor_keeps_published_k8s_owner_during_cancel_outage(tmp_path, monkeypatch, failure):
+    from tests.unit_test.private.fed.client.client_executor_test import assert_published_backend_cleanup
+
+    handle, api = _make_settlement_handle()
+    transfer = handle.workspace_transfer
+    api.errors["delete"] = _FakeApiException(status=503)
+
+    def advance(step):
+        _assert_job_ownership_retained(handle, api)
+        if step == 1:
+            api.errors.clear()
+        elif step == 2:
+            # Successful DELETE was followed by a Running observation.
+            assert api.pod.metadata.deletion_timestamp
+            api.stop()
+
+    if failure == "server-abort":
+        from tests.unit_test.private.fed.server.server_engine_test import assert_server_backend_cleanup
+
+        assert_server_backend_cleanup(handle, "nvflare.app_opt.job_launcher.k8s_launcher", monkeypatch, advance)
+    else:
+        assert_published_backend_cleanup(
+            tmp_path,
+            handle,
+            "nvflare.app_opt.job_launcher.k8s_launcher",
+            monkeypatch,
+            advance,
+            failure == "missing-return",
+        )
+    handle.task_owner.release.assert_called_once()
+    transfer.remove_job.assert_called_once_with("job-1")
+    api.delete_namespaced_secret.assert_called_once()
+
+
+@pytest.mark.parametrize("code", [0, ProcessExitCode.CONFIG_ERROR])
+def test_completed_job_preserves_outcome_when_finalizer_reply_is_lost(code):
+    handle, api = _make_settlement_handle()
+    api.stop()
+    api.pod.status.phase = "Succeeded" if code == 0 else "Failed"
+    api.pod.metadata.deletion_timestamp = "external-delete"
+    for status in api.pod.status.container_statuses:
+        status.state.terminated.exit_code = code
+    real_patch = api.patch_namespaced_pod
+
+    def lost_reply(**kwargs):
+        real_patch(**kwargs)
+        raise ConnectionError("patch response lost")
+
+    api.patch_namespaced_pod = lost_reply
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert api.pod is None
+    _assert_job_ownership_retained(handle, api)
+    assert handle.poll() == (JobReturnCode.SUCCESS if code == 0 else code)
+    handle.task_owner.release.assert_called_once()
+
+
+def test_lost_create_reply_cancels_only_the_matching_accepted_pod():
+    handle, api = _make_settlement_handle()
+    handle.pod_uid = None
+    handle.terminate()
+    assert handle.pod_uid == "owned-cj-uid"
+    assert "delete" in api.calls
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    api.stop()
+    handle.wait()
+    assert handle.poll() == JobReturnCode.ABORTED
+
+
+def test_lost_create_reply_does_not_delete_an_unrelated_pod():
+    handle, api = _make_settlement_handle()
+    handle.pod_uid = None
+    api.pod.metadata.labels.clear()
+    handle.terminate()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert "delete" not in api.calls
+    _assert_job_ownership_retained(handle, api)
+
+
+def test_job_template_accepts_explicit_null_labels():
+    handle = _make_handle(pod_manifest_template={"metadata": {"labels": None, "finalizers": ["site/fence"]}})
+    manifest = handle.get_manifest()
+    assert manifest["metadata"]["labels"]["nvflare.nvidia.com/job-launch"]
+    assert manifest["metadata"]["finalizers"] == ["site/fence", JOB_SETTLEMENT_FINALIZER]
+
+
+def test_terminal_during_startup_keeps_handle_when_finalizer_api_fails():
+    handle, api = _make_settlement_handle()
+    api.stop()
+    api.errors["patch"] = _FakeApiException(status=503)
+    assert handle.enter_states(JobState.RUNNING) is False
+    _assert_job_ownership_retained(handle, api)
+    api.errors.clear()
+    handle.wait()
+    assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+
+
+def _failed_init_pod(api):
+    api.stop()
+    api.pod.spec.init_containers = [SimpleNamespace(name="init-one"), SimpleNamespace(name="init-two")]
+
+    def never_started(name):
+        return SimpleNamespace(
+            name=name,
+            container_id=None,
+            restart_count=0,
+            started=False,
+            last_state=SimpleNamespace(terminated=None),
+            state=SimpleNamespace(terminated=None, running=None, waiting=SimpleNamespace(reason="PodInitializing")),
+        )
+
+    api.pod.status.init_container_statuses = [
+        SimpleNamespace(name="init-one", state=SimpleNamespace(terminated=SimpleNamespace(exit_code=1))),
+        never_started("init-two"),
+    ]
+    api.pod.status.container_statuses = [never_started(c.name) for c in api.pod.spec.containers]
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_failed_init_settles_with_explicit_never_started_containers(cancel):
+    handle, api = _make_settlement_handle()
+    _failed_init_pod(api)
+    if cancel:
+        handle.terminate()
+    handle.wait()
+    assert handle.poll() == JobReturnCode.ABORTED
+    handle.task_owner.release.assert_called_once()
+    assert (api.pod is None) is cancel
+
+
+@pytest.mark.parametrize("uncertainty", ["running", "container-id", "restart", "last-state", "started", "missing"])
+def test_never_started_evidence_does_not_hide_container_uncertainty(uncertainty):
+    handle, api = _make_settlement_handle()
+    _failed_init_pod(api)
+    status = api.pod.status.container_statuses[0]
+    if uncertainty == "running":
+        status.state.running = SimpleNamespace()
+    elif uncertainty == "container-id":
+        status.container_id = "containerd://possibly-live"
+    elif uncertainty == "restart":
+        status.restart_count = 1
+    elif uncertainty == "last-state":
+        status.last_state.terminated = SimpleNamespace(exit_code=137)
+    elif uncertainty == "started":
+        status.started = True
+    else:
+        api.pod.status.container_statuses.clear()
+    for _ in range(2):
+        assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    assert "patch" not in api.calls
+
+
+def test_podgc_node_loss_never_settles_stale_prestart_snapshot():
+    handle, api = _make_settlement_handle()
+    _failed_init_pod(api)
+    # Even the init exception must not bypass node-loss reconciliation.
+    api.pod.status.conditions.append(SimpleNamespace(type="DisruptionTarget", status="True", reason="DeletionByPodGC"))
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    # Reproduce generic Waiting/no-ID + stale sandbox False without init proof.
+    api.pod.spec.init_containers.clear()
+    api.pod.status.init_container_statuses.clear()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    assert "patch" not in api.calls
+
+
+@pytest.mark.parametrize("missing_proof", ["no-init", "restartable-init", "restartable-pod", "init-success"])
+def test_waiting_container_requires_failed_regular_init_sequence(missing_proof):
+    handle, api = _make_settlement_handle()
+    _failed_init_pod(api)
+    if missing_proof == "no-init":
+        api.pod.spec.init_containers.clear()
+        api.pod.status.init_container_statuses.clear()
+    elif missing_proof == "restartable-init":
+        api.pod.spec.init_containers[0].restart_policy = "Always"
+    elif missing_proof == "restartable-pod":
+        api.pod.spec.restart_policy = "OnFailure"
+    else:
+        api.pod.status.init_container_statuses[0].state.terminated.exit_code = 0
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    _assert_job_ownership_retained(handle, api)
+    assert "patch" not in api.calls

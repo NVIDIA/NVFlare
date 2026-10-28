@@ -311,11 +311,16 @@ Pending CJ. CP keeps task cleanup after CJ exits. CJ end-run makes bounded clean
 calls and can exit while reconciliation continues. A ten-second independent CJ
 observer backs up normal job-handle polling.
 
-Deleting a Pod does not prove execution stopped. Task deletes use UID preconditions;
-replacements are not adopted or deleted. A finalizer keeps the owned Pod observable
-until a scheduled Pod has terminal status, all admitted containers have terminated
-and kubelet sandbox teardown is confirmed, or an unscheduled Pod's deletion fences
-scheduling. Only shutdown evidence plus confirmed Pod removal establishes settlement.
+Deleting a Pod does not prove execution stopped. Job and task deletes use UID
+preconditions; replacements are not adopted or deleted. The shared job launcher
+uses the `nvflare.nvidia.com/job-settlement` finalizer for both CJ and SJ in job
+and task modes. The client and server parent Roles need Pod `patch` permission
+so their handles can remove this fence after shutdown. A finalizer keeps the owned
+Pod observable until a scheduled Pod has terminal status and kubelet sandbox
+teardown is confirmed. Every admitted container must have terminated, except for
+explicitly waiting containers blocked by a failed non-restartable init in a Never
+Pod. Generic waiting snapshots and PodGC node-loss transitions are insufficient.
+An unscheduled Pod instead requires observed deletion to fence scheduling. Only shutdown evidence plus confirmed Pod removal establishes settlement.
 Transient API errors preserve the last-known phase. Missing/replaced Pods, node loss
 or ambiguous create replies without evidence leave ownership fenced; a timeout or
 404 alone cannot authorize retry or result publication.

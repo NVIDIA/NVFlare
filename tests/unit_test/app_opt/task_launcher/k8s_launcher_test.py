@@ -866,6 +866,7 @@ def test_parent_abort_seals_cp_task_owner_before_deleting_cj(setup, state):
             "volume_list": [],
         },
     )
+    cj.bind_pod(NS(metadata=NS(uid="cj-uid")))
     owner = cj.task_owner = Mock()
     owner.close.side_effect = worker.request_cancel
     owner.release.side_effect = worker.request_cancel

@@ -1495,3 +1495,66 @@ def test_replacement_published_launch_cleanup_retains_owner_through_backend_fail
     assert handles[-1].wait.call_count == attempts
     assert launcher.launch_job.call_count == 2
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
+
+
+def assert_published_backend_cleanup(tmp_path, runtime, backend_module, monkeypatch, advance, missing_return=False):
+    """Exercise the actual backend wait contract while JobExecutor owns a CJ."""
+    meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    run_dir = tmp_path / "job-1"
+    write_job_cert(str(run_dir), b"cert", b"key")
+    launcher = MagicMock()
+    waits = []
+    failures = []
+
+    def retained():
+        assert executor.get_run_processes_keys() == ["job-1"]
+        assert find_job_cert(str(run_dir)) is not None
+        resources.free_resources.assert_not_called()
+        client.send_request_before_shutdown.assert_not_called()
+        assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is not None
+        assert runtime.terminal_state is None
+
+    def sleep(_seconds):
+        try:
+            retained()
+            waits.append(True)
+            assert len(waits) < 6, "backend did not settle after recovery"
+            advance(len(waits))
+        except AssertionError as error:
+            # JobExecutor retries wait() exceptions; retain test assertion
+            # failures so a later successful retry cannot hide them.
+            failures.append(error)
+            raise
+
+    isolate_time(monkeypatch, backend_module).sleep = sleep
+
+    def launch(_meta, fl_ctx):
+        publish_job_handle(runtime, fl_ctx)
+        if missing_return:
+            return None
+        raise RuntimeError("original failure after native acceptance")
+
+    launcher.launch_job.side_effect = launch
+    message = "returned no job handle" if missing_return else "original failure after native acceptance"
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match=message),
+    ):
+        executor.start_app(
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            {"gpu": 1},
+            "allocation-token",
+            resources,
+            context,
+        )
+    assert not failures, failures
+    assert waits, "cleanup returned without observing backend recovery"
+    launcher.launch_job.assert_called_once()
+    assert runtime.poll() != JobReturnCode.UNKNOWN
+    assert executor.get_run_processes_keys() == []
+    assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
