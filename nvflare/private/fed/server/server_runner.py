@@ -417,7 +417,8 @@ class ServerRunner(TBI):
                     fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
                     # Keep the issuing workflow independently of the payload:
                     # OUT filters may replace its entire Shareable/cookie jar.
-                    fl_ctx.set_prop(FLContextKey.WORKFLOW, value=self.current_wf.id, private=True, sticky=False)
+                    # WORKFLOW is sticky and may advance while filtering runs.
+                    fl_ctx.set_prop(FLContextKey.TASK_WORKFLOW, value=self.current_wf.id, private=True, sticky=False)
                     fl_ctx.set_prop(
                         FLContextKey.TASK_ATTEMPT_ID, value=task_data.get_task_attempt_id(), private=True, sticky=False
                     )
