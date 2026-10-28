@@ -13,7 +13,8 @@
 # limitations under the License.
 
 """Exported jobs run on the real NVFlare 2.8.1 simulator: portability, the
-external-process client, failed and silent clients, and late replies.
+external-process client, failed and silent clients, late replies, and a
+retried round.
 
 Every job here is exported for deployment (fl.nvflare.env: export) and the
 exported folder is what runs, as it would on a real federation.
@@ -46,19 +47,24 @@ def _updates_per_round(workspace) -> list[int]:
     return [int(n) for n in re.findall(r"round \d+  updates=(\d+)", server_log(workspace))]
 
 
+_HELD_OUT = {"tasks": [{"suite": "mock", "dataset_task_index": 3, "eval_task_id": 3, "task_name": "task_3"}]}
+
+
 def test_exported_job_runs_after_moving_it_and_hiding_its_configs(tmp_path):
     """The job carries its run config and the files it names, and no path of
     the submitting machine: moved elsewhere, with the source configs gone, it
     still runs."""
     cfg = mock_config()
     cfg["backend"]["extra"] = {"train_config_path": "pipeline.yaml"}  # packaged; the mock backend ignores it
-    job = export(tmp_path, cfg, extra_files={"pipeline.yaml": "policy: {type: mock}\n"})
+    cfg["data"]["partitioning"] = {"scheme": "iid", "held_out": "heldout.json"}
+    job = export(tmp_path, cfg, extra_files={"pipeline.yaml": "policy: {type: mock}\n",
+                                             "heldout.json": json.dumps(_HELD_OUT)})
 
-    # The script in custom/; the run config and the file it names in config/,
+    # The script in custom/; the run config and the files it names in config/,
     # where `nvflare job submit` leaves them as they are.
     assert sorted(p.name for p in (job / "app" / "custom").iterdir()) == ["client_script.py"]
     config = job / "app" / "config"
-    assert {"decent_vla_run.yaml", "pipeline.yaml"} <= {p.name for p in config.iterdir()}
+    assert {"decent_vla_run.yaml", "pipeline.yaml", "heldout.json"} <= {p.name for p in config.iterdir()}
     for f in config.iterdir():
         assert str(tmp_path) not in f.read_text(), f.name
 
@@ -70,6 +76,8 @@ def test_exported_job_runs_after_moving_it_and_hiding_its_configs(tmp_path):
 
     assert _final_checkpoint(ws).exists()
     assert _updates_per_round(ws) == [2, 2]
+    manifest = json.loads((server_outputs(ws) / "partition_manifest.json").read_text())
+    assert manifest["held_out_task_names"] == ["task_3"]
 
 
 def test_external_process_client_runs_the_packaged_script(tmp_path):
@@ -142,6 +150,24 @@ def test_a_late_reply_is_sent_again_not_trained_again(tmp_path):
     ws = simulate(job, tmp_path / "ws", fault="c1:sleep_once:12")
 
     assert "attempt 1: got 1/2 updates" in server_log(ws)
+    assert _final_checkpoint(ws).exists()
+    states = ws / "c1" / "simulate_job" / "outputs" / NAME / "client_states"
+    blob = torch.load(states / "c1_round_0001.pt", map_location="cpu", weights_only=False)
+    assert blob["global_step"] == 4
+    assert {int(s["step"]) for s in blob["optimizer"]["state"].values()} == {4}
+
+
+def test_a_failed_round_is_retried_from_the_state_saved_before_it(tmp_path):
+    """c1 trains round 1, then fails before replying, after its optimizer has
+    stepped. It drops that state, and the server's retry trains round 1 from
+    the state c1 saved after round 0: its optimizer steps 2 per round, not 6
+    in all."""
+    job = export(tmp_path, mock_config(round_timeout_s=60, persist_client_state=True, save_every_n_rounds=1))
+    use_fault_client(job)
+    ws = simulate(job, tmp_path / "ws", fault="c1:fail_after_round:1")
+
+    assert "c1 failed round 1: RuntimeError: injected failure on c1 after training round 1" in server_log(ws)
+    assert _updates_per_round(ws) == [2, 2]
     assert _final_checkpoint(ws).exists()
     states = ws / "c1" / "simulate_job" / "outputs" / NAME / "client_states"
     blob = torch.load(states / "c1_round_0001.pt", map_location="cpu", weights_only=False)

@@ -52,16 +52,15 @@ def staged_job(config_path: str):
     run the block from that folder. Yields (stage folder, config file names).
 
     The job carries its own run config, the files that config names
-    (`client.PACKAGED_KEYS`, rewritten to bare names) and the client script,
+    (`client.packaged_refs`, rewritten to bare names) and the client script,
     so a deployed site needs neither the source tree nor the submitter's
     paths. FedJob resolves relative resource names against the cwd both when
     the job is built and when it is exported, so both happen in here.
     """
     from decent_vla.runtime.nvflare import client_script
-    from decent_vla.runtime.nvflare.client import PACKAGED_KEYS
+    from decent_vla.runtime.nvflare.client import packaged_refs
 
     raw = yaml.safe_load(Path(config_path).read_text()) or {}
-    extra = (raw.get("backend") or {}).get("extra") or {}
     # Where the job folder and the simulator workspace go is the submitter's
     # business; the sites never read it.
     for key in ("job_dir", "workspace"):
@@ -69,18 +68,18 @@ def staged_job(config_path: str):
     cwd = os.getcwd()
     with tempfile.TemporaryDirectory(prefix="decent_vla_job_") as stage:
         config_files = [RUN_CONFIG]
-        for key in PACKAGED_KEYS:
-            value = extra.get(key)
+        for key, holder, field in packaged_refs(raw):
+            value = holder.get(field)
             if not value:
                 continue
             # Relative paths in a run config resolve against the cwd, as in local mode.
             src = Path(cwd, value)
             if not src.is_file():
-                raise FileNotFoundError(f"backend.extra.{key}={value!r}: no such file under {cwd}")
-            if src.name in (RUN_CONFIG, CLIENT_SCRIPT):
-                raise ValueError(f"backend.extra.{key}: {src.name!r} is a reserved name in the job")
+                raise FileNotFoundError(f"{key}={value!r}: no such file under {cwd}")
+            if src.name in (RUN_CONFIG, CLIENT_SCRIPT) or src.name in config_files:
+                raise ValueError(f"{key}: {src.name!r} is already a file name in the job")
             shutil.copy(src, Path(stage, src.name))
-            extra[key] = src.name
+            holder[field] = src.name
             config_files.append(src.name)
         Path(stage, RUN_CONFIG).write_text(yaml.safe_dump(raw, sort_keys=False))
         shutil.copy(client_script.__file__, Path(stage, CLIENT_SCRIPT))

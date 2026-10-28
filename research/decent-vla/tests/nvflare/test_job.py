@@ -131,6 +131,43 @@ def test_staged_job_packages_the_files_the_config_names(tmp_path, monkeypatch):
     assert not stage.exists()
 
 
+@pytest.mark.parametrize("block", [True, False], ids=["partitioning-block", "flat"])
+def test_staged_job_packages_the_held_out_task_spec(tmp_path, monkeypatch, block):
+    from decent_vla.runtime.nvflare.job import RUN_CONFIG, staged_job
+
+    (tmp_path / "configs").mkdir()
+    spec = tmp_path / "configs" / "heldout.json"
+    spec.write_text('{"tasks": []}')
+    if block:
+        data = {"partitioning": {"scheme": "task_round_robin", "held_out": "configs/heldout.json"}}
+    else:
+        data = {"partitioning": "task_round_robin", "held_out": "configs/heldout.json"}
+    cfg = tmp_path / "run.yaml"
+    cfg.write_text(yaml.safe_dump({"name": "t", "backend": {"name": "mock"}, "data": data}))
+    monkeypatch.chdir(tmp_path)
+
+    with staged_job(str(cfg)) as (stage, config_files):
+        assert config_files == [RUN_CONFIG, "heldout.json"]
+        assert (stage / "heldout.json").read_text() == spec.read_text()
+        packaged = yaml.safe_load((stage / RUN_CONFIG).read_text())["data"]
+    assert (packaged["partitioning"]["held_out"] if block else packaged["held_out"]) == "heldout.json"
+
+
+def test_staged_job_rejects_two_packaged_files_with_one_name(tmp_path, monkeypatch):
+    from decent_vla.runtime.nvflare.job import staged_job
+
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "x.json").write_text("{}")
+    cfg = tmp_path / "run.yaml"
+    cfg.write_text(yaml.safe_dump({"backend": {"name": "lerobot", "extra": {"train_config_path": "a/x.json"}},
+                                   "data": {"held_out": "b/x.json"}}))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="data.held_out: 'x.json' is already a file name in the job"):
+        with staged_job(str(cfg)):
+            pass
+
+
 def test_staged_job_rejects_a_missing_packaged_file(tmp_path, monkeypatch):
     from decent_vla.runtime.nvflare.job import staged_job
 

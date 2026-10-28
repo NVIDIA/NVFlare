@@ -30,6 +30,7 @@ DECENT_VLA_CONFIG env var upstream); clients compute their own data shard via
 
 from __future__ import annotations
 
+import gc
 from collections.abc import Callable
 from pathlib import Path
 
@@ -87,7 +88,24 @@ def handle_round(
     plan,
     configure: Callable | None = None,
 ):
-    """Run one client round and return the ClientUpdate (transport-free)."""
+    """Run one client round and return the ClientUpdate (transport-free).
+
+    A round that fails part-way may already have stepped the optimizer,
+    scheduler, data iterator and personal weights. Training the server's retry
+    from there would spend the round's budget twice, so a failed round drops
+    the client's state: the next request rebuilds it as a client joining at
+    that round, from its newest saved state before the round under
+    fl.persist_client_state, otherwise with fresh optimizer state and the
+    schedule moved forward to the round.
+    """
+    try:
+        return _handle_round(cid, config_path, global_state, plan, configure)
+    except Exception:
+        _STATES.pop(cid, None)
+        raise
+
+
+def _handle_round(cid, config_path, global_state, plan, configure):
     cfg, factory, strategy, chunks = load_session(config_path, configure)
     # cids are always f"c{i}" (server and runtimes agree on this naming).
     idx = int(cid[1:])
@@ -105,6 +123,9 @@ def handle_round(
 
     st = _STATES.get(cid)
     if st is None:
+        # A state dropped after a failed round can still hold its tensors
+        # through reference cycles; free them before building another.
+        gc.collect()
         st = build_client_state(
             client_id=cid,
             backend_factory=factory,

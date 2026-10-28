@@ -34,23 +34,37 @@ from decent_vla.runtime.nvflare import codec
 
 log = logging.getLogger(__name__)
 
-# Files a run config names that `job.build_job` packages next to it (keys of
-# backend.extra). In the packaged config each is the file's bare name.
-PACKAGED_KEYS = ("train_config_path",)
-
 
 def _configure(cfg) -> None:
     if cfg.fl is not None:
         codec.set_wire_dtype(cfg.fl.wire_dtype)
 
 
+# The files a run config names that `job.staged_job` packages next to it: the
+# lerobot training config and the held-out task spec. In the packaged config
+# each is the file's bare name. The two functions below name the same fields,
+# one in the raw YAML (submit side), one in the loaded config (site side).
+def packaged_refs(raw: dict) -> list[tuple[str, dict, str]]:
+    """Where a raw run config names its packaged files: (config key, the
+    mapping that holds it, its field), for each place the loader accepts."""
+    extra = (raw.get("backend") or {}).get("extra") or {}
+    data = raw.get("data") or {}
+    refs = [("backend.extra.train_config_path", extra, "train_config_path"), ("data.held_out", data, "held_out")]
+    if isinstance(data.get("partitioning"), dict):  # the `data.partitioning: {scheme, held_out, ...}` form
+        refs.append(("data.partitioning.held_out", data["partitioning"], "held_out"))
+    return refs
+
+
 def resolve_packaged_paths(cfg, config_dir) -> None:
     """Point the packaged file references of a job's run config at `config_dir`."""
+
+    def resolve(value):
+        return str(Path(config_dir) / value) if value and not os.path.isabs(value) else value
+
     extra = cfg.backend.extra or {}
-    for key in PACKAGED_KEYS:
-        value = extra.get(key)
-        if value and not os.path.isabs(value):
-            extra[key] = str(Path(config_dir) / value)
+    if extra.get("train_config_path"):
+        extra["train_config_path"] = resolve(extra["train_config_path"])
+    cfg.data.held_out = resolve(cfg.data.held_out)
 
 
 def load_job_config(config_path):
@@ -218,6 +232,8 @@ def client_main(config_arg: str | None = None, app_dir: str | None = None,
             # Report the failure instead of ending the loop: the client stays
             # available for the server's retry and later rounds, and the
             # server's round loop decides (min_clients, retry, RoundFailure).
+            # handle_round has dropped the client's half-stepped state, so
+            # the retry trains from a rebuilt one.
             log.error("nvflare client %s: round %d failed\n%s", cid, plan.round_num,
                       traceback.format_exc())
             del global_state

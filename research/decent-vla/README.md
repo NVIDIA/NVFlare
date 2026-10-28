@@ -193,7 +193,8 @@ decent-vla train --config <config with fl.nvflare.env: export>
 nvflare job submit -j outputs/<config name>/nvflare_job/<config name>
 ```
 
-- The job carries its run config, the lerobot training config that the run config names, and the client script.
+- The job carries its run config, the files that it names (the lerobot training config and the held-out task spec,
+  `data.held_out`), and the client script.
   Every site needs this folder installed (`pip install -e .`, see [Setup](#setup)) and its own copy of the data and
   model weights. Download them before starting the site, not inside the first run.
 - Name the sites `c0` … `cN-1`, or set `fl.nvflare.site_prefix: site-` for sites `site-1` … `site-N`.
@@ -205,10 +206,13 @@ nvflare job submit -j outputs/<config name>/nvflare_job/<config name>
   `DECENT_VLA_WORKDIR` environment variable.
 - Set `fl.round_timeout_s`. A round needs `fl.min_clients` updates (default: every selected client), and NVFlare
   stops the job if fewer sites than that stay connected. Once that many clients have answered, the server waits
-  `fl.nvflare.wait_time_after_min_received` seconds (default 10) for the others. A client whose round fails reports the error and stays in the federation; the server asks the missing
-  clients once more, then stops the run with `RoundFailure` if the round is still short. With `fl.round_timeout_s`
-  or `fl.min_clients` set, each client keeps its last update in memory, and a client asked again for a round it has
-  finished sends that update instead of training twice.
+  `fl.nvflare.wait_time_after_min_received` seconds (default 10) for the others. A client whose round fails reports
+  the error and stays in the federation; the server asks the missing clients once more, then stops the run with
+  `RoundFailure` if the round is still short. The failed client drops its training state and rebuilds it for the
+  retry: from its last saved state with `fl.persist_client_state` and `fl.save_every_n_rounds: 1`, otherwise with a
+  fresh optimizer, the learning-rate schedule at that round, and personal (unshared) weights reset. With
+  `fl.round_timeout_s` or `fl.min_clients` set, each client keeps its last update in memory, and a client asked again
+  for a round it has finished sends that update instead of training twice.
 - `fl.nvflare.launch_external_process: true` runs each client's training in a subprocess.
 
 **Evaluate SmolVLA and π0.5.** `scripts/eval_libero.sh` exports a checkpoint to a lerobot policy folder and runs
@@ -244,10 +248,11 @@ training through the NVFlare simulator, aggregation, checkpointing and evaluatio
 algorithm. Exported jobs also ran outside the simulator: in NVFlare's POC mode and on a federation of two machines.
 
 - **Revision:** the code in this folder. On the final code: the unit tests, the tests against the real NVFlare
-  simulator, the mock federation, the POC and two-machine runs, and a repeat of the
-  `smolvla_libero_lora_nvflare_smoke` training (completed; mean client loss 3.1230 in round 1, 2.7898 in round 2).
-  The other smoke trainings in the table below, the LIBERO evaluations and the missing-checkpoint check ran on
-  earlier versions. Changes since then: the NVFlare job carries its config files, passes the round's quorum to
+  simulator, the mock federation, and a repeat of the `smolvla_libero_lora_nvflare_smoke` training with the held-out
+  task spec `configs/libero_heldout_8.json` (completed; the 8 held-out tasks were left out of training, mean client
+  loss 2.9835 in round 1, 2.7240 in round 2). The POC and two-machine runs ran on the previous version, before a
+  failed round rebuilt the client's state and the job packaged the held-out spec. The other smoke trainings in the
+  table below, the LIBERO evaluations and the missing-checkpoint check ran on earlier versions. Changes since then: the NVFlare job carries its config files, passes the round's quorum to
   NVFlare and handles failed and repeated rounds (tested on the final code as above); a missing `--ckpt` raises;
   unused packages left the GR00T evaluation package list; settings the code did not apply are rejected when the
   config loads (every example config still loads); and fixes went into paths those runs do not use (personalized
@@ -266,8 +271,8 @@ algorithm. Exported jobs also ran outside the simulator: in NVFlare's POC mode a
 
 | Check | Command | Result |
 |---|---|---|
-| Unit tests | `python -m pytest tests` (SmolVLA and π0.5 environment) | 435 passed, including the 7 below; on Lustre, add `--basetemp=/tmp/dvla-pytest`: one cache test needs sub-second file times |
-| Exported jobs in the real NVFlare simulator | `python -m pytest tests/nvflare_real` | 7 passed: a job moved away from its source configs runs; the external-process client runs; a failing client, a silent client and a client whose script died do not stop the rounds when `min_clients` allows; an unreachable quorum stops the run with `RoundFailure`; a late reply is sent again, not trained again |
+| Unit tests | `python -m pytest tests` (SmolVLA and π0.5 environment) | 441 passed, including the 8 below; on Lustre, add `--basetemp=/tmp/dvla-pytest`: one cache test needs sub-second file times |
+| Exported jobs in the real NVFlare simulator | `python -m pytest tests/nvflare_real` | 8 passed: a job moved away from its source configs, among them a held-out task spec, runs; the external-process client runs; a failing client, a silent client and a client whose script died do not stop the rounds when `min_clients` allows; an unreachable quorum stops the run with `RoundFailure`; a late reply is sent again, not trained again; a client that fails after training retries the round from the state it saved before it |
 | POC federation, mock model | `nvflare poc prepare -n 2`, `nvflare poc start`, `nvflare job submit -j <exported job>` | completed with the source configs removed; `nvflare job download` returned the checkpoint. With `min_clients: 1`, killing site-2 during round 3 left rounds 3 to 8 with one update each, and the job completed; with every client required, the same kill stopped the job with `RoundFailure` after one retry |
 | Two-machine federation | provisioned server and site-1 on one workstation, site-2 on the other; `smolvla_libero_lora_nvflare_smoke.yaml` exported with `site_prefix: site-`, a round timeout and `batch_size: 16` | completed in 86 s: both clients returned an update in both rounds (mean client loss 2.8156, then 3.0500); checkpoints fetched with `nvflare job download`. At batch size 64, site-2's 24 GB GPU ran out of memory: site-2 reported the error, the server retried once and stopped the run with `RoundFailure` |
 | Mock federation on CPU | `bash scripts/smoke_nvflare.sh` | passed: 2 clients, 2 rounds, checkpoint written and evaluated |

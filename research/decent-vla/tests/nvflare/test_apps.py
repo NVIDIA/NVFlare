@@ -207,6 +207,39 @@ def test_client_reports_a_failed_round_and_keeps_serving(run_cfg_path, fake_nvfl
     assert codec.flmodel_to_update(trained).client_id == "c0"
 
 
+@pytest.mark.parametrize("persist, adam_steps", [(False, 2), (True, 4)])
+def test_a_failed_round_is_retried_from_a_rebuilt_state(run_cfg_path, monkeypatch, persist, adam_steps):
+    """A round that fails after its optimizer stepped drops the client's state,
+    so the retry does not train on top of it: it starts from the state saved
+    before the round (fl.persist_client_state), otherwise from fresh optimizer
+    state, at the round's step either way."""
+    raw = yaml.safe_load(run_cfg_path.read_text())
+    raw["fl"].update(persist_client_state=persist, save_every_n_rounds=1)
+    run_cfg_path.write_text(yaml.safe_dump(raw))
+    state, cfg = _bootstrap_state(run_cfg_path), str(run_cfg_path)
+
+    def plan(r):
+        return RoundPlan(selected_clients=["c0", "c1"], local_steps=2, round_num=r)
+
+    client_session.handle_round("c0", cfg, state, plan(0))
+    real = client_session.run_client_round
+
+    def fails_after_training(**kwargs):
+        real(**kwargs)
+        raise RuntimeError("failed after training")
+
+    monkeypatch.setattr(client_session, "run_client_round", fails_after_training)
+    with pytest.raises(RuntimeError, match="failed after training"):
+        client_session.handle_round("c0", cfg, state, plan(1))
+    assert "c0" not in client_session._STATES
+
+    monkeypatch.setattr(client_session, "run_client_round", real)
+    client_session.handle_round("c0", cfg, state, plan(1))
+    st = client_session._STATES["c0"]
+    assert st.global_step == 4
+    assert {int(s["step"]) for s in st.optimizer.state_dict()["state"].values()} == {adam_steps}
+
+
 def test_client_keeps_no_reply_when_no_resend_can_happen(run_cfg_path, fake_nvflare):
     """Without fl.round_timeout_s or fl.min_clients the server waits for every
     client, so the last reply (a full delta) is not kept; a repeated round,
@@ -461,11 +494,13 @@ def test_load_job_config_resolves_packaged_files(run_cfg_path, tmp_path):
 
     raw = yaml.safe_load(run_cfg_path.read_text())
     raw["backend"]["extra"] = {"train_config_path": "pipeline.yaml"}
+    raw["data"]["held_out"] = "heldout.json"
     (tmp_path / "pipeline.yaml").write_text("x: 1\n")
     cfg_path = tmp_path / "decent_vla_run.yaml"
     cfg_path.write_text(yaml.safe_dump(raw))
     cfg = load_job_config(cfg_path)
     assert cfg.backend.extra["train_config_path"] == str(tmp_path / "pipeline.yaml")
+    assert cfg.data.held_out == str(tmp_path / "heldout.json")
 
 
 def test_site_paths_of_a_simulator_job_restore_the_submitting_host(run_cfg_path, tmp_path, monkeypatch):
