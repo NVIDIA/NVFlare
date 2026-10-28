@@ -720,12 +720,12 @@ def download_workspace(args, secure_mode: bool) -> None:
         # and may have cached clear/default communication settings. Make the
         # downloaded workspace visible and reload those settings before any
         # subsequent job Cell or configuration-built component is created.
-        # Search the site-owned local directory first. A job can also contain
-        # comm_config.json, but its settings must not override the site's.
+        # A job can also contain comm_config.json. Reload communication settings
+        # only from the site-owned local directory, even when it has no config.
         site_config_dir = os.path.join(args.workspace, "local")
         config_path = [site_config_dir, args.workspace] if os.path.isdir(site_config_dir) else [args.workspace]
         ConfigService.refresh_config_path(config_path)
-        CommConfigurator.reset()
+        CommConfigurator.reload_from_dir(site_config_dir)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
