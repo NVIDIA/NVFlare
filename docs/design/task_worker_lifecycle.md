@@ -7,6 +7,22 @@ assignment. This document defines the roles, resource contract, execution flow,
 storage, failure handling and current limits. The Kubernetes operator guide gives
 deployment commands and troubleshooting; it is not required to understand this design.
 
+## Compute release versus job lifetime
+
+Task scope separates the lifetime of computation from the lifetime of federation
+coordination. On Kubernetes, a CPU CJ can remain connected while a task Pod owns
+the training GPUs. Once the worker has published durable output and its native
+execution has physically settled, those GPUs can serve another eligible Pod.
+CJ can upload the saved result afterwards; neither job completion nor algorithm
+acceptance is required to release the worker's compute. Any GPUs explicitly
+reserved for CJ remain reserved for CJ's lifetime.
+
+This resource-reuse benefit requires scheduler admission and enforcement, not
+just a fresh process or `CUDA_VISIBLE_DEVICES`. Task scope by itself does not
+provide a local GPU scheduler. It also does not make an interrupted assignment
+resumable: [client-job recovery and native task-resume boundaries](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+are separate from resource release.
+
 ## Roles and assumptions
 
 | Role | Job lifetime | Task lifetime |
@@ -193,6 +209,25 @@ rejected. Local-model submission, external/attach Client API sessions and the
 resident Collab RPC service use job lifetime. Global-only cross-site evaluation
 is supported. Lightning's in-memory `restore_state=True` cache cannot restore a
 fresh task worker; use explicit native checkpoints or job lifetime.
+
+### Direct computation without a nested trainer
+
+For the supported Client API task path, the task worker is already the isolated
+compute runtime: it runs the script in its main thread through InProcessClientAPI.
+There is no second `external_process` trainer to launch solely for model handoff.
+CJ stages input files, the worker writes immutable output files, and CJ reads and
+submits that output after physical settlement. The native Pod/allocation still
+contains a worker process; removing a redundant trainer hop does not remove
+`task_worker_process.py`, TaskLauncher or the supervisor.
+
+Disk handoff replaces neither all transport nor live communication. CJ still
+owns federation downloads/uploads and filters; the [worker Cell session](task_worker_cellnet_session.md)
+delivers metrics while the worker is alive. Existing job-mode
+[external-process and Attach sessions](client_api_execution_modes.md), including
+their pass-through/download paths, remain separate supported mechanisms. Task
+mode currently rejects those session modes rather than silently nesting them.
+
+### Site policy
 
 Only canonical site `local/resources.json` (or its default fallback) supplies
 `task_execution`. Jobs cannot select the internal adapter, launcher, environment
@@ -418,6 +453,11 @@ Exceeding a deadline does not prove settlement. The supervisor has no reset or
 automatic physical retry after unconfirmed settlement. CP crash/restart, permanent
 node loss or missing finalizer evidence requires operator reconciliation after
 verifying runtime shutdown; clearing a stuck finalizer is not a substitute for proof.
+
+The [recovery design](client_job_recovery.md#native-task-resume-follow-up-requirements)
+lists the missing ownership, checkpoint and timeout-qualification requirements
+for native task restart/resume. The current completion-bound checkpoint handoff
+does not implement periodic recovery from an unfinished task.
 
 ## Qualification and optional references
 

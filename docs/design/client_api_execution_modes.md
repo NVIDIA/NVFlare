@@ -2,17 +2,29 @@
 
 ## Status
 
-**Implemented architecture, updated 2026-08-04.**
+**Implemented architecture.**
 
 This document records the architecture implemented for `ClientAPIExecutor`.
 
-The currently available modes are:
+The currently available modes for **job lifetime** are:
 
 | Mode | Backend | Trainer location | Availability |
 |---|---|---|---|
 | `in_process` | DataBus | Thread in the Client Job (CJ) process | Available |
 | `external_process` | Cell | Trainer process/group launched by the CJ | Available |
 | `attach` | Cell | Independently started and externally owned trainer | Available |
+
+Execution mode describes how Client API code connects to its executor;
+`execution_lifetime` describes how long compute stays alive. They are separate
+settings, but not every combination is supported. With task lifetime, the
+supported in-process Client API script runs in the **task worker's main thread**,
+not a thread in resident CJ. The worker uses the shared InProcessClientAPI adapter
+and durable file handoff; `external_process` and `attach` task sessions are rejected.
+See [direct task-worker computation](task_worker_lifecycle.md#direct-computation-without-a-nested-trainer).
+
+The job-mode external trainer and its pass-through transport remain useful for
+job lifetime. Avoiding that extra trainer hop inside a task Pod/allocation does
+not remove job-mode support or the task worker's live metrics Cell channel.
 
 ## Goals and Boundaries
 
