@@ -82,6 +82,8 @@ _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
 _CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHUTDOWN}
 _CONNECTION_RETRY_ATTEMPTS = 3
 _CONNECTION_RETRY_BACKOFF = 0.5
+_ABORT_STARTING_RETRY_SECS = 30.0
+_ABORT_STARTING_RETRY_DELAY = 0.5
 
 
 def _command_name(command: str) -> str:
@@ -559,10 +561,22 @@ class Session(SessionSpec):
         If the job is already done, no effect;
         If job is not started yet, it will be cancelled and won't be scheduled.
         If the job is being executed, it will be aborted.
+        If the job is still starting, the server asks the caller to retry; this method retries for up to
+        30 seconds before raising the server's response.
 
         """
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        starting_error = f"{MetaStatusValue.ERROR}: Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
+        deadline = time.monotonic() + _ABORT_STARTING_RETRY_SECS
+        while True:
+            try:
+                result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+                break
+            except InternalError as e:
+                remaining = deadline - time.monotonic()
+                if str(e) != starting_error or remaining <= 0:
+                    raise
+                time.sleep(min(_ABORT_STARTING_RETRY_DELAY, remaining))
         meta = result[ResultKey.META]
         status = meta.get(MetaKey.STATUS)
         info = meta.get(MetaKey.INFO)
