@@ -21,7 +21,8 @@ Adapters own model arithmetic; no runtime or ML framework is imported here.
 import math
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from functools import cached_property
+from typing import Any, Callable, Protocol
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.collab.async_storage import MemorySnapshotStore
@@ -108,8 +109,19 @@ class AcceptedUpdate:
     delta: dict
     weight: float
     metrics: dict
-    returned_model: dict
+    _returned_model: dict | Callable[[], dict] = field(repr=False)
     metadata: dict
+
+    @cached_property
+    def returned_model(self) -> dict:
+        """Borrow the full upload, reconstructing a delta payload only on demand.
+
+        Delta-only consumers need no full model. An explicit reconstruction
+        uses the adapter's original dtype/buffer rules and can fail if the
+        unscaled full model is unrepresentable, even when a scaled update is
+        valid. This does not affect acceptance unless a consumer requests it.
+        """
+        return self._returned_model() if callable(self._returned_model) else self._returned_model
 
     @property
     def staleness(self):
@@ -269,7 +281,14 @@ class AsyncEngine:
             raise ValueError("aggregation weight must be finite and positive")
         update = None
         if self.update_transform is not None or self.update_observer is not None:
-            returned_model = self.adapter.apply(base_model, delta, 1.0) if result.is_delta else result.model
+            # Match the usual FULL/DIFF aggregation path: a delta can be
+            # transformed/scaled without first constructing its full model.
+            # Bind the original delta before the transform replaces it below.
+            returned_model = (
+                (lambda base=base_model, client_delta=delta: self.adapter.apply(base, client_delta, 1.0))
+                if result.is_delta
+                else result.model
+            )
             update = AcceptedUpdate(
                 assignment, self.version, self.model, delta, weight, result.metrics, returned_model, result.metadata
             )

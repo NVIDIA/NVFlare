@@ -186,7 +186,7 @@ class AsyncWorkflow:
                 self.weight_metric,
                 self.update_transform,
                 snapshot_store,
-                update_observer=lambda update: self._hook("on_update", update),
+                update_observer=getattr(self.application, "on_update", None),
             )
             cleanup.callback(engine.close)
             scheduler.initialize(engine, names)

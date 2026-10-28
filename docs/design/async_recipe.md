@@ -83,6 +83,11 @@ The engine reuses `WeightedAggregationHelper` for running weighted sums, retaini
 one accumulator rather than B full models. Floating-point summation follows
 acceptance order; another arrival order need not be bitwise identical.
 
+The basic NumPy/PyTorch examples use float32, consistent with the other basic
+FLARE recipes. There is no async-specific dtype setting or saturation/retry
+policy. As in FedAvg, aggregation reuses WeightedAggregationHelper; model
+arithmetic and dtype choices belong to the adapter/application.
+
 Adapters provide snapshot, validation, difference, and apply without mutating
 inputs. Supplied adapters require identical full-state keys/shapes/dtypes and
 finite values. They average floating entries and preserve non-floating buffers
@@ -105,8 +110,12 @@ snapshot/result stores can provide disk offload without replacing the workflow.
 
 A callable receives `AcceptedUpdate`: assignment, current model/version, client
 delta, weight, metrics, full `returned_model`, and raw result `metadata`. For a
-delta payload, `returned_model` is reconstructed against the exact assignment
-base using the adapter's buffer rules. For full uploads it is the original model.
+delta payload, `returned_model` is reconstructed lazily on first access against
+the exact assignment base using the adapter's dtype/buffer rules. It is cached
+for subsequent accesses. For full uploads it is the original model. A consumer
+that needs only deltas/staleness incurs no full-model reconstruction. If the
+unscaled full state cannot be represented, explicit access can raise even when
+a transformed/scaled delta is valid; it does not block delta-only consumers.
 Return a replacement delta with matching keys/shapes/dtypes.
 Borrowed model states are read-only. Transformation, acceptance, and publication
 run serially. Staleness is measured at acceptance as current minus base version.
