@@ -45,6 +45,9 @@ pytestmark = pytest.mark.skipif(importlib.util.find_spec("torch") is None, reaso
 
 @pytest.fixture
 def lesson(monkeypatch, request, tmp_path):
+    import torch
+
+    original_threads = torch.get_num_threads()
     source = CHAPTER / SECTIONS[getattr(request, "param", "basic")] / "code"
     # Run from a copy with no sibling lessons or parent-level Python project available.
     code = tmp_path / "example-code"
@@ -61,6 +64,7 @@ def lesson(monkeypatch, request, tmp_path):
     try:
         yield importlib.import_module
     finally:
+        torch.set_num_threads(original_threads)
         for name in module_names:
             sys.modules.pop(name, None)
         sys.modules.update(original)
