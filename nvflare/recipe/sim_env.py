@@ -124,7 +124,6 @@ class SimEnv(ExecEnv):
         started_at = time.time()
         started_timer = time.monotonic()
         try:
-            _print_output(f"Simulation · {self.num_clients} clients\nStarting server and clients...", flush=True)
             # Validate scripts exist locally for simulation
             non_local_scripts = collect_non_local_scripts(job)
             if non_local_scripts:
@@ -133,6 +132,7 @@ class SimEnv(ExecEnv):
                     f"For SimEnv, all scripts must be present on the local machine."
                 )
 
+            _print_output(f"Simulation · {self.num_clients} clients\nStarting server and clients...", flush=True)
             workspace = os.path.join(self.workspace_root, job_id)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
