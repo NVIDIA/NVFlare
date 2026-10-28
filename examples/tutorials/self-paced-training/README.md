@@ -46,7 +46,7 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 #### Running Federated Learning Applications [[Open notebooks](./part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb)]
 - Run a CPU-only PyTorch application with `FedAvgRecipe` and `SimEnv`
 - Convert local PyTorch training with the Client API
-- Customize server settings and per-site training through recipe helpers
+- Implement custom server aggregation and configure per-site training through recipes
 - Track metrics, evaluate the saved global model, and inspect recipe exports
 
 #### Developing Federated Learning Applications [[Open notebooks](./part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb)]

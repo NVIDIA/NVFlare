@@ -12,23 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Configure the standard FedAvg server through the Recipe API."""
+"""Plug custom server aggregation into the Recipe API."""
 
 import argparse
 
+from aggregator import MedianAggregator
 from model import create_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation
 
 
-def create_recipe(num_rounds=5, stop_accuracy=80.0, patience=2):
+def create_recipe(num_rounds=5, stop_accuracy=80.0, patience=2, aggregation="median"):
+    if aggregation not in ("median", "fedavg"):
+        raise ValueError(f"Unknown aggregation: {aggregation}")
     recipe = FedAvgRecipe(
-        name="chapter1-custom-server",
+        name="chapter1-custom-server" if aggregation == "median" else "chapter1-custom-server-fedavg",
         model=create_model(),
-        min_clients=2,
+        min_clients=3,
         num_rounds=num_rounds,
         train_script="client.py",
+        aggregator=MedianAggregator() if aggregation == "median" else None,
         key_metric="accuracy",
         key_metric_mode="max",
         stop_cond=f"accuracy >= {stop_accuracy}",
@@ -44,9 +48,10 @@ def main():
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--stop_accuracy", type=float, default=80.0)
     parser.add_argument("--patience", type=int, default=2)
+    parser.add_argument("--aggregation", choices=("median", "fedavg"), default="median")
     args = parser.parse_args()
-    recipe = create_recipe(args.num_rounds, args.stop_accuracy, args.patience)
-    run = recipe.execute(SimEnv(num_clients=2, log_config="progress"))
+    recipe = create_recipe(args.num_rounds, args.stop_accuracy, args.patience, args.aggregation)
+    run = recipe.execute(SimEnv(num_clients=3, log_config="progress"))
     print("Results:", run.get_result())
 
 

@@ -6,7 +6,7 @@ Other chapters are being migrated separately. The [archived 2.6 course](https://
 
 ## Environment: development and published editions
 
-Use Python 3.10–3.14 on Linux or macOS. The exercises run on CPU with two simulated clients; they do not require a GPU or dataset download. Installation requires internet access unless the dependencies are already cached.
+Use Python 3.10–3.14 on Linux or macOS. The exercises run on CPU with two simulated clients, or three in the server aggregation lesson; they do not require a GPU or dataset download. Installation requires internet access unless the dependencies are already cached.
 
 Obtain the repository version containing these notebooks with Git **or extract its source ZIP**. Keep each section's notebook and its own `code` directory together. A Git clone is not required. In a terminal at the repository root:
 
@@ -67,7 +67,7 @@ chapter-1_running_federated_learning_applications/
 | --- | --- |
 | [First run](01.1_running_federated_learning_job/code) | Define and run a FedAvg recipe; read its evaluation summary |
 | [Convert local training](01.2_convert_deep_learning_to_federated_learning/code) | `train.py`, a training-only `client.py`, and `client_evaluate.py` |
-| [Server customization](01.3_server_side_customization/code) | Stopping, model selection, and persistence settings |
+| [Server customization](01.3_server_side_customization/code) | Custom median aggregation, stopping, model selection, and persistence |
 | [Client customization](01.4_client_side_customization/code) | Different training arguments per site |
 | [TensorBoard](01.5_experiment_tracking/01.5.1_experiment_tracking_with_tensorboard/code) | `SummaryWriter` and the matching server receiver |
 | [MLflow](01.5_experiment_tracking/01.5.2_experiment_tracking_with_mlflow/code) | `MLflowWriter` and a local SQLite store |
@@ -86,7 +86,7 @@ All section jobs use progress logging by default. For detailed console output, r
 
 When moving to another section, open its notebook and run its cells in order. The notebook selects that section's `code` directory and identifies the result paths. Its README also gives terminal commands. The introduction and experiment-tracking overview link to the hands-on sections.
 
-The examples use 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. They are offline workflow exercises, not benchmarks. Local SGD state is reset every round. Clients report actual optimizer-step counts for aggregation and evaluate received weights before training; final evaluation measures the persisted checkpoint separately.
+The examples use 200 training and 100 evaluation samples per site, with different site/split seeds and a shared class distribution. They are offline workflow exercises, not benchmarks. Local SGD state is reset every round. Clients report actual optimizer-step counts for built-in FedAvg aggregation; the server customization lesson instead gives each site one vote in a coordinate-wise median. Clients evaluate received weights before training; final evaluation measures the persisted checkpoint separately.
 
 Each example has a distinct recipe name and workspace under `/tmp/nvflare/simulation`. To preserve repeated experiments, set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory in the notebook environment before executing the run cell. The launched job inherits that setting. The conversion and job-structure variations also have distinct names.
 

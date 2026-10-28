@@ -172,15 +172,77 @@ def test_client_recipe_exports_distinct_arguments_for_each_site(lesson, tmp_path
 
 
 @pytest.mark.parametrize("lesson", ["server"], indirect=True)
-def test_server_recipe_exports_stopping_and_final_evaluation(lesson, tmp_path):
-    lesson("job").create_recipe(num_rounds=8, stop_accuracy=75.0, patience=3).export(str(tmp_path))
-    config = json.loads(next(tmp_path.rglob("config_fed_server.json")).read_text())
+@pytest.mark.parametrize("aggregation", ["median", "fedavg"])
+def test_server_recipe_exports_aggregation_stopping_and_final_evaluation(lesson, tmp_path, aggregation):
+    lesson("job").create_recipe(num_rounds=8, stop_accuracy=75.0, patience=3, aggregation=aggregation).export(
+        str(tmp_path)
+    )
+    config_path = next(tmp_path.rglob("config_fed_server.json"))
+    config = json.loads(config_path.read_text())
     training, evaluation = config["workflows"]
+    if aggregation == "median":
+        assert training["args"]["aggregator"]["path"] == "aggregator.MedianAggregator"
+        packaged = config_path.parent.parent / "custom/aggregator.py"
+        assert packaged.read_bytes() == (Path.cwd() / "aggregator.py").read_bytes()
+    else:
+        assert training["args"].get("aggregator") is None
+    meta = json.loads((config_path.parents[2] / "meta.json").read_text())
+    assert meta["min_clients"] == 3
     assert training["args"]["num_rounds"] == 8
     assert training["args"]["stop_cond"] == "accuracy >= 75.0"
     assert training["args"]["patience"] == 3
     assert evaluation["path"].endswith(".CrossSiteModelEval")
     assert evaluation["args"]["submit_model_task_name"] == ""
+
+
+@pytest.mark.parametrize("lesson", ["server"], indirect=True)
+def test_custom_server_uses_coordinate_medians_and_separate_mean_accuracy(lesson):
+    import numpy as np
+
+    from nvflare.apis.fl_constant import FLMetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+
+    aggregator = lesson("aggregator").MedianAggregator()
+    clients = []
+    for weights, bias, accuracy, steps in (([1, 30], 0, 20, 1), ([2, 10], 10, 40, 2), ([100, 20], 1, 90, 100)):
+        model = FLModel(
+            params={"weight": np.array(weights, dtype=np.float32), "bias": np.array([bias], dtype=np.float32)},
+            metrics={"accuracy": accuracy},
+            meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps},
+        )
+        clients.append(model)
+        aggregator.accept_model(model)
+    result = aggregator.aggregate_model()
+    # The outlier's large step count must not dominate the custom aggregation.
+    np.testing.assert_array_equal(result.params["weight"], [2, 20])
+    np.testing.assert_array_equal(result.params["bias"], [1])
+    assert result.params["weight"].dtype == np.float32
+    assert result.params_type == ParamsType.FULL
+    assert result.metrics == {"accuracy": 50.0}
+    np.testing.assert_array_equal(clients[2].params["weight"], [100, 20])
+
+    # A subsequent round must not reuse models or metrics from the previous round.
+    aggregator.accept_model(FLModel(params={"weight": np.array([9.0])}, metrics={"accuracy": 75.0}))
+    next_result = aggregator.aggregate_model()
+    np.testing.assert_array_equal(next_result.params["weight"], [9.0])
+    assert next_result.metrics == {"accuracy": 75.0}
+    with pytest.raises(ValueError, match="No client models"):
+        aggregator.aggregate_model()
+
+
+@pytest.mark.parametrize("lesson", ["server"], indirect=True)
+def test_custom_server_reset_and_full_weight_contract(lesson):
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+
+    aggregator = lesson("aggregator").MedianAggregator()
+    aggregator.accept_model(FLModel(params={"weight": np.array([1.0])}, metrics={"accuracy": 10.0}))
+    aggregator.reset_stats()
+    with pytest.raises(ValueError, match="No client models"):
+        aggregator.aggregate_model()
+    with pytest.raises(ValueError, match="full model weights"):
+        aggregator.accept_model(FLModel(params={"weight": np.array([1.0])}, params_type=ParamsType.DIFF))
 
 
 @pytest.mark.parametrize(
