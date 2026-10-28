@@ -37,7 +37,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from .cc_authorizer import CCAuthorizer, CCTokenGenerateError
-from .trustee_claims import CPU_TRUST_VECTORS, TRUST_VECTOR, cpu_evidence_type, normalized_init_data
+from .trustee_claims import (
+    CPU_TEE_EVIDENCE_TYPES,
+    CPU_TRUST_VECTORS,
+    TRUST_VECTOR,
+    cpu_evidence_type,
+    cpu_tee_for_evidence_type,
+    normalized_init_data,
+)
 
 COCO_NAMESPACE = "x-trustee-coco"
 EAT_PROFILE = "tag:github.com,2024:confidential-containers/Trustee"
@@ -87,7 +94,7 @@ class CoCoAuthorizer(CCAuthorizer):
         retry_backoff_multiplier up to retry_max_delay.
         ear_audience optionally pins the inner EAR aud, independently of the
         required FL proof audience. workload_constraints optionally maps signed
-        site subjects to init_data (SHA-256), cpu_tee (snp/tdx), SNP measurement,
+        site subjects to init_data (SHA-256), cpu_tee (intel_tdx/amd_sev_snp), SNP measurement,
         and/or explicit TDX tdx_mr_td / tdx_rtmr_0..3 (SHA-384) pins. An optional
         gpu_required boolean selects CPU-only or CPU+GPU signed appraisals for
         that site; a required GPU cannot fall back to a CPU-only proof. The legacy
@@ -162,8 +169,8 @@ class CoCoAuthorizer(CCAuthorizer):
                 ):
                     raise ValueError("Invalid site workload constraints")
                 tdx_pins = any(name.startswith("tdx_") for name in pins)
-                if ("measurement" in pins and (tdx_pins or pins.get("cpu_tee") == "tdx")) or (
-                    tdx_pins and pins.get("cpu_tee") == "snp"
+                if ("measurement" in pins and (tdx_pins or pins.get("cpu_tee") == "intel_tdx")) or (
+                    tdx_pins and pins.get("cpu_tee") == "amd_sev_snp"
                 ):
                     raise ValueError("Conflicting CPU workload constraints")
                 for name, value in pins.items():
@@ -172,11 +179,8 @@ class CoCoAuthorizer(CCAuthorizer):
                             raise ValueError("workload gpu_required must be a boolean")
                         continue
                     if name == "cpu_tee":
-                        if not isinstance(value, str) or value not in CPU_TRUST_VECTORS:
-                            raise ValueError(
-                                "Invalid workload cpu_tee pin: use Trustee EAR evidence type 'tdx' or 'snp'; "
-                                "participant-level cpu_tee uses 'intel_tdx' or 'amd_sev_snp'"
-                            )
+                        if not isinstance(value, str) or value not in CPU_TEE_EVIDENCE_TYPES:
+                            raise ValueError("Invalid workload cpu_tee pin: use intel_tdx or amd_sev_snp")
                         continue
                     length = 64 if name == "init_data" else 96
                     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):
@@ -461,7 +465,7 @@ class CoCoAuthorizer(CCAuthorizer):
                 evidence = ear["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
                 cpu_type = cpu_evidence_type(evidence)
                 actual = {
-                    "cpu_tee": cpu_type,
+                    "cpu_tee": cpu_tee_for_evidence_type(cpu_type),
                     "measurement": evidence.get("snp", {}).get("measurement"),
                     "gpu_required": "gpu0" in ear["submods"],
                 }

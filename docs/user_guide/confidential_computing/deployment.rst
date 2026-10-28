@@ -74,14 +74,13 @@ trusted build commands. Paths in this file resolve relative to this file.
        get_token_request_timeout_seconds: 45
        # Optional verifier policy shared by bare-metal CVM and CoCo.
        proof_iat_leeway_seconds: 180
-       # Trustee EAR evidence names are tdx/snp here. Participant cpu_tee uses
-       # intel_tdx/amd_sev_snp; provisioning also normalizes those aliases here.
+       # Use the same CPU TEE names as participant cc_config files.
        workload_constraints:
          server:
-           cpu_tee: tdx
+           cpu_tee: intel_tdx
            tdx_mr_td: <approved-96-character-lowercase-hex-value>
          site-1:
-           cpu_tee: snp
+           cpu_tee: amd_sev_snp
            init_data: <approved-64-character-lowercase-hex-value>
        retry:
          max_attempts: 10

@@ -62,7 +62,6 @@ LEGACY_FIELDS = {
 CLASS_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 REPOSITORY = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*")
 DNS_LABEL = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
-WORKLOAD_CPU_TEE_ALIASES = {"intel_tdx": "tdx", "amd_sev_snp": "snp"}
 DEFAULT_EXPIRY_WARNING_SECONDS = 7 * 86400
 
 
@@ -365,10 +364,6 @@ def _validate_service(name, value, config_path):
             )
             _number(retry.get("jitter_ratio"), f"attestation_services.{name}.retry.jitter_ratio", minimum=0, maximum=1)
         constraints = service.get("workload_constraints")
-        if isinstance(constraints, dict):
-            for pins in constraints.values():
-                if isinstance(pins, dict) and pins.get("cpu_tee") in WORKLOAD_CPU_TEE_ALIASES:
-                    pins["cpu_tee"] = WORKLOAD_CPU_TEE_ALIASES[pins["cpu_tee"]]
         if isinstance(constraints, dict) and any(
             isinstance(pins, dict) and "gpu_required" in pins for pins in constraints.values()
         ):

@@ -26,10 +26,10 @@ REQUIRED = OPTION + "=all"
 CAPABILITY = "guest-local-aa-token/v1"
 PROFILE_SCHEMA_V4 = "coco-approved-workload-launch/v4"
 RUNTIME_TARGETS = {
-    "kata-qemu-nvidia-gpu-snp": ("snp", "nvidia"),
-    "kata-qemu-snp": ("snp", "none"),
-    "kata-qemu-nvidia-gpu-tdx": ("tdx", "nvidia"),
-    "kata-qemu-tdx": ("tdx", "none"),
+    "kata-qemu-nvidia-gpu-snp": ("amd_sev_snp", "nvidia"),
+    "kata-qemu-snp": ("amd_sev_snp", "none"),
+    "kata-qemu-nvidia-gpu-tdx": ("intel_tdx", "nvidia"),
+    "kata-qemu-tdx": ("intel_tdx", "none"),
 }
 
 
@@ -43,7 +43,9 @@ def runtime_target(runtime):
         "gpu": gpu,
         "gpu_count": 1 if gpu == "nvidia" else 0,
         "config_name": "configuration-" + runtime.removeprefix("kata-") + ".toml",
-        "node_label": "amd.feature.node.kubernetes.io/snp" if tee == "snp" else "intel.feature.node.kubernetes.io/tdx",
+        "node_label": (
+            "amd.feature.node.kubernetes.io/snp" if tee == "amd_sev_snp" else "intel.feature.node.kubernetes.io/tdx"
+        ),
     }
 
 
@@ -63,9 +65,9 @@ def require_confidential_config(qemu, runtime):
     target = runtime_target(runtime)
     if qemu.get("confidential_guest") is not True:
         raise ValueError("Kata configuration must enable confidential_guest")
-    if qemu.get("sev_snp_guest", False) is not (target["cpu_tee"] == "snp"):
+    if qemu.get("sev_snp_guest", False) is not (target["cpu_tee"] == "amd_sev_snp"):
         raise ValueError("Kata sev_snp_guest does not match approved CPU TEE")
-    if target["cpu_tee"] == "tdx" and qemu.get("machine_type") != "q35":
+    if target["cpu_tee"] == "intel_tdx" and qemu.get("machine_type") != "q35":
         raise ValueError("The approved TDX profile requires QEMU q35")
     return target
 

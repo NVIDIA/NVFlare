@@ -106,10 +106,10 @@ Shared terminology and configuration names
      - ``intel_tdx`` / ``amd_sev_snp``
      - platform map key
      - selected Kata runtime
-   * - Signed EAR CPU evidence
-     - ``tdx`` / ``snp`` inside ``workload_constraints``
-     - appraisal evidence
-     - appraisal evidence
+   * - CPU TEE configuration
+     - ``intel_tdx`` / ``amd_sev_snp``
+     - ``intel_tdx`` / ``amd_sev_snp``
+     - ``intel_tdx`` / ``amd_sev_snp``
    * - NVIDIA confidential GPU
      - ``gpu_tee: nvidia_cc``
      - ``gpu: nvidia_cc``
@@ -118,7 +118,9 @@ Shared terminology and configuration names
 Both on-premises modes resolve their endpoint names to the same upstream
 Trustee service. ``SERVICE_FQDN`` must resolve from inside the confidential
 guest, not only on the host. The different 2.9 keys are retained for
-compatibility; do not invent additional aliases.
+compatibility. Trustee still signs the upstream ``tdx`` or ``snp`` evidence
+object key on the wire; NVFlare translates that internal protocol detail and
+does not accept it as a configuration value.
 
 Troubleshooting by symptom
 --------------------------

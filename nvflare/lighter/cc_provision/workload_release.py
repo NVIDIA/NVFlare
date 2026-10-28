@@ -27,16 +27,23 @@ from pathlib import Path
 from string import Template
 
 if __package__:
-    from nvflare.app_opt.confidential_computing.trustee_claims import CPU_TRUST_VECTORS, TRUST_VECTOR
+    from nvflare.app_opt.confidential_computing.trustee_claims import (
+        CPU_TEE_EVIDENCE_TYPES,
+        CPU_TRUST_VECTORS,
+        TRUST_VECTOR,
+        cpu_evidence_type_for_tee,
+    )
 else:
     _claims = runpy.run_path(str(Path(__file__).resolve().parent / "trustee_claims.py"))
     TRUST_VECTOR, CPU_TRUST_VECTORS = _claims["TRUST_VECTOR"], _claims["CPU_TRUST_VECTORS"]
+    CPU_TEE_EVIDENCE_TYPES = _claims["CPU_TEE_EVIDENCE_TYPES"]
+    cpu_evidence_type_for_tee = _claims["cpu_evidence_type_for_tee"]
 
 RUNTIME_TARGETS = {
-    "kata-qemu-nvidia-gpu-snp": ("snp", "nvidia"),
-    "kata-qemu-snp": ("snp", "none"),
-    "kata-qemu-nvidia-gpu-tdx": ("tdx", "nvidia"),
-    "kata-qemu-tdx": ("tdx", "none"),
+    "kata-qemu-nvidia-gpu-snp": ("amd_sev_snp", "nvidia"),
+    "kata-qemu-snp": ("amd_sev_snp", "none"),
+    "kata-qemu-nvidia-gpu-tdx": ("intel_tdx", "nvidia"),
+    "kata-qemu-tdx": ("intel_tdx", "none"),
 }
 V1 = "coco-workload-owner-authorization/v1"
 V2 = "coco-workload-owner-authorization/v2"
@@ -76,15 +83,15 @@ def target_for_runtime(runtime):
 
 
 def init_data_claim(cpu_tee, digest):
-    require(cpu_tee in ("snp", "tdx"), "unsupported CPU TEE")
+    require(cpu_tee in CPU_TEE_EVIDENCE_TYPES, "unsupported CPU TEE")
     require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest), "invalid SHA-256 InitData digest")
     # deps/verifier/src/tdx/{mod,claims}.rs at Trustee 338610fbfed57b66c61a8a3a60e0e4386bdce793.
-    return digest + ("0" * 32 if cpu_tee == "tdx" else "")
+    return digest + ("0" * 32 if cpu_tee == "intel_tdx" else "")
 
 
 def required_vectors(cpu_tee, gpu):
-    require(cpu_tee in ("snp", "tdx") and gpu in ("none", "nvidia"), "unsupported CPU/GPU target")
-    vectors = {"cpu0": dict(CPU_TRUST_VECTORS[cpu_tee])}
+    require(cpu_tee in CPU_TEE_EVIDENCE_TYPES and gpu in ("none", "nvidia"), "unsupported CPU/GPU target")
+    vectors = {"cpu0": dict(CPU_TRUST_VECTORS[cpu_evidence_type_for_tee(cpu_tee)])}
     if gpu == "nvidia":
         vectors["gpu0"] = dict(TRUST_VECTOR)
     return vectors
@@ -129,7 +136,7 @@ def validate_authorization(authorization):
     if schema == V1:
         require(auth.pop("snp_init_data_encoding_in_trustee_v0_21") == "lowercase-hex", "unexpected SNP encoding")
         digest = auth.pop("snp_init_data_sha256")
-        auth.update(schema=V2, cpu_tee="snp", gpu="nvidia", init_data_sha256=digest, init_data_claim=digest)
+        auth.update(schema=V2, cpu_tee="amd_sev_snp", gpu="nvidia", init_data_sha256=digest, init_data_claim=digest)
     release = auth["release_name"]
     require(
         isinstance(release, str) and re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release) and len(release) <= 63,
@@ -169,7 +176,7 @@ def render_fragment(authorization, template, *, legacy=False):
     """Encode every owner-controlled value as JSON data in a local, reviewed template."""
     auth = validate_authorization(authorization)
     if legacy:
-        require(auth["cpu_tee"] == "snp" and auth["gpu"] == "nvidia", "legacy fragments are SNP+GPU only")
+        require(auth["cpu_tee"] == "amd_sev_snp" and auth["gpu"] == "nvidia", "legacy fragments are SNP+GPU only")
     prefix = policy_prefix(auth["release_name"])
 
     def compact(value):
@@ -180,7 +187,7 @@ def render_fragment(authorization, template, *, legacy=False):
         initdata=compact(auth["init_data_claim"]),
         image=compact(auth["encrypted_image"]),
         args=compact(auth["process_args"]),
-        cpu_tee=compact(auth["cpu_tee"]),
+        cpu_tee=compact(cpu_evidence_type_for_tee(auth["cpu_tee"])),
         gpu_required=compact(auth["gpu"] == "nvidia"),
         submods=compact(auth["required_ear_submods"]),
         trust_vectors=json.dumps(auth["required_ear_trust_vectors"], indent=4),
@@ -199,11 +206,12 @@ def policy_test_cases(authorization):
     auth = validate_authorization(authorization)
     image, args = auth["encrypted_image"], auth["process_args"]
     cpu_tee, gpu = auth["cpu_tee"], auth["gpu"]
+    cpu_type = cpu_evidence_type_for_tee(cpu_tee)
     evidence = {
         "init_data": auth["init_data_claim"],
-        cpu_tee: (
+        cpu_type: (
             {"quote": {"body": {"mr_config_id": auth["init_data_claim"]}}}
-            if cpu_tee == "tdx"
+            if cpu_tee == "intel_tdx"
             else {"measurement": "approved"}
         ),
         "init_data_claims": {
@@ -263,12 +271,12 @@ def policy_test_cases(authorization):
     change("negative-image", container + ["Annotations", "io.kubernetes.cri.image-name"], "other/image:latest")
     change("negative-command", container + ["Process", "Args"], [*args, "--unapproved-extra-argument"])
     change("negative-weak-cpu", ["submods", "cpu0", "ear.trustworthiness-vector", "hardware"], 0)
-    change("negative-missing-cpu-type", ev + [cpu_tee], None, remove=True)
-    change("negative-empty-cpu-type", ev + [cpu_tee], {})
-    change("negative-ambiguous-cpu", ev + ["snp" if cpu_tee == "tdx" else "tdx"], {"unapproved": True})
+    change("negative-missing-cpu-type", ev + [cpu_type], None, remove=True)
+    change("negative-empty-cpu-type", ev + [cpu_type], {})
+    change("negative-ambiguous-cpu", ev + ["snp" if cpu_type == "tdx" else "tdx"], {"unapproved": True})
     change("negative-unknown-cpu", ev + ["sgx"], {"unapproved": True})
     change("negative-extra-submod", ["submods", "cpu1"], cpu)
-    if cpu_tee == "tdx":
+    if cpu_tee == "intel_tdx":
         change("negative-mrconfigid", ev + ["tdx", "quote", "body", "mr_config_id"], "f" * 96)
         change("negative-truncated-initdata", ev + ["init_data"], auth["init_data_sha256"])
     if gpu == "nvidia":

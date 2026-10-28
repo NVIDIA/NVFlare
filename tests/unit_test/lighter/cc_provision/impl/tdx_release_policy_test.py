@@ -59,7 +59,7 @@ def test_target_authentication_contract(runtime):
     cpu, gpu = release.RUNTIME_TARGETS[runtime]
     assert auth["cpu_tee"] == cpu
     assert auth["gpu"] == gpu
-    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "tdx" else "")
+    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "intel_tdx" else "")
     assert auth["required_ear_submods"] == (["cpu0", "gpu0"] if gpu == "nvidia" else ["cpu0"])
     assert auth["required_ear_trust_vectors"]["cpu0"]["configuration"] == 2
     assert release.validate_authorization(auth) == auth
@@ -71,6 +71,8 @@ def test_target_authentication_contract(runtime):
     [
         ("schema", "other"),
         ("cpu_tee", "sgx"),
+        ("cpu_tee", "tdx"),
+        ("cpu_tee", "snp"),
         ("gpu", "amd"),
         ("init_data_sha256", "ab" * 48),
         ("init_data_claim", "0" * 64),

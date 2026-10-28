@@ -79,8 +79,8 @@ def test_real_builders_sign_mixed_coco_kits(tmp_path):
         "admin@example.com",
     }
     constraints = {
-        "site-1": {"cpu_tee": "tdx", "gpu_required": False},
-        "site-2": {"cpu_tee": "snp", "gpu_required": True},
+        "site-1": {"cpu_tee": "intel_tdx", "gpu_required": False},
+        "site-2": {"cpu_tee": "amd_sev_snp", "gpu_required": True},
     }
     for name in ("server.example.com", "site-1", "site-2"):
         kit = result / name

@@ -31,6 +31,32 @@ CPU_TRUST_VECTORS = {
     "tdx": dict(TRUST_VECTOR),
 }
 
+# NVFlare configuration uses one platform vocabulary throughout. Trustee's
+# signed EAR keeps the upstream verifier names as evidence object keys; keep
+# that wire-format translation here instead of exposing it to operators.
+CPU_TEE_EVIDENCE_TYPES = {
+    "intel_tdx": "tdx",
+    "amd_sev_snp": "snp",
+}
+
+
+def cpu_evidence_type_for_tee(cpu_tee):
+    """Translate an NVFlare CPU TEE name to Trustee's signed evidence key."""
+
+    try:
+        return CPU_TEE_EVIDENCE_TYPES[cpu_tee]
+    except (KeyError, TypeError):
+        raise ValueError("Unsupported CPU TEE: use intel_tdx or amd_sev_snp") from None
+
+
+def cpu_tee_for_evidence_type(cpu_type):
+    """Translate a verified Trustee evidence key to the NVFlare CPU TEE name."""
+
+    for cpu_tee, evidence_type in CPU_TEE_EVIDENCE_TYPES.items():
+        if cpu_type == evidence_type:
+            return cpu_tee
+    raise ValueError("Unsupported Trustee CPU evidence type")
+
 
 def cpu_evidence_type(evidence):
     """Identify the platform in already authenticated Trustee EAR evidence.

@@ -184,7 +184,7 @@ def _coco_project(tmp_path):
                     "proof_iat_leeway_seconds": 90,
                     "workload_constraints": {
                         "site-1": {
-                            "cpu_tee": "snp",
+                            "cpu_tee": "amd_sev_snp",
                             "init_data": "a" * 64,
                         }
                     },
@@ -425,7 +425,9 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
     plan = builder.plans["site-1"]
     args = builder.deployments[plan.mode].authorizer(plan, issuer=False)["args"]
     assert args["proof_iat_leeway_seconds"] == 90
-    assert args["workload_constraints"] == {"site-1": {"cpu_tee": "snp", "init_data": "a" * 64, "gpu_required": True}}
+    assert args["workload_constraints"] == {
+        "site-1": {"cpu_tee": "amd_sev_snp", "init_data": "a" * 64, "gpu_required": True}
+    }
     with pytest.raises(TypeError):
         builder.plans["site-1"].internal["workload_constraints"]["site-1"]["gpu_required"] = False
 
@@ -436,7 +438,7 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "invalid"), project))
 
     config["attestation_services"]["trustee"]["workload_constraints"]["site-1"] = {
-        "cpu_tee": "snp",
+        "cpu_tee": "amd_sev_snp",
         "gpu_required": False,
     }
     _write(tmp_path / "cc_project.yml", config)
@@ -444,7 +446,7 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
 
 
-def test_participant_cpu_names_are_normalized_in_workload_constraints(tmp_path):
+def test_workload_constraints_keep_the_common_cpu_tee_name(tmp_path):
     project = _coco_project(tmp_path)
     path = tmp_path / "cc_project.yml"
     config = yaml.safe_load(path.read_text())
@@ -454,7 +456,7 @@ def test_participant_cpu_names_are_normalized_in_workload_constraints(tmp_path):
     builder = CCBuilder()
     builder.initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
 
-    assert builder.plans["site-1"].internal["workload_constraints"]["site-1"]["cpu_tee"] == "snp"
+    assert builder.plans["site-1"].internal["workload_constraints"]["site-1"]["cpu_tee"] == "amd_sev_snp"
 
 
 def test_gpu_tee_defaults_missing_client_capacity_to_one(tmp_path):
