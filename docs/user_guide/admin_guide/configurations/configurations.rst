@@ -4,18 +4,23 @@
 Configuration Files
 ###################
 
-**Supported Configuration File Formats**
+Job, startup, and resource configuration files use JSON syntax, with optional ``//`` line comments and
+``/* ... */`` block comments and trailing commas. Existing ``.json`` and ``.conf``
+filenames use the same parser. HOCON expressions, includes, and
+YAML are no longer supported for these files. Provisioning project files and
+site-owned ``study_runtime.yaml`` retain their YAML support.
 
-- `JSON <https://www.json.org/json-en.html>`_
-- `YAML <https://yaml.org/>`_
-- `Pyhocon <https://github.com/chimpler/pyhocon>`_ - a JSON variant and HOCON (Human-Optimized Config Object Notation) parser for python.
-  Supports comments, variable substitution, and inheritance.
-- `OmegaConf <https://omegaconf.readthedocs.io/en/2.3_branch/>`_ - a YAML based hierarchical configuration.
+FedJob/recipe exports and provisioned startup kits already contain JSON. Legacy
+``nvflare job create`` renders bundled HOCON templates into JSON syntax while
+keeping ``.conf`` names. Job metadata is data only;
+runtime application references are described in :ref:`variable_resolution`.
 
-Users have the flexibility to use a single format or combine several formats, as exemplified by using config_fed_client.conf and config_fed_server.json together.
-If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: 
-
-``.json -> .conf -> .yml -> .yaml``
+Before upgrading, convert existing HOCON/YAML jobs and site configurations.
+HOCON ``.conf`` filenames can stay unchanged; YAML files must become ``.json``
+or ``.conf`` files containing JSON. YAML overrides produce a conversion error
+instead of silently selecting a default configuration. Combine repeated HOCON
+object definitions explicitly: JSON keeps only the last duplicate key.
+Place site configuration overrides under ``startup/`` or ``local/``.
 
 See the sections below for more in-depth information about the different capabilities and types of configuration files:
 

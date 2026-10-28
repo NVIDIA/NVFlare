@@ -1163,7 +1163,7 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
     config = Path(workspace.get_app_config_dir("job-1"))
     config.mkdir(parents=True)
     if config_case == "nested_json":
-        (config / "config_fed_client.conf").write_text("execution_lifetime = task\n")
+        (config / "config_fed_client.conf").write_text('{"execution_lifetime":"task"}')
         (config / "shadow").mkdir()
         (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
     elif config_case == "hocon_include":
@@ -1173,14 +1173,19 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
         (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
         monkeypatch.setenv("NVFLARE_LIFETIME", "job")
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        error = (
+            "resolved client execution_lifetime"
+            if config_case == "nested_json"
+            else "Expecting value|YAML configuration"
+        )
+        with pytest.raises(ValueError, match=error):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                 client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
             )
     choose.assert_not_called()
 
 
-def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
+def test_cj_rejects_environment_reference_as_execution_lifetime(tmp_path, monkeypatch):
     from pathlib import Path
 
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1193,10 +1198,10 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
         json.dump(job_meta, stream)
     config = Path(workspace.get_app_config_dir("job-1"))
     config.mkdir(parents=True)
-    path = config / "config_fed_client.yml"
-    path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
-    monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
-    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
+    path = config / "config_fed_client.json"
+    path.write_text('{"format_version":3,"execution_lifetime":"{$NVFLARE_LIFETIME}","executors":[]}')
+    monkeypatch.setenv("NVFLARE_LIFETIME", "task")
+    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "{$NVFLARE_LIFETIME}"
     monkeypatch.setenv("NVFLARE_LIFETIME", "job")
     args = SimpleNamespace(
         workspace=str(tmp_path),
@@ -1208,7 +1213,7 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
         sp_target="server:8002",
     )
     with patch.object(ClientJsonConfigurator, "configure") as build:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        with pytest.raises(ValueError, match="execution_lifetime must be"):
             ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
     build.assert_not_called()
 

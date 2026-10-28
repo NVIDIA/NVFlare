@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shlex
 import shutil
@@ -22,6 +21,7 @@ import subprocess
 import tempfile
 
 import grpc
+import jsonc as json
 
 from nvflare.utils.process_utils import popen_in_new_session
 

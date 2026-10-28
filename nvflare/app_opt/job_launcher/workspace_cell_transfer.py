@@ -41,6 +41,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+import jsonc
 import yaml
 
 from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
@@ -131,7 +132,7 @@ def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: st
     for resource_config_name in _RESOURCE_CONFIG_NAMES:
         try:
             with open(os.path.join(local_dir, resource_config_name), "rt") as f:
-                resource_config = json.load(f)
+                resource_config = jsonc.load(f)
         except FileNotFoundError:
             continue
         except Exception as e:
@@ -548,7 +549,7 @@ def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
         return None
     try:
         with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+            data = jsonc.load(fh)
     except (OSError, json.JSONDecodeError) as ex:
         logger.warning("failed to load %s: %s", path, secure_format_exception(ex))
         return None

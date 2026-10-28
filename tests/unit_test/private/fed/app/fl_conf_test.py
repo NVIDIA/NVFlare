@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import builtins
 import json
 import logging
 import os
@@ -21,11 +23,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
@@ -83,6 +86,58 @@ def _workspace_with_kit(tmp_path, site_name):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     return Workspace(str(tmp_path), site_name=site_name)
+
+
+@pytest.mark.parametrize("is_server", [True, False])
+def test_starter_restart_never_searches_persisted_jobs_for_site_config(tmp_path, monkeypatch, is_server):
+    site_name = SiteType.SERVER if is_server else "site-1"
+    workspace = _workspace_with_kit(tmp_path, site_name)
+    startup_name = "fed_server.json" if is_server else "fed_client.json"
+    startup_config = {"servers": []} if is_server else {"client": {}, "servers": []}
+    (tmp_path / "startup" / startup_name).write_text(json.dumps(startup_config))
+    (tmp_path / "local" / "resources.json.default").write_text('{"site_owned": true}')
+    job_app = Path(workspace.get_app_dir("old-job"))
+    (job_app / "config").mkdir(parents=True)
+    secret = tmp_path / "synthetic-secret.conf"
+    secret.write_text('probe = "SYNTHETIC_FILE_SECRET"')
+    monkeypatch.setenv("NVFLARE_RESTART_TEST_SECRET", "SYNTHETIC_ENV_SECRET")
+    payload = f'include file("{secret}")\nprobe_env = ${{NVFLARE_RESTART_TEST_SECRET}}'
+    (job_app / "resources.conf").write_text(payload)
+    (job_app / "config" / "comm_config.conf").write_text(payload)
+
+    configer_type = FLServerStarterConfiger if is_server else FLClientStarterConfiger
+    configer = configer_type.__new__(configer_type)
+    configer.workspace = workspace
+    configer.args = argparse.Namespace(workspace=str(tmp_path), job_id=None)
+    configer.cmd_vars = {}
+    configer.app_validator = None
+    configer.components = {}
+    configer.handlers = []
+    configer.config_data = startup_config
+    if is_server:
+        configer.server_config_file_names = workspace.get_config_files_for_startup(True, False)
+        configer.snapshot_persistor = None
+    else:
+        configer.client_config_file_names = workspace.get_config_files_for_startup(False, False)
+
+    real_open = builtins.open
+
+    def site_only_open(path, *args, **kwargs):
+        resolved = os.path.realpath(path)
+        assert not resolved.startswith(str(job_app)), "startup read persisted job configuration"
+        assert resolved != str(secret), "startup evaluated the persisted job include"
+        return real_open(path, *args, **kwargs)
+
+    ConfigService.reset()
+    try:
+        with patch("builtins.open", side_effect=site_only_open):
+            configer.finalize_config(MagicMock())
+            assert ConfigService.get_section(SystemConfigs.RESOURCES_CONF) == {"site_owned": True}
+            assert ConfigService.load_configuration("comm_config") is None
+            (tmp_path / "local" / "comm_config.conf").write_text('{"trusted": "site"}')
+            assert ConfigService.load_configuration("comm_config").to_dict() == {"trusted": "site"}
+    finally:
+        ConfigService.reset()
 
 
 @pytest.mark.parametrize(

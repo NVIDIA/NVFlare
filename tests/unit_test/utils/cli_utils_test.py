@@ -148,9 +148,7 @@ poc_workspace {
 
         save_config(config, str(config_path))
 
-        persisted = config_path.read_text()
-        assert "version = 2" in persisted
-        assert 'workspace = "/tmp/nvflare/poc"' in persisted
+        assert json.loads(config_path.read_text()) == {"version": 2, "poc": {"workspace": "/tmp/nvflare/poc"}}
         assert list(tmp_path.glob("tmp*")) == []
 
     def test_save_config_uses_final_filename_extension(self, tmp_path):
@@ -169,6 +167,15 @@ poc_workspace {
 
         assert json.loads(config_path.read_text())["version"] == 2
 
+    def test_save_config_normalizes_to_json_in_conf_file(self, tmp_path):
+        config_path = tmp_path / "client.yaml"
+        config_path.write_text("version: 1")
+
+        save_config(CF.parse_string("version = 2"), str(config_path), keep_origin_format=False)
+
+        assert json.loads(config_path.with_suffix(".conf").read_text()) == {"version": 2}
+        assert not config_path.exists()
+
     def test_save_config_rejects_unsupported_trailing_suffix(self, tmp_path):
         config_path = tmp_path / "client.json.backup"
         config = CF.parse_string("version = 2")
@@ -179,14 +186,13 @@ poc_workspace {
         assert not config_path.exists()
 
     @pytest.mark.parametrize("ext", [".yml", ".yaml"])
-    def test_save_config_writes_yaml(self, tmp_path, ext):
-        pytest.importorskip("omegaconf")
+    def test_save_config_rejects_yaml(self, tmp_path, ext):
         config_path = tmp_path / f"config_fed_client{ext}"
         config = CF.parse_string("version = 2")
 
-        save_config(config, str(config_path))
-
-        assert "version: 2" in config_path.read_text()
+        with pytest.raises(ValueError, match="invalid file extension"):
+            save_config(config, str(config_path))
+        assert not config_path.exists()
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

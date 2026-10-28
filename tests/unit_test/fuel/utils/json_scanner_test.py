@@ -15,6 +15,9 @@
 import json
 import re
 
+import pytest
+
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 
 test_json = """
@@ -248,3 +251,24 @@ class TestJsonScanner:
     def test_scan(self):
         scanner = JsonScanner(TRAIN_CONFIG, "test")
         scanner.scan(_TestJsonProcessor())
+
+
+@pytest.mark.parametrize("exception_type", [ValueError, ComponentNotAuthorized])
+@pytest.mark.parametrize("secure", [False, True])
+def test_scan_errors_omit_nodes_and_preserve_secure_diagnostics(exception_type, secure, caplog, monkeypatch):
+    monkeypatch.setenv("NVFLARE_SECURE_LOGGING", "1" if secure else "0")
+
+    class FailingProcessor(JsonObjectProcessor):
+        def process_element(self, node):
+            if node.path() == "token":
+                raise exception_type(node.element if secure else "invalid setting")
+
+    expected_type = ComponentNotAuthorized if exception_type is ComponentNotAuthorized else ConfigError
+    with pytest.raises(expected_type, match="token") as error:
+        JsonScanner({"token": "synthetic-private-value"}, "config.json").scan(FailingProcessor())
+
+    assert "config.json" in str(error.value)
+    assert "synthetic-private-value" not in str(error.value) + caplog.text
+    if not secure:
+        assert "invalid setting" in str(error.value)
+    assert "json_scanner.py" in caplog.text

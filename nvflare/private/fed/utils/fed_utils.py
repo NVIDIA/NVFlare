@@ -22,6 +22,8 @@ import sys
 import warnings
 from typing import List, Optional, Union
 
+import jsonc
+
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -106,7 +108,7 @@ def require_signed_jobs(workspace: Workspace, startup_config: str = WorkspaceCon
                             "can be altered by other local users (TOCTOU risk)",
                             startup_config,
                         )
-                    cfg = json.load(f)
+                    cfg = jsonc.load(f)
             except BaseException:
                 if fd != -1:
                     os.close(fd)

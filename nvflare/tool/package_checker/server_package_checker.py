@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shutil
 import sys
+
+import jsonc as json
 
 from .check_rule import CheckAddressBinding, CheckWriting
 from .package_checker import PackageChecker

@@ -247,6 +247,10 @@ def create_job(cmd_args):
             app_config_dir = get_config_dir(job_folder, app_name)
             shutil.copytree(src=src, dst=app_config_dir, dirs_exist_ok=True)
             remove_extra_files(app_config_dir)
+            for name in (CONFIG_FED_CLIENT_CONF, CONFIG_FED_SERVER_CONF):
+                config_path = os.path.join(app_config_dir, name)
+                if os.path.isfile(config_path):
+                    save_config(CF.parse_file(config_path, resolve=False), config_path)
         prepare_meta_config(cmd_args, template_src, app_names)
         app_variable_values = prepare_job_config(cmd_args, app_names)
         display_template_variables(job_folder, app_variable_values)
@@ -495,14 +499,14 @@ def submit_job(cmd_args):
     )
 
     def _has_job_meta(path: str) -> bool:
-        for ext in (".json", ".conf", ".yml", ".yaml"):
+        for ext in (".json", ".conf"):
             if os.path.isfile(os.path.join(path, f"meta{ext}")):
                 return True
         return False
 
     def _has_server_config(path: str) -> bool:
         config_dir = os.path.join(path, "app", "config")
-        for ext in (".json", ".conf", ".yml", ".yaml"):
+        for ext in (".json", ".conf"):
             if os.path.isfile(os.path.join(config_dir, f"config_fed_server{ext}")):
                 return True
         return False
@@ -540,11 +544,6 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         shutil.copytree(job_folder, temp_job_dir, dirs_exist_ok=True)
 
-        app_dirs = get_app_dirs_from_job_folder(job_folder)
-        app_names = [os.path.basename(f) for f in app_dirs]
-        app_names = app_names if app_names else [DEFAULT_APP_NAME]
-
-        prepare_job_config(cmd_args, app_names, temp_job_dir)
         internal_submit_job(None, None, temp_job_dir, cmd_args)
 
     except ValueError as e:

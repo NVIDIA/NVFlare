@@ -202,7 +202,7 @@ class TestJobCLI:
             parser.parse_args(["job", "submit", "--submit-token", token])
 
 
-@pytest.mark.parametrize("extension", ["json", "conf", "yml", "yaml"])
+@pytest.mark.parametrize("extension", ["json", "conf"])
 @pytest.mark.parametrize("override", [False, True])
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_path, extension, override, lifetime):
@@ -230,13 +230,7 @@ def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_p
     }
     if lifetime == "task":
         meta["cj_resource_spec"] = {"@default": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}, "@ALL": {}}
-    if extension in {"json", "conf"}:
-        text = json.dumps(meta)
-    else:
-        import yaml
-
-        text = yaml.safe_dump(meta)
-    (source / f"meta.{extension}").write_text(text)
+    (source / f"meta.{extension}").write_text(json.dumps(meta))
     (config / "config_fed_server.json").write_text(json.dumps({"format_version": 2, "workflows": []}))
     (config / "config_fed_client.json").write_text(
         json.dumps({"format_version": 3 if lifetime == "task" else 2, "execution_lifetime": lifetime, "executors": []})

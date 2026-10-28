@@ -396,7 +396,7 @@ class TestJobMetaValidator:
         assert error
 
 
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+@pytest.mark.parametrize("extension", ["json", "conf"])
 def test_submission_derives_task_admission_from_client_config(extension):
     from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
@@ -434,14 +434,12 @@ def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
     assert "task-lifetime" in error
 
 
-@pytest.mark.parametrize("extension", ["yml", "yaml", "conf"])
+@pytest.mark.parametrize("extension", ["json", "conf"])
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 def test_submission_leaves_client_only_substitutions_unresolved(extension, lifetime, monkeypatch):
     monkeypatch.delenv("NVFLARE_TEST_CLIENT_DATA_ROOT", raising=False)
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
-    variable = "${NVFLARE_TEST_CLIENT_DATA_ROOT}" if extension == "conf" else "${oc.env:NVFLARE_TEST_CLIENT_DATA_ROOT}"
-    if extension != "conf":
-        variable = json.dumps(variable)
+    variable = "${NVFLARE_TEST_CLIENT_DATA_ROOT}"
     bio = io.BytesIO()
     with ZipFile(bio, "w") as archive:
         archive.writestr("split/meta.json", json.dumps(meta))
@@ -449,7 +447,7 @@ def test_submission_leaves_client_only_substitutions_unresolved(extension, lifet
         archive.writestr("split/app/config/config_fed_server.json", "{}")
         archive.writestr(
             f"split/app/config/config_fed_client.{extension}",
-            f"execution_lifetime: {lifetime}\nexecutors: [{{data_root: {variable}}}]\n",
+            json.dumps({"execution_lifetime": lifetime, "executors": [{"data_root": variable}]}),
         )
     valid, error, submitted = JobMetaValidator().validate("split", bio.getvalue())
     assert valid, error
@@ -476,9 +474,8 @@ def test_submission_does_not_open_client_hocon_includes(include, monkeypatch):
     bio = io.BytesIO()
     with ZipFile(bio, "w") as archive:
         archive.writestr("config_fed_client.conf", f"{include}\nexecution_lifetime = task\n")
-    with ZipFile(bio) as archive:
-        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
-    assert config["execution_lifetime"] == "task"
+    with ZipFile(bio) as archive, pytest.raises(ValueError):
+        JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
 
 
 @pytest.mark.parametrize("quotes", [3, 4, 5, 8])
@@ -500,16 +497,16 @@ def test_client_hocon_multiline_strings_cannot_hide_include_directives(quotes, m
     bio = io.BytesIO()
     with ZipFile(bio, "w") as archive:
         archive.writestr("config_fed_client.conf", text)
-    with ZipFile(bio) as archive:
-        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
-    assert config["execution_lifetime"] == "task"
+    with ZipFile(bio) as archive, pytest.raises(ValueError):
+        JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
 
 
-def test_client_hocon_include_keys_and_strings_remain_application_data():
+def test_client_include_keys_and_strings_remain_application_data():
     bio = io.BytesIO()
     with ZipFile(bio, "w") as archive:
         archive.writestr(
-            "config_fed_client.conf", 'execution_lifetime=job\nargs {include=true, note="include url(ignored)"}\n'
+            "config_fed_client.conf",
+            '{"execution_lifetime":"job","args":{"include":true,"note":"include url(ignored)"}}',
         )
     with ZipFile(bio) as archive:
         config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
@@ -531,9 +528,8 @@ def test_client_hocon_comment_line_endings_cannot_hide_an_include(comment, newli
         archive.writestr(
             "config_fed_client.conf", comment + newline + 'include "client.conf"\nexecution_lifetime=task\n'
         )
-    with ZipFile(bio) as archive:
-        config = JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
-    assert config["execution_lifetime"] == "task"
+    with ZipFile(bio) as archive, pytest.raises(ValueError):
+        JobMetaValidator._load_config(archive, "", "config_fed_client.json", resolve=False)
 
 
 def test_submission_uses_shared_resource_lifetime_classifier(monkeypatch):

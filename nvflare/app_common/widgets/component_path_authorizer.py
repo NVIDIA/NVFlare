@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import re
 import threading
 from enum import Enum
 from typing import Optional
+
+import jsonc as json
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType

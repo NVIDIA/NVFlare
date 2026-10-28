@@ -37,10 +37,11 @@ class TestRequireSignedJobs:
         ws = _make_workspace(str(tmp_path))
         assert _require_signed_jobs(ws) is True
 
-    def test_explicit_false(self, tmp_path):
+    @pytest.mark.parametrize("comment", ["", "// signing policy\n"])
+    def test_explicit_false(self, tmp_path, comment):
         """Explicit require_signed_jobs=false in fed_server.json → False."""
         cfg = {"require_signed_jobs": False}
-        (tmp_path / "fed_server.json").write_text(json.dumps(cfg))
+        (tmp_path / "fed_server.json").write_text(comment + json.dumps(cfg))
         ws = _make_workspace(str(tmp_path))
         assert _require_signed_jobs(ws) is False
 

@@ -28,7 +28,6 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
-from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import (
     normalize_cj_resource_spec,
     validate_docker_job_launcher_spec,
@@ -89,17 +88,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
-        base_meta_file = f"{job_name}/{JobConstants.META}"
-        logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
-
-        meta = None
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
-            meta_file = f"{base_meta_file}{ext}"
-            if meta_file in zf.namelist():
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = zf.read(meta_file)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
-                break
+        meta = JobMetaValidator._load_config(zf, f"{job_name}/", JobConstants.META)
+        if meta is not None and not isinstance(meta, dict):
+            raise ValueError("Job metadata must be a JSON object")
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
             if job_id:
@@ -111,7 +102,8 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         if not meta:
             raise ValueError(
-                f"{JobConstants.META}.[json|conf|yml] not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
+                f"Missing {JobConstants.META}.[json|conf] for job {job_name}. "
+                "Job configurations must use JSON with optional comments."
             )
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
@@ -174,10 +166,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
             if all_sites or SERVER_SITE_NAME in deployments:
-                if not self._config_exists(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG):
-                    raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
-
                 server_config = self._load_config(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG)
+                if server_config is None:
+                    raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
                 if self._has_flower_app_path(server_config):
                     has_flower_predeployed = True
 
@@ -224,38 +215,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
             if config_path in zip_file.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
                 config_data = zip_file.read(config_path)
-                text = config_data.decode()
-                if not resolve and fmt == ConfigFormat.PYHOCON:
-                    from pyhocon import ConfigFactory as HoconFactory
-
-                    # Client includes and substitutions belong to the client.
-                    # Strip include directives without interpreting their targets;
-                    # otherwise submission could open client paths or URLs on SJ.
-                    from pyparsing import CaselessKeyword, Literal, Regex, Suppress
-
-                    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-
-                    quoted = Regex(r'"(?:[^"\\\n]|\\.)*"[ \t]*')
-                    target = quoted | (
-                        (CaselessKeyword("url") | CaselessKeyword("file") | CaselessKeyword("package"))
-                        + Literal("(")
-                        + quoted
-                        + Literal(")")
-                    )
-                    include = CaselessKeyword("include") + (
-                        target | (CaselessKeyword("required") + Literal("(") + target + Literal(")"))
-                    )
-                    # Match pyhocon's complete opaque-token grammar, including
-                    # extra closing quotes in multiline strings.
-                    opaque = Regex(r'"""[\s\S]*?"*"""') | quoted | Regex(r"(?://|#)[^\r\n]*")
-                    text = (opaque | Suppress(include)).transform_string(text)
-                    # Never delegate a surviving directive to the include-capable
-                    # parser. Keep unrelated keys named "include" valid.
-                    remaining = (Suppress(opaque) | include).search_string(text)
-                    if any(tokens for tokens in remaining):
-                        raise ValueError("client config includes cannot be opened during submission")
-                    return PyhoconConfig(HoconFactory.parse_string(text, resolve=False)).to_dict()
-                return config_loader.load_config_from_str(text).to_dict(resolve=resolve)
+                return config_loader.load_config_from_str(config_data.decode()).to_dict(resolve=resolve)
         return None
 
     @staticmethod
@@ -278,10 +238,8 @@ class JobMetaValidator(JobMetaValidatorSpec):
             try:
                 v = int(v)
                 return v
-            except ValueError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
-            except TypeError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
+            except (ValueError, TypeError, OverflowError):
+                raise ValueError("min_clients must be an integer") from None
 
     def _validate_min_clients(self, job_name: str, meta: dict, clients: set) -> None:
         logger.debug(f"validate min_clients for job {job_name}")

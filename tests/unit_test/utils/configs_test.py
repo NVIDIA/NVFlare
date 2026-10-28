@@ -206,3 +206,26 @@ class TestConfigUtils:
             # Don't create the config file
             assert get_server_config_value(fl_ctx, "any_key") is None
             assert get_server_config_value(fl_ctx, "any_key", default=789) == 789
+
+    @pytest.mark.parametrize("extension", ["json", "conf"])
+    def test_config_value_supports_comments_and_extension_fallback(self, mock_fl_ctx, tmp_path, extension):
+        fl_ctx, workspace = mock_fl_ctx
+        workspace.get_app_config_dir.return_value = str(tmp_path)
+        (tmp_path / f"config_fed_client.{extension}").write_text(
+            '{ // site setting\n "service": /* inline comment */ {"url": "https://example.test"} }'
+        )
+        assert get_client_config_value(fl_ctx, "service") == {"url": "https://example.test"}
+
+    @pytest.mark.parametrize("filename", ["training.settings.json", "nested/settings.json"])
+    @pytest.mark.parametrize("exists", [True, False])
+    def test_job_config_value_reads_the_exact_requested_file(self, mock_fl_ctx, tmp_path, filename, exists):
+        from nvflare.utils.configs import get_job_config_value
+
+        fl_ctx, workspace = mock_fl_ctx
+        workspace.get_app_config_dir.return_value = str(tmp_path)
+        path = tmp_path / filename
+        path.parent.mkdir(exist_ok=True)
+        if exists:
+            path.write_text('// requested config\n{"value":"requested"}')
+        (tmp_path / "training.json").write_text('{"value":"wrong file"}')
+        assert get_job_config_value(fl_ctx, filename, "value") == ("requested" if exists else None)

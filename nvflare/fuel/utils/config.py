@@ -28,11 +28,12 @@ class ConfigFormat(Enum):
         return OrderedDict(
             {
                 ".json": ConfigFormat.JSON,
-                ".conf": ConfigFormat.PYHOCON,
+                ".conf": ConfigFormat.JSON,
+                # Discover YAML overrides so loading reports an error instead of using defaults.
                 ".yml": ConfigFormat.OMEGACONF,
                 ".yaml": ConfigFormat.OMEGACONF,
                 ".json.default": ConfigFormat.JSON,
-                ".conf.default": ConfigFormat.PYHOCON,
+                ".conf.default": ConfigFormat.JSON,
                 ".yml.default": ConfigFormat.OMEGACONF,
                 ".yaml.default": ConfigFormat.OMEGACONF,
             }
@@ -40,10 +41,8 @@ class ConfigFormat(Enum):
 
     @classmethod
     def extensions(cls, target_fmt=None) -> List[str]:
-        if target_fmt is None:
-            return [ext for ext, fmt in cls.config_ext_formats().items()]
-        else:
-            return [ext for ext, fmt in cls.config_ext_formats().items() if fmt == target_fmt]
+        target_fmt = target_fmt or cls.JSON
+        return [ext for ext, fmt in cls.config_ext_formats().items() if fmt == target_fmt]
 
 
 class Config(ABC):

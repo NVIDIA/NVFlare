@@ -38,7 +38,6 @@ class TestConfigFactory:
 
     def test_fmt_to_loader(self):
         fmt2loaders = ConfigFactory._fmt2Loader
-        ext2fmts = ConfigFormat.config_ext_formats()
 
         config_dicts = dict(
             example="1",
@@ -50,18 +49,20 @@ class TestConfigFactory:
             arrs=[1, 2, 5, 6],
         )
 
-        # note this tests assume Pyhocon and OmegaConf both are installed.
-        # to test only Pyhocon installed (but OmegaConf not installed) or
-        # OmegaConf installed (but Pyhocon Not installed)
-        # One can simply filter one config format out. The code should still work without asking for other dependency
-
-        for ext in ext2fmts:
-            fmt = ext2fmts[ext]
-            loader: ConfigLoader = fmt2loaders[fmt]
+        for fmt, loader in fmt2loaders.items():
             assert isinstance(loader, ConfigLoader)
             assert loader.get_format() == fmt
             config = loader.load_config_from_dict(config_dicts)
             assert config.to_dict() == config_dicts
+
+    @pytest.mark.parametrize("suffix", [".yml", ".yaml", ".yml.default", ".yaml.default"])
+    def test_yaml_config_raises_conversion_error_instead_of_using_defaults(self, tmp_path, suffix):
+        (tmp_path / f"resources{suffix}").write_text("setting: custom\n")
+        if not suffix.endswith(".default"):
+            (tmp_path / "resources.json.default").write_text('{"setting": "default"}')
+
+        with pytest.raises(ValueError, match="YAML configuration.*convert to JSON"):
+            ConfigFactory.load_config("resources.json", [str(tmp_path)])
 
     def _walk_result(self, search_dir):
         if search_dir == ".":
@@ -80,12 +81,12 @@ class TestConfigFactory:
     @pytest.mark.parametrize(
         "init_file_path, search_dirs, expected_loc, expected_fmt",
         [
-            ["fed_client_config.json", ["."], "./fed_client_config.conf", ConfigFormat.PYHOCON],
+            ["fed_client_config.json", ["."], "./fed_client_config.conf", ConfigFormat.JSON],
             [
                 "fed_client_config.json",
                 ["/tmp/nvflare"],
                 "/tmp/nvflare/site-1/fed_client_config.conf",
-                ConfigFormat.PYHOCON,
+                ConfigFormat.JSON,
             ],
         ],
     )

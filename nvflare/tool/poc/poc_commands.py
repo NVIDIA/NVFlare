@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 
+import jsonc
 import yaml
 from pyhocon import ConfigFactory as CF
 
@@ -206,7 +207,7 @@ def get_upload_dir(startup_dir) -> str:
     console_config_path = os.path.join(startup_dir, "fed_admin.json")
     try:
         with open(console_config_path, "r") as f:
-            console_config = json.load(f)
+            console_config = jsonc.load(f)
             upload_dir = console_config["admin"]["upload_dir"]
     except IOError as e:
         raise CLIException(f"failed to load {console_config_path} {e}")
@@ -571,7 +572,7 @@ def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: st
 def _patch_poc_docker_client_target(kit_dir: Path):
     fed_client_file = kit_dir / SC.STARTUP / "fed_client.json"
     with fed_client_file.open("rt", encoding="utf-8") as f:
-        fed_client = json.load(f)
+        fed_client = jsonc.load(f)
 
     changed = False
     for server in fed_client.get("servers") or []:

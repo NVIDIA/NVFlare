@@ -16,11 +16,48 @@
 
 import json
 import os
+import shutil
 from argparse import Namespace
 from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+@pytest.mark.parametrize("template_name", ["sag_np", "sag_nemo"])
+def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name):
+    from pathlib import Path
+
+    from nvflare.tool.job.job_cli import create_job
+
+    templates = Path(__file__).resolve().parents[4] / "job_templates"
+    template = tmp_path / "template"
+    shutil.copytree(templates / template_name, template)
+    app = template / "app_1" if template_name == "sag_nemo" else template
+    auxiliary = app / "auxiliary.conf"
+    auxiliary.write_text("external-tool-setting = unchanged\n")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "settings.yaml").write_text("dataset: training\n")
+    job = tmp_path / "job"
+    monkeypatch.setattr("sys.argv", ["nvflare", "job", "create"])
+    create_job(
+        Namespace(
+            template=str(template),
+            job_folder=str(job),
+            force=False,
+            script_dir=str(scripts),
+            config_file=None,
+            debug=False,
+        )
+    )
+    configs = list(job.glob("*/config/config_fed_*.conf"))
+    assert configs
+    for path in [job / "meta.conf", *configs]:
+        assert isinstance(json.loads(path.read_text()), dict)
+    config_dir = job / ("app_1" if template_name == "sag_nemo" else "app") / "config"
+    assert (config_dir / auxiliary.name).read_bytes() == auxiliary.read_bytes()
+    assert (config_dir.parent / "custom/settings.yaml").read_bytes() == (scripts / "settings.yaml").read_bytes()
 
 
 def _make_valid_job(root: str) -> str:

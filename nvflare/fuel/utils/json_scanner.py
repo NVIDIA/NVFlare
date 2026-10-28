@@ -16,7 +16,6 @@ import copy
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -102,23 +101,18 @@ class JsonScanner(object):
 
             if self.location:
                 raise ComponentNotAuthorized(
-                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
-                        self.location, node.element, node.path(), secure_format_exception(e)
+                    "Error processing {}: path: {}, exception: {}".format(
+                        self.location, node.path(), secure_format_exception(e)
                     )
                 )
             else:
                 raise ComponentNotAuthorized(
-                    "Error in JSON element: {}, path: {}, exception: {}".format(
-                        node.element, node.path(), secure_format_exception(e)
-                    )
+                    "Error at path: {}, exception: {}".format(node.path(), secure_format_exception(e))
                 )
 
         except Exception as e:
             secure_log_traceback(self.logger)
-            config = ConfigFactory.load_config(self.location[0])
-            elmt_str = config.to_str(node.element)
-            location = config.get_location()
-            raise ConfigError(self.get_process_err_msg(e, elmt_str, location, node))
+            raise ConfigError(self.get_process_err_msg(e, self.location, node))
 
         element = node.element
 
@@ -137,11 +131,9 @@ class JsonScanner(object):
             except Exception as e:
                 raise ConfigError(self.get_post_proces_err_msg(e, node))
 
-    def get_process_err_msg(self, e, elmt, location, node):
-        location_msg = f" processing '{location}' " if location else ""
-        msg = "Error{}in element '{}': path: '{}', exception: '{}'".format(
-            location_msg, elmt, node.path(), secure_format_exception(e)
-        )
+    def get_process_err_msg(self, e, location, node):
+        location_msg = f" processing '{location}' " if location else " "
+        msg = "Error{}at path: '{}', exception: '{}'".format(location_msg, node.path(), secure_format_exception(e))
         return msg
 
     def get_post_proces_err_msg(self, e, node):

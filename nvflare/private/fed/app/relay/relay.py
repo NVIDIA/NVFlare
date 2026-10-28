@@ -189,7 +189,7 @@ def main(args):
 
     ConfigService.initialize(
         section_files={},
-        config_path=[args.workspace],
+        config_path=[workspace.get_startup_kit_dir(), workspace.get_site_config_dir()],
     )
 
     root_cert_path = search_file(SSL_ROOT_CERT, args.workspace)

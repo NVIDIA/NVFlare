@@ -18,6 +18,7 @@ import time
 import warnings
 from typing import Optional
 
+import jsonc
 from pydantic import BaseModel, model_validator
 
 from nvflare.apis.fl_constant import WorkspaceConstants
@@ -176,7 +177,7 @@ class SimEnv(ExecEnv):
         resources = {"format_version": 2}
         if os.path.exists(target_file):
             with open(target_file) as f:
-                resources = json.load(f)
+                resources = jsonc.load(f)
             if not isinstance(resources, dict):
                 raise ValueError(f"Simulator resources file must contain a JSON object: {target_file}")
 

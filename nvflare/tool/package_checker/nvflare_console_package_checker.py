@@ -16,6 +16,8 @@ import json
 import os
 import shutil
 
+import jsonc
+
 from nvflare.fuel.sec.admin_cert_provider import validate_admin_cert_provider_config
 from nvflare.fuel.sec.step_ca_admin_cert import validate_step_ca_admin_cert_config
 
@@ -38,7 +40,7 @@ class NVFlareConsolePackageChecker(ClientPackageChecker):
         startup = os.path.join(self.package_path, "startup")
         try:
             with open(os.path.join(startup, NVFlareConfig.ADMIN), "r") as f:
-                config = json.load(f)
+                config = jsonc.load(f)
         except (OSError, json.JSONDecodeError):
             return super().check_dry_run()
         provider_config = config.get("admin", {}).get("admin_cert_provider")

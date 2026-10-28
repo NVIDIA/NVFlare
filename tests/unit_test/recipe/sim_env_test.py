@@ -208,7 +208,7 @@ def test_sim_env_adds_standard_policy_to_existing_resources(tmp_path, resources_
     job = _make_job("missing-policy")
     resources_file = tmp_path / job.name / WorkspaceConstants.SITE_FOLDER_NAME / resources_name
     resources_file.parent.mkdir(parents=True)
-    resources_file.write_text(json.dumps({"format_version": 2, "preserved": True}))
+    resources_file.write_text("// simulator resources\n" + json.dumps({"format_version": 2, "preserved": True}))
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
 
     _deploy_with_mocked_simulator(env, job)

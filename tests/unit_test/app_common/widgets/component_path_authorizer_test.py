@@ -101,9 +101,10 @@ def test_allows_component_on_exact_path_from_class_allow_list():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_allows_component_from_resources_class_allow_list(tmp_path):
+@pytest.mark.parametrize("comment", ["", "// site policy\n"])
+def test_allows_component_from_resources_class_allow_list(tmp_path, comment):
     resources_file = tmp_path / "resources.json"
-    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["nvflare.app_common.widgets."]}))
+    resources_file.write_text(comment + json.dumps({CLASS_ALLOW_LIST: ["nvflare.app_common.widgets."]}))
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
         {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"},

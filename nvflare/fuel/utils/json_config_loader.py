@@ -15,6 +15,8 @@
 import json
 from typing import Dict, Optional
 
+import jsonc
+
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
@@ -45,19 +47,19 @@ class JsonConfigLoader(ConfigLoader):
 
     def load_config_from_str(self, config_str: str) -> Config:
         try:
-            conf = json.loads(config_str)
+            conf = jsonc.loads(config_str)
             return JsonConfig(conf)
         except Exception as e:
-            self.logger.error("Error loading config {}: {}".format(config_str, secure_format_exception(e)))
+            self.logger.error("Error loading config: {}".format(secure_format_exception(e)))
             raise e
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
         return JsonConfig(config_dict)
 
     def _from_file(self, path) -> Dict:
-        with open(path, "r") as file:
+        with open(path, "r", encoding="utf-8") as file:
             try:
-                return json.load(file)
+                return jsonc.load(file)
             except Exception as e:
                 self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
                 raise e

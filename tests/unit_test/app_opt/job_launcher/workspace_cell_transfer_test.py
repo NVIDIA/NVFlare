@@ -178,7 +178,10 @@ class TestWorkspaceTransferManager:
                     }
                 ]
             }
-            _write_file(os.path.join(ws_root, "local", "resources.json"), json.dumps(resource_config).encode())
+            _write_file(
+                os.path.join(ws_root, "local", "resources.json"),
+                ("// site resources\n" + json.dumps(resource_config)).encode(),
+            )
             _write_file(os.path.join(ws_root, "local", "custom_data.yaml"), b"study-a: {}\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
@@ -805,7 +808,8 @@ class TestBootstrapAuthIdentityMap:
         startup = tmp_path / "startup"
         startup.mkdir()
         (startup / "fed_client.json").write_text(
-            json.dumps(
+            "// server identity\n"
+            + json.dumps(
                 {
                     "servers": [{"name": "project", "identity": "gcp-server"}],
                     "client": {"auth_identity_map": {"relay-a": "relay-a-cn"}},

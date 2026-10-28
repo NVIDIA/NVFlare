@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
+import jsonc
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
@@ -243,7 +244,7 @@ def _is_admin_startup_kit(startup_kit_dir: Path) -> bool:
         return True
 
     try:
-        config = json.loads((startup_kit_dir / "startup" / "fed_admin.json").read_text())
+        config = jsonc.loads((startup_kit_dir / "startup" / "fed_admin.json").read_text())
     except Exception:
         return False
 

@@ -13,8 +13,31 @@
 # limitations under the License.
 import json
 
+import pytest
+
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ('// note\n{"x": "${PRIVATE_VALUE}"} /* note */', {"x": "${PRIVATE_VALUE}"}),
+        ('{"x": [1,],} // final comment', {"x": [1]}),
+        (
+            '{"url": "https://example.test/*literal*/", "quote": "\\"//literal"}',
+            {"url": "https://example.test/*literal*/", "quote": '"//literal'},
+        ),
+    ],
+)
+def test_comments_do_not_change_string_values(text, expected):
+    assert JsonConfigLoader().load_config_from_str(text).to_dict() == expected
+
+
+@pytest.mark.parametrize("text", ["{/* unfinished", 'include "private.conf"', '{"x": "unfinished}'])
+def test_invalid_json_is_rejected(text):
+    with pytest.raises(ValueError):
+        JsonConfigLoader().load_config_from_str(text)
 
 
 class TestJsonConfig:
