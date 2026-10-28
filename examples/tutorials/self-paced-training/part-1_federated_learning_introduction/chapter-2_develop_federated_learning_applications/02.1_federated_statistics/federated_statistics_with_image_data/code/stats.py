@@ -17,7 +17,7 @@ import os
 from typing import Optional
 
 import numpy as np
-from monai.data import ITKReader, load_decathlon_datalist
+from monai.data import PILReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 
 from nvflare.apis.fl_context import FLContext
@@ -49,7 +49,7 @@ class ImageStatistics(Statistics):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         self.loader = LoadImage(image_only=True)
-        self.loader.register(ITKReader())
+        self.loader.register(PILReader())
         self._load_data_list(self.client_name, fl_ctx)
 
         if self.data_list is None:

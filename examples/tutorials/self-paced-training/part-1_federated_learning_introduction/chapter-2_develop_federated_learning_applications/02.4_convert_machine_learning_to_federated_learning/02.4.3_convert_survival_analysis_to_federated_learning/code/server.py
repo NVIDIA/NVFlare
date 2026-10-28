@@ -16,6 +16,7 @@ import logging
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.model_controller import ModelController
+from nvflare.fuel.utils.log_utils import log_progress
 
 
 # Controller Workflow
@@ -27,8 +28,10 @@ class KM(ModelController):
         self.num_rounds = 2
 
     def run(self):
+        log_progress(self.logger, "Collect local histograms")
         hist_local = self.start_fl_collect_hist()
         hist_obs_global, hist_cen_global = self.aggr_hist(hist_local)
+        log_progress(self.logger, "Distribute aggregated histograms")
         _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
 
     def start_fl_collect_hist(self):
