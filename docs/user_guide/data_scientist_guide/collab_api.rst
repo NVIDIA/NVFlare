@@ -323,7 +323,24 @@ Buffered Async Training
 
 Use ``AsyncRecipe`` for reusable buffered training in actual client arrival
 order. Supply a client, application hooks and model operations; the recipe owns
-assignment tracking, K/B/O scheduling and weighted aggregation.
+assignment tracking, client dispatch and buffered weighted aggregation.
+
+The async guide uses **K**, **B** and **O** as shorthand for three independent
+scheduling settings:
+
+* **K -- active assignments** (``num_active_jobs``): the maximum number of
+  outstanding client training assignments. Each client has at most one.
+* **B -- aggregation buffer** (``buffer_size``): the number of accepted client
+  updates combined before publishing the next global model.
+* **O -- open slots before refill** (``min_open_slots``): how many assignment
+  slots must become free before the server dispatches replacement work.
+
+For example, K = 8, B = 4 and O = 1 keeps up to eight assignments outstanding.
+Each accepted result frees a slot, which is immediately refilled using the latest
+published model. Every four accepted updates produce a new global model, while
+other clients can continue training on earlier versions. Raising O makes the
+server wait for more free slots before refilling. Setting K = B = O gives a
+synchronous boundary: collect all K results, publish, then dispatch the next batch.
 
 .. toctree::
    :maxdepth: 1
