@@ -32,6 +32,7 @@ from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.utils.job_cert_utils import JobCertIssuer
+from tests.timing_utils import stop_processes
 
 _CHANNEL = "job_binding_test"
 _TOPIC = "echo"
@@ -232,9 +233,7 @@ def site_parent(tmp_path_factory):
         yield internal_url, pki, reject_q
     finally:
         stop_ev.set()
-        if parent:
-            parent.join(15)
-        server.join(15)
+        stop_processes(parent, server)
 
 
 def _job_cell(site_parent, cert_name, fqcn, wait):
@@ -246,7 +245,7 @@ def _job_cell(site_parent, cert_name, fqcn, wait):
     try:
         result = result_q.get(timeout=wait + 30)
     finally:
-        proc.join(15)
+        stop_processes(proc)
     assert "error" not in result, result.get("error")
     return result
 
