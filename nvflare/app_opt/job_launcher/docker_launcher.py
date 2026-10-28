@@ -35,7 +35,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, JobConstants, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
@@ -195,12 +202,13 @@ class DockerJobHandle(JobHandleSpec):
 
     def __init__(
         self,
-        container_id: str,
+        container_id: str | None,
         container_name: str,
         docker_client,
         timeout: int = 30,
         container=None,
         watch_exit: bool = True,
+        on_exit=None,
     ):
         super().__init__()
         self.container_id = container_id
@@ -214,6 +222,8 @@ class DockerJobHandle(JobHandleSpec):
         self._exit_watcher = None
         self._terminating = False
         self._exit_confirmed = False
+        self._launch_cancelled = threading.Event()
+        self._on_exit = on_exit
         if watch_exit and container is not None:
             self._start_exit_watcher(container)
 
@@ -225,6 +235,12 @@ class DockerJobHandle(JobHandleSpec):
         with self._state_lock:
             if self.terminal_state is None:
                 self.terminal_state = return_code
+
+    def _release_gpu_allocation(self):
+        with self._state_lock:
+            on_exit, self._on_exit = self._on_exit, None
+        if on_exit:
+            on_exit()
 
     def _set_terminating(self):
         with self._state_lock:
@@ -261,11 +277,13 @@ class DockerJobHandle(JobHandleSpec):
                 return
             return_code = JobReturnCode.ABORTED if self._is_terminating() else _exit_code_to_return_code(exit_code)
             self._exit_confirmed = True
+            self._release_gpu_allocation()
             self._set_terminal_state(return_code)
         except docker.errors.NotFound:
             self.logger.info(
                 f"container {self.container_name} not found while waiting; exit code unavailable, marking aborted"
             )
+            self._release_gpu_allocation()
             self._set_terminal_state(JobReturnCode.ABORTED)
         except docker.errors.APIError as e:
             self.logger.warning(f"error waiting for container {self.container_name}: {e}")
@@ -280,10 +298,13 @@ class DockerJobHandle(JobHandleSpec):
         Returns None if not found or on API error. NotFound sets terminal_state only
         when no exit watcher can still provide the container's final exit code.
         """
+        if self.container_id is None:
+            return None
         try:
             return self.docker_client.containers.get(self.container_id)
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found")
+            self._release_gpu_allocation()
             if self._exit_watcher is None or self._exit_watch_done.is_set():
                 self._set_terminal_state(JobReturnCode.ABORTED)
             return None
@@ -296,6 +317,7 @@ class DockerJobHandle(JobHandleSpec):
 
     def _resolve_terminal_return_code(self, container) -> JobReturnCode:
         """Get the final JobReturnCode from a terminal container using exit code."""
+        self._release_gpu_allocation()
         if container.status == DockerStatus.DEAD:
             return JobReturnCode.ABORTED
         # EXITED: read actual exit code from container attrs
@@ -352,14 +374,19 @@ class DockerJobHandle(JobHandleSpec):
 
     def terminate(self):
         """Stop and remove the container. Always sets terminal_state."""
+        self._launch_cancelled.set()
         if self._get_terminal_state() is None:
             self._set_terminating()
         try:
+            if self.container_id is None:
+                return
             container = self.docker_client.containers.get(self.container_id)
             container.stop(timeout=0)
+            self._release_gpu_allocation()
             container.remove(force=True)
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found during termination; assuming terminated")
+            self._release_gpu_allocation()
         except docker.errors.APIError as e:
             self.logger.error(f"error terminating container {self.container_name}: {e}")
         except Exception as e:
@@ -446,6 +473,7 @@ class DockerJobLauncher(JobLauncherSpec):
         default_job_container_kwargs: dict = None,
         default_job_env: dict = None,
         default_python_path: str = None,
+        gpu_ids: list | None = None,
     ):
         """
         Args:
@@ -474,6 +502,7 @@ class DockerJobLauncher(JobLauncherSpec):
                              like USER, HOME, and PYTHONPATH still take precedence.
             default_python_path: Default Python executable path inside job containers. Jobs can override
                                  it with launcher_spec[site]["docker"]["python_path"].
+            gpu_ids: Pool of host GPU indices or UUIDs. Required for GPU jobs; CPU-only jobs can omit it.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -500,6 +529,62 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_job_env = default_job_env or {}
 
         self._docker_client = None
+        if gpu_ids is not None:
+            if not isinstance(gpu_ids, list) or any(
+                isinstance(gpu_id, bool)
+                or not isinstance(gpu_id, (int, str))
+                or (isinstance(gpu_id, int) and gpu_id < 0)
+                or not str(gpu_id).strip()
+                for gpu_id in gpu_ids
+            ):
+                raise ValueError("gpu_ids must be a list of GPU indices or UUIDs")
+            gpu_ids = [str(gpu_id) for gpu_id in gpu_ids]
+            if len(set(gpu_ids)) != len(gpu_ids):
+                raise ValueError("gpu_ids must contain distinct devices")
+        self.gpu_ids = gpu_ids
+        self._gpu_lock = threading.Lock()
+        self._gpu_allocations = {}
+
+    def _release_gpus(self, container_name):
+        with self._gpu_lock:
+            self._gpu_allocations.pop(container_name, None)
+
+    def _run_job_container(self, docker_client, image, job_handle, **kwargs):
+        requests = kwargs.get("device_requests") or []
+        if not requests:
+            return docker_client.containers.run(image, **kwargs)
+        if len(requests) != 1 or not any("gpu" in caps for caps in requests[0].get("Capabilities", [])):
+            raise RuntimeError("Docker GPU allocation requires a single GPU device request")
+        if self.gpu_ids is None:
+            raise RuntimeError("GPU jobs require gpu_ids in the Docker launcher configuration")
+        request = requests[0]
+        pool = self.gpu_ids
+        requested = request.get("DeviceIDs")
+        if requested:
+            pool = [str(i) for i in requested]
+            if not set(pool).issubset(self.gpu_ids):
+                raise RuntimeError("requested GPU devices are outside the launcher's gpu_ids pool")
+        count = len(pool) if requested or request.get("Count", 0) < 0 else request.get("Count", 0)
+        if count > len(pool):
+            raise RuntimeError(f"job requests {count} GPUs but the launcher pool contains {len(pool)}")
+        while not job_handle._launch_cancelled.is_set():
+            # Reserve before creating the container so concurrent launches cannot reuse its devices.
+            with self._gpu_lock:
+                used = {gpu_id for allocation in self._gpu_allocations.values() for gpu_id in allocation}
+                available = [gpu_id for gpu_id in pool if gpu_id not in used]
+                if len(available) >= count:
+                    self._gpu_allocations[job_handle.container_name] = available[:count]
+                    break
+            job_handle._launch_cancelled.wait(timeout=1)
+        if job_handle._launch_cancelled.is_set():
+            job_handle._release_gpu_allocation()
+            return None
+        kwargs["device_requests"] = [{**request, "Count": 0, "DeviceIDs": available[:count]}]
+        try:
+            return docker_client.containers.run(image, **kwargs)
+        except BaseException:
+            job_handle._release_gpu_allocation()
+            raise
 
     def _resolve_study_runtime(self, study):
         # Reads use WORKSPACE_MOUNT (container-internal path) because launch_job runs inside
@@ -700,6 +785,7 @@ class DockerJobLauncher(JobLauncherSpec):
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
         elif job_gpus_specified:
             merged_container_kwargs.pop("device_requests", None)
+            environment["NVIDIA_VISIBLE_DEVICES"] = "void"
         if "num_of_cpus" in portable_spec:
             merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
         if "memory" in portable_spec:
@@ -743,6 +829,16 @@ class DockerJobLauncher(JobLauncherSpec):
         require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
 
         docker_client = self._get_docker_client()
+        job_handle = DockerJobHandle(
+            None,
+            container_name,
+            docker_client,
+            timeout=self.timeout,
+            on_exit=lambda: self._release_gpus(container_name),
+        )
+        publish_job_handle(job_handle, fl_ctx)
+        if job_handle._launch_cancelled.is_set():
+            return job_handle
         try:
             # bind the kit file by file: site private keys never enter the job container;
             # the job credential arrives through the read-write job workspace bind
@@ -796,8 +892,10 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
-            container = docker_client.containers.run(
+            container = self._run_job_container(
+                docker_client,
                 job_image,
+                job_handle,
                 command=command,
                 name=container_name,
                 network=self.network,
@@ -817,14 +915,13 @@ class DockerJobLauncher(JobLauncherSpec):
         except docker.errors.APIError as e:
             raise RuntimeError(f"error creating container for job {job_id}: {e}")
 
-        job_handle = DockerJobHandle(
-            container_id=container.id,
-            container_name=container_name,
-            docker_client=docker_client,
-            timeout=self.timeout,
-            container=container,
-            watch_exit=True,
-        )
+        if container is None:
+            return job_handle
+        job_handle.container_id = container.id
+        if job_handle._launch_cancelled.is_set():
+            job_handle.terminate()
+            return job_handle
+        job_handle._start_exit_watcher(container)
 
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):

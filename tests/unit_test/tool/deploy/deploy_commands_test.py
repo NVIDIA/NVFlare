@@ -265,7 +265,8 @@ def _add_server_storage(resources_path, snapshot_persistor=None):
     _write_json(resources_path, resources)
 
 
-def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys):
+@pytest.mark.parametrize("gpu_ids", [None, [0, 2]])
+def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys, gpu_ids):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-docker"
 
@@ -279,6 +280,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
                 "default_python_path": "/usr/bin/python",
                 "default_job_env": {"NCCL_P2P_DISABLE": "1"},
                 "default_job_container_kwargs": {"shm_size": "8g"},
+                **({"gpu_ids": gpu_ids} if gpu_ids is not None else {}),
             },
         },
     )
@@ -323,6 +325,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert launcher["args"]["default_python_path"] == "/usr/bin/python"
     assert launcher["args"]["default_job_env"] == {"NCCL_P2P_DISABLE": "1"}
     assert launcher["args"]["default_job_container_kwargs"] == {"shm_size": "8g"}
+    assert launcher["args"].get("gpu_ids") == gpu_ids
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"

@@ -162,6 +162,31 @@ scheduler-facing resource requests, such as ``num_of_gpus``, in
 continue to use their configured launcher, usually process mode.
 
 
+GPU Assignment
+--------------
+
+The Docker launcher assigns distinct GPUs to concurrent jobs with the default
+``PassthroughResourceManager``. Each job requests its count through
+``resource_spec[site].num_of_gpus``. The launcher selects unused devices and waits
+when they are occupied; waiting jobs can be aborted normally.
+
+GPU jobs require a device pool in the Docker runtime config:
+
+.. code-block:: yaml
+
+  job_launcher:
+    gpu_ids: [0, 1, 2, 3]
+
+List the device indices or GPU UUIDs from the Docker daemon's host that this
+parent may use. CPU-only deployments can omit ``gpu_ids``. The parent does not
+need GPU access or run discovery containers. The resource manager and resource
+consumer configuration does not need to change. The launcher remembers each job's
+assigned IDs and releases them when its container exits. Allocations are held in
+parent memory: stop existing job containers before restarting the parent. Use
+disjoint pools for parents sharing a host. GPU assignment does not coordinate
+with independently launched workloads.
+
+
 Mounting Site Data into Job Containers
 -------------------------------------------
 
