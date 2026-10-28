@@ -90,7 +90,7 @@ The examples use 200 training and 100 evaluation samples per site, with differen
 
 Each example has a distinct recipe name and workspace under `/tmp/nvflare/simulation`. To preserve repeated experiments, set `NVFLARE_SIMULATOR_WORKSPACE_ROOT` to a fresh directory in the notebook environment before executing the run cell. The launched job inherits that setting. The conversion and job-structure variations also have distinct names.
 
-The tracking labs explain how to open their UIs in a separate terminal. MLflow uses `mlflow.db` in its own section's `code` directory; repeated runs remain in that store.
+The tracking labs explain how to open their UIs. The MLflow notebook starts its UI directly and provides a browser link; stop the UI with the notebook's Stop/Interrupt button when finished. MLflow uses `mlflow.db` in its own section's `code` directory; repeated runs remain in that store.
 
 ## Completion and remaining edition work
 
