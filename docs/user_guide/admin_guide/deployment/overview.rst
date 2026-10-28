@@ -191,6 +191,9 @@ to ``/etc/hosts`` with the internal IP and the hostname.
    tensor disk offload, because they do not reduce server memory usage. Verify both the resolved temp directory and its
    backing filesystem as part of server IT setup.
 
+   Disk-backed aggregation (``enable_disk_aggregation=True``) also needs a writable, disk-backed server workspace.
+   Reserve space for incoming client models and saved checkpoints.
+
 .. _starting_fl_clients:
 
 Starting Federated Learning Clients
