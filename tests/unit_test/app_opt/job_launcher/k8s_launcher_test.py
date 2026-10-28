@@ -3944,9 +3944,12 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
             }
             normalize_cj_resource_spec(meta, {_TASK_SITE})
 
+    # Import the actual target explicitly; this test also runs without collecting task-service tests.
+    from nvflare.app_opt.task_launcher import k8s_task_service
+
     with (
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
-        patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService") as service,
+        patch.object(k8s_task_service, "K8sTaskService") as service,
     ):
         transfer.get_or_create.return_value.owner_fqcn = "site-parent"
         transfer.get_or_create.return_value.add_job.return_value = "transfer-token"

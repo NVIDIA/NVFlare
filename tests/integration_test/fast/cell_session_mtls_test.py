@@ -33,7 +33,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.config_service import ConfigService
-from tests.integration_test.fast.job_cert_binding_live_test import _JOB_A, _JOB_B, _free_port, _write_pki
+from tests.job_cert_test_utils import _JOB_A, _JOB_B, _free_port, _write_pki
 from tests.timing_utils import stop_processes
 
 pytestmark = pytest.mark.timeout(180)
