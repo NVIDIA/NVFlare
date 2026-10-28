@@ -58,20 +58,22 @@ Bare-metal CVM checklist
 CoCo checklist
 --------------
 
-#. Use Ubuntu 24.04 for the secure-services host in this pinned workflow and
-   the documented 26.04 baseline for the other role hosts. Give the registry
-   publisher its exact egress IPv4 ``/32``; it must not be the site egress.
-#. Install Trustee, registry, and reference policies through the role-separated
-   service stages. Keep the KBS default-deny until a reviewed release handoff is
-   merged.
-#. Rehearse and approve the exact Kata runtime profile, then install Kubernetes,
-   Kata, and (for GPU targets) GPU Operator. Set
-   ``GPU_OPERATOR_DRIVER_ENABLED=0`` only with a working host driver.
-#. Run ``coco/45-check-gpu-operator.sh`` after every GPU Operator install or
-   upgrade. The launch script repeats this check and reports operand drift.
-#. Transfer the digest-authenticated Pod handoff to CoCo IT. The launch script
-   treats a ``FailedCreatePodSandBox`` event as proof that the effective Kata
-   handler failed and prints the event instead of waiting silently.
+#. Start with an existing CoCo-ready Kubernetes cluster, image registry, and
+   configured Trustee. Use the supported Kata confidential runtime and follow
+   the upstream NVIDIA CoCo/Kata instructions for GPU targets. NVFlare
+   provisioning does not install or reconfigure this infrastructure.
+#. Capture the installed runtime measurements using the CoCo measurement guide,
+   then have the Trustee administrator install and read back the exact CPU and,
+   when required, GPU reference values.
+#. For a GPU target, repeat the read-only ClusterPolicy, operand, worker-label,
+   ``vfio-pci``, and allocatable ``nvidia.com/pgpu`` checks documented in the
+   CoCo README after each GPU Operator upgrade or configuration change.
+#. Run ``nvflare provision`` to create encrypted images, private Trustee release
+   handoffs, and Pod YAML. The Trustee administrator registers each unique
+   release using the retained complete resource-policy export before launch.
+#. Transfer the Pod handoff to the cluster operator and use the documented
+   launcher. It reports a ``FailedCreatePodSandBox`` event promptly while
+   retaining the Pod for diagnosis.
 #. Verify attestation, key release, the real FL job, renewal, and required denial
    cases. ``kubectl exec``, attach, copy, port-forward, and application log
    collection from the host are intentionally unavailable.
@@ -97,15 +99,15 @@ Shared terminology and configuration names
    * - Meaning
      - Unified provisioning
      - Bare-metal profile
-     - CoCo role scripts
+     - CoCo workflow
    * - Trustee HTTPS service
      - ``kbs_endpoint``
      - ``kbs_url``
-     - ``https://${SERVICE_FQDN}:8443``
+     - ``KBS_URL``
    * - Trustee host name
      - ``trustee.example.org``
      - ``trustee.example.org``
-     - ``SERVICE_FQDN``
+     - host in ``KBS_URL``
    * - Participant CPU TEE
      - ``intel_tdx`` / ``amd_sev_snp``
      - platform map key
@@ -120,7 +122,7 @@ Shared terminology and configuration names
      - NVIDIA GPU Kata runtime
 
 Both on-premises modes resolve their endpoint names to the same upstream
-Trustee service. ``SERVICE_FQDN`` must resolve from inside the confidential
+Trustee service. The host in ``KBS_URL`` must resolve from inside the confidential
 guest, not only on the host. The different 2.9 keys are retained for
 compatibility. Trustee still signs the upstream ``tdx`` or ``snp`` evidence
 object key on the wire; NVFlare translates that internal protocol detail and
@@ -137,7 +139,7 @@ Troubleshooting by symptom
      - First check and next action
      - Diagnostic source
    * - ``phase=attestation`` or no Trustee token
-     - Check DNS for ``SERVICE_FQDN``, KBS/AS TLS, NTS reachability and clock
+     - Check DNS for the Trustee host, KBS/AS TLS, NTS reachability and clock
        convergence, then platform collateral egress.
      - Retained CVM applog; Trustee AS logs
    * - ``phase=key_release``
@@ -167,18 +169,19 @@ Troubleshooting by symptom
        authenticated VCEK for its chip/TCB identity according to site policy.
      - Trustee verifier logs; KDS response status
    * - A shared-KBS release name already exists
-     - Release names are immutable within the shared policy namespace. The
-       provisioner checks the authenticated active policy before invoking the
-       publisher; choose a unique project/release name. The secure-services
-       install lock repeats the check to close concurrent races.
-     - Active KBS resource policy and release handoff
+     - Release names are immutable within the shared policy namespace. Choose a
+       unique project/release name and reconcile the Trustee administrator's
+       retained complete resource-policy export before registering another
+       release; a stale export can overwrite resources or remove unrelated rules.
+     - Retained complete resource-policy export and release handoff
    * - GPU Operator never becomes ready
-     - Run ``45-check-gpu-operator.sh``. Restore each reported ClusterPolicy
-       operand. With ``driver.enabled=false``, verify the host driver first.
+     - Repeat the CoCo README's ClusterPolicy, operand, worker-label,
+       ``vfio-pci``, and allocatable ``nvidia.com/pgpu`` checks. Repair the
+       existing platform according to its GPU Operator management model.
      - ClusterPolicy; node labels and allocatable resources
    * - ``FailedCreatePodSandBox``
-     - Use the event text. For a missing Kata handler, rerun stages 30 and 35
-       after verifying containerd imports the selected runtime fragment.
+     - Use the event text. For a missing Kata handler, verify the selected
+       RuntimeClass and repair the existing containerd/Kata installation.
      - Pod Events; containerd and kubelet journals
    * - GPU quarantine after periodic appraisal failure
      - Treat quarantine as terminal for that guest. Preserve diagnostics and
@@ -214,8 +217,9 @@ Day-2 rebuild matrix
    * - CPU/GPU/VBIOS/driver baseline
      - Update reviewed references and profile inputs; repeat affected hardware
        acceptance and rebuild/approve as required by the changed contract.
-     - Update platform/GPU references through service stages, verify them, and
-       launch a newly approved release when its policy binding changes.
+     - Capture the changed platform, update and read back Trustee CPU/GPU
+       references, and launch a newly approved release when its policy binding
+       changes.
    * - Trustee AS signing key or endpoint identity
      - Re-provision signed kits and rebuild artifacts that pin the key or CA.
      - Re-provision kits and redistribute the authenticated key/CA handoff.

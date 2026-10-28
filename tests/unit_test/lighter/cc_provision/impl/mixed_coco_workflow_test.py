@@ -33,8 +33,8 @@ def test_real_builders_sign_mixed_coco_kits(tmp_path):
     _coco_project(private)
     common = yaml.safe_load((private / "cc_project.yml").read_text())
     common["attestation_services"]["trustee"]["workload_constraints"] = {
-        "site-1": {"cpu_tee": "tdx"},
-        "site-2": {"cpu_tee": "snp"},
+        "site-1": {"cpu_tee": "intel_tdx"},
+        "site-2": {"cpu_tee": "amd_sev_snp"},
     }
     (private / "cc_project.yml").write_text(yaml.safe_dump(common, sort_keys=False))
     template = yaml.safe_load((private / "cc_site.yml").read_text())

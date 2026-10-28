@@ -34,7 +34,7 @@ IMAGE = "registry.example.com/coco/collector@sha256:" + "a" * 64
 
 
 def collector(tmp_path):
-    metadata = {"schema": 1, "image": IMAGE, "image_id": "sha256:" + "b" * 64, "cpu_tee": "snp"}
+    metadata = {"schema": 1, "image": IMAGE, "image_id": "sha256:" + "b" * 64, "cpu_tee": "amd_sev_snp"}
     path = tmp_path / "collector-image.json"
     path.write_text(json.dumps(metadata))
     ca = tmp_path / "ca.crt"

@@ -476,7 +476,7 @@ def test_ready_profile_uses_fixed_nvflare_context_without_a_source_pod(runtime):
         **paths,
         "kernel_params": kata_runtime_profile.REQUIRED,
         "confidential_guest": True,
-        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "sev_snp_guest": target["cpu_tee"] == "amd_sev_snp",
         "machine_type": "q35",
         "default_vcpus": 1,
         "default_memory": 8192,
@@ -516,7 +516,7 @@ def test_ready_profile_rejects_missing_token_api_or_confidential_runtime(runtime
     qemu = {
         "kernel_params": kata_runtime_profile.REQUIRED,
         "confidential_guest": True,
-        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "sev_snp_guest": target["cpu_tee"] == "amd_sev_snp",
         "machine_type": "q35",
     }
     qemu[setting] = value

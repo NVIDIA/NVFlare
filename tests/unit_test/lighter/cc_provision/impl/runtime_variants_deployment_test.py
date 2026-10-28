@@ -223,7 +223,7 @@ def captured_inputs(runtime_class):
         **paths,
         "kernel_params": runtime.REQUIRED,
         "confidential_guest": True,
-        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "sev_snp_guest": target["cpu_tee"] == "amd_sev_snp",
         "machine_type": "q35",
         "default_vcpus": 1,
         "default_memory": 8192,

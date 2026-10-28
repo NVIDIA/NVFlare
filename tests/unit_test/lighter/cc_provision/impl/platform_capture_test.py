@@ -100,7 +100,7 @@ def capture_fixture(tmp_path, monkeypatch):
         inputs = {"kernel_command_line": qemu["kernel_params"], "smp": "2", "memory": "4096M"}
         actual = {
             "runtime_class": runtime,
-            "cpu_tee": "snp",
+            "cpu_tee": "amd_sev_snp",
             "gpu": "none",
             "node_name": "selected-worker",
             "node_uid": "node-uid",

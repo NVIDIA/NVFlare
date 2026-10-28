@@ -170,7 +170,7 @@ def inspect_platform(profile, env):
     config = runtime_settings(config_raw, env["RUNTIME_CLASS"])
     qemu = config["hypervisor"]["qemu"]
     target = runpy.run_path(str(HERE / "kata-runtime-profile.py"))["runtime_target"](env["RUNTIME_CLASS"])
-    verifier = Path(env["SNP_VERIFIER" if target["cpu_tee"] == "snp" else "TDX_VERIFIER"])
+    verifier = Path(env["SNP_VERIFIER" if target["cpu_tee"] == "amd_sev_snp" else "TDX_VERIFIER"])
     if not verifier.is_absolute() or not verifier.is_file() or not os.access(verifier, os.X_OK):
         raise ValueError("Configure an existing reviewed executable CPU evidence verifier")
     metadata, checksum, metadata_raw = load_collector(env, with_bytes=True)

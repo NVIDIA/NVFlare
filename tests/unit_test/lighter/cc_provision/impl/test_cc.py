@@ -35,11 +35,7 @@ from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participa
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
-from nvflare.lighter.cc_provision.impl.cc_packager import (
-    MAX_KBS_POLICY_BYTES,
-    CCPackager,
-    _check_coco_release_available,
-)
+from nvflare.lighter.cc_provision.impl.cc_packager import CCPackager
 from nvflare.lighter.cc_provision.impl.coco import CoCoDeployment
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
@@ -55,47 +51,6 @@ from nvflare.lighter.utils import verify_folder_signature
 def _write(path, value):
     path.write_text(yaml.safe_dump(value, sort_keys=False))
     return path
-
-
-class _PolicyResponse:
-    def __init__(self, value):
-        self.value = value
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-    def read(self, limit):
-        assert limit == MAX_KBS_POLICY_BYTES + 1
-        return self.value
-
-
-@pytest.mark.parametrize("collision", [False, True])
-def test_coco_release_collision_is_checked_before_publication(tmp_path, collision):
-    token = tmp_path / "admin.jwt"
-    token.write_text("header.payload.signature")
-    service = {
-        "kbs_endpoint": "https://trustee.example.com:8443",
-        "ca_cert_file": str(tmp_path / "ca.pem"),
-        "admin_token_file": str(token),
-    }
-    marker = b"wo_site_v1_expected_initdata" if collision else b"package policy\ndefault allow := false"
-    opener = Mock()
-    opener.open.return_value = _PolicyResponse(marker)
-    with (
-        patch("nvflare.lighter.cc_provision.impl.cc_packager.ssl.create_default_context", return_value=object()),
-        patch("nvflare.lighter.cc_provision.impl.cc_packager.urllib.request.build_opener", return_value=opener),
-    ):
-        if collision:
-            with pytest.raises(ValueError, match="already exists.*before image publication"):
-                _check_coco_release_available(service, "site-v1")
-        else:
-            _check_coco_release_available(service, "site-v1")
-    request = opener.open.call_args.args[0]
-    assert request.full_url == "https://trustee.example.com:8443/kbs/v0/resource-policy"
-    assert request.get_header("Authorization") == "Bearer header.payload.signature"
 
 
 def _azure_project(tmp_path, participant=None, project_config=None):
@@ -1072,10 +1027,7 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
         [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()],
         CCPackager(),
     )
-    with (
-        patch("nvflare.lighter.cc_provision.impl.cc_packager._check_coco_release_available"),
-        patch("nvflare.lighter.cc_provision.impl.cc_packager.subprocess.run", side_effect=runner),
-    ):
+    with patch("nvflare.lighter.cc_provision.impl.cc_packager.subprocess.run", side_effect=runner):
         ctx = provisioner.provision(project)
 
     assert ctx[CtxKey.PROVISION_SUCCESS] is True, ctx.get_errors()
