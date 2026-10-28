@@ -15,27 +15,6 @@
 import argparse
 import csv
 import os
-import shutil
-
-
-def parse_args(prog_name: str):
-    _parser = argparse.ArgumentParser(description=prog_name)
-    _parser.add_argument(
-        "--prepare-data",
-        dest="prepare_data",
-        action="store_const",
-        const=prepare_data,
-        help="prepare data based on configuration",
-    )
-    _parser.add_argument(
-        "-d",
-        "--dest",
-        type=str,
-        nargs="?",
-        default="",
-        help="destination directory where the data to download to",
-    )
-    return _parser, _parser.parse_args()
 
 
 def get_data_url() -> dict:
@@ -55,17 +34,14 @@ def prepare_data(data_root_dir: str):
             os.makedirs(client_data_dir, exist_ok=True)
 
         dest = os.path.join(client_data_dir, "data.csv")
-        if os.path.exists(dest):
-            print(f"\nremove existing data at {dest}")
-            shutil.rmtree(dest, ignore_errors=True)
-
         print(f"\ndownload to {dest}")
         url = client_data_urls[client]
         import requests
 
         with open(dest, "w") as f:
             writer = csv.writer(f)
-            r = requests.get(url, allow_redirects=True)
+            r = requests.get(url, allow_redirects=True, timeout=60)
+            r.raise_for_status()
             for line in r.iter_lines():
                 if line:
                     writer.writerow(line.decode("utf-8").split(","))
@@ -74,15 +50,8 @@ def prepare_data(data_root_dir: str):
     print("\ndone with prepare data")
 
 
-def main():
-    prog_name = "data_utils"
-    parser, args = parse_args(prog_name)
-
-    if args.prepare_data:
-        prepare_data(args.dest)
-    else:
-        parser.print_help()
-
-
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_root_dir", default="/tmp/nvflare/df_stats/data")
+    args = parser.parse_args()
+    prepare_data(args.data_root_dir)

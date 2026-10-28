@@ -44,7 +44,7 @@ def create_datasets(root, subdirs, extension, shuffle, seed):
 def save_data_list(data, data_list_file, data_root, key="data"):
     data_list = []
     for d in data:
-        data_list.append({"image": d.replace(data_root + os.path.sep, "")})
+        data_list.append({"image": os.path.abspath(d)})
 
     os.makedirs(os.path.dirname(data_list_file), exist_ok=True)
     with open(data_list_file, "w") as f:
