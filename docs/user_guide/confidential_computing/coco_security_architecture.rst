@@ -10,8 +10,8 @@ attestation components. It is for workload owners, data owners, federation
 administrators, infrastructure operators, and security reviewers. Read it
 before deciding which participants or infrastructure providers to trust.
 
-It describes the security model of the pinned Kata 3.29.0 profile and Trustee
-policies, with the implementation scope below. It is not a security proof,
+It describes the supported Kata/genpolicy 3.29.0 contract and Trustee appraisal
+and resource-authorization policies, with the implementation scope below. It is not a security proof,
 certification, or assurance that every supported hardware configuration has
 passed end-to-end testing. Reassess these assumptions when changing versions,
 policies, applications, or deployment topology. The separate
@@ -30,13 +30,12 @@ storage design; its guarantees must not be imported into this CoCo deployment.
    current TCB were ``OutOfDate``; that failure remains part of the record.
    On October 4, 2026, a separate mixed functional deployment passed with an
    ordinary trusted server, a CPU-only TDX client, and an SNP plus NVIDIA GPU
-   client. Approved Kata guests launched encrypted images, obtained release
+   client. Authorized Kata guests launched encrypted images, obtained release
    resources, registered with required peer proofs, and completed a finite
    job with both clients. The job used CPU arithmetic; GPU appraisal was
    required for the SNP client. That result does not qualify TDX plus GPU,
    sustained renewal, confidentiality denial tests, or the complete negative
-   test matrix. See
-   :github_nvflare_link:`support status and hardware validation <examples/devops/coco/RUNTIME-VARIANTS.md#support-status-and-hardware-validation>`.
+   test matrix. See :ref:`acceptance and evidence limits <coco_security_acceptance>`.
    Implemented targets and passing offline tests are not hardware acceptance.
 
 .. contents:: Find a security answer
@@ -49,9 +48,9 @@ Security promise and deployment choices
 =======================================
 
 The intended guarantee is that an adversarial cluster operator can schedule an
-approved encrypted workload without obtaining its plaintext image or changing
+authorized encrypted workload without obtaining its plaintext image or changing
 security-relevant launch inputs while retaining access to its protected keys.
-That guarantee depends on the approved hardware, guest software, application,
+That guarantee depends on the authorized hardware, guest software, application,
 independent secure services, and correctly enforced policies described below.
 It is not a claim that every YAML field is immutable or that the current
 implementation has complete field-level coverage. In particular, the launch
@@ -71,13 +70,13 @@ There are **two separate authorization decisions**:
 Encryption protects image layers; it does not hide all image metadata.
 Attestation verifies specified claims about a trusted execution environment
 (TEE); it does not prove that an application is harmless, that training is
-correct, or that released results cannot leak data. An approved application
+correct, or that released results cannot leak data. An authorized application
 can disclose any secret it is allowed to access.
 
 Target profiles and implementation scope
 ----------------------------------------
 
-.. list-table:: Select and approve each target explicitly
+.. list-table:: Select each target explicitly
    :header-rows: 1
    :widths: 17 27 22 17 17
 
@@ -119,7 +118,7 @@ Protected clients and protected servers are supported. An ordinary server can
 verify CoCo client proofs without running in CoCo; that **does not protect the
 server's own memory, aggregation, credentials, or data from its administrator**.
 Protecting the server requires its own CC configuration, encrypted release,
-approved TEE launch, and inclusion in the required attested participant set.
+authorized TEE launch, and inclusion in the required attested participant set.
 Ordinary participants outside that set have no CC attestation requirement.
 
 .. _coco_security_trust_boundaries:
@@ -144,40 +143,44 @@ The four deployment roles
        release keys. Compromise here can produce an authorized malicious image.
    * - Trusted platform authority / trusted system
      - Reviews the platform baseline and launch artifacts; collects and
-       verifies fresh hardware evidence; approves reference profiles.
+       verifies fresh hardware evidence; exports reference profiles.
      - Trusted to choose acceptable software and TCB, not merely copy values
        supplied by the future cluster operator.
    * - Secure-services administrator
      - Operates registry write authorization, Trustee/KBS, Attestation Service
        (AS), Reference Value Provider Service (RVPS), and their policies/keys.
      - Trusted to protect keys, validate handoffs, enforce release rules, and
-       maintain reference provenance independently of the adversarial cluster.
+       retain the platform authority's configuration records.
    * - CoCo IT / cluster operator
-     - Installs public runtime inputs and schedules delivered Pod manifests.
+     - Schedules delivered Pod manifests on the existing runtime.
      - Untrusted. Controls the host OS, Kubernetes, containerd, hypervisor
        arguments, disks, CNI, DNS, routing, scheduling, and cluster APIs.
 
 Roles may share a machine or organization only when that does not collapse a
 required trust boundary. In particular, giving the adversarial cluster owner
 control of AS/RVPS/KBS policy or its administrative credentials defeats the
-independent key-release decision. A checksum calculated by that owner is not
-independent approval of a reference or workload.
+independent key-release decision. A checksum calculated by that owner does not change Trustee's configured
+reference or workload authorization.
 
 The data owner and workload publisher also have distinct interests. Protecting
 the publisher's code from the data owner does not prove the publisher's code
-will preserve the data owner's privacy. Both parties must approve what code
+will preserve the data owner's privacy. Both parties control what code
 may consume sensitive inputs and what outputs it may emit.
 
 Architecture
 ------------
 
-.. figure:: ../../resources/coco-nvflare-security-architecture.svg
-   :alt: Four-party architecture: the trusted platform authority supplies approved references and launch constraints through the provisioning node; independent secure services authorize resources to the confidential guest inside the adversarial CoCo cluster; NVFlare peers separately verify guest proofs over authenticated connections.
-   :width: 100%
+.. figure:: ../../resources/cc-federation-architecture.svg
+   :alt: Trusted preparation supplies authorized artifacts and policies. Trustee authorizes resources for the confidential guest inside an untrusted host, while NVFlare peers separately verify identity-bound proofs over TLS.
+   :width: 640px
    :align: center
 
    Four deployment roles and two separate security decisions: workload resource
    release by secure services, and participant verification by NVFlare peers.
+
+For the complete role and service interactions, open the
+:download:`detailed CoCo architecture diagram <../../resources/coco-nvflare-security-architecture.svg>`.
+In this CoCo deployment, the protected guest is a Kata confidential VM.
 
 Registry storage and network transport are not where image plaintext should
 appear on the hostile side. Decryption occurs inside the confidential guest.
@@ -188,12 +191,12 @@ Trusted computing base
 ----------------------
 
 The trusted computing base includes the CPU security implementation and
-firmware; vendor endorsement roots and verifier implementations; the approved
+firmware; vendor endorsement roots and verifier implementations; the authorized
 guest boot chain, kernel and services; Kata agent policy enforcement; the
 attestation agent (AA), confidential data hub (CDH), image verification and
 decryption code; NVFlare and the admitted application/dependencies; trusted
 build/provisioning systems; and the independently administered secure services.
-GPU targets add the confidential GPU implementation and its approved guest
+GPU targets add the confidential GPU implementation and its authorized guest
 stack and verification path.
 
 The host OS, Kubernetes admission policies, CNI, host-side seccomp, RuntimeClass
@@ -225,7 +228,7 @@ Assets and visibility
      - Public verification key/signature may be visible; private key is not.
    * - AS token-signing private key
      - Secure services; signs attestation results.
-     - Only the independently authenticated public key goes to peer verifiers.
+     - Only the configured public key goes to peer verifiers.
    * - KBS administrative credential
      - Secure-services administrators; can change protected policy/resources.
      - Never delivered to CoCo IT or workload users merely submitting releases.
@@ -239,7 +242,7 @@ Assets and visibility
      - The raw AA token response must never be exported. This is not a claim
        that application-accessible key material is hardware-nonexportable.
    * - Pod, InitData, policy, digests, manifests, encrypted blobs, reference values
-     - Public or nonsecret coordination material; integrity/provenance matter.
+     - Public or nonsecret coordination material; format and consistency are checked.
      - Image/configuration metadata, sizes, timing and resource usage remain
        observable. Do not put secrets in command lines or environment metadata.
 
@@ -253,19 +256,23 @@ the FL server, **data owner A** participates as ``site-1``, and **data owner B**
 participates as ``site-2``. Each client runs in its own adversarially operated
 CoCo cluster. The concrete setup uses the **SNP plus NVIDIA GPU** profile;
 consult the implementation-scope qualification above and the
-:github_nvflare_link:`runtime-aware FL deployment guide <examples/devops/coco/FL-DEPLOYMENT.md>`
+:github_nvflare_link:`runtime-aware FL deployment guide <examples/devops/coco/README.md>`
 for other target choices.
 It is an architectural deployment recipe, not a supplied end-to-end training
 application or a claim that this exact two-site deployment has been tested.
 
-.. figure:: ../../resources/coco-two-site-fl-example.svg
-   :alt: Model owner M supplies reviewed client code to a mutually trusted provisioner. Separate encrypted releases run in hostile clusters for site-1 and site-2, with independent secure services. Each data owner authorizes a user-supplied TLS dataset connector into its guest. Approved model updates go to M's ordinary trusted server.
-   :width: 100%
+.. figure:: ../../resources/coco-two-site-summary.svg
+   :alt: Model owner M supplies reviewed client code to a mutually trusted provisioner. Separate encrypted releases run in hostile clusters for site-1 and site-2, with independent secure services. Each data owner authorizes a user-supplied TLS dataset connector into its guest. Authorized model updates go to M's ordinary trusted server.
+   :width: 640px
    :align: center
 
    Solid paths use the CoCo/NVFlare deployment model. Dashed dataset paths
    require application-specific implementation and authorization; they are
    not supplied by the CoCo packaging scripts.
+
+Open the :download:`detailed two-site architecture diagram
+<../../resources/coco-two-site-fl-example.svg>` for the full handoffs and trust
+boundaries.
 
 Agree on authority before preparing machines
 --------------------------------------------
@@ -276,36 +283,36 @@ Agree on authority before preparing machines
 
    * - Stakeholder
      - Operates or supplies
-     - Required approval / trust
+     - Responsibilities / trust
    * - Model owner M
      - Model, reviewed client/server application, ordinary FL server, and
        trusted FL project-administration console.
-     - A and B approve the admitted client code, permitted job/model inputs,
+     - A and B select the admitted client code, permitted job/model inputs,
        and outputs to M. M's server administrators can see those outputs.
    * - Data owner A / B
      - Its dataset service and storage, separately administered from its
        untrusted compute operator.
-     - Each owner approves code that may access its data, dataset scope,
+     - Each owner selects code that may access its data, dataset scope,
        purpose, recipients, retention, and output policy. An explicitly
-       delegated reviewer may act for that owner; CoCo IT does not approve it.
+       delegated reviewer may act for that owner; CoCo IT does not administer it.
    * - Trusted provisioning operator
-     - ``admin/`` role kit, build/sign/encrypt pipeline, project provisioning,
+     - ``admin/`` image helpers, build/sign/encrypt pipeline, project provisioning,
        and separate client releases.
      - M, A, and B must trust this operator with application plaintext,
        participant credentials, build inputs, signing keys, and image keys.
        M may perform this role only with that agreement.
    * - Trusted platform authority
-     - ``trusted_system/`` role kit and approved platform rehearsal.
+     - ``trusted_system/`` installed-runtime capture helpers.
      - Reviews guest artifacts, effective launch inputs and firmware/TCB
-       baseline; supplies authenticated references and launch contracts.
+       baseline; supplies references and launch contracts.
        The future hostile cluster operator is not this authority.
    * - Independent secure-services administrator
-     - ``service/`` role kit, registry, Trustee/KBS, AS/RVPS and release policy.
+     - ``service/`` reference/resource helpers and existing Trustee/KBS/AS/RVPS policy.
      - Acts as a trusted delegate for the affected owners; checks their
-       recorded approvals before installing platform or workload policy.
+       configured requirements before installing platform or workload policy.
        Trustee does not implement an automatic multi-owner vote or quorum.
    * - CoCo IT A / B
-     - ``coco/`` public role kit, host, Kubernetes and runtime; launches its
+     - ``coco/`` launch helper and the existing host/Kubernetes/runtime; launches its
        site's delivered Pod.
      - Receives no plaintext startup kit, image key, registry publishing
        password, or secure-services administration credentials.
@@ -334,27 +341,27 @@ Machines and inputs to prepare
      - Required environment
      - Intended final state
    * - Provisioning node / trusted provisioning operator
-     - Dedicated Ubuntu 26.04 x86_64; matching NVFlare environment, Docker and
-       build tools; reviewed application contexts; authenticated public trust
-       material and restricted registry publishing credentials.
+     - Supported Linux environment with matching NVFlare, existing image/policy
+       tools and engine privileges; reviewed application contexts, supplied TLS
+       trust material, and registry publishing credentials.
      - Private build workspace, signed kits, per-site encrypted releases and
        handoffs. No cluster administration is needed to package a release.
    * - Trusted platform system / platform authority
-     - Ubuntu 26.04 x86_64; enabled AMD SEV-SNP, supported production-CC NVIDIA
-       GPU, KVM/SEV devices, and independently approved firmware baseline.
-     - Rehearsal Kubernetes/Kata environment; verified CPU evidence, five
-       approved SNP reference values, and approved workload launch contract.
+     - Trusted control of the selected existing CoCo-ready SNP/GPU worker
+       during capture; runtime/QEMU access and configured firmware.
+     - Verified fresh CPU evidence and an authorized reference/launch handoff;
+       no cluster or runtime installation is part of this workflow.
    * - Secure-services host / independent administrator
-     - Fresh Ubuntu 24.04 x86_64; Docker, DNS/network access, protected TLS and
-       administrative keys. No confidential CPU/GPU or Kubernetes is needed.
-     - TLS registry and Trustee/KBS/AS/RVPS, approved references, and separate
-       workload release authorizations.
+     - Existing configured Trustee/KBS/AS/RVPS and registry endpoints, TLS roots,
+       administrative credentials, and the canonical current resource-policy
+       export used to preserve existing rules during workload registration.
+     - Authorized platform references and separate workload release authorizations.
    * - Two site compute hosts / CoCo IT A and B
-     - Ubuntu 26.04 x86_64; enabled SNP and one available supported
-       production-CC GPU per running protected Pod; matching approved launch
-       profile. Follow host preflight, including VFIO and swap requirements.
-     - Kubernetes, pinned Kata runtime and GPU support; one confidential
-       NVFlare client at each site. Host software remains untrusted.
+     - CoCo-ready Kubernetes workers with the supported installed SNP runtime,
+       matching captured launch profile, and one allocatable confidential GPU
+       per running protected GPU Pod.
+     - Existing Kubernetes, authorized Kata runtime and GPU support; one
+       confidential NVFlare client at each site. Host software remains untrusted.
    * - FL server and administration host / M
      - Trusted OS and matching NVFlare environment; private signed server and
        FL admin kits; reachable server DNS and authenticated FL transport.
@@ -370,128 +377,70 @@ Two simultaneous clients in this example consume two allocatable GPUs. A
 protected server is optional and requires its own encrypted release and the
 logical CC identity ``server`` in the required attested set. Selecting the same
 GPU profile for the server requires a third concurrent GPU; a separately
-approved CPU-only server profile needs none. An ordinary server needs no CoCo
+authorized CPU-only server profile needs none. An ordinary server needs no CoCo
 runtime to verify client proofs, but its operator remains trusted with
 aggregation and permitted updates.
 
-Ensure secure-services DNS resolves **inside each guest**, and registry HTTPS
-and KBS are reachable on their configured ports (defaults 5000 and 8443).
-Host ``/etc/hosts`` entries are insufficient. For the supplied registry access
-configuration, the publisher's public egress IPv4 must differ from both CoCo
-sites' egress; configure its exact ``/32`` as ``REGISTRY_PUBLISHER_CIDR``.
-Otherwise a guest pull can encounter the publisher authentication challenge.
+Ensure the independently configured registry and KBS endpoints resolve
+**inside each guest** and are reachable through authenticated HTTPS.
+Host files are insufficient. The existing registry must permit credential-free
+guest image/signature reads while rejecting anonymous writes; publisher
+credentials remain on trusted provisioning infrastructure.
 
 The **prebuilt Kata guest** and the **application container** are different
-artifacts. The pinned Kata 3.29.0 chart/artifact image supplies the runtime and
+artifacts. The authorized existing Kata 3.29.0 installation supplies the runtime and
 guest boot artifacts, including kernel, rootfs and guest services; operators
 do not build a new guest OS for each client. M instead supplies reviewed
 application Dockerfiles containing matching NVFlare, Python 3.11 or later,
-bash/coreutils, required userspace libraries, and approved training/connector
+bash/coreutils, required userspace libraries, and authorized training/connector
 code. The example Dockerfiles contain deliberately non-runnable placeholder
 bases: replace them with reviewed, digest-pinned bases before provisioning.
 Provisioning adds the individual client's signed startup kit to its image.
 
-Initial setup and handoff order
--------------------------------
+Measurement, packaging and handoff order
+----------------------------------------
 
-Use a clean, reviewed source revision and assemble the complete role kits as
-described in :github_nvflare_link:`examples/devops/coco/CONFIGURATION.md`.
-Do not distribute only the top-level script wrappers. Create the private
-``platform.env`` configurations for the actual endpoints and machines. The
-scripts do not supply leases, firmware enablement, DNS, firewall rules, SSH
-access, or the application-specific data API.
+Start with CoCo-ready Kubernetes workers, the supported Kata confidential
+runtime and GPU Operator for GPU targets, and existing configured Trustee
+KBS/AS/RVPS plus a TLS registry. Follow
+:github_nvflare_link:`examples/devops/coco/README.md` from an NVFlare source
+checkout. The workflow has four operational steps and no manual approval phase.
 
-1. **M, A and B review the application and launch shape.** Choose the baked-in
-   executor/controller code, dataset connector, output policy, non-root
-   UID/GID 65532, and permitted writable state. Explicitly set the source
-   application's ``securityContext.readOnlyRootFilesystem: false`` for
-   NVFlare; the source template's read-only default does not match the
-   packager's required writable setting. Include a harmless finite
-   validation workflow before building images. Prepare the source launch YAML
-   for rehearsal; this is not yet the final encrypted-release Pod. Host
-   volumes are unsupported. Changing the approved security context later
-   requires a new contract, not an edit by IT.
+1. **Capture references from the installed runtime.** The platform operator runs
+   ``capture-platform.py CONFIG OUTPUT`` on the selected worker under its control.
+   The collector is bound to that worker. Capture verifies fresh challenge-bound
+   hardware evidence, TCB constraints, and local input consistency, then directly
+   writes ``platform-reference-values.json`` and
+   ``approved-workload-launch-profile.json``. The existing verifier executables
+   come from the operator's trusted tool environment; capture records their
+   hashes for local change detection, not initial upstream provenance.
+   Prepare a collector on trusted build infrastructure only if one is needed,
+   keeping publisher credentials off cluster workers. See
+   :github_nvflare_link:`examples/devops/coco/MEASUREMENTS.md`.
 
-2. **The platform authority runs trusted-system stages 01 through 10**, in
-   the order and with the inputs in
-   :github_nvflare_link:`examples/devops/coco/trusted_system/SEC-SYS-LAUNCH-PROFILE.md`.
-   This installs rehearsal Kubernetes/Kata, approves the token-API-enabled
-   launch profile, verifies fresh CPU evidence, repeats the launch, and exports
-   ``platform-reference-values.json`` for secure services plus
-   ``approved-workload-launch-profile.json`` for provisioning. Authenticate
-   both handoffs through the provisioning coordinator. Review TCB minimums
-   independently; do not approve floors merely because a collector reported
-   them. A collector rehearsal does not run the application or prove GPU/NRAS
-   appraisal. Rehearse and approve additional platform profiles if the sites
-   cannot use the same approved inputs.
+2. **Set values in the configured Trustee.** The administrator installs the
+   supplied references with the reference helper and receives authenticated API
+   readback. CPU/GPU appraisal policies already exist and must implement the
+   expected reference and signed-claim contracts. Project participants reference
+   one named Trustee service in ``cc_project.yml``; administrative credentials
+   belong to the separate service-operation configuration. See
+   :github_nvflare_link:`examples/devops/coco/TRUSTEE.md`.
 
-3. **The secure-services administrator runs stages 01 through 11** from
-   :github_nvflare_link:`examples/devops/coco/service/README.md`, using the
-   authenticated reference file. Verify RVPS persistence after restart and
-   TLS reachability. Authenticate distribution of registry/KBS trust roots and
-   the AS signing public key; give publishing credentials only to the trusted
-   provisioner. Do not send KBS administrative credentials to it merely to
-   submit a workload. Stage 05 resets workload policy to default-deny; do not
-   rerun it to approve a new release.
+3. **Provision NVFlare images and Pod manifests.** Provisioning signs startup
+   kits, builds and encrypts participant images, signs and publishes their
+   immutable digests, and generates guest policies/InitData, Pod YAMLs, and
+   private Trustee release handoffs. The image runner is noninteractive.
+   It does not configure Trustee automatically. See
+   :github_nvflare_link:`examples/devops/coco/provision/README.md`.
 
-4. **CoCo IT at each site installs public platform inputs.** Follow
-   :github_nvflare_link:`examples/devops/coco/coco/README.md`: stages
-   **00, 10, 20, 30, 35, 40, 60**, including the first stage-10 configuration
-   edit and rerun, and receipt of the pinned public chart/configuration before
-   runtime installation. This can proceed in parallel with workload packaging.
-   IT does not collect or approve replacement reference values, and does not
-   install a local Trustee to bypass independent secure services.
-
-5. **The provisioner prepares tools and packages both clients.** Run admin
-   stages **00 and 05** for tools and the authenticated publishing credential,
-   after placing authenticated ``public/trustee.crt`` and
-   ``public/registry-ca.crt`` in the admin kit;
-   follow :github_nvflare_link:`examples/devops/coco/provision/README.md` and
-   the two-client configuration below. Pin the approved launch contract for
-   each destination. Keep all plaintext kits and recovery/build files private.
-
-6. **The secure-services administrator approves each release**, after checking
-   the owners' recorded authorization and independently authenticating the
-   handoff manifest digest. From the service kit, repeat for each release::
-
-      ./12-install-trusted-service-handoff.sh \
-        "$HOME/incoming/site-1-v1" "$EXPECTED_MANIFEST_SHA256"
-
-   Use ``site-2-v1`` and its own expected digest for the other site. These
-   private handoffs contain the image key, verification public key, image
-   policy, release authorization, resource-policy fragment, and manifest.
-   Stage 12 merges the approved release into the complete policy; never
-   install a fragment as the global policy. The two releases have different
-   keys and resource paths.
-
-7. **M starts the ordinary server with its private signed kit.** CoCo IT
-   receives only its site's public Pod and independently authenticated
-   checksum, then runs from its CoCo kit::
-
-      ./50-launch-handoff.sh site-1-v1-pod.yaml EXPECTED_SHA256
-      ./70-verify-running-workload.sh site-1-v1-pod.yaml EXPECTED_SHA256
-
-   Substitute the delivered filename and digest, and use the site-2 release
-   at B. Only launch after secure-services approval. The service administrator
-   checks each release with its target-aware authorization, for example::
-
-      ./13-verify-workload-release.sh site-1-v1 5m \
-        "$HOME/incoming/site-1-v1/release-authorization.json"
-
-   Repeat for ``site-2-v1`` and its authorization. These checks supplement
-   attestation; host readiness and service log entries alone do not prove a
-   successful FL job.
-
-8. **The trusted FL administrator verifies both clients**, using
-   :github_nvflare_link:`examples/devops/coco/provision/VERIFY-RUNNING-FEDERATION.md`.
-   Set ``REQUIRED_CC_SITES=site-1,site-2`` and
-   ``EXPECTED_CLIENTS=site-1,site-2`` in that procedure. Require both clients in
-   the validation job's ``mandatory_clients``, set ``min_clients`` to ``2``,
-   and check that the controller actually exercised both clients. Verify
-   registration, completion, expected results and required periodic proofs.
-   There is no universal validation job in the package. Do not release real
-   datasets until the owner-specific authorization and confidentiality gates
-   below are also satisfied.
+4. **Register releases and launch Pods.** The administrator passes each received
+   private six-file handoff directly to the installer. It installs resources
+   first and the merged KBS policy last, preserving other releases. CoCo IT
+   receives only its final Pod and invokes the launch helper, which validates,
+   performs a server dry run, applies, and waits. The trusted FL administrator
+   checks registration and required peer proofs/CC validation. Pod readiness
+   alone does not establish NVFlare application readiness. See
+   :github_nvflare_link:`examples/devops/coco/LAUNCH.md`.
 
 Provision two separate client releases
 --------------------------------------
@@ -541,26 +490,25 @@ Use these distinct packaging values:
 
 Both participants select the same named Trustee service from ``cc_project.yml``.
 Each ``coco.platform_config_file`` must reference a
-file named ``platform.env`` inside a complete prepared admin kit directory for
-its destination. Use separate admin kit directories when launch contracts,
-cluster service environment or trust inputs differ. Use reviewed, fully
+prepared configuration for its destination in the source example's admin
+helper directory. Use the matching captured launch profile and cluster service
+settings for each target. Use reviewed, fully
 qualified ``class_allow_list`` entries for admitted
 application components. Do not upload executable code through a job to avoid
 rebuilding: CCManager disables bring-your-own-code jobs.
 
-From the assembled ``provision/`` directory in the trusted, matching NVFlare
+From the source example's ``provision/`` directory in the matching NVFlare
 environment, run::
 
    nvflare provision -p project.yaml
 
-The packager invokes admin stages **10, 20, 25, 30, 40** for each protected
-participant, including the operator's plaintext-image approval after stage 10.
+The packager invokes the image builder for each protected participant,
+and publishes it without an interactive review or approval gate.
 It produces separate participant kits, encrypted/signed images, InitData and
-policies, secure-services handoffs and Pod manifests. The same approved base
+policies, secure-services handoffs and Pod manifests. The same authorized base
 code may be reused, but the sites must not share a packaged identity or image
 key. Code, dependency, startup-kit or security-policy changes require a fresh
-release and renewed approval; measured launch-input changes also need fresh
-platform rehearsal. Protect the ordinary server and FL admin kits separately.
+release; measured launch-input changes also need fresh platform capture. Protect the ordinary server and FL admin kits separately.
 
 Dataset access, training outputs and persistence
 ------------------------------------------------
@@ -573,8 +521,8 @@ only B's authorized records to site-2. Keep the data services, authorization
 secrets and storage outside the hostile compute administrators' control.
 
 Before sending data, the owner-controlled service must authenticate the
-recipient and authorize its site, approved workload, dataset scope and expiry.
-A participant certificate proves an identity, not that approved code is
+recipient and authorize its site, authorized workload, dataset scope and expiry.
+A participant certificate proves an identity, not that authorized code is
 executing. CoCoAuthorizer's peer proof is also **not an exact-image workload
 authorization or a dataset ACL**. Implement and review the service's proof and
 credential-delivery protocol; do not export the raw AA response or its private
@@ -583,7 +531,7 @@ Kubernetes Secrets.
 
 .. important::
 
-   Strict release of data **only to the approved application** remains a
+   Strict release of data **only to the authorized application** remains a
    deployment gate: establish the actual-image authorization and guest
    boot/rootfs integrity coverage discussed in
    :ref:`the Pod launch analysis <coco_security_pod_launch>`, and test the
@@ -606,13 +554,13 @@ untrusted, encrypt and authenticate data inside the guest before upload and
 keep decryption authority outside their control. Neither durable confidential
 storage nor freshness protection is supplied automatically by CoCo.
 
-During training M sends the approved model/configuration; clients compute over
+During training M sends the authorized model/configuration; clients compute over
 their authorized inputs and return permitted model updates through NVFlare's
 authenticated transport. Keeping raw data site-local is an **application and
 output-policy requirement**, not a consequence of attestation alone. Updates
 can disclose training information. This setup does not automatically provide
 differential privacy, secure aggregation, or protection from malicious model
-inputs. A and B must approve what M may receive; M's ordinary server sees those
+inputs. A and B control what M may receive; M's ordinary server sees those
 updates in plaintext. Review and validate these application-level controls
 before enabling sensitive training.
 
@@ -654,8 +602,8 @@ Host-controlled and guest-local interfaces
    * - **Pod, runtime, and launch configuration.** CoCo IT controls Kubernetes,
        CRI requests, runtime selection, boot inputs, InitData delivery, and
        effective container configuration.
-     - **Assets:** approved guest and workload execution, release keys.
-       Approved measurements, independent expected InitData, and effective
+     - **Assets:** authorized guest and workload execution, release keys.
+       Authorized measurements, independent expected InitData, and effective
        guest-policy checks constrain selected inputs; host validation is not
        the adversarial boundary.
      - Not every YAML field is bound. Equivalent or unconstrained changes may
@@ -664,7 +612,7 @@ Host-controlled and guest-local interfaces
    * - **Host-to-guest agent requests and virtual I/O.** The host/VMM supplies
        agent requests, virtual-device responses, and shared-I/O inputs to the
        guest, regardless of Kubernetes admission controls.
-     - **Assets:** guest kernel/services and private CPU/GPU state. The approved
+     - **Assets:** guest kernel/services and private CPU/GPU state. The authorized
        guest stack and TEE enforce the boundary; agent rules constrain
        effective requests and deny interactive exec/stream and policy-replacement
        paths. Permitted lifecycle operations still exist.
@@ -715,17 +663,16 @@ Secure services and trusted-side interfaces
        startup kits, evidence, references, and release files; supply-chain
        producers influence those inputs.
      - **Assets:** plaintext images, FL credentials, signing/publishing keys,
-       image keys, and approval provenance. Trusted-side review and
-       independently authenticated handoffs establish authority. The release
-       importer checks the handoff and reconstructs policy from a service-owned
+       image keys, and configuration records. The importer consumes received handoff
+       files directly, validates their structure, and reconstructs policy from a service-owned
        template instead of accepting arbitrary supplied Rego.
      - Trusted code execution and build caches remain sensitive. An attacker
-       controlling a trusted build or approval authority can authorize malicious
-       content. Review dependencies and imported files, authenticate expected
-       handoff hashes out of band, and protect retained plaintext/recovery data.
+       controlling a trusted build or configuration authority can authorize malicious
+       content. Review dependencies and imported files, and protect retained
+       plaintext/recovery data.
    * - **KBS attestation and resource HTTPS requests.** Any client that can
        reach the endpoint can attempt protocol requests; it need not already
-       be an approved confidential workload.
+       be an authorized confidential workload.
      - **Assets:** per-release keys and verification policy/material. AS
        appraisal, session/guest-key binding, and KBS's exact resource-path and
        workload authorization gate release. Authorized responses are encrypted
@@ -739,21 +686,22 @@ Secure services and trusted-side interfaces
        Hostile evidence therefore reaches verifier code even when backends are
        not directly reachable from the cluster.
      - **Assets:** appraisal integrity, AS signing authority, reference values,
-       and TCB floors. Evidence verification, approved reference provenance,
+       and TCB floors. Evidence verification, configured baselines,
        service-owned appraisal policy, and controlled administration form the
        trusted boundary.
      - Keep backend interfaces restricted and verify actual listeners/routes;
        do not infer isolation from component names. Verifier flaws, compromised
-       reference ingestion, or administrator mistakes can approve an
+       reference ingestion, or administrator mistakes can admit an
        unacceptable guest. Verify persisted references and policy after changes.
    * - **Administrative APIs, publishing, and host management.** Secure-services
        administrators and authorized registry publishers hold distinct
        credentials; remote clients may still reach administrative request
        parsers on the public HTTPS front end.
      - **Assets:** KBS resources/policies, AS/TLS keys, registry content, and
-       backups. KBS administrative authentication and the configured ``KBS``
-       audience checks protect administrative calls; registry publishing uses
-       separate authorization. OS/container administrators remain trusted.
+       backups. The existing Trustee configuration enforces administrative
+       authentication and authorization; this example consumes opaque credentials
+       and does not validate their audience. Registry publishing uses separate
+       authorization. OS/container administrators remain trusted.
      - The TLS proxy forwards KBS routes; administrative routes are not
        guaranteed a separate private listener. Protect credentials and
        management access independently of CoCo IT. A valid privileged identity
@@ -763,11 +711,11 @@ Secure services and trusted-side interfaces
        appraisal responses, and possibly locally cached copies.
      - **Assets:** platform identity, freshness, and accepted security baseline.
        Vendor trust roots and verifier checks establish authenticity;
-       independently approved AS/RVPS policy decides acceptability. The
-       CPU/GPU-specific approval sections describe the supported paths.
+       configured AS/RVPS policy decides acceptability. The
+       CPU/GPU-specific verification sections describe the supported paths.
      - Vendor services, verifier dependencies, cache contents, freshness, and
        availability remain part of the trust/operations review. Valid signatures
-       alone do not approve a TCB. Do not relax checks or accept stale material
+       alone do not satisfy a configured TCB. Do not relax checks or accept stale material
        solely to restore connectivity.
 
 Federation, application, and output interfaces
@@ -805,7 +753,7 @@ Federation, application, and output interfaces
        interactive endpoint, or misuse valid proofs. Review actual listeners,
        input handling, administrator privileges, and permitted outputs; TEE
        identity does not establish application benevolence or training privacy.
-   * - **Logs, results, writable storage, and checkpoints.** Approved code emits
+   * - **Logs, results, writable storage, and checkpoints.** Authorized code emits
        outputs; recipients and any host-backed sink may observe them. CoCo IT
        controls host storage, traffic metadata, scheduling, and restart/replay
        of public launch inputs.
@@ -817,7 +765,7 @@ Federation, application, and output interfaces
      - Console redirection does not stop alternate output channels or disable
        Kubernetes logs. Image encryption does not encrypt arbitrary writable
        volumes or prevent rollback, duplicate execution, or inference from
-       released results. Explicitly approve each output/storage destination.
+       released results. Configure each output/storage destination.
 
 Using the inventory during deployment review
 --------------------------------------------
@@ -832,65 +780,76 @@ result of each check rather than treating this table as a completed audit.
 Remove unnecessary listeners, debug services, and API forwarding. Review any
 new device, mount, sidecar, application service, dependency, or administrative
 route as a change to the attack surface. Where a measured launch input or
-workload authorization changes, obtain new approved references/releases as
+workload authorization changes, obtain new authorized references/releases as
 required. These are review obligations, not additional protections introduced
 by this documentation.
 
 .. _coco_security_platform_approval:
 
-Platform evidence is verified, then approved
+Capturing verified platform references
 ============================================
 
 A **measurement** is a digest of defined launch inputs or measured events, not
 a generic hash of everything on a machine. **Evidence** is the hardware-backed
 report/quote and supporting data used to verify those claims. A **reference**
-is an independently approved expected value. A valid signature establishes
+is an configured expected value. A valid signature establishes
 origin/integrity under a trust root; it does not decide whether a measured
 program or firmware version is acceptable.
 
-The trusted system uses the same intended runtime and effective launch profile
-as the application. A short-lived Kata collector obtains evidence inside a
-confidential VM. The trusted host verifies a fresh challenge, evidence,
-security baseline, and captured actual launch inputs. A second rehearsal uses
-a different challenge and must reproduce the approved stable profile. The
-platform authority reviews the candidate; finalization re-verifies the retained
-evidence and artifact bindings. A successful collector does not self-approve.
+The platform operator runs ``capture-platform.py CONFIG OUTPUT`` on the selected
+existing worker. A short-lived collector obtains a fresh challenge-bound
+report/quote inside the confidential VM. Capture records the installed
+configuration and actual launch, verifies hardware evidence using the supplied
+verifier, checks the configured TCB/security constraints and local input hashes,
+and writes ``capture-summary.json`` plus both handoff files directly.
+There is no separate approval command, offline SNP model, upstream Kata image
+download, or second collection phase.
 
-The provisioning node coordinates two distinct authenticated handoffs:
+Preinstalled verifier executables are supplied by the operator's trusted tool
+environment. Capture records their hashes to detect later local changes; it does
+not establish the initial upstream origin of those executables. Cryptographic
+verification still requires the AMD chain/report signature or Intel quote/
+collateral, fresh challenge binding, and the selected security baseline.
 
-* ``platform-reference-values.json`` goes to secure services for reviewed RVPS
-  installation under service-owned AS policies.
+The provisioning node coordinates two distinct direct file handoffs:
+
+* ``platform-reference-values.json`` goes to secure services for RVPS
+  reference updates under the existing AS policies.
 * ``approved-workload-launch-profile.json`` goes to the workload owner as
-  a target-aware v4 contract. Legacy v3 is accepted only for its original
-  SNP-plus-GPU profile; changing its fields does not approve another target.
-  The contract constrains trusted-side generation and records runtime provenance, launch
-  shape, application security context, and guest token-API capability. It is
-  not itself an attestation claim.
+  a target-aware authorized contract. Its SNP/TDX and CPU/GPU selection must match
+  the configured profile; editing its fields cannot select another target.
+  The contract constrains trusted-side generation and records captured runtime
+  settings, launch shape, application security context, and guest token-API
+  capability. It is not itself an attestation claim.
 
-CoCo IT receives public runtime installation inputs and final Pod YAML, not
-authority to approve references. No signed runtime bundle is required by this
-workflow. Authenticated trusted-side handoffs remain required.
+CoCo IT uses the existing authorized runtime and receives only final Pod YAML.
+It has no authority to update reference values. Handoff files are accepted
+as supplied; format checks and locally recorded checksums do not automatically
+establish a sender's identity or the transferred file's origin. Trusted recipients
+are responsible for supplying the intended files. Replacement of an entire
+handoff and its checksum manifest can authorize a different workload; the direct
+handoff workflow does not detect that substitution. Optional independently known
+digests can check supplied bytes, but are not required by this workflow.
 
-SNP approval
-------------
+SNP verification
+----------------
 
 For the usual VCEK-based SNP path, AMD firmware produces the signed guest
 report. The verifier validates the endorsement chain and report binding; AMD's
 Key Distribution Service provides chip/TCB-specific endorsement certificates.
 An Intel-style host QGS is not needed for this path. Certificate retrieval may
-be online or use a separately managed cache; successful retrieval is not TCB
-approval.
+be online or use a separately managed cache; successful retrieval alone does not establish acceptable TCB.
 
 The service policy checks membership in ``snp_launch_measurement`` and four
-independently approved minimum reported-TCB values: bootloader, TEE, SNP
+configured minimum reported-TCB values: bootloader, TEE, SNP
 firmware, and microcode. Missing/nonnumeric floor data cannot pass. Debug and
-migration-agent permission must be disabled. Multiple approved measurements
+migration-agent permission must be disabled. Multiple authorized measurements
 share these four floors; the current SNP format does not associate different
 TCB minima with each measurement. Never choose permissive floors solely from
 the platform under test.
 
-TDX approval
-------------
+TDX verification
+----------------
 
 The collection/export and RVPS/AS policy implementation is included in
 ``2.9``. Its TDX end-to-end hardware acceptance remains outstanding as described
@@ -900,7 +859,7 @@ A TDX guest obtains a TD report; a Quote Generation Service on the same physical
 platform uses Intel's quoting infrastructure to produce a remotely verifiable
 quote. PCK certification and verification collateral support this trust chain.
 Platform provisioning/certificate caching and quote generation are separate
-from application approval. The NVFlare participant does not need a PCS API key
+from application authorization. The NVFlare participant does not need a PCS API key
 to call the guest AA API. The host's chosen provisioning workflow may need one.
 
 The trusted collector and service verifier/policy require a valid quote and
@@ -909,7 +868,7 @@ TCB, and replay of the measured-boot log. The current-TCB result, when supplied,
 must also be acceptable; expired collateral is rejected. An open QGS socket,
 booted TDX VM, decoded quote, or valid signature alone is insufficient.
 
-RVPS stores approved profiles under ``coco_tdx_profiles_v2``. Each profile is
+RVPS stores authorized profiles under ``coco_tdx_profiles_v2``. Each profile is
 one complete tuple:
 
 .. code-block:: text
@@ -919,16 +878,15 @@ one complete tuple:
 
 MRTD covers the initial TD measurement. RTMRs accumulate measurements through
 extend operations; the event log explains the events whose replay must agree
-with the quoted registers. Their contents depend on the approved boot and
-runtime measurement sequence. All four RTMRs must match the same approved
+with the quoted registers. Their contents depend on the authorized boot and
+runtime measurement sequence. All four RTMRs must match the same authorized
 profile, together with XFAM and the kernel/kernel-parameter event digests.
-Combining individually approved fields from different profiles is forbidden.
+Combining individually authorized fields from different profiles is forbidden.
 
-Collection, repeat rehearsal, and workload appraisal need a stable approved
+Collection and workload appraisal need a stable authorized
 attestation phase. Runtime extensions to RTMR3 cannot be handled by ignoring
 it, assuming it is always zero, or accepting arbitrary values. Review profiles
-for intended states or redesign the measurement sequence. Older incomplete
-six-field profiles require recollection and reapproval.
+for intended states or redesign the measurement sequence.
 
 GPU appraisal and downgrade prevention
 --------------------------------------
@@ -959,13 +917,13 @@ Measurement coverage must be demonstrated
 Identical CPU model, runtime name, container image, or Pod YAML does not by
 itself guarantee identical launch measurements. The effective firmware,
 kernel, boot arguments, VM configuration, and measured event sequence matter.
-Changes require review and usually a new rehearsal rather than weakening
+Changes require review and a new capture as appropriate rather than weakening
 reference matching.
 
 A trusted-host file hash proves which file was reviewed there; it does not
 remotely prove what an adversarial host supplied later. In particular, do not
 claim that an external block-device root filesystem is protected merely
-because rehearsal recorded its hash. The approved boot path must demonstrate
+because capture recorded its hash. The authorized boot path must demonstrate
 that security-critical guest content is covered by hardware measurements or
 cryptographic integrity verification rooted in measured code. Measured
 firmware/kernel/initrd and externally supplied disk content are not
@@ -989,23 +947,21 @@ container build and creates a separate protected release for each participant.
 The publication pipeline encrypts every workload image layer, resolves the
 immutable encrypted-image manifest digest, signs that digest, and generates
 the image signature policy and strict Kata agent policy. InitData carries the
-guest trust/configuration and agent policy. The owner approves the resulting
-workload authorization and sends the confidential six-file release handoff to
-secure services. It contains the image key, public image-signing key, image
+guest trust/configuration and agent policy. The pipeline generates release-specific workload authorization and a
+confidential six-file handoff for secure services. It contains the image key, public image-signing key, image
 policy, release authorization, resource-policy fragment, and checksum manifest.
 
-The secure-services administrator authenticates that handoff and reconstructs
-and checks the release policy using the service-owned trusted template, rather
+The secure-services administrator reads the received handoff directly and
+reconstructs and checks the release policy using the service-owned template, rather
 than trusting arbitrary workload-supplied Rego. The administrator installs the
 resources and reviewed rule into a default-deny global resource policy. Only
-then does CoCo IT receive the Pod YAML and an independently authenticated
-expected checksum.
+then does CoCo IT receive the Pod YAML for direct launch-helper consumption.
 
 Plaintext startup kits, build contexts, Docker caches, signing material, and
 recovery outputs on the provisioning node remain sensitive. Packaging is not
 secure erasure or a transactional publication protocol. A failed build/push
 can leave private local artifacts or partially published ciphertext; investigate
-before retrying and follow the recovery runbook.
+before retrying and retain the private recovery state.
 
 What InitData binds
 -------------------
@@ -1022,9 +978,9 @@ compared against independent release authorization:
 This is **attestation-bound InitData**, not a separately signed InitData file.
 It commits to the guest agent policy and guest configuration, including KBS
 endpoint/trust and image-policy location. Image digest and process arguments
-are present in the approved policy. The CPU does not directly hash the later
+are present in the authorized policy. The CPU does not directly hash the later
 decrypted application image and magically certify its behavior; trusted guest
-verification and enforcement connect that application to the approved policy.
+verification and enforcement connect that application to the authorized policy.
 
 Changing the decoded embedded policy or trust configuration changes the
 expected binding. Editing YAML is possible: changes outside the permitted
@@ -1044,13 +1000,13 @@ During a workload launch:
    TLS trust. The actual-image authorization limitation is detailed below.
 2. CPU evidence, and GPU evidence when required, binds the attestation session
    and guest public key. AS verifies evidence and evaluates its appraisal
-   policy against approved RVPS references; it signs the attestation result.
+   policy against authorized RVPS references; it signs the attestation result.
 3. For **each** resource request, KBS evaluates the actual plugin/resource path,
-   exact required submodules/vectors, approved CPU type, expected InitData,
+   exact required submodules/vectors, authorized CPU type, expected InitData,
    image identity and process arguments extracted from the attested policy.
    KBS does not inspect the host's live image-pull or process-creation request.
 4. Only an authorized request receives the resource encrypted to the attested
-   guest key. The approved guest image-verification/decryption path and agent
+   guest key. The authorized guest image-verification/decryption path and agent
    policy must then permit execution. KBS acceptance alone is not proof that
    the application started successfully.
 
@@ -1108,20 +1064,19 @@ it is not a separate service and its name is not a hardware-attested identity.
 The host-side API, admission, launch-script and checksum checks are bypassable
 by CoCo IT and are not the security boundary against that operator.
 
-.. figure:: ../../resources/coco-pod-launch-sequence.svg
-   :alt: Vertically stacked Pod launch phases among CoCo IT, Kubernetes, the Kata runtime, confidential guest services, registry, KBS, AS, RVPS and workload, showing startup failure, key-release denial, guest-request denial and allowed-change outcomes. Repeated guest headings refer to the same confidential VM.
-   :width: 100%
+.. figure:: ../../resources/coco-launch-summary.svg
+   :alt: Five conceptual checkpoints: guest launch, policy and encrypted artifacts, hardware appraisal, resource authorization, and guest checks before workload startup. Failed checkpoints stop that launch path; exact image-digest binding remains a documented limitation.
+   :width: 640px
    :align: center
 
-   Read the stacked phases from top to bottom; repeated participant headings
-   refer to the same actors, not new VMs or services. These are conceptual
-   launch dependencies and enforcement checkpoints, not a literal packet
-   trace. Guest policy checks and image handling can interleave, and resource
-   requests can repeat. A failure path terminates that launch attempt; later
-   steps describe the continuing successful path.
+   Read the checkpoints from top to bottom. These are conceptual dependencies,
+   not a literal packet trace. Guest checks, image handling, and resource
+   requests can interleave or repeat. The table below distinguishes startup
+   failure, key-release denial, guest-request denial, and an allowed launch.
 
 Open the :download:`full-size vector diagram <../../resources/coco-pod-launch-sequence.svg>`
-to zoom into its labels. The :download:`editable Mermaid source <../../resources/coco-pod-launch-sequence.mmd>`
+for the detailed actor-by-actor interactions. The
+:download:`editable Mermaid source <../../resources/coco-pod-launch-sequence.mmd>`
 retains the full logical trace of the same actors, checkpoints, outcomes and
 coverage limitation; the SVG groups it into narrower phases for readability.
 
@@ -1142,7 +1097,7 @@ coverage limitation; the SVG groups it into narrower phases for readability.
      - Guest image signature/integrity/decryption checks or agent checks of the effective container/process request fail.
      - The prohibited request cannot complete. KBS might already have released resources inside the authorized guest; this does not expose them to IT.
    * - 4. Allowed change / successful launch
-     - The effective launch satisfies the implemented checks despite a changed, unconstrained or equivalent YAML value. The unchanged approved launch follows this path too.
+     - The effective launch satisfies the implemented checks despite a changed, unconstrained or equivalent YAML value. The unchanged authorized launch follows this path too.
      - The workload can run. This does not certify every YAML field, prove exactly-once execution, or close the image-digest coverage limitation below.
 
 These are expected outcomes from source inspection, not a completed live
@@ -1167,24 +1122,24 @@ RuntimeClass and guest-boot changes
      - It cannot supply the required confidential CPU evidence for the protected release.
      - 2: no protected image key. An unrelated unencrypted container can still run.
    * - Switch an SNP-authorized release to TDX, or vice versa
-     - KBS requires the release's CPU evidence type and exact approved trust vectors.
+     - KBS requires the release's CPU evidence type and exact authorized trust vectors.
      - 2: denial, even if the other platform passes its own appraisal.
    * - Switch a GPU-required workload to CPU-only
      - KBS requires the exact CPU/GPU submodule set and GPU appraisal; guest device constraints also apply.
      - 2: missing required GPU evidence denies the key; an earlier guest/runtime failure is also possible.
-   * - Different class name/handler producing the same approved guest
+   * - Different class name/handler producing the same authorized guest
      - KBS checks evidence, InitData and workload authorization, not ``runtimeClassName``.
      - 4: can pass after IT bypasses exact-name preflight. A different name alone is not a violation of the attested guest boundary.
    * - Kernel, firmware or other guest-boot overrides
-     - AS compares covered measured inputs with approved references; the guest boot path must authenticate other security-critical content.
-     - 2 for unapproved measured inputs, or 1 for boot failure. Ignored/unmeasured changes have no automatic remote denial; establish external disk/rootfs integrity separately.
+     - AS compares covered measured inputs with authorized references; the guest boot path must authenticate other security-critical content.
+     - 2 for unauthorized measured inputs, or 1 for boot failure. Ignored/unmeasured changes have no automatic remote denial; establish external disk/rootfs integrity separately.
 
 Image changes and the current authorization limitation
 -------------------------------------------------------
 
 The intended image controls combine signatures, digest/integrity checks,
 encrypted layers, release-scoped keys and guest policy. They must not be
-described as a universal comparison of the requested image with the approved
+described as a universal comparison of the requested image with the authorized
 digest in the current implementation:
 
 * KBS compares the image in the attested InitData policy, not the host's actual
@@ -1195,21 +1150,21 @@ digest in the current implementation:
   ``driver_options`` validation incomplete.
 * The generated image signature policy uses ``sigstoreSigned`` with
   ``signedIdentity: matchRepository``. That is not an independent allowlist of
-  exactly one approved manifest digest.
+  exactly one authorized manifest digest.
 
 The provisioner creates a separate encryption key and resource path for each
 immutable release. For independently provisioned images A and B with different
 keys, A's key cannot decrypt B's encryption material. Requesting B's key while
 retaining A's InitData must fail B's exact resource authorization rule. Changing
 InitData invokes the other release's independently installed authorization;
-it does not inherit A's approval. Repository-scoped signature acceptance alone
+it does not inherit A's release authorization. Repository-scoped signature acceptance alone
 does not bypass these controls. Registry write access also does not supply a
 signing key or a decryption key.
 
 .. warning::
 
    Exact-image-digest authorization is an unresolved coverage limitation.
-   A direct comparison of the effective image digest with the approved digest
+   A direct comparison of the effective image digest with the authorized digest
    has not been demonstrated. Any proposed replacement must still have an
    accepted signature, be decryptable using authorized resources, and satisfy
    every other guest check. The missing comparison is a source-review finding,
@@ -1256,16 +1211,16 @@ which are not identical to literal YAML fields.
      - Actual checkpoint / limitation
      - Possible outcome
    * - ``cc_init_data`` policy, endpoint, CA or image-policy location
-     - Guest validates the InitData hardware binding; KBS expects the independently approved digest of the decoded data.
+     - Guest validates the InitData hardware binding; KBS expects the configured digest of the decoded data.
      - 2 if decoded data changes; guest validation can also stop startup. Re-encoding identical bytes can reach 4.
    * - ``command`` / effective arguments
-     - Guest agent compares argument count and values against the approved rules, including permitted substitutions.
-     - 3 for an unapproved process; 4 if the same or explicitly permitted effective process results.
+     - Guest agent compares argument count and values against the authorized rules, including permitted substitutions.
+     - 3 for an unauthorized process; 4 if the same or explicitly permitted effective process results.
    * - ``env``
-     - Each supplied value must match guest rules. The pin does not require every approved variable to remain present; ordering and some substitutions are permitted.
+     - Each supplied value must match guest rules. The pin does not require every authorized variable to remain present; ordering and some substitutions are permitted.
      - 3 for disallowed supplied values; removals/reordering or allowed substitutions can reach 4.
    * - ``runAsUser`` / ``runAsGroup``
-     - Guest checks effective UID/GID. Supplementary groups may be a subset of approved groups, not arbitrary additions.
+     - Guest checks effective UID/GID. Supplementary groups may be a subset of authorized groups, not arbitrary additions.
      - 3 for an unauthorized identity; 4 for equivalent/permitted identity settings.
    * - Capabilities, ``allowPrivilegeEscalation``, ``readOnlyRootFilesystem``
      - Guest checks normalized capability sets, ``NoNewPrivileges`` and rootfs readonly mode.
@@ -1280,8 +1235,8 @@ which are not identical to literal YAML fields.
      - The trusted manifest schema forbids them. Guest rules check effective mounts/storage but allow specified patterns, exceptions and some omissions.
      - 3 for requests outside those rules; permitted effective requests can reach 4. Arbitrary host-backed storage is not confidential by default.
    * - Additional sidecar, init or debug containers
-     - Each guest create request must match an approved policy entry. The pin does not globally consume each entry once or enforce exactly-once execution.
-     - 3 for an unapproved request; do not promise every duplicate request matching an approved entry is denied.
+     - Each guest create request must match an authorized policy entry. The pin does not globally consume each entry once or enforce exactly-once execution.
+     - 3 for an unauthorized request; do not promise every duplicate request matching an authorized entry is denied.
    * - ``tty`` / ``stdin``
      - Effective terminal mode is checked. Exec and read/write streams are separately denied; ``stdin`` is not independently attested as a YAML flag.
      - 3 for prohibited guest requests; a flag change with no disallowed effect can reach 4.
@@ -1315,7 +1270,7 @@ requires closure of the stated coverage limitation and live negative tests.
 Guest enforcement, network, and storage
 ---------------------------------------
 
-The approved agent policy restricts container creation, process arguments,
+The authorized agent policy restricts container creation, process arguments,
 environment, mounts, identity, capabilities, and other reviewed OCI properties.
 Exec/stream requests and policy replacement are denied; global and
 per-container exec allowlists remain empty. Validation checks the pinned rule
@@ -1324,7 +1279,7 @@ It is not a verifier for arbitrary user-written Rego.
 
 For NVFlare, the reviewed profile uses non-root UID/GID 65532, dropped Linux
 capabilities, no privilege escalation, and a **writable guest-local** root
-filesystem for logs/job state. No hostPath or PVC is implied. The approved
+filesystem for logs/job state. No hostPath or PVC is implied. The authorized
 ``RuntimeDefault`` seccomp YAML field is not proof of guest seccomp filtering:
 the pinned Kata policy requires null guest OCI seccomp. Do not advertise host
 Kubernetes security settings as equivalent guest-enforced controls.
@@ -1339,7 +1294,7 @@ Networking remains hostile. CNI, DNS, network policies, service selectors and
 source IPs are not independent trust anchors. Use owner-controlled FL mTLS,
 certificate/peer authentication, and application authorization end to end.
 Forward protected-server connections without terminating TLS outside the
-approved guest. Policy validation of CNI-supplied values does not make the
+authorized guest. Policy validation of CNI-supplied values does not make the
 cluster's routing, peer identity, or connectivity trustworthy.
 
 Generated NVFlare startup redirects inherited stdout/stderr to ``/dev/null``
@@ -1523,7 +1478,7 @@ a guarantee.
 Threats, enforcement, and residual risks
 ========================================
 
-The following matrix assumes the independent services and approved guest and
+The following matrix assumes the independent services and authorized guest and
 application are not compromised. "Denied" means the specified enforcement
 must reject the request; the acceptance checklist below requires testing the
 real boundary, not merely trusting an installer's preflight.
@@ -1548,14 +1503,14 @@ real boundary, not merely trusting an installer's preflight.
      - Independent expected InitData binding, authenticated service endpoint and exact resource authorization.
      - Compromise of trusted policy or trust-root distribution is outside the hostile-host guarantee.
    * - Replace guest/runtime launch inputs
-     - Approved measurements, verified boot events and integrity checks in the approved boot path.
+     - Authorized measurements, verified boot events and integrity checks in the authorized boot path.
      - Host binary pins are not remote proof. Demonstrate integrity coverage of external rootfs/disk inputs.
    * - Forge evidence, enable debug, or downgrade platform TCB
-     - Report/quote signatures, challenge binding, verifier checks, approved references and security baseline.
+     - Report/quote signatures, challenge binding, verifier checks, authorized references and security baseline.
      - Vendor/firmware/verifier vulnerabilities remain assumptions. A valid certificate alone is insufficient.
-   * - Mix fields from several approved TDX profiles
-     - AS requires one complete approved tuple, including all four RTMRs.
-     - Each accepted state still needs independent approval; event-log consistency alone is not approval.
+   * - Mix fields from several authorized TDX profiles
+     - AS requires one complete authorized tuple, including all four RTMRs.
+     - Each accepted state must match the configured reference tuple; event-log consistency alone is insufficient.
    * - Omit GPU or submit failed GPU evidence
      - GPU release policy requires exactly CPU+GPU and both exact vectors; present failed GPU proofs are rejected.
      - Select ``gpu_tee: nvidia_cc`` for the participant. Provisioning derives the bound peer-verifier requirement; ``gpu_tee: none`` requires CPU-only evidence.
@@ -1564,17 +1519,17 @@ real boundary, not merely trusting an installer's preflight.
      - Knowing a path or passing CPU appraisal grants no store-wide access. A permissive global policy defeats isolation.
    * - Use exec, attach, copy, ephemeral debug, or SSH
      - Guest agent request policy denies interactive paths; application review must exclude SSH/debug services and credentials.
-     - Custom images are not automatically scanned for daemons. A vulnerable or intentionally interactive approved application can provide another entry point.
+     - Custom images are not automatically scanned for daemons. A vulnerable or intentionally interactive authorized application can provide another entry point.
    * - Inspect or modify private guest CPU/GPU memory
-     - Approved CPU TEE and, when selected, confidential GPU protections.
+     - Authorized CPU TEE and, when selected, confidential GPU protections.
      - Not a universal physical/side-channel guarantee; shared I/O and intentionally disclosed outputs remain outside private memory.
    * - Spoof DNS, CNI, peer address, or server routing
      - End-to-end TLS/mTLS, provisioned trust, authenticated FL identity and site-bound proofs.
      - Host retains traffic metadata, routing and availability control. Network policy alone is not a trust boundary.
    * - Forward another site's token or tamper with its claims
      - AS signature, guest-key possession proof, expected subject/audience and FL peer authentication.
-     - Approved guest code can access its key. Compatibility verification without expected-site binding is insufficient.
-   * - Replay evidence/proofs or use stale approval
+     - Authorized guest code can access its key. Compatibility verification without expected-site binding is insufficient.
+   * - Replay evidence/proofs or use stale authorization
      - Attestation-session freshness, token time checks and local proof replay rejection.
      - Cached EARs, verifier restarts/replicas and issued-key lifetime matter; this is not immediate revocation or exactly-once execution.
    * - Clone workload, repeat a job, or roll back persistent data
@@ -1583,13 +1538,13 @@ real boundary, not merely trusting an installer's preflight.
    * - Extract secrets from logs, environment metadata, or outputs
      - Silent generated startup, denied agent streams, reviewed application output and authenticated channels.
      - Admitted code can emit secrets. Kubernetes log availability and traffic-analysis resistance are not disabled by attestation.
-   * - Compromise the approved application or an admitted dependency
+   * - Compromise the authorized application or an admitted dependency
      - Build review, restricted job-code admission and application security controls reduce exposure.
      - Attestation preserves identity, not benevolence. Application compromise can leak keys/data and sign proofs.
    * - Infer training data, poison updates, or falsify aggregation
      - Requires separate application review, privacy controls and protocol/algorithm defenses.
      - CoCo does not by itself provide differential privacy, Byzantine robustness, verifiable computation, or cryptographic secure aggregation.
-   * - Compromise provisioning, AS signing, KBS administration, or reference approval
+   * - Compromise provisioning, AS signing, KBS administration, or reference configuration
      - Trusted-side access control, credential separation, review, rotation and audit.
      - These are trusted authorities. The deployment cannot defend against their authorized malicious decisions by attestation alone.
    * - Kill, pause, starve, partition, or never schedule a participant
@@ -1610,9 +1565,9 @@ Before deploying
 * Establish who trusts each authority and who can change its configuration.
   Separate mutually distrustful administrative domains; the example is not a
   multi-tenant administrative isolation proof.
-* Authenticate AS public-key and TLS-root distribution independently of CoCo IT
-  and received tokens. Use different credentials for TLS, token signing,
-  image signing, registry publishing, and KBS administration.
+* Place the supplied AS public key and TLS roots with their intended operators.
+  Use different credentials for TLS, token signing, image signing, registry
+  publishing, and KBS administration.
 * Review build sources, base images, dependencies, class allowlists, startup
   behavior and permitted outputs. CCManager blocks BYOC job submission in this
   flow; explicitly allowed component class paths are still trusted code, not
@@ -1620,19 +1575,19 @@ Before deploying
 * Keep the trusted-system evidence and private build/recovery material private.
   Handoffs contain only the material authorized for their recipient. Do not
   distribute publisher credentials, plaintext kits or release keys to CoCo IT.
-* Record actual code/runtime/policy revisions, security approval, time sources,
+* Record actual code/runtime/policy revisions, security configuration, time sources,
   and independent positive/negative acceptance evidence for each target.
 
 Changes, revocation, and credential compromise
 ----------------------------------------------
 
 Changing guest launch inputs, token-API configuration or the security baseline
-requires reviewed references and a fresh rehearsal as appropriate. Changing
+requires reviewed references and a fresh capture as appropriate. Changing
 image, command, security context, policy or guest trust configuration requires
-a new approved release. Editing host configuration does not update an already
+a new authorized release. Editing host configuration does not update an already
 running confidential guest.
 
-Reference updates replace the approved set; include every profile that should
+Reference updates replace the authorized set; include every profile that should
 remain accepted. SNP's multi-key updates are not transactional. Coordinate
 writers and launches, maintain deny-on-failure behavior, verify RVPS readback
 and persistence, and do not lower floors to recover from an error. Install
@@ -1647,18 +1602,18 @@ separately designed short-lived application authorization/key protocol and
 control of the relevant trusted endpoints; do not assume hostile IT will stop
 an old guest on request.
 
-AS signing-key rotation requires independently distributing the new verification
-trust to participants; do not learn it from incoming JWT headers. Retire
+AS signing-key rotation requires configuring the new verification
+key at participants; do not learn it from incoming JWT headers. Retire
 compromised FL identities and protect issuance of replacement kits. Rotation
 of TLS certificates is not rotation of AS signing or KBS administrative keys.
 Keep historical logs and backups access-controlled; deleting a local file
 does not revoke credentials copied elsewhere.
 
-Do not rerun secure-services deployment stage 05 as a routine reference update
-or narrow credential rotation: it resets resource authorization to default-deny.
-Follow the dedicated reference and credential runbooks and verify the resulting
-live policy. A default-deny reset can stop new launches without retracting keys
-from existing guests.
+Reference updates use the already configured appraisal policies. Workload
+registration merges with a current complete KBS resource-policy export, keeping
+unrelated rules. The helper maintains one canonical export and pending recovery
+state around policy writes because the API cannot retrieve the current policy
+bytes. Reconcile an uncertain pending write before registering another release.
 
 Outages and diagnostics
 -----------------------
@@ -1683,11 +1638,11 @@ Deployment acceptance and evidence limits
 Static checks and unit tests establish implementation behavior for tested
 inputs. They do not establish hardware isolation or a successful real
 deployment. Host diagnostics establish readiness observations; ``Running``
-Pod status is controlled by the adversarial cluster. Trusted rehearsal verifies
+Pod status is controlled by the adversarial cluster. Trusted capture verifies
 platform evidence, not an encrypted application's complete lifecycle.
 
 For **each selected CPU/GPU target**, retain at least the following private
-acceptance record, with relevant software, policy and approval revisions:
+acceptance record, with relevant software, policy and configuration revisions:
 
 .. list-table:: Test the enforcing boundary
    :header-rows: 1
@@ -1697,11 +1652,11 @@ acceptance record, with relevant software, policy and approval revisions:
      - Positive and negative checks
      - Evidence to retain
    * - Platform collection
-     - Fresh verified rehearsal and repeat; reject wrong challenge, tampered report/quote or event log, debug mode and unacceptable TCB.
+     - Fresh verified capture; reject wrong challenge, tampered report/quote or event log, debug mode and unacceptable TCB.
      - Verifier results and bound launch/artifact records, not decoded claims alone.
    * - Reference policy
-     - Accept each approved profile; reject unapproved or mixed TDX tuples, omitted RTMRs, wrong CPU type and insufficient SNP TCB.
-     - Reviewed AS policy, RVPS readback including after restart, and live denial/acceptance results.
+     - Accept each authorized profile; reject unauthorized or mixed TDX tuples, omitted RTMRs, wrong CPU type and insufficient SNP TCB.
+     - Reviewed AS policy, RVPS readback, and live denial/acceptance results.
    * - Workload resource release
      - Release all three exact resources for the authorized launch; reject wrong paths, InitData or attested policy image/command claims, and missing/failed required GPU.
      - Trusted service and guest/application evidence correlated to the tested release.
@@ -1709,7 +1664,7 @@ acceptance record, with relevant software, policy and approval revisions:
      - Reject unsigned/corrupt images; close the exact-digest binding limitation and test another accepted-key/same-repository signed image with unchanged InitData.
      - Evidence from the guest image-verification path. A test changing only attested policy claims does not establish rejection of the actual substituted image.
    * - Guest enforcement
-     - Start the approved process; reject prohibited exec/attach/debug and effective OCI requests outside guest rules. Also test permitted substitutions/omissions and equivalent-field changes.
+     - Start the authorized process; reject prohibited exec/attach/debug and effective OCI requests outside guest rules. Also test permitted substitutions/omissions and equivalent-field changes.
      - Guest-policy behavior and the four launch outcomes; hostile-host launcher validation alone is insufficient.
    * - Federation identity
      - Register protected clients and, if selected, protected server; reject missing tokens, wrong site/audience, incomplete required sets and altered signatures.
@@ -1718,7 +1673,7 @@ acceptance record, with relevant software, policy and approval revisions:
      - Reject expired/replayed proofs within the stated cache scope; exercise bounded transient retry, terminal failures and required-participant loss.
      - Actual fail-closed behavior, timing and shutdown consequences; do not infer these from token generation alone.
    * - Lifecycle and output
-     - Review guest disk integrity coverage, sensitive output, rebuild/reapproval, credential rotation and new-release denial after revocation.
+     - Review guest disk integrity coverage, sensitive output, rebuild/configuration update, credential rotation and new-release denial after revocation.
      - Explicit limitations for issued keys, persistent state, external boot storage and host-visible metadata.
 
 Service log lines are diagnostic observations, not necessarily cryptographic
@@ -1737,10 +1692,10 @@ Security questions and direct answers
 Can CoCo IT SSH into a protected workload or use kubectl exec?
 --------------------------------------------------------------
 
-The intended image contains no SSH daemon/credentials, and the approved guest
+The intended image contains no SSH daemon/credentials, and the authorized guest
 agent policy denies interactive exec/stream access. Host root does not grant
 authorized guest-agent access. This does not rule out a vulnerability or an
-interactive service deliberately included in the approved application.
+interactive service deliberately included in the authorized application.
 
 Can IT modify the Pod YAML or runtime?
 --------------------------------------
@@ -1758,7 +1713,7 @@ the coverage limits in :ref:`coco_security_pod_launch`.
 
    * - IT's change
      - Expected enforcement under the documented configuration
-   * - Change metadata outside the approved guest policy, such as an unrelated label
+   * - Change metadata outside the authorized guest policy, such as an unrelated label
      - The workload may still start. Not every YAML field is security-bound;
        do not assume every name, namespace or annotation is unconstrained.
    * - Change the command or another effective setting outside the permitted guest rules, keeping the original InitData
@@ -1770,14 +1725,14 @@ the coverage limits in :ref:`coco_security_pod_launch`.
        authorization has an unresolved coverage limitation. Another signed
        image in the accepted repository is not universally shown to be rejected.
    * - Change the embedded policy or guest trust configuration to allow that modification
-     - The InitData digest changes. KBS expects the independently approved
+     - The InitData digest changes. KBS expects the configured
        digest and refuses to release the image decryption key.
-   * - Replace measured guest components with an unapproved version
+   * - Replace measured guest components with an unauthorized version
      - Attestation appraisal fails and KBS withholds the key. This relies on
-       demonstrated measurement/integrity coverage of the approved boot path;
+       demonstrated measurement/integrity coverage of the authorized boot path;
        a host runtime binary is not itself remotely authenticated.
 
-For example, replacing the approved command with ``/bin/sh`` does not grant a
+For example, replacing the authorized command with ``/bin/sh`` does not grant a
 shell. With the original InitData, the guest agent rejects that command. If IT
 also edits the embedded policy to allow the shell, KBS rejects the changed
 InitData digest. KBS checks the attested policy claims, not the host's live
@@ -1791,7 +1746,7 @@ inside the protected guest.** This includes decrypted application files,
 startup credentials, and guest-local logs/job state. Image decryption and key
 use stay inside the authorized confidential guest; reviewed agent policy
 denies interactive exec and attach/stream access, including ``kubectl cp``
-readback through those paths. The approved application must not provide an
+readback through those paths. The authorized application must not provide an
 SSH/debug service that bypasses that boundary.
 
 This is not an unconditional promise that any file mounted into any Pod is
@@ -1800,7 +1755,7 @@ confidentiality/integrity protection. Plaintext hostPath/PVC storage,
 host-visible logs, and files deliberately served by the application are outside
 that boundary. Image-layer encryption alone does not protect arbitrary writable
 disks, persistent volumes or checkpoints. Application vulnerabilities or
-admitted code can also leak data; approved storage, code and output channels
+admitted code can also leak data; authorized storage, code and output channels
 must be reviewed. The hardware, guest stack and independent secure services
 remain trust assumptions.
 
@@ -1818,19 +1773,19 @@ resource rule or compromised service administrator defeats that boundary.
 Is the image digest the CPU measurement?
 ----------------------------------------
 
-No. CPU launch/boot measurements identify approved guest inputs. InitData binds
+No. CPU launch/boot measurements identify authorized guest inputs. InitData binds
 policy claims about the image and command, which KBS checks. Guest code checks
 the actual image's signature/integrity and effective process request; the
 exact-image-digest limitation above remains to be closed. Neither measurement
 nor image authorization establishes application benevolence.
 
-Who approves measurements, and can IT simply supply them?
----------------------------------------------------------
+How are platform references produced?
+--------------------------------------
 
-The independent platform authority approves verified references; secure
-services authenticates and accepts them under its policy. A value obtained
-only from hostile IT is not an approved baseline. CPU model or a matching
-RuntimeClass name is not enough to establish measurement equality.
+The capture command verifies fresh hardware evidence and configured TCB/security
+constraints, then exports the reference file directly. The existing Trustee
+policies compare later appraisals with those references. CPU model or a matching
+RuntimeClass name alone does not establish measurement equality.
 
 Can a signed CPU+GPU token be changed into CPU-only?
 ----------------------------------------------------
@@ -1851,7 +1806,7 @@ Does a protected client mean the server and training data are safe?
 -------------------------------------------------------------------
 
 No. An ordinary server is still trusted with what it receives. A protected
-server isolates approved computation from its host, but does not automatically
+server isolates authorized computation from its host, but does not automatically
 provide differential privacy, prevent model inversion or membership inference,
 detect poisoned updates, or prove aggregation correctness. Review recipients,
 algorithms, data access and outputs separately.
@@ -1896,7 +1851,7 @@ Glossary and implementation references
 
    AS / RVPS / KBS
       Attestation Service appraises evidence; Reference Value Provider Service
-      supplies approved values; Key Broker Service authorizes resource release.
+      supplies authorized values; Key Broker Service authorizes resource release.
 
    OPA / Rego
       Open Policy Agent and its policy language. The workflow uses Rego rules
@@ -1923,22 +1878,15 @@ Glossary and implementation references
       NVIDIA Remote Attestation Service / Reference Integrity Manifest. These
       support appraisal of GPU evidence; they do not authorize KBS resource paths.
 
-Use the following runbooks for commands. They complement this security model;
-installation success does not replace its acceptance requirements.
+Use the following guides for commands. They start from existing infrastructure
+and complement this security model's acceptance requirements.
 
-* :github_nvflare_link:`Runtime selection and role workflow <examples/devops/coco/RUNTIME-VARIANTS.md>`
-* :github_nvflare_link:`Configuration and transfer boundaries <examples/devops/coco/CONFIGURATION.md>`
-* :github_nvflare_link:`Trusted SNP rehearsal <examples/devops/coco/trusted_system/SEC-SYS-LAUNCH-PROFILE.md>`
-  and :github_nvflare_link:`trusted TDX rehearsal <examples/devops/coco/trusted_system/TDX-LAUNCH-PROFILE.md>`
-* :github_nvflare_link:`Approved workload launch contract and security-context limitations <examples/devops/coco/admin/APPROVED-LAUNCH-PROFILE.md>`
-* :github_nvflare_link:`Secure-services installation <examples/devops/coco/service/SERVICE-INSTALLATION.md>`,
-  :github_nvflare_link:`TDX reference updates <examples/devops/coco/service/TDX-REFERENCE-VALUES.md>`, and
-  :github_nvflare_link:`release installation <examples/devops/coco/service/TRUSTED-HANDOFF-RUNBOOK.md>`
-* :github_nvflare_link:`KBS administrator credential protection and rotation <examples/devops/coco/service/TRUSTEE-ADMIN-CREDENTIAL-SECURITY.md>`
-* :github_nvflare_link:`NVFlare provisioning and recovery <examples/devops/coco/provision/README.md>`
-  and :github_nvflare_link:`CoCoAuthorizer/CCManager configuration and protocol <examples/devops/coco/provision/CCMANAGER.md>`
-* :github_nvflare_link:`Authenticated federation verification <examples/devops/coco/provision/VERIFY-RUNNING-FEDERATION.md>`
-  and :github_nvflare_link:`CoCo IT runbook <examples/devops/coco/coco/COCO-IT-RUNBOOK.md>`
+* :github_nvflare_link:`Workflow and prerequisites <examples/devops/coco/README.md>`
+* :github_nvflare_link:`Capture measurements <examples/devops/coco/MEASUREMENTS.md>`
+* :github_nvflare_link:`Configure Trustee and register releases <examples/devops/coco/TRUSTEE.md>`
+* :github_nvflare_link:`Build NVFlare images and Pod YAML <examples/devops/coco/provision/README.md>`
+* :github_nvflare_link:`Launch and trusted verification <examples/devops/coco/LAUNCH.md>`
+* :ref:`Trustee-backed peer-proof protocol <coco_security_peer_attestation>`
 
 Implementation sources for reviewers:
 
@@ -1952,7 +1900,7 @@ Implementation sources for reviewers:
   :github_nvflare_link:`pinned hardened guest rules <tests/unit_test/lighter/cc_provision/impl/fixtures/kata-3.29-hardened-rules.rego>`
 * :github_nvflare_link:`AS CPU policy <examples/devops/coco/service/policies/default_cpu.rego>` and
   :github_nvflare_link:`KBS resource-policy template <examples/devops/coco/service/policies/workload-resource-policy.rego.template>`
-* :github_nvflare_link:`Trusted TDX verifier contract <examples/devops/coco/trusted_system/tdx-verifier/README.md>`
+* :github_nvflare_link:`Platform capture helper <examples/devops/coco/trusted_system/capture-platform.py>`
 
 For upstream concepts, consult:
 
@@ -1963,7 +1911,7 @@ For upstream concepts, consult:
   and `upstream trust model <https://confidentialcontainers.org/docs/architecture/trust-model/trust-model/>`_
 * `NVIDIA Remote Attestation Service <https://docs.nvidia.com/attestation/cloud-services/latest/nras/nras_introduction.html>`_
 
-Also review the upstream revisions pinned by the runtime/verifier runbooks.
+Also review the configured runtime/verifier versions and generator rules.
 Upstream capabilities and example policies do not, by themselves, establish
 which controls this particular deployment has enabled and validated; do not
 replace the reviewed release rules with a permissive upstream example.

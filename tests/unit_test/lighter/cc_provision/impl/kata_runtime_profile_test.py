@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Offline tests for the reviewed Kata configuration derivation; no host installation."""
+"""Read-only runtime capability and launch-contract checks."""
 
 import hashlib
 import json
@@ -23,17 +23,18 @@ from pathlib import Path
 
 import pytest
 
-# NVFlare supports Python 3.10, but these deployment helpers require Python 3.11+.
-# Skip before loading the helpers; do not add a third-party TOML backport for tests.
-tomllib = pytest.importorskip("tomllib", reason="CoCo deployment helpers require Python 3.11+")
-
-ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
-HELPER = ROOT / "shared/kata-runtime-profile.py"
 from nvflare.lighter.cc_provision import kata_runtime_profile, workload_launch_profile
 
+ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 API = vars(kata_runtime_profile)
 ADMIN = vars(workload_launch_profile)
-CONFIG = '[hypervisor.qemu]\n# Preserve this comment\nkernel_params = "pci=one pci=two quiet" # tail\ndefault_vcpus = 1\n[agent.kata]\ndebug = false\n'
+CONFIG = (
+    "[hypervisor.qemu]\n"
+    'kernel_params = "pci=one pci=two quiet agent.guest_components_rest_api=all"\n'
+    "confidential_guest = true\nsev_snp_guest = true\n"
+    "default_vcpus = 1\ndefault_memory = 8192\n"
+)
+
 SECURITY_CONTEXT = {
     "privileged": False,
     "allowPrivilegeEscalation": False,
@@ -46,30 +47,47 @@ SECURITY_CONTEXT = {
 }
 
 
-def test_only_reviewed_setting_changes():
-    derived = API["derive"](CONFIG)
-    assert API["derive"](derived) == derived
-    before, after = tomllib.loads(CONFIG), tomllib.loads(derived)
-    before["hypervisor"]["qemu"]["kernel_params"] += " " + API["REQUIRED"]
-    assert before == after
-    assert "pci=one pci=two quiet" in derived
-    assert "# Preserve this comment" in derived and "# tail" in derived
+@pytest.mark.parametrize(
+    "runtime,tee,gpu,count",
+    [
+        ("kata-qemu-snp", "snp", "none", 0),
+        ("kata-qemu-nvidia-gpu-snp", "snp", "nvidia", 1),
+        ("kata-qemu-tdx", "tdx", "none", 0),
+        ("kata-qemu-nvidia-gpu-tdx", "tdx", "nvidia", 1),
+    ],
+)
+def test_supported_runtime_mapping(runtime, tee, gpu, count):
+    target = API["runtime_target"](runtime)
+    assert (target["cpu_tee"], target["gpu"], target["gpu_count"]) == (tee, gpu, count)
+    assert target["config_name"] == "configuration-" + runtime.removeprefix("kata-") + ".toml"
 
 
-@pytest.mark.parametrize("old", ["resource", "attestation", "all"])
-def test_existing_single_setting(old):
-    source = CONFIG.replace("quiet", "quiet agent.guest_components_rest_api=" + old)
-    result = API["derive"](source)
-    API["require_token_api"](tomllib.loads(result)["hypervisor"]["qemu"]["kernel_params"])
+@pytest.mark.parametrize("runtime", [None, True, 1, "", "kata-qemu-tdx-gpu", "kata-qemu-snp-extra"])
+def test_unknown_runtime_is_not_inferred_from_its_name(runtime):
+    with pytest.raises(ValueError, match="Unsupported confidential RuntimeClass"):
+        API["runtime_target"](runtime)
+
+
+def test_token_capability_accepts_existing_setting_without_changing_other_parameters():
+    cmdline = "pci=one pci=two quiet " + API["REQUIRED"]
+    API["require_token_api"](cmdline)
+    assert cmdline == "pci=one pci=two quiet agent.guest_components_rest_api=all"
 
 
 @pytest.mark.parametrize(
     "value",
     [
+        None,
+        False,
+        [],
         "",
+        "quiet",
         "agent.guest_components_rest_api",
         "agent.guest_components_rest_api=resource",
+        "agent.guest_components_rest_api=attestation",
+        "agent.guest_components_rest_api=unknown",
         "agent.guest_components_rest_api=all agent.guest_components_rest_api=all",
+        "agent.guest_components_rest_api=all agent.guest_components_rest_api=resource",
     ],
 )
 def test_missing_disabled_duplicate_launch_option(value):
@@ -77,156 +95,48 @@ def test_missing_disabled_duplicate_launch_option(value):
         API["require_token_api"](value)
 
 
-def test_ambiguous_derivation_rejected():
-    for params in [
-        "agent.guest_components_rest_api=all agent.guest_components_rest_api=resource",
-        "agent.guest_components_rest_api=unknown",
-        "agent.guest_components_rest_api",
-    ]:
-        with pytest.raises(ValueError):
-            API["derive"](CONFIG.replace("quiet", params))
+@pytest.mark.parametrize("runtime", API["RUNTIME_TARGETS"])
+def test_confidential_guard_only_reads_existing_settings(runtime):
+    tee = API["runtime_target"](runtime)["cpu_tee"]
+    qemu = {"confidential_guest": True, "sev_snp_guest": tee == "snp", "machine_type": "q35"}
+    before = json.dumps(qemu, sort_keys=True)
+    assert API["require_confidential_config"](qemu, runtime)["cpu_tee"] == tee
+    assert json.dumps(qemu, sort_keys=True) == before
+    qemu["confidential_guest"] = False
+    with pytest.raises(ValueError, match="confidential_guest"):
+        API["require_confidential_config"](qemu, runtime)
 
 
-def test_provenance_installed_and_launch_checks(tmp_path):
-    upstream, approved, record, installed, launch = [
-        tmp_path / n for n in ("upstream", "approved", "record", "installed", "launch")
-    ]
-    upstream.write_text(CONFIG)
-    subprocess.run([sys.executable, str(HELPER), "derive", str(upstream), str(approved), str(record)], check=True)
-    assert upstream.read_text() == CONFIG
-    installed.write_bytes(approved.read_bytes())
-    captured = {
-        "launch_inputs": {"kernel_command_line": API["REQUIRED"]},
-        "artifacts": {"kata_config": {"sha256": hashlib.sha256(approved.read_bytes()).hexdigest()}},
-    }
-    launch.write_text(json.dumps(captured))
-    API["verify"](upstream, approved, record, installed, launch)
-    installed.write_text(CONFIG)
-    with pytest.raises(ValueError, match="Installed"):
-        API["verify"](upstream, approved, record, installed, launch)
-    API["enable"](installed)
-    API["enable"](installed)
-    assert installed.read_bytes() == approved.read_bytes()
-    captured["launch_inputs"]["kernel_command_line"] = "quiet"
-    launch.write_text(json.dumps(captured))
-    with pytest.raises(ValueError, match="Require exactly"):
-        API["verify"](upstream, approved, record, installed, launch)
-    approved.write_text(approved.read_text().replace("default_vcpus = 1", "default_vcpus = 2"))
-    with pytest.raises(ValueError, match="reviewed upstream derivation"):
-        API["verify"](upstream, approved, record)
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / "shared/kata-runtime-profile.py",
+        ROOT / "trusted_system/lib/kata-runtime-profile.py",
+    ],
+)
+def test_checkout_adapter_exports_current_read_only_guards(path):
+    source = runpy.run_path(str(path))
+    assert source["runtime_target"] is API["runtime_target"]
+    source["require_token_api"](API["REQUIRED"])
 
 
-def test_reference_symlink_rejected(tmp_path):
-    source = tmp_path / "source"
-    source.write_text(CONFIG)
-    alias = tmp_path / "alias"
-    alias.symlink_to(source)
-    with pytest.raises(ValueError, match="regular"):
-        API["read_config"](alias)
-
-
-@pytest.fixture
-def deployed_profile(tmp_path):
-    upstream, approved, record = [tmp_path / n for n in ("upstream.toml", "approved.toml", "record.json")]
-    upstream.write_text(CONFIG)
-    subprocess.run([sys.executable, str(HELPER), "derive", str(upstream), str(approved), str(record)], check=True)
-    config_dir = tmp_path / "kata-containers"
-    target = config_dir / "runtimes/qemu-nvidia-gpu-snp/configuration.toml"
-    target.parent.mkdir(parents=True)
-    target.write_text("# Managed by kata-deploy\n# Do not remove this header\n\n" + CONFIG)
-    target.chmod(0o640)
-    installed = config_dir / "configuration-qemu-nvidia-gpu-snp.toml"
-    installed.symlink_to(target.relative_to(config_dir))
-    return upstream, approved, record, installed, target
-
-
-def test_install_stock_header_and_runtime_symlink(deployed_profile, tmp_path):
-    upstream, approved, record, installed, target = deployed_profile
-    original = target.read_text()
-    reference_bytes = [p.read_bytes() for p in (upstream, approved, record)]
-    stat = target.stat()
-    command = [
-        sys.executable,
-        str(HELPER),
-        "install",
-        str(upstream),
-        str(approved),
-        str(record),
-        "--installed",
-        str(installed),
-    ]
-    subprocess.run(command, check=True)
-    assert installed.is_symlink() and installed.resolve() == target
-    assert target.read_text() == API["derive"](original)
-    assert target.stat().st_mode == stat.st_mode
-    assert (target.stat().st_uid, target.stat().st_gid) == (stat.st_uid, stat.st_gid)
-    assert reference_bytes == [p.read_bytes() for p in (upstream, approved, record)]
-    assert target.read_bytes() != approved.read_bytes()
-    assert API["settings"](target.read_text()) == API["settings"](approved.read_text())
-    inode = target.stat().st_ino
-    subprocess.run(command, check=True)
-    assert target.stat().st_ino == inode  # Idempotent: do not even replace the file.
-    for role in ("trusted_system", "coco"):
-        helper = ROOT / role / "lib/kata-runtime-profile.py"
-        subprocess.run([sys.executable, str(helper), "enable", str(installed)], check=True)
-        subprocess.run([sys.executable, str(helper), "check", str(installed)], check=True)
-    captured = {
-        "launch_inputs": {"kernel_command_line": API["REQUIRED"]},
-        "artifacts": {"kata_config": {"sha256": hashlib.sha256(target.read_bytes()).hexdigest()}},
-    }
-    launch = tmp_path / "launch.json"
-    launch.write_text(json.dumps(captured))
-    API["verify"](upstream, approved, record, installed, launch)
-    with pytest.raises(ValueError, match="requires the installed"):
-        API["verify"](upstream, approved, record, launch=launch)
-    # Comments are not settings, but captured evidence must bind the exact installed bytes.
-    target.write_text(target.read_text() + "# changed after capture\n")
-    with pytest.raises(ValueError, match="Captured Kata configuration"):
-        API["verify"](upstream, approved, record, installed, launch)
-    captured["artifacts"]["kata_config"]["sha256"] = hashlib.sha256(approved.read_bytes()).hexdigest()
-    launch.write_text(json.dumps(captured))
-    with pytest.raises(ValueError, match="Captured Kata configuration"):
-        API["verify"](upstream, approved, record, installed, launch)
-
-
-@pytest.mark.parametrize("value", ["2", "true", "1.0"])
-def test_install_and_verify_reject_changed_settings(deployed_profile, value):
-    upstream, approved, record, installed, target = deployed_profile
-    for text in (CONFIG, API["derive"](CONFIG)):
-        changed = text.replace("default_vcpus = 1", "default_vcpus = " + value)
-        target.write_text(changed)
-        with pytest.raises(ValueError, match="differ from both"):
-            API["install"](upstream, approved, record, installed)
-        assert target.read_text() == changed
-        with pytest.raises(ValueError, match="Installed Kata configuration"):
-            API["verify"](upstream, approved, record, installed)
-
-
-@pytest.mark.parametrize("kind", ["outside", "broken", "directory"])
-def test_unsafe_runtime_links_rejected(tmp_path, kind):
-    config_dir = tmp_path / "configs"
-    config_dir.mkdir()
-    outside = tmp_path / "outside.toml"
-    outside.write_text(CONFIG)
-    target = {"outside": outside, "broken": config_dir / "missing", "directory": config_dir}[kind]
-    alias = config_dir / "configuration.toml"
-    alias.symlink_to(target)
-    with pytest.raises((ValueError, FileNotFoundError)):
-        API["enable"](alias)
-    assert outside.read_text() == CONFIG
-    assert alias.is_symlink()
-
-
-def test_source_and_isolated_role_helpers(tmp_path):
-    for role in ("trusted_system", "coco"):
-        source = runpy.run_path(str(ROOT / role / "lib/kata-runtime-profile.py"))
-        assert source["derive"](CONFIG) == API["derive"](CONFIG)
-    isolated = tmp_path / "kit/lib/kata-runtime-profile.py"
-    isolated.parent.mkdir(parents=True)
-    isolated.write_bytes(Path(kata_runtime_profile.__file__).read_bytes())
-    config = tmp_path / "runtime.toml"
-    config.write_text(API["derive"](CONFIG))
-    subprocess.run([sys.executable, str(isolated), "check", str(config)], check=True)
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / "shared/kata-runtime-profile.py",
+        ROOT / "trusted_system/lib/kata-runtime-profile.py",
+        Path(kata_runtime_profile.__file__),
+    ],
+)
+@pytest.mark.parametrize(
+    "arguments", [[], ["target", "kata-qemu-snp", "--field", "cpu_tee"], ["enable", "unused.toml"]]
+)
+def test_removed_runtime_cli_rejects_direct_execution(path, arguments):
+    result = subprocess.run([sys.executable, str(path), *arguments], capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0
+    assert not result.stdout
+    assert "Kata runtime configuration CLI has been removed" in result.stderr
+    assert "agent.guest_components_rest_api=all" in result.stderr
 
 
 def test_admin_rejects_old_or_missing_capability(tmp_path):
@@ -271,65 +181,62 @@ def test_admin_rejects_old_or_missing_capability(tmp_path):
         load({**contract, "guest_token_api": "resource-only"})
 
 
-def test_exported_contract_and_measured_option(tmp_path):
+def test_ready_launch_contract_and_measured_option(tmp_path):
+    tomllib = pytest.importorskip("tomllib", reason="installed TOML capture requires Python 3.11+")
+    capture = runpy.run_path(str(ROOT / "trusted_system/lib/platform-capture.py"))
     runtime = "kata-qemu-nvidia-gpu-snp"
-    image = "registry/runtime@sha256:" + "a" * 64
-    resources = {"limits": {"nvidia.com/pgpu": 1}, "requests": {"nvidia.com/pgpu": 1}}
-    approved = API["derive"](CONFIG)
+    resources = {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
+    installed = CONFIG
     profile = {
+        "runtime_class": runtime,
+        "cpu_tee": "snp",
+        "gpu": "nvidia",
+        "kata_version": "3.29.0",
         "guest_token_api": API["CAPABILITY"],
         "workload_security_context": SECURITY_CONTEXT,
-        "kata_config": tomllib.loads(approved),
-        "kata_config_sha256": hashlib.sha256(approved.encode()).hexdigest(),
-        "runtime_class": runtime,
+        "kata_config": tomllib.loads(installed),
+        "kata_config_sha256": hashlib.sha256(installed.encode()).hexdigest(),
         "pod_resources": resources,
         "runtime_default_vcpus": 1,
         "runtime_default_memory_mib": 8192,
+        "artifacts": {
+            name: {"sha256": hashlib.sha256(name.encode()).hexdigest()}
+            for name in ("path", "firmware", "kernel", "initrd")
+        },
     }
     actual = {
+        "cpu_tee": "snp",
+        "gpu": "nvidia",
         "launch_inputs": {"kernel_command_line": API["REQUIRED"], "smp": "1", "memory": "8192M"},
         "pod_resources": [resources],
         "artifacts": {"kata_config": {"sha256": profile["kata_config_sha256"]}},
     }
-    actual_path = tmp_path / "rehearsal-collector-build/actual-launch.json"
-    actual_path.parent.mkdir()
-    profile_path = tmp_path / "approved-launch-profile.json"
-
-    def export():
-        actual["launch_inputs_sha256"] = hashlib.sha256(
-            json.dumps(actual["launch_inputs"], sort_keys=True).encode()
-        ).hexdigest()
-        profile_path.write_text(json.dumps(profile))
-        actual_path.write_text(json.dumps(actual))
-        return subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "trusted_system/export-workload-launch-profile.py"),
-                str(tmp_path),
-                "reviewed",
-                "3.29.0",
-                runtime,
-                image,
-                hashlib.sha256(profile_path.read_bytes()).hexdigest(),
-                hashlib.sha256(actual_path.read_bytes()).hexdigest(),
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-    result = export()
-    assert result.returncode == 0, result.stderr
+    actual["artifacts"].update(
+        {"qemu_executable" if key == "path" else key: value for key, value in profile["artifacts"].items()}
+    )
+    actual["launch_inputs_sha256"] = hashlib.sha256(
+        json.dumps(actual["launch_inputs"], sort_keys=True).encode()
+    ).hexdigest()
+    value = capture["build_launch_profile"](profile, actual, "reviewed")
     contract = tmp_path / "contract.json"
-    contract.write_text(result.stdout)
-    assert ADMIN["load_profile"](contract, hashlib.sha256(contract.read_bytes()).hexdigest(), runtime, "3.29.0")
-    assert json.loads(result.stdout)["workload_security_context"] == SECURITY_CONTEXT
+    contract.write_text(json.dumps(value))
+    assert ADMIN["load_profile"](contract, None, runtime, "3.29.0")
+    assert value["workload_security_context"] == SECURITY_CONTEXT
+    assert "kata_deploy_image" not in value
     del profile["workload_security_context"]
-    assert export().returncode != 0
+    with pytest.raises((KeyError, ValueError)):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     profile["workload_security_context"] = {**SECURITY_CONTEXT, "privileged": True}
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="fixed NVFlare"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
+    profile["workload_security_context"] = {**SECURITY_CONTEXT, "readOnlyRootFilesystem": True}
+    with pytest.raises(ValueError, match="fixed NVFlare"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     profile["workload_security_context"] = SECURITY_CONTEXT
     actual["launch_inputs"]["kernel_command_line"] = "quiet"
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="guest_components_rest_api"):
+        capture["build_launch_profile"](profile, actual, "reviewed")
     actual["launch_inputs"]["kernel_command_line"] = API["REQUIRED"]
     del profile["guest_token_api"]
-    assert export().returncode != 0
+    with pytest.raises(ValueError, match="guest-local token API"):
+        capture["build_launch_profile"](profile, actual, "reviewed")

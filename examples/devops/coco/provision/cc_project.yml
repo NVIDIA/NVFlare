@@ -4,7 +4,6 @@ attestation_services:
     type: trustee
     kbs_endpoint: https://secure-services.example.com:8443
     ca_cert_file: ../admin/public/trustee.crt
-    admin_token_file: ../admin/secrets/kbs-resource-token.jwt
     attestation_token_endpoint: http://127.0.0.1:8006/aa/token
     attestation_signing_public_key_file: ./trustee-as-public.pem
     token_expiration_seconds: 300

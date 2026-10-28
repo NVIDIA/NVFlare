@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checkout adapter; assembly vendors the importable package implementation."""
+"""Source-checkout adapter for the canonical NVFlare implementation."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-from nvflare.lighter.cc_provision.kata_runtime_profile import *  # noqa: E402,F403
+from nvflare.lighter.cc_provision.kata_runtime_profile import *  # noqa: E402,F401,F403
+from nvflare.lighter.cc_provision.kata_runtime_profile import CLI_REMOVED_MESSAGE  # noqa: E402
 
 if __name__ == "__main__":
-    main()  # noqa: F405
+    raise SystemExit(CLI_REMOVED_MESSAGE)

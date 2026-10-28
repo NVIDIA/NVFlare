@@ -29,11 +29,11 @@ separate instances and credentials.
 | Guest-components used by CVM kbs-client | `706cd996d2f3ef746c3ec378741d6d953b08740f` (upstream selector API) |
 | Policy engine | Regorus 0.11.0 |
 
-Use the release commit in every shared CoCo/CVM service. The checked-in CoCo
-service workflow builds that commit with its reviewed Actix request-head patch,
-exports the exact KBS binary from the resulting image, and writes
-`trustee-build.json`. An official image can instead be used when its immutable
-digest and extracted server binary are recorded:
+Use the release commit in every shared CoCo/CVM service. The CoCo deployment
+example consumes an existing Trustee; it does not build or install the service.
+The deployment operator maintains the server build/provenance records separately.
+An official image can be used when its immutable digest and extracted server
+binary are recorded:
 
 ```sh
 export TRUSTEE_IMAGE=ghcr.io/confidential-containers/staged-images/kbs:512fed65642015b849f38fb13bfdec7806639987
@@ -69,7 +69,7 @@ the client with `NVAT_USE_SYSTEM_LIB=1` and `nvidia-attester`. The command above
 builds a CPU-only client. Compile guest binaries for the guest's Linux
 environment.
 The provenance command accepts either the clean server checkout or exactly the
-checked-in client patch. The CoCo service build records its separate reviewed
+checked-in client patch. The CoCo deployment operator records the service's reviewed
 build recipe, source-patch digest, dependency hashes, image ID and exported
 server-binary digest. Any other source change or recipe is rejected.
 
@@ -412,11 +412,11 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
 
 `approval_public_keys` lists the acceptance authorities whose Ed25519 signature
 on a bundle's `approval.json` counts as production approval; `admin install`
-refuses unsigned or foreign-signed receipts. The paths above use the files
-emitted by `examples/devops/coco/service/04-build-trustee-main.sh`. For another
-image deployment, retain its immutable image identity and source provenance
-alongside the binary extracted from that image. The shared CoCo service's
-deployment receipt contains:
+refuses unsigned or foreign-signed receipts. The Trustee administrator supplies
+the configured binary, immutable image identity, and build-provenance files for
+the existing compatible deployment. For an image deployment, retain its immutable
+image identity and source provenance alongside the binary extracted from that
+image. The configured Trustee deployment receipt contains:
 
 ```json
 {

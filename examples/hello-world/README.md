@@ -4,16 +4,22 @@ Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how
 
 ## Quick Start
 
+> **NVFlare 2.9.1:** The hello-world examples on the `2.9` branch require NVFlare
+> 2.9.1 or a later 2.9 patch release. Until 2.9.1 is published on PyPI, install
+> NVFlare from this repository's `2.9` branch with `python -m pip install -e .`
+> at the repository root, then install the example's remaining dependencies
+> separately.
+
 ### Prerequisites
 
 1. **Install NVIDIA FLARE:**
    ```bash
-   pip install nvflare
+   pip install "nvflare~=2.9.1"
    ```
 
 2. **Clone the repository:**
    ```bash
-   git clone https://github.com/NVIDIA/NVFlare.git
+   git clone --branch 2.9 https://github.com/NVIDIA/NVFlare.git
    cd NVFlare/examples/hello-world
    ```
 

@@ -1,116 +1,61 @@
 #!/usr/bin/env bash
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common-base.sh"
-
 set -Eeuo pipefail
 umask 077
-
-SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../platform.env
-[[ -s "${SCRIPT_ROOT}/platform.env" ]] || { echo 'Copy platform.env.example to platform.env, chmod 600, and review it first.' >&2; exit 2; }
-source "${SCRIPT_ROOT}/platform.env"
-source "${SCRIPT_ROOT}/lib/validate-config.sh"
-validate_target_host
-validate_service_host "$SERVICE_FQDN"
-validate_private_root "$TRUSTEE_ROOT"
-validate_private_root "$PUBLISHER_DIR"
-[[ $REGISTRY_PORT == 5000 && $REGISTRY_BACKEND_PORT == 5001 && $KBS_URL == "https://${SERVICE_FQDN}:8443" ]] || config_error 'Use registry TLS 5000, loopback backend 5001, and KBS HTTPS 8443.'
-
-TRUSTEE_COMPOSE="${TRUSTEE_ROOT}/docker-compose.yml"
-KBS_CLIENT="${TRUSTEE_ROOT}/kbs-client-snp-tdx-${TRUSTEE_LABEL}"
-KBS_SERVER="${TRUSTEE_ROOT}/kbs-server-${TRUSTEE_LABEL}"
-TRUSTEE_BUILD_PROVENANCE="${TRUSTEE_ROOT}/trustee-build.json"
-ADMIN_TOKEN="${TRUSTEE_ROOT}/kbs/config/docker-compose/admin-token"
-KBS_STORAGE_DIR="${TRUSTEE_ROOT}/kbs/data/kbs-storage"
-KBS_POLICY_DIR="${TRUSTEE_ROOT}/kbs/data/kbs-policy"
-AS_STORAGE_DIR="${TRUSTEE_ROOT}/kbs/data/attestation-service"
-REFERENCE_DIR="${TRUSTEE_ROOT}/kbs/data/reference-values"
-
-
-
-
-is_uint8() {
-    local value="${1-}"
-    [[ "${value}" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
-    (( 10#${value} <= 255 ))
-}
-
-require_uint8() {
-    local name="$1" value="${2-}"
-    is_uint8 "${value}" \
-        || die "${name} must be an explicitly approved decimal integer from 0 through 255"
-}
-
-read_integer_reference() {
-    local reference_id="$1" raw cleaned
-    raw="$(kbs_admin get-reference-value --id "${reference_id}")"
-    cleaned="$(printf '%s' "${raw}" | tr -d '[:space:]\"')"
-    is_uint8 "${cleaned}" \
-        || die "RVPS reference ${reference_id} is missing or is not one scalar uint8"
-    printf '%s\n' "${cleaned}"
-}
-
-verify_integer_reference() {
-    local reference_id="$1" expected="$2" actual
-    actual="$(read_integer_reference "${reference_id}")"
-    [[ "${actual}" == "${expected}" ]] \
-        || die "RVPS reference ${reference_id} is ${actual}, expected ${expected}"
-}
-
-
-wait_https() {
-    local url="$1" cert="$2" attempts="${3:-90}"
-    local index
-    for ((index = 1; index <= attempts; index++)); do
-        if curl --fail --silent --show-error --cacert "${cert}" \
-            --output /dev/null "${url}"; then
-            return 0
-        fi
-        sleep 1
-    done
-    die "HTTPS endpoint did not become ready: ${url}"
-}
+SCRIPT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$SCRIPT_ROOT/lib/common-base.sh"
+[[ -s $SCRIPT_ROOT/platform.env ]] || die 'Copy platform.env.example to platform.env and configure existing Trustee access.'
+source "$SCRIPT_ROOT/platform.env"
+for variable in KBS_URL TRUSTEE_PUBLIC_CERT ADMIN_TOKEN KBS_CLIENT; do
+    [[ -n ${!variable:-} ]] || die "Set $variable for the existing Trustee."
+done
+STATE_DIR=${STATE_DIR:-${HOME}/.local/state/nvflare-coco-trustee}
+need_file "$TRUSTEE_PUBLIC_CERT"
+need_file "$ADMIN_TOKEN"
+need_cmd "$KBS_CLIENT"
+# Credentials are opaque to this kit. Administrative authentication and
+# authorization are enforced by the existing Trustee configuration.
+python3 - "$KBS_URL" <<'URL'
+import sys
+from urllib.parse import urlsplit
+url = urlsplit(sys.argv[1])
+if (url.scheme != "https" or not url.hostname or url.username or url.password
+        or url.path not in ("", "/") or url.query or url.fragment):
+    raise SystemExit("KBS_URL must be an HTTPS origin without embedded credentials")
+if url.port is not None and not 1 <= url.port <= 65535:
+    raise SystemExit("Invalid KBS port")
+URL
+KBS_URL=${KBS_URL%/}
+install -d -m 0700 "$STATE_DIR"
 
 kbs_admin() {
-    sudo "${KBS_CLIENT}" --url "${KBS_URL}" --cert-file "${TRUSTEE_PUBLIC_CERT}" \
-        config --admin-token-file "${ADMIN_TOKEN}" "$@"
+    local output
+    if output=$("$KBS_CLIENT" --url "$KBS_URL" --cert-file "$TRUSTEE_PUBLIC_CERT" \
+        config --admin-token-file "$ADMIN_TOKEN" "$@" 2>/dev/null); then
+        printf '%s\n' "$output"
+    else
+        die 'Trustee administration request failed; check the endpoint and credential permissions.'
+    fi
 }
 
-# Shared by initial policy installation and subsequent reference updates.
 lock_platform_reference_update() {
     need_cmd flock
-    exec {PLATFORM_REFERENCE_LOCK_FD}>"${KBS_POLICY_DIR}/.resource-policy.lock"
-    flock -n "$PLATFORM_REFERENCE_LOCK_FD" || die 'Another platform-reference update is in progress'
+    exec {PLATFORM_REFERENCE_LOCK_FD}>"$STATE_DIR/reference-update.lock"
+    flock -n "$PLATFORM_REFERENCE_LOCK_FD" || die 'Another reference update is in progress.'
 }
 
-configured_platform_values() {
-    if [[ -n ${PLATFORM_REFERENCE_VALUES_FILE:-} ]]; then
-        python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" validate "$PLATFORM_REFERENCE_VALUES_FILE"
-        return
-    fi
-    python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" from-env \
-        "${SNP_LAUNCH_MEASUREMENT:-}" "${SNP_MIN_REPORTED_TCB_BOOTLOADER:-}" \
-        "${SNP_MIN_REPORTED_TCB_TEE:-}" "${SNP_MIN_REPORTED_TCB_SNP:-}" \
-        "${SNP_MIN_REPORTED_TCB_MICROCODE:-}"
+verify_platform_references() {
+    local values=$1 key raw
+    while IFS= read -r key; do
+        raw=$(kbs_admin get-reference-value --id "$key")
+        python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" compare-reference "$values" "$key" "$raw"
+    done < <(python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" reference-ids "$values")
 }
 
-install_measurement_allowlist() {
-    sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-measurements \
-        "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
-}
-
-install_platform_references() {
-    sudo python3 "$SCRIPT_ROOT/lib/platform-reference-values.py" install-references \
-        "$1" "$KBS_URL" "$TRUSTEE_PUBLIC_CERT" "$ADMIN_TOKEN"
-}
-
-verify_gpu_readiness() {
-    [[ -n ${GPU_REFERENCE_VALUES_FILE:-} ]] \
-        || die 'GPU release requires an independently approved GPU reference snapshot'
-    need_file "$GPU_REFERENCE_VALUES_FILE"
-    need_file "$SCRIPT_ROOT/policies/default_gpu.rego"
-    need_file "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego"
-    cmp --silent "$SCRIPT_ROOT/policies/default_gpu.rego" \
-        "$AS_STORAGE_DIR/attestation_service_policy/default_gpu.rego" \
-        || die 'Active GPU appraisal policy differs from the reviewed policy'
-    bash "$SCRIPT_ROOT/10g-verify-gpu-reference-values.sh" "$GPU_REFERENCE_VALUES_FILE"
+verify_gpu_references() {
+    local values=$1 stage reference_id raw
+    for stage in vbios drivers; do
+        reference_id=$(python3 "$SCRIPT_ROOT/lib/gpu-reference-values.py" reference-id "$values" "$stage")
+        raw=$(kbs_admin get-reference-value --id "$reference_id")
+        python3 "$SCRIPT_ROOT/lib/gpu-reference-values.py" compare-stage "$values" "$stage" "$raw"
+    done
 }

@@ -17,11 +17,8 @@
 
 import importlib.util
 import json
-import os
 import re
-import shlex
 import sys
-import tempfile
 from pathlib import Path
 
 SCHEMA = "coco-gpu-reference-values/v1"
@@ -102,39 +99,6 @@ def post_stage(values, stage, url, cert_file, token_file):
     _transport.post_reference(message, url, cert_file, token_file)
 
 
-def update_env(values, filename):
-    validate_values(values)
-    path = Path(filename)
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("platform.env must be an existing regular, non-symlink file")
-    snapshot = path.parent / "approved-gpu-reference-values.json"
-    if snapshot.is_symlink():
-        raise ValueError("GPU reference snapshot must not be a symlink")
-    text = path.read_text()
-    assignment = "GPU_REFERENCE_VALUES_FILE=" + shlex.quote(str(snapshot.resolve()))
-    text, count = re.subn(r"^GPU_REFERENCE_VALUES_FILE=.*$", lambda _: assignment, text, flags=re.M)
-    if count > 1:
-        raise ValueError("Expected at most one GPU_REFERENCE_VALUES_FILE assignment")
-    if count == 0:
-        text += ("" if text.endswith("\n") or not text else "\n") + assignment + "\n"
-    serialized = json.dumps(values, separators=(",", ":"))
-    if len(serialized.encode()) > MAX_BYTES:
-        raise ValueError("GPU reference snapshot exceeds 16384 bytes")
-    atomic_write(snapshot, serialized)
-    atomic_write(path, text)
-
-
-def atomic_write(path, content):
-    fd, temporary = tempfile.mkstemp(prefix=".gpu-reference.", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w") as stream:
-            stream.write(content)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 2:
@@ -142,9 +106,6 @@ def main(argv=None):
     mode, filename, *args = argv
     values = load_values(filename)
     if mode == "validate" and not args:
-        return
-    if mode == "update-env" and len(args) == 1:
-        update_env(values, args[0])
         return
     if mode == "reference-id" and len(args) == 1:
         print(expected_stage(values, args[0])[0])

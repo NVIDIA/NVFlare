@@ -598,6 +598,52 @@ def test_config_loaders_expose_declaring_paths(tmp_path):
     assert normalized["config_path"] == tmp_path / "cc_server.yml"
 
 
+def test_coco_does_not_require_admin_token_with_unused_cvm_tools_or_service(tmp_path):
+    _coco_project(tmp_path)
+    config_path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(config_path.read_text())
+    del config["attestation_services"]["trustee"]["admin_token_file"]
+    config["attestation_services"]["unused"] = dict(config["attestation_services"]["trustee"])
+    builder = tmp_path / "cvm-builder"
+    builder.mkdir()
+    (builder / "cvmctl").write_text("#!/bin/sh\n")
+    (builder / "cvmctl").chmod(0o700)
+    config["build_tools"]["bare_metal_cvm"] = {"cvm_builder_dir": str(builder)}
+    _write(config_path, config)
+    (tmp_path / "admin.jwt").unlink()
+
+    project_config = load_project_config(config_path)
+    normalized = load_participant_config(tmp_path / "cc_site.yml", project_config)
+
+    assert normalized["mode"] is CCDeploymentMode.COCO
+    assert "admin_token_file" not in normalized["attestation_service"].values
+
+
+def test_bare_metal_requires_admin_token_for_selected_service(tmp_path):
+    _coco_project(tmp_path)
+    config_path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(config_path.read_text())
+    config["attestation_services"]["selected"] = dict(config["attestation_services"]["trustee"])
+    del config["attestation_services"]["selected"]["admin_token_file"]
+    _write(config_path, config)
+    participant_path = tmp_path / "cc_site.yml"
+    participant = yaml.safe_load(participant_path.read_text())
+    participant["cc_deployment_mode"] = "bare_metal_cvm"
+    participant["attestation"]["service"] = "selected"
+    _write(participant_path, participant)
+
+    project_config = load_project_config(config_path)
+    with pytest.raises(ValueError, match=r"bare_metal_cvm requires attestation_services.selected.admin_token_file"):
+        load_participant_config(participant_path, project_config)
+
+
+def test_optional_admin_token_still_requires_existing_file(tmp_path):
+    _coco_project(tmp_path)
+    (tmp_path / "admin.jwt").unlink()
+    with pytest.raises(ValueError, match=r"attestation_services.trustee.admin_token_file.*existing file"):
+        load_project_config(tmp_path / "cc_project.yml")
+
+
 def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypatch):
     _coco_project(tmp_path)
     home = tmp_path / "home"

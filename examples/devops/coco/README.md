@@ -1,133 +1,159 @@
-# Confidential workload deployment
+# NVFlare on an existing CoCo-ready cluster
 
-A sanitized, role-separated deployment example for AMD SEV-SNP or Intel TDX,
-with an optional NVIDIA confidential GPU. Scripts, policies, dependencies and configuration templates
-are included; deployment credentials, certificates, measurements, private
-evidence and generated handoffs are not.
+**Complete and verify these prerequisites before starting the four-step workflow:**
 
-For security guarantees, trust boundaries, threats, residual risks and the
-attestation/key-release protocol, start with the comprehensive
-[CoCo + NVFlare security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
-The role guides below provide operational procedures, not separate security
-models. Follow the architecture's implementation-scope and validation notes.
+- A running, configured **Trustee service (KBS/AS/RVPS)**. Follow the
+  [official Trustee installation guide](https://confidentialcontainers.org/docs/attestation/installation/).
+- A **CoCo-ready Kubernetes cluster with the supported Kata confidential runtime**.
+  GPU workloads require the Kata confidential GPU runtime and NVIDIA GPU Operator;
+  follow the [official NVIDIA CoCo/Kata GPU deployment guide (v1.0)](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/confidential-containers-deploy).
+  CPU-only profiles do not require the GPU components.
 
-For a collaboration-level starting point, read
-[one model owner and two data owners](FL-DEPLOYMENT.md): roles and approvals,
-machine prerequisites, the guest/application distinction, reference rehearsal,
-ordered handoffs, and the dataset integrations users must supply.
+Use the component versions required by the supported NVFlare profile. This
+example then covers measurements, Trustee values, NVFlare images, and Pod launch
+using those existing services.
 
-**A mixed TDX CPU-only and SNP+NVIDIA GPU functional run passed on
-2026-10-04.** An ordinary trusted server authenticated both real Kata clients
-with `coco_authorizer`, and a finite job received both nonce-bound results
-(3 and 7, aggregate 10). The SNP client required CPU and GPU appraisal; the job
-itself performed CPU arithmetic. This establishes the tested functional chain,
-not full security qualification or TDX+GPU coverage. Renewal, confidentiality
-and hardware denial acceptance remain incomplete. See
-[support status and the exact test boundary](RUNTIME-VARIANTS.md#support-status-and-hardware-validation).
+Run commands from `examples/devops/coco` in an NVFlare source checkout,
+except where a guide explicitly changes directory. The helper modules use that
+checkout or an installed NVFlare package.
 
-For that normal server/two-client configuration, start with the complete
-[mixed TDX/SNP project](provision/mixed-tdx-snp/README.md). The ordinary server
-verifies clients directly; an additional observation client is unnecessary for
-the deployment workflow.
+## Existing inputs
 
-Choose the target using [runtime variants and deployment requirements](RUNTIME-VARIANTS.md).
-The role scripts select SNP-only, SNP+GPU, TDX-only or TDX+GPU explicitly; they
-do not infer trust from the cluster operator's runtime name. TDX host firmware,
-kernel, SGX provisioning and pinned quote-generation services must already be
-installed and reviewed. For the implementation/security contract, see
-[runtime implementation details](RUNTIME-PORTING.md). TDX hardware validation
-must be completed on the intended platform; offline tests are not that proof.
+- The supported Kata 3.29.0 runtime profile, access to the selected worker,
+  and permission to launch a measurement collector.
+- Trustee HTTPS endpoint, its TLS CA, AS signing public key, and administration
+  credentials. Its configured appraisal policies must support the selected TEE
+  and the reference values described in [Trustee configuration](TRUSTEE.md).
+- An existing image registry, a CA certificate/trust bundle for guest/tool TLS,
+  and private publisher credentials.
+- NVFlare provisioning and the image/policy tools listed in
+  [provisioning](provision/README.md).
 
-For a worked deployment with one model owner and two data owners, follow the
-[two-site FL example](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html#coco-security-two-site-example).
-It explains responsibilities, machine prerequisites and setup order, including
-the application-specific dataset and persistence integration you must supply.
+Before starting, check these operational dependencies:
 
-Start with [CONFIGURATION.md](CONFIGURATION.md) for required inputs, configuration
-commands, transfer boundaries and execution order. Read
-[PUBLICATION.md](PUBLICATION.md) before publishing or redistributing a used copy.
+- Synchronize clocks on workers, Trustee, and NVFlare participants; certificate
+  validity, collateral expiry, and short-lived attestation proofs depend on time.
+- Ensure hosts and confidential guests can resolve the configured registry and
+  Trustee DNS names, reach their HTTPS endpoints, and verify their certificates.
+- Allow the configured verifiers to retrieve AMD KDS/VCEK material for SNP,
+  Intel PCS collateral for TDX, and NVIDIA NRAS/RIM material for GPU appraisal,
+  through the deployment's existing network/cache configuration.
+- Confirm the existing CPU/GPU appraisal policies consume the selected reference
+  values, and the guest-local AA token API supports the NVFlare proof flow.
 
-## Roles and guides
+These public trust inputs serve different purposes:
 
-For NVFlare clients and an optional protected server, see
-[project.yaml-based provisioning](provision/README.md). The provisioning-node
-packager creates a separate encrypted image and Pod handoff for each protected
-participant. An ordinary server remains supported as a verifier-only participant.
-The [CoCoAuthorizer guide](provision/CCMANAGER.md) covers protected-participant proof
-generation, local verification, trusted AS public-key
-distribution, and the [live cross-node test's scope](provision/CCMANAGER.md#verification-status).
+| Input | Purpose |
+| --- | --- |
+| Registry CA/bundle | Verify registry TLS for image publication and pulls. |
+| Trustee TLS CA/bundle | Verify the Trustee HTTPS endpoint. |
+| AS signing public key | Verify AS-signed attestation results (EARs) carried by NVFlare peer proofs. |
 
-- [Secure services](service/README.md): TLS registry, Trustee/KBS, AS, RVPS and resource authorization.
-- [NVFlare provisioning node](admin/README.md): build, encrypt, sign, publish and generate workload handoffs.
-- [Trusted platform system](trusted_system/README.md): verify hardware evidence and produce approved reference inputs.
-- [Adversarial CoCo cluster](coco/README.md): install public pinned runtime inputs and launch unchanged workloads.
+## Select the runtime
 
-CoCo IT does not approve measurements or administer secure services. Workload
-signatures, encrypted layers, measured init-data, CPU/GPU appraisal and exact
-resource authorization enforce the trust boundary. The host can still deny
-service and observe exposed metadata and workload output. These scripts do
-not establish absolute protection against every hardware/software flaw.
+| CPU | GPU | Participant `cpu_tee` | Participant `gpu_tee` | RuntimeClass | Allocation |
+| --- | --- | --- | --- | --- | --- |
+| SNP | None | `amd_sev_snp` | `none` | `kata-qemu-snp` | None |
+| SNP | NVIDIA | `amd_sev_snp` | `nvidia_cc` | `kata-qemu-nvidia-gpu-snp` | 1 `nvidia.com/pgpu` |
+| TDX | None | `intel_tdx` | `none` | `kata-qemu-tdx` | None |
+| TDX | NVIDIA | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` | 1 `nvidia.com/pgpu` |
 
-## Local validation
+The table uses participant configuration values. For constraints on signed EAR
+evidence, `cpu_tee` instead uses `snp` or `tdx`.
 
-For the CPU-only TDX acceptance harness, both federation topologies, the baked
-validation application, and private evidence recording, see
-[TDX acceptance](acceptance/README.md).
+The guest must provide its local AA token API at
+`http://127.0.0.1:8006/aa/token`. GPU profiles allocate one `nvidia.com/pgpu`
+per Pod and require successful CPU and GPU appraisal. CPU-only profiles need
+no GPU Operator. TDX remains experimental pending complete hardware acceptance.
 
-```bash
-python3 validate-package.py
-```
+## Check GPU Operator readiness
 
-Run from this directory in the Git checkout with Python 3.11+, Git and Bash.
-Validation is offline and checks tracked sources, syntax, document links and
-shared dependencies; it does not run regression tests. For a full assembled
-package, use `--assembled` (no Git required). Static validation is not a substitute
-for hardware-backed positive and negative tests.
-Software versions and public upstream digest pins are retained for
-reproducibility, not a claim that these versions remain vulnerability-free.
-Host-specific teardown scripts and the obsolete signed-bundle installer are
-not included. No separate NVFlare clone is required by the cluster installer.
+Skip this section for CPU-only profiles. The platform owner runs these read-only
+checks before capture and repeats them after GPU Operator upgrades or changes to
+its operands. Replace the names below with the existing policy, namespace, and
+selected worker; access must permit reading ClusterPolicies, Nodes, and operands.
 
-## Package capabilities, not live state
+~~~bash
+NODE_NAME=existing-worker
+CLUSTER_POLICY=existing-policy
+GPU_OPERATOR_NAMESPACE=existing-namespace
+kubectl get clusterpolicies.nvidia.com "$CLUSTER_POLICY" -o yaml
+kubectl -n "$GPU_OPERATOR_NAMESPACE" get deployments,daemonsets -o wide
+kubectl -n "$GPU_OPERATOR_NAMESPACE" get pods -o wide \
+  --field-selector "spec.nodeName=$NODE_NAME"
+kubectl get node "$NODE_NAME" \
+  -L nvidia.com/gpu.workload.config,nvidia.com/cc.mode,nvidia.com/cc.mode.state,nvidia.com/cc.ready.state
+kubectl get node "$NODE_NAME" -o jsonpath='{.status.allocatable.nvidia\.com/pgpu}{"\n"}'
+~~~
 
-For protected NVFlare servers and clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
-It requires a new trusted rehearsal and v4 admin contract; old measurements and
-contracts are not silently reused.
-The [approved security context](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
-pins application IDs, privileges, capabilities and rootfs mode. NVFlare's writable
-rootfs requires explicit approval; the collector's diagnostic privileges are not
-application permissions. The pinned runtime does not establish guest seccomp
-filtering merely by requesting `RuntimeDefault` in Kubernetes YAML.
+Check the effective configuration and selected worker against the
+[GPU Operator ClusterPolicy fields](https://github.com/NVIDIA/gpu-operator/blob/v26.3.1/api/nvidia/v1/clusterpolicy_types.go):
 
-These files do not imply a running Pod, issued certificate, installed policy,
-or approved measurement on any machine. Obtain fresh deployment inputs and
-record execution results privately. Public version/digest pins live in the
-role configuration templates. Workload and platform approvals come from the
-trusted workflow, not a historical deployment. Hardware-backed validation is
-required after configuration; offline package checks alone do not establish it.
+| Check | Required state |
+| --- | --- |
+| `spec.ccManager.enabled`, `spec.vfioManager.enabled`, `spec.kataSandboxDevicePlugin.enabled` | Enabled, with the corresponding selected-worker operands ready. Check the Kata sandbox device plugin, not the ordinary container GPU device plugin. |
+| `spec.sandboxWorkloads` | `enabled: true`, `mode: kata`; the selected worker's `nvidia.com/gpu.workload.config` override or `defaultWorkload` must select `vm-passthrough`. |
+| Worker and CC labels | Node is Ready; `nvidia.com/cc.ready.state=true`; `nvidia.com/cc.mode.state` matches the intended enabled mode from the node override or `ccManager.defaultMode`. |
+| GPU allocation | At least one allocatable `nvidia.com/pgpu` for this example's one-GPU Pod. |
 
-## Assemble self-contained role kits
+For CC mode values, use the installed release's
+[mode-label semantics](https://docs.nvidia.com/confidential-computing/containers/configure-cc-mode):
+`on` is the normal single-GPU mode; `ppcie` requires a separately qualified
+Hopper PPCIE configuration. Missing/false readiness, `off`, `failed`, or an
+incomplete mode transition requires platform-owner repair before capture.
+These labels indicate operational readiness, not attestation.
 
-Shared configuration checks, Kubernetes bootstrap helpers, the Kubernetes
-installer and its kubeadm template are maintained only in [shared/](shared/README.md).
-In the source checkout, role entry points call these shared implementations.
-Do not transfer an unassembled role directory by itself.
+On the selected worker, inspect PCI binding with `lspci -nnk -d 10de:`
+(`lspci` comes from pciutils). The GPUs intended for passthrough must use
+`vfio-pci`; an NVIDIA host driver must not own them. Review the existing
+`spec.driver.enabled` setting against the platform's driver-management plan.
+The [preinstalled-driver option](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/26.3/getting-started.html#pre-installed-nvidia-gpu-drivers)
+uses `driver.enabled=false` when driver installation is managed outside the
+Operator, including an applicable Ubuntu 26.04 host-managed-driver deployment.
+This is conditional, not an instruction to install NVIDIA host drivers on
+passthrough GPUs or to disable driver management solely because of the OS.
 
-```bash
-python3 role_kits.py /path/to/new-coco-role-kits
-python3 /path/to/new-coco-role-kits/validate-package.py --assembled
-```
+Keep the supported version combination explicit:
+[NVIDIA CoCo v1.0](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
+lists Kata 3.29 and Ubuntu 25.10;
+[v1.1](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
+lists Kata 4.0 and adds Ubuntu 26.04. The newer matrix does not qualify this
+example's pinned Kata 3.29.0 profile for Ubuntu 26.04.
 
-Choose a new directory outside this source package. Assembly requires a clean
-Git checkout: commit reviewed changes first. The assembler copies only tracked
-files, excludes ignored/untracked files, and materializes shared dependencies.
-It does not assemble from an unpacked source archive or an existing role kit.
-Transfer the resulting `admin/`, `service/`, `coco/`, or `trusted_system/`
-directory only to its intended operator. Its scripts run without sibling roles,
-the shared source tree or an NVFlare checkout. Supply private configuration,
-certificates and handoff material separately according to [CONFIGURATION.md](CONFIGURATION.md).
-The full assembled package retains cross-role documentation links for reference.
+Comprehensive new-host BIOS, CPU TEE, firmware, and GPU qualification remains a
+separate platform-owner follow-up. This workflow assumes that qualification is
+already complete; the checks and upstream links above do not perform it.
 
-## Design slides
+## Workflow
 
-[Design slides (Markdown)](docs/coco-security-design-3-slides.md)
+1. [Capture measurements](MEASUREMENTS.md) from the installed runtime to obtain
+   reference values and the NVFlare launch profile.
+2. [Set Trustee values](TRUSTEE.md) and read them back.
+3. [Provision NVFlare](provision/README.md) to build encrypted images and Pod YAML.
+4. Register each generated release with Trustee, then [launch its Pod](LAUNCH.md).
+
+| Operator | Input | Output/destination |
+| --- | --- | --- |
+| Platform owner | Existing worker and capture configuration | Reference values to Trustee admin; launch profile to provisioner. |
+| Trustee admin | Reference values and per-release handoff | Configured references, image keys, and release policies before launch. |
+| NVFlare provisioner | Project/application inputs and launch profile | Encrypted images to registry; private handoff to Trustee admin; Pod YAML to cluster operator. |
+| Cluster operator | Generated Pod YAML | Running confidential Pod. |
+
+`nvflare provision` generates the Trustee release handoff; it does not install
+that handoff automatically. The received files are used directly. Keep image
+keys and credentials with their intended trusted recipients. The direct handoff
+workflow assumes recipients supply the intended files; bundled checksums check
+consistency, not sender identity. See the [Trustee handoff checks](TRUSTEE.md#optional-handoff-digest-check)
+and [Pod digest check](LAUNCH.md#optional-pod-digest-check) for optional inputs.
+
+For the security model and peer-proof protocol, see the
+[CoCo security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+
+For upstream platform, service, and tool documentation, see the CC user guide's
+[official component references](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/getting_started.html#cc-official-references).
+
+## Developer package check
+
+`python3 validate-package.py` checks public source files in a Git checkout using
+Python 3.11+ and Git. It is a developer check, not a deployment step, and does not
+support archive or non-Git copies. Ignored deployment inputs remain outside it.
