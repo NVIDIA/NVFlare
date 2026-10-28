@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import re
-import time
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -23,6 +22,9 @@ from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError
 from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import MetaStatusValue, ReplyKeyword
+from tests.timing_utils import isolate_time
+
+pytestmark = pytest.mark.timeout(5)
 
 JOB_ID = "12345678-1234-5678-1234-567812345678"
 STARTING = f"Job {JOB_ID} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
@@ -40,8 +42,9 @@ def abort_session(monkeypatch):
         clock.now += delay
 
     sleep = Mock(side_effect=advance)
-    monkeypatch.setattr(time, "monotonic", lambda: clock.now)
-    monkeypatch.setattr(time, "sleep", sleep)
+    local_time = isolate_time(monkeypatch, "nvflare.fuel.flare_api.flare_api")
+    monkeypatch.setattr(local_time, "monotonic", lambda: clock.now)
+    monkeypatch.setattr(local_time, "sleep", sleep)
     # Keep the real server-response-to-exception mapping; mock only the transport.
     session = Session.__new__(Session)
     session.username = "admin@nvidia.com"
