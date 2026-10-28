@@ -22,7 +22,7 @@ from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking, add_final_global_evaluation
 
 
-def create_recipe(num_rounds=3):
+def create_recipe(num_rounds=20):
     recipe = FedAvgRecipe(
         name="chapter1-tensorboard",
         model=create_model(),
@@ -37,7 +37,7 @@ def create_recipe(num_rounds=3):
 
 def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
-    parser.add_argument("--num_rounds", type=int, default=3)
+    parser.add_argument("--num_rounds", type=int, default=20)
     args = parser.parse_args()
     run = create_recipe(args.num_rounds).execute(SimEnv(num_clients=2, log_config="progress"))
     print("Results:", run.get_result())
