@@ -68,8 +68,13 @@ class _TaskCJHandle(JobHandleSpec):
 
 
 class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
-    def __init__(self, *, cj_cpu_cores=1, cj_memory_mb=1024, cj_gpu_count=0, **kwargs):
+    allow_zero_gpus = True
+
+    def __init__(self, *, cj_cpu_cores=1, cj_memory_mb=1024, cj_gpu_count=0, task_shutdown_timeout=30.0, **kwargs):
         super().__init__(**kwargs)
+        from nvflare.app_opt.job_launcher.slurm.config import _require_positive_number
+
+        self.task_shutdown_timeout = _require_positive_number(task_shutdown_timeout, "task_shutdown_timeout")
         from nvflare.apis.task_launcher_spec import TaskResourceRequest
 
         request = TaskResourceRequest(cj_cpu_cores, cj_memory_mb, cj_gpu_count)
@@ -114,8 +119,8 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
                     **plan.study_env,
                     **{name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in _GPU_ENV},
                 }
-                return replace(plan, study_env=environment), None
-            return plan, None
+                return replace(plan, study_env=environment, clear_gres=True), None
+            return replace(plan, clear_gres=True), None
         from nvflare.app_opt.job_launcher.slurm.task_launcher import _SlurmTaskBackend
 
         data = ConfigService.load_config_dict(workspace.get_resources_file_path())
@@ -147,6 +152,7 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         return (
             replace(
                 plan,
+                clear_gres=True,
                 resources=replace(
                     cj_resources, time_limit=plan.resources.time_limit, pending_timeout=plan.resources.pending_timeout
                 ),
@@ -202,4 +208,4 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         if event_type == EventType.SYSTEM_END:
             service = getattr(self, "_task_service", None)
             if service is not None:
-                service.shutdown()
+                service.shutdown(timeout=self.task_shutdown_timeout)

@@ -67,7 +67,8 @@ from nvflare.app_opt.job_launcher.slurm.manager import (
     _is_terminal,
     _write_exclusive,
 )
-from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter
+from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic
+from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, submission_was_rejected
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
@@ -252,18 +253,41 @@ class SlurmTaskManager(SlurmJobManager):
                 python_path="",
                 python_env="",
                 forward_env=(),
+                clear_gres=True,
             )
             argv = _submission_argv(plan, job_dir, name, self._marker(key), self.config)
             with self._lock:
                 self._handles[key] = handle
+            submission = None
             try:
                 submission = self.adapter.submit(argv, self.config.submit_timeout)
                 handle.job_id, handle.cluster = submission.job_id, submission.cluster
                 handle._record("submitted")
                 if not submission.command.available or not submission.job_id or submission.cluster:
-                    raise TaskLauncherError("sbatch did not confirm a local task allocation")
+                    diagnostic = _command_diagnostic(submission.command)
+                    handle.failure_reason = f"Slurm task submission failed: {diagnostic}"
+                    if submission_was_rejected(submission):
+                        handle._status(
+                            TaskExecutionPhase.TERMINAL,
+                            settled=True,
+                            exit_code=submission.command.returncode,
+                            failure=handle.failure_reason,
+                        )
+                    elif submission.cluster and submission.job_id:
+                        handle.request_cancel()
+                        # The exact returned identity is used, as in the resident
+                        # launcher. Acknowledgement never proves settlement.
+                        response = self.adapter.cancel_suffix(
+                            submission.job_id, submission.cluster, timeout=self.config.cancel_timeout
+                        )
+                        handle._cancel_acknowledged = response.status == LookupStatus.FOUND
+                        handle._cancel_sent_at = self._monotonic()
+                        handle._record("cancel_ack", status=response.status.value)
+                    raise TaskLauncherError(handle.failure_reason)
             except BaseException as e:
-                handle.failure_reason = f"Slurm task submission unresolved: {type(e).__name__}"
+                if not handle.failure_reason:
+                    detail = _command_diagnostic(submission.command) if submission else f"{type(e).__name__}: {e}"
+                    handle.failure_reason = f"Slurm task submission unresolved: {detail}"
                 # sbatch may have submitted work before losing its response.
                 # Never delete scripts or permit identity reuse after that call.
                 raise TaskLaunchError(handle.failure_reason, handle) from e
@@ -278,6 +302,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         self._request = request
         self.operation_lock = threading.RLock()
         self.cluster = None
+        self._cleanup_adapter = None
         self.failure_reason = None
         self._settled = None
         self._last_status = TaskExecutionStatus(TaskExecutionPhase.QUEUED)
@@ -305,6 +330,8 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             os.fsync(stream.fileno())
 
     def _status(self, phase, *, settled=False, exit_code=None, termination_signal=None, failure=None):
+        if self.failure_reason and failure and failure != self.failure_reason:
+            failure = f"{self.failure_reason}; {failure}"
         status = TaskExecutionStatus(
             phase,
             exit_code=exit_code,
@@ -335,12 +362,28 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         with self.operation_lock:
             if self._settled is not None:
                 return replace(self._settled, cancel_requested=self.cancel_requested)
-            if self.cluster:
-                return self._status(TaskExecutionPhase.TERMINAL, failure="Slurm allocation identity is unresolved")
             if self.manager._monotonic() < self._next_query_at:
                 return replace(self._last_status, cancel_requested=self.cancel_requested)
             self._next_query_at = self.manager._monotonic() + self.poll_interval
             try:
+                from nvflare.app_opt.job_launcher.slurm.task_reconcile import operator_release_reason
+
+                try:
+                    reason = operator_release_reason(self)
+                except (OSError, ValueError, TypeError) as error:
+                    # A stale or malformed attestation never blocks native
+                    # cancellation and scheduler-confirmed settlement.
+                    self._record("operator_release_rejected", error=str(error))
+                    reason = None
+                if reason:
+                    self.cancel_requested = True
+                    self._record("operator_release", reason=reason)
+                    return self._status(
+                        TaskExecutionPhase.TERMINAL,
+                        settled=True,
+                        exit_code=1,
+                        failure=f"Operator reconciled allocation: {reason}",
+                    )
                 if not self.job_id:
                     result = self.manager.adapter.task_by_marker(
                         self.job_name,
@@ -364,7 +407,13 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
                 )
 
     def _observe(self):
-        adapter, config = self.manager.adapter, self.manager.config
+        config = self.manager.config
+        if self.cluster:
+            if self._cleanup_adapter is None:
+                self._cleanup_adapter = self.manager.adapter.for_cluster(self.cluster)
+            adapter = self._cleanup_adapter
+        else:
+            adapter = self.manager.adapter
         active = adapter.active_by_id(
             self.job_id, self.job_name, self.manager._marker(self.nvflare_job_id), timeout=config.query_timeout
         )

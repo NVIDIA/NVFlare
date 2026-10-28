@@ -81,6 +81,23 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
     assert (_payload(attempt).parent / "failure.json").exists()
 
 
+def test_native_rejection_without_worker_artifacts_reports_scheduler_reason(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+
+    def reject(request):
+        handle.request = request
+        return handle
+
+    reason = "Slurm task submission failed: Invalid partition name specified"
+    attempt["launcher"].launch_task.side_effect = reject
+    handle.wait_for_settlement.return_value = replace(SETTLED, exit_code=1, failure_reason=reason)
+    with pytest.raises(RuntimeError, match="Invalid partition name specified.*diagnostics:"):
+        supervisor.run(**attempt)
+    assert not supervisor.settlement_unconfirmed
+    assert reason in _records(attempt)[-1]["message"]
+
+
 def test_launch_error_without_handle_preserves_original_exception(tmp_path):
     supervisor = TaskSupervisor()
     attempt, _ = _attempt(tmp_path)

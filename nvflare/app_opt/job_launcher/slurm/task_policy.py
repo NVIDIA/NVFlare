@@ -95,7 +95,9 @@ def task_resources(launcher, meta, site_name):
     if default.memory_mb is not None:
         spec.setdefault("mem_per_node", default.memory_mb)
     spec["gpus_per_node"] = gpu_count
-    resolved = _resolve_resources(meta, site_name, "none", launcher.manager.config.pending_timeout, spec=spec)
+    resolved = _resolve_resources(
+        meta, site_name, "none", launcher.manager.config.pending_timeout, spec=spec, allow_zero_gpus=True
+    )
     if resolved.cpus_per_node is None or resolved.mem_per_node is None:
         raise ValueError("Slurm task allocations require CPU and memory requests, including GPU tasks")
     return replace(resolved, gpus_per_node=gpu_count)

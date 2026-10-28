@@ -26,7 +26,7 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.job_launcher_spec import JobReturnCode
-from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskResourceRequest
+from nvflare.apis.task_launcher_spec import TaskLauncherError, TaskLaunchError, TaskResourceRequest
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import CommandResult, LookupStatus, QueryResult, SubmissionResult
 from nvflare.app_opt.job_launcher.slurm.task_job_launcher import _TaskCJHandle
@@ -39,12 +39,7 @@ from nvflare.app_opt.job_launcher.slurm.task_service import (
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.private.fed.task_worker.protocol import write_bootstrap
-from tests.unit_test.app_opt.job_launcher.slurm_task_launcher_test import (
-    _accounting,
-    _backend,
-    _query,
-    _supervisor_case,
-)
+from tests.slurm_test_utils import _accounting, _backend, _query, _supervisor_case
 
 
 def _eventually(predicate):
@@ -182,13 +177,13 @@ def test_cj_exit_during_sbatch_retains_late_allocation_for_cancellation(owned):
 
     def submit(*args, **kwargs):
         entered.set()
-        assert finish.wait(5)
+        finish.wait()
         return SubmissionResult(CommandResult(0, "42", ""), "42")
 
     owned.adapter.submit.side_effect = submit
-    owned.client.launch(owned.request)
-    assert entered.wait(5)
     try:
+        owned.client.launch(owned.request)
+        assert entered.wait(5)
         owned.owner.release()
         assert owned.owner.thread.is_alive()
         assert "job-1" in owned.service.jobs
@@ -336,3 +331,119 @@ def test_settled_attempt_keeps_replay_fence_without_retaining_native_handle(owne
     assert replay.poll().settled
     assert replay.execution_id == remote.execution_id
     assert owned.adapter.submit.call_count == 1
+
+
+def test_nonzero_sbatch_with_id_requests_cancel_without_cj_intervention(owned):
+    owned.adapter.submit.return_value = SubmissionResult(
+        CommandResult(1, "42", "accepted but post-submit failed"), "42"
+    )
+    owned.adapter.submit.side_effect = None
+    remote = _launch(owned)
+    _eventually(lambda: owned.adapter.cancel.called)
+    assert not owned.owner.closed and not owned.owner.released
+    assert not remote.poll().settled
+    assert "accepted but post-submit failed" in remote.poll().failure_reason
+    _settle(owned)
+
+
+def test_closed_job_rejects_a_new_attempt_at_the_cp_service(owned):
+    remote = _launch(owned)
+    _settle(owned)
+    _eventually(lambda: remote.poll().settled)
+    owned.client.close()
+    with pytest.raises(TaskLauncherError, match="rejected"):
+        owned.client.call(
+            "launch", task_id="task-2", attempt_id="attempt-2", bootstrap=owned.request.argv[4], cwd=owned.request.cwd
+        )
+    assert ("task-2", "attempt-2") not in owned.owner.attempts
+    assert owned.adapter.submit.call_count == 1
+
+
+def test_single_unsettled_attempt_is_enforced_by_the_cp_service(owned):
+    _launch(owned)
+    with pytest.raises(TaskLauncherError, match="rejected"):
+        owned.client.call(
+            "launch", task_id="task-2", attempt_id="attempt-2", bootstrap=owned.request.argv[4], cwd=owned.request.cwd
+        )
+    assert not owned.owner.closed
+    assert ("task-2", "attempt-2") not in owned.owner.attempts
+    assert owned.adapter.submit.call_count == 1
+
+
+def test_shutdown_deadline_retains_and_reports_unsettled_jobs(owned, caplog):
+    _launch(owned)
+    started = time.monotonic()
+    assert owned.service.shutdown(timeout=0.02) == ("job-1",)
+    assert time.monotonic() - started < 1
+    assert owned.owner.thread.is_alive()
+    assert "job-1" in owned.service.jobs
+    assert "job-1" in caplog.text and "task-1" in caplog.text
+    _settle(owned)
+
+
+def test_definitive_rejection_allows_cj_and_system_shutdown(owned):
+    reason = "Invalid partition name specified"
+    owned.adapter.submit.side_effect = None
+    owned.adapter.submit.return_value = SubmissionResult(
+        CommandResult(1, "", "sbatch: error: Batch job submission failed: " + reason)
+    )
+    remote = owned.client.launch(owned.request)
+    _eventually(lambda: remote.poll().settled)
+    assert reason in remote.poll().failure_reason
+    native = Mock()
+    native.poll.return_value = 1
+    cj = _TaskCJHandle(native, owned.owner)
+    cj.wait()
+    assert cj.poll() == 1
+    assert not owned.owner.thread.is_alive()
+    assert owned.service.shutdown(timeout=0.05) == ()
+
+
+def test_operator_reconciliation_releases_only_the_attested_attempt(owned):
+    from nvflare.app_opt.job_launcher.slurm.task_reconcile import release_attempt
+
+    owned.adapter.submit.side_effect = TimeoutError("lost reply")
+    owned.adapter.task_by_marker.return_value = _query()
+    remote = owned.client.launch(owned.request)
+    _eventually(lambda: remote.poll().phase.value == "terminal")
+    assert not remote.poll().settled
+    owned.owner.release()
+    with pytest.raises(ValueError, match="confirm"):
+        release_attempt(
+            owned.backend.manager.config.workspace_path,
+            owned.request.identity,
+            remote.execution_id,
+            "checked with scheduler administrator",
+        )
+    path = release_attempt(
+        owned.backend.manager.config.workspace_path,
+        owned.request.identity,
+        remote.execution_id,
+        "scheduler administrator confirmed no delayed or live work",
+        confirm_no_active_allocation=True,
+    )
+    owned.owner.thread.join(5)
+    assert not owned.owner.thread.is_alive()
+    assert Path(path).exists()
+    assert "job-1" not in owned.service.jobs
+    assert Path(path).parent.joinpath("identity.json").exists()
+
+
+def test_operator_record_for_another_allocation_cannot_release_live_work(owned):
+    from nvflare.app_opt.job_launcher.slurm.task_reconcile import release_attempt
+
+    remote = _launch(owned)
+    stale = remote.execution_id.replace(":42:", ":999:")
+    release_attempt(
+        owned.backend.manager.config.workspace_path,
+        owned.request.identity,
+        stale,
+        "stale operator evidence",
+        confirm_no_active_allocation=True,
+    )
+    assert not remote.poll().settled
+    owned.owner.release()
+    _settle(owned)
+    owned.owner.thread.join(5)
+    assert not owned.owner.thread.is_alive()
+    assert Path(owned.backend.manager.jobs_dir).exists()

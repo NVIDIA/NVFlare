@@ -222,13 +222,30 @@ class SlurmTaskService:
         thread.start()
         return job
 
-    def shutdown(self):
+    def shutdown(self, timeout=30.0):
         with self.lock:
             jobs = list(self.jobs.values())
         for job in jobs:
             job.release()
+        deadline = time.monotonic() + timeout
         for job in jobs:
-            job.thread.join()
+            job.thread.join(max(0.0, deadline - time.monotonic()))
+        pending = []
+        for job in jobs:
+            if job.thread.is_alive():
+                pending.append(job.job_id)
+                with job.lock:
+                    held = [
+                        (a.request.task_id, a.request.attempt_id, a.execution_id, a.status.failure_reason)
+                        for a in job.attempts.values()
+                        if not a.status.settled
+                    ]
+                logger.error(
+                    "Slurm shutdown deadline: CP retains job %s attempts %s; reconcile before releasing resources",
+                    job.job_id,
+                    held,
+                )
+        return tuple(pending)
 
     def _request(self, message):
         # The channel deliberately does not accept arbitrary component/request objects.
