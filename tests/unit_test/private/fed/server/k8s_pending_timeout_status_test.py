@@ -34,6 +34,7 @@ chains them so a single regression test covers the full pipeline:
 """
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,12 +42,19 @@ import pytest
 from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.job_def import RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
-from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, PodPhase
+from nvflare.app_opt.job_launcher.k8s_launcher import JOB_SETTLEMENT_FINALIZER, K8sJobHandle, PodPhase
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_engine import ServerEngine
 from tests.timing_utils import isolate_time
+
+# A broken lifecycle fixture must fail promptly rather than hang the CI worker.
+pytestmark = pytest.mark.timeout(15)
+
+
+class _PodNotFound(Exception):
+    status = 404
 
 
 def _stuck_pending_handle(pending_timeout=0):
@@ -57,18 +65,46 @@ def _stuck_pending_handle(pending_timeout=0):
     site to keep the loop tight.
     """
     api = MagicMock()
-    resp = MagicMock()
-    resp.status.phase = PodPhase.PENDING.value
-    resp.status.node_name = None
-    condition = MagicMock()
-    condition.type = "PodScheduled"
-    condition.status = "False"
-    condition.reason = "Unschedulable"
-    condition.message = "0/1 nodes are available: 1 Insufficient nvidia.com/gpu."
-    resp.status.conditions = [condition]
-    resp.status.container_statuses = []
-    resp.status.init_container_statuses = []
+    resp = SimpleNamespace(
+        metadata=SimpleNamespace(
+            uid="accepted-pending-pod",
+            resource_version="1",
+            deletion_timestamp=None,
+            finalizers=[JOB_SETTLEMENT_FINALIZER],
+        ),
+        spec=SimpleNamespace(node_name=None),
+        status=SimpleNamespace(
+            phase=PodPhase.PENDING.value,
+            conditions=[
+                SimpleNamespace(
+                    type="PodScheduled",
+                    status="False",
+                    reason="Unschedulable",
+                    message="0/1 nodes are available: 1 Insufficient nvidia.com/gpu.",
+                )
+            ],
+            container_statuses=[],
+            init_container_statuses=[],
+        ),
+    )
     api.read_namespaced_pod.return_value = resp
+
+    def delete(**kwargs):
+        assert kwargs["body"]["preconditions"]["uid"] == resp.metadata.uid
+        resp.metadata.deletion_timestamp = "deleting"
+        resp.metadata.resource_version = "2"
+
+    def remove_finalizer(**kwargs):
+        assert resp.metadata.deletion_timestamp is not None
+        # An unbound, deleting Pod cannot start. Its finalizer can now be
+        # removed, and a subsequent API read confirms actual removal.
+        remaining = kwargs["body"][-1]["value"]
+        assert JOB_SETTLEMENT_FINALIZER not in remaining
+        resp.metadata.finalizers = remaining
+        api.read_namespaced_pod.side_effect = _PodNotFound()
+
+    api.delete_namespaced_pod.side_effect = delete
+    api.patch_namespaced_pod.side_effect = remove_finalizer
 
     job_config = {
         "name": "stuck-pod",
@@ -79,12 +115,15 @@ def _stuck_pending_handle(pending_timeout=0):
         "volume_list": [],
         "module_args": {},
     }
-    return K8sJobHandle(
+    handle = K8sJobHandle(
         job_id="job-1",
         api_instance=api,
         job_config=job_config,
         pending_timeout=pending_timeout,
     )
+    # Match launch_job's binding to the UID returned by accepted creation.
+    handle.bind_pod(resp)
+    return handle
 
 
 @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
@@ -95,6 +134,9 @@ def test_k8s_launcher_returns_exception_when_pod_stuck_pending(_mock_sleep):
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
     assert handle.enter_states([JobState.RUNNING]) is False
+    # DELETE acceptance is not settlement, even for an unscheduled Pod.
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    handle.wait()
     assert handle.poll() == JobReturnCode.EXCEPTION
 
 
@@ -110,6 +152,7 @@ def test_server_side_pending_timeout_reports_finished_execution_exception(_mock_
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
     handle.enter_states([JobState.RUNNING])
+    handle.wait()
     assert handle.poll() == JobReturnCode.EXCEPTION
 
     # 2. ServerEngine.wait_for_complete reads the launcher's return code and
@@ -168,6 +211,7 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
     handle.enter_states([JobState.RUNNING])
+    handle.wait()
     launcher_return_code = handle.poll()
     assert launcher_return_code == JobReturnCode.EXCEPTION
 
