@@ -1,4 +1,9 @@
-# Async research extensions
+# Async with research reproducibility
+
+This is the research-reproducibility companion to the
+[asynchronous CIFAR-10 example](../pt_async_cifar10/README.md). It keeps the
+`pt_async_cifar10` naming and places the extended components in a separate
+`pt_async_cifar10_reproducible` package.
 
 This example composes the production `AsyncRecipe` with fixed arrival replay,
 logical clients over fewer physical workers, and isolated assignment seeds.
@@ -8,14 +13,22 @@ The core recipe has no dependency on them. Omitting `scheduler` and
 
 ## Run
 
+Download the example and enter the parent of its importable package:
+
+```bash
+nvflare examples get collab-pt-async-reproducible
+cd collab-pt-async-reproducible/collab
+python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
+```
+
 From the repository root:
 
 ```bash
 cd examples/advanced/collab
-python -m async_research.job --num-clients 2 --run-seed 10
+python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
 ```
 
-The job reserves K=3 logical assignments over two physical workers. It accepts
+The dataset-free smoke job reserves K=3 logical assignments over two physical workers. It accepts
 IDs `[2, 0, 1, 3]` with exact bases `[0, 0, 0, 1]` and applies seeded random
 NumPy deltas. The run directory keeps every artifact on disk. No dataset or PyTorch is needed.
 
@@ -50,9 +63,9 @@ a separate research unit-test matrix.
 With this directory's parent on the Python path:
 
 ```python
-from async_research.disk_storage import DiskSnapshotStore, DiskResultStore
-from async_research.replay import ReplayScheduler
-from async_research.seed_policy import SeedPolicy, SeededTrainArgs
+from pt_async_cifar10_reproducible.disk_storage import DiskSnapshotStore, DiskResultStore
+from pt_async_cifar10_reproducible.replay import ReplayScheduler
+from pt_async_cifar10_reproducible.seed_policy import SeedPolicy, SeededTrainArgs
 from nvflare.collab import AsyncRecipe
 
 recipe = AsyncRecipe(
@@ -104,7 +117,7 @@ and apply that argument. Importing a helper alone enables no behavior.
 For PyTorch clients, optional helpers remain in this example:
 
 ```python
-from async_research.pt_seed import seed_worker, torch_seed_scope
+from pt_async_cifar10_reproducible.pt_seed import seed_worker, torch_seed_scope
 
 loader = DataLoader(
     dataset, shuffle=True, num_workers=2, persistent_workers=False,

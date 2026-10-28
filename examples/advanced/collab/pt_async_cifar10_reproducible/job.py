@@ -20,9 +20,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from async_research.disk_storage import DiskResultStore, DiskSnapshotStore
-from async_research.replay import ReplayScheduler
-from async_research.seed_policy import SeededTrainArgs, SeedPolicy
+from pt_async_cifar10_reproducible.disk_storage import DiskResultStore, DiskSnapshotStore
+from pt_async_cifar10_reproducible.replay import ReplayScheduler
+from pt_async_cifar10_reproducible.seed_policy import SeededTrainArgs, SeedPolicy
 
 from nvflare.collab import AsyncRecipe, collab
 from nvflare.collab.async_models.numpy import NumpyAsyncModelAdapter
@@ -81,7 +81,7 @@ def make_recipe(run_seed=10):
     order = [2, 0, 1, 3]
     logical = ["alice", "bob", "alice", "carol"]
     recipe = AsyncRecipe(
-        job_name="async_research",
+        job_name="collab_pt_async_cifar10_reproducible",
         client=ResearchClient(),
         application=ResearchApplication(
             {

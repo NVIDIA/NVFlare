@@ -93,7 +93,7 @@ Copy any teacher/model state retained beyond the hook.
 ## Extension contracts
 
 Core contains small policy/storage ports; research implementations live in the
-[async research example](../../examples/advanced/collab/async_research/README.md).
+[async research example](../../examples/advanced/collab/pt_async_cifar10_reproducible/README.md).
 The production recipe imports no replay or RNG helper from that example.
 Its research composition retains all base snapshots, results, model versions
 and traces on disk, avoiding in-run artifact reclamation and reference counts.
