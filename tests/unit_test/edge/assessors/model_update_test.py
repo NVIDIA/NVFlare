@@ -25,6 +25,7 @@ from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.device_manager import DeviceManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.mud import Device, ModelUpdate, StateUpdateReply, StateUpdateReport
+from tests.timing_utils import isolate_time
 
 
 def _setup(
@@ -264,3 +265,8 @@ def test_custom_device_manager_retains_finite_timeout_behavior(monkeypatch):
     mock_time.return_value = 95.0
     assert assessor.assess(fl_ctx) == Assessment.WORKFLOW_DONE
     assert device_manager.current_selection == {"d2": 1}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.edge.assessors.model_update")

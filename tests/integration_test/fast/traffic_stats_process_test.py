@@ -28,12 +28,13 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.unit_test.fuel.f3.cellnet.server_transit_e2e_test import (
+from tests.integration_test.fast.server_transit_e2e_test import (
     _mark_server_transit,
     _queue_result,
     _run_relay,
     _wait_for_connection,
 )
+from tests.timing_utils import stop_processes
 
 _CHANNEL = "traffic_counter_test"
 _TOPIC = "echo"
@@ -101,15 +102,14 @@ def _traffic_server(root_url, streaming, payload_size, status_queue, capture_eve
         )
         cell.start()
         status_queue.put({"ready": True})
-        if not capture_event.wait(30):
-            raise TimeoutError("No request to capture server traffic")
+        capture_event.wait()
         status_queue.put(
             {
                 "snapshot": _wait_for_traffic(cell, _REPEATS * payload_size),
                 "stream_frames": [event.is_set() for event in stream_frames.values()],
             }
         )
-        stop_event.wait(30)
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -159,18 +159,18 @@ def test_real_tcp_repeated_request_reply_counts_actual_adjacent_peers(streaming,
         server = context.Process(
             target=_traffic_server, args=(root_url, streaming, payload_size, server_status, capture_event, stop_event)
         )
-        server.start()
         processes.append(server)
+        server.start()
         assert _queue_result(server_status)["ready"]
 
         relay = context.Process(target=_run_relay, args=(root_url, relay_status, stop_event))
-        relay.start()
         processes.append(relay)
+        relay.start()
         parent_url = _queue_result(relay_status)["parent_url"]
 
         sender = context.Process(target=_traffic_sender, args=(parent_url, streaming, payload_size, sender_result))
-        sender.start()
         processes.append(sender)
+        sender.start()
         result = _queue_result(sender_result)
         capture_event.set()
         server_result = _queue_result(server_status)
@@ -199,10 +199,6 @@ def test_real_tcp_repeated_request_reply_counts_actual_adjacent_peers(streaming,
     finally:
         capture_event.set()
         stop_event.set()
-        for process in reversed(processes):
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        stop_processes(*reversed(processes))
 
     assert all(process.exitcode == 0 for process in processes)
