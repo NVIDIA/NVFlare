@@ -89,6 +89,8 @@ namespace to remove this finalizer. The bundled Helm Roles include it. Update
 custom Roles before upgrading; otherwise stopped Pods remain fenced. Parents
 must remain alive for cleanup. If a parent or node is lost, verify the runtime
 has stopped before manually removing its finalizer or releasing reservations.
+For a still-running parent that has observed the deleting Pod's UID and finalizer,
+removing the finalizer after that verification lets its next 404 settle the handle.
 There is no timeout-based release or automatic adoption after parent restart.
 
 Site prerequisites
@@ -368,14 +370,16 @@ without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
 its existing resource semantics. Images must contain the same reviewed
 framework source and the required application dependencies.
 
-Task cleanup and CJ recovery require kubelet ``PodReadyToStartContainers`` teardown
-evidence and terminal container statuses. The condition is
+The cluster must expose kubelet ``PodReadyToStartContainers`` teardown evidence
+and terminal container statuses for all Kubernetes job Pods, including resident
+CJs, server jobs, and task workers. The condition is
 `enabled by default since Kubernetes 1.29 <https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/>`_.
-If it is absent or disabled, cleanup cannot be confirmed and CJ recovery stops
-after its cleanup timeout (60 seconds by default). Unsettled workers remain
-owned by CP. Disable admission-injected long-lived containers for the
-qualified worker profile; the handle nevertheless checks every admitted main,
-init and ephemeral container before cleanup. No force deletion, in-place
+Missing evidence retains ownership and prevents replacement; the job launcher
+logs the missing sandbox condition. After confirmed CJ shutdown, recovery waits
+up to its cleanup timeout (60 seconds by default) for CP-owned workers to settle
+before declining replacement. Disable admission-injected long-lived containers
+for the qualified worker profile; the handle nevertheless checks every admitted
+main, init and ephemeral container before cleanup. No force deletion, in-place
 worker retry, Job controller or TTL deletion is used. See Kubernetes
 `Pod lifecycle <https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/>`_
 and `finalizers <https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/>`_.

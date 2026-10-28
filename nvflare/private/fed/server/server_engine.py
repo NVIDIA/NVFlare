@@ -373,11 +373,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         except Exception:
             graceful_wait = 0.0
         # Run cleanup off-thread: its graceful wait can exceed the CLI's 5.0s cmd_timeout.
-        # Keep the worker non-daemon so interpreter exit does not abandon launcher cleanup.
+        # Reconcile while the parent is alive, but do not keep a shutting-down
+        # server process alive forever when backend settlement cannot be proved.
         threading.Thread(
             target=self._remove_run_processes,
             kwargs={"job_id": job_id, "job_handle": job_handle, "max_wait": graceful_wait},
-            daemon=False,
+            daemon=True,
         ).start()
 
         self.engine_info.status = MachineStatus.STOPPED

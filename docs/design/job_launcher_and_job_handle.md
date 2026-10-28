@@ -48,9 +48,9 @@ Abstract base class representing a running job (`class JobHandleSpec(ABC)`).
 
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
-| `terminate()` | `() -> None` | Stop the job immediately. |
-| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` while running. |
-| `wait()` | `() -> None` | Block until the job finishes. |
+| `terminate()` | `() -> None` | Request termination; backend settlement may still be pending. |
+| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` until shutdown is confirmed. |
+| `wait()` | `() -> None` | Block until the backend confirms shutdown. |
 
 ### 2.2 JobLauncherSpec
 
@@ -377,10 +377,10 @@ JobLauncherSpec (FLComponent, ABC)
 
 | Method | Implementation |
 |--------|---------------|
-| `terminate()` | `delete_namespaced_pod(grace_period_seconds=0)`. Always sets `terminal_state = TERMINATED` regardless of outcome. |
-| `poll()` | Returns `terminal_state` if set; otherwise calls `_query_state()` mapped through `JOB_RETURN_CODE_MAPPING`. |
-| `wait()` | Loops `_query_state()`; sets `terminal_state` when `SUCCEEDED` or `TERMINATED`; sleeps 1s. No timeout. |
-| `_query_phase()` | Calls `read_namespaced_pod`. On 404: sets `terminal_state = TERMINATED`. Returns `PodPhase.UNKNOWN` on any error. |
+| `terminate()` | Closes task admission and requests UID-bound Pod deletion. It retains ownership until shutdown and removal are confirmed. |
+| `poll()` | Observes the Pod and returns `UNKNOWN` while shutdown evidence or cancellation cleanup is incomplete. |
+| `wait()` | Polls until settlement is confirmed; API outages and missing evidence keep it waiting. |
+| `_query_phase()` | Reads the UID-bound Pod. A 404 settles only after shutdown proof, or after deletion began for an observed UID with our settlement finalizer and that finalizer was removed. |
 | `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → delete pod and preserve `EXCEPTION` return code, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → delete pod and preserve `EXCEPTION` return code. Returns `True` on state reached, `False` otherwise. |
 
 Pod phase mapping:
@@ -432,7 +432,7 @@ Launch sequence:
 | 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
 | 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials, the workspace transfer token, and — when the job has one — the per-job certificate and key as `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. The startup Secret never includes `*.key`; in secure mode a job without a credential is refused. |
 | 4 | Create `K8sJobHandle` (carries the credential Secret name). |
-| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
+| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). A confirmed pre-send failure or API rejection releases the unused resources and returns `EXCEPTION`. An ambiguous create preserves the handle, credential and cleanup owner until the Pod is identified and settled. |
 | 6 | Publish the created handle through `JOB_HANDLE_CALLBACK` before waiting for Running, so a concurrent abort can delete a never-started Pod. Then call `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
 
