@@ -33,7 +33,8 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.config_service import ConfigService
-from tests.unit_test.fuel.f3.cellnet.job_cert_binding_live_test import _JOB_A, _JOB_B, _free_port, _write_pki
+from tests.integration_test.fast.job_cert_binding_live_test import _JOB_A, _JOB_B, _free_port, _write_pki
+from tests.timing_utils import stop_processes
 
 pytestmark = pytest.mark.timeout(180)
 
@@ -143,11 +144,11 @@ def _spawn(target, *args):
     ctx = mp.get_context("spawn")
     result_q = ctx.Queue()
     proc = ctx.Process(target=target, args=(*args, result_q))
-    proc.start()
     try:
+        proc.start()
         return result_q.get(timeout=60)
     finally:
-        proc.join(15)
+        stop_processes(proc)
 
 
 @pytest.fixture(scope="module")
@@ -162,14 +163,14 @@ def client_job(tmp_path_factory):
     stop_ev = ctx.Event()
     ready_q, record_q = ctx.Queue(), ctx.Queue()
     proc = ctx.Process(target=_run_cj, args=(mount, config_dir, ready_q, stop_ev, record_q))
-    proc.start()
     try:
+        proc.start()
         fields = ready_q.get(timeout=60)
         assert isinstance(fields, dict), fields
         yield fields, {**pki, "mount": mount}, record_q
     finally:
         stop_ev.set()
-        proc.join(15)
+        stop_processes(proc)
 
 
 def _drain(record_q, wait=2.0):

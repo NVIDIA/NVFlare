@@ -64,11 +64,13 @@ if _k8s_quantity is not None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_kubernetes_modules():
+def _isolate_kubernetes_modules(monkeypatch):
     # The SDK is imported lazily by the resident launcher. Keep these stubs
     # local to its tests so other backends can use the real SDK utilities.
-    with patch.dict(sys.modules, _K8S_MODULES):
-        yield
+    # Restore only SDK entries: restoring all of sys.modules evicts lazily
+    # imported NVFlare modules but leaves stale references on their packages.
+    for name, module in _K8S_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
 
 
 from nvflare.apis.event_type import EventType

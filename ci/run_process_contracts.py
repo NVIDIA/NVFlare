@@ -24,13 +24,16 @@ from pathlib import Path
 
 TESTS = (
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
+    "tests/integration_test/fast/cell_session_mtls_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
+    "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",
     "tests/integration_test/fast/task_execution_process_test.py",
     "tests/integration_test/fast/task_supervisor_process_test.py",
     "tests/integration_test/fast/task_worker_descendants_test.py",
+    "tests/integration_test/fast/traffic_stats_process_test.py",
     "tests/integration_test/fast/worker_process_cleanup_test.py",
     "tests/integration_test/fast/workspace_transfer_bootstrap_mtls_test.py",
 )
