@@ -157,6 +157,11 @@ See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-
 
 ## Task and checkpoint boundaries
 
+Native task checkpoints atomically record the logical assignment and its saved
+result. If CJ dies after promotion, its replacement verifies and resends that
+result without advancing the checkpoint again; missing result artifacts fail
+the assignment instead of rerunning it from already-advanced state.
+
 No task journal, model-input cache, result outbox, or checkpoint API is added.
 If the server already accepted the result, its existing receipt handling applies.
 If a replacement cannot synchronize with its server job within the existing

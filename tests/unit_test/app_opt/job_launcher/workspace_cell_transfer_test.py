@@ -602,7 +602,7 @@ class TestWorkspaceBootstrapHelpers:
             assert os.path.exists(os.path.join(ws_root, WORKSPACE_READY_FILE)) == persistent
 
     @pytest.mark.parametrize("kind", ["symlink", "pipe", "directory"])
-    def test_workspace_initialization_record_must_be_a_regular_file(self, tmp_path, kind):
+    def test_workspace_initialization_record_must_be_a_regular_file(self, tmp_path, monkeypatch, kind):
         record = tmp_path / WORKSPACE_READY_FILE
         if kind == "symlink":
             other = tmp_path / "other"
@@ -613,6 +613,11 @@ class TestWorkspaceBootstrapHelpers:
         else:
             record.mkdir()
         assert not workspace_download_complete(str(tmp_path))
+        monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+        monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1")
+        with pytest.raises(RuntimeError, match="initialization marker must be a regular file"):
+            download_workspace(SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID), secure_mode=False)
 
     def test_upload_results_noop_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN, raising=False)

@@ -268,6 +268,115 @@ def test_cj_replacement_keeps_process_artifact_fence_and_scopes_native_receipts(
     adapter.supervisor.record_receipt.assert_called_once_with(identities[1], TaskResultReceipt.RECEIVED)
 
 
+@pytest.mark.parametrize("missing_result", [False, True])
+def test_replacement_cj_resends_result_after_checkpoint_commit_without_retraining(
+    tmp_path, monkeypatch, isolated_fobs, missing_result
+):
+    from pathlib import Path
+
+    from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
+    from nvflare.apis.workspace import Workspace
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.defs import RequestHeader
+    from nvflare.private.fed.client import task_worker_executor as executor_module
+    from nvflare.private.fed.task_worker.artifacts import IncompleteTaskArtifactError
+    from nvflare.private.fed.task_worker.protocol import read_bootstrap
+    from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+
+    nvflare_fobs_initialize()
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    workspace = Workspace(str(tmp_path), site_name="site")
+    Path(workspace.get_run_dir("job")).mkdir()
+    context = FLContext()
+    for key, value in (
+        (ReservedKey.RUN_NUM, "job"),
+        (ReservedKey.IDENTITY_NAME, "site"),
+        (ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None)),
+        (FLContextKey.WORKSPACE_OBJECT, workspace),
+        (FLContextKey.TASK_ID, "task"),
+        (FLContextKey.TASK_NAME, "train"),
+        (FLContextKey.TASK_ATTEMPT_ID, "attempt"),
+    ):
+        context.set_prop(key, value, private=True, sticky=False)
+    launcher = K8sTaskLauncher("test", "worker:latest", "/workspace", "jobs", "worker")
+    status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
+
+    def train(request):
+        bootstrap = read_bootstrap(request.argv[4])
+        store = FileTaskArtifactStore(bootstrap.artifact_root)
+        paths = store.checkpoint_paths(bootstrap.identity)
+        previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+        Path(paths["output"]).write_text(str(previous + 1))
+        checkpoint = store.stage_checkpoint(bootstrap.identity)
+        store.commit_result(
+            bootstrap.identity, Shareable({"value": previous + 1}), diagnostics={"checkpoint": checkpoint.to_dict()}
+        )
+        return SimpleNamespace(
+            execution_id="pod",
+            request=request,
+            poll=lambda: status,
+            cancel=lambda: status,
+            wait_for_settlement=lambda **_: status,
+        )
+
+    launcher.launch_task = Mock(side_effect=train)
+    monkeypatch.setattr(
+        executor_module.cell_session,
+        "CellWorkerSession",
+        lambda *args: SimpleNamespace(bootstrap_fields=lambda: None, close=lambda **kwargs: None),
+    )
+
+    class CJCrash(BaseException):
+        pass
+
+    original_commit = FileTaskArtifactStore.commit_checkpoint
+
+    def commit_then_crash(*args, **kwargs):
+        original_commit(*args, **kwargs)
+        raise CJCrash()
+
+    def replacement(generation):
+        monkeypatch.setattr(ConfigService, "_var_values", {})
+        monkeypatch.setattr(ConfigService, "_var_dict", {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"})
+        adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher=launcher))
+        adapter._started = True
+        return adapter
+
+    first = replacement(1)
+    monkeypatch.setattr(FileTaskArtifactStore, "commit_checkpoint", commit_then_crash)
+    with pytest.raises(CJCrash):
+        first.execute("train", Shareable(), context, Signal())
+    checkpoint_file = next(tmp_path.rglob("*.checkpoint"))
+    committed = checkpoint_file.read_bytes()
+    monkeypatch.setattr(FileTaskArtifactStore, "commit_checkpoint", original_commit)
+    if missing_result:
+        next(tmp_path.rglob("result.fobs")).unlink()
+        with pytest.raises(IncompleteTaskArtifactError):
+            replacement(2).execute("train", Shareable(), context, Signal())
+        assert launcher.launch_task.call_count == 1
+        assert checkpoint_file.read_bytes() == committed
+        return
+    for generation in (2, 3):
+        recovered = replacement(generation)
+        result = recovered.execute("train", Shareable(), context, Signal())
+        assert result["value"] == 1
+        assert recovered.execute("train", Shareable(), context, Signal())["value"] == 1
+        assert checkpoint_file.read_bytes() == committed
+    assert launcher.launch_task.call_count == 1
+    identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
+    context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+    recovered._record_receipt(context)
+    assert not list(tmp_path.rglob("result.fobs"))
+    context.set_prop(FLContextKey.TASK_ID, "next-task", private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "next-attempt", private=True, sticky=False)
+    assert recovered.execute("train", Shareable(), context, Signal())["value"] == 2
+    assert context.get_prop(TASK_ATTEMPT_IDENTITY) != identity
+    assert launcher.launch_task.call_count == 2
+
+
 def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     from nvflare.apis.fl_constant import ReturnCode
     from nvflare.apis.shareable import make_reply
