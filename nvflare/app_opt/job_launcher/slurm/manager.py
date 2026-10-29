@@ -22,6 +22,7 @@ import shutil
 import stat
 import threading
 import time
+import uuid
 from dataclasses import replace
 from typing import Callable, Optional
 
@@ -252,7 +253,7 @@ class SlurmJobManager:
             node_script = _render_node_script(plan, self.config)
             _write_exclusive(os.path.join(job_dir, NODE_FILE), node_script.encode("utf-8"), 0o700)
 
-    def launch(self, plan: LaunchPlan) -> "SlurmJobHandle":
+    def launch(self, plan: LaunchPlan, on_handle=None) -> "SlurmJobHandle":
         self._require_initialized()
         with self._submission_gate:
             with self._lock:
@@ -261,9 +262,19 @@ class SlurmJobManager:
                 if plan.job_id in self._handles:
                     raise SlurmLauncherError(f"job '{plan.job_id}' already has a live Slurm handle")
             job_key, job_dir = self._prepare_job_dir(plan.job_id, plan.sandbox != "none")
-            job_name = _job_name(plan.site_name, job_key)
+            # Accounting recovery must never adopt an older run of the same job.
+            job_name = f"{_job_name(plan.site_name, job_key)}-{uuid.uuid4().hex[:16]}"
             try:
                 self._write_job_files(plan, job_dir)
+            except BaseException:
+                _cleanup_job_dir(job_dir)
+                raise
+            handle = SlurmJobHandle(
+                self, plan.job_id, job_name, job_dir, None, plan.resources.pending_timeout, self.config.poll_interval
+            )
+            with self._lock:
+                self._handles[plan.job_id] = handle
+            try:
                 try:
                     submission = self.adapter.submit(
                         _submission_argv(
@@ -277,6 +288,14 @@ class SlurmJobManager:
                     )
                 except Exception as e:
                     raise SlurmLauncherError("sbatch submission failed") from e
+                handle.job_id = submission.job_id
+                handle.cluster = submission.cluster
+                if not submission.job_id and (
+                    submission.command.not_started
+                    or (submission.command.returncode not in (None, 0) and not submission.command.timed_out)
+                ):
+                    # The command never ran, or sbatch explicitly rejected it.
+                    self._finish(handle, ProcessExitCode.INFRASTRUCTURE_ERROR)
                 if submission.command.timed_out or not submission.job_id:
                     raise SlurmLauncherError(
                         f"sbatch did not return a valid job ID: {_command_diagnostic(submission.command)}"
@@ -297,24 +316,21 @@ class SlurmJobManager:
                         outcome,
                     )
                     raise SlurmLauncherError("Slurm multi-cluster routing is unsupported")
-                handle = SlurmJobHandle(
-                    self,
-                    plan.job_id,
-                    job_name,
-                    job_dir,
-                    submission.job_id,
-                    plan.resources.pending_timeout,
-                    self.config.poll_interval,
-                )
-                with self._lock:
-                    self._handles[plan.job_id] = handle
-                return handle
-            except BaseException:
-                try:
-                    _cleanup_job_dir(job_dir)
-                except OSError as e:
-                    raise SlurmLauncherError("failed to remove Slurm artifacts after launch failure") from e
+            except BaseException as error:
+                handle.submission_pending = False
+                if handle.terminal_result is None:
+                    handle._request_cancel()
+                    error.handle = handle
+                    if on_handle is not None:
+                        on_handle(handle)
+                    self.logger.error(
+                        "Slurm submission may have been accepted; retaining ownership: job_name=%s", handle.job_name
+                    )
                 raise
+            handle.submission_pending = False
+            if on_handle is not None:
+                on_handle(handle)
+            return handle
 
     def _result_for(self, handle: "SlurmJobHandle", record: SlurmRecord) -> int:
         if record.state in _INFRASTRUCTURE_TERMINAL_STATES:
@@ -355,6 +371,7 @@ class SlurmJobManager:
             handle.job_id,
             handle.job_name,
             timeout=self.config.query_timeout,
+            **({"cluster": handle.cluster} if handle.cluster else {}),
         )
         if result.status == LookupStatus.UNAVAILABLE:
             return JobReturnCode.UNKNOWN
@@ -385,14 +402,30 @@ class SlurmJobManager:
         with handle.operation_lock:
             if handle.terminal_result is not None:
                 return handle.terminal_result
+            if handle.submission_pending:
+                return JobReturnCode.UNKNOWN
             active = self.adapter.active_by_id(
                 handle.job_id,
                 handle.job_name,
                 self._marker(handle.nvflare_job_id),
                 timeout=self.config.query_timeout,
+                **({"cluster": handle.cluster} if handle.cluster else {}),
             )
             if active.status == LookupStatus.UNAVAILABLE:
                 return JobReturnCode.UNKNOWN
+            if handle.job_id is None:
+                if active.status == LookupStatus.FOUND:
+                    handle.job_id = active.records[0].job_id
+                else:
+                    now = self._monotonic()
+                    if now - handle.identity_last_query < _ACCOUNTING_RETRY_INTERVAL:
+                        return JobReturnCode.UNKNOWN
+                    handle.identity_last_query = now
+                    recovered = self.adapter.accounting_by_name(handle.job_name, timeout=self.config.query_timeout)
+                    if recovered.status != LookupStatus.FOUND:
+                        # Even repeated absence cannot disprove a delayed submit.
+                        return JobReturnCode.UNKNOWN
+                    handle.job_id = recovered.records[0].job_id
             if active.status == LookupStatus.NOT_FOUND:
                 return self._poll_accounting(handle, allocation_gone=True)
             record = active.records[0]
@@ -400,7 +433,7 @@ class SlurmJobManager:
             if _is_terminal(record.state):
                 return self._poll_accounting(handle)
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel(handle)
                 return JobReturnCode.UNKNOWN
             if record.state in _PENDING_STATES:
                 now = self._monotonic()
@@ -410,8 +443,13 @@ class SlurmJobManager:
                     self.logger.warning("Slurm job %s exceeded pending_timeout", handle.job_id)
                     handle._request_cancel()
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel(handle)
             return JobReturnCode.UNKNOWN
+
+    def _cancel(self, handle):
+        if handle.cluster:
+            return self.adapter.cancel_suffix(handle.job_id, handle.cluster, timeout=self.config.cancel_timeout)
+        return self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
 
     def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
         if user_abort:
@@ -439,7 +477,7 @@ class SlurmJobHandle(JobHandleSpec):
         nvflare_job_id: str,
         job_name: str,
         job_dir: str,
-        job_id: str,
+        job_id: Optional[str],
         pending_timeout: float,
         poll_interval: float,
     ):
@@ -452,6 +490,9 @@ class SlurmJobHandle(JobHandleSpec):
         self.condition = threading.Condition()
         self.operation_lock = threading.Lock()
         self.job_id = job_id
+        self.cluster = None
+        self.submission_pending = True
+        self.identity_last_query = float("-inf")
         self.cancel_requested = False
         self.user_abort = False
         self.terminal_result = None
@@ -476,7 +517,7 @@ class SlurmJobHandle(JobHandleSpec):
             self.manager._abort_handle(self)
 
     def can_restart(self):
-        return self.exit_confirmed and not self.cancel_requested
+        return self.exit_confirmed and not self.cancel_requested and self.cluster is None
 
     def _terminate_for_heartbeat_cleanup(self):
         if self.terminal_result is None:

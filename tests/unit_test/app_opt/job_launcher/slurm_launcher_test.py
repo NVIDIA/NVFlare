@@ -22,7 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobProcessEnv
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
     SLURM_CHILD_PROCESS_ENV,
@@ -85,6 +85,31 @@ def _fl_ctx(workspace, module="ignored.by.slurm"):
         sticky=False,
     )
     return context
+
+
+@pytest.mark.parametrize("uncertain", [False, True])
+def test_launcher_publishes_accepted_or_uncertain_submission(tmp_path, uncertain):
+    from nvflare.app_opt.job_launcher.slurm.config import SubmissionResult
+    from tests.unit_test.app_opt.job_launcher.slurm_manager_test import Adapter, _command, _manager
+
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+    adapter = Adapter()
+    if uncertain:
+        adapter.submission = SubmissionResult(_command(stdout="lost identity"))
+    launcher.manager = _manager(workspace, adapter)
+    context = _fl_ctx(workspace)
+    published = []
+    context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published.append, private=True, sticky=False)
+    if uncertain:
+        with pytest.raises(SlurmLauncherError) as caught:
+            launcher.launch_job({JobConstants.JOB_ID: "job-1"}, context)
+        handle = caught.value.handle
+    else:
+        handle = launcher.launch_job({JobConstants.JOB_ID: "job-1"}, context)
+    assert isinstance(handle, JobHandleSpec)
+    assert published == [handle]
+    assert launcher.manager._handles["job-1"] is handle
 
 
 def test_resource_resolution_combines_portable_gpu_total():

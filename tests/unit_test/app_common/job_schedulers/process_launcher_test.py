@@ -16,6 +16,7 @@ import os
 import shlex
 import signal
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
@@ -66,10 +67,11 @@ def test_restart_requires_readable_trainer_launch_directory(tmp_path):
         assert not handle.can_restart()
 
 
+@pytest.mark.parametrize("exit_code", [0, -signal.SIGKILL])
 @pytest.mark.parametrize("cleanup", ["delayed", "forced", "stuck", "unknown", "cancelled"])
-def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
+def test_process_waits_for_owned_group_cleanup(monkeypatch, cleanup, exit_code):
     adapter = mock.Mock(pid=4321)
-    adapter.poll.return_value = -signal.SIGKILL
+    adapter.poll.return_value = exit_code
     handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
     clock = isolate_time(monkeypatch, "nvflare.app_common.job_launcher.process_launcher")
     elapsed = [0.0]
@@ -77,6 +79,8 @@ def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
 
     def killpg(pgid, sig):
         assert pgid == adapter.pid
+        if cleanup in ("stuck", "unknown") and elapsed[0] >= 20.3:
+            raise ProcessLookupError()
         if cleanup == "unknown":
             raise PermissionError("group cannot be inspected")
         if sig == signal.SIGKILL:
@@ -94,7 +98,7 @@ def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
     monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.os.killpg", killpg)
     handle.wait()
     adapter.wait.assert_called_once()
-    assert handle.can_restart() is (cleanup not in ("stuck", "unknown"))
+    assert handle.can_restart()
     if cleanup == "delayed":
         assert elapsed[0] == pytest.approx(0.3)
         assert not kills
@@ -102,8 +106,51 @@ def test_failed_process_waits_for_owned_group_cleanup(monkeypatch, cleanup):
         assert kills == [0.1]
         assert elapsed[0] == pytest.approx(0.1)
     else:
-        assert elapsed[0] == pytest.approx(10.0 if cleanup == "forced" else 20.0)
-        assert kills == ([] if cleanup == "unknown" else [10.0])
+        assert elapsed[0] == pytest.approx(10.0 if cleanup == "forced" else 20.3)
+        assert kills == ([] if cleanup == "unknown" else [10.0, 20.0] if cleanup == "stuck" else [10.0])
+
+
+@pytest.mark.timeout(10)
+def test_successful_leader_waits_for_real_owned_writer(tmp_path):
+    from nvflare.utils.process_utils import ProcessAdapter
+
+    ready, finished = tmp_path / "ready", tmp_path / "finished"
+    leader_code = "import pathlib, sys, time\n" "while not pathlib.Path(sys.argv[1]).exists(): time.sleep(0.01)\n"
+    writer_code = (
+        "import pathlib, sys, time\n"
+        "pathlib.Path(sys.argv[1]).touch()\n"
+        "time.sleep(0.4)\n"
+        "pathlib.Path(sys.argv[2]).write_text('writer stopped')\n"
+    )
+    # Both are direct children so this test can reap every member, including
+    # on CI containers whose PID 1 does not reap orphaned grandchildren.
+    leader = os.posix_spawn(sys.executable, [sys.executable, "-c", leader_code, str(ready)], os.environ, setpgroup=0)
+    writer = None
+    reaper = None
+    try:
+        writer = os.posix_spawn(
+            sys.executable,
+            [sys.executable, "-c", writer_code, str(ready), str(finished)],
+            os.environ,
+            setpgroup=leader,
+        )
+        reaper = threading.Thread(target=os.waitpid, args=(writer, 0))
+        reaper.start()
+        handle = ProcessHandle(process_adapter=ProcessAdapter(pid=leader), owns_process_group=True)
+        handle.wait()
+        assert finished.read_text() == "writer stopped"
+        assert handle.poll() == JobReturnCode.SUCCESS
+    finally:
+        try:
+            os.killpg(leader, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if reaper is not None:
+            reaper.join(timeout=2)
+        try:
+            os.waitpid(leader, 0)
+        except ChildProcessError:
+            pass
 
 
 class DummyWorkspace:
@@ -136,6 +183,23 @@ def _build_fl_ctx(workspace):
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
     return fl_ctx
+
+
+def test_spawn_finalization_failure_publishes_acquired_process(tmp_path, monkeypatch):
+    from nvflare.utils.process_utils import ProcessSpawnError
+
+    adapter = mock.Mock(pid=4321)
+    context = _build_fl_ctx(DummyWorkspace(tmp_path))
+    published = []
+    context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published.append, private=True, sticky=False)
+    monkeypatch.setattr(
+        "nvflare.app_common.job_launcher.process_launcher.spawn_process",
+        mock.Mock(side_effect=ProcessSpawnError(adapter)),
+    )
+    with pytest.raises(ProcessSpawnError):
+        DummyLauncher().launch_job({JobConstants.JOB_ID: "job"}, context)
+    assert len(published) == 1
+    assert published[0].adapter is adapter
 
 
 def _write_runtime(tmp_path, studies):

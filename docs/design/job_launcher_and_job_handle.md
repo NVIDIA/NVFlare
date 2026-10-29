@@ -260,9 +260,9 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 
 | Method | Implementation |
 |--------|---------------|
-| `terminate()` | Delegates to `adapter.terminate()`. |
+| `terminate()` | Requests termination of the owned process group. |
 | `poll()` | Maps exit code: 0 → `SUCCESS`, 1 → `EXECUTION_ERROR`, 9 → `ABORTED`, `None` → `UNKNOWN`. |
-| `wait()` | Delegates to `adapter.wait()`. |
+| `wait()` | Waits for the leader and its owned group, including successful leader exit. Retries group cancellation after each grace period; an expired grace period cannot release ownership. |
 
 #### ProcessJobLauncher
 
@@ -272,7 +272,7 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 | 2 | Merge `get_credential_env(JOB_PROCESS_ARGS)` into the child env — bootstrap credentials travel in the environment, never in argv (see `job_process_credential_transport_design.md`). |
 | 3 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
 | 4 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
-| 5 | Return `ProcessHandle`. |
+| 5 | Publish and return `ProcessHandle`. A spawn-finalization error also publishes the acquired process before propagating the error. |
 
 **Event registration** — unconditionally registers:
 
@@ -472,8 +472,10 @@ def handle_event(self, event_type, fl_ctx):
 
 `ClientSlurmJobLauncher` and `ServerSlurmJobLauncher` return a manager-backed `SlurmJobHandle`. One manager per
 parent submits, monitors, and cancels scheduler allocations. Its live-handle map prevents duplicate submissions
-within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID; otherwise it removes
-the transient job artifacts and reports failure.
+within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID. Explicit rejection
+or a confirmed failure to start `sbatch` releases unused files. An uncertain response publishes a cleanup handle
+and preserves files and ownership while the manager recovers the submission ID and requests cancellation. Each
+submission has a unique job-name suffix so reconciliation cannot adopt a previous run of the same logical job.
 
 The deploy tool prepares the appropriate client or server launcher directly in the shared workspace selected by
 `--output`. Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;

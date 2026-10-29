@@ -530,13 +530,15 @@ non-terminal and retries; it never assumes that a missing observation means a
 job has stopped.
 
 NVFlare stores transient launch artifacts under ``<prepare-output>/.nvflare_slurm``.
-The live parent removes a job's artifacts after launch failure or terminal
-completion. User abort and pending timeout verify ownership before ``scancel``;
+The live parent removes a job's artifacts after confirmed submission rejection
+or terminal completion. An uncertain submission keeps its cleanup handle and
+artifacts. User abort and pending timeout verify ownership before ``scancel``;
 normal framework shutdown terminates running handles through the same path
 before the Slurm launcher closes launch admission.
 
 Slurm job names include the first 32 characters of the NVFlare site name and a
-short job hash, so operators can distinguish sites sharing one Slurm user. Job output is
+short job hash, followed by a unique launch suffix, so operators can distinguish
+sites and attempts sharing one Slurm user. Job output is
 ``<run-dir>/slurm-<slurm-job-id>.out``. Use ``squeue`` for live state and
 ``sacct`` for completed jobs. Preserve the complete workspace and relevant
 scheduler records for investigation.
@@ -546,10 +548,14 @@ remove their job artifacts; this matches the Docker and Kubernetes launchers.
 A leftover job directory blocks relaunch of that job ID until an operator
 verifies that no old allocation uses it and removes the directory.
 
-An ``sbatch`` timeout fails the FL dispatch even if Slurm accepted the job.
-Artifact removal prevents a pending allocation from starting unless the same
-job ID is relaunched before it starts. Increase ``submit_timeout`` where slow
-scheduler responses make this risk unacceptable.
+An ``sbatch`` timeout may hide an accepted job. The parent retains ownership,
+files and credentials while recovering the scheduler ID by the unique launch
+name and verifying ownership, then cancelling and observing the allocation.
+It never retries submission. If no matching scheduler record becomes visible,
+cleanup remains pending; inspect the logged job name with ``squeue`` and
+``sacct`` and reconcile the allocation before stopping the parent or removing
+its files. A larger ``submit_timeout`` can reduce uncertain responses, but
+does not establish whether a timed-out submission was accepted.
 
 To change the workspace, stop the parent and prepare to a new ``--output``.
 Preparing to an existing output replaces it, so copy any data that must survive

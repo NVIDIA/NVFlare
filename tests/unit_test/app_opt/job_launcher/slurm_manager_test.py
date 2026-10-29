@@ -15,6 +15,8 @@
 import logging
 import os
 import subprocess
+import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -84,6 +86,10 @@ class Adapter:
     def active_by_id(self, job_id, job_name, marker, timeout):
         self.calls.append(("live", job_name, marker, job_id, timeout))
         return self._take(self.live)
+
+    def accounting_by_name(self, job_name, timeout):
+        self.calls.append(("accounting_name", job_name, timeout))
+        return self._take(self.accounting_id)
 
     def accounting_by_id(self, job_id, job_name, timeout):
         self.calls.append(("accounting_id", job_id, job_name, timeout))
@@ -350,7 +356,7 @@ def test_launch_returns_handle_with_deterministic_identity(tmp_path):
     assert not Path(handle.job_dir, SANDBOX_ROOT).exists()
     submit_argv = adapter.calls[0][1]
     assert f"--job-name={handle.job_name}" in submit_argv
-    assert handle.job_name == _job_name("site-1", _job_key("job-1"))
+    assert handle.job_name.startswith(_job_name("site-1", _job_key("job-1")) + "-")
     assert f"--output={_plan(tmp_path).run_dir}/slurm-%j.out" in submit_argv
     assert adapter.calls[0][0] == "submit"
 
@@ -429,23 +435,41 @@ def test_stale_job_artifacts_block_relaunch(tmp_path):
     [
         SubmissionResult(_command(returncode=None, stdout="42\n", timed_out=True), "42"),
         SubmissionResult(_command(stdout="site plugin output\n42\n")),
-        SubmissionResult(_command(returncode=1, stdout="", stderr="invalid time")),
         SubmissionResult(_command(returncode=None, stdout="")),
     ],
 )
-def test_submission_uncertainty_fails_and_cleans_artifacts(tmp_path, submission):
+def test_submission_uncertainty_retains_published_cleanup_handle(tmp_path, submission):
     adapter = Adapter()
     adapter.submission = submission
     manager = _manager(tmp_path, adapter)
 
-    with pytest.raises(SlurmLauncherError, match="valid job ID"):
+    published = []
+    with pytest.raises(SlurmLauncherError, match="valid job ID") as caught:
+        manager.launch(_plan(tmp_path), on_handle=published.append)
+
+    handle = caught.value.handle
+    assert published == [handle]
+    assert manager._handles["job-1"] is handle
+    assert Path(handle.job_dir, "secret.env").exists()
+    assert handle.cancel_requested
+    with pytest.raises(SlurmLauncherError, match="live Slurm handle"):
         manager.launch(_plan(tmp_path))
 
+
+@pytest.mark.parametrize("not_started", [False, True])
+def test_rejected_or_unsent_submission_releases_unused_artifacts(tmp_path, not_started):
+    adapter = Adapter()
+    adapter.submission = SubmissionResult(
+        CommandResult(None if not_started else 1, "", "rejected", not_started=not_started)
+    )
+    manager = _manager(tmp_path, adapter)
+    with pytest.raises(SlurmLauncherError):
+        manager.launch(_plan(tmp_path))
     assert not os.listdir(manager.jobs_dir)
     assert not manager._handles
 
 
-def test_unparsed_accepted_job_cannot_start_after_artifact_cleanup(tmp_path):
+def test_unparsed_submission_preserves_files_for_later_reconciliation(tmp_path):
     adapter = Adapter()
     adapter.submission = SubmissionResult(_command(stdout="site plugin output\n42\n"))
     manager = _manager(tmp_path, adapter)
@@ -459,11 +483,11 @@ def test_unparsed_accepted_job_cannot_start_after_artifact_cleanup(tmp_path):
     spooled_batch.chmod(0o700)
     process = subprocess.run([str(spooled_batch)], capture_output=True, text=True)
     assert process.returncode != 0
-    assert "secret file is unavailable" in process.stderr
-    assert not setup_marker.exists()
+    assert "secret file is unavailable" not in process.stderr
+    assert setup_marker.exists()
 
 
-def test_submit_exception_fails_and_cleans_artifacts(tmp_path):
+def test_submit_exception_preserves_cleanup_handle(tmp_path):
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)
 
@@ -474,8 +498,88 @@ def test_submit_exception_fails_and_cleans_artifacts(tmp_path):
     with pytest.raises(SlurmLauncherError, match="submission failed"):
         manager.launch(_plan(tmp_path))
 
-    assert not os.listdir(manager.jobs_dir)
+    assert os.listdir(manager.jobs_dir)
+    assert manager._handles["job-1"].cancel_requested
+
+
+@pytest.mark.parametrize("discovered_in", ["live", "accounting"])
+def test_lost_submission_reply_recovers_identity_and_settles(tmp_path, discovered_in):
+    adapter = Adapter()
+    adapter.submission = SubmissionResult(_command(stdout="unparseable reply"))
+    clock = Clock()
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    with pytest.raises(SlurmLauncherError) as caught:
+        manager.launch(_plan(tmp_path))
+    handle = caught.value.handle
+    for index in range(8):
+        clock.value = index * 7
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        assert manager._handles["job-1"] is handle
+        assert Path(handle.job_dir, "secret.env").exists()
+    if discovered_in == "live":
+        adapter.live = _query(LookupStatus.FOUND, _record())
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        assert handle.job_id == "42"
+        assert any(call[0] == "cancel" for call in adapter.calls)
+        adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
+    clock.value += 7
+    assert handle.poll() == JobReturnCode.SUCCESS
     assert not manager._handles
+    assert not Path(handle.job_dir).exists()
+    assert not handle.can_restart()  # failed launch cleanup cannot admit a replacement
+
+
+@pytest.mark.timeout(10)
+def test_accepted_batch_keeps_writing_before_lost_reply_without_losing_owner(tmp_path):
+    worker = tmp_path / "owned_writer.py"
+    ready, heartbeat = tmp_path / "ready", tmp_path / "heartbeat"
+    worker.write_text(
+        "import pathlib, sys, time\n"
+        "pathlib.Path(sys.argv[1]).touch()\n"
+        "for _ in range(100):\n"
+        "    with open(sys.argv[2], 'a') as stream: stream.write('alive\\n')\n"
+        "    time.sleep(0.02)\n"
+    )
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+    plan = replace(
+        _plan(tmp_path),
+        python_path=sys.executable,
+        python_env=str(tmp_path),
+        exe_module="owned_writer",
+        module_args=(str(ready), str(heartbeat)),
+    )
+    process = None
+
+    def submit_with_lost_reply(argv, timeout):
+        nonlocal process
+        spooled = tmp_path / "spooled.sh"
+        spooled.write_text(Path(argv[-1]).read_text())
+        process = subprocess.Popen(["/bin/bash", str(spooled)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 3
+        while not ready.exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        return SubmissionResult(_command(returncode=None, stdout="", timed_out=True))
+
+    adapter.submit = submit_with_lost_reply
+    published = []
+    try:
+        with pytest.raises(SlurmLauncherError) as caught:
+            manager.launch(plan, on_handle=published.append)
+        handle = caught.value.handle
+        before = heartbeat.stat().st_size
+        time.sleep(0.1)
+        assert heartbeat.stat().st_size > before
+        assert published == [handle]
+        assert manager._handles["job-1"] is handle
+        assert Path(handle.job_dir, "batch.sh").exists()
+    finally:
+        if process is not None:
+            process.kill()
+            process.wait(timeout=2)
 
 
 @pytest.mark.parametrize("cancel_error", [None, RuntimeError("controller unavailable")])
@@ -489,8 +593,28 @@ def test_cluster_suffix_is_cancelled_once_and_fails_launch(tmp_path, cancel_erro
         manager.launch(_plan(tmp_path))
 
     adapter.cancel_suffix.assert_called_once_with("42", "remote", timeout=10.0)
-    assert not os.listdir(manager.jobs_dir)
-    assert not manager._handles
+    assert os.listdir(manager.jobs_dir)
+    assert manager._handles["job-1"].cluster == "remote"
+
+
+def test_unsupported_cluster_retains_handle_until_observed_settlement(tmp_path):
+    adapter = Adapter()
+    adapter.submission = SubmissionResult(_command(stdout="42;remote\n"), "42", "remote")
+    adapter.active_by_id = MagicMock(return_value=_query(LookupStatus.FOUND, _record()))
+    adapter.cancel_suffix = MagicMock(return_value=_query(LookupStatus.FOUND))
+    adapter.accounting_by_id = MagicMock(return_value=_query(LookupStatus.FOUND, _record(state="CANCELLED")))
+    manager = _manager(tmp_path, adapter)
+    with pytest.raises(SlurmLauncherError) as caught:
+        manager.launch(_plan(tmp_path))
+    handle = caught.value.handle
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert Path(handle.job_dir).exists()
+    adapter.cancel_suffix.assert_called_with("42", "remote", timeout=10)
+    adapter.active_by_id.return_value = _query(LookupStatus.NOT_FOUND)
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert adapter.active_by_id.call_args.kwargs["cluster"] == "remote"
+    assert adapter.accounting_by_id.call_args.kwargs["cluster"] == "remote"
+    assert not Path(handle.job_dir).exists()
 
 
 def test_running_allocation_remains_unknown(tmp_path):
@@ -537,21 +661,18 @@ def test_handle_monitors_only_its_returned_id_when_job_name_is_shared(tmp_path):
         runner=run_command,
     )
     manager = _manager(tmp_path, scheduler)
-    job_name = _job_name("site-1", _job_key("job-1"))
     marker = "nvfl:job-1"
-    results.extend(
-        [
-            _command(stdout="42\n"),
-            _command(
-                stdout=(
-                    f"41|RUNNING|{scheduler.uid}|old-marker|{job_name}\n"
-                    f"42|RUNNING|{scheduler.uid}|{marker}|{job_name}\n"
-                )
-            ),
-        ]
-    )
-
+    results.append(_command(stdout="42\n"))
     handle = manager.launch(_plan(tmp_path))
+    job_name = handle.job_name
+    results.append(
+        _command(
+            stdout=(
+                f"41|RUNNING|{scheduler.uid}|old-marker|{job_name}\n"
+                f"42|RUNNING|{scheduler.uid}|{marker}|{job_name}\n"
+            )
+        )
+    )
 
     assert handle.job_id == "42"
     assert handle.poll() == JobReturnCode.UNKNOWN

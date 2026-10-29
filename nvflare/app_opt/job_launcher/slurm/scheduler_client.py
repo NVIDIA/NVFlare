@@ -113,7 +113,9 @@ class _SlurmCliAdapter:
         except subprocess.TimeoutExpired:
             return CommandResult(None, "", "", timed_out=True)
         except OSError as e:
-            return CommandResult(None, "", type(e).__name__)
+            return CommandResult(
+                None, "", type(e).__name__, not_started=isinstance(e, (FileNotFoundError, PermissionError))
+            )
 
         if len(completed.stdout) > _MAX_STDOUT_BYTES:
             self.logger.error("Slurm command stdout exceeded %d bytes: %s", _MAX_STDOUT_BYTES, argv[0])
@@ -164,10 +166,11 @@ class _SlurmCliAdapter:
 
     def active_by_id(
         self,
-        job_id: str,
+        job_id: Optional[str],
         job_name: str,
         marker: str,
         timeout: float,
+        cluster: Optional[str] = None,
     ) -> QueryResult:
         command = self._run(
             [
@@ -176,6 +179,7 @@ class _SlurmCliAdapter:
                 f"--user={self.uid}",
                 f"--name={job_name}",
                 f"--format={SQUEUE_FORMAT}",
+                *([f"--clusters={cluster}"] if cluster else []),
             ],
             timeout,
         )
@@ -184,7 +188,7 @@ class _SlurmCliAdapter:
         records = []
         for raw_id, raw_state, raw_uid, comment, returned_name in self._rows(command, "squeue", 5):
             returned_id = raw_id.strip()
-            if returned_id != job_id:
+            if job_id is not None and returned_id != job_id:
                 self._warn_stray_row(job_name, returned_id)
                 continue
             try:
@@ -192,7 +196,7 @@ class _SlurmCliAdapter:
             except ValueError as e:
                 raise SlurmProtocolError("malformed squeue UID") from e
             state = _parse_state(raw_state)
-            if not state:
+            if not returned_id.isdigit() or not state:
                 raise SlurmProtocolError("malformed squeue row")
             if uid != self.uid or comment != marker or returned_name.strip() != job_name:
                 raise SlurmProtocolError(f"squeue ownership mismatch for job name {job_name}")
@@ -201,15 +205,26 @@ class _SlurmCliAdapter:
             raise SlurmProtocolError(f"duplicate squeue rows for job {job_id}")
         return QueryResult(LookupStatus.FOUND if records else LookupStatus.NOT_FOUND, tuple(records))
 
-    def accounting_by_id(self, job_id: str, job_name: str, timeout: float) -> QueryResult:
+    def accounting_by_id(
+        self, job_id: str, job_name: str, timeout: float, cluster: Optional[str] = None
+    ) -> QueryResult:
+        return self._accounting(job_name, timeout, job_id=job_id, cluster=cluster)
+
+    def accounting_by_name(self, job_name: str, timeout: float) -> QueryResult:
+        """Recover a lost submission ID using its unique per-launch job name."""
+        return self._accounting(job_name, timeout)
+
+    def _accounting(self, job_name, timeout, job_id=None, cluster=None):
         command = self._run(
             [
                 self.executables["sacct"],
                 "-X",
                 "-n",
                 "-P",
-                f"--jobs={job_id}",
+                f"--jobs={job_id}" if job_id is not None else f"--name={job_name}",
+                *(["--starttime=1970-01-01", f"--user={self.user}"] if job_id is None else []),
                 f"--format={SACCT_FORMAT}",
+                *([f"--clusters={cluster}"] if cluster else []),
             ],
             timeout,
         )
@@ -243,7 +258,7 @@ class _SlurmCliAdapter:
             )
         if not records:
             return QueryResult(LookupStatus.NOT_FOUND)
-        if len(records) != 1 or records[0].job_id != job_id:
+        if len(records) != 1 or (job_id is not None and records[0].job_id != job_id):
             raise SlurmProtocolError(f"sacct identity mismatch for job {job_id}")
         return QueryResult(LookupStatus.FOUND, tuple(records))
 

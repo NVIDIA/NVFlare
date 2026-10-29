@@ -65,6 +65,56 @@ def test_submit_treats_parsed_job_id_as_authoritative_despite_return_code():
     assert submission.job_id == "42"
 
 
+@pytest.mark.parametrize("bad_owner", [False, True])
+def test_unidentified_submission_lookup_verifies_name_uid_and_marker(bad_owner):
+    runner = Runner()
+    adapter = _adapter(runner)
+    marker = "foreign" if bad_owner else "launch-marker"
+    runner.results.append(_result(f"42|RUNNING|{adapter.uid}|{marker}|unique-launch-name\n"))
+    if bad_owner:
+        with pytest.raises(SlurmProtocolError, match="ownership mismatch"):
+            adapter.active_by_id(None, "unique-launch-name", "launch-marker", 1)
+    else:
+        result = adapter.active_by_id(None, "unique-launch-name", "launch-marker", 1)
+        assert result.records[0].job_id == "42"
+
+
+def test_unknown_submission_cannot_adopt_multiple_matching_jobs():
+    runner = Runner()
+    adapter = _adapter(runner)
+    runner.results.append(
+        _result(f"42|RUNNING|{adapter.uid}|marker|unique-name\n43|RUNNING|{adapter.uid}|marker|unique-name\n")
+    )
+    with pytest.raises(SlurmProtocolError, match="duplicate"):
+        adapter.active_by_id(None, "unique-name", "marker", 1)
+
+
+def test_accounting_recovers_unique_submission_name_across_midnight():
+    runner = Runner()
+    adapter = _adapter(runner)
+    runner.results.append(_result(f"42|unique-name|{adapter.user}|COMPLETED|0:0|0:0\n"))
+    result = adapter.accounting_by_name("unique-name", 1)
+    assert result.records[0].job_id == "42"
+    argv = runner.calls[0][0]
+    assert "--name=unique-name" in argv
+    assert "--starttime=1970-01-01" in argv
+    assert f"--user={adapter.user}" in argv
+
+
+def test_unsupported_cluster_cleanup_queries_only_returned_cluster():
+    runner = Runner()
+    adapter = _adapter(runner)
+    runner.results.extend(
+        [
+            _result(f"42|RUNNING|{adapter.uid}|marker|unique-name\n"),
+            _result(f"42|unique-name|{adapter.user}|CANCELLED|0:9|0:0\n"),
+        ]
+    )
+    adapter.active_by_id("42", "unique-name", "marker", 1, cluster="remote")
+    adapter.accounting_by_id("42", "unique-name", 1, cluster="remote")
+    assert all("--clusters=remote" in argv for argv, _ in runner.calls)
+
+
 def test_scheduler_environment_removes_cli_overrides(monkeypatch):
     monkeypatch.setenv("SBATCH_CLUSTERS", "remote")
     monkeypatch.setenv("SLURM_CLUSTERS", "remote")
@@ -303,6 +353,7 @@ def test_subprocess_runner_reports_spawn_failure(monkeypatch):
 
     assert result.returncode is None
     assert result.stderr == "FileNotFoundError"
+    assert result.not_started
 
 
 def test_subprocess_runner_rejects_captured_stdout_over_limit(monkeypatch):

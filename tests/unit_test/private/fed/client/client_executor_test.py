@@ -1558,3 +1558,99 @@ def assert_published_backend_cleanup(tmp_path, runtime, backend_module, monkeypa
     assert runtime.poll() != JobReturnCode.UNKNOWN
     assert executor.get_run_processes_keys() == []
     assert context.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
+
+
+def test_uncertain_slurm_submission_retains_parent_owner_until_scheduler_settlement(tmp_path):
+    from nvflare.app_opt.job_launcher.slurm.config import LookupStatus
+    from tests.unit_test.app_opt.job_launcher.slurm_manager_test import Adapter, _manager, _plan, _query, _record
+
+    meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+    observed = []
+
+    def retained():
+        assert executor.get_run_processes_keys() == ["job-1"]
+        assert find_job_cert(str(tmp_path / "job-1")) is not None
+        resources.free_resources.assert_not_called()
+        client.send_request_before_shutdown.assert_not_called()
+        assert manager._handles["job-1"].terminal_result is None
+
+    def live(*_args, **_kwargs):
+        retained()
+        observed.append(True)
+        return _query(LookupStatus.FOUND, _record()) if len(observed) == 1 else _query(LookupStatus.NOT_FOUND)
+
+    adapter.active_by_id = live
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
+    adapter.submit = Mock(side_effect=RuntimeError("lost submission reply"))
+    launcher = MagicMock()
+    launcher.launch_job.side_effect = lambda _meta, ctx: manager.launch(
+        _plan(tmp_path), on_handle=lambda handle: publish_job_handle(handle, ctx)
+    )
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with pytest.raises(RuntimeError, match="sbatch submission failed"):
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                context,
+            )
+    assert len(observed) == 2
+    assert any(call[0] == "cancel" for call in adapter.calls)
+    assert not manager._handles
+    assert executor.get_run_processes_keys() == []
+
+
+def test_process_launch_cleanup_retains_parent_owner_past_failed_group_cleanup(tmp_path):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+
+    meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    adapter = Mock(pid=4321)
+    adapter.poll.return_value = 0
+    runtime = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    observations = []
+
+    def group_exit():
+        assert executor.get_run_processes_keys() == ["job-1"]
+        assert find_job_cert(str(tmp_path / "job-1")) is not None
+        resources.free_resources.assert_not_called()
+        client.send_request_before_shutdown.assert_not_called()
+        observations.append(True)
+        return len(observations) >= 3
+
+    launcher = MagicMock()
+
+    def launch(_meta, ctx):
+        publish_job_handle(runtime, ctx)
+        raise RuntimeError("failed after process creation")
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(runtime, "_wait_for_group_exit", side_effect=group_exit),
+        patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=PermissionError),
+        pytest.raises(RuntimeError, match="failed after process creation"),
+    ):
+        executor.start_app(
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            {"gpu": 1},
+            "token",
+            resources,
+            context,
+        )
+    assert len(observations) == 3
+    assert executor.get_run_processes_keys() == []
