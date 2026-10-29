@@ -7,11 +7,23 @@ a job, its recorded CPU work, retained file sizes, and messaging payload. It
 lets users inspect a participant or compare retained jobs without installing
 a monitoring service or changing their application.
 
-**Status: design proposal.** This document does not add collection, schemas or
-commands to main. It defines the planned task-aware format 4.0. The development
-branch currently implements resident-job format 3.0; task integration follows
-separately. The design supports every execution mode admitted by the task runtime,
-including additional backends as they become supported.
+**Status: design proposal, target format 4.0.** This PR does not add collection,
+schemas or commands to main. Unreleased prototypes inform the design but are not
+the published interface. Runtime admission and statistics qualification are
+separate requirements; this design does not enable a new execution backend.
+
+## Detailed design
+
+This page introduces the contract. The following pages describe the component
+interfaces, algorithms and lifecycle decisions behind it. Read them in this order;
+all three describe the same format 4.0.
+
+1. [Measurement and accounting](resource_statistics_measurement.md): the APIs,
+   limits, execution windows and formulas used to obtain each measurement.
+2. [Reports, delivery and queries](resource_statistics_reporting.md): record
+   formats, validation, deduplication, archive publication and authorized reads.
+3. [Runtime integration](resource_statistics_implementation.md): component
+   interfaces and lifecycle behavior on success, failure, cancellation and restart.
 
 ## Measurement contract
 
@@ -195,5 +207,6 @@ The existing [task worker lifecycle](task_worker_lifecycle.md) defines worker
 ownership, coordinator/compute budgets, settlement, and result receipts.
 Resource statistics must observe those contracts without changing them.
 The [job launcher and handle design](job_launcher_and_job_handle.md) describes
-backend lifecycle ownership. The implementation should add the public report
-reference and generated examples alongside its code.
+backend lifecycle ownership. The detailed reporting page includes a complete
+participant example and the stored/query contracts; the implementation will add
+the machine-readable schema and generated examples alongside its code.
