@@ -34,8 +34,19 @@ def load_omegaconf_job_config(path: str) -> dict:
     return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
 
-def _config_format(path: str):
-    return next((fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if path.endswith(ext)), None)
+def _used_configs(paths):
+    """Keeps, per folder and config name, the file runtime lookup picks first by extension precedence."""
+    ext_formats = ConfigFormat.config_ext_formats()
+    exts = list(ext_formats)
+    used = {}
+    for path in paths:
+        ext = next((ext for ext in exts if path.endswith(ext)), None)
+        if ext is None:
+            continue
+        key = path[: -len(ext)]
+        if key not in used or exts.index(ext) < exts.index(used[key][1]):
+            used[key] = (path, ext)
+    return [(path, ext_formats[ext]) for path, ext in used.values()]
 
 
 def _needs_rendering(path: str, fmt: ConfigFormat) -> bool:
@@ -69,16 +80,14 @@ def convert_job_configs(job_dir: str, work_dir: str) -> str:
     # Legacy app folders without meta keep their configs in config/ directly.
     patterns = ["meta.*", os.path.join("config", "*"), os.path.join("*", "config", "*")]
     to_render = []
-    for pattern in patterns:
-        for path in glob.glob(os.path.join(root, pattern)):
-            fmt = _config_format(path)
-            if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) or not _needs_rendering(path, fmt):
-                continue
-            rel_path = os.path.relpath(path, job_dir)
-            # Writing through a linked file or folder would overwrite a file outside the job.
-            if os.path.realpath(path) != os.path.join(os.path.realpath(job_dir), rel_path):
-                raise ValueError(f"cannot render linked job config {rel_path}")
-            to_render.append((rel_path, fmt))
+    for path, fmt in _used_configs(path for pattern in patterns for path in glob.glob(os.path.join(root, pattern))):
+        if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) or not _needs_rendering(path, fmt):
+            continue
+        rel_path = os.path.relpath(path, job_dir)
+        # Writing through a linked file or folder would overwrite a file outside the job.
+        if os.path.realpath(path) != os.path.join(os.path.realpath(job_dir), rel_path):
+            raise ValueError(f"cannot render linked job config {rel_path}")
+        to_render.append((rel_path, fmt))
     if not to_render:
         return job_dir
 

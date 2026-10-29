@@ -136,3 +136,18 @@ def test_default_fallback_configs_are_rendered(tmp_path):
     }
     client = os.path.join(converted, "app", "config", "config_fed_client.conf.default")
     assert ConfigService.load_config_dict(client) == {"format_version": 2}
+
+
+def test_configs_shadowed_by_higher_precedence_files_are_not_rendered(tmp_path):
+    job_dir = tmp_path / "job6"
+    config_dir = job_dir / "app" / "config"
+    _write(str(config_dir / "config_fed_client.json"), '{"format_version": 2}')
+    _write(str(config_dir / "config_fed_client.conf.default"), "data_root = ${CONVERTER_TEST_MISSING}\n")
+    _write(str(config_dir / "config_fed_server.conf"), "format_version = 2\n")
+    _write(str(config_dir / "config_fed_server.yml"), "rounds: ${CONVERTER_TEST_MISSING}\n")
+
+    converted = convert_job_configs(str(job_dir), str(tmp_path / "work"))
+
+    converted_config = os.path.join(converted, "app", "config")
+    assert json.loads(open(os.path.join(converted_config, "config_fed_server.conf")).read()) == {"format_version": 2}
+    assert open(os.path.join(converted_config, "config_fed_client.conf.default")).read().startswith("data_root = ${")
