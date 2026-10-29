@@ -1820,7 +1820,7 @@ class TestDockerJobLauncherStudyRuntime:
 
     @pytest.mark.parametrize("lowercase", [False, True])
     @pytest.mark.parametrize("legacy_count", [None, 1, 2])
-    @pytest.mark.parametrize("managed", [True, False])
+    @pytest.mark.parametrize("managed,num_gpu_key", [(True, "num_of_gpus"), (True, "gpus"), (False, "num_of_gpus")])
     @pytest.mark.parametrize("source", ["site", "study"])
     @pytest.mark.parametrize(
         "gpu_request",
@@ -1833,7 +1833,7 @@ class TestDockerJobLauncherStudyRuntime:
         ],
     )
     def test_gpu_defaults_follow_resource_manager(
-        self, tmp_path, source, gpu_request, managed, legacy_count, lowercase
+        self, tmp_path, source, gpu_request, managed, num_gpu_key, legacy_count, lowercase
     ):
         from nvflare.private.admin_defs import Message
         from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -1859,7 +1859,7 @@ class TestDockerJobLauncherStudyRuntime:
             )
         else:
             launcher.default_job_container_kwargs = {"device_requests": [device_request]}
-        manager = GPUResourceManager(2, 0, ignore_host=True, exclusive=True)
+        manager = GPUResourceManager(2, 0, ignore_host=True, exclusive=True, num_gpu_key=num_gpu_key)
         if not managed:
             manager = PassthroughResourceManager()
         engine = MagicMock(spec=ClientEngineInternalSpec)
@@ -1895,19 +1895,21 @@ class TestDockerJobLauncherStudyRuntime:
             assert "NVIDIA_VISIBLE_DEVICES" not in dc.containers.run.call_args.kwargs["environment"]
         if managed and len(allocated) == 2:
             assert allocated[0].isdisjoint(allocated[1])
-        assert manager.check_resources({"num_of_gpus": 1}, resource_ctx)[0] is (not managed)
+        assert manager.check_resources({num_gpu_key: 1}, resource_ctx)[0] is (not managed)
 
-    @pytest.mark.parametrize("managed", [True, False])
+    @pytest.mark.parametrize("managed,num_gpu_key", [(True, "num_of_gpus"), (True, "gpus"), (False, "num_of_gpus")])
     @pytest.mark.parametrize("count", [0, 1])
     @pytest.mark.parametrize("source", ["docker", "portable", "process"])
-    def test_job_gpu_count_overrides_study_default_during_admission(self, count, managed, source):
+    def test_job_gpu_count_overrides_study_default_during_admission(self, count, managed, num_gpu_key, source):
         launcher = _make_launcher()
         launcher._resolve_study_runtime = MagicMock(
             return_value=SimpleNamespace(docker_kwargs={"device_requests": [{"Count": 2, "Capabilities": [["gpu"]]}]})
         )
         engine = MagicMock()
         engine.get_component.return_value = (
-            GPUResourceManager(2, 0, ignore_host=True, exclusive=True) if managed else PassthroughResourceManager()
+            GPUResourceManager(2, 0, ignore_host=True, exclusive=True, num_gpu_key=num_gpu_key)
+            if managed
+            else PassthroughResourceManager()
         )
         ctx = FLContextManager(engine=engine, identity_name="site-1").new_context()
         meta = _make_job_meta(docker_spec={"num_of_gpus": count} if source == "docker" else {})
@@ -1920,7 +1922,7 @@ class TestDockerJobLauncherStudyRuntime:
         ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, requirement)
         launcher.handle_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, ctx)
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-        assert requirement == ({"num_of_gpus": count} if managed else original_requirement)
+        assert requirement == ({**original_requirement, num_gpu_key: count} if managed else original_requirement)
 
     @pytest.mark.parametrize("key", ["DeviceIDs", "device_ids"])
     @pytest.mark.parametrize("managed", [True, False])

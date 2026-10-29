@@ -904,7 +904,9 @@ class DockerJobLauncher(JobLauncherSpec):
                         raise RuntimeError(
                             "GPU capacity not configured; configure GPUResourceManager with num_of_gpus > 0"
                         )
-                    resources.setdefault("num_of_gpus", len(manager.resources) if count < 0 else count)
+                    resources.setdefault(
+                        getattr(manager, "num_gpu_key", "num_of_gpus"), len(manager.resources) if count < 0 else count
+                    )
             except Exception as e:
                 fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, str(e), private=True, sticky=False)
 
