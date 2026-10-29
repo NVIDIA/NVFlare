@@ -264,6 +264,10 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 | `poll()` | Maps exit code: 0 → `SUCCESS`, 1 → `EXECUTION_ERROR`, 9 → `ABORTED`, `None` → `UNKNOWN`. |
 | `wait()` | Waits for the leader and its owned group, including successful leader exit. Retries group cancellation after each grace period; an expired grace period cannot release ownership. |
 
+On Linux, a group containing only unreaped zombies is quiescent. Two complete procfs observations must confirm
+there are no live processes or threads; incomplete observations retain ownership. Confirmed group shutdown is
+cached so later cleanup does not signal a released group ID.
+
 #### ProcessJobLauncher
 
 | Step | Action |

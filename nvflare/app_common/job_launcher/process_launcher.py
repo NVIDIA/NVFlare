@@ -16,6 +16,7 @@ import os
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from abc import abstractmethod
 from typing import Optional
@@ -38,7 +39,12 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     study_runtime_file_path,
 )
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
-from nvflare.utils.process_utils import ProcessAdapter, ProcessSpawnError, spawn_process
+from nvflare.utils.process_utils import (
+    ProcessAdapter,
+    ProcessSpawnError,
+    linux_process_group_has_live_members,
+    spawn_process,
+)
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
@@ -55,6 +61,7 @@ class ProcessHandle(JobHandleSpec):
         super().__init__()
         self.owns_process_group = owns_process_group
         self.app_dir = app_dir
+        self._group_exit_confirmed = False
 
         if process_adapter:
             self.adapter = process_adapter
@@ -64,6 +71,8 @@ class ProcessHandle(JobHandleSpec):
             raise ValueError("ProcessHandle requires a process object, a pid, or a ProcessAdapter.")
 
     def terminate(self):
+        if self._group_exit_confirmed:
+            return
         if not self.owns_process_group:
             self.adapter.terminate()
             return
@@ -113,6 +122,8 @@ class ProcessHandle(JobHandleSpec):
             return False
 
     def _group_exited(self):
+        if self._group_exit_confirmed:
+            return True
         # The launcher starts a new session. Other supplied processes need not
         # own their group.
         if not self.owns_process_group or self.adapter.poll() is None:
@@ -120,9 +131,20 @@ class ProcessHandle(JobHandleSpec):
         try:
             os.killpg(self.adapter.pid, 0)
         except ProcessLookupError:
+            self._group_exit_confirmed = True
             return True
         except (OSError, AttributeError):
             return False
+        if sys.platform == "linux":
+            # Zombies retain the PGID but cannot execute or write. Inspect
+            # threads too: a zombie main thread can have live worker threads.
+            # Require two complete observations to cover a concurrent fork.
+            if (
+                linux_process_group_has_live_members(self.adapter.pid) is False
+                and linux_process_group_has_live_members(self.adapter.pid) is False
+            ):
+                self._group_exit_confirmed = True
+                return True
         return False
 
 

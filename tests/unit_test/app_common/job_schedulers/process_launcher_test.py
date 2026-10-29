@@ -17,6 +17,7 @@ import shlex
 import signal
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
@@ -74,6 +75,9 @@ def test_process_waits_for_owned_group_cleanup(monkeypatch, cleanup, exit_code):
     adapter.poll.return_value = exit_code
     handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
     clock = isolate_time(monkeypatch, "nvflare.app_common.job_launcher.process_launcher")
+    monkeypatch.setattr(
+        "nvflare.app_common.job_launcher.process_launcher.linux_process_group_has_live_members", lambda _: True
+    )
     elapsed = [0.0]
     kills = []
 
@@ -147,6 +151,67 @@ def test_successful_leader_waits_for_real_owned_writer(tmp_path):
             pass
         if reaper is not None:
             reaper.join(timeout=2)
+        try:
+            os.waitpid(leader, 0)
+        except ChildProcessError:
+            pass
+
+
+@pytest.mark.parametrize(
+    "observations, settled", [([False, False], True), ([False, True], False), ([None], False), ([True], False)]
+)
+def test_linux_group_settlement_requires_two_complete_quiescent_observations(monkeypatch, observations, settled):
+    adapter = mock.Mock(pid=4321, poll=lambda: 0)
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.sys.platform", "linux")
+    probe = mock.Mock(side_effect=observations)
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.linux_process_group_has_live_members", probe)
+    killpg = mock.Mock()
+    monkeypatch.setattr(os, "killpg", killpg)
+    assert handle._group_exited() is settled
+    if settled:
+        calls = killpg.call_count
+        assert handle._group_exited()
+        handle.terminate()
+        assert killpg.call_count == calls
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux procfs zombie groups")
+@pytest.mark.timeout(10)
+def test_wait_settles_real_zombie_group_without_reaping_or_signalling_it(tmp_path, monkeypatch):
+    import psutil
+
+    from nvflare.utils.process_utils import ProcessAdapter
+
+    release = tmp_path / "release"
+    code = "import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); exec('while not p.exists():\\n time.sleep(0.01)')"
+    leader = os.posix_spawn(sys.executable, [sys.executable, "-c", code, str(release)], os.environ, setpgroup=0)
+    sibling = None
+    handle = ProcessHandle(process_adapter=ProcessAdapter(pid=leader), owns_process_group=True)
+    try:
+        sibling = os.posix_spawn(sys.executable, [sys.executable, "-c", "pass"], os.environ, setpgroup=leader)
+        observed = psutil.Process(sibling)
+        deadline = time.monotonic() + 3
+        while observed.status() != psutil.STATUS_ZOMBIE:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        release.touch()
+        killpg = mock.Mock(wraps=os.killpg)
+        monkeypatch.setattr(os, "killpg", killpg)
+        handle.wait()
+        assert observed.status() == psutil.STATUS_ZOMBIE
+        assert handle.can_restart()
+        assert all(call.args[1] == 0 for call in killpg.call_args_list)
+        calls = killpg.call_count
+        handle.terminate()
+        assert killpg.call_count == calls
+    finally:
+        if sibling is not None:
+            os.waitpid(sibling, 0)
+        try:
+            os.killpg(leader, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         try:
             os.waitpid(leader, 0)
         except ChildProcessError:
