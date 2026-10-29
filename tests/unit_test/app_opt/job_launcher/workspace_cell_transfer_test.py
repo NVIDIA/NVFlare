@@ -1091,3 +1091,38 @@ def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypat
         if job_cell:
             job_cell.stop()
         bootstrap.stop()
+
+
+def test_download_discards_bootstrap_scalar_reads_during_comm_reload(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    bootstrap_config = CommConfigurator()
+    assert bootstrap_config.get_config() is None
+    assert bootstrap_config.get_max_message_size() == DEFAULT_MAX_MSG_SIZE
+
+    site_config = {"max_message_size": 16777216, "streaming_chunk_size": 65536}
+    bundle = tmp_path / "bundle.zip"
+    _make_zip(str(bundle), {"local/comm_config.json": json.dumps(site_config).encode()})
+    fake = _FakeCell(fqcn="site-1", reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1"}))
+    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1")
+    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell", lambda *_: fake)
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
+    )
+    reload_from_dir = CommConfigurator.reload_from_dir
+
+    def reload_after_bootstrap_read(config_dir):
+        # Deterministically inject a live bootstrap callback's scalar reads just
+        # before the downloaded communication config replaces the old defaults.
+        assert bootstrap_config.get_max_message_size() == DEFAULT_MAX_MSG_SIZE
+        assert bootstrap_config.get_streaming_chunk_size(1234) == 1234
+        reload_from_dir(config_dir)
+
+    monkeypatch.setattr(CommConfigurator, "reload_from_dir", reload_after_bootstrap_read)
+    args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID)
+
+    download_workspace(args, secure_mode=False)
+
+    job_config = CommConfigurator()
+    assert job_config.get_max_message_size() == site_config["max_message_size"]
+    assert job_config.get_streaming_chunk_size(1234) == site_config["streaming_chunk_size"]

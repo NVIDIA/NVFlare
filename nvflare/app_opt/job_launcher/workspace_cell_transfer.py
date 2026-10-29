@@ -724,8 +724,10 @@ def download_workspace(args, secure_mode: bool) -> None:
         # only from the site-owned local directory, even when it has no config.
         site_config_dir = os.path.join(args.workspace, "local")
         config_path = [site_config_dir, args.workspace] if os.path.isdir(site_config_dir) else [args.workspace]
-        ConfigService.refresh_config_path(config_path)
         CommConfigurator.reload_from_dir(site_config_dir)
+        # Invalidate scalar values last so bootstrap reads during the reload
+        # cannot leave old defaults cached for subsequent job components.
+        ConfigService.refresh_config_path(config_path)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
