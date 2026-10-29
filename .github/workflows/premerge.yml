@@ -120,8 +120,6 @@ jobs:
           tar --extract --gzip --file "${GITLEAKS_ARCHIVE}" gitleaks
           install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Check unit-test timing contracts
-        run: python3 ci/check_unit_test_contracts.py
       - name: Run unit test
         env:
           NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}

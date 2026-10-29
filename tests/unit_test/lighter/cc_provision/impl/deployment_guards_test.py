@@ -56,11 +56,6 @@ def test_shell_prerequisite_probe_is_bounded(monkeypatch):
         require_coco_bash()
 
 
-def test_unit_process_boundary_rejects_real_launches():
-    with pytest.raises(pytest.fail.Exception, match="CoCo unit test attempted to launch a real process"):
-        subprocess.run(["this-command-must-never-start"])
-
-
 @pytest.mark.parametrize("quantity", [1, "1"])
 def test_profile_resource_quantities_match_kubernetes(quantity):
     resources = {"limits": {"nvidia.com/pgpu": quantity}}

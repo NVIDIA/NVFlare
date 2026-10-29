@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 """Exercise production builders for mixed CoCo targets without publishing images."""
 
 import json
@@ -25,7 +24,7 @@ from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import verify_folder_signature
-from tests.coco_test_utils.provisioning import _coco_project
+from tests.unit_test.lighter.cc_provision.impl.test_cc import _coco_project
 
 
 def test_real_builders_sign_mixed_coco_kits(tmp_path):

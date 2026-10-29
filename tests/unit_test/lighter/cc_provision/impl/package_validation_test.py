@@ -12,19 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CoCo external-runtime contracts; run serially outside unit workers."""
+"""Validate source-file boundaries without modifying the user's index."""
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from tests.coco_test_utils.process import run_coco_command
-
-ROOT = Path(__file__).resolve().parents[4]
-
+ROOT = Path(__file__).resolve().parents[5]
 SOURCE = ROOT / "examples/devops/coco"
 
 
@@ -37,19 +35,19 @@ def test_working_tree_validation_checks_new_guides_and_pending_deletions(tmp_pat
     reference = Path("nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md")
     (repo / reference).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(SOURCE.parents[2] / reference, repo / reference)
-    run_coco_command(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     obsolete = source / "obsolete.md"
     obsolete.write_text("Retired guide\n")
-    run_coco_command(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     obsolete.unlink()
     guide = source / "NEW-GUIDE.md"
     guide.write_text("[Missing guide](missing-guide.md)\n")
     command = [sys.executable, str(source / "validate-package.py"), "--working-tree"]
-    result = run_coco_command(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode != 0
     assert "NEW-GUIDE.md: missing-guide.md" in result.stderr
     guide.write_text("[Start](README.md)\n")
-    result = run_coco_command(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
@@ -58,9 +56,9 @@ def test_working_tree_validation_rejects_untracked_symlinks(tmp_path):
     repo = tmp_path / "repo"
     source = repo / "examples/devops/coco"
     shutil.copytree(SOURCE, source)
-    run_coco_command(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     (source / "linked.md").symlink_to("README.md")
-    result = run_coco_command(
+    result = subprocess.run(
         [sys.executable, str(source / "validate-package.py"), "--working-tree"],
         capture_output=True,
         text=True,
@@ -84,10 +82,10 @@ def test_working_tree_validation_reports_unsupported_sources(tmp_path, case):
     elif case == "archive":
         expected = "requires an NVFlare Git source checkout"
     else:
-        run_coco_command(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
         (repo / ".gitignore").write_text("copy/\n")
         expected = "Package sources are excluded from Git"
-    result = run_coco_command(
+    result = subprocess.run(
         [sys.executable, str(source / "validate-package.py")],
         capture_output=True,
         text=True,

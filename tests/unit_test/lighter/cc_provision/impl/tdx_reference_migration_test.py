@@ -12,24 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CoCo external-runtime contracts; run serially outside unit workers."""
+"""Reference updates use the existing Trustee API without rewriting installation state."""
 
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from tests.coco_test_utils.process import COMMAND_TIMEOUT, run_coco_command
-
-COCO = Path(__file__).resolve().parents[4] / "examples/devops/coco"
-
+COCO = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 STAGE = "02-install-platform-reference-values.sh"
-
 FIELDS = ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam", "tdvfkernel", "tdvfkernelparams")
-
 STUB_COMMON = r"""
 source "$SCRIPT_DIR/platform.env"
 die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -129,7 +125,7 @@ def run_update(role, env, values, mode=None):
     arguments = ["bash", str(role / STAGE), str(values)]
     if mode is not None:
         arguments.append(mode)
-    return run_coco_command(arguments, env=env, capture_output=True, text=True, timeout=COMMAND_TIMEOUT)
+    return subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=10)
 
 
 def test_reference_update_preserves_other_tee_and_local_installation_configuration(tmp_path, service):
@@ -188,11 +184,11 @@ def test_removed_approval_flags_fail_before_reading_values_or_service_configurat
     role = tmp_path / "service"
     role.mkdir()
     shutil.copyfile(COCO / "service" / script, role / script)
-    result = run_coco_command(
+    result = subprocess.run(
         ["bash", str(role / script), str(tmp_path / "missing-values.json"), option],
         capture_output=True,
         text=True,
-        timeout=COMMAND_TIMEOUT,
+        timeout=10,
     )
     assert result.returncode == 2
     assert "Usage:" in result.stderr

@@ -12,23 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CoCo external-runtime contracts; run serially outside unit workers."""
+"""Optional real OPA checks, using the already pinned service CLI (no Python extras)."""
 
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from tests.coco_test_utils.process import run_coco_command
-
-ROOT = Path(__file__).resolve().parents[4]
-
+ROOT = Path(__file__).resolve().parents[5]
 OPA = os.environ.get("COCO_TEST_OPA") or shutil.which("opa")
-
 pytestmark = pytest.mark.skipif(not OPA, reason="set COCO_TEST_OPA to the service-pinned OPA 1.8.0 executable")
-
 FIELDS = ("bootloader", "tee", "snp", "microcode")
 
 
@@ -47,7 +43,7 @@ def test_reported_tcb_must_be_numeric_and_meet_floor(tmp_path, field, value):
     snp.update({"reported_tcb_" + name: 1 for name in FIELDS})
 
     def evaluate(evidence):
-        result = run_coco_command(
+        result = subprocess.run(
             [
                 OPA,
                 "eval",

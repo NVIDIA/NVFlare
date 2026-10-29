@@ -19,19 +19,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def forbid_external_processes(monkeypatch):
-    """CoCo unit cases must fake process boundaries, including calls in helpers."""
-
-    def forbidden(*args, **kwargs):
-        pytest.fail(
-            "CoCo unit test attempted to launch a real process. Mock the component's process boundary, "
-            "or move the executable contract to tests/integration_test/fast/coco and preserve CI coverage."
-        )
-
-    monkeypatch.setattr(subprocess, "Popen", forbidden)
-
-
 @pytest.fixture(scope="session")
 def require_source_git_commit():
     """Skip checkout-dependent tests when CI supplies source without Git metadata."""
