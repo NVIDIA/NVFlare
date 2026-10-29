@@ -137,7 +137,13 @@ case "$SOCK_GID" in
 esac
 GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 
+GPU_ENV_ARGS=()
+if [ "${CUDA_VISIBLE_DEVICES+x}" = "x" ]; then
+    GPU_ENV_ARGS=(-e "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
+fi
+
 docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
+    "${GPU_ENV_ARGS[@]}" \
     --user "$(id -u):$(id -g)" \
     "${GROUP_ADD_ARGS[@]}" \
     --network "$NETWORK_NAME" \
