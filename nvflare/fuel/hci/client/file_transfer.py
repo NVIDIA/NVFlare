@@ -339,9 +339,7 @@ class FileTransferModule(CommandModule):
                 except Exception as e:
                     return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to sign job folder: {e}"}
             else:
-                self.logger.warning(
-                    "job folder '%s' submitted without signing — no client key available", folder_name
-                )
+                self.logger.warning("job folder '%s' submitted without signing — no client key available", folder_name)
 
             # zip the data
             out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
