@@ -135,7 +135,10 @@ class Workspace:
         )
 
     def get_resources_file_path(self):
-        return self._fallback_path([WorkspaceConstants.RESOURCES_CONFIG, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG])
+        from nvflare.fuel.utils.config_factory import ConfigFactory
+
+        _, path = ConfigFactory.search_config_format(WorkspaceConstants.RESOURCES_CONFIG, [self.get_site_config_dir()])
+        return path
 
     def get_job_resources_file_path(self):
         return self.get_file_path_in_site_config(WorkspaceConstants.JOB_RESOURCES_CONFIG)

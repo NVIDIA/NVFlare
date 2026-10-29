@@ -232,18 +232,9 @@ def is_dir_empty(path: str):
 
 
 def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
-    if target_fmt == ConfigFormat.JSON:
-        return HOCONConverter.to_json(dst_config)
-    elif target_fmt == ConfigFormat.PYHOCON:
-        return HOCONConverter.to_hocon(config=dst_config, level=1)
-    elif target_fmt == ConfigFormat.OMEGACONF:
-        from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
-        from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-
-        loader = OmegaConfLoader()
-        dst_dict_config = PyhoconConfig(dst_config).to_dict()
-        omega_conf = loader.load_config_from_dict(dst_dict_config)
-        return omega_conf.to_str()
+    if target_fmt != ConfigFormat.JSON:
+        raise ValueError("Configuration output must use JSON with optional comments (.json or .conf)")
+    return HOCONConverter.to_json(dst_config)
 
 
 def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):

@@ -125,9 +125,10 @@ class ConfigFactory:
         """
         if config_format is None:
             return None
-        if config_format == ConfigFormat.OMEGACONF:
+        if config_format in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
+            name = "YAML" if config_format == ConfigFormat.OMEGACONF else "HOCON"
             raise ValueError(
-                "YAML configuration is no longer supported; convert to JSON with comments (.json or .conf)."
+                f"{name} configuration is no longer supported; convert to JSON with comments (.json or .conf)."
             )
         return ConfigFactory._fmt2Loader.get(config_format)
 

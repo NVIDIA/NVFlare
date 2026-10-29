@@ -241,7 +241,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={},
-            config_path=[self.app_root],
+            config_path=[self.workspace_obj.get_startup_kit_dir(), self.workspace_obj.get_site_config_dir()],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
@@ -255,7 +255,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         """Reject multiple ClientAPIExecutors that would share Client API runtime state.
 
         Job authoring treats executor types generically. Runtime validation is authoritative
-        because client apps may also be supplied directly as JSON/HOCON. Other Executor
+        because client apps may also be supplied directly as JSON with comments. Other Executor
         implementations remain unrestricted.
         """
         # Deferred import keeps the normal client configurator import path light for jobs

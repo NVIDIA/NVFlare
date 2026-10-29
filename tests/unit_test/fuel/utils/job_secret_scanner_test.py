@@ -21,11 +21,12 @@ from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_j
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
 
-def test_warns_on_generated_config_without_exposing_value(tmp_path):
+@pytest.mark.parametrize("extension", ["json", "conf"])
+def test_warns_on_generated_config_without_exposing_value(tmp_path, extension):
     config_dir = tmp_path / "job" / "app" / "config"
     config_dir.mkdir(parents=True)
     secret = "ghp_" + "Ab1" * 12
-    (config_dir / "config_fed_client.json").write_text(json.dumps({"token": secret}))
+    (config_dir / f"config_fed_client.{extension}").write_text("// configuration\n" + json.dumps({"token": secret}))
 
     with pytest.warns(PotentialSecretWarning) as record:
         findings = warn_on_potential_secrets_in_job_dir(str(tmp_path), job_name="job")

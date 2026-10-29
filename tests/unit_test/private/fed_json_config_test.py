@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.json_configer import ConfigError
@@ -51,9 +52,13 @@ WORKFLOWS = [
 
 
 def _workspace(tmp_path):
+    for name in ("startup", "local"):
+        (tmp_path / name).mkdir(exist_ok=True)
     return SimpleNamespace(
         get_app_custom_dir=lambda job_id: str(tmp_path / job_id / "custom"),
         get_app_config_dir=lambda job_id: str(tmp_path / job_id / "config"),
+        get_startup_kit_dir=lambda: str(tmp_path / "startup"),
+        get_site_config_dir=lambda: str(tmp_path / "local"),
     )
 
 
@@ -89,6 +94,20 @@ def _configure(tmp_path, is_server, key, value):
     return configurator
 
 
+@pytest.mark.parametrize("is_server", [False, True])
+def test_job_cannot_supply_site_comm_config(tmp_path, is_server):
+    _workspace(tmp_path)
+    (tmp_path / "comm_config.json").write_text('{"source": "job"}')
+    ConfigService.reset()
+    try:
+        _configure(tmp_path, is_server, "task_data_filters", [])
+        assert ConfigService.load_configuration("comm_config.json") is None
+        (tmp_path / "local/comm_config.conf").write_text('// site configuration\n{"source": "site"}')
+        assert ConfigService.load_configuration("comm_config.json").to_dict() == {"source": "site"}
+    finally:
+        ConfigService.reset()
+
+
 @pytest.mark.parametrize("is_server", [False, True], ids=["client", "server"])
 @pytest.mark.parametrize("key", ["task_data_filters", "task_result_filters"])
 @pytest.mark.parametrize(
@@ -101,12 +120,15 @@ def _configure(tmp_path, is_server, key, value):
     ids=["one-chain-as-dict", "chains-keyed-by-name", "string"],
 )
 class TestFilterChainShape:
-    def test_non_list_filter_chains_are_refused(self, tmp_path, is_server, key, value, got):
+    def test_non_list_filter_chains_are_refused(self, tmp_path, is_server, key, value, got, capsys):
         # A chain is recognised at `task_*_filters.#<n>`, which the scanner only produces for a
         # list. Before this check any other shape matched nothing, so the chain was never built
         # and the job ran with the filters the site asked for silently absent.
         with pytest.raises(ConfigError, match='"%s" must be a list of filter chains but got %s' % (key, got)):
             _configure(tmp_path, is_server, key, value)
+        output = capsys.readouterr().out
+        assert "Error processing config " in output
+        assert "Error processing config ['" not in output
 
 
 @pytest.mark.parametrize("is_server", [False, True], ids=["client", "server"])

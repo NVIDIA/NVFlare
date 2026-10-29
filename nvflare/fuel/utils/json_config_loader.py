@@ -20,6 +20,15 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate configuration key: {key}")
+        result[key] = value
+    return result
+
+
 def loads(text):
     """Parse JSON with comments and trailing commas without changing source positions."""
     result = list(text)
@@ -56,7 +65,7 @@ def loads(text):
             previous = char
             in_string = char == '"'
         pos += 1
-    return json.loads("".join(result))
+    return json.loads("".join(result), object_pairs_hook=_unique_object)
 
 
 def load(file):

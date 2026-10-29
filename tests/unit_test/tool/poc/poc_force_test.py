@@ -22,13 +22,12 @@ import yaml
 from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
-from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from tests.timing_utils import isolate_time
 
 
 def _load_config_dict(path):
-    return PyhoconConfig(CF.parse_file(str(path))).to_dict()
+    return CF.parse_file(str(path)).as_plain_ordered_dict()
 
 
 def _make_admin_startup_kit(prod_dir, identity):

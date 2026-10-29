@@ -73,7 +73,7 @@ def test_live_job_configuration_security_and_commented_numpy_job(tmp_path, monke
             "permissions": {"lead": {"submit_job": "any", "view": "any", "byoc": "none", "shell_commands": "none"}},
         }
         for name in ("localhost", "site-1"):
-            (kits / name / "local/authorization.json").write_text(json.dumps(policy))
+            (kits / name / "local/authorization.json").write_text("// site permissions\n" + json.dumps(policy))
         with monkeypatch.context() as server_env:
             server_env.setenv("NVFLARE_SECURITY_CANARY", "SYNTHETIC-SERVER-SECRET")
             launcher.start_servers()

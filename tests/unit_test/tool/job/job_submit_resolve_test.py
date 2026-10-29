@@ -25,7 +25,8 @@ import pytest
 
 
 @pytest.mark.parametrize("template_name", ["sag_np", "sag_nemo"])
-def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name):
+@pytest.mark.parametrize("resolved", [True, False])
+def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name, resolved, capsys):
     from pathlib import Path
 
     from nvflare.tool.job.job_cli import create_job
@@ -34,6 +35,9 @@ def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name):
     template = tmp_path / "template"
     shutil.copytree(templates / template_name, template)
     app = template / "app_1" if template_name == "sag_nemo" else template
+    source = next(template.rglob("config_fed_server.conf"))
+    values = ("rounds = 7\n" if resolved else "") + "num_rounds = ${rounds}\n"
+    source.write_text(source.read_text().replace("{", "{\n" + values, 1))
     auxiliary = app / "auxiliary.conf"
     auxiliary.write_text("external-tool-setting = unchanged\n")
     scripts = tmp_path / "scripts"
@@ -41,23 +45,52 @@ def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name):
     (scripts / "settings.yaml").write_text("dataset: training\n")
     job = tmp_path / "job"
     monkeypatch.setattr("sys.argv", ["nvflare", "job", "create"])
-    create_job(
-        Namespace(
-            template=str(template),
-            job_folder=str(job),
-            force=False,
-            script_dir=str(scripts),
-            config_file=None,
-            debug=False,
-        )
+    args = Namespace(
+        template=str(template),
+        job_folder=str(job),
+        force=False,
+        script_dir=str(scripts),
+        config_file=None,
+        debug=False,
     )
+    if not resolved:
+        with pytest.raises(SystemExit) as error:
+            create_job(args)
+        assert error.value.code == 4
+        assert "Cannot resolve variable ${rounds}" in capsys.readouterr().err
+        return
+    create_job(args)
     configs = list(job.glob("*/config/config_fed_*.conf"))
     assert configs
     for path in [job / "meta.conf", *configs]:
         assert isinstance(json.loads(path.read_text()), dict)
+        if path.name == "config_fed_server.conf":
+            assert json.loads(path.read_text())["num_rounds"] == 7
     config_dir = job / ("app_1" if template_name == "sag_nemo" else "app") / "config"
     assert (config_dir / auxiliary.name).read_bytes() == auxiliary.read_bytes()
     assert (config_dir.parent / "custom/settings.yaml").read_bytes() == (scripts / "settings.yaml").read_bytes()
+
+
+@pytest.mark.parametrize("filename", ["meta.yaml", "app/config/config_fed_client.yml"])
+def test_job_cli_reports_unsupported_yaml_configuration(tmp_path, filename, monkeypatch, capsys):
+    from pathlib import Path
+
+    from nvflare.tool.job.job_cli import create_job
+
+    job = tmp_path / "job"
+    _make_valid_job(str(job))
+    if filename == "meta.yaml":
+        (job / "meta.json").unlink()
+    (job / filename).write_text("format_version: 2\n")
+    template = Path(__file__).resolve().parents[4] / "job_templates/sag_np"
+    monkeypatch.setattr("sys.argv", ["nvflare", "job", "create"])
+    args = Namespace(
+        template=str(template), job_folder=str(job), force=False, script_dir=None, config_file=None, debug=False
+    )
+    with pytest.raises(SystemExit) as error:
+        create_job(args)
+    assert error.value.code == 4
+    assert "YAML configuration" in capsys.readouterr().err
 
 
 def _make_valid_job(root: str) -> str:

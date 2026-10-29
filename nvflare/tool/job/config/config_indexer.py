@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
-from nvflare.fuel.utils.config import Config, ConfigFormat
+from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.import_utils import optional_import
 
@@ -34,7 +34,7 @@ class KeyIndex:
 
 
 def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigTree, List[str], Dict]:
-    # use pyhocon to load config
+    # Build a ConfigTree for local CLI editing.
     config_dir = os.path.dirname(input_config_file_path)
     config_dir = None if not config_dir else config_dir
     config_file_path = os.path.basename(input_config_file_path)
@@ -83,20 +83,17 @@ def _quote_resource_keys(value):
 
 
 def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
-    """Loads config using pyhocon."""
+    """Load JSON configuration into a ConfigTree for local template editing."""
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
         if temp_conf:
             config_file_path = temp_conf.file_path
-            if temp_conf.format == ConfigFormat.PYHOCON:
-                config: ConfigTree = temp_conf.conf
-            else:
-                config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
+            config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
         else:
             raise ValueError(f"Config is None for file:'{config_file_path}'.")
 
     except Exception as e:
-        raise RuntimeError(f"filed to parse file {config_file_path}:", e)
+        raise ValueError(f"Failed to parse file {config_file_path}: {e}") from e
     return config, config_file_path
 
 

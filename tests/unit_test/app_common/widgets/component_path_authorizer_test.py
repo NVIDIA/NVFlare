@@ -23,6 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.apis.workspace import Workspace
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import (
     ALLOW_ALL,
@@ -112,6 +113,18 @@ def test_allows_component_from_resources_class_allow_list(tmp_path, comment):
     )
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
+def test_resources_conf_restriction_overrides_json_default(tmp_path):
+    (tmp_path / "startup").mkdir()
+    local = tmp_path / "local"
+    local.mkdir()
+    (local / "resources.json.default").write_text('{"class_allow_list": ["*"]}')
+    (local / "resources.conf").write_text('// explicit policy\n{"class_allow_list": []}')
+    workspace = Workspace(str(tmp_path))
+    component = {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"}
+    with pytest.raises(UnsafeComponentError, match="allow_list"):
+        ComponentPathAuthorizer().authorize_component_config(component, Node(component), workspace=workspace)
 
 
 def test_direct_authorize_component_config_uses_workspace_class_allow_list(tmp_path):

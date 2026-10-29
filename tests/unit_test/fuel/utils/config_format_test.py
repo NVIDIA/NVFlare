@@ -36,7 +36,7 @@ class TestConfigFormat:
 
     def test_config_exts3(self):
         exts = ConfigFormat.extensions()
-        assert "|".join(exts) == ".json|.conf|.json.default|.conf.default"
+        assert "|".join(exts) == ".json|.conf|.yml|.yaml|.json.default|.conf.default|.yml.default|.yaml.default"
 
     def test_config_exts4(self):
         exts = ConfigFormat.extensions(target_fmt=ConfigFormat.JSON)

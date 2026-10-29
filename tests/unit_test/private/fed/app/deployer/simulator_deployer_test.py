@@ -37,6 +37,16 @@ from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
 
 
+def test_simulator_accepts_commented_resources_with_existing_policy(tmp_path):
+    local = tmp_path / "local"
+    local.mkdir()
+    (local / "resources.json").write_text('// retain policy\n{"class_allow_list": ["nvflare."]}')
+    deployer = SimulatorDeployer.__new__(SimulatorDeployer)
+    deployer.open_ports = [8002]
+    config, _ = deployer._create_simulator_client_config("site-1", argparse.Namespace(workspace=str(tmp_path)))
+    assert config["class_allow_list"] == ["nvflare."]
+
+
 @pytest.mark.xdist_group(name="simulator_deploy")
 class TestSimulatorDeploy(unittest.TestCase):
     def setUp(self) -> None:

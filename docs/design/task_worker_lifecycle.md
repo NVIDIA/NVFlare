@@ -138,8 +138,8 @@ Resource resolution has explicit boundaries:
   resource settings remain a compatibility fallback when the matching launcher
   block is absent; legacy/native GPU counts must remain consistent.
 - Submission preserves `@default`/`@ALL` through CLI preparation and serialization.
-  Server-side lifetime inspection does not resolve unrelated client environment
-  variables or open client HOCON includes. Declare the root lifetime literally.
+  Server-side lifetime inspection does not resolve client runtime references.
+  HOCON includes are unsupported. Declare the root lifetime literally.
 
 Kubernetes enforces each worker's Pod requests/limits. Two CPU CJs at the same site
 can stay resident while their workers successively use one available GPU.

@@ -29,6 +29,7 @@ from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
+from pyhocon.exceptions import ConfigException
 
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
@@ -224,6 +225,8 @@ def create_job(cmd_args):
         config_dirs = get_config_dirs(job_folder, app_names)
 
         fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
+        if real_config_path:
+            ConfigFactory.get_config_loader(fmt)
         if real_config_path and not cmd_args.force:
             from nvflare.tool.cli_output import print_human
 
@@ -250,12 +253,12 @@ def create_job(cmd_args):
             for name in (CONFIG_FED_CLIENT_CONF, CONFIG_FED_SERVER_CONF):
                 config_path = os.path.join(app_config_dir, name)
                 if os.path.isfile(config_path):
-                    save_config(CF.parse_file(config_path, resolve=False), config_path)
+                    save_config(CF.parse_file(config_path), config_path)
         prepare_meta_config(cmd_args, template_src, app_names)
         app_variable_values = prepare_job_config(cmd_args, app_names)
         display_template_variables(job_folder, app_variable_values)
 
-    except ValueError as e:
+    except (ValueError, ConfigException) as e:
         from nvflare.tool.cli_output import output_usage_error, print_human
 
         if cmd_args.debug:
@@ -499,14 +502,14 @@ def submit_job(cmd_args):
     )
 
     def _has_job_meta(path: str) -> bool:
-        for ext in (".json", ".conf"):
+        for ext in (".json", ".conf", ".yml", ".yaml"):
             if os.path.isfile(os.path.join(path, f"meta{ext}")):
                 return True
         return False
 
     def _has_server_config(path: str) -> bool:
         config_dir = os.path.join(path, "app", "config")
-        for ext in (".json", ".conf"):
+        for ext in (".json", ".conf", ".yml", ".yaml"):
             if os.path.isfile(os.path.join(config_dir, f"config_fed_server{ext}")):
                 return True
         return False

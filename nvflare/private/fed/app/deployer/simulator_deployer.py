@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shutil
 import tempfile
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import ClientRegMsgKey

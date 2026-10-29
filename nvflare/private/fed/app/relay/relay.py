@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -32,6 +31,7 @@ from nvflare.fuel.f3.drivers.net_utils import SSL_ROOT_CERT, enhance_credential_
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService, search_file
 from nvflare.fuel.utils.log_utils import configure_logging

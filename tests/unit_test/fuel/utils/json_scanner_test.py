@@ -265,9 +265,10 @@ def test_scan_errors_omit_nodes_and_preserve_secure_diagnostics(exception_type, 
 
     expected_type = ComponentNotAuthorized if exception_type is ComponentNotAuthorized else ConfigError
     with pytest.raises(expected_type, match="token") as error:
-        JsonScanner({"token": "synthetic-private-value"}, "config.json").scan(FailingProcessor())
+        JsonScanner({"token": "synthetic-private-value"}, ["config.json"]).scan(FailingProcessor())
 
     assert "config.json" in str(error.value)
+    assert "['config.json']" not in str(error.value)
     assert "synthetic-private-value" not in str(error.value) + caplog.text
     if not secure:
         assert "invalid setting" in str(error.value)

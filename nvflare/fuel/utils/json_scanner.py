@@ -89,7 +89,7 @@ class JsonScanner(object):
         """
         if not isinstance(json_data, dict):
             raise ValueError("json_data must be dict")
-        self.location = location
+        self.location = ", ".join(location) if isinstance(location, (list, tuple)) else location
         self.data = json_data
         self.logger = get_obj_logger(self)
 

@@ -309,7 +309,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         try:
             self._do_configure()
         except Exception as e:
-            print("Error processing config {}: {}".format(self.config_file_names, secure_format_exception(e)))
+            print("Error processing config {}: {}".format(self.json_scanner.location, secure_format_exception(e)))
             raise e
 
     def process_element(self, node: Node):

@@ -440,7 +440,7 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
         custom_dir = os.path.join(job_folder, app_name, "custom")
         for root, dirs, files in os.walk(custom_dir):
             for f in files:
-                for ext in config_extensions:
+                for ext in ConfigFormat.extensions(ConfigFormat.JSON):
                     if f.endswith(ext) and not f.startswith(NVFLARE_PREFIX):
                         file = os.path.join(root, f)
                         config_files = app_config_files.get(app_name, [])

@@ -63,6 +63,12 @@ def test_comments_preserve_error_locations():
     assert error.value.colno == 6
 
 
+@pytest.mark.parametrize("text", ['{"x": 1, "x": 2}', '{"outer": {"x": {}, "x": {"y": 1}}}'])
+def test_duplicate_keys_are_rejected(text):
+    with pytest.raises(ValueError, match="Duplicate configuration key: x"):
+        JsonConfigLoader().load_config_from_str(text)
+
+
 class TestJsonConfig:
     def return_dict(self, file_name):
         if file_name == "test.json":

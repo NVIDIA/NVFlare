@@ -237,7 +237,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
 
         if policy_file_path and os.path.exists(policy_file_path):
             with open(policy_file_path, "rt") as f:
-                policy_config = json.load(f)
+                policy_config = json_config.load(f)
             authorizer = FLAuthorizer(site_org, policy_config)
 
     if not authorizer:
@@ -253,7 +253,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     registry = None
     if os.path.exists(studies_file):
         with open(studies_file, "rt") as f:
-            registry = StudyRegistry(json.load(f))
+            registry = StudyRegistry(json_config.load(f))
     StudyRegistryService.initialize(registry)
 
 

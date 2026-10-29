@@ -102,8 +102,8 @@ existing bring-your-own-code authorization requirement.
 ## Admission and enforcement
 
 Submission derives coordinator entries from the client app declaration, without
-resolving unrelated application arguments on the server. Client-only environment
-substitutions and HOCON includes remain client concerns. Task lifetime should be
+resolving unrelated application arguments on the server. Native client runtime
+variable references remain client concerns; HOCON includes are unsupported. Task lifetime should be
 declared literally in the submitted root client config. Before launch, CP checks
 the deployed resolved mode; CJ checks it again before constructing application
 components. A task admission marker cannot excuse a resident CJ from compute

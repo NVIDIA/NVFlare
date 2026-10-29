@@ -57,6 +57,8 @@ def _config(**args):
 
 
 def _configure(tmp_path, config, authorizer=None):
+    for name in ("startup", "local"):
+        (tmp_path / name).mkdir(exist_ok=True)
     config_file = tmp_path / "config_fed_client.json"
     config_file.write_text(json.dumps(config))
     args = argparse.Namespace(
@@ -71,6 +73,8 @@ def _configure(tmp_path, config, authorizer=None):
         get_app_custom_dir=lambda _: str(tmp_path / "custom"),
         get_app_config_dir=lambda _: str(tmp_path / "config"),
         get_resources_file_path=lambda: None,
+        get_startup_kit_dir=lambda: str(tmp_path / "startup"),
+        get_site_config_dir=lambda: str(tmp_path / "local"),
     )
     configurator = ClientJsonConfigurator(workspace, str(config_file), args, str(tmp_path))
     if authorizer:

@@ -19,8 +19,9 @@ Before upgrading, convert existing HOCON/YAML jobs and site configurations.
 HOCON ``.conf`` filenames can stay unchanged; YAML files must become ``.json``
 or ``.conf`` files containing JSON. YAML overrides produce a conversion error
 instead of silently selecting a default configuration. Combine repeated HOCON
-object definitions explicitly: JSON keeps only the last duplicate key.
+object definitions explicitly: duplicate JSON keys are rejected.
 Place site configuration overrides under ``startup/`` or ``local/``.
+The ``CONFIG``/``core_opt`` installation extras have been removed; JSON comments need no extra dependency.
 
 See the sections below for more in-depth information about the different capabilities and types of configuration files:
 

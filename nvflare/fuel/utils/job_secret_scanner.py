@@ -14,10 +14,10 @@
 
 """Secret validation for generated NVFlare job configuration files."""
 
-import json
 import os
 from typing import List, Optional
 
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.secret_utils import SecretFinding, warn_on_potential_secrets
 
 _GENERATED_JOB_CONFIG_FILES = frozenset(
@@ -25,6 +25,9 @@ _GENERATED_JOB_CONFIG_FILES = frozenset(
         "config_fed_client.json",
         "config_fed_server.json",
         "meta.json",
+        "config_fed_client.conf",
+        "config_fed_server.conf",
+        "meta.conf",
     }
 )
 

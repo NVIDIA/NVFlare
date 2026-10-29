@@ -24,6 +24,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from nvflare.fuel.utils import json_config_loader as json_config
+
 
 class LoadResult(Enum):
     """Constants for different results when loading secure content."""
@@ -100,9 +102,9 @@ class SecurityContentManager(object):
 
         if data_bytes:
             try:
-                data_text = data_bytes.decode("ascii")
-                json_data = json.loads(data_text)
-            except json.JSONDecodeError:
+                data_text = data_bytes.decode("utf-8")
+                json_data = json_config.loads(data_text)
+            except (ValueError, UnicodeError):
                 return None, LoadResult.INVALID_CONTENT
 
         return json_data, result

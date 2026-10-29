@@ -175,7 +175,6 @@ class TestConfigIndex:
 def test_json_indexing_preserves_resource_keys_and_application_values(tmp_path):
     import json
 
-    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
     from nvflare.tool.job.config.config_indexer import load_pyhocon_conf
 
     original = {
@@ -185,4 +184,4 @@ def test_json_indexing_preserves_resource_keys_and_application_values(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps(original))
     config, _ = load_pyhocon_conf(path.name, str(tmp_path))
-    assert PyhoconConfig(config).to_dict() == original
+    assert config.as_plain_ordered_dict() == original
