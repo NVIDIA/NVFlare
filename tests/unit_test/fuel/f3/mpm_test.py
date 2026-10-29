@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -181,3 +182,22 @@ class TestMainProcessMonitorReturnCode:
 
         force_exit = self._run(tmp_path / "missing", _fail_publication)
         force_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+
+
+@pytest.mark.parametrize("completed", [True, False])
+def test_cleanup_deadline_policy_does_not_depend_on_thread_scheduling(cleanup_monitor, monkeypatch, completed):
+    from nvflare.fuel.f3 import mpm
+
+    waiter = MagicMock()
+    waiter.wait.return_value = completed
+    cleanup_thread = MagicMock()
+    local_threading = SimpleNamespace(Event=lambda: waiter, Thread=MagicMock(return_value=cleanup_thread))
+    monkeypatch.setattr(mpm, "threading", local_threading)
+    monkeypatch.setattr(mpm, "time", SimpleNamespace(sleep=MagicMock()))
+    cleanup_monitor.add_cleanup_cb(lambda: None)
+
+    cleanup_monitor._start_shutdown(shutdown_grace_time=0, cleanup_grace_time=0.1)
+
+    cleanup_thread.start.assert_called_once_with()
+    waiter.wait.assert_called_once_with(timeout=0.1)
+    assert cleanup_monitor.logger().warning.called is (not completed)

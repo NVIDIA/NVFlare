@@ -27,6 +27,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
@@ -1268,13 +1269,16 @@ class DownloadService:
                 signals.extend(cls._active_source_downloads.get(key, ()))
             while len(cls._source_failures) > _MAX_SOURCE_FAILURE_TOMBSTONES:
                 cls._source_failures.pop(next(iter(cls._source_failures)))
+            # Publish under the same lock as shutdown so cleanup cannot replace
+            # an already-observed source failure (or vice versa).
+            for signal in signals:
+                if not signal.triggered:
+                    signal.trigger(failure_reason)
         if cls._logger:
             cls._logger.warning(
                 f"received owned source failure from {origin} for {source_fqcn} "
                 f"({len(unique_ref_ids)} ref(s)): {failure_reason}"
             )
-        for signal in signals:
-            signal.trigger(failure_reason)
         return make_reply(ReturnCode.OK)
 
     @classmethod
@@ -1287,8 +1291,8 @@ class DownloadService:
             cls._purge_source_failures_locked(now)
             cls._active_source_downloads.setdefault(key, set()).add(signal)
             failure = cls._source_failures.get(key)
-        if failure:
-            signal.trigger(failure[0])
+            if failure:
+                signal.trigger(failure[0])
         return signal
 
     @classmethod
@@ -1491,7 +1495,10 @@ class DownloadService:
         with cls._source_failure_lock:
             for signals in cls._active_source_downloads.values():
                 for signal in signals:
-                    signal.trigger("download service shut down")
+                    # Preserve local cancellation through FOBS decoding. A plain
+                    # failure becomes RuntimeError and fatally exits server jobs.
+                    if not signal.triggered:
+                        signal.trigger(DownloadCancelled("download service shut down"))
             cls._active_source_downloads.clear()
             cls._source_failures.clear()
 
@@ -2003,11 +2010,18 @@ def download_object(
     progress_cb: Optional[Callable] = None,
     progress_interval: float = 30.0,
 ):
-    """Download an object and interrupt it promptly if its owned source dies."""
+    """Download an object and interrupt it promptly if its owned source dies.
+
+    Raises DownloadCancelled when local service shutdown cancels the download,
+    after notifying the consumer so it can release partial data/resources.
+    """
     source_signal = DownloadService._register_source_download(cell, from_fqcn, ref_id, abort_signal)
     try:
         if source_signal.triggered and source_signal.value:
-            consumer.download_failed(ref_id, str(source_signal.value))
+            reason = source_signal.value
+            consumer.download_failed(ref_id, str(reason))
+            if isinstance(reason, DownloadCancelled):
+                raise reason
             return
         return _download_object(
             from_fqcn=from_fqcn,
@@ -2122,13 +2136,17 @@ def _download_object(
         except Exception as ex:
             logger.warning(f"failed to cancel download for ref={ref_id}: {secure_format_exception(ex)}")
 
-    def _abort_download(reason: str):
+    def _abort_download(reason: str | DownloadCancelled):
         _send_cancel()
-        consumer.download_failed(ref_id, reason)
+        consumer.download_failed(ref_id, str(reason))
         _emit_progress("aborted", force=True)
+        if isinstance(reason, DownloadCancelled):
+            raise reason
 
-    def _abort_reason(default: str) -> str:
+    def _abort_reason(default: str) -> str | DownloadCancelled:
         value = abort_signal.value if abort_signal is not None else None
+        if isinstance(value, DownloadCancelled):
+            return value
         return str(value) if value else default
 
     def _interruptible_backoff(duration: float) -> bool:
