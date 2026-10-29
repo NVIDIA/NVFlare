@@ -181,27 +181,25 @@ changes must directly address it.
 Pull requests without a qualifying issue will not be accepted.
 
 1. Create a new ticket or take a known ticket from `the issue
-list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. Check if there is
-already a branch dedicated to the task. 3. If the task has not been
+list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. If the task has not been
 taken, `create a new branch in your
 fork <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`__
 of the codebase. Ideally, the new branch should be based on the latest
-``main`` branch. 4. Make changes to the branch (`use detailed commit
-messages if possible <https://chris.beams.io/posts/git-commit/>`__). 5.
+``main`` branch. 3. Make changes to the branch (`use detailed commit
+messages if possible <https://chris.beams.io/posts/git-commit/>`__). 4.
 Make sure that new tests cover the changes and the changed codebase
-`passes all tests locally <#unit-testing>`__. 6. `Create a new pull
+`passes all tests locally <#unit-testing>`__. 5. `Create a new pull
 request <https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request>`__
 from the task branch to the ``main`` branch, with detailed descriptions of
-the purpose of this pull request. 7. Check `the CI/CD status of the pull
+the purpose of this pull request. 6. Check `the CI/CD status of the pull
 request <https://github.com/NVIDIA/NVFlare/actions>`__, make sure all
-CI/CD tests passed. 8. Assign 2 reviewers. One of the reviewers must be
-a code owner for this section of code. 9. Wait for reviews; if there are
+CI/CD tests passed. 7. Wait for reviews; if there are
 reviews, make point-to-point responses, make further code changes if
-needed. 10. If there are conflicts between the pull request branch and
+needed. 8. If there are conflicts between the pull request branch and
 the ``main`` branch, pull the changes from ``main`` and resolve the
-conflicts locally. 11. Reviewer and contributor may have discussions
+conflicts locally. 9. Reviewer and contributor may have discussions
 back and forth until all comments addressed. All conversations must be
-resolved for PR to pass. 12. Wait for the pull request to be merged.
+resolved for PR to pass. 10. Wait for the pull request to be merged.
 
 Reviewing pull requests
 -----------------------
