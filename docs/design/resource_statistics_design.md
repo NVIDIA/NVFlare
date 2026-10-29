@@ -7,20 +7,20 @@ a job, its recorded CPU work, retained file sizes, and messaging payload. It
 lets users inspect a participant or compare retained jobs without installing
 a monitoring service or changing their application.
 
-**Status: design proposal.** This document does not add resource collection,
-report schemas, or CLI commands to main. Implementation and qualification will
-follow separately. The resident-job contract below establishes the measurement
-semantics; **Task lifetime** describes the required extension for disposable
-workers. The task-aware report layout and supported deployment matrix must be
-finalized with that implementation. Each claimed execution profile needs
-validation on the final integrated revision.
+**Status: design proposal.** This document does not add collection, schemas or
+commands to main. It defines the planned task-aware format 4.0. The development
+branch currently implements resident-job format 3.0; task integration follows
+separately. The design supports every execution mode admitted by the task runtime,
+including additional backends as they become supported.
 
 ## Measurement contract
 
-A participant is the server or a client site. The proposed resident-job report
-has one shared `duration_seconds`, separate `resource_capacity` and `resource_utilization`
-groups, and optional quality information on each measurement. This abbreviated
-example omits report identity and optional hardware descriptions:
+A participant is the server or a client site. It has one final rollup, one
+shared participant `duration_seconds`, and separate capacity and utilization
+measurements. `resource_capacity` is the job-process startup snapshot.
+`resource_time` rolls up capacity multiplied by each execution's own duration;
+it uses the same representation as job/study totals. Worker records stay internal.
+This abbreviated resident example omits identity and optional descriptions:
 
 ```json
 {
@@ -29,6 +29,11 @@ example omits report identity and optional hardware descriptions:
     "cpu": {"groups": [{"units": "2"}]},
     "memory": {"bytes": "2147483648"},
     "gpu": {"groups": [{"kind": "cuda_device_unclassified", "count": "1"}]}
+  },
+  "resource_time": {
+    "cpu": {"groups": [{"unit_seconds": "20"}]},
+    "memory": {"byte_seconds": "21474836480"},
+    "gpu": {"groups": [{"kind": "cuda_device_unclassified", "instance_seconds": "10"}]}
   },
   "resource_utilization": {
     "cpu_consumed": {"cpu_seconds": "2"},
@@ -45,16 +50,17 @@ example omits report identity and optional hardware descriptions:
 - **CUDA capacity:** devices visible for CUDA execution to the observed process.
   Device and MIG-instance counts are integers. Visibility does not prove use or
   exclusive allocation.
-- **CPU work:** user plus system CPU time of the job process and descendants
-  included by the operating system after waiting. Arbitrary unwaited descendants
-  are not guaranteed covered.
-- **Duration:** one monotonic elapsed window shared by CPU work and the startup
-  capacity observation, including application waiting.
+- **CPU work:** user plus system CPU time from disjoint job/worker process
+  scopes and their normally waited descendants. Task workers are folded in once;
+  arbitrary unwaited descendants are not guaranteed covered.
+- **Duration:** one participant window, including waiting. Each execution has
+  one shared CPU/capacity window internally; worker durations are not added to
+  participant elapsed time.
 - **Retained content:** bounded sum of regular-file lengths in the run directory
   at finalization. Symlinks and the top-level report directory are excluded.
   This is logical content size, not physical disk occupancy or peak storage.
 - **Message traffic:** separate sent/received payload-byte counters from the job
-  Cell and its managed trainers, including control payloads and repeated
+  Cell, task workers and managed trainers, including control payloads and repeated
   transfers. Shared parent-process traffic and network headers are excluded.
 - **Workspace filesystem:** visible filesystem capacity at finalization,
   available in participant detail; not storage reserved for the job.
@@ -65,12 +71,13 @@ quality beside their values. For example, `retained_content.bytes` can carry a
 partial-scan explanation without affecting CPU results. Numeric strings preserve
 precision; field names identify units.
 
-A query derives capacity-time from capacity × duration. The example yields
-20 CPU-unit seconds and 10 CUDA-device seconds. Average CPU use is 2 CPU
-seconds / 10 seconds = 0.2 logical CPUs. Shared hardware can appear in several
-reports, so totals are observations across executions, not unique hardware,
-reservations, billing, or GPU utilization. Filesystem capacity is never summed
-or multiplied by duration.
+The collector computes capacity-time for each execution and combines it in
+`resource_time`. Job/study queries sum those participant values without multiplying
+startup capacity by duration again. The example yields 20 CPU-unit seconds and
+10 device-seconds; average CPU use is 2/10 = 0.2 logical CPUs. Shared hardware
+can be visible to several executions, so totals are observations, not unique
+hardware, reservations, billing or GPU busy time. Filesystem capacity is never
+summed or multiplied by duration.
 
 Sent and received counters are summed separately, including local endpoint
 traffic. A successful local send is not proof of receipt. Their sum is not a
@@ -95,9 +102,8 @@ classification. No mandatory PyTorch dependency is added.
 
 Driver enumeration can initialize CUDA in its calling process. A bounded
 fresh-process probe is the recommended approach to avoid altering application
-CUDA initialization. It must inherit the execution's finalized visibility and
-limits, and pass timeout, cleanup, and application lifecycle checks before
-adoption.
+CUDA initialization. It inherits the execution's finalized visibility and
+limits and has bounded lifetime under the existing process owner.
 
 The parent supplies participant identity and attaches the report to the existing
 `REPORT_JOB_OUTCOME` request. The server retains accepted reports until
@@ -124,48 +130,45 @@ create a second recovery protocol.
 Filesystem scans and requested archive members are bounded. Scan deadlines are
 cooperative and cannot interrupt a blocked filesystem call. ZIP indexing has a
 separate metadata-read bound. Remote job stores may still transfer the whole
-workspace archive to answer a small query; representative latency, temporary
-storage, and concurrency measurements are release checks.
+workspace archive to answer a small query. Query latency and temporary storage
+can therefore depend on the archive size, not just the statistics size.
 
 ## Task lifetime
 
-With `execution_lifetime="task"`, a resident Client Job coordinates disposable
-workers. Its CPU/GPU budget can differ from each worker's budget. A coordinator
-with zero GPUs can run a worker with one GPU, release it, and continue uploading
-the result. The coordinator's capacity multiplied by the job duration cannot
-describe that execution.
+With `execution_lifetime="task"`, the resident Client Job coordinates workers
+whose resources and lifetimes can differ from its own. Statistics are collected
+inside each worker's actual environment and rolled into the participant's existing
+CPU-work and traffic fields. Retained content is scanned once at finalization.
+There is no public task or worker list.
 
-The planned extension observes each worker in its actual execution environment
-and folds its bounded report into the participant report. It preserves one
-duration per execution, shared by that execution's CPU and capacity measurements.
-It keeps coordinator and worker capacity distinguishable, derives worker
-capacity-time using worker durations, and counts each physical attempt once.
-Saved-result retransmission adds actual messaging traffic but no new compute.
-Failed work remains resource use even when its result is never accepted.
+For example, a 60-second coordinator with zero GPUs and 2 CPU seconds launches
+one-GPU workers lasting 10 and 5 seconds, using 8 and 4 CPU seconds. The participant
+reports 15 GPU-device-seconds, 14 CPU seconds and a 60-second duration. Average
+CPU use is about 0.23 logical CPUs. It does not report two GPUs or multiply worker
+capacity by the coordinator's lifetime.
 
-CPU ownership must be explicit: local Process workers may already contribute
-to the coordinator's waited-child counters, whereas native Kubernetes/Slurm
-workers do not. The proposed task-mode accounting uses coordinator self CPU
-plus worker CPU, without also adding those workers through coordinator child
-counters. Resident-job accounting retains the self-plus-waited-descendants boundary
-defined above.
+Task-mode CPU uses coordinator self CPU plus disjoint worker CPU; workers are
+not also added through the coordinator's waited-child counters. A reused worker
+session contributes once even when it runs several assignments. Saved-result
+retransmission adds actual traffic but no compute; failed physical work still
+contributes. Multi-rank adapters must avoid repeating shared capacity per rank.
 
-Worker reports remain optional measurement artifacts, independent of successful
-task completion, checkpoint promotion, receipts, and confirmed resource
-settlement. Missing reports produce gaps. Statistics must never authorize
-publication, retry, or cleanup. Retained content is scanned once at participant
-finalization; per-task scans would count the same workspace repeatedly.
+Worker reports are optional measurement artifacts, separate from task completion,
+checkpoint promotion, receipts and resource settlement. Missing observations mark
+the affected rollups partial or unavailable. Statistics never authorizes publication,
+retry, recovery or cleanup. If a known participant window does not contain all
+included work, omit its duration and CPU average rather than use a misleading
+denominator; valid CPU and capacity-time totals remain useful.
 
-The shared task runtime is the integration point. Process CPU and Kubernetes
-are the first integration targets; Process GPU and single-node Slurm coverage
-depends on the corresponding runtime support and qualification. Docker task
-accounting is outside this proposal's initial scope.
-External-process/attach task execution, arbitrary detached descendants, and
-multi-node task accounting require their own supported runtime contracts.
-This extension requires a coordinated stored-report/schema, query, CLI, and
-documentation update before task statistics can be advertised as supported.
+The accounting path is shared across supported Process, Docker, Kubernetes,
+Slurm and custom task launchers. External/attach, grouped and distributed workers
+use the same rollup when their runtime supplies execution identity, attributable
+measurement scopes, artifact access and lifecycle ownership. Deferred runtime
+modes remain integration targets; this design does not enable them or bypass
+their admission checks. Runtime support and statistics integration must both be
+present before a mode is described as supported.
 
-## Proposed user interface and release checks
+## Proposed user interface
 
 These commands specify the intended interface; they are not enabled by this
 documentation change.
@@ -178,19 +181,13 @@ nvflare resources --job JOB_ID --format json
 nvflare resources --schema
 ```
 
-The proposed command serves people and agents. Capacity and utilization have
-separate tables. Counts display as integers; CPU quotas, average CPU use, and
-capacity-time can be fractional. Text uses at most two decimal places without
-trailing zeros, with `<0.01` for small positive values. JSON preserves precision.
-
-Before merging the implementation, require report/derived-total reconciliation,
-missing and malformed data tests, duplicate/retry isolation, real job completion and failure paths,
-concurrent-job checks, authorization/archive bounds, and documentation/example
-consistency. Qualify CPU/GPU visibility, worker teardown, application CUDA
-initialization, and overhead on the exact release candidate. Task-mode claims
-also require distinct coordinator/worker budgets and proof of no CPU or retry
-double counting. Standalone simulator collection and unqualified launchers are
-not implied by this design.
+The proposed command serves people and agents. Capacity-time and utilization
+are rolled up per participant, including the selected-site view. Participant
+detail labels the raw snapshot **Job-process startup capacity**; for task jobs
+this is coordinator capacity, not a worker inventory. GPU counts are integers;
+CPU quotas, average CPU use and capacity-time may be fractional. Text uses at
+most two decimals without trailing zeros, with `<0.01` for small positive values.
+JSON preserves precision and existing measurement quality markers.
 
 ## Related architecture
 
@@ -199,4 +196,4 @@ ownership, coordinator/compute budgets, settlement, and result receipts.
 Resource statistics must observe those contracts without changing them.
 The [job launcher and handle design](job_launcher_and_job_handle.md) describes
 backend lifecycle ownership. The implementation should add the public report
-reference, generated examples, and QA acceptance guide alongside its code.
+reference and generated examples alongside its code.
