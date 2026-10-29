@@ -1,18 +1,17 @@
 # Resource statistics: measurement and accounting
 
-This is the proposed measurement design for task-aware format 4.0, not a claim
-that collection is implemented on main. The [overview](resource_statistics_design.md)
-defines the user contract; the [reporting design](resource_statistics_reporting.md)
-defines wire validation and identity. Execution records and intervals here are
-internal artifacts, not a public task list. Prototype collectors inform this
-proposal but do not establish support for a launcher or execution mode.
+This page defines measurement and accounting for format 4.0. The
+[overview](resource_statistics_design.md) defines the user contract; the
+[reporting design](resource_statistics_reporting.md) defines wire validation and
+identity. Execution records and intervals are internal artifacts. The public
+result contains one rollup per participant.
 
 ## Collection boundary and ownership
 
 The existing client [job entry point](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/app/client/worker_process.py)
 and server [job entry point](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/app/server/runner_process.py)
-prepare/download the workspace before constructing application components. Add
-the collector after that preparation and before configuration constructs user
+prepare/download the workspace before constructing application components. The
+collector starts after that preparation and before configuration constructs user
 components. Do not install it in the persistent site/server parent, change
 Python startup, or count the initial workspace download as job-Cell traffic.
 
@@ -122,15 +121,16 @@ The helper consolidates overlarge optional descriptions into counts by kind.
 Output is captured in a temporary file, not an unbounded in-memory pipe. The read
 limit is not a hard disk-write quota if interpreter startup itself writes output.
 There is no sampling loop, framework import or change to the application's
-CUDA initialization. Probe startup cost still needs qualification for short tasks.
+CUDA initialization. Helper startup is a fixed per-execution cost and can be
+significant for short tasks.
 
 The choice differs from copying [PyTorch's discovery implementation](https://github.com/pytorch/pytorch/blob/v2.9.0/torch/cuda/__init__.py#L894-L966):
 NVFlare does not need framework device caching or its NVML-based count/fallback machinery.
 The system Driver is the numeric authority inside the same execution environment;
 NVML only enriches already counted ordinals. A helper isolates Driver initialization
-without adding PyTorch as a dependency. Tests must still establish that the helper
-inherits the deployed container/scheduler visibility; a host NVML count cannot
-substitute for that evidence.
+without adding PyTorch as a dependency. The helper must inherit the deployed
+container/scheduler visibility; a host NVML count cannot substitute for observation
+inside the execution environment.
 
 ## CPU work and disjoint execution scopes
 
@@ -223,7 +223,7 @@ external symlink cannot escape the scan. Close all iterators/descriptors on ever
 exit. If safe primitives are unsupported, report unavailable rather than fall
 back to a followable path walk.
 
-Proposed fixed budgets: 100,000 visited entries, depth 64, and one second of
+Fixed scan budgets: 100,000 visited entries, depth 64, and one second of
 monotonic traversal, checked between entries. Keep depth-bounded iterators, not
 a materialized directory listing. A limit, permission error, vanishing entry or
 overflow retains a partial subtotal. Failure before observing either an entry
@@ -278,44 +278,11 @@ startup snapshot or the final file scan.
 
 Consider these disjoint executions, all within one 60-second participant window:
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Execution</th>
-  <th>Duration</th>
-  <th>CPU capacity</th>
-  <th>RAM capacity</th>
-  <th>Visible GPUs</th>
-  <th>CPU work</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td>Coordinator</td>
-  <td>60 s</td>
-  <td>2 units</td>
-  <td>2 GiB</td>
-  <td>0</td>
-  <td>2 CPU s</td>
-</tr>
-<tr>
-  <td>Worker A</td>
-  <td>10 s</td>
-  <td>2 units</td>
-  <td>4 GiB</td>
-  <td>1</td>
-  <td>8 CPU s</td>
-</tr>
-<tr>
-  <td>Worker B</td>
-  <td>5 s</td>
-  <td>2 units</td>
-  <td>4 GiB</td>
-  <td>1</td>
-  <td>4 CPU s</td>
-</tr>
-</tbody>
-</table>
+| Execution | Duration | CPU capacity | RAM capacity | Visible GPUs | CPU work |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Coordinator | 60 s | 2 units | 2 GiB | 0 | 2 CPU s |
+| Worker A | 10 s | 2 units | 4 GiB | 1 | 8 CPU s |
+| Worker B | 5 s | 2 units | 4 GiB | 1 | 4 CPU s |
 
 Assuming compatible CPU/GPU descriptions, the participant records 150 CPU-unit
 seconds, 180 GiB-seconds (`193273528320` byte-seconds), 15 GPU-instance-seconds,

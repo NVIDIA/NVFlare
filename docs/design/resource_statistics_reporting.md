@@ -1,43 +1,21 @@
 # Resource statistics: reports, delivery and queries
 
-**Status: proposed format 4.0, not an available main-branch API.** This is the
-record and delivery contract for the [overview](resource_statistics_design.md).
+Public resource reports use **schema format 4.0**. This page defines the record
+and delivery contract introduced in the [overview](resource_statistics_design.md).
 The [measurement design](resource_statistics_measurement.md) defines how values
 are obtained; the [implementation design](resource_statistics_implementation.md)
-maps the proposed components to existing lifecycle hooks. Prototype formats are
-not a backwards-compatibility obligation for this unreleased feature.
+maps the components to their lifecycle hooks.
 
 ## Records and ownership
 
 There are three public record kinds. The `kind` strings below are prefixed by
 `nvflare.resource_stats.`; each record has `schema_version: "4.0"`.
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Kind</th>
-  <th>Required top-level fields, in addition to version and kind</th>
-  <th>Owner</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>participant_summary</code></td>
-  <td><code>job_id</code>, <code>participant_name</code>, <code>reported_at</code>, <code>resource_capacity</code>, <code>resource_time</code>, <code>resource_utilization</code>, <code>workspace_filesystem</code>; optional <code>duration_seconds</code></td>
-  <td>The participant's parent constructs identity and timestamp around the job process's observations.</td>
-</tr>
-<tr>
-  <td><code>resource_summary</code></td>
-  <td><code>job_id</code>, <code>participants</code></td>
-  <td>The root server builds the expected participant roster and copies accepted measurements into it.</td>
-</tr>
-<tr>
-  <td><code>study_summary</code></td>
-  <td><code>selection</code>, <code>generated_at</code>, <code>coverage</code>, <code>jobs</code>, <code>totals</code></td>
-  <td>The authorized query derives a view of accessible jobs; it is not a stored report.</td>
-</tr>
-</tbody>
-</table>
+| Kind | Required top-level fields, in addition to version and kind | Owner |
+| --- | --- | --- |
+| `participant_summary` | `job_id`, `participant_name`, `reported_at`, `resource_capacity`, `resource_time`, `resource_utilization`, `workspace_filesystem`; optional `duration_seconds` | The participant's parent constructs identity and timestamp around the job process's observations. |
+| `resource_summary` | `job_id`, `participants` | The root server builds the expected participant roster and copies accepted measurements into it. |
+| `study_summary` | `selection`, `generated_at`, `coverage`, `jobs`, `totals` | The authorized query derives a view of accessible jobs; it is not a stored report. |
 
 `participant_name` is the existing logical site name, or `server` for the server
 slot. The root server assigns `role: "server"|"client"` from its roster; the child
@@ -105,28 +83,11 @@ observation or a group with count zero.
 Successful measurement objects omit `status` and `issues`. Explicit success
 strings such as `reported` or `accepted` are not serialized. Exceptions use:
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Measurement state</th>
-  <th>Representation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td>Complete</td>
-  <td>Required value fields, no quality fields. A measured zero is valid.</td>
-</tr>
-<tr>
-  <td>Partial</td>
-  <td><code>status: &quot;partial&quot;</code>, usable value fields, and nonempty <code>issues</code>.</td>
-</tr>
-<tr>
-  <td>Unavailable</td>
-  <td><code>status: &quot;unavailable&quot;</code> and nonempty <code>issues</code>; no usable value fields.</td>
-</tr>
-</tbody>
-</table>
+| Measurement state | Representation |
+| --- | --- |
+| Complete | Required value fields, no quality fields. A measured zero is valid. |
+| Partial | `status: "partial"`, usable value fields, and nonempty `issues`. |
+| Unavailable | `status: "unavailable"` and nonempty `issues`; no usable value fields. |
 
 This table describes participant measurements, including those copied into the
 job's participant list. Derived job/study **utilization totals** use `status`
@@ -157,11 +118,10 @@ CPU/capacity-time values may still be useful without an average.
 
 ## Terminal transport and validation
 
-Add an optional `resource_report` field to the existing `REPORT_JOB_OUTCOME`
-request. Its value is `{"participant_summary": <UTF-8 JSON bytes>}`. The outcome
+The `REPORT_JOB_OUTCOME` request carries an optional `resource_report` field.
+Its value is `{"participant_summary": <UTF-8 JSON bytes>}`. The outcome
 reply carries a separate `resource_report_status`; statistics rejection must not
-reject or change the training outcome. Proposed request/reply keys are new;
-the existing [client outcome path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/client/client_executor.py)
+reject or change the training outcome. The [client outcome path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/client/client_executor.py)
 and [server handler](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/fed_server.py)
 remain the transport and authentication boundaries.
 
@@ -199,106 +159,33 @@ input; it cannot attest the truth of a site's self-report.
 
 ### Limits and retries
 
-These are initial format-4 implementation bounds, not additional configuration
+These are format-4 implementation bounds, not additional configuration
 options. A producer must stop before exceeding them; a receiver must enforce them
 independently.
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Bound</th>
-  <th>Limit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td>Participant JSON, before and after canonicalization</td>
-  <td>1 MiB</td>
-</tr>
-<tr>
-  <td>Accepted canonical participant bytes retained per job</td>
-  <td>64 MiB</td>
-</tr>
-<tr>
-  <td>Job or study summary JSON</td>
-  <td>64 MiB</td>
-</tr>
-<tr>
-  <td>JSON nesting</td>
-  <td>32 levels</td>
-</tr>
-<tr>
-  <td>Expected participants per job; selected jobs per study query</td>
-  <td>10,000 each</td>
-</tr>
-<tr>
-  <td>CPU or GPU groups per object; visible GPU instances</td>
-  <td>4,096 each</td>
-</tr>
-<tr>
-  <td>Total CPU capacity units in a snapshot</td>
-  <td>1,048,576</td>
-</tr>
-<tr>
-  <td>ZIP metadata reads while constructing the member index</td>
-  <td>4 MiB</td>
-</tr>
-</tbody>
-</table>
+| Bound | Limit |
+| --- | --- |
+| Participant JSON, before and after canonicalization | 1 MiB |
+| Accepted canonical participant bytes retained per job | 64 MiB |
+| Job or study summary JSON | 64 MiB |
+| JSON nesting | 32 levels |
+| Expected participants per job; selected jobs per study query | 10,000 each |
+| CPU or GPU groups per object; visible GPU instances | 4,096 each |
+| Total CPU capacity units in a snapshot | 1,048,576 |
+| ZIP metadata reads while constructing the member index | 4 MiB |
 
 One immutable accepted record occupies a `(job_id, participant_name)` slot:
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Condition</th>
-  <th><code>resource_report_status</code></th>
-  <th>Effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td>First valid record while open</td>
-  <td><code>accepted</code></td>
-  <td>Retain it once.</td>
-</tr>
-<tr>
-  <td>Semantically equivalent retry, including after closure</td>
-  <td><code>duplicate</code></td>
-  <td>No additional values or receipt entry.</td>
-</tr>
-<tr>
-  <td>Different valid record for an accepted open slot</td>
-  <td><code>conflict</code></td>
-  <td>Keep the original.</td>
-</tr>
-<tr>
-  <td>New or changed record after closure</td>
-  <td><code>too_late</code></td>
-  <td>Do not alter the archive snapshot.</td>
-</tr>
-<tr>
-  <td>Invalid content while open</td>
-  <td><code>invalid</code></td>
-  <td>Keep any accepted record; otherwise record a gap that a valid arrival may repair before closure.</td>
-</tr>
-<tr>
-  <td>No statistics on an otherwise valid outcome</td>
-  <td><code>not_provided</code></td>
-  <td>Ordinary outcome processing continues.</td>
-</tr>
-<tr>
-  <td>Unknown/disabled slot or no current job ledger</td>
-  <td><code>not_expected</code></td>
-  <td>Do not allocate state for the request.</td>
-</tr>
-<tr>
-  <td>Capacity or internal acceptance failure</td>
-  <td><code>server_error</code></td>
-  <td>Do not change the job outcome or accepted subtotal.</td>
-</tr>
-</tbody>
-</table>
+| Condition | `resource_report_status` | Effect |
+| --- | --- | --- |
+| First valid record while open | `accepted` | Retain it once. |
+| Semantically equivalent retry, including after closure | `duplicate` | No additional values or receipt entry. |
+| Different valid record for an accepted open slot | `conflict` | Keep the original. |
+| New or changed record after closure | `too_late` | Do not alter the archive snapshot. |
+| Invalid content while open | `invalid` | Keep any accepted record; otherwise record a gap that a valid arrival may repair before closure. |
+| No statistics on an otherwise valid outcome | `not_provided` | Ordinary outcome processing continues. |
+| Unknown/disabled slot or no current job ledger | `not_expected` | Do not allocate state for the request. |
+| Capacity or internal acceptance failure | `server_error` | Do not change the job outcome or accepted subtotal. |
 
 The normal terminal-outcome mechanism may retransmit the same bytes, including
 the original `reported_at`; rebuilding a record with a new timestamp is not an
@@ -306,11 +193,11 @@ equivalent retry. There is no separate statistics sender, retry journal or
 acknowledgement protocol. Old peers
 may omit the report or its reply status. Treat that as absent statistics, not an
 outcome failure. An old archive without this bundle is unavailable, not a zero
-measurement. Do not interpret an unsupported prototype version as format 4.0.
+measurement. Do not interpret an unsupported version as format 4.0.
 
 ## Server ledger and archive publication
 
-The proposed coordinator has one per-job state and lock, plus a short registry
+The coordinator has one per-job state and lock, plus a short registry
 lock for lookup. Parsing occurs outside the per-job lock; acceptance rechecks
 closure after parsing. A slow finalization for one job must not block unrelated
 jobs through a global filesystem-I/O lock. Keep only bounded canonical report
@@ -358,13 +245,13 @@ returns the same committed bundle; it does not accept newer measurements.
 If publication fails, exclude/discard the incomplete statistics bundle and
 continue the normal job/archive failure policy. Do not turn an optional
 statistics failure into a different training result. A crash before publication
-can lose the in-memory ledger; this proposal does not add server restart adoption
-or make delivery durable. Unpublished child files are never an authoritative
-alternative to a committed server bundle.
+can lose the in-memory ledger; the protocol provides neither server restart
+adoption nor durable delivery before archive publication. Unpublished child files
+are never an authoritative alternative to a committed server bundle.
 
 ## Authorized reads and derived totals
 
-Proposed API methods are `Session.get_job_resources(job_id, site=None)` and
+The Session API exposes `Session.get_job_resources(job_id, site=None)` and
 `Session.get_study_resources()`. A job response contains `resource_summary` and,
 when a site is selected, `participant_summary`; the study response contains
 `study_summary`. They extend the existing
@@ -422,7 +309,7 @@ retains the numeric strings and quality markers above.
 
 Format 4.0 requires `resource_time` on every participant, including resident
 jobs. There is no optional fallback that reinterprets startup capacity as a task
-rollup. Unreleased formats 1–3 are not silently upgraded. Unsupported or absent
+rollup. Unsupported formats are not silently upgraded. Unsupported or absent
 archives are reported as unavailable; deployment may still complete normally
 when a peer does not send statistics.
 

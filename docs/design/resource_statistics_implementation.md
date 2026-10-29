@@ -3,130 +3,46 @@
 This page describes the components and lifecycle of the format-4 design introduced
 in the [overview](resource_statistics_design.md). The [measurement design](resource_statistics_measurement.md)
 defines the algorithms; the [reporting design](resource_statistics_reporting.md)
-defines records, validation, delivery and queries. This docs-only proposal adds no
-runtime code or commands to main. The interfaces below describe the intended
-implementation, informed by the resource-statistics development branch.
+defines records, validation, delivery and queries. The internal interfaces below
+keep resource accounting separate from runtime control and application code.
 
 ## Components and ownership
 
-The design adds an internal `nvflare/private/fed/resource_stats/` package. Its
-interfaces are internal integration points, not extension APIs for job code.
+The internal `nvflare/private/fed/resource_stats/` package owns collection and reporting.
+Its interfaces are internal integration points, not extension APIs for job code.
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Component</th>
-  <th>Input and result</th>
-  <th>Responsibility</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>contract.py</code></td>
-  <td>Untrusted JSON/measurements to normalized records; participant entries to job/study totals</td>
-  <td>Version, shape, numeric and size validation; decimal arithmetic and quality propagation. No runtime or filesystem ownership.</td>
-</tr>
-<tr>
-  <td><code>accumulator.py:ResourceCapacityRecorder</code></td>
-  <td>One probe snapshot to normalized startup capacity</td>
-  <td>Preserve independent dimensions and consolidate equivalent hardware groups. No separate timer.</td>
-</tr>
-<tr>
-  <td><code>collector.py:ExecutionResourceCollector</code></td>
-  <td>Finalized execution environment to one immutable <code>stop()</code> snapshot</td>
-  <td>Probe once, open the shared CPU/capacity window, then freeze CPU work, capacity and duration. No file scan or worker teardown.</td>
-</tr>
-<tr>
-  <td><code>collector.py:JobResourceCollector</code></td>
-  <td>Job snapshot, optional worker totals and traffic to terminal handoff</td>
-  <td>Own the participant's task reducer; compute capacity-time; scan retained content once and observe the workspace filesystem.</td>
-</tr>
-<tr>
-  <td><code>cpu_consumed.py</code>, <code>message_traffic.py</code>, <code>probes/</code></td>
-  <td>OS and existing endpoint observations to measurement objects</td>
-  <td>Isolate platform/native APIs and keep missing observations local to the affected measurement.</td>
-</tr>
-<tr>
-  <td><code>task_rollup.py:TaskResourceReducer</code></td>
-  <td>Registered runtime identities and settled worker files to worker-only subtotals</td>
-  <td>Deduplicate physical executions, preserve gaps and enforce state/artifact budgets. No launch, cancellation or settlement decisions.</td>
-</tr>
-<tr>
-  <td><code>handoff.py</code></td>
-  <td>Job measurements to/from a checked local terminal file</td>
-  <td>Atomic publication, bounded reads and per-measurement validation. Parent-owned identity is added separately.</td>
-</tr>
-<tr>
-  <td><code>coordinator.py:ResourceStatsCoordinator</code></td>
-  <td>Trusted expected roster and authenticated reports to frozen archive bundle</td>
-  <td>One accepted record per participant, closure, atomic publication and missing/invalid roster entries.</td>
-</tr>
-<tr>
-  <td><code>archive_reader.py</code></td>
-  <td>Authorized workspace archive to validated summary/detail</td>
-  <td>Read fixed members under independent metadata and decoded-data limits. No arbitrary extraction.</td>
-</tr>
-</tbody>
-</table>
+| Component | Input and result | Responsibility |
+| --- | --- | --- |
+| `contract.py` | Untrusted JSON/measurements to normalized records; participant entries to job/study totals | Version, shape, numeric and size validation; decimal arithmetic and quality propagation. No runtime or filesystem ownership. |
+| `accumulator.py:ResourceCapacityRecorder` | One probe snapshot to normalized startup capacity | Preserve independent dimensions and consolidate equivalent hardware groups. No separate timer. |
+| `collector.py:ExecutionResourceCollector` | Finalized execution environment to one immutable `stop()` snapshot | Probe once, open the shared CPU/capacity window, then freeze CPU work, capacity and duration. No file scan or worker teardown. |
+| `collector.py:JobResourceCollector` | Job snapshot, optional worker totals and traffic to terminal handoff | Own the participant's task reducer; compute capacity-time; scan retained content once and observe the workspace filesystem. |
+| `cpu_consumed.py`, `message_traffic.py`, `probes/` | OS and existing endpoint observations to measurement objects | Isolate platform/native APIs and keep missing observations local to the affected measurement. |
+| `task_rollup.py:TaskResourceReducer` | Registered runtime identities and settled worker files to worker-only subtotals | Deduplicate physical executions, preserve gaps and enforce state/artifact budgets. No launch, cancellation or settlement decisions. |
+| `handoff.py` | Job measurements to/from a checked local terminal file | Atomic publication, bounded reads and per-measurement validation. Parent-owned identity is added separately. |
+| `coordinator.py:ResourceStatsCoordinator` | Trusted expected roster and authenticated reports to frozen archive bundle | One accepted record per participant, closure, atomic publication and missing/invalid roster entries. |
+| `archive_reader.py` | Authorized workspace archive to validated summary/detail | Read fixed members under independent metadata and decoded-data limits. No arbitrary extraction. |
 
 The existing runtime retains lifecycle and authorization ownership. Collection is
 placed in entry-point cleanup rather than an application event handler, so an app
 construction failure can still produce statistics.
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Existing integration point</th>
-  <th>Added behavior</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>private/fed/app/client/worker_process.py:main</code> and <code>app/server/runner_process.py:main</code></td>
-  <td>Start collection after workspace and custom-path preparation, before application configuration; finalize during owned cleanup. Observe the Client/Server Job, not its persistent parent.</td>
-</tr>
-<tr>
-  <td><code>private/fed/app/job_process_cleanup.py:shutdown_job_process_runtime</code></td>
-  <td>Check callback coverage without an extra wait; preserve publication, streaming shutdown, Cell stop and security-close order.</td>
-</tr>
-<tr>
-  <td><code>private/fed/client/client_app_runner.py:ClientAppRunner.start_run</code></td>
-  <td>After resolving and validating <code>execution_lifetime</code>, select task accounting before constructing adapters/components.</td>
-</tr>
-<tr>
-  <td><code>private/fed/client/task_worker_executor.py:TaskWorkerExecutor</code></td>
-  <td>Give each supervisor the same participant-owned reducer; preserve saved-result replay and receipt handling.</td>
-</tr>
-<tr>
-  <td><code>private/fed/task_worker/worker.py:run_worker</code> and <code>supervisor.py:TaskSupervisor</code></td>
-  <td>Collect inside the worker; register before launch and fold after existing settlement proof.</td>
-</tr>
-<tr>
-  <td><code>private/fed/client/client_executor.py:JobExecutor._wait_child_process_finish</code></td>
-  <td>Consume the terminal handoff, attach parent-owned identity, release resources through normal owner checks, then report the outcome.</td>
-</tr>
-<tr>
-  <td><code>private/fed/server/server_engine.py:ServerEngine.wait_for_complete</code></td>
-  <td>Accept the local Server Job's handoff before removing its terminal process record.</td>
-</tr>
-<tr>
-  <td><code>private/fed/server/fed_server.py:process_job_outcome</code></td>
-  <td>Process optional statistics independently of the authenticated job outcome.</td>
-</tr>
-<tr>
-  <td><code>private/fed/server/job_runner.py:JobRunner</code></td>
-  <td>Register the deployed roster, finalize before saving the workspace, and retain archive/finalization latches across cleanup retries.</td>
-</tr>
-<tr>
-  <td><code>private/fed/server/job_cmds.py:JobCommandModule</code>, <code>fuel/flare_api/</code>, <code>tool/resources/</code></td>
-  <td>Authorized finalized-report reads, Session methods and human/JSON rendering.</td>
-</tr>
-</tbody>
-</table>
+| Runtime integration point | Statistics behavior |
+| --- | --- |
+| `private/fed/app/client/worker_process.py:main` and `app/server/runner_process.py:main` | Start collection after workspace and custom-path preparation, before application configuration; finalize during owned cleanup. Observe the Client/Server Job, not its persistent parent. |
+| `private/fed/app/job_process_cleanup.py:shutdown_job_process_runtime` | Check callback coverage without an extra wait; preserve publication, streaming shutdown, Cell stop and security-close order. |
+| `private/fed/client/client_app_runner.py:ClientAppRunner.start_run` | After resolving and validating `execution_lifetime`, select task accounting before constructing adapters/components. |
+| `private/fed/client/task_worker_executor.py:TaskWorkerExecutor` | Give each supervisor the same participant-owned reducer; preserve saved-result replay and receipt handling. |
+| `private/fed/task_worker/worker.py:run_worker` and `supervisor.py:TaskSupervisor` | Collect inside the worker; register before launch and fold after existing settlement proof. |
+| `private/fed/client/client_executor.py:JobExecutor._wait_child_process_finish` | Consume the terminal handoff, attach parent-owned identity, release resources through normal owner checks, then report the outcome. |
+| `private/fed/server/server_engine.py:ServerEngine.wait_for_complete` | Accept the local Server Job's handoff before removing its terminal process record. |
+| `private/fed/server/fed_server.py:process_job_outcome` | Process optional statistics independently of the authenticated job outcome. |
+| `private/fed/server/job_runner.py:JobRunner` | Register the deployed roster, finalize before saving the workspace, and retain archive/finalization latches across cleanup retries. |
+| `private/fed/server/job_cmds.py:JobCommandModule`, `fuel/flare_api/`, `tool/resources/` | Authorized finalized-report reads, Session methods and human/JSON rendering. |
 
 Paths in the integration table are relative to `nvflare/`. The statistics package
-and resource commands are additions; the job entry points and lifecycle owners
-already exist.
+observes job entry points and lifecycle owners; they retain control of execution,
+settlement and authorization.
 
 ## Resident job sequence
 
@@ -232,36 +148,16 @@ reserving a sidecar budget. It binds `TaskHandleSpec.execution_id` in the owner'
 ledger, including a handle returned by `TaskLaunchError`. The sidecar does not
 supply new execution authority or add fields to result/checkpoint digests.
 
-For current singleton workers, the deduplication key is the trusted job/site/task/
+For singleton workers, the deduplication key is the trusted job/site/task/
 attempt tuple plus worker scope; the full identity is checked on every read.
 The bound handle supplies lifecycle evidence, not an untrusted file claim.
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Private disposition</th>
-  <th>Meaning and effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>unresolved</code></td>
-  <td>Registered, without settlement or proof of no launch. Keep a coverage gap; omit the containing participant duration. Later owner-confirmed settlement may resolve it.</td>
-</tr>
-<tr>
-  <td><code>never_started</code></td>
-  <td>Launch was never entered. No worker contribution and no missing-work claim. An ambiguous launch failure is not this state.</td>
-</tr>
-<tr>
-  <td><code>reported</code></td>
-  <td>A settled worker has a valid record. Fold each independent measurement once, even if its training result failed validation.</td>
-</tr>
-<tr>
-  <td><code>invalid</code> / <code>settled_missing</code></td>
-  <td>Settlement is confirmed but a usable record is absent. Preserve other subtotals and mark affected rollups incomplete.</td>
-</tr>
-</tbody>
-</table>
+| Private disposition | Meaning and effect |
+| --- | --- |
+| `unresolved` | Registered, without settlement or proof of no launch. Keep a coverage gap; omit the containing participant duration. Later owner-confirmed settlement may resolve it. |
+| `never_started` | Launch was never entered. No worker contribution and no missing-work claim. An ambiguous launch failure is not this state. |
+| `reported` | A settled worker has a valid record. Fold each independent measurement once, even if its training result failed validation. |
+| `invalid` / `settled_missing` | Settlement is confirmed but a usable record is absent. Preserve other subtotals and mark affected rollups incomplete. |
 
 Equivalent re-reads add nothing. Conflicting records retain the first contribution
 and mark a gap. Retire the optional file after processing; retain its reservation
@@ -314,45 +210,21 @@ timeout does not cancel server storage I/O.
 
 ## Backend boundaries and design choices
 
-<table class="docutils">
-<thead>
-<tr>
-  <th>Execution profile</th>
-  <th>Required observation boundary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td>Resident Process/container/scheduler job</td>
-  <td>Inside the actual Client/Server Job after its limits and visibility are applied. Managed trainers retain their existing CPU/traffic attribution.</td>
-</tr>
-<tr>
-  <td>Admitted singleton task backend</td>
-  <td>The common worker inside its process, Pod, container or allocation; optional artifact access and physical settlement stay with the trusted launcher.</td>
-</tr>
-<tr>
-  <td>Reused/grouped worker</td>
-  <td>One runtime-issued session identity and one final contribution at session close, including between-assignment idle time. Per-assignment cumulative addition is invalid.</td>
-</tr>
-<tr>
-  <td>External/attach trainer</td>
-  <td>A runtime-owned or authenticated cooperating scope with an attributable window. Do not count an unrelated preexisting process lifetime.</td>
-</tr>
-<tr>
-  <td>Distributed/multi-node execution</td>
-  <td>Disjoint CPU scopes and one capacity owner per shared resource boundary; node-local observations rather than rank-zero capacity multiplied by ranks/nodes.</td>
-</tr>
-</tbody>
-</table>
+| Execution profile | Required observation boundary |
+| --- | --- |
+| Resident Process/container/scheduler job | Inside the actual Client/Server Job after its limits and visibility are applied. Managed trainers retain their existing CPU/traffic attribution. |
+| Admitted singleton task backend | The common worker inside its process, Pod, container or allocation; optional artifact access and physical settlement stay with the trusted launcher. |
+| Reused/grouped worker | One runtime-issued session identity and one final contribution at session close, including between-assignment idle time. Per-assignment cumulative addition is invalid. |
+| External/attach trainer | A runtime-owned or authenticated cooperating scope with an attributable window. Do not count an unrelated preexisting process lifetime. |
+| Distributed/multi-node execution | Disjoint CPU scopes and one capacity owner per shared resource boundary; node-local observations rather than rank-zero capacity multiplied by ranks/nodes. |
 
-The last three rows require their runtime's session/scope integration. They are
-not enabled by having a `TaskLauncherSpec` or by this documentation. The accounting
-contract applies to every admitted mode, while runtime support and deployment
-qualification remain prerequisites for claiming support.
+Each profile requires the runtime's session/scope integration and admission
+checks. A `TaskLauncherSpec` alone does not establish that support. The accounting
+contract applies to every admitted mode with attributable measurement scopes.
 
 The main tradeoffs are deliberate: endpoint counters and final snapshots avoid a
 sampling service; explicit capacity-time avoids a public worker inventory; immutable
 reports and normal archives avoid a new database; gaps avoid inventing measurements
-after crashes. The remaining engineering qualification is actual backend/GPU
-execution and collection overhead, especially fresh GPU-probe startup on short tasks.
-Those checks establish release readiness; they do not change this data model.
+after crashes. Collection overhead depends on the workload, especially fresh
+GPU-probe startup for short tasks. The observation and state limits bound collection work without
+changing the runtime's scheduling or cleanup policy.

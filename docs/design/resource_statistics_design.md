@@ -1,16 +1,15 @@
 # Resource statistics design
 
-## Purpose and status
+## Purpose
 
-This proposal defines a final, best-effort account of the resources visible to
-a job, its recorded CPU work, retained file sizes, and messaging payload. It
+Resource statistics provides a final, best-effort account of the resources visible
+to a job, its recorded CPU work, retained file sizes, and messaging payload. It
 lets users inspect a participant or compare retained jobs without installing
 a monitoring service or changing their application.
 
-**Status: design proposal, target format 4.0.** This PR does not add collection,
-schemas or commands to main. Unreleased prototypes inform the design but are not
-the published interface. Runtime admission and statistics qualification are
-separate requirements; this design does not enable a new execution backend.
+The public report format is **4.0**. Collection follows the runtime's execution
+boundaries and admission checks. A supported execution mode supplies attributable
+measurements and lifecycle ownership; statistics does not select or enable backends.
 
 ## Detailed design
 
@@ -112,10 +111,10 @@ and memory probes use existing affinity and visible cgroup limits. CUDA
 enumeration uses the system Driver; optional NVML only improves device
 classification. No mandatory PyTorch dependency is added.
 
-Driver enumeration can initialize CUDA in its calling process. A bounded
-fresh-process probe is the recommended approach to avoid altering application
-CUDA initialization. It inherits the execution's finalized visibility and
-limits and has bounded lifetime under the existing process owner.
+Driver enumeration can initialize CUDA in its calling process. It runs in a
+bounded fresh helper process to avoid altering application CUDA initialization.
+It inherits the execution's finalized visibility and limits and has bounded
+lifetime under the existing process owner.
 
 The parent supplies participant identity and attaches the report to the existing
 `REPORT_JOB_OUTCOME` request. The server retains accepted reports until
@@ -175,15 +174,13 @@ denominator; valid CPU and capacity-time totals remain useful.
 The accounting path is shared across supported Process, Docker, Kubernetes,
 Slurm and custom task launchers. External/attach, grouped and distributed workers
 use the same rollup when their runtime supplies execution identity, attributable
-measurement scopes, artifact access and lifecycle ownership. Deferred runtime
-modes remain integration targets; this design does not enable them or bypass
-their admission checks. Runtime support and statistics integration must both be
-present before a mode is described as supported.
+measurement scopes, artifact access and lifecycle ownership. Runtime support and
+statistics integration are both required for a mode to provide this accounting.
+Collection does not bypass runtime admission checks.
 
-## Proposed user interface
+## User interface
 
-These commands specify the intended interface; they are not enabled by this
-documentation change.
+Use `nvflare resources` to inspect a finalized job, a participant, or a study.
 
 ```bash
 nvflare resources --job JOB_ID
@@ -193,7 +190,7 @@ nvflare resources --job JOB_ID --format json
 nvflare resources --schema
 ```
 
-The proposed command serves people and agents. Capacity-time and utilization
+The command serves people and agents. Capacity-time and utilization
 are rolled up per participant, including the selected-site view. Participant
 detail labels the raw snapshot **Job-process startup capacity**; for task jobs
 this is coordinator capacity, not a worker inventory. GPU counts are integers;
@@ -208,5 +205,5 @@ ownership, coordinator/compute budgets, settlement, and result receipts.
 Resource statistics must observe those contracts without changing them.
 The [job launcher and handle design](job_launcher_and_job_handle.md) describes
 backend lifecycle ownership. The detailed reporting page includes a complete
-participant example and the stored/query contracts; the implementation will add
-the machine-readable schema and generated examples alongside its code.
+participant example and the stored/query contracts. The machine-readable schema,
+validators and generated examples must follow the same contract.
