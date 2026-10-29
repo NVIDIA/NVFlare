@@ -88,9 +88,17 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
-        meta = JobMetaValidator._load_config(zf, f"{job_name}/", JobConstants.META)
-        if meta is not None and not isinstance(meta, dict):
-            raise ValueError("Job metadata must be a JSON object")
+        base_meta_file = f"{job_name}/{JobConstants.META}"
+        logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
+
+        meta = None
+        for ext, fmt in ConfigFormat.config_ext_formats().items():
+            meta_file = f"{base_meta_file}{ext}"
+            if meta_file in zf.namelist():
+                config_loader = ConfigFactory.get_config_loader(fmt)
+                meta_data = zf.read(meta_file)
+                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                break
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
             if job_id:
@@ -102,8 +110,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         if not meta:
             raise ValueError(
-                f"Missing {JobConstants.META}.[json|conf] for job {job_name}. "
-                "Job configurations must use JSON with optional comments."
+                f"{JobConstants.META}.[json|conf|yml] not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
             )
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
@@ -166,9 +173,10 @@ class JobMetaValidator(JobMetaValidatorSpec):
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
             if all_sites or SERVER_SITE_NAME in deployments:
-                server_config = self._load_config(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG)
-                if server_config is None:
+                if not self._config_exists(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG):
                     raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
+
+                server_config = self._load_config(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG)
                 if self._has_flower_app_path(server_config):
                     has_flower_predeployed = True
 

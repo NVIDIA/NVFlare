@@ -19,6 +19,7 @@ from typing import List, Optional, Tuple
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
 
 
 class ConfigFactory:
@@ -26,6 +27,7 @@ class ConfigFactory:
 
     _fmt2Loader = {
         ConfigFormat.JSON: JsonConfigLoader(),
+        ConfigFormat.OMEGACONF: OmegaConfLoader(),
     }
 
     @staticmethod
@@ -125,11 +127,6 @@ class ConfigFactory:
         """
         if config_format is None:
             return None
-        if config_format in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
-            name = "YAML" if config_format == ConfigFormat.OMEGACONF else "HOCON"
-            raise ValueError(
-                f"{name} configuration is no longer supported; convert to JSON with comments (.json or .conf)."
-            )
         return ConfigFactory._fmt2Loader.get(config_format)
 
     @staticmethod

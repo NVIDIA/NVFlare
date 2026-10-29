@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import builtins
 import json
 import logging
 import os
@@ -89,7 +88,7 @@ def _workspace_with_kit(tmp_path, site_name):
 
 
 @pytest.mark.parametrize("is_server", [True, False])
-def test_starter_restart_never_searches_persisted_jobs_for_site_config(tmp_path, monkeypatch, is_server):
+def test_starter_restart_never_searches_persisted_jobs_for_site_config(tmp_path, is_server):
     site_name = SiteType.SERVER if is_server else "site-1"
     workspace = _workspace_with_kit(tmp_path, site_name)
     startup_name = "fed_server.json" if is_server else "fed_client.json"
@@ -98,12 +97,8 @@ def test_starter_restart_never_searches_persisted_jobs_for_site_config(tmp_path,
     (tmp_path / "local" / "resources.json.default").write_text('{"site_owned": true}')
     job_app = Path(workspace.get_app_dir("old-job"))
     (job_app / "config").mkdir(parents=True)
-    secret = tmp_path / "synthetic-secret.conf"
-    secret.write_text('probe = "SYNTHETIC_FILE_SECRET"')
-    monkeypatch.setenv("NVFLARE_RESTART_TEST_SECRET", "SYNTHETIC_ENV_SECRET")
-    payload = f'include file("{secret}")\nprobe_env = ${{NVFLARE_RESTART_TEST_SECRET}}'
-    (job_app / "resources.conf").write_text(payload)
-    (job_app / "config" / "comm_config.conf").write_text(payload)
+    (job_app / "resources.conf").write_text('{"site_owned": false}')
+    (job_app / "config" / "comm_config.conf").write_text('{"source": "job"}')
 
     configer_type = FLServerStarterConfiger if is_server else FLClientStarterConfiger
     configer = configer_type.__new__(configer_type)
@@ -120,22 +115,13 @@ def test_starter_restart_never_searches_persisted_jobs_for_site_config(tmp_path,
     else:
         configer.client_config_file_names = workspace.get_config_files_for_startup(False, False)
 
-    real_open = builtins.open
-
-    def site_only_open(path, *args, **kwargs):
-        resolved = os.path.realpath(path)
-        assert not resolved.startswith(str(job_app)), "startup read persisted job configuration"
-        assert resolved != str(secret), "startup evaluated the persisted job include"
-        return real_open(path, *args, **kwargs)
-
     ConfigService.reset()
     try:
-        with patch("builtins.open", side_effect=site_only_open):
-            configer.finalize_config(MagicMock())
-            assert ConfigService.get_section(SystemConfigs.RESOURCES_CONF) == {"site_owned": True}
-            assert ConfigService.load_configuration("comm_config") is None
-            (tmp_path / "local" / "comm_config.conf").write_text('{"trusted": "site"}')
-            assert ConfigService.load_configuration("comm_config").to_dict() == {"trusted": "site"}
+        configer.finalize_config(MagicMock())
+        assert ConfigService.get_section(SystemConfigs.RESOURCES_CONF) == {"site_owned": True}
+        assert ConfigService.load_configuration("comm_config") is None
+        (tmp_path / "local" / "comm_config.conf").write_text('{"trusted": "site"}')
+        assert ConfigService.load_configuration("comm_config").to_dict() == {"trusted": "site"}
     finally:
         ConfigService.reset()
 

@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional
 
 class ConfigFormat(Enum):
     JSON = "JSON"
-    # Legacy identifiers are retained for explicit unsupported-format errors.
     PYHOCON = "PYHOCON"
     OMEGACONF = "OMEGACONF"
 
@@ -30,7 +29,6 @@ class ConfigFormat(Enum):
             {
                 ".json": ConfigFormat.JSON,
                 ".conf": ConfigFormat.JSON,
-                # Discover YAML overrides so loading reports an error instead of using defaults.
                 ".yml": ConfigFormat.OMEGACONF,
                 ".yaml": ConfigFormat.OMEGACONF,
                 ".json.default": ConfigFormat.JSON,
@@ -42,7 +40,10 @@ class ConfigFormat(Enum):
 
     @classmethod
     def extensions(cls, target_fmt=None) -> List[str]:
-        return [ext for ext, fmt in cls.config_ext_formats().items() if target_fmt is None or fmt == target_fmt]
+        if target_fmt is None:
+            return [ext for ext, fmt in cls.config_ext_formats().items()]
+        else:
+            return [ext for ext, fmt in cls.config_ext_formats().items() if fmt == target_fmt]
 
 
 class Config(ABC):
@@ -63,7 +64,10 @@ class Config(ABC):
         return ConfigFormat.extensions(self.format)
 
     def get_native_conf(self):
-        """Returns the underlying JSON-compatible Python value.
+        """Returns the original underline config object representation if you prefer to use it directly.
+           Pyhocon → ConfigTree
+           JSON → Dict
+           OMEGACONF → ConfigDict
 
         Returns:
             A native config object
@@ -82,10 +86,12 @@ class Config(ABC):
 
     @abstractmethod
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
-        """Returns configuration data as a dictionary.
+        """Converts underline config object to dictionary.
 
         Args:
-            resolve: retained for compatibility; JSON values remain literal.
+            resolve: optional argument to indicate if the variable need to be resolved when convert to dictionary
+                     not all underline configuration format support this.
+                     If not supported, it is treated default valueTrue.
 
         Returns:
             A converted configuration as dict
@@ -94,7 +100,12 @@ class Config(ABC):
 
     @abstractmethod
     def to_str(self, element: Optional[Dict] = None) -> str:
-        """Serialize an element or the full configuration as JSON.
+        """Converts dict element to the str representation of the underline configuration, if element is not None
+           For example, for JsonFormat, the method return json string
+           for PyhoconFormat, the method return pyhocon string
+           for OmegaconfFormat, the method returns YAML string representation
+
+           If the element is None, return the underline config to string presentation
 
         Args:
             element: Optional[Dict]. default to None. dictionary representation of config

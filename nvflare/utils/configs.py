@@ -19,8 +19,7 @@ from typing import Any
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.secret_utils import resolve_secret_refs
 
 
@@ -35,7 +34,7 @@ def get_job_config_value(
     """Generic function to read from any job config file.
 
     By default, secret references in the selected value are resolved recursively at this runtime
-    boundary. This helper reads the exported JSON with comments directly, so ordinary NVFlare placeholders
+    boundary. This helper reads the exported JSON directly, so ordinary NVFlare placeholders
     such as ``{SITE_NAME}`` are not expanded here and remain literal in the returned value, even
     when they appear alongside secret references.
 
@@ -62,17 +61,13 @@ def get_job_config_value(
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         config_dir = workspace.get_app_config_dir(fl_ctx.get_job_id())
-        config_path = os.path.join(config_dir, config_file)
-        config = (
-            ConfigFactory.load_config(config_file, [config_dir])
-            if config_file in (JobConstants.CLIENT_JOB_CONFIG, JobConstants.SERVER_JOB_CONFIG)
-            and not os.path.isfile(config_path)
-            else JsonConfigLoader().load_config(config_path)
-        )
-        if config:
-            config_data = config.to_dict()
-            value = config_data.get(key, default)
-            value_found = key in config_data
+        config_file_path = os.path.join(config_dir, config_file)
+
+        if os.path.exists(config_file_path):
+            with open(config_file_path, "r") as f:
+                config_data = json.load(f)
+                value = config_data.get(key, default)
+                value_found = key in config_data
     except Exception:
         # Silently return default on any error
         return default

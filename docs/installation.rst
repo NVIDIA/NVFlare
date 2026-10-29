@@ -129,6 +129,12 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[MONITORING]
 
+* **CONFIG** - Legacy extra; plain YAML support is included by default:
+
+  .. code-block:: shell
+
+     $ pip install nvflare[CONFIG]
+
 You can also install multiple optional dependencies at once:
 
 .. code-block:: shell

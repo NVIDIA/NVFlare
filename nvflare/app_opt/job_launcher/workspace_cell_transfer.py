@@ -26,7 +26,6 @@ so large bundles move in chunks instead of being buffered into a single message.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import posixpath
@@ -56,7 +55,7 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
-from nvflare.fuel.utils import json_config_loader as json_config
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
 from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_DIR_NAME,
@@ -132,7 +131,7 @@ def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: st
     for resource_config_name in _RESOURCE_CONFIG_NAMES:
         try:
             with open(os.path.join(local_dir, resource_config_name), "rt") as f:
-                resource_config = json_config.load(f)
+                resource_config = json.load(f)
         except FileNotFoundError:
             continue
         except Exception as e:
@@ -549,8 +548,8 @@ def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
         return None
     try:
         with open(path, encoding="utf-8") as fh:
-            data = json_config.load(fh)
-    except (OSError, json.JSONDecodeError) as ex:
+            data = json.load(fh)
+    except (OSError, ValueError) as ex:
         logger.warning("failed to load %s: %s", path, secure_format_exception(ex))
         return None
     return data if isinstance(data, dict) else None

@@ -34,7 +34,7 @@ class KeyIndex:
 
 
 def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigTree, List[str], Dict]:
-    # Build a ConfigTree for local CLI editing.
+    # use pyhocon to load config
     config_dir = os.path.dirname(input_config_file_path)
     config_dir = None if not config_dir else config_dir
     config_file_path = os.path.basename(input_config_file_path)
@@ -83,7 +83,7 @@ def _quote_resource_keys(value):
 
 
 def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
-    """Load JSON configuration into a ConfigTree for local template editing."""
+    """Loads config using pyhocon."""
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
         if temp_conf:

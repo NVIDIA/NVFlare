@@ -225,8 +225,6 @@ def create_job(cmd_args):
         config_dirs = get_config_dirs(job_folder, app_names)
 
         fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
-        if real_config_path:
-            ConfigFactory.get_config_loader(fmt)
         if real_config_path and not cmd_args.force:
             from nvflare.tool.cli_output import print_human
 

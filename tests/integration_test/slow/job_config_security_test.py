@@ -33,35 +33,18 @@ from tests.integration_test.src import ProvisionSiteLauncher
 pytestmark = [pytest.mark.slow, pytest.mark.timeout(240)]
 
 
-def test_live_job_configuration_security_and_commented_numpy_job(tmp_path, monkeypatch):
-    template = Path(__file__).parents[1] / "data/jobs/hello-numpy-sag"
+def test_live_job_configuration_security_and_commented_yaml_numpy_job(tmp_path, monkeypatch):
+    data = Path(__file__).parents[1] / "data"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"])
     fed_port, admin_port = get_open_ports(2)
-    project = {
-        "api_version": 3,
-        "name": "config-security",
-        "participants": [
-            {
-                "name": "localhost",
-                "type": "server",
-                "org": "test",
-                "fed_learn_port": fed_port,
-                "admin_port": admin_port,
-            },
-            {"name": "site-1", "type": "client", "org": "test"},
-            {"name": "lead@test.org", "type": "admin", "org": "test", "role": "lead"},
-        ],
-        "builders": [
-            {"path": "nvflare.lighter.impl." + name}
-            for name in (
-                "workspace.WorkspaceBuilder",
-                "static_file.StaticFileBuilder",
-                "cert.CertBuilder",
-                "signature.SignatureBuilder",
-            )
-        ],
-    }
+    project = yaml.safe_load((data / "projects/client_api.yml").read_text())
+    project["name"] = "config-security"
+    project["participants"] = [p for p in project["participants"] if p["name"] != "site-2"]
+    next(p for p in project["participants"] if p["type"] == "server").update(
+        fed_learn_port=fed_port, admin_port=admin_port
+    )
+    next(p for p in project["participants"] if p["type"] == "admin").update(name="lead@test.org", role="lead")
     project_file = tmp_path / "project.yml"
     project_file.write_text(yaml.safe_dump(project))
     launcher = ProvisionSiteLauncher(str(project_file))
@@ -86,15 +69,20 @@ def test_live_job_configuration_security_and_commented_numpy_job(tmp_path, monke
             assert time.monotonic() < deadline, "client did not register"
             time.sleep(0.2)
         job = tmp_path / "job"
-        shutil.copytree(template, job)
+        shutil.copytree(data / "jobs/hello-numpy-sag", job)
         meta = json.loads((job / "meta.json").read_text())
         meta.update(
             min_clients=1,
             deploy_map={"app": ["server", "site-1"]},
-            literal=["${NVFLARE_SECURITY_CANARY}", "{$NVFLARE_SECURITY_CANARY}", "${secret:NVFLARE_SECURITY_CANARY}"],
+            literal=[
+                "${NVFLARE_SECURITY_CANARY}",
+                "{$NVFLARE_SECURITY_CANARY}",
+                "${secret:NVFLARE_SECURITY_CANARY}",
+                "${oc.env:NVFLARE_SECURITY_CANARY}",
+            ],
         )
         (job / "meta.json").unlink()
-        for role, suffix in (("server", ".conf"), ("client", ".json")):
+        for role, suffix in (("server", ".conf"), ("client", ".yaml")):
             path = job / "app/config" / f"config_fed_{role}.json"
             config = json.loads(path.read_text())
             if role == "server":
@@ -102,14 +90,19 @@ def test_live_job_configuration_security_and_commented_numpy_job(tmp_path, monke
             else:
                 config["executors"][0]["executor"]["args"]["model_dir"] = "{$NVFLARE_TEST_MODEL_DIR}"
             path.unlink()
-            path.with_suffix(suffix).write_text("// retained configuration comment\n" + json.dumps(config))
+            text = (
+                "# retained YAML comment\n" + yaml.safe_dump(config)
+                if suffix == ".yaml"
+                else "// retained configuration comment\n" + json.dumps(config)
+            )
+            path.with_suffix(suffix).write_text(text)
         private_file = tmp_path / "private.conf"
         private_file.write_text('stolen="SYNTHETIC-FILE-SECRET"')
         for suffix, payload in (
             (".conf", "stolen=${NVFLARE_SECURITY_CANARY}"),
             (".conf", "include file(" + json.dumps(str(private_file)) + ")"),
             (".conf", "min_clients=${NVFLARE_SECURITY_CANARY}"),
-            (".yaml", "stolen: ${oc.env:NVFLARE_SECURITY_CANARY}"),
+            (".yaml", "stolen: !!python/object/apply:os.getenv [NVFLARE_SECURITY_CANARY]"),
         ):
             path = job / ("meta" + suffix)
             path.write_text(payload)
@@ -117,7 +110,7 @@ def test_live_job_configuration_security_and_commented_numpy_job(tmp_path, monke
                 session.submit_job(str(job))
             assert "SYNTHETIC-" not in str(error.value)
             path.unlink()
-        (job / "meta.json").write_text("/* metadata comment */\n" + json.dumps(meta))
+        (job / "meta.yaml").write_text("# metadata comment\n" + yaml.safe_dump(meta))
         job_id = session.submit_job(str(job))
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:

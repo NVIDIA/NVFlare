@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils import json_config_loader as json
 from nvflare.fuel.utils.config_service import ConfigService
 
 LOG_STREAM_EVENT_TYPE = "stream_log"

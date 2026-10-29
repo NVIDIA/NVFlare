@@ -255,7 +255,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         """Reject multiple ClientAPIExecutors that would share Client API runtime state.
 
         Job authoring treats executor types generically. Runtime validation is authoritative
-        because client apps may also be supplied directly as JSON with comments. Other Executor
+        because client apps may also be supplied directly as JSON/HOCON. Other Executor
         implementations remain unrestricted.
         """
         # Deferred import keeps the normal client configurator import path light for jobs

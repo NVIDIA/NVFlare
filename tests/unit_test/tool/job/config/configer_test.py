@@ -14,8 +14,11 @@
 
 import argparse
 import os
+import shutil
+from pathlib import Path
 
 import pytest
+from pyhocon import ConfigFactory as CF
 
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
@@ -27,6 +30,7 @@ from nvflare.tool.job.config.configer import (
     split_array_key,
 )
 from nvflare.tool.job.job_client_const import DEFAULT_APP_NAME, META_APP_NAME
+from nvflare.utils.cli_utils import save_config
 
 MERGE_CONFIG_TEST_CASES = [
     (
@@ -77,13 +81,23 @@ GET_CONFIG_FILE_PATH_TEST_CASES = [
 ]
 
 
-def _create_test_args(config_file: list, job_name: str = "launch_once"):
+@pytest.fixture
+def job_root(tmp_path):
+    source = Path(__file__).resolve().parents[3] / "data/jobs"
+    for name in ("launch_once", "launch_everytime"):
+        target = tmp_path / name
+        shutil.copytree(source / name, target)
+        for path in target.rglob("*.conf"):
+            save_config(CF.parse_file(str(path)), str(path))
+    return tmp_path
+
+
+def _create_test_args(config_file: list, job_root, job_name: str = "launch_once"):
     args = argparse.Namespace()
     args.config_file = config_file
     args.debug = False
     args.force = True
-    dir_name = os.path.join(os.getcwd(), os.path.dirname(__file__))
-    args.job_folder = os.path.realpath(os.path.join(dir_name, f"../../../data/jobs/{job_name}"))
+    args.job_folder = os.path.realpath(os.path.join(job_root, job_name))
     args.job_sub_cmd = "create"
     args.sub_command = "job"
     return args
@@ -98,9 +112,10 @@ def _get_merged_configs(args):
 
 class TestConfiger:
     @pytest.mark.parametrize("job_name, config_file, expected", GET_CLI_USE_CASES)
-    def test_get_cli_config(self, job_name, config_file, expected):
+    def test_get_cli_config(self, job_root, job_name, config_file, expected):
         args = _create_test_args(
             config_file=config_file,
+            job_root=job_root,
             job_name=job_name,
         )
         result = get_cli_config(args, [DEFAULT_APP_NAME])
@@ -127,14 +142,15 @@ class TestConfiger:
         assert result == {}
 
     @pytest.mark.parametrize("origin_job, origin_config, expect_job, expect_config", MERGE_CONFIG_TEST_CASES)
-    def test_merge_configs(self, origin_job, origin_config, expect_job, expect_config):
+    def test_merge_configs(self, job_root, origin_job, origin_config, expect_job, expect_config):
         args = _create_test_args(
             config_file=origin_config,
+            job_root=job_root,
             job_name=origin_job,
         )
         result_merged = _get_merged_configs(args)
 
-        expected_args = _create_test_args(config_file=expect_config, job_name=expect_job)
+        expected_args = _create_test_args(config_file=expect_config, job_root=job_root, job_name=expect_job)
         expected_merged = _get_merged_configs(expected_args)
 
         result = {}
@@ -158,7 +174,7 @@ class TestConfiger:
 
         assert result == expected
 
-    def test_add_and_remove_config_keys(self):
+    def test_add_and_remove_config_keys(self, job_root):
         # Remove one existing executor arg and add another.
         config_file = [
             [
@@ -169,6 +185,7 @@ class TestConfiger:
         ]
         args = _create_test_args(
             config_file=config_file,
+            job_root=job_root,
             job_name="launch_once",
         )
         result_merged = _get_merged_configs(args)

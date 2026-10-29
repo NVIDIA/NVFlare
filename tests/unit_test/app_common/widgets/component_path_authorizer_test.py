@@ -115,12 +115,15 @@ def test_allows_component_from_resources_class_allow_list(tmp_path, comment):
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_resources_conf_restriction_overrides_json_default(tmp_path):
+@pytest.mark.parametrize(
+    "suffix, policy", [("conf", '// explicit policy\n{"class_allow_list": []}'), ("yaml", "class_allow_list: []")]
+)
+def test_resources_restriction_overrides_json_default(tmp_path, suffix, policy):
     (tmp_path / "startup").mkdir()
     local = tmp_path / "local"
     local.mkdir()
     (local / "resources.json.default").write_text('{"class_allow_list": ["*"]}')
-    (local / "resources.conf").write_text('// explicit policy\n{"class_allow_list": []}')
+    (local / f"resources.{suffix}").write_text(policy)
     workspace = Workspace(str(tmp_path))
     component = {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"}
     with pytest.raises(UnsafeComponentError, match="allow_list"):
@@ -151,13 +154,13 @@ def test_workspace_class_allow_list_is_cached(tmp_path, monkeypatch):
         workspace=_FakeWorkspace(resources_file),
     )
     load_calls = []
-    original_json_load = json.load
+    original_open = open
 
-    def record_json_load(f):
-        load_calls.append(f.name)
-        return original_json_load(f)
+    def record_open(*args, **kwargs):
+        load_calls.append(args[0])
+        return original_open(*args, **kwargs)
 
-    monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.json.load", record_json_load)
+    monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.open", record_open, raising=False)
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -170,7 +173,7 @@ def test_workspace_class_allow_list_file_is_read_while_cache_lock_held(tmp_path,
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["nvflare.app_common.widgets."]}))
     authorizer = ComponentPathAuthorizer()
     load_lock_states = []
-    original_json_load = json.load
+    original_open = open
 
     class RecordingLock:
         def __init__(self):
@@ -185,11 +188,11 @@ def test_workspace_class_allow_list_file_is_read_while_cache_lock_held(tmp_path,
     lock = RecordingLock()
     authorizer._allow_list_cache_lock = lock
 
-    def record_json_load(f):
+    def record_open(*args, **kwargs):
         load_lock_states.append(lock.locked)
-        return original_json_load(f)
+        return original_open(*args, **kwargs)
 
-    monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.json.load", record_json_load)
+    monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.open", record_open, raising=False)
 
     allow_list, _, _ = authorizer._get_policy_from_file(str(resources_file))
     assert allow_list == ["nvflare.app_common.widgets."]

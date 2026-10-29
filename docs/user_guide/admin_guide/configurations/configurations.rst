@@ -4,24 +4,25 @@
 Configuration Files
 ###################
 
-Job, startup, and resource configuration files use JSON syntax, with optional ``//`` line comments and
-``/* ... */`` block comments and trailing commas. Existing ``.json`` and ``.conf``
-filenames use the same parser. HOCON expressions, includes, and
-YAML are no longer supported for these files. Provisioning project files and
-site-owned ``study_runtime.yaml`` retain their YAML support.
+**Supported Configuration File Formats**
 
-FedJob/recipe exports and provisioned startup kits already contain JSON. Legacy
-``nvflare job create`` renders bundled HOCON templates into JSON syntax while
-keeping ``.conf`` names. Job metadata is data only;
-runtime application references are described in :ref:`variable_resolution`.
+- `JSON <https://www.json.org/json-en.html>`_ with ``//`` and ``/* ... */`` comments and trailing commas.
+  Both ``.json`` and ``.conf`` files use JSON syntax.
+- `YAML <https://yaml.org/>`_ parsed as data with ``yaml.safe_load``; OmegaConf expressions remain literal.
 
-Before upgrading, convert existing HOCON/YAML jobs and site configurations.
-HOCON ``.conf`` filenames can stay unchanged; YAML files must become ``.json``
-or ``.conf`` files containing JSON. YAML overrides produce a conversion error
-instead of silently selecting a default configuration. Combine repeated HOCON
-object definitions explicitly: duplicate JSON keys are rejected.
-Place site configuration overrides under ``startup/`` or ``local/``.
-The ``CONFIG``/``core_opt`` installation extras have been removed; JSON comments need no extra dependency.
+Users have the flexibility to use a single format or combine several formats, as exemplified by using config_fed_client.conf and config_fed_server.json together.
+If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: 
+
+``.json -> .conf -> .yml -> .yaml``
+
+Before upgrading, convert HOCON content to JSON or YAML; ``.conf`` filenames can stay
+when converted to JSON. HOCON includes and substitutions are unsupported. Combine repeated
+HOCON object definitions explicitly: duplicate JSON keys are rejected. Legacy
+``nvflare job create`` resolves local HOCON templates before writing JSON.
+YAML filenames and comments remain supported; replace OmegaConf expressions with literal
+values or supported FLARE runtime references (:ref:`variable_resolution`).
+Site overrides belong under ``startup/`` or ``local/``. Provisioning YAML and site-owned
+``study_runtime.yaml`` are unchanged. Neither supported format needs an extra dependency.
 
 See the sections below for more in-depth information about the different capabilities and types of configuration files:
 

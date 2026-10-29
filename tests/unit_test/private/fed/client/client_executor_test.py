@@ -1173,11 +1173,11 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
         (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
         monkeypatch.setenv("NVFLARE_LIFETIME", "job")
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
-        error = (
-            "resolved client execution_lifetime"
-            if config_case == "nested_json"
-            else "Expecting value|YAML configuration"
-        )
+        error = {
+            "nested_json": "resolved client execution_lifetime",
+            "hocon_include": "Expecting value",
+            "yaml_environment": "execution_lifetime must be",
+        }[config_case]
         with pytest.raises(ValueError, match=error):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                 client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context

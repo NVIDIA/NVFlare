@@ -71,28 +71,6 @@ def test_legacy_job_create_emits_json(tmp_path, monkeypatch, template_name, reso
     assert (config_dir.parent / "custom/settings.yaml").read_bytes() == (scripts / "settings.yaml").read_bytes()
 
 
-@pytest.mark.parametrize("filename", ["meta.yaml", "app/config/config_fed_client.yml"])
-def test_job_cli_reports_unsupported_yaml_configuration(tmp_path, filename, monkeypatch, capsys):
-    from pathlib import Path
-
-    from nvflare.tool.job.job_cli import create_job
-
-    job = tmp_path / "job"
-    _make_valid_job(str(job))
-    if filename == "meta.yaml":
-        (job / "meta.json").unlink()
-    (job / filename).write_text("format_version: 2\n")
-    template = Path(__file__).resolve().parents[4] / "job_templates/sag_np"
-    monkeypatch.setattr("sys.argv", ["nvflare", "job", "create"])
-    args = Namespace(
-        template=str(template), job_folder=str(job), force=False, script_dir=None, config_file=None, debug=False
-    )
-    with pytest.raises(SystemExit) as error:
-        create_job(args)
-    assert error.value.code == 4
-    assert "YAML configuration" in capsys.readouterr().err
-
-
 def _make_valid_job(root: str) -> str:
     """Create a minimal valid job structure at root and return root."""
     os.makedirs(root, exist_ok=True)

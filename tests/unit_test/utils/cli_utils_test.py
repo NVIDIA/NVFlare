@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from pyhocon import ConfigFactory as CF
 
 from nvflare.utils.cli_utils import (
@@ -185,14 +186,14 @@ poc_workspace {
 
         assert not config_path.exists()
 
-    @pytest.mark.parametrize("ext", [".yml", ".yaml"])
-    def test_save_config_rejects_yaml(self, tmp_path, ext):
+    @pytest.mark.parametrize("ext", [".yml", ".yaml", ".yaml.default"])
+    def test_save_config_preserves_yaml_values(self, tmp_path, ext):
         config_path = tmp_path / f"config_fed_client{ext}"
-        config = CF.parse_string("version = 2")
+        values = {"version": 2, "nested": {"value": "on", "literal": "${oc.env:PRIVATE_VALUE}"}, "items": [None, True]}
+        config = CF.from_dict(values)
 
-        with pytest.raises(ValueError, match="invalid file extension"):
-            save_config(config, str(config_path))
-        assert not config_path.exists()
+        save_config(config, str(config_path))
+        assert yaml.safe_load(config_path.read_text()) == values
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

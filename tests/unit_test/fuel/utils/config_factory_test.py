@@ -56,13 +56,26 @@ class TestConfigFactory:
             assert config.to_dict() == config_dicts
 
     @pytest.mark.parametrize("suffix", [".yml", ".yaml", ".yml.default", ".yaml.default"])
-    def test_yaml_config_raises_conversion_error_instead_of_using_defaults(self, tmp_path, suffix):
+    def test_yaml_config_overrides_json_defaults(self, tmp_path, suffix):
         (tmp_path / f"resources{suffix}").write_text("setting: custom\n")
         if not suffix.endswith(".default"):
             (tmp_path / "resources.json.default").write_text('{"setting": "default"}')
 
-        with pytest.raises(ValueError, match="YAML configuration.*convert to JSON"):
-            ConfigFactory.load_config("resources.json", [str(tmp_path)])
+        config = ConfigFactory.load_config("resources.json", [str(tmp_path)])
+        assert config.to_dict() == {"setting": "custom"}
+        assert config.get_location() == str(tmp_path / f"resources{suffix}")
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "value: [unterminated",
+            "value: !include private.yaml",
+            "value: !!python/object/apply:os.getenv [PRIVATE_VALUE]",
+        ],
+    )
+    def test_yaml_rejects_invalid_syntax_and_object_constructors(self, source):
+        with pytest.raises(ValueError, match="Invalid YAML configuration"):
+            ConfigFactory.get_config_loader(ConfigFormat.OMEGACONF).load_config_from_str(source)
 
     def _walk_result(self, search_dir):
         if search_dir == ".":

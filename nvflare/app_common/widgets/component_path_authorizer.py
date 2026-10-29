@@ -25,7 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.utils import json_config_loader as json
+from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.widgets.widget import Widget
 
@@ -186,7 +187,8 @@ class ComponentPathAuthorizer(Widget):
                 return cached[1], cached[2], cached[3]
 
             with open(cache_key, "rt") as f:
-                resources = json.load(f)
+                fmt = next(fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if cache_key.endswith(ext))
+                resources = ConfigFactory.get_config_loader(fmt).load_config_from_str(f.read()).to_dict()
                 cache_signature = self._make_file_signature(os.fstat(f.fileno()))
             allow_list, enforcement_mode, uses_default = self._get_policy_from_resources(resources)
 

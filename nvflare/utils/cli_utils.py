@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import pathlib
 import shutil
@@ -18,6 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import yaml
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
@@ -232,8 +234,10 @@ def is_dir_empty(path: str):
 
 
 def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
+    if target_fmt == ConfigFormat.OMEGACONF:
+        return yaml.safe_dump(json.loads(HOCONConverter.to_json(dst_config)), sort_keys=False)
     if target_fmt != ConfigFormat.JSON:
-        raise ValueError("Configuration output must use JSON with optional comments (.json or .conf)")
+        raise ValueError("Configuration output must use JSON with optional comments (.json or .conf) or YAML")
     return HOCONConverter.to_json(dst_config)
 
 
@@ -250,7 +254,7 @@ def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = Tru
     if keep_origin_format:
         filename = os.path.basename(dst_path)
         fmt = next((fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if filename.endswith(ext)), None)
-        if fmt != ConfigFormat.JSON:
+        if fmt not in (ConfigFormat.JSON, ConfigFormat.OMEGACONF):
             raise ValueError(f"invalid file extension {dst_path}, no supported configuration format")
         dst_config_path = dst_path
 

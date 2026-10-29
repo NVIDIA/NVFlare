@@ -31,6 +31,10 @@ def _unique_object(pairs):
 
 def loads(text):
     """Parse JSON with comments and trailing commas without changing source positions."""
+    try:
+        return json.loads(text, object_pairs_hook=_unique_object)
+    except json.JSONDecodeError:
+        pass
     result = list(text)
     pos = 0
     in_string = False
