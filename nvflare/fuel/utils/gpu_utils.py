@@ -29,7 +29,7 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
             text=True,
         )
         rc = result.returncode
-        if rc > 0:
+        if rc != 0:
             raise Exception(f"Failed to call nvidia-smi with query {query}", result.stderr)
         else:
             return result.stdout.splitlines()

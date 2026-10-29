@@ -27,7 +27,6 @@ import pytest
 import yaml
 
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe import PocEnv
 
 
@@ -61,16 +60,11 @@ def recovery_env(tmp_path, monkeypatch):
 
 
 @pytest.mark.timeout(360)
-@pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_checkpoint_task_survives_repeated_cj_or_worker_crashes(recovery_env, lifetime):
+def test_checkpoint_task_survives_repeated_cj_crashes(recovery_env):
     env, module = recovery_env
-    job = FedJob(name="cj_recovery", min_clients=1, execution_lifetime=lifetime)
+    job = FedJob(name="cj_recovery", min_clients=1)
     job.to(module.RecoveryController(crashes=4), "server")
-    if lifetime == "task":
-        script = str(Path(module.__file__).with_name("recovery_task.py"))
-        job.to(ScriptRunner(script=script, framework="numpy"), "site-1")
-    else:
-        job.to(module.CheckpointExecutor(), "site-1", tasks=["train"])
+    job.to(module.CheckpointExecutor(), "site-1", tasks=["train"])
     job_id = env.deploy(job)
     result = env.get_job_result(job_id, timeout=270)
     assert result is not None
@@ -82,16 +76,9 @@ def test_checkpoint_task_survives_repeated_cj_or_worker_crashes(recovery_env, li
     assert saved["value"] == sum(range(1, 6))
     runs = saved["runs"]
     assert len(runs) == len({r["pid"] for r in runs}) == 5
-    for key in (("job",) if lifetime == "task" else ("job", "task", "attempt")):
+    for key in ("job", "task", "attempt"):
         assert runs[0][key]
         assert len({r[key] for r in runs}) == 1
-    if lifetime == "task":
-        assert len({r["cj_pid"] for r in runs}) == 5
-        records = Path(env.poc_workspace).rglob("attempts/**/identity.json")
-        identities = [json.loads(p.read_text()) for p in records]
-        assert len(identities) == 5
-        assert len({identity["attempt_id"] for identity in identities}) == 5
-        assert len({identity["task_id"] for identity in identities}) == 1
 
 
 @pytest.mark.timeout(180)

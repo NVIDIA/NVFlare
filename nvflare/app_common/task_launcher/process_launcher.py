@@ -308,7 +308,6 @@ class ProcessTaskHandle(TaskHandleSpec):
             cancel_requested=self._cancel_requested,
             settled=return_code is not None and not group_exists,
             failure_reason=self._failure_reason,
-            retryable=return_code not in (None, 0),
         )
         if status.settled:
             try:
@@ -321,7 +320,6 @@ class ProcessTaskHandle(TaskHandleSpec):
                     status,
                     exit_code=reaped_code if reaped_code >= 0 else None,
                     termination_signal=-reaped_code if reaped_code < 0 else None,
-                    retryable=reaped_code != 0,
                 )
             # Settlement is final for this physical execution. Never reopen
             # its scope because a later scan is uncertain or its PGID is reused.

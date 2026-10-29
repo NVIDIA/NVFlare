@@ -161,24 +161,24 @@ class TaskWorkerExecutor(Executor):
         if panic:
             self.system_panic("task worker settlement is unconfirmed; retaining ownership and stopping the job", fl_ctx)
 
-    @staticmethod
-    def _attempt_id(fl_ctx):
+    def _attempt_id(self, fl_ctx):
         attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
         launch_id = ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID)
-        if launch_id and isinstance(attempt_id, str) and attempt_id:
+        if is_native_task_launcher(self.policy.launcher) and launch_id and isinstance(attempt_id, str) and attempt_id:
             # The server assignment survives CJ recovery; each physical worker
-            # needs a fresh identity for exclusive artifacts and checkpoint commits.
+            # needs a fresh identity after CP confirms prior worker shutdown.
+            # Process keeps its existing artifact fence: CJ group exit alone
+            # cannot establish that a separately grouped task worker stopped.
             return hashlib.sha256(json.dumps([launch_id, attempt_id]).encode()).hexdigest()
         return attempt_id
 
-    @classmethod
-    def _identity(cls, task_name, fl_ctx):
+    def _identity(self, task_name, fl_ctx):
         return TaskAttemptIdentity(
             fl_ctx.get_job_id(),
             fl_ctx.get_identity_name(),
             fl_ctx.get_prop(FLContextKey.TASK_ID),
             task_name,
-            cls._attempt_id(fl_ctx),
+            self._attempt_id(fl_ctx),
         )
 
     @staticmethod

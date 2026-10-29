@@ -24,11 +24,46 @@ no lifetime restart limit. CP increments the counter when it launches a replacem
 and resets it when that CJ completes runner initialization and reports READY.
 The original failure does not consume an attempt. Three replacement startups that
 fail consecutively end recovery; a successful replacement restores the full budget.
-Thus a two-day task can span twelve four-hour allocations without exhausting it.
+A two-day task can therefore span twelve or more four-hour allocations without
+exhausting the budget, provided its checkpoint and server assignment remain valid.
 
 This measures initialization success, not training progress. A CJ that repeatedly
 initializes successfully and then crashes can continue restarting. Application
 checkpoint compatibility and progress remain the application's responsibility.
+
+## Allocation wall-time and task lifetime
+
+In Kubernetes task mode, a confirmed worker crash or scheduler timeout exits CJ without
+closing the server assignment. CP waits for CJ and its workers to stop, then
+uses the same restart policy. A valid committed result takes precedence;
+application errors, rejected submissions and cancellation do not trigger recovery.
+
+Kubernetes supports this path with the persistent jobs PVC. Integration with the
+[Slurm task-adapter proposal](https://github.com/NVIDIA/NVFlare/pull/5513)
+remains separate work; resident Slurm CJ recovery is unchanged. Process task
+mode retains its existing behavior and the
+[eligibility gap](#process-task-mode-recovery-gap) below.
+
+### Wall-limit and owner-loss timeline
+
+| Event | Recovery behavior |
+| --- | --- |
+| Kubernetes worker allocation expires | After confirmed worker settlement, CJ exits and CP replaces it using the existing recovery policy. Application code restores its partial checkpoint. |
+| Kubernetes CJ dies while a worker may still exist | CP retains cleanup ownership and replaces CJ only after both executions have stopped. |
+| Result reply is lost while CJ remains alive | CJ retransmits its saved result without launching another worker. |
+| CP dies | Ownership adoption is unsupported; persistent files alone do not authorize replacement. |
+
+Replacement CJs derive fresh physical worker IDs while normal server delivery
+preserves an outstanding assignment's IDs. Existing assignment deadlines still
+apply; recovery does not extend them.
+
+### Native task-resume follow-up requirements
+
+Partial-progress checkpoints remain application-owned. Applications must publish
+complete, compatible state that survives abrupt termination; the framework's
+completion-bound checkpoint handoff does not periodically save unfinished work.
+Slurm task-adapter integration, GPU recovery and Lustre qualification remain
+separate work. CP restart adoption remains outside this feature.
 
 ## Implementation
 
@@ -74,11 +109,6 @@ waits for that worker before releasing its resources. Docker physical launches u
 unique container names, allowing delayed auto-removal of the previous container.
 Existing scheduler queue/startup timeouts remain in effect.
 
-In task mode, a confirmed worker crash or scheduler timeout exits CJ without
-closing the server assignment. CP waits for CJ and its workers to stop, then
-uses the same restart policy. A valid committed result takes precedence;
-application errors, rejected submissions and cancellation do not trigger recovery.
-
 Process recovery is skipped when an `external_process` trainer launch bootstrap
 remains in the app directory. The backend writes this existing file before
 launching a detached trainer and removes it only after confirming trainer-group
@@ -105,8 +135,25 @@ stops while CP continues worker cleanup. Replacement Pods get fresh launch IDs,
 task capabilities and credential Secrets; the old task capability is closed.
 Old CJ Pod deletion is best effort; the final Pod is retained for diagnostics.
 
-Worker attempt IDs include the CJ launch ID; server task and attempt IDs stay
-unchanged. Logs map server attempts to physical worker IDs.
+Native worker attempt IDs include the CJ launch ID; server task and attempt IDs
+stay unchanged. Logs map server attempts to physical worker IDs.
+
+### Process task-mode recovery gap
+
+In the current Process task implementation, each task worker starts a separate
+process group. `ProcessHandle.can_restart()` checks the CJ's own group and
+`client_api_bootstrap_*.json` external-trainer files; it does not check task-worker
+groups or exclude task lifetime. Consequently, CP can find CJ replacement eligible
+without proof that its task workers have stopped. The worker's startup parent-PID
+check is not CP-owned settlement evidence after a later CJ failure.
+
+This is an implementation eligibility gap, not supported task-mode recovery and
+not a guarantee that every replacement will launch overlapping compute. The
+[local task-backend removal proposal](https://github.com/NVIDIA/NVFlare/pull/5592)
+defers Process/Docker task mode instead of adding a new local recovery owner.
+Until it lands, do not qualify Process task-CJ replacement as safe solely from
+CJ-group exit. This documentation does not change or repair that restart gate.
+See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-boundaries).
 
 ## Task and checkpoint boundaries
 

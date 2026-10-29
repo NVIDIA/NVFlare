@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One long task that saves progress across repeated CJ or task worker crashes."""
+"""One long task that saves progress across repeated CJ crashes."""
 
 import json
 import os
@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from nvflare.apis.controller_spec import Task
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.impl.controller import Controller
@@ -119,7 +119,7 @@ class RecoveryController(Controller):
         pass
 
     def control_flow(self, abort_signal, fl_ctx):
-        data = DXO(DataKind.WEIGHTS, {"w": [0.0]}, meta={"crashes": self.crashes}).to_shareable()
+        data = DXO(DataKind.WEIGHTS, {"w": [0.0]}).to_shareable()
         data["crashes"] = self.crashes
         task = Task("train", data, timeout=240, result_received_cb=self.received)
         self.broadcast_and_wait(task, fl_ctx, min_responses=1, abort_signal=abort_signal)
@@ -129,8 +129,6 @@ class RecoveryController(Controller):
     def received(self, client_task, fl_ctx):
         self.receipts += 1
         result = client_task.result
-        if "value" not in result:
-            result = from_shareable(result).meta["recovery_state"]
         run_dir = Path(fl_ctx.get_workspace().get_run_dir(fl_ctx.get_job_id()))
         (run_dir / "recovery_result.json").write_text(
             json.dumps({"receipts": self.receipts, "value": result["value"], "runs": result["runs"]})
