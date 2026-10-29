@@ -12,4 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tests.unit_test.private.fed.conftest import isolated_fobs  # noqa: F401
+"""Fixtures owned by the task-launcher test scope; inherited fixtures use pytest discovery."""
+
+import pytest
+
+
+@pytest.fixture
+def setup(tmp_path, isolated_fobs):
+    from tests.k8s_task_test_utils import make_task_setup
+
+    return make_task_setup(tmp_path)

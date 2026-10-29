@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.dashboard import cli as dashboard_cli
 from nvflare.tool.cli_output import set_output_format
+from tests.timing_utils import isolate_time
 
 
 @pytest.fixture(autouse=True)
@@ -174,3 +175,8 @@ class TestDashboardCli:
         output = capsys.readouterr().out
         assert "Dashboard container exited immediately and was removed." in output
         container.logs.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.dashboard.cli")

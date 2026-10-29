@@ -47,6 +47,18 @@ def test_edge_http_does_not_require_dashboard_extensions():
     assert _dependency_names("options.extras_require", "edge-http") == {"flask"}
 
 
+def test_documentation_tools_do_not_require_web_dependencies():
+    assert _dependency_names("options.extras_require", "doc").isdisjoint(WEB_DEPENDENCIES)
+
+
+def test_documentation_build_includes_web_runtime_without_test_tooling():
+    dependencies = _dependency_names("options.extras_require", "doc_build")
+    assert WEB_DEPENDENCIES <= dependencies
+    assert dependencies.isdisjoint(
+        {"pytest", "pytest-xdist", "pytest-cov", "pytest-timeout", "black", "flake8", "isort"}
+    )
+
+
 @pytest.mark.parametrize(
     "extra", ("all", "all_mac", "all_cpu", "test", "test_mac", "test_cpu", "dev", "dev_mac", "dev_cpu")
 )

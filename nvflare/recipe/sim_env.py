@@ -132,8 +132,8 @@ class SimEnv(ExecEnv):
                     f"For SimEnv, all scripts must be present on the local machine."
                 )
 
+            _print_output(f"Simulation · {self.num_clients} clients\nStarting server and clients...", flush=True)
             workspace = os.path.join(self.workspace_root, job_id)
-            _print_output(f"Simulation · {self.num_clients} clients", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,

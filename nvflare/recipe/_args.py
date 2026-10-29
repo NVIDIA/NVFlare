@@ -15,8 +15,10 @@
 """Import-time handling of shared Recipe command-line arguments."""
 
 import argparse
+import ast
 import os
 import sys
+import tokenize
 import warnings
 
 DEFAULT_EXPORT_DIR = "./fl_job"
@@ -31,6 +33,30 @@ def _record_error(message):
     _RECIPE_ARG_ERROR = message
     _CONSUMED = True
     return False, DEFAULT_EXPORT_DIR
+
+
+def _script_defines_export_args() -> bool:
+    """Find literal add_argument declarations in the entry script without executing it.
+
+    The local parser is usually created after this module is imported. Source
+    inspection covers ordinary declarations without modifying argparse globally;
+    dynamically constructed options and imported parser helpers are not inspected.
+    """
+    if not sys.argv:
+        return False
+    try:
+        with tokenize.open(sys.argv[0]) as source:
+            tree = ast.parse(source.read(), filename=sys.argv[0])
+        return any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_argument"
+            and any(isinstance(arg, ast.Constant) and arg.value in ("--export", "--export-dir") for arg in node.args)
+            for node in ast.walk(tree)
+        )
+    except Exception:
+        # This best-effort diagnostic must not prevent Recipe imports or exports.
+        return False
 
 
 def _consume_recipe_args() -> tuple:
@@ -59,13 +85,16 @@ def _consume_recipe_args() -> tuple:
     export_dir_seen = args.export_dir is not None
     export_dir = args.export_dir if export_dir_seen else DEFAULT_EXPORT_DIR
     if args.export or export_dir_seen:
-        message = (
-            "NVFlare reserves '--export' and '--export-dir' as system-level recipe arguments and consumes them "
-            "before the script's argument parser runs. Rename any script-defined arguments that use these names."
-        )
+        messages = []
+        if _script_defines_export_args():
+            messages.append(
+                "NVFlare reserves '--export' and '--export-dir' as system-level recipe arguments and consumes them "
+                "before the script's argument parser runs. Rename any script-defined arguments that use these names."
+            )
         if export_dir_seen and not args.export:
-            message += " '--export-dir' was provided without '--export', so the directory will not be used."
-        warnings.warn(message, UserWarning, stacklevel=2)
+            messages.append("'--export-dir' was provided without '--export', so the directory will not be used.")
+        if messages:
+            warnings.warn(" ".join(messages), UserWarning, stacklevel=2)
 
     sys.argv[1:] = remaining
     _RECIPE_LOG_CONFIG = args.log_config
