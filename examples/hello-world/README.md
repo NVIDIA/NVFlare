@@ -128,7 +128,7 @@ small synthetic PyTorch model.
 ```bash
 cd hello-collab
 # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
-pip install nvflare
+pip install "nvflare>=2.9"
 pip install -r requirements.txt
 python job.py
 ```
