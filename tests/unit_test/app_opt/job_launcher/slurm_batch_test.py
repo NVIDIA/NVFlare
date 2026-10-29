@@ -389,3 +389,13 @@ def test_submission_argv_is_structured_and_resource_complete(tmp_path):
         f"--output={plan.run_dir}/slurm-%j.out",
     ):
         assert expected in argv
+
+
+def test_resident_zero_gpu_does_not_emit_a_gres_flag(tmp_path):
+    config = _config(tmp_path)
+    plan = _plan(tmp_path)
+    from dataclasses import replace
+
+    plan = replace(plan, resources=replace(plan.resources, gpus_per_node=0))
+    argv = _submission_argv(plan, str(tmp_path), "name", "marker", config)
+    assert not any(arg.startswith("--gres=") for arg in argv)

@@ -1,0 +1,166 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Task-specific accounting; resident JobLauncher queries remain unchanged."""
+
+import re
+from copy import copy
+from dataclasses import dataclass
+
+from nvflare.app_opt.job_launcher.slurm.config import (
+    SQUEUE_FORMAT,
+    LookupStatus,
+    QueryResult,
+    SlurmProtocolError,
+    SlurmRecord,
+)
+from nvflare.app_opt.job_launcher.slurm.scheduler_client import _parse_state, _SlurmCliAdapter
+
+_TASK_FORMAT = "JobIDRaw%64,JobName%128,UID%32,Comment%128,State%64,ExitCode%32,DerivedExitCode%32"
+
+
+@dataclass(frozen=True)
+class TaskSlurmRecord(SlurmRecord):
+    derived_exit_signal: int = 0
+
+
+# Exact controller rejection diagnostics from SchedMD's slurm_errno.c.
+# Transport errors, unknown/plugin messages and any returned allocation ID
+# remain ambiguous, even when sbatch exits nonzero.
+_REJECTION_REASONS = frozenset(
+    {
+        "Invalid partition name specified",
+        "Invalid account or account/partition combination specified",
+        "Invalid qos specification",
+        "Requested node configuration is not available",
+        "Invalid generic resource (gres) specification",
+        "Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+    }
+)
+
+
+def submission_was_rejected(submission):
+    command = submission.command
+    if (
+        submission.job_id
+        or submission.cluster
+        or command.timed_out
+        or command.stdout.strip()
+        or command.returncode is None
+        or command.returncode <= 0
+    ):
+        return False
+    reasons = []
+    for line in command.stderr.splitlines():
+        if not line.strip():
+            continue
+        prefix = "sbatch: error: Batch job submission failed: "
+        if line.startswith(prefix) and line[len(prefix) :] in _REJECTION_REASONS:
+            reasons.append(line[len(prefix) :])
+        elif re.fullmatch(r"sbatch: error: invalid partition specified: [^\r\n]+", line):
+            reasons.append("Invalid partition name specified")
+        else:
+            return False
+    return bool(reasons)
+
+
+class SlurmTaskCliAdapter(_SlurmCliAdapter):
+    def for_cluster(self, cluster):
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", cluster):
+            raise SlurmProtocolError("invalid Slurm cleanup cluster")
+        adapter = copy(self)
+        adapter._cleanup_cluster = cluster
+        return adapter
+
+    def _run(self, argv, timeout):
+        cluster = getattr(self, "_cleanup_cluster", None)
+        if cluster:
+            argv = [argv[0], f"--clusters={cluster}", *(a for a in argv[1:] if a != "--local")]
+        return super()._run(argv, timeout)
+
+    def task_by_marker(self, job_name: str, marker: str, timeout: float) -> QueryResult:
+        """Recover one live allocation after a lost sbatch reply, only for cleanup."""
+        command = self._run(
+            [
+                self.executables["squeue"],
+                "--local",
+                "-h",
+                f"--user={self.uid}",
+                f"--name={job_name}",
+                f"--format={SQUEUE_FORMAT}",
+            ],
+            timeout,
+        )
+        if not command.available:
+            return QueryResult(LookupStatus.UNAVAILABLE)
+        records = []
+        for raw_id, state, uid, comment, name in self._rows(command, "squeue task marker", 5):
+            # Name alone never establishes ownership. Stray same-name jobs must
+            # not be cancelled, and duplicate exact matches remain ambiguous.
+            if uid.strip() != str(self.uid) or comment != marker or name.strip() != job_name:
+                continue
+            job_id, state = raw_id.strip(), _parse_state(state)
+            if not re.fullmatch(r"[1-9][0-9]*", job_id) or not state:
+                raise SlurmProtocolError("invalid task marker allocation identity/state")
+            records.append(SlurmRecord(job_id, state))
+        if len(records) > 1:
+            raise SlurmProtocolError("multiple live allocations have the task ownership marker")
+        return QueryResult(LookupStatus.FOUND if records else LookupStatus.NOT_FOUND, tuple(records))
+
+    def task_accounting(self, job_id: str, job_name: str, marker: str, timeout: float) -> QueryResult:
+        # -X deliberately omitted: a finished batch leader is insufficient.
+        # Duplicates must be visible so ID recycling/requeue cannot look settled.
+        command = self._run(
+            [
+                self.executables["sacct"],
+                "--local",
+                "--duplicates",
+                "-n",
+                "-P",
+                f"--jobs={job_id}",
+                f"--format={_TASK_FORMAT}",
+            ],
+            timeout,
+        )
+        if not command.available:
+            return QueryResult(LookupStatus.UNAVAILABLE)
+        records = {}
+        for raw_id, name, uid, comment, state, exit_code, derived_code in self._rows(command, "sacct task", 7):
+            returned_id = raw_id.strip()
+            allocation = returned_id == job_id
+            if not allocation and not re.fullmatch(re.escape(job_id) + r"\.(?:batch|extern|[0-9]+)", returned_id):
+                raise SlurmProtocolError("unexpected Slurm task allocation/step identity")
+            if returned_id in records:
+                raise SlurmProtocolError("duplicate Slurm task accounting identity")
+            if allocation:
+                if uid.strip() != str(self.uid) or name.strip() != job_name or comment != marker:
+                    raise SlurmProtocolError("Slurm task accounting ownership mismatch")
+            elif uid.strip() not in ("", str(self.uid)):
+                # Some Slurm versions omit allocation-only fields on step rows.
+                raise SlurmProtocolError("Slurm task step ownership mismatch")
+            if allocation and not derived_code.strip():
+                raise SlurmProtocolError("Slurm task allocation is missing its derived exit code")
+            try:
+                status, sig = (int(value) for value in exit_code.strip().split(":", 1))
+                derived, derived_sig = (int(value) for value in (derived_code.strip() or "0:0").split(":", 1))
+            except ValueError as e:
+                raise SlurmProtocolError("malformed Slurm task exit code") from e
+            state = _parse_state(state)
+            if not state or min(status, sig, derived, derived_sig) < 0:
+                raise SlurmProtocolError("malformed Slurm task state/exit code")
+            records[returned_id] = TaskSlurmRecord(returned_id, state, status, sig, derived, derived_sig)
+        if not records:
+            return QueryResult(LookupStatus.NOT_FOUND)
+        if job_id not in records:
+            raise SlurmProtocolError("Slurm task accounting is missing its allocation")
+        return QueryResult(LookupStatus.FOUND, tuple(records.values()))

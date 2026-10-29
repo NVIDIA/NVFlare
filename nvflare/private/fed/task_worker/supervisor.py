@@ -298,6 +298,11 @@ class TaskSupervisor:
                         f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
                     ) from e
+                if status.failure_reason:
+                    raise RuntimeError(
+                        f"task worker {identity.attempt_id} failed: {status.failure_reason} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
                 raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
