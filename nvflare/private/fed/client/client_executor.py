@@ -291,6 +291,7 @@ class JobExecutor(ClientExecutor):
         with open(meta_file, "w") as f:
             json.dump(job_meta, f, indent=4)
 
+        fl_ctx.set_prop(FLContextKey.ALLOCATED_RESOURCES, allocated_resource, private=True, sticky=False)
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
         if has_cj_resource_spec(job_meta, client.client_name):
             from .task_execution_policy import TaskExecutionPolicy
