@@ -22,6 +22,7 @@ from pyhocon import ConfigTree
 from nvflare.fuel.utils.config import Config, ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.job_config_converter import load_omegaconf_job_config
 
 
 @dataclasses.dataclass
@@ -89,9 +90,11 @@ def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple
         if fmt is None:
             raise ValueError(f"Config is None for file:'{config_file_path}'.")
         config_file_path = real_config_file_path
+        # Job tools run on the author's machine; FLARE sites parse configs without HOCON or OmegaConf features.
         if fmt == ConfigFormat.PYHOCON:
-            # Job tools run on the author's machine; FLARE sites parse .conf files as JSON.
             config: ConfigTree = CF.parse_file(config_file_path)
+        elif fmt == ConfigFormat.OMEGACONF:
+            config: ConfigTree = CF.from_dict(_quote_resource_keys(load_omegaconf_job_config(config_file_path)))
         else:
             temp_conf: Config = ConfigFactory.get_config_loader(fmt).load_config(config_file_path)
             config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))

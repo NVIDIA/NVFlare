@@ -104,3 +104,35 @@ def test_legacy_app_folder_and_symlinks_are_preserved(tmp_path):
 
     assert json.loads(open(os.path.join(converted, "config", "config_fed_client.conf")).read())["format_version"] == 2
     assert os.readlink(os.path.join(converted, "dangling")) == "/nonexistent-target"
+
+
+@pytest.mark.parametrize("link", ["file", "folder"])
+def test_linked_configs_are_rejected_without_touching_their_targets(tmp_path, link):
+    outside = tmp_path / "outside" / "config"
+    _write(str(outside / "config_fed_client.conf"), "format_version = 2\n")
+    job_dir = tmp_path / "job4"
+    if link == "file":
+        (job_dir / "app" / "config").mkdir(parents=True)
+        os.symlink(str(outside / "config_fed_client.conf"), str(job_dir / "app" / "config" / "config_fed_client.conf"))
+    else:
+        (job_dir / "app").mkdir(parents=True)
+        os.symlink(str(outside), str(job_dir / "app" / "config"))
+
+    with pytest.raises(ValueError, match="linked job config"):
+        convert_job_configs(str(job_dir), str(tmp_path / "work"))
+    assert (outside / "config_fed_client.conf").read_text() == "format_version = 2\n"
+
+
+def test_default_fallback_configs_are_rendered(tmp_path):
+    job_dir = tmp_path / "job5"
+    _write(str(job_dir / "meta.yml.default"), "base: &b {n: 1}\nother: *b\n")
+    _write(str(job_dir / "app" / "config" / "config_fed_client.conf.default"), "format_version = 2\n")
+
+    converted = convert_job_configs(str(job_dir), str(tmp_path / "work"))
+
+    assert ConfigService.load_config_dict(os.path.join(converted, "meta.yml.default")) == {
+        "base": {"n": 1},
+        "other": {"n": 1},
+    }
+    client = os.path.join(converted, "app", "config", "config_fed_client.conf.default")
+    assert ConfigService.load_config_dict(client) == {"format_version": 2}
