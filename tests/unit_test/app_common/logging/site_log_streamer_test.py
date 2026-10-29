@@ -16,6 +16,8 @@ import json
 import os
 from unittest.mock import Mock, patch
 
+import pytest
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     FLContextKey,
@@ -29,6 +31,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.site_log_streamer import SiteLogStreamer
+from nvflare.fuel.utils.config_service import ConfigService
 
 
 def _allow_streaming(value: bool):
@@ -190,7 +193,8 @@ def _write_job_config(tmp_path, components, job_id="job-1", client_name="site-1"
     return cfg_path
 
 
-def test_before_job_launch_strips_existing_streamer_when_disabled(tmp_path):
+@pytest.mark.parametrize("comment", ["", "// site policy\n"])
+def test_before_job_launch_strips_existing_streamer_when_disabled(tmp_path, comment):
     cfg_path = _write_job_config(
         tmp_path,
         [
@@ -200,8 +204,11 @@ def test_before_job_launch_strips_existing_streamer_when_disabled(tmp_path):
     )
     fl_ctx = _make_launch_fl_ctx(tmp_path)
     streamer = SiteLogStreamer()
+    (tmp_path / "local/resources.json.default").write_text(
+        comment + '{"allow_log_streaming": false, "class_allow_list": ["nvflare."]}'
+    )
 
-    with _allow_streaming(False):
+    with patch.object(ConfigService, "get_bool_var", return_value=None):
         streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
 
     with open(cfg_path) as f:
@@ -225,8 +232,12 @@ def test_before_job_launch_skips_injection_when_disabled(tmp_path):
     assert all("JobLogStreamer" not in p for p in paths)
 
 
-def test_before_job_launch_injects_when_enabled(tmp_path):
+@pytest.mark.parametrize("commented", [False, True])
+def test_before_job_launch_injects_when_enabled(tmp_path, commented):
     cfg_path = _write_job_config(tmp_path, [])
+    if commented:
+        with open(cfg_path, "w") as f:
+            f.write('// client configuration\n{"format_version": 2, "components": [],}')
     fl_ctx = _make_launch_fl_ctx(tmp_path)
     streamer = SiteLogStreamer()
 

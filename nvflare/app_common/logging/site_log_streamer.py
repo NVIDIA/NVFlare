@@ -29,6 +29,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels, is_log_streaming_allowed
 from nvflare.app_common.streamers.log_streamer import LogStreamer
+from nvflare.fuel.utils.json_config_loader import load as load_json
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
 
@@ -103,7 +104,7 @@ class SiteLogStreamer(Widget):
 
         try:
             with open(config_path) as f:
-                cfg = json.load(f)
+                cfg = load_json(f)
         except Exception as ex:
             self.log_exception(
                 fl_ctx,
