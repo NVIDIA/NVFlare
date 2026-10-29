@@ -1,0 +1,217 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Live mTLS regression: a site parent's internal listener binds job certificates to their job's FQCNs."""
+
+import json
+import logging
+import multiprocessing as mp
+import os
+import time
+import traceback
+
+import pytest
+
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.utils.config_service import ConfigService
+from tests.job_cert_test_utils import _JOB_A, _JOB_B, _free_port, _write_pki
+from tests.timing_utils import stop_processes
+
+_CHANNEL = "job_binding_test"
+_TOPIC = "echo"
+_CONNECT_TIMEOUT = 10.0
+_REJECT_WAIT = 3.0
+_REQUEST_TIMEOUT = 3.0
+_REJECTION_LOG_WAIT = 10.0
+
+
+class _RejectionRecorder(logging.Handler):
+    """Forwards the parent's certificate-scope rejections to the test process."""
+
+    def __init__(self, queue):
+        super().__init__(level=logging.ERROR)
+        self.queue = queue
+
+    def emit(self, record):
+        message = record.getMessage()
+        if "outside that scope" in message:
+            self.queue.put(message)
+
+
+def _await_rejection_of(reject_q, fqcn: str) -> str:
+    deadline = time.time() + _REJECTION_LOG_WAIT
+    while time.time() < deadline:
+        message = reject_q.get(timeout=max(0.1, deadline - time.time()))
+        if fqcn in message:
+            return message
+    raise AssertionError(f"parent logged no binding rejection for {fqcn}")
+
+
+def _run_server(root_url, pki, ready_q, stop_ev):
+    cell = None
+    try:
+        credentials = {
+            DriverParams.CA_CERT.value: pki["rootCA.pem"],
+            DriverParams.SERVER_CERT.value: pki["server.crt"],
+            DriverParams.SERVER_KEY.value: pki["server.key"],
+            DriverParams.CONNECTION_SECURITY.value: "mtls",
+        }
+        cell = Cell("server", root_url, secure=True, credentials=credentials, create_internal_listener=False)
+        cell.start()
+        ready_q.put("ready")
+        stop_ev.wait(120)
+    except Exception:
+        ready_q.put(traceback.format_exc())
+    finally:
+        if cell:
+            cell.stop()
+
+
+def _run_site_parent(root_url, pki, config_dir, ready_q, stop_ev, reject_q):
+    cell = None
+    try:
+        logging.getLogger().addHandler(_RejectionRecorder(reject_q))
+        # the internal listener scheme and security come from comm_config.json, as in a provisioned kit
+        ConfigService.initialize(section_files={}, config_path=[config_dir])
+        credentials = {
+            DriverParams.CA_CERT.value: pki["rootCA.pem"],
+            DriverParams.CLIENT_CERT.value: pki["site-1.crt"],
+            DriverParams.CLIENT_KEY.value: pki["site-1.key"],
+            DriverParams.SERVER_CERT.value: pki["site-1.crt"],
+            DriverParams.SERVER_KEY.value: pki["site-1.key"],
+            DriverParams.CONNECTION_SECURITY.value: "mtls",
+        }
+        cell = Cell(
+            "site-1",
+            root_url,
+            secure=True,
+            credentials=credentials,
+            create_internal_listener=True,
+            auth_identity="site-1",
+            auth_identity_map={"site-1": "site-1", "server": "server"},
+        )
+        cell.register_request_cb(_CHANNEL, _TOPIC, lambda request: Message(payload=request.payload))
+        cell.start()
+        deadline = time.time() + _CONNECT_TIMEOUT
+        while time.time() < deadline and not cell.is_cell_connected("server"):
+            time.sleep(0.1)
+        ready_q.put(cell.get_internal_listener_url())
+        stop_ev.wait(120)
+    except Exception:
+        ready_q.put(traceback.format_exc())
+    finally:
+        if cell:
+            cell.stop()
+
+
+def _run_job_cell(parent_url, pki, cert_name, fqcn, wait, result_q):
+    cell = None
+    try:
+        credentials = {
+            DriverParams.CA_CERT.value: pki["rootCA.pem"],
+            DriverParams.CLIENT_CERT.value: pki[f"{cert_name}.crt"],
+            DriverParams.CLIENT_KEY.value: pki[f"{cert_name}.key"],
+            DriverParams.CONNECTION_SECURITY.value: "mtls",
+        }
+        # Connect only to the parent; using its URL as root_url creates a second connector.
+        cell = Cell(
+            fqcn,
+            "",
+            secure=True,
+            credentials=credentials,
+            create_internal_listener=False,
+            parent_url=parent_url,
+            parent_resources={DriverParams.CONNECTION_SECURITY.value: "mtls"},
+            auth_identity_map={"site-1": "site-1"},
+        )
+        cell.start()
+        deadline = time.time() + wait
+        while time.time() < deadline and not cell.is_cell_connected("site-1"):
+            time.sleep(0.1)
+        # the client-side connected flag is transient while the parent is still validating the handshake;
+        # only a completed application request proves the parent accepted this cell
+        reply = cell.send_request(_CHANNEL, _TOPIC, "site-1", Message(payload="hello"), timeout=_REQUEST_TIMEOUT)
+        result_q.put({"rc": reply.get_header(MessageHeaderKey.RETURN_CODE)})
+    except Exception:
+        result_q.put({"error": traceback.format_exc()})
+    finally:
+        if cell:
+            cell.stop()
+
+
+@pytest.fixture(scope="module")
+def site_parent(tmp_path_factory):
+    ctx = mp.get_context("spawn")
+    pki = _write_pki(str(tmp_path_factory.mktemp("pki")))
+    config_dir = str(tmp_path_factory.mktemp("config"))
+    with open(os.path.join(config_dir, "comm_config.json"), "w") as f:
+        json.dump(
+            {"internal": {"scheme": "stcp", "resources": {"host": "localhost", "connection_security": "mtls"}}}, f
+        )
+    root_url = f"stcp://localhost:{_free_port()}"
+    stop_ev = ctx.Event()
+    server_q, parent_q, reject_q = ctx.Queue(), ctx.Queue(), ctx.Queue()
+    server = ctx.Process(target=_run_server, args=(root_url, pki, server_q, stop_ev))
+    server.start()
+    parent = None
+    try:
+        status = server_q.get(timeout=30)
+        assert status == "ready", status
+        parent = ctx.Process(target=_run_site_parent, args=(root_url, pki, config_dir, parent_q, stop_ev, reject_q))
+        parent.start()
+        internal_url = parent_q.get(timeout=40)
+        assert internal_url.startswith("stcp://"), internal_url
+        yield internal_url, pki, reject_q
+    finally:
+        stop_ev.set()
+        stop_processes(parent, server)
+
+
+def _job_cell(site_parent, cert_name, fqcn, wait):
+    internal_url, pki, _ = site_parent
+    ctx = mp.get_context("spawn")
+    result_q = ctx.Queue()
+    proc = ctx.Process(target=_run_job_cell, args=(internal_url, pki, cert_name, fqcn, wait, result_q))
+    proc.start()
+    try:
+        result = result_q.get(timeout=wait + 30)
+    finally:
+        stop_processes(proc)
+    assert "error" not in result, result.get("error")
+    return result
+
+
+def test_site_parent_accepts_job_cell_with_its_own_job_cert(site_parent):
+    result = _job_cell(site_parent, "job_b", f"site-1.{_JOB_B}", _CONNECT_TIMEOUT)
+
+    assert result["rc"] == ReturnCode.OK
+
+
+@pytest.mark.parametrize(
+    "claimed_fqcn",
+    [
+        f"site-1.{_JOB_B}",
+        f"site-1.{_JOB_B}.ws_transfer_{_JOB_A}",  # an auxiliary name below job B's cell is still job B's
+    ],
+    ids=["job_b_cell", "aux_cell_below_job_b"],
+)
+def test_site_parent_rejects_another_jobs_cert_on_job_fqcn(site_parent, claimed_fqcn):
+    result = _job_cell(site_parent, "job_a", claimed_fqcn, _REJECT_WAIT)
+
+    assert result["rc"] != ReturnCode.OK
+    rejection = _await_rejection_of(site_parent[2], claimed_fqcn)
+    assert f"site-1.{_JOB_A}" in rejection  # the certificate's own scope is named in the rejection

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="710" viewBox="0 0 1000 710" role="img" aria-labelledby="title desc">
+<title id="title">Collab API: one round and the server-controlled loop</title>
+<desc id="desc">The recipe starts the collaboration. The server calls two published client methods in parallel. They return local weights, sample counts and loss. The server aggregates with weights 0.4 and 0.6, then starts the next round. After three rounds it saves weights and history.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#516176"/></marker></defs>
+<rect width="1000" height="710" fill="white"/>
+<g font-family="Arial, Helvetica, sans-serif" text-anchor="middle" fill="#172638">
+<rect x="230" y="18" width="500" height="75" rx="12" fill="#f1f5f9" stroke="#b4c0ce"/>
+<text x="480" y="47" font-size="20" font-weight="bold">job.py: CollabRecipe + SimEnv</text>
+<text x="480" y="74" font-size="17">Start the server and clients; deliver per-site properties</text>
+<rect x="230" y="135" width="500" height="85" rx="12" fill="#edf7db" stroke="#76b900" stroke-width="2"/>
+<text x="480" y="165" font-size="20" font-weight="bold">server.py: @collab.main run()</text>
+<text x="480" y="193" font-size="18">Own the round loop and current global weights</text>
+<rect x="35" y="285" width="390" height="102" rx="12" fill="#eaf3fc" stroke="#87a9cb"/>
+<text x="230" y="314" font-size="20" font-weight="bold">client.py: site-1</text>
+<text x="230" y="341" font-size="18">@collab.publish train(weights)</text>
+<text x="230" y="368" font-size="17">Local data: seed 1, 80 training rows</text>
+<rect x="535" y="285" width="390" height="102" rx="12" fill="#eaf3fc" stroke="#87a9cb"/>
+<text x="730" y="314" font-size="20" font-weight="bold">client.py: site-2</text>
+<text x="730" y="341" font-size="18">@collab.publish train(weights)</text>
+<text x="730" y="368" font-size="17">Local data: seed 2, 120 training rows</text>
+<rect x="230" y="450" width="500" height="80" rx="12" fill="#edf7db" stroke="#76b900" stroke-width="2"/>
+<text x="480" y="480" font-size="20" font-weight="bold">Server checks results and aggregates</text>
+<text x="480" y="508" font-size="18">New weights = 0.4 × site-1 + 0.6 × site-2</text>
+<rect x="230" y="585" width="500" height="70" rx="12" fill="#f1f5f9" stroke="#b4c0ce"/>
+<text x="480" y="614" font-size="20" font-weight="bold">After three rounds: save on the server</text>
+<text x="480" y="640" font-size="18">weights.npy and history.json</text>
+<g font-size="17" fill="#374b63"><text x="130" y="252">train(same global weights)</text><text x="830" y="252">train(same global weights)</text><text x="140" y="426">Return weights, samples, loss</text><text x="815" y="426">Return weights, samples, loss</text><text x="592" y="565">Loop finished</text><text x="952" y="345" transform="rotate(-90 952 345)">Next round: use the aggregated weights</text></g>
+<text x="480" y="692" font-size="17" fill="#516176">Within each round, both client calls run concurrently; the server waits for their outcomes.</text>
+</g>
+<g fill="none" stroke="#516176" stroke-width="2.3" marker-end="url(#arrow)"><path d="M480 93V133"/><path d="M350 220L230 283"/><path d="M610 220L730 283"/><path d="M230 387L350 448"/><path d="M730 387L610 448"/><path d="M730 490H980V177H732"/><path d="M480 530V583"/></g>
+</svg>
