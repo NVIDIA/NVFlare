@@ -94,6 +94,8 @@ if not _skip_api:
         ]
     )
 
+# Quantization imports these helpers only inside method bodies.
+autodoc_mock_imports = ["bitsandbytes"]
 autoclass_content = "both"
 add_module_names = False
 autosectionlabel_prefix_document = True
@@ -113,7 +115,7 @@ llms_txt_suffix_mode = "replace"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build"]
+exclude_patterns = ["_build", "constraints.txt", "requirements-build.txt"]
 
 if _skip_api:
     # Exclude auto-generated API files but keep the committed stub
@@ -145,8 +147,11 @@ html_logo = "resources/nvidia_logo.png"
 html_static_path = ["_static"]
 
 
-def generate_apidocs(*args):
+def generate_apidocs(app):
     """Generate API docs automatically by trawling the available modules"""
+    # The serial Markdown child reuses the HTML build's API stubs and doctrees.
+    if "sphinx_llm_markdown" in app.tags:
+        return
     if os.environ.get("SKIP_API_DOCS", "").lower() in ("1", "true", "yes"):
         print("Skipping API doc generation (SKIP_API_DOCS is set)")
         return

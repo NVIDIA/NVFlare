@@ -59,13 +59,49 @@ function clean_docs() {
     find docs/apidocs -type f -name "nvflare*" -delete
 }
 
+function check_doc_environment() {
+    python - <<'PY_DOC_ENV'
+import importlib.metadata
+import platform
+import sys
+
+if sys.platform == "linux" and platform.machine() == "x86_64":
+    conflicts = []
+    try:
+        importlib.metadata.version("xgboost")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    else:
+        conflicts.append("the xgboost distribution conflicts with xgboost-cpu")
+    if sys.version_info[:2] == (3, 10):
+        for name in ("torch", "torchvision"):
+            try:
+                version = importlib.metadata.version(name)
+            except importlib.metadata.PackageNotFoundError:
+                continue
+            if not version.endswith("+cpu"):
+                conflicts.append(f"{name} {version} would be replaced by a CPU wheel")
+    if conflicts:
+        sys.exit(
+            "Cannot install documentation dependencies in this environment: "
+            + "; ".join(conflicts)
+            + ". Create a separate Python documentation virtual environment; "
+            "no environment changes were made."
+        )
+PY_DOC_ENV
+}
+
 function build_html_docs() {
-    pip install -e .[dev]
+    if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
+        python -m pip install --no-cache-dir --constraint docs/constraints.txt pip setuptools wheel versioneer PyYAML
+        python -m pip install --no-cache-dir --no-build-isolation --requirement docs/requirements-build.txt
+    else
+        python -m pip install -e ".[doc-build]"
+    fi
     if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
         echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
     else
         echo "${blue}Generating API reference...${noColor}"
-        sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
     fi
     sphinx-build -b html docs docs/_build
 }
@@ -112,6 +148,7 @@ fi
 if [[ $doHTML == true ]]
 then
     echo "${separator}${blue}html${noColor}"
+    check_doc_environment
     clean_docs
     build_html_docs
     echo "${green}done!${noColor}"
