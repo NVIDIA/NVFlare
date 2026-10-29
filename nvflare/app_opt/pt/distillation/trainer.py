@@ -46,6 +46,20 @@ class DistillationTrainer:
     Use functools.partial(kl_divergence, temperature=...) to configure KD, or
     supply another loss. Multiple teachers contribute equally; logits are not
     averaged. No synthetic data, class weighting or optimizer reset is implicit.
+
+    Example::
+
+        from functools import partial
+        import torch
+        from torch import nn
+        from nvflare.app_opt.pt.distillation import DistillationTrainer
+
+        trainer = DistillationTrainer(
+            student=nn.Linear(4, 3),
+            teachers=[nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 3))],
+            optimizer_factory=partial(torch.optim.SGD, lr=0.1),
+        )
+        metrics = trainer.fit([torch.randn(8, 4)], max_steps=1)
     """
 
     def __init__(

@@ -16,7 +16,6 @@ Data Scientist Guide
    recipe_api
    available_recipes
    recipe_metrics_artifacts
-   knowledge_distillation
    ../timeout_troubleshooting
    flare_api
    poc
