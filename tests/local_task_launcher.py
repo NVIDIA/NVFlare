@@ -33,7 +33,7 @@ import os
 import signal
 import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Optional
 
 import psutil
@@ -543,9 +543,12 @@ class ProcessTaskLauncher(TaskLauncherSpec):
 # Direct test injection only. Production from_config/from_workspace accepts
 # exact scheduler-backed classes and cannot select this helper.
 def local_policy(**kwargs):
-    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+    from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, TaskExecutionPolicy
 
+    @dataclass(frozen=True)
     class LocalPolicy(TaskExecutionPolicy):
+        environment_variables: tuple[str, ...] = ()
+
         def worker_environment(self):
             allowed = {
                 "PATH",
@@ -567,7 +570,9 @@ def local_policy(**kwargs):
                 "FL_LOG_LEVEL",
             }
             environment = {
-                name: value for name, value in os.environ.items() if name in allowed | set(self.environment_variables)
+                name: value
+                for name, value in os.environ.items()
+                if name in allowed | set(self.environment_variables) and name not in FORBIDDEN_ENVIRONMENT_NAMES
             }
             environment.update(
                 {

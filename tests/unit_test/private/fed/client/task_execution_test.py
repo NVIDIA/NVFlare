@@ -130,12 +130,12 @@ def test_jobs_cannot_select_the_internal_adapter(lifetime):
         prepare_task_execution(config)
 
 
-def test_cpu_validation_only_considers_receiving_site():
-    meta = {"resource_spec": {"site-2": {"num_of_gpus": 1}}}
+def test_gpu_count_validation_only_considers_receiving_site():
+    meta = {"resource_spec": {"site-2": {"num_of_gpus": -1}}}
     validate_task_resources(meta, "site-1")
-    with pytest.raises(ValueError, match="GPUs"):
+    with pytest.raises(ValueError, match="num_of_gpus"):
         validate_task_resources(meta, "site-2")
-    meta = {"launcher_spec": {"default": {"process": {"num_of_gpus": 1}}, "site-1": {"process": {"num_of_gpus": 0}}}}
+    meta = {"launcher_spec": {"default": {"process": {"num_of_gpus": -1}}, "site-1": {"process": {"num_of_gpus": 0}}}}
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
@@ -151,9 +151,22 @@ def test_cpu_validation_only_considers_receiving_site():
         "CLIENT_API_TYPE",
     ],
 )
-def test_site_policy_never_forwards_credential_or_gpu_environment(name):
-    with pytest.raises(ValueError, match="cannot forward"):
+def test_site_policy_rejects_retired_environment_forwarding(name):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({"environment_variables": [name]})
+
+
+@pytest.mark.parametrize("value", [[], ["APP_DATA"], None, "APP_DATA"])
+def test_site_policy_rejects_environment_forwarding_key_even_when_empty(value):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
+        TaskExecutionPolicy.from_config({"environment_variables": value})
+
+
+@pytest.mark.parametrize("name", sorted(policy_module.FORBIDDEN_ENVIRONMENT_NAMES))
+def test_test_policy_cannot_forward_forbidden_environment_names(monkeypatch, name):
+    monkeypatch.setenv(name, "must-not-forward")
+    environment = local_policy(environment_variables=(name,)).worker_environment()
+    assert environment.get(name) != "must-not-forward"
 
 
 @pytest.mark.parametrize("config", [{}, {"task_execution": {}}])
@@ -386,8 +399,8 @@ def test_gpu_named_application_options_are_not_resource_requests():
     "mode,gpu_field",
     [("process", "num_of_gpus"), ("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")],
 )
-def test_cpu_validation_resolves_launcher_defaults_and_zero_site_overrides(mode, gpu_field):
-    meta = {"launcher_spec": {"default": {mode: {gpu_field: 1}}, "site-1": {mode: {gpu_field: 0}}}}
+def test_gpu_count_validation_resolves_launcher_defaults_and_zero_site_overrides(mode, gpu_field):
+    meta = {"launcher_spec": {"default": {mode: {gpu_field: -1}}, "site-1": {mode: {gpu_field: 0}}}}
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
@@ -396,21 +409,21 @@ def test_cpu_validation_resolves_launcher_defaults_and_zero_site_overrides(mode,
     validate_task_resources({"resource_spec": {"site-2": {mode: {gpu_field: 1}}}}, "site-1")
 
 
-def test_cpu_validation_does_not_drop_nested_gpu_modes_with_portable_defaults():
+def test_gpu_count_validation_does_not_drop_nested_gpu_modes_with_portable_defaults():
     meta = {
         "resource_spec": {
             "@default": {"num_of_gpus": 1},
-            "site-1": {"process": {"num_of_gpus": 0}, "slurm": {"gpus_per_node": 1}},
+            "site-1": {"process": {"num_of_gpus": 0}, "slurm": {"gpus_per_node": -1}},
         }
     }
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-1")
 
 
-def test_cpu_validation_falls_back_to_nested_resources_for_missing_launcher_modes():
+def test_gpu_count_validation_falls_back_to_nested_resources_for_missing_launcher_modes():
     meta = {
         "launcher_spec": {"site-1": {"process": {"num_of_gpus": 0}}},
-        "resource_spec": {"site-1": {"docker": {"num_of_gpus": 1}}},
+        "resource_spec": {"site-1": {"docker": {"num_of_gpus": -1}}},
     }
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-1")
@@ -607,8 +620,18 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
     assert policy.task_resources({"launcher_spec": {"site": {mode: {gpu_field: 1}}}}, "site").gpu_count == 0
     with pytest.raises(ValueError, match="portable GPUs reserve"):
         policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
-    with pytest.raises(ValueError, match="trusted backend"):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
+
+    job_module, job_class_name = policy_module._NATIVE_JOB_LAUNCHERS[mode]
+
+    class NativeJobLauncher:
+        pass
+
+    monkeypatch.setitem(sys.modules, job_module, SimpleNamespace(**{job_class_name: NativeJobLauncher}))
+    policy.validate_job_launcher(NativeJobLauncher())
+    with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+        policy.validate_job_launcher(SimpleNamespace())
 
     class Impersonator(NativeLauncher):
         pass

@@ -13,11 +13,9 @@
 # limitations under the License.
 
 from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
-from nvflare.utils.job_launcher_utils import generate_client_command, has_cj_resource_spec
+from nvflare.utils.job_launcher_utils import generate_client_command
 
 
 class ClientProcessJobLauncher(ProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> str:
-        if has_cj_resource_spec(job_meta, fl_ctx.get_identity_name()):
-            raise ValueError("local Process task execution is deferred; use job lifetime or a Kubernetes/Slurm site")
         return generate_client_command(fl_ctx)

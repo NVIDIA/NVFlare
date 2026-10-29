@@ -46,7 +46,7 @@ from nvflare.private.fed.task_worker.protocol import (
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
-from .task_execution_policy import TaskExecutionPolicy, is_native_task_launcher
+from .task_execution_policy import TaskExecutionPolicy
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 _TASK_ROUTE = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
@@ -118,16 +118,10 @@ class TaskWorkerExecutor(Executor):
                         self.policy.launcher.handle_event(event_type, fl_ctx)
                     finally:
                         self.supervisor.end_run()
-                elif event_type == EventType.END_RUN and is_native_task_launcher(self.policy.launcher):
+                elif event_type == EventType.END_RUN:
                     self._end_native_run(fl_ctx)
                 else:
                     self.supervisor.end_run()
-                    if (
-                        event_type == EventType.END_RUN
-                        and not self._done.wait(self.policy.settlement_timeout)
-                        and self.supervisor.owns_execution
-                    ):
-                        self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
                     fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)

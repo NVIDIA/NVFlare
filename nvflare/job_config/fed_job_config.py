@@ -178,7 +178,7 @@ class FedJobConfig:
                 for receiving_site in sites:
                     # Export cannot know the receiving site's trusted backend
                     # or admission policy. Enforce resource capability there.
-                    validate_task_resources(meta_json, receiving_site, allow_gpu=True)
+                    validate_task_resources(meta_json, receiving_site)
 
         return json.dumps(meta_json, indent=4)
 

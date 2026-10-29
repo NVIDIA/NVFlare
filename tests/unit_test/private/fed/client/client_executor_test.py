@@ -1213,30 +1213,39 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
     build.assert_not_called()
 
 
-@pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
-def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
+@pytest.mark.parametrize("budget", [{}, {"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
+@pytest.mark.parametrize("backend", ["process", "docker", "custom"])
+def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, budget, backend):
     from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+    from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
-    with pytest.raises(ValueError, match="Process task execution is deferred"):
-        ClientProcessJobLauncher().get_command({"cj_resource_spec": {"site-1": budget}}, context)
-
-
-@pytest.mark.parametrize(
-    "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
-)
-def test_process_task_compute_requirements_fail_before_starting_cj(compute):
-    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
-
-    context = Mock()
-    context.get_identity_name.return_value = "site-1"
-    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command") as command:
-        with pytest.raises(ValueError):
-            ClientProcessJobLauncher().get_command(
-                {"resource_spec": {"@default": compute}, "cj_resource_spec": {"site-1": {}}}, context
-            )
-    command.assert_not_called()
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": budget}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    config_dir = Path(workspace.get_app_config_dir("job-1"))
+    config_dir.mkdir(parents=True)
+    (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    classes = {"process": ClientProcessJobLauncher, "docker": ClientDockerJobLauncher}
+    launcher = object.__new__(classes[backend]) if backend in classes else Mock()
+    launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
+    # Canonical site-policy validation has its own tests. Exercise the real
+    # selected-launcher check at the shared parent admission boundary here.
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="k8s"))
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
+            with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    launcher.launch_job.assert_not_called()
 
 
 def test_process_resident_compute_admission_keeps_legacy_behavior():
@@ -1248,6 +1257,63 @@ def test_process_resident_compute_admission_keeps_legacy_behavior():
         assert (
             ClientProcessJobLauncher().get_command({"resource_spec": {"@default": {"num_of_cpus": 2}}}, context) == "CJ"
         )
+
+
+@pytest.mark.parametrize("mode", ["k8s", "slurm"])
+def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode):
+    import importlib
+
+    from nvflare.private.fed.client.task_execution_policy import _NATIVE_JOB_LAUNCHERS, TaskExecutionPolicy
+
+    module_name, class_name = _NATIVE_JOB_LAUNCHERS[mode]
+    launcher = object.__new__(getattr(importlib.import_module(module_name), class_name))
+    launcher.launch_job = Mock(side_effect=RuntimeError("native launch boundary reached"))
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    config_dir = Path(workspace.get_app_config_dir("job-1"))
+    config_dir.mkdir(parents=True)
+    (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode))
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
+            with pytest.raises(RuntimeError, match="native launch boundary reached"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    launcher.launch_job.assert_called_once()
+
+
+def test_shared_admission_keeps_job_site_independent_of_another_sites_task_policy(tmp_path):
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-2": {}}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    launcher = Mock()
+    launcher.launch_job.side_effect = RuntimeError("resident launch boundary reached")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace") as native_policy:
+            with pytest.raises(RuntimeError, match="resident launch boundary reached"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    native_policy.assert_not_called()
+    launcher.launch_job.assert_called_once()
 
 
 def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):

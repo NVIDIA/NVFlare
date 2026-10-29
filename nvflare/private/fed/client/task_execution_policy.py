@@ -16,7 +16,6 @@
 
 import importlib
 import os
-import re
 from dataclasses import dataclass
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
@@ -57,6 +56,10 @@ _NATIVE_TASK_LAUNCHERS = {
     "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
     "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
 }
+_NATIVE_JOB_LAUNCHERS = {
+    "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
+    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+}
 
 
 def _supported_native_launcher(launcher):
@@ -72,10 +75,6 @@ def _supported_native_launcher(launcher):
             return False
         raise
     return type(launcher) is getattr(module, class_name, None)
-
-
-def is_native_task_launcher(launcher):
-    return launcher.launch_mode in _NATIVE_TASK_LAUNCHERS
 
 
 def site_job_launchers(site_config):
@@ -98,7 +97,6 @@ class _SiteBuilder(ComponentBuilder):
 @dataclass(frozen=True)
 class TaskExecutionPolicy:
     launcher: TaskLauncherSpec
-    environment_variables: tuple[str, ...] = ()
     artifact_cleanup: str = "receipt"
     worker_timeout: float | None = None
     settlement_timeout: float = 10.0
@@ -122,9 +120,12 @@ class TaskExecutionPolicy:
     def from_config(cls, config):
         if not isinstance(config, dict):
             raise ValueError("site task_execution policy must be a dict")
+        if "environment_variables" in config:
+            raise ValueError(
+                "environment_variables is not supported; configure worker environment on the native backend"
+            )
         allowed = {
             "launcher",
-            "environment_variables",
             "artifact_cleanup",
             "worker_timeout",
             "settlement_timeout",
@@ -134,15 +135,6 @@ class TaskExecutionPolicy:
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
-        names = config.get("environment_variables", [])
-        if not isinstance(names, list) or any(
-            not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in names
-        ):
-            raise ValueError("environment_variables must be a list of valid environment names")
-        if set(names) & FORBIDDEN_ENVIRONMENT_NAMES:
-            raise ValueError(
-                "task environment policy cannot forward federation credentials, API bootstrap, or GPU visibility"
-            )
         cleanup = config.get("artifact_cleanup", "receipt")
         if cleanup not in ("receipt", "retain"):
             raise ValueError("artifact_cleanup must be 'receipt' or 'retain'")
@@ -172,17 +164,14 @@ class TaskExecutionPolicy:
         launcher = _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or not _supported_native_launcher(launcher):
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
-        if names:
-            raise ValueError("native worker environment belongs to trusted backend configuration")
         return cls(
-            launcher,
-            tuple(dict.fromkeys(names)),
-            cleanup,
-            options.worker_timeout,
-            options.settlement_timeout,
-            options.poll_interval,
-            limit,
-            finalization_timeout,
+            launcher=launcher,
+            artifact_cleanup=cleanup,
+            worker_timeout=options.worker_timeout,
+            settlement_timeout=options.settlement_timeout,
+            poll_interval=options.poll_interval,
+            max_payload_bytes=limit,
+            finalization_timeout=finalization_timeout,
         )
 
     def worker_environment(self):
@@ -190,8 +179,15 @@ class TaskExecutionPolicy:
         # owns worker credentials, GPU visibility and application variables.
         return {}
 
+    def validate_job_launcher(self, launcher):
+        """Fail closed before starting a CJ on an incompatible site runtime."""
+        module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
+        expected = getattr(importlib.import_module(module_name), class_name)
+        if type(launcher) is not expected:
+            raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
+
     def task_resources(self, meta, site_name):
-        validate_task_resources(meta, site_name, allow_gpu=True)
+        validate_task_resources(meta, site_name)
         reject_job_gpu_reservation(meta, site_name)
         # Each native backend derives its request from the validated site/job
         # binding; do not reinterpret it as local process or Docker resources.

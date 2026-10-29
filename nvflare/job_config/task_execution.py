@@ -53,12 +53,8 @@ def get_client_execution_lifetime(client_config):
     return ExecutionLifetime.validate(client_config.get("execution_lifetime", ExecutionLifetime.JOB))
 
 
-def validate_task_resources(meta, site_name, *, allow_gpu=False):
-    """Validate counts; require GPU capability only at trusted site admission.
-
-    Export uses allow_gpu=True because it cannot select the receiving site's
-    backend. Callers admitting GPU requests must opt in explicitly.
-    """
+def validate_task_resources(meta, site_name):
+    """Validate GPU counts; the trusted native backend owns admission."""
     specs = [
         get_compute_resource_manager_spec(meta, site_name),
         get_resource_manager_spec(meta, site_name),
@@ -70,8 +66,6 @@ def validate_task_resources(meta, site_name, *, allow_gpu=False):
             value = spec.get(name, 0)
             if type(value) is not int or value < 0:
                 raise ValueError("task GPUs must be nonnegative integer counts")
-        if not allow_gpu and (spec.get("num_of_gpus", 0) or spec.get("gpus_per_node", 0)):
-            raise ValueError("task GPUs require a scheduler-backed site with GPU support")
 
 
 def validate_task_workflows(workflows):

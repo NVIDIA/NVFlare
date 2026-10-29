@@ -88,7 +88,8 @@ def test_local_task_simulation_rejected_before_starting_workers(tmp_path, monkey
 
     monkeypatch.chdir(ADVANCED_DIR)
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as example:
-        args = example.parse_args(["--execution_lifetime", "task"])
+        # Exercise framework admission independently of the CLI's earlier guard.
+        args = example.define_parser().parse_args(["--execution_lifetime", "task"])
         recipe = example.create_recipe(args)
         generate = Mock(side_effect=AssertionError("must reject before export or spawn"))
         monkeypatch.setattr(FedJobConfig, "generate_job_config", generate)

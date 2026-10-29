@@ -19,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -327,6 +328,7 @@ def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch)
 
 def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
+        monkeypatch.setattr(job_module.recipe_args, "_RECIPE_EXPORT", True)
         args = job_module.parse_args(["--execution_lifetime", "task", "--seed", "731", "--no-resume_training"])
         recipe = job_module.create_recipe(args)
         monkeypatch.chdir(ADVANCED_DIR)
@@ -338,6 +340,24 @@ def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, m
     executor_args = config["executors"][0]["executor"]["args"]
     assert executor_args["task_script_path"] == "client.py"
     assert executor_args["task_script_args"] == ["--dataset", "synthetic", "--seed", "731", "--no-resume_training"]
+
+
+@pytest.mark.parametrize("environment", ["sim", "poc"])
+def test_local_task_run_rejected_before_environment_creation(monkeypatch, environment):
+    job_module = _load_job_module()
+    create = Mock(side_effect=AssertionError("must reject before starting local services"))
+    monkeypatch.setattr(job_module, "create_environment", create)
+    with pytest.raises(SystemExit, match="2"):
+        job_module.main(["--env", environment, "--execution_lifetime", "task"])
+    create.assert_not_called()
+
+
+@pytest.mark.parametrize("environment", ["sim", "poc"])
+def test_task_export_is_backend_neutral(monkeypatch, environment):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module.recipe_args, "_RECIPE_EXPORT", True)
+    args = job_module.parse_args(["--env", environment, "--execution_lifetime", "task"])
+    assert args.execution_lifetime == "task"
 
 
 @pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, GeneratorExit, pytest.fail.Exception])

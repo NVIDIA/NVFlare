@@ -29,7 +29,9 @@ from prepare_data import add_dataset_arguments  # noqa: E402
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import PocEnv, ProdEnv, SimEnv, add_experiment_tracking, add_final_global_evaluation
+from nvflare.recipe import PocEnv, ProdEnv, SimEnv
+from nvflare.recipe import _args as recipe_args
+from nvflare.recipe import add_experiment_tracking, add_final_global_evaluation
 from nvflare.recipe.prod_env import DEFAULT_ADMIN_USER
 from nvflare.recipe.utils import add_cross_site_evaluation
 
@@ -136,6 +138,10 @@ def define_parser() -> argparse.ArgumentParser:
 def parse_args(argv=None):
     parser = define_parser()
     args = parser.parse_args(argv)
+    # Recipe consumes --export before the application's parser sees argv.
+    exporting, _ = recipe_args._peek_recipe_args()
+    if args.execution_lifetime == "task" and args.env in ("sim", "poc") and not exporting:
+        parser.error("task lifetime requires --export or --env prod; local simulation and POC require job lifetime")
     if args.execution_lifetime == "task" and args.launch_external_process:
         parser.error("--execution_lifetime task requires the in-process client script")
     if args.execution_lifetime == "task" and args.evaluation == "cross-site":

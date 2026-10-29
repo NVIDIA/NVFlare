@@ -1773,17 +1773,6 @@ class TestDockerJobLauncherStudyRuntime:
         dc.containers.run.assert_not_called()
 
 
-@pytest.mark.parametrize("coordinator", [{}, {"num_of_cpus": 0.25, "memory": "512Mi"}, {"num_of_gpus": 1}])
-def test_local_task_mode_rejected_before_docker_access(coordinator):
-    launcher = _make_launcher()
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
-    with patch.object(launcher, "_get_docker_client") as connect:
-        with pytest.raises(ValueError, match="Docker task execution is deferred"):
-            launcher.launch_job({"cj_resource_spec": {"site-1": coordinator}}, context)
-    connect.assert_not_called()
-
-
 def test_local_job_mode_still_delegates_to_docker_launcher():
     launcher = _make_launcher()
     context = MagicMock()

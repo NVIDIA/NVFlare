@@ -109,6 +109,12 @@ the deployed resolved mode; CJ checks it again before constructing application
 components. A task admission marker cannot excuse a resident CJ from compute
 resource reservation if local configuration resolves to job lifetime.
 
+Before starting a task-lifetime CJ, the client parent validates the canonical
+native task policy and requires its matching supported client-job launcher.
+Process, Docker and unsupported custom launchers are rejected at this shared
+admission boundary before the CJ starts. Job-lifetime apps keep their existing
+launcher selection, including mixed-lifetime deployments at different sites.
+
 The scheduler's resource-manager request is obtained through
 `get_resource_manager_spec`. For a task site this uses only the coordinator
 budget; `get_compute_resource_manager_spec` resolves compute admission fields

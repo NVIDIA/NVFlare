@@ -292,6 +292,10 @@ class JobExecutor(ClientExecutor):
             json.dump(job_meta, f, indent=4)
 
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
+        if has_cj_resource_spec(job_meta, client.client_name):
+            from .task_execution_policy import TaskExecutionPolicy
+
+            TaskExecutionPolicy.from_workspace(workspace).validate_job_launcher(job_launcher)
 
         # prepare command args for the job process
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
