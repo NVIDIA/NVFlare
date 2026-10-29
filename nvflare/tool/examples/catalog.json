@@ -240,6 +240,10 @@
     "source_path": "examples/advanced/multi-gpu/pt",
     "category": "advanced"
   },
+  "pt-distillation": {
+    "source_path": "examples/advanced/pt_distillation",
+    "category": "advanced"
+  },
   "psi": {
     "source_path": "examples/advanced/psi",
     "category": "advanced"

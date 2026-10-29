@@ -23,6 +23,10 @@ provided.
 * [Gen3 data access](./gen3/README.md)
   * Access protected Gen3 data using site-owned study credentials and train a federated NumPy model.
 
+## Knowledge distillation
+* [Standalone PyTorch distillation](./pt_distillation/README.md)
+  * Reusable loss, bounded teacher snapshots and local KD with different teacher/student architectures.
+
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
