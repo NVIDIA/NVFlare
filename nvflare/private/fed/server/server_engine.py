@@ -121,6 +121,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
+        self._abort_cleanup_threads = set()
         self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False
@@ -373,18 +374,39 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         except Exception:
             graceful_wait = 0.0
         # Run cleanup off-thread: its graceful wait can exceed the CLI's 5.0s cmd_timeout.
-        # Reconcile while the parent is alive, but do not keep a shutting-down
-        # server process alive forever when backend settlement cannot be proved.
-        threading.Thread(
-            target=self._remove_run_processes,
-            kwargs={"job_id": job_id, "job_handle": job_handle, "max_wait": graceful_wait},
-            daemon=True,
-        ).start()
+        # Preserve the grace period and first cancellation attempt during
+        # interpreter shutdown. Only the unbounded settlement wait is a daemon.
+        cleanup = threading.Thread(
+            target=self._run_abort_cleanup,
+            kwargs={
+                "job_id": job_id,
+                "job_handle": job_handle,
+                "max_wait": graceful_wait,
+                "background_settlement": True,
+            },
+            daemon=False,
+        )
+        with self.lock:
+            if not hasattr(self, "_abort_cleanup_threads"):
+                self._abort_cleanup_threads = set()
+            self._abort_cleanup_threads.add(cleanup)
+            try:
+                cleanup.start()
+            except BaseException:
+                self._abort_cleanup_threads.discard(cleanup)
+                raise
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def _remove_run_processes(self, job_id, job_handle=None, max_wait=10.0):
+    def _run_abort_cleanup(self, **kwargs):
+        try:
+            self._remove_run_processes(**kwargs)
+        finally:
+            with self.lock:
+                self._abort_cleanup_threads.discard(threading.current_thread())
+
+    def _remove_run_processes(self, job_id, job_handle=None, max_wait=10.0, background_settlement=False):
         # Wait for the run process to terminate gracefully, then always call
         # terminate() for the captured job handle. For launcher-managed jobs
         # this is the resource cleanup path, not only a force-kill path.
@@ -402,11 +424,25 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             time.sleep(0.1)
 
         if job_handle is not None:
+            self._terminate_job_handle(job_id, job_handle)
+        if background_settlement:
+            threading.Thread(
+                target=self._wait_for_run_process_settlement,
+                kwargs={"job_id": job_id, "job_handle": job_handle},
+                daemon=True,
+            ).start()
+        else:
+            self._wait_for_run_process_settlement(job_id, job_handle)
+
+    def _terminate_job_handle(self, job_id, job_handle):
+        try:
+            job_handle.terminate()
+        except Exception as e:
+            self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
+
+    def _wait_for_run_process_settlement(self, job_id, job_handle):
+        if job_handle is not None:
             while True:
-                try:
-                    job_handle.terminate()
-                except Exception as e:
-                    self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
                 try:
                     # Cancellation is request-only. Keep the SJ registered if
                     # its backend cannot yet confirm that execution stopped.
@@ -415,6 +451,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 except Exception as e:
                     self.logger.error(f"job {job_id}: abort settlement unconfirmed: {secure_format_exception(e)}")
                     time.sleep(1.0)
+                    self._terminate_job_handle(job_id, job_handle)
             self.logger.debug(f"job {job_id}: job handle settled after abort cleanup")
         with self.lock:
             current = self.run_processes.get(job_id)
@@ -1135,6 +1172,15 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
     def close(self):
         self.executor.shutdown()
+        # server_train calls close before MPM teardown. Its forced-exit path
+        # must not preempt the bounded first cancellation phase either.
+        while True:
+            with self.lock:
+                cleanups = tuple(getattr(self, "_abort_cleanup_threads", ()))
+            if not cleanups:
+                break
+            for cleanup in cleanups:
+                cleanup.join()
         self.shutdown_streamer()
 
 

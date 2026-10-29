@@ -363,9 +363,9 @@ def test_abort_app_on_server_schedules_cleanup_in_background_after_in_band_abort
 
     assert result == ""
     thread_cls.assert_called_once_with(
-        target=engine._remove_run_processes,
-        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 10.0},
-        daemon=True,
+        target=engine._run_abort_cleanup,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 10.0, "background_settlement": True},
+        daemon=False,
     )
     thread_cls.return_value.start.assert_called_once()
     engine._remove_run_processes.assert_not_called()
@@ -382,11 +382,26 @@ def test_abort_app_on_server_skips_graceful_wait_when_in_band_abort_fails():
 
     assert result == ""
     thread_cls.assert_called_once_with(
-        target=engine._remove_run_processes,
-        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 0.0},
-        daemon=True,
+        target=engine._run_abort_cleanup,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 0.0, "background_settlement": True},
+        daemon=False,
     )
     thread_cls.return_value.start.assert_called_once()
+
+
+def test_abort_first_cancellation_precedes_daemon_settlement():
+    handle = MagicMock()
+    engine = _make_abort_engine(handle)
+    with patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls:
+        thread_cls.side_effect = lambda **kwargs: handle.terminate.assert_called_once() or MagicMock()
+        engine._remove_run_processes("job-1", job_handle=handle, max_wait=0, background_settlement=True)
+    handle.wait.assert_not_called()
+    thread_cls.assert_called_once_with(
+        target=engine._wait_for_run_process_settlement,
+        kwargs={"job_id": "job-1", "job_handle": handle},
+        daemon=True,
+    )
+    assert engine.run_processes["job-1"][RunProcessKey.JOB_HANDLE] is handle
 
 
 def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires():

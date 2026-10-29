@@ -203,6 +203,11 @@ _start_runner_process(job, job_clients, snapshot, fl_ctx)
 └─ 6. Background thread → wait_for_complete → job_handle.wait()
 ```
 
+Server abort cleanup keeps the graceful wait and first `terminate()` call in a non-daemon thread so interpreter
+shutdown cannot skip cancellation. `ServerEngine.close()` joins these bounded workers before process-monitor
+teardown can force an exit. Only the subsequent settlement/retry loop is a daemon. While the parent is
+alive, that loop retains the captured registration until shutdown is confirmed and cannot remove a replacement.
+
 ### 3.4 Client Side (`ClientExecutor`)
 
 Location: `nvflare/private/fed/client/client_executor.py`
@@ -386,6 +391,9 @@ JobLauncherSpec (FLComponent, ABC)
 | `wait()` | Polls until settlement is confirmed; API outages and missing evidence keep it waiting. |
 | `_query_phase()` | Reads the UID-bound Pod. A 404 settles only after shutdown proof, or after deletion began for an observed UID with our settlement finalizer and that finalizer was removed. |
 | `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → delete pod and preserve `EXCEPTION` return code, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → delete pod and preserve `EXCEPTION` return code. Returns `True` on state reached, `False` otherwise. |
+
+Pod reads, patches and deletes use a five-second request timeout so cleanup can retry observation failures.
+Pod creation uses the SDK's normal timeout behavior; the cleanup timeout must not cut off admission processing.
 
 Pod phase mapping:
 
