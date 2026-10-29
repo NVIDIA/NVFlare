@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Task execution launch backends."""
-
 """Task launch contracts live in nvflare.apis.task_launcher_spec.
 
 Scheduler-backed implementations live in nvflare.app_opt. Local Process and

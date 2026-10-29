@@ -63,9 +63,14 @@ def _request(tmp_path, attempt_id, code, *args, environment=None):
 
 def _wait_for_file(path, timeout=5.0):
     deadline = time.monotonic() + timeout
-    while not path.exists():
+    while True:
+        try:
+            if path.stat().st_size > 0:
+                return
+        except FileNotFoundError:
+            pass
         if time.monotonic() >= deadline:
-            pytest.fail(f"timed out waiting for {path}")
+            pytest.fail(f"timed out waiting for contents of {path}")
         time.sleep(0.01)
 
 
