@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, distribution
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Iterator, Sequence
 
 DASHBOARD_OPTIONAL_MODULES = ("flask", "flask_jwt_extended", "flask_sqlalchemy")
@@ -24,11 +26,25 @@ class MissingOptionalDependencyError(ImportError):
     """Raised when an explicitly requested feature is not installed."""
 
 
+def _installation_hint(extra: str) -> str:
+    installations = []
+    for name in ("nvflare", "nvflare-nightly"):
+        try:
+            installed = distribution(name)
+        except PackageNotFoundError:
+            continue
+        module_path = installed.locate_file("nvflare/fuel/utils/optional_dependencies.py")
+        if Path(module_path).resolve() == Path(__file__).resolve() and installed.version:
+            installations.append(f"{name}[{extra}]=={installed.version}")
+    if len(installations) == 1:
+        return f"Install them with: python -m pip install '{installations[0]}'"
+    return f"Reinstall the same NVFlare wheel or source checkout with the '{extra}' extra."
+
+
 def _missing_dependency_error(feature: str, extra: str, missing_modules: Sequence[str]):
     missing = ", ".join(missing_modules)
     return MissingOptionalDependencyError(
-        f"{feature} requires optional dependencies ({missing}). "
-        f"Install them with: python -m pip install 'nvflare[{extra}]'"
+        f"{feature} requires optional dependencies ({missing}). {_installation_hint(extra)}"
     )
 
 

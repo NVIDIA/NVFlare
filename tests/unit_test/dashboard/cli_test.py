@@ -118,7 +118,7 @@ class TestDashboardCli:
         with (
             patch("nvflare.fuel.utils.optional_dependencies.find_spec", return_value=None),
             patch.object(dashboard_cli.subprocess, "run") as run_mock,
-            pytest.raises(ImportError, match=r"nvflare\[dashboard\]") as exc_info,
+            pytest.raises(ImportError, match="NVFlare Dashboard requires optional dependencies") as exc_info,
         ):
             dashboard_cli.start_local({})
 
