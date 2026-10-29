@@ -1,0 +1,4 @@
+# CPU framework versions for Linux x86_64 documentation builds.
+torch==2.14.1+cpu
+torchvision==0.29.2+cpu
+xgboost-cpu==3.2.0

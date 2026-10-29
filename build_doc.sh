@@ -60,7 +60,12 @@ function clean_docs() {
 }
 
 function build_html_docs() {
-    python -m pip install -e ".[doc-build]"
+    if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
+        python -m pip install --no-cache-dir --no-deps --index-url https://download.pytorch.org/whl/cpu --constraint docs/constraints.txt torch torchvision
+        python -m pip install --constraint docs/constraints.txt -e ".[doc-build]"
+    else
+        python -m pip install -e ".[doc-build]"
+    fi
     if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
         echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
     else
