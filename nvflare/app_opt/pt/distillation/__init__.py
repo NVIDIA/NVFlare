@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Standalone PyTorch distillation; no federated workflow or synthesis dependency."""
+"""Standalone PyTorch distillation helpers.
+
+Basic KD uses losses, teachers and trainer. Optional data-free helpers are
+imported explicitly from synthesis, pool, classification, image and features;
+importing basic KD does not load those modules or construct any models.
+"""
 
 from .losses import kl_divergence
 from .teachers import TeacherBuffer, TeacherSnapshot

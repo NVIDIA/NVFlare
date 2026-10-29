@@ -40,9 +40,10 @@ class DistillationTrainer:
     once, moved to device, frozen and put in eval mode. Originals are untouched.
 
     batch_adapter extracts a single input tensor from each supplied batch.
-    Output adapters convert model outputs to aligned [batch, classes] logits.
+    Output adapters prepare model outputs for loss_fn. The default KL expects
+    aligned [batch, classes] logits; other tasks can supply a different loss.
     Wrap a model for multiple inputs or different per-teacher output conventions.
-    loss_fn(student_logits, teacher_logits) must return a scalar batch-mean loss.
+    loss_fn(student_output, teacher_output) must return a scalar batch-mean loss.
     Use functools.partial(kl_divergence, temperature=...) to configure KD, or
     supply another loss. Multiple teachers contribute equally; logits are not
     averaged. No synthetic data, class weighting or optimizer reset is implicit.
