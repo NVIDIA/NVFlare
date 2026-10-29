@@ -1312,16 +1312,23 @@ class TestDockerJobLauncherLaunchJob:
         launcher._docker_client.containers.run.assert_not_called()
 
     @pytest.mark.parametrize("source", ["portable", "job", "site", "study"])
-    def test_server_gpu_jobs_preserve_docker_requests_without_client_allocation(self, tmp_path, source):
-        request = {"Count": 2, "Capabilities": [["gpu"]]}
+    @pytest.mark.parametrize("pinned", [False, True])
+    def test_server_gpu_jobs_preserve_docker_requests_without_client_allocation(self, tmp_path, source, pinned):
+        request = {"DeviceIDs": ["3"], "Capabilities": [["gpu"]]} if pinned else {"Count": 2, "Capabilities": [["gpu"]]}
         defaults = {"device_requests": [request]} if source == "site" else {}
         launcher = _make_launcher(cls=ServerDockerJobLauncher, default_job_container_kwargs=defaults)
         if source == "study":
             local = tmp_path / "local"
             local.mkdir()
+            import yaml
+
             (local / "study_runtime.yaml").write_text(
-                "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n"
-                "      device_requests: [{Count: 2, Capabilities: [[gpu]]}]\n"
+                yaml.safe_dump(
+                    {
+                        "format_version": 2,
+                        "studies": {"study-a": {"docker_kwargs": {"device_requests": [request]}}},
+                    }
+                )
             )
             launcher.WORKSPACE_MOUNT = str(tmp_path)
         dc = launcher._docker_client
@@ -1335,9 +1342,8 @@ class TestDockerJobLauncherLaunchJob:
             meta[JobMetaKey.STUDY.value] = "study-a"
         launcher.launch_job(meta, ctx)
         actual = dc.containers.run.call_args.kwargs["device_requests"][0]
-        assert actual["Count"] == 2
-        assert actual["Capabilities"] == [["gpu"]]
-        assert not actual.get("DeviceIDs")
+        expected = request if source in ("site", "study") else {"Count": 2, "Capabilities": [["gpu"]]}
+        assert DeviceRequest(**actual) == DeviceRequest(**expected)
 
     def test_launch_portable_cpu_and_memory(self):
         launcher = _make_launcher(default_job_container_kwargs={"nano_cpus": 1, "mem_limit": 1})
@@ -1378,8 +1384,11 @@ class TestDockerJobLauncherLaunchJob:
 
         assert dc.containers.run.call_args[0][0] == "default/img:v1"
 
-    def test_launch_no_container_kwargs_no_extra_keys(self):
-        launcher = _make_launcher(default_job_env={"NVIDIA_VISIBLE_DEVICES": "all"})
+    @pytest.mark.parametrize("cls", [ClientDockerJobLauncher, ServerDockerJobLauncher])
+    @pytest.mark.parametrize("visible_devices", [None, "all"])
+    def test_launch_no_gpu_request_preserves_site_visibility(self, cls, visible_devices):
+        env = {"NVIDIA_VISIBLE_DEVICES": visible_devices} if visible_devices is not None else {}
+        launcher = _make_launcher(cls=cls, default_job_env=env)
         dc = launcher._docker_client
         container = MagicMock()
         container.id = "abc123"
@@ -1391,7 +1400,8 @@ class TestDockerJobLauncherLaunchJob:
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") is None
-        assert call_kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] == "void"
+        expected = visible_devices or ("void" if cls is ClientDockerJobLauncher else None)
+        assert call_kwargs["environment"].get("NVIDIA_VISIBLE_DEVICES") == expected
 
     def test_launch_status_error_returns_handle_without_releasing_gpus(self):
         launcher = _make_launcher()
@@ -1567,8 +1577,8 @@ class TestDockerJobLauncherStudyRuntime:
         local_dir.mkdir(parents=True, exist_ok=True)
         (local_dir / "study_runtime.yaml").write_text(text, encoding="utf-8")
 
-    def _make_v2_launcher(self, tmp_path):
-        launcher = _make_launcher()
+    def _make_v2_launcher(self, tmp_path, cls=None):
+        launcher = _make_launcher(cls=cls)
         launcher.WORKSPACE_MOUNT = str(tmp_path)
         dc = launcher._docker_client
         container = MagicMock()
@@ -1577,7 +1587,8 @@ class TestDockerJobLauncherStudyRuntime:
         dc.containers.get.return_value = _make_container("running")
         return launcher, dc
 
-    def test_env_and_secret_env_injected(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("cls", [ClientDockerJobLauncher, ServerDockerJobLauncher])
+    def test_env_and_secret_env_injected(self, tmp_path, monkeypatch, cls):
         self._write_study_runtime(
             tmp_path,
             "format_version: 2\n"
@@ -1585,12 +1596,14 @@ class TestDockerJobLauncherStudyRuntime:
             "  study-a:\n"
             "    env:\n"
             "      DB_HOST: postgres.internal\n"
+            "      NVIDIA_VISIBLE_DEVICES: '3'\n"
             "      USER: site-user\n"
             "    secret_env:\n"
             "      DB_PASSWORD: {source: NVFL_STUDY_A_DB_PASSWORD, key: password}\n",
         )
         monkeypatch.setenv("NVFL_STUDY_A_DB_PASSWORD", "s3cret")
-        launcher, dc = self._make_v2_launcher(tmp_path)
+        launcher, dc = self._make_v2_launcher(tmp_path, cls=cls)
+        launcher.default_job_env = {"NVIDIA_VISIBLE_DEVICES": "all"}
 
         fl_ctx, _ = _make_fl_ctx()
         launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
@@ -1598,6 +1611,7 @@ class TestDockerJobLauncherStudyRuntime:
         environment = dc.containers.run.call_args[1]["environment"]
         assert environment["DB_HOST"] == "postgres.internal"
         assert environment["DB_PASSWORD"] == "s3cret"
+        assert environment["NVIDIA_VISIBLE_DEVICES"] == "3"
         # launcher-controlled variables win over site-provided ones
         assert environment["USER"] != "site-user"
 
@@ -1793,7 +1807,7 @@ class TestDockerJobLauncherStudyRuntime:
         fl_ctx, _ = _make_fl_ctx()
         launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 0}), fl_ctx)
 
-        assert "device_requests" not in dc.containers.run.call_args[1]
+        assert not dc.containers.run.call_args[1].get("device_requests")
 
     @pytest.mark.parametrize("lowercase", [False, True])
     @pytest.mark.parametrize("legacy_count", [None, 1, 2])
@@ -1804,8 +1818,6 @@ class TestDockerJobLauncherStudyRuntime:
         [
             {"Count": 1, "Capabilities": [["gpu"]]},
             {"Count": -1, "Capabilities": [["gpu"]]},
-            {"DeviceIDs": ["1"], "Capabilities": [["gpu"]]},
-            {"DeviceIDs": ["1", "1"], "Capabilities": [["gpu"]]},
         ],
     )
     def test_gpu_defaults_are_reserved_before_launch(
@@ -1820,8 +1832,7 @@ class TestDockerJobLauncherStudyRuntime:
         launcher, dc = self._make_v2_launcher(tmp_path)
         device_request = gpu_request
         if lowercase:
-            keys = {"Count": "count", "Capabilities": "capabilities", "DeviceIDs": "device_ids"}
-            device_request = {keys[k]: v for k, v in gpu_request.items()}
+            device_request = {k.lower(): v for k, v in gpu_request.items()}
         if source == "study":
             import yaml
 
@@ -1848,27 +1859,15 @@ class TestDockerJobLauncherStudyRuntime:
         if legacy_count is not None:
             meta["resource_spec"] = {"site-1": {"process": {"num_of_gpus": legacy_count}}}
         allocated = []
-        count = 2 if gpu_request.get("Count") == -1 else 1
+        count = legacy_count or (2 if gpu_request["Count"] == -1 else 1)
         for _ in range(2 // count):
             check = Message(topic=TrainingTopic.CHECK_RESOURCE, body=get_resource_manager_spec(meta, "site-1"))
             check.set_header(RequestHeader.JOB_META, meta)
             reply = CheckResourceProcessor().process(check, engine)
-            if len(gpu_request.get("DeviceIDs", [])) == 2:
-                assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
-                assert "distinct devices" in reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
-                return
             if not managed:
                 assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
                 assert "GPU capacity not configured" in reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
                 return
-            if legacy_count is not None and legacy_count != count:
-                assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
-                assert "GPU count mismatch" in reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
-                assert not manager.reserved_resources
-                return
-            if allocated and gpu_request.get("DeviceIDs"):
-                assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
-                break
             assert reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
             token = reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
             allocation = manager.allocate_resources({}, token, resource_ctx)
@@ -1878,16 +1877,14 @@ class TestDockerJobLauncherStudyRuntime:
             actual = dc.containers.run.call_args.kwargs["device_requests"][0]
             assert actual["DeviceIDs"] == [str(i) for i in allocation]
             assert len(allocation) == count
-            if gpu_request.get("DeviceIDs"):
-                assert actual["DeviceIDs"] == gpu_request["DeviceIDs"]
         if len(allocated) == 2:
             assert allocated[0].isdisjoint(allocated[1])
-        if not gpu_request.get("DeviceIDs"):
-            assert not manager.check_resources({"num_of_gpus": 1}, resource_ctx)[0]
+        assert not manager.check_resources({"num_of_gpus": 1}, resource_ctx)[0]
 
     @pytest.mark.parametrize("managed", [True, False])
     @pytest.mark.parametrize("count", [0, 1])
-    def test_job_gpu_count_overrides_study_default_during_admission(self, count, managed):
+    @pytest.mark.parametrize("source", ["docker", "portable", "process"])
+    def test_job_gpu_count_overrides_study_default_during_admission(self, count, managed, source):
         launcher = _make_launcher()
         launcher._resolve_study_runtime = MagicMock(
             return_value=SimpleNamespace(docker_kwargs={"device_requests": [{"Count": 2, "Capabilities": [["gpu"]]}]})
@@ -1897,8 +1894,12 @@ class TestDockerJobLauncherStudyRuntime:
             GPUResourceManager(2, 0, ignore_host=True, exclusive=True) if managed else PassthroughResourceManager()
         )
         ctx = FLContextManager(engine=engine, identity_name="site-1").new_context()
-        ctx.set_prop(FLContextKey.JOB_META, _make_job_meta(docker_spec={"num_of_gpus": count}))
-        requirement = {}
+        meta = _make_job_meta(docker_spec={"num_of_gpus": count} if source == "docker" else {})
+        if source != "docker":
+            resources = {"num_of_gpus": count}
+            meta["resource_spec"] = {"site-1": {"process": resources} if source == "process" else resources}
+        ctx.set_prop(FLContextKey.JOB_META, meta)
+        requirement = get_resource_manager_spec(meta, "site-1")
         ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, requirement)
         launcher.handle_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, ctx)
         if count and not managed:
@@ -1906,6 +1907,20 @@ class TestDockerJobLauncherStudyRuntime:
             return
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
         assert requirement == {"num_of_gpus": count}
+
+    @pytest.mark.parametrize("key", ["DeviceIDs", "device_ids"])
+    def test_client_pinned_gpu_defaults_are_rejected(self, key):
+        launcher = _make_launcher(
+            default_job_container_kwargs={"device_requests": [{key: ["3"], "capabilities": [["gpu"]]}]}
+        )
+        ctx = FLContextManager(engine=MagicMock(), identity_name="site-1").new_context()
+        ctx.set_prop(FLContextKey.JOB_META, _make_job_meta())
+        ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, {})
+        launcher.handle_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, ctx)
+        assert "must use Count" in ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        launch_ctx, _ = _make_fl_ctx()
+        with pytest.raises(ValueError, match="must use Count"):
+            launcher.launch_job(_make_job_meta(), launch_ctx)
 
     def test_unspecified_job_gpus_require_the_default_allocation(self, tmp_path):
         self._write_study_runtime(

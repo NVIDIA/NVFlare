@@ -183,6 +183,7 @@ the client. Without configured GPU capacity, GPU requests are declined during sc
 ``nvflare deploy prepare`` preserves the client's existing ``GPUResourceManager``
 capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Jobs can inherit
 ``docker_kwargs.device_requests`` from their study, or the launcher's site defaults.
+These client defaults use ``Count``; pinned ``DeviceIDs`` are not supported.
 An explicit ``resource_spec[site].num_of_gpus`` overrides these defaults, including
 zero to decline GPUs. The manager resolves the effective request and reserves IDs
 before launch, defers jobs when capacity is occupied, and uses its existing

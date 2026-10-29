@@ -78,18 +78,6 @@ def test_exclusive_pool_allows_empty_parent_mask(monkeypatch):
     assert list(manager.resources) == [0, 1]
 
 
-def test_pinned_gpu_request_waits_for_that_device():
-    manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
-    ctx = FLContext()
-    requirement = {NUM_GPU_KEY: 1, "gpu_ids": [3]}
-    enough, token = manager.check_resources(requirement, ctx)
-    assert enough
-    assert manager.allocate_resources(requirement, token, ctx) == {3: 1}
-    assert not manager.check_resources(requirement, ctx)[0]
-    assert manager.check_resources({NUM_GPU_KEY: 1}, ctx)[0]
-    assert not manager.check_resources({NUM_GPU_KEY: 1, "gpu_ids": [7]}, ctx)[0]
-
-
 class MockEngine:
     def __init__(self, run_name="exp1"):
         self.fl_ctx_mgr = FLContextManager(

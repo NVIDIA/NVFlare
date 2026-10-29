@@ -198,20 +198,24 @@ def _port_from_target(target: str | None) -> int | None:
         return None
 
 
-def _patch_resources(
-    kit_dir: Path,
-    launcher_id: str,
-    launcher_path: str,
-    launcher_args: dict[str, Any],
-    resource_manager: dict[str, Any] | None = None,
-    resource_consumer: str | None = None,
-) -> None:
+def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launcher_args: dict[str, Any]) -> None:
     local_dir = kit_dir / "local"
     default_path = local_dir / RESOURCES_JSON_DEFAULT
     resources = _load_json_file(default_path, RESOURCES_JSON_DEFAULT)
     components = resources.setdefault("components", [])
     if not isinstance(components, list):
         _fail("INVALID_KIT", "resources.json.default components must be a list.", "Fix the startup kit resources file.")
+
+    resource_manager = None
+    resource_consumer = None
+    if launcher_path == DOCKER_CLIENT_LAUNCHER:
+        for component in components:
+            if component.get("id") == "resource_manager" and component.get("path") == GPU_RESOURCE_MANAGER:
+                args = component.get("args") or {}
+                if args.get("num_of_gpus", 0) > 0:
+                    resource_manager = {**component, "args": {**args, "ignore_host": True, "exclusive": True}}
+                    resource_consumer = PASSTHROUGH_RESOURCE_CONSUMER
+                break
 
     _warn_for_replaced_components(
         [c for c in components if not (resource_manager and c.get("id") == "resource_manager")],

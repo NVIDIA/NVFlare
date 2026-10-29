@@ -171,29 +171,22 @@ class GPUResourceManager(AutoCleanResourceManager):
         if self.num_gpu_key not in resource_requirement:
             raise ValueError(f"resource_requirement is missing num_gpu_key {self.num_gpu_key}.")
 
-        is_resource_enough = False
         num_gpu = resource_requirement[self.num_gpu_key]
-        gpu_mem = (self.mem_per_gpu_in_GiB or 1) if self.exclusive else resource_requirement.get(self.gpu_mem_key, 0)
         if num_gpu == 0:
             return True
-        if (
-            self.exclusive
-            and self.mem_per_gpu_in_GiB
-            and resource_requirement.get(self.gpu_mem_key, 0) > self.mem_per_gpu_in_GiB
-        ):
-            return False
+        gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
+        if self.exclusive:
+            if self.mem_per_gpu_in_GiB and gpu_mem > self.mem_per_gpu_in_GiB:
+                return False
+            gpu_mem = self.mem_per_gpu_in_GiB or 1
 
         satisfied = 0
-        for k in dict.fromkeys(resource_requirement.get("gpu_ids", self.resources)):
-            if k not in self.resources:
-                return False
-            r: GPUResource = self.resources[k]
+        for r in self.resources.values():
             if r.memory >= gpu_mem:
                 satisfied += 1
             if satisfied >= num_gpu:
-                is_resource_enough = True
-                break
-        return is_resource_enough
+                return True
+        return False
 
     def _reserve_resource(self, resource_requirement: dict) -> dict:
         if not resource_requirement:
@@ -208,14 +201,11 @@ class GPUResourceManager(AutoCleanResourceManager):
         if num_gpu == 0:
             return reserved_resources
 
-        reserved = 0
-        for k in dict.fromkeys(resource_requirement.get("gpu_ids", self.resources)):
-            r: GPUResource = self.resources[k]
+        for k, r in self.resources.items():
             if r.memory >= gpu_mem:
                 r.memory -= gpu_mem
                 reserved_resources[k] = gpu_mem
-                reserved += 1
-            if reserved == num_gpu:
+            if len(reserved_resources) == num_gpu:
                 break
         return reserved_resources
 
