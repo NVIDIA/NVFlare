@@ -12,20 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 import hashlib
 import json
 import os
-import struct
-import tempfile
-import weakref
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.private.fed.task_worker import (
     FileTaskArtifactStore,
@@ -274,79 +269,6 @@ def test_missing_attempt_and_invalid_staged_results_are_rejected(tmp_path):
     assert not (tmp_path / identity.attempt_id / "completion.json").exists()
 
 
-@pytest.mark.parametrize("records", [[{"key": "loss", "value": 0.5}], [None]])
-def test_analytics_records_are_validated_on_read(tmp_path, records):
-    store = FileTaskArtifactStore(str(tmp_path))
-    identity = _identity()
-    store.create_attempt(identity)
-    with tempfile.TemporaryFile(dir=tmp_path) as stream:
-        for record in records:
-            encoded = fobs.dumps(record)
-            stream.write(struct.pack("!Q", len(encoded)))
-            stream.write(encoded)
-        reference = store.write_analytics(identity, stream)
-    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
-    if isinstance(records, list) and all(isinstance(record, dict) for record in records):
-        assert store.read_analytics(identity, completion) == records
-    else:
-        with pytest.raises(ValueError, match="must contain records"):
-            store.read_analytics(identity, completion)
-    with pytest.raises(ValueError, match="wrong artifact kind"):
-        store.read_analytics(identity, replace(completion, diagnostics={"analytics": completion.result.to_dict()}))
-
-
-def test_analytics_snapshots_each_log_without_retaining_mutable_values(tmp_path):
-    class Values(dict):
-        def __deepcopy__(self, memo):
-            raise AssertionError("analytics must serialize instead of copying")
-
-    store = FileTaskArtifactStore(str(tmp_path))
-    identity = _identity()
-    store.create_attempt(identity)
-    values = Values(loss=0.5)
-    reference_to_values = weakref.ref(values)
-    with tempfile.TemporaryFile(dir=tmp_path) as stream:
-        store.write_analytics_record(stream, {"value": values})
-        assert os.fstat(stream.fileno()).st_size > 0
-        values["loss"] = 99
-        store.write_analytics_record(stream, {"value": values})
-        del values
-        gc.collect()
-        assert reference_to_values() is None
-        reference = store.write_analytics(identity, stream)
-    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
-    assert store.read_analytics(identity, completion) == [{"value": {"loss": 0.5}}, {"value": {"loss": 99}}]
-
-
-def test_analytics_spool_enforces_the_total_payload_limit_and_seals_empty_streams(tmp_path):
-    store = FileTaskArtifactStore(str(tmp_path), max_payload_bytes=300)
-    identity = _identity()
-    store.create_attempt(identity)
-    with tempfile.TemporaryFile(dir=tmp_path) as stream:
-        store.write_analytics_record(stream, {"value": "x" * 150})
-        size = stream.tell()
-        with pytest.raises(ValueError, match="too large"):
-            store.write_analytics_record(stream, {"value": "x" * 150})
-        assert stream.tell() == size
-    with tempfile.TemporaryFile(dir=tmp_path) as stream:
-        assert store.write_analytics(identity, stream) is None
-        assert stream.closed
-    assert not (tmp_path / identity.attempt_id / "analytics.fobs").exists()
-
-
-@pytest.mark.parametrize("encoded", [b"short", struct.pack("!Q", 0), struct.pack("!Q", 999) + b"short"])
-def test_analytics_rejects_incomplete_or_invalid_record_framing(tmp_path, encoded):
-    store = FileTaskArtifactStore(str(tmp_path))
-    identity = _identity()
-    store.create_attempt(identity)
-    with tempfile.TemporaryFile(dir=tmp_path) as stream:
-        stream.write(encoded)
-        reference = store.write_analytics(identity, stream)
-    completion = store.commit_result(identity, Shareable(), diagnostics={"analytics": reference.to_dict()})
-    with pytest.raises(ValueError, match="record size"):
-        store.read_analytics(identity, completion)
-
-
 @pytest.mark.parametrize("kind", ["directory", "symlink"])
 def test_cleanup_refuses_non_regular_payloads(tmp_path, kind):
     store = FileTaskArtifactStore(str(tmp_path))
@@ -532,7 +454,7 @@ def test_release_removes_interrupted_payload_temporaries_and_retains_diagnostics
     identity = _identity()
     directory = Path(store.create_attempt(identity))
     store.commit_result(identity, Shareable({"result": 1}))
-    temporary_names = [f".{name}.{'a' * 32}" for name in ("input.fobs", "result.fobs", "analytics.fobs")]
+    temporary_names = [f".{name}.{'a' * 32}" for name in ("input.fobs", "result.fobs")]
     for name in temporary_names:
         (directory / name).write_bytes(b"interrupted payload")
     retained_names = ["identity.json", "completion.json", "failure.json", f".completion.json.{'b' * 32}"]
