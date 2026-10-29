@@ -15,11 +15,14 @@
 import datetime
 import json
 import os
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import MagicMock, Mock
 
+import psutil
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -34,6 +37,7 @@ from nvflare.fuel.sec.admin_cert_provider import (
 )
 from nvflare.fuel.sec.step_ca_admin_cert import (
     DEFAULT_STEP_CA_REQUEST_NAME,
+    _run_step,
     obtain_step_ca_admin_cert_files,
     validate_step_ca_admin_cert_config,
 )
@@ -612,6 +616,36 @@ def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
             },
             root_ca_file=str(root_ca_path),
         )
+
+
+def test_step_ca_timeout_kills_login_child_before_parent(monkeypatch):
+    timeout = subprocess.TimeoutExpired(["step"], 0.01)
+    process = MagicMock(pid=123)
+    process.__enter__.return_value = process
+    process.communicate.side_effect = timeout
+
+    def wait(timeout=None):
+        if timeout is not None:
+            raise subprocess.TimeoutExpired(["step"], timeout)
+        return 0
+
+    process.wait.side_effect = wait
+    killed = []
+    child = Mock()
+    child.kill.side_effect = lambda: killed.append("child")
+    process.kill.side_effect = lambda: killed.append("parent")
+    root = Mock()
+    root.children.return_value = [child]
+    monkeypatch.setattr(subprocess, "Popen", Mock(return_value=process))
+    monkeypatch.setattr(psutil, "Process", Mock(return_value=root))
+    monkeypatch.setattr(psutil, "wait_procs", Mock())
+
+    with pytest.raises(AdminCertProviderError, match="timed out after 0.01 seconds"):
+        _run_step(["step"], timeout=0.01)
+
+    assert killed == ["child", "parent"]
+    root.children.assert_called_once_with(recursive=True)
+    assert process.wait.call_count == 2
 
 
 def test_step_ca_source_reports_unexecutable_step_binary(tmp_path):

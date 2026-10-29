@@ -7,6 +7,56 @@ assignment. This document defines the roles, resource contract, execution flow,
 storage, failure handling and current limits. The Kubernetes operator guide gives
 deployment commands and troubleshooting; it is not required to understand this design.
 
+## Compute release versus job lifetime
+
+Task scope separates the lifetime of computation from the lifetime of federation
+coordination. On Kubernetes, a CPU CJ can remain connected while a task Pod owns
+the training GPUs. Once the worker has published durable output and its native
+execution has physically settled, those GPUs can serve another eligible Pod.
+CJ can upload the saved result afterwards; neither job completion nor algorithm
+acceptance is required to release the worker's compute. Any GPUs explicitly
+reserved for CJ remain reserved for CJ's lifetime.
+
+This resource-reuse benefit requires scheduler admission and enforcement, not
+just a fresh process or `CUDA_VISIBLE_DEVICES`. Task scope by itself does not
+provide a local GPU scheduler. It also does not make an interrupted assignment
+resumable: [client-job recovery and native task-resume boundaries](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+are separate from resource release.
+
+## Backend and recovery boundaries
+
+The matrix distinguishes implemented behavior from release direction. Kubernetes
+task execution is implemented; the [Slurm task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)
+is an experimental draft, not deployed qualification. Local Process/Docker task
+backends are deferred: their production launchers reject task lifetime. The
+test-only process harness exercises shared worker contracts. The historical
+Process recovery gap described below explains a boundary of the retired path.
+
+"Release" means returning a per-task scheduler reservation while CJ/job remain
+alive, not merely masking devices or freeing GPU memory. "CP recovery" means
+adopting an existing job and its workers after CP restarts, not starting a new CP.
+
+| Backend | Lifetime | Per-task compute/GPU release | Automatic CJ replacement | CP recovery | Mid-assignment resume |
+| --- | --- | --- | --- | --- | --- |
+| Process | `job` | No per-task scheduler reservation | Conditional on confirmed termination and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Process | `task` (deferred) | No scheduler-backed resource admission | Rejected before local CJ launch | Not provided | Not supported |
+| Docker | `job` | No; resident container retains its device access | Conditional on confirmed container exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Docker | `task` (deferred) | No supported native task profile here | Rejected before local CJ launch | Not provided | Not supported |
+| Kubernetes | `job` | No; resident CJ Pod retains its allocation | Disabled | Not provided | No automatic recovery |
+| Kubernetes | `task` | Yes, after worker Pod settlement | Disabled; CP retains task cleanup | Not provided | Not implemented |
+| Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
+
+Resident recovery relies on a live CP/server and a valid client registration.
+Restoring partial progress on the original assignment additionally needs a
+still-valid assignment and a compatible application checkpoint; CP does not check
+those as replacement-launch gates. A replacement may receive a later assignment
+or recompute without a checkpoint. Recovery does not automatically capture model,
+optimizer or data-loader progress. See
+[client-job recovery](client_job_recovery.md#confirmed-failures-only) for the gates,
+the [Process task-mode gap](client_job_recovery.md#process-task-mode-recovery-gap),
+and the [wall-limit ownership timeline](client_job_recovery.md#wall-limit-and-owner-loss-timeline).
+
 ## Roles and assumptions
 
 | Role | Job lifetime | Task lifetime |
@@ -194,6 +244,26 @@ rejected. Local-model submission, external/attach Client API sessions and the
 resident Collab RPC service use job lifetime. Global-only cross-site evaluation
 is supported. Lightning's in-memory `restore_state=True` cache cannot restore a
 fresh task worker; use explicit native checkpoints or job lifetime.
+
+### Direct computation without a nested trainer
+
+For the supported Client API task path, the task worker is already the isolated
+compute runtime: it runs the script in its main thread through InProcessClientAPI.
+There is no second `external_process` trainer to launch solely for model handoff.
+CJ stages input files, the worker writes immutable output files, and CJ reads and
+submits that output after physical settlement. The native Pod/allocation still
+contains a worker process; removing a redundant trainer hop does not remove
+`task_worker_process.py`, TaskLauncher or the supervisor.
+
+Disk handoff replaces neither all transport nor live communication. CJ still
+owns federation downloads/uploads and filters; the [worker Cell session](task_worker_cellnet_session.md)
+delivers metrics while the worker is alive. Existing job-mode
+[external-process and Attach sessions](client_api_execution_modes.md), including
+their pass-through/download paths, are currently separate mechanisms. Task
+mode currently rejects those session modes rather than silently nesting them.
+This describes current behavior, not a decision to retain job-mode pass-through.
+
+### Site policy
 
 Only canonical site `local/resources.json` (or its default fallback) supplies
 `task_execution`. Jobs cannot select the internal adapter, launcher, environment
@@ -432,6 +502,11 @@ Exceeding a deadline does not prove settlement. The supervisor has no reset or
 automatic physical retry after unconfirmed settlement. CP crash/restart, permanent
 node loss or missing finalizer evidence requires operator reconciliation after
 verifying runtime shutdown; clearing a stuck finalizer is not a substitute for proof.
+
+The [recovery design](client_job_recovery.md#native-task-resume-follow-up-requirements)
+lists the missing ownership, checkpoint and timeout-qualification requirements
+for native task restart/resume. The current completion-bound checkpoint handoff
+does not implement periodic recovery from an unfinished task.
 
 ## Qualification and optional references
 

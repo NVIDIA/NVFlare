@@ -95,16 +95,15 @@ def _zip_directory(root_dir: str, folder_name: str, output_file):
         raise NotADirectoryError(f'"{dir_name}" is not a valid directory')
 
     file_paths = get_all_file_paths(dir_name)
-    if folder_name:
-        prefix_len = len(split_path(dir_name)[0]) + 1
-    else:
-        prefix_len = len(dir_name) + 1
+    # keep the folder itself in the archive when folder_name is given
+    abs_dir = os.path.abspath(dir_name)
+    base_dir = os.path.dirname(abs_dir) if folder_name else abs_dir
 
     # writing files to a zipfile
     with ZipFile(output_file, "w") as z:
         # writing each file one by one
         for full_path in file_paths:
-            rel_path = full_path[prefix_len:]
+            rel_path = normpath_for_zip(os.path.relpath(os.path.abspath(full_path), base_dir))
             z.write(full_path, arcname=rel_path)
 
 

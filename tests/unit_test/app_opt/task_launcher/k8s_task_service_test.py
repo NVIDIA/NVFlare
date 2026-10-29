@@ -24,35 +24,12 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskLaunchError
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN
 from nvflare.app_opt.task_launcher.k8s_launcher import SETTLEMENT_FINALIZER, K8sTaskLauncher
-from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient, K8sTaskService
+from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from tests.unit_test.app_opt.task_launcher.k8s_launcher_test import ApiError, setup  # noqa: F401
-
-
-class LoopbackCell:
-    def __init__(self, service):
-        self.service = service
-        self.origin = "site-parent.job"
-        self.drop_reply = False
-        self.decode_pass_through_topics = set()
-
-    def send_request(self, *, request, **kwargs):
-        request.set_header(MessageHeaderKey.ORIGIN, self.origin)
-        reply = self.service._request(request)
-        if self.drop_reply:
-            raise TimeoutError("reply lost after CP accepted the request")
-        return reply
-
-
-def wire_client(monkeypatch):
-    cp = SimpleNamespace(get_fqcn=lambda: "site-parent", register_request_cb=Mock())
-    service = K8sTaskService(cp)
-    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-parent")
-    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "job-token")
-    return LoopbackCell(service), service
+from tests.k8s_task_test_utils import ApiError, wire_client
 
 
 def eventually(check, timeout=2):
@@ -66,7 +43,7 @@ def eventually(check, timeout=2):
 
 
 @pytest.fixture
-def control(setup, monkeypatch):  # noqa: F811
+def control(setup, monkeypatch):
     backend, api, request, store, bootstrap = setup
     cell, service = wire_client(monkeypatch)
     owner = service.add_job(backend, "job", "site-1", "job-token")
