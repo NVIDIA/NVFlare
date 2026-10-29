@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import threading
-import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -25,6 +24,7 @@ from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.constants import Types
 from nvflare.fuel.f3.sfm.heartbeat_monitor import HeartbeatMonitor
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
+from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ObservedLock, ThreadGroup
 
 
 class FakeDriver:
@@ -101,7 +101,7 @@ class BlockingSendConn:
         self.send_calls += 1
         if self.send_calls == 1:
             self.first_send_entered.set()
-            self.release_send.wait(timeout=2.0)
+            assert self.release_send.wait(WAIT_TIMEOUT)
 
 
 class TestSfmStallMonitor:
@@ -279,92 +279,59 @@ class TestSfmConnectionSendState:
 
 class TestHolBlockingBehavior:
     def test_without_mitigation_send_lock_can_cause_hol_blocking(self):
-        """Baseline behavior: blocked send on one thread blocks a second sender on same connection lock."""
+        """A second sender must actually contend with the in-flight frame write."""
         conn = BlockingSendConn()
         sfm_conn = SfmConnection(conn=conn, local_endpoint=Endpoint("local"))
-
-        errors = []
-
-        def do_send():
-            try:
-                sfm_conn.send_dict(Types.PING, 1, {"k": "v"})
-            except Exception as ex:
-                errors.append(ex)
-
-        t1 = threading.Thread(target=do_send, daemon=True)
-        t1.start()
-        assert conn.first_send_entered.wait(timeout=0.5)
-
-        t2 = threading.Thread(target=do_send, daemon=True)
-        t2.start()
-
-        # While the first send is blocked, the second cannot enter send_frame due to SfmConnection.lock.
-        time.sleep(0.05)
-        assert conn.send_calls == 1
-
-        conn.release_send.set()
-        t1.join(timeout=0.5)
-        t2.join(timeout=0.5)
-        assert not t1.is_alive()
-        assert not t2.is_alive()
+        sfm_conn.lock = ObservedLock(sfm_conn.lock)
+        with ThreadGroup(conn.release_send) as workers:
+            workers.start(sfm_conn.send_dict, Types.PING, 1, {"k": "v"})
+            assert conn.first_send_entered.wait(WAIT_TIMEOUT)
+            workers.start(sfm_conn.send_dict, Types.PING, 1, {"k": "v"})
+            assert sfm_conn.lock.blocked.wait(WAIT_TIMEOUT), "second sender never contended with the frame write"
+            assert conn.send_calls == 1
         assert conn.send_calls == 2
-        assert errors == []
 
 
 class TestFix3OnlyRecovery:
     def test_fix3_close_enabled_unblocks_stalled_send(self, monkeypatch):
-        """Fix #3 only: monitor closes stalled connection and blocked send returns."""
+        from nvflare.fuel.f3.sfm import sfm_conn as sfm_module
+
+        clock = ManualClock()
+        monkeypatch.setattr(sfm_module, "time", clock)
         conn = BlockingSendConn()
         sfm_conn = SfmConnection(conn=conn, local_endpoint=Endpoint("local"))
-
-        def do_send():
-            sfm_conn.send_dict(Types.PING, 1, {"k": "v"})
-
-        t = threading.Thread(target=do_send, daemon=True)
-        t.start()
-        assert conn.first_send_entered.wait(timeout=0.5)
-
-        # Give send state a moment to register non-zero stall time.
-        time.sleep(0.03)
-
         monkeypatch.setattr(CommConfigurator, "get_heartbeat_interval", lambda self, default: 60)
         monkeypatch.setattr(CommConfigurator, "get_sfm_send_stall_timeout", lambda self, default: 0.01)
         monkeypatch.setattr(CommConfigurator, "get_sfm_close_stalled_connection", lambda self, default=False: True)
         monkeypatch.setattr(CommConfigurator, "get_sfm_send_stall_consecutive_checks", lambda self, default=3: 1)
-
-        monitor = HeartbeatMonitor({"c1": sfm_conn})
-        monitor.curr_time = time.time()
-        monitor._check_heartbeat()
-
-        assert conn.close.called
-        t.join(timeout=0.5)
-        assert not t.is_alive()
+        with ThreadGroup(conn.release_send) as workers:
+            sender = workers.start(sfm_conn.send_dict, Types.PING, 1, {"k": "v"})
+            assert conn.first_send_entered.wait(WAIT_TIMEOUT)
+            clock.advance(0.03)
+            monitor = HeartbeatMonitor({"c1": sfm_conn})
+            monitor.curr_time = clock.time()
+            monitor._check_heartbeat()
+            assert conn.close.called is True
+            assert conn.release_send.is_set()
+        assert not sender.is_alive()
 
     def test_fix3_close_disabled_keeps_stalled_send_blocked(self, monkeypatch):
-        """Negative case for #3: warn-only mode does not close/unblock the stalled send."""
+        from nvflare.fuel.f3.sfm import sfm_conn as sfm_module
+
+        clock = ManualClock()
+        monkeypatch.setattr(sfm_module, "time", clock)
         conn = BlockingSendConn()
         sfm_conn = SfmConnection(conn=conn, local_endpoint=Endpoint("local"))
-
-        def do_send():
-            sfm_conn.send_dict(Types.PING, 1, {"k": "v"})
-
-        t = threading.Thread(target=do_send, daemon=True)
-        t.start()
-        assert conn.first_send_entered.wait(timeout=0.5)
-        time.sleep(0.03)
-
         monkeypatch.setattr(CommConfigurator, "get_heartbeat_interval", lambda self, default: 60)
         monkeypatch.setattr(CommConfigurator, "get_sfm_send_stall_timeout", lambda self, default: 0.01)
         monkeypatch.setattr(CommConfigurator, "get_sfm_close_stalled_connection", lambda self, default=False: False)
         monkeypatch.setattr(CommConfigurator, "get_sfm_send_stall_consecutive_checks", lambda self, default=3: 1)
-
-        monitor = HeartbeatMonitor({"c1": sfm_conn})
-        monitor.curr_time = time.time()
-        monitor._check_heartbeat()
-
-        assert not conn.close.called
-        assert t.is_alive()
-
-        conn.release_send.set()
-        t.join(timeout=0.5)
-        assert not t.is_alive()
+        with ThreadGroup(conn.release_send) as workers:
+            sender = workers.start(sfm_conn.send_dict, Types.PING, 1, {"k": "v"})
+            assert conn.first_send_entered.wait(WAIT_TIMEOUT)
+            clock.advance(0.03)
+            monitor = HeartbeatMonitor({"c1": sfm_conn})
+            monitor.curr_time = clock.time()
+            monitor._check_heartbeat()
+            assert conn.close.called is False
+            assert sender.is_alive()
