@@ -340,6 +340,9 @@ If using Colima, when finished with the dedicated VM, run
 
 ## Notes
 
+- Existing `PassthroughResourceManager` sites continue to forward GPU counts and
+  site/study device requests directly to Docker. Concurrent jobs may share GPUs.
+  Provision GPU capacity to use `GPUResourceManager` for exclusive assignment.
 - Docker launcher settings are specified per-site in `launcher_spec` in
   `meta.json`. Keep resource requests such as `num_of_gpus` in `resource_spec`,
   the same way as process-mode jobs. Example:

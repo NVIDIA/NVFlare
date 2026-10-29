@@ -44,6 +44,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -716,17 +717,20 @@ class DockerJobLauncher(JobLauncherSpec):
         study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
         merged_container_kwargs = {**self.default_job_container_kwargs, **study_docker_kwargs, **job_container_kwargs}
 
-        # Job count overrides study and site GPU defaults. Client admission reserves
-        # the effective request; servers retain Docker's site-owned device selection.
+        # Job counts override study and site GPU defaults. Passthrough clients and
+        # servers retain Docker's device selection; managed clients use reserved IDs.
         is_client = isinstance(self, ClientDockerJobLauncher)
+        reserve_gpus = is_client and not isinstance(
+            fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER), PassthroughResourceManager
+        )
         gpu_request = _get_gpu_request(
             docker_spec,
             resolve_site_resource_spec(job_meta, site_name) if is_client else portable_spec,
-            merged_container_kwargs if is_client else {},
+            merged_container_kwargs if reserve_gpus else {},
         )
         count = gpu_request.get("Count", 0) if gpu_request is not None else 0
         if gpu_request is not None:
-            if is_client and count:
+            if reserve_gpus and count:
                 allocation = fl_ctx.get_prop(FLContextKey.ALLOCATED_RESOURCES) or {}
                 if not allocation or (count > 0 and len(allocation) != count):
                     raise RuntimeError("Docker GPU jobs require a matching GPUResourceManager allocation")
@@ -735,7 +739,7 @@ class DockerJobLauncher(JobLauncherSpec):
             merged_container_kwargs["device_requests"] = [
                 r for r in merged_container_kwargs.get("device_requests") or [] if not _is_gpu_request(r)
             ] + ([gpu_request] if count else [])
-        if is_client and not count:
+        if is_client and not any(_is_gpu_request(r) for r in merged_container_kwargs.get("device_requests") or []):
             environment.setdefault("NVIDIA_VISIBLE_DEVICES", "void")
         if "num_of_cpus" in portable_spec:
             merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
@@ -878,6 +882,9 @@ class DockerJobLauncher(JobLauncherSpec):
             add_launcher(self, fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
             try:
+                manager = fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER)
+                if isinstance(manager, PassthroughResourceManager):
+                    return
                 meta = fl_ctx.get_prop(FLContextKey.JOB_META) or {}
                 site = fl_ctx.get_identity_name()
                 study_runtime = self._resolve_study_runtime(meta.get(JobMetaKey.STUDY.value))
@@ -888,7 +895,6 @@ class DockerJobLauncher(JobLauncherSpec):
                 resources = fl_ctx.get_prop(FLContextKey.CLIENT_RESOURCE_SPECS)
                 if request is not None:
                     count = request.get("Count", 0)
-                    manager = fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER)
                     if count and (not isinstance(manager, GPUResourceManager) or not manager.resources):
                         raise RuntimeError(
                             "GPU capacity not configured; configure GPUResourceManager with num_of_gpus > 0"

@@ -107,11 +107,13 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Resource Management
 
-Docker CPU-only clients use `PassthroughResourceManager`. GPU clients retain their provisioned `GPUResourceManager` capacity with `ignore_host=True` and `exclusive=True`. The process-mode `CUDA_VISIBLE_DEVICES` mask selects an optional subset. The existing reservation lifecycle schedules whole devices, and Docker receives reserved IDs through `FLContextKey.ALLOCATED_RESOURCES`.
+Docker clients can use `PassthroughResourceManager` for CPU or GPU jobs. GPU counts and site/study `device_requests`, including pinned `DeviceIDs`, are forwarded to Docker without FLARE GPU reservations. Concurrent jobs may share GPUs, and FLARE does not wait for GPU capacity in this mode. Existing passthrough configurations continue to work.
 
-The Docker parent uses the configured GPU count and optional environment mask, so it does not need GPU passthrough or host discovery. GPU clients use `PassthroughResourceConsumer`; the process-mode `GPUResourceConsumer` queries host GPUs and modifies the parent environment, while Docker applies the reserved IDs directly through `device_requests`.
+For exclusive GPU assignment, clients retain their provisioned `GPUResourceManager` capacity with `ignore_host=True` and `exclusive=True`. The process-mode `CUDA_VISIBLE_DEVICES` mask selects an optional subset. The existing reservation lifecycle schedules whole devices, and Docker receives reserved IDs through `FLContextKey.ALLOCATED_RESOURCES`.
 
-For a **CPU-only client**, use `PassthroughResourceManager` in `workspace/local/resources.json` **before starting CP** — the resource manager is loaded once at startup and is not re-read at job submission time:
+The Docker parent uses the configured GPU count and optional environment mask, so it does not need GPU passthrough or host discovery. GPU-managed clients use `PassthroughResourceConsumer`; the process-mode `GPUResourceConsumer` queries host GPUs and modifies the parent environment, while Docker applies the reserved IDs directly through `device_requests`.
+
+To use **passthrough**, configure `PassthroughResourceManager` in `workspace/local/resources.json` **before starting CP** — the resource manager is loaded once at startup and is not re-read at job submission time:
 
 ```json
 {
@@ -125,9 +127,9 @@ For a **CPU-only client**, use `PassthroughResourceManager` in `workspace/local/
 }
 ```
 
-CPU-only clients can remove the `resource_consumer` component. GPU clients must keep their provisioned `GPUResourceManager` with `ignore_host=True` and `exclusive=True`, and replace `GPUResourceConsumer` with `nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer`. `nvflare deploy prepare` configures this automatically from the client's provisioned capacity.
+Passthrough clients can remove the `resource_consumer` component. For exclusive GPU assignment, keep the provisioned `GPUResourceManager` with `ignore_host=True` and `exclusive=True`, and replace `GPUResourceConsumer` with `nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer`. `nvflare deploy prepare` configures this automatically when the client's provisioned GPU capacity is positive; otherwise it configures passthrough.
 
-Study and site GPU defaults are resolved before client resource admission. Jobs can inherit `docker_kwargs.device_requests` from their study without declaring a GPU count. An explicit job GPU count overrides those defaults; zero declines GPUs. Count requests reserve free devices and `Count: -1` reserves the client's entire pool. Client defaults must use `Count`; select the site's pool with `CUDA_VISIBLE_DEVICES`.
+Jobs can inherit `docker_kwargs.device_requests` from their study without declaring a GPU count. An explicit job GPU count overrides study and site defaults; zero declines GPUs. With `GPUResourceManager`, defaults are resolved before admission: count requests reserve free devices and `Count: -1` reserves the client's entire pool. GPU-managed client defaults must use `Count`; select the site's pool with `CUDA_VISIBLE_DEVICES`. Passthrough forwards `Count: -1` to Docker to expose all Docker-visible GPUs.
 
 Exclusive host-independent GPU pools use nonempty integer `CUDA_VISIBLE_DEVICES` masks; unsupported UUID or MIG masks fail at startup instead of selecting different GPUs. An empty mask only hides GPUs from the parent and leaves the configured pool unchanged. Existing non-exclusive `ignore_host=True` managers continue to ignore the host mask. Server job containers retain their existing Docker GPU requests: client resource-manager admission applies only to clients.
 
@@ -256,7 +258,7 @@ Allowlisted job-controlled Docker options live under `launcher_spec[site][docker
 }
 ```
 
-`GPUResourceManager` reserves devices for the flat `resource_spec[site].num_of_gpus` request, or for the study/site GPU default when the job omits its count. `DockerJobLauncher` translates the client's allocated IDs to `device_requests: [{"DeviceIDs": [...], "Capabilities": [["gpu"]]}]`. Study defaults take precedence over site defaults; explicit job counts take precedence over both.
+`GPUResourceManager` reserves devices for the flat `resource_spec[site].num_of_gpus` request, or for the study/site GPU default when the job omits its count. `DockerJobLauncher` translates the client's allocated IDs to `device_requests: [{"DeviceIDs": [...], "Capabilities": [["gpu"]]}]`. With `PassthroughResourceManager`, GPU requests go directly to Docker without reservations. Study defaults take precedence over site defaults; explicit job counts take precedence over both.
 
 New jobs should put launcher/container settings in `launcher_spec` and scheduler resource requests such as `num_of_gpus` in `resource_spec`. Do not use `resource_spec[site][docker]` for new metadata; that shape mixes scheduler resources with launcher settings and was only part of earlier migration experiments.
 
@@ -670,11 +672,11 @@ single flag sets everything needed for that mode:
 | `mode` | Launcher | Resource manager | Resource consumer | Start script |
 |---|---|---|---|---|
 | `process` | `ProcessJobLauncher` | `GPUResourceManager` | `GPUResourceConsumer` | `start.sh` (unchanged) |
-| `docker` | `DockerJobLauncher` | `GPUResourceManager` for GPU clients; otherwise passthrough | `PassthroughResourceConsumer` for GPU clients | `start_docker.sh` |
+| `docker` | `DockerJobLauncher` | `GPUResourceManager` for provisioned GPU capacity; otherwise passthrough | `PassthroughResourceConsumer` with GPU management | `start_docker.sh` |
 | `k8s` | `K8sJobLauncher` | `PassthroughResourceManager` | none | Helm charts |
 
-The tool uses passthrough resource management for K8s and CPU-only Docker clients.
-Docker GPU clients keep `GPUResourceManager` in exclusive, host-independent mode and use a no-op consumer. `GPUResourceConsumer` sets
+The tool uses passthrough resource management for K8s and Docker clients without provisioned GPU capacity; passthrough Docker clients may still request GPUs directly from Docker.
+Docker clients with provisioned GPU capacity keep `GPUResourceManager` in exclusive, host-independent mode and use a no-op consumer. `GPUResourceConsumer` sets
 `CUDA_VISIBLE_DEVICES` in the SP/CP process
 environment, which is correct for process mode (subprocess inherits it) but wrong for
 Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU
