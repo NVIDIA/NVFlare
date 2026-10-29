@@ -42,15 +42,25 @@ _k8s_api.core_v1_api = _k8s_core
 _k8s_mock.config = _k8s_config
 _k8s_mock.client = _k8s_client
 
-for _mod_name, _mod_obj in [
-    ("kubernetes", _k8s_mock),
-    ("kubernetes.config", _k8s_config),
-    ("kubernetes.client", _k8s_client),
-    ("kubernetes.client.rest", _k8s_rest),
-    ("kubernetes.client.api", _k8s_api),
-    ("kubernetes.client.api.core_v1_api", _k8s_core),
-]:
-    sys.modules[_mod_name] = _mod_obj
+_K8S_MODULES = {
+    "kubernetes": _k8s_mock,
+    "kubernetes.config": _k8s_config,
+    "kubernetes.client": _k8s_client,
+    "kubernetes.client.rest": _k8s_rest,
+    "kubernetes.client.api": _k8s_api,
+    "kubernetes.client.api.core_v1_api": _k8s_core,
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kubernetes_modules(monkeypatch):
+    # The SDK is imported lazily by the resident launcher. Keep these stubs
+    # local to its tests so other backends can use the real SDK utilities.
+    # Restore only SDK entries: restoring all of sys.modules evicts lazily
+    # imported NVFlare modules but leaves stale references on their packages.
+    for name, module in _K8S_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey

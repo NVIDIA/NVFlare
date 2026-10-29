@@ -120,11 +120,16 @@ jobs:
           tar --extract --gzip --file "${GITLEAKS_ARCHIVE}" gitleaks
           install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Check unit-test timing contracts
+        run: python3 ci/check_unit_test_contracts.py
       - name: Run unit test
         env:
           NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}
           NVFLARE_SKILL_TIER1_REQUIRED: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: ./runtest.sh --skip-install --numprocesses=auto -u
+      - name: Run process and transport integration contracts
+        timeout-minutes: 15
+        run: python3 ci/run_process_contracts.py
       - name: Run Client API external-process lifecycle integration
         if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         run: >-
@@ -190,6 +195,9 @@ jobs:
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test with coverage
         run: python3 -m pytest -v --timeout=180 --timeout-method=signal --cov=nvflare --cov-report xml:cov.xml tests/unit_test
+      - name: Append process and transport integration coverage
+        timeout-minutes: 15
+        run: python3 ci/run_process_contracts.py --cov=nvflare --cov-append --cov-report xml:cov.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
