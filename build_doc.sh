@@ -61,8 +61,8 @@ function clean_docs() {
 
 function build_html_docs() {
     if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
-        python -m pip install --no-cache-dir --no-deps --index-url https://download.pytorch.org/whl/cpu --constraint docs/constraints.txt torch torchvision
-        python -m pip install --constraint docs/constraints.txt -e ".[doc-build]"
+        python -m pip install --no-cache-dir --constraint docs/constraints.txt pip setuptools wheel versioneer PyYAML
+        python -m pip install --no-cache-dir --no-build-isolation --requirement docs/requirements-build.txt
     else
         python -m pip install -e ".[doc-build]"
     fi
