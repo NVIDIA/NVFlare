@@ -162,15 +162,23 @@ scheduler-facing resource requests, such as ``num_of_gpus``, in
 continue to use their configured launcher, usually process mode.
 
 
+.. _docker_gpu_assignment:
+
 GPU Assignment
 --------------
 
-Clients using ``PassthroughResourceManager`` retain native Docker GPU requests,
+**Docker with NVFlare GPU reservations** and **Docker without NVFlare GPU reservations**
+use the same launcher. The manager selects the GPU admission policy; CPU and host-memory
+limits are separate. The :ref:`configuration table <design/docker_job_launcher_design:resource management>`
+compares these policies with Process and Kubernetes/Slurm.
+
+Docker without NVFlare GPU reservations uses ``PassthroughResourceManager`` and no consumer.
+It returns empty allocations, so startup skips resource consumption. It retains native GPU requests,
 including site/study ``device_requests`` defaults and pinned ``DeviceIDs``.
-They do not require provisioned GPU capacity or reprovisioning. FLARE does not
+Existing passthrough clients do not require provisioned GPU capacity or reprovisioning. FLARE does not
 reserve GPUs or wait for GPU capacity in this mode, so concurrent jobs may share GPUs.
 
-For exclusive GPU assignment, use the same GPU capacity configuration as process
+Docker with NVFlare GPU reservations uses the same capacity configuration as process
 mode. For example, set the client's GPU count in the provisioning project:
 
 .. code-block:: yaml
@@ -182,17 +190,24 @@ mode. For example, set the client's GPU count in the provisioning project:
       num_of_gpus: 2
 
 To enable exclusive assignment for an existing passthrough client, reprovision
-with this capacity and run ``nvflare deploy prepare`` again before restarting
-the client. Preparation configures passthrough when no GPU capacity is provisioned.
+with this capacity and run ``nvflare deploy prepare`` again before restarting the client.
 
-``nvflare deploy prepare`` preserves the client's existing ``GPUResourceManager``
-capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Jobs can inherit
+``nvflare deploy prepare`` preserves the built-in ``GPUResourceManager`` when its provisioned
+GPU capacity is positive, enabling ``ignore_host=True`` and ``exclusive=True``.
+Other prepared Docker clients use passthrough without a consumer. Jobs can inherit
 ``docker_kwargs.device_requests`` from their study, or the launcher's site defaults.
 For GPU-managed clients, these defaults use ``Count``; pinned ``DeviceIDs`` are not supported.
 An explicit ``resource_spec[site].num_of_gpus`` overrides these defaults, including
 zero to decline GPUs. The manager resolves the effective request and reserves IDs
 before launch, defers jobs when capacity is occupied, and uses its existing
 cancellation, expiration, and job-completion cleanup.
+
+During the server's scheduling check, the client reserves GPU IDs; job startup consumes
+the reservation token. The allocation is released after confirmed container termination.
+A required client without capacity can keep the federated job pending. Released capacity
+becomes available on a subsequent server scheduling pass, without a local FIFO queue or
+guaranteed immediate handoff. Kubernetes/Slurm instead delegate GPU acquisition and queuing
+to their cluster schedulers.
 
 To restrict a client to a specific subset, use the process-mode environment mask
 when starting its Docker parent:
@@ -209,10 +224,19 @@ memory-sharing policy unless explicitly configured for exclusive allocation.
 An explicit nonzero memory budget still limits the memory a job may request.
 
 Docker receives the reserved IDs through ``DeviceIDs``. The existing no-op
-``PassthroughResourceConsumer`` replaces the process-mode consumer, so the parent
-does not query GPUs or change ``CUDA_VISIBLE_DEVICES``. Allocations remain in
-client memory: stop job containers before restarting the parent, and configure
-disjoint pools for clients sharing a host.
+``PassthroughResourceConsumer`` replaces ``GPUResourceConsumer``, which queries host GPUs
+and sets ``CUDA_VISIBLE_DEVICES`` for process-mode jobs. The Docker parent therefore
+does not query GPUs or change its environment when consuming an allocation.
+
+.. important::
+
+   GPU reservations coordinate only jobs tracked by this client's resource manager.
+   They do not prevent other applications, containers, or independent NVFlare clients
+   from using the same GPUs. Exclusive allocation does not provide a host-wide GPU lock
+   or enforce a physical GPU memory quota. Operators must prevent overlapping GPU use
+   or rely on an external scheduler. Allocation state lives in client memory: stop job
+   containers before restarting the parent, and use disjoint pools for clients sharing
+   a host. See :ref:`resource_manager_and_consumer` for external-process usage and host discovery.
 
 
 Mounting Site Data into Job Containers

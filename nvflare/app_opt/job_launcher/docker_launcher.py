@@ -97,7 +97,12 @@ _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
 def _is_gpu_request(request):
-    return any("gpu" in capabilities for capabilities in request.get("capabilities", request.get("Capabilities")) or [])
+    # Docker's NVIDIA driver also accepts these capabilities without the literal "gpu".
+    gpu_capabilities = {"gpu", "nvidia", "compute", "compat32", "graphics", "utility", "video", "display"}
+    return request.get("driver", request.get("Driver")) == "nvidia" or any(
+        gpu_capabilities.intersection(capabilities)
+        for capabilities in request.get("capabilities", request.get("Capabilities")) or []
+    )
 
 
 def _get_gpu_request(docker_spec, resource_spec, container_kwargs):

@@ -1805,7 +1805,8 @@ class TestDockerJobLauncherStudyRuntime:
             "    docker_kwargs:\n"
             "      device_requests:\n"
             "        - Count: 4\n"
-            "          Capabilities: [[gpu]]\n",
+            "          Driver: nvidia\n"
+            "          Capabilities: [[compute, utility]]\n",
         )
         launcher, dc = self._make_v2_launcher(tmp_path)
 
@@ -1826,6 +1827,9 @@ class TestDockerJobLauncherStudyRuntime:
         [
             {"Count": 1, "Capabilities": [["gpu"]]},
             {"Count": -1, "Capabilities": [["gpu"]]},
+            {"Driver": "nvidia", "Count": 1, "Capabilities": [["compute", "utility"]]},
+            {"Count": 1, "Capabilities": [["compute", "utility"]]},
+            {"Count": -1, "Capabilities": [["nvidia"]]},
         ],
     )
     def test_gpu_defaults_follow_resource_manager(
@@ -1882,6 +1886,7 @@ class TestDockerJobLauncherStudyRuntime:
             actual = dc.containers.run.call_args.kwargs["device_requests"][0]
             if managed:
                 assert actual["DeviceIDs"] == [str(i) for i in allocation]
+                assert not actual.get("Count")
                 assert len(allocation) == count
             else:
                 assert not allocation

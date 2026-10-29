@@ -340,9 +340,13 @@ If using Colima, when finished with the dedicated VM, run
 
 ## Notes
 
-- Existing `PassthroughResourceManager` sites continue to forward GPU counts and
-  site/study device requests directly to Docker. Concurrent jobs may share GPUs.
-  Provision GPU capacity to use `GPUResourceManager` for exclusive assignment.
+- **Docker without NVFlare GPU reservations** uses `PassthroughResourceManager`
+  without a consumer and forwards GPU requests to Docker. Existing configurations
+  remain valid; concurrent jobs may share GPUs. **Docker with NVFlare GPU reservations**
+  uses provisioned GPU capacity and a no-op consumer. Reservations coordinate only
+  jobs tracked by that client's manager, so clients sharing a host need disjoint pools.
+  See the [GPU policy table and lifecycle](../../docs/design/docker_job_launcher_design.md#resource-management)
+  for preparation, waiting, and parent-restart requirements.
 - Docker launcher settings are specified per-site in `launcher_spec` in
   `meta.json`. Keep resource requests such as `num_of_gpus` in `resource_spec`,
   the same way as process-mode jobs. Example:
