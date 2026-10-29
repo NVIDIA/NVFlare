@@ -22,9 +22,10 @@ not a thread in resident CJ. The worker uses the shared InProcessClientAPI adapt
 and durable file handoff; `external_process` and `attach` task sessions are rejected.
 See [direct task-worker computation](task_worker_lifecycle.md#direct-computation-without-a-nested-trainer).
 
-The job-mode external trainer and its pass-through transport remain useful for
-job lifetime. Avoiding that extra trainer hop inside a task Pod/allocation does
-not remove job-mode support or the task worker's live metrics Cell channel.
+Job-mode external-process/Attach sessions currently use the transport paths
+described below. Whether to retain, simplify or remove pass-through, including
+in job mode, is an open design question. Direct task-worker computation does not
+settle that choice; the worker's live metrics Cell channel is a separate concern.
 
 ## Goals and Boundaries
 

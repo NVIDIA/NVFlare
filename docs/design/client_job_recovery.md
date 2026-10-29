@@ -5,7 +5,10 @@ resource reservation, and persistent job workspace. The replacement uses normal
 `GET_TASK` delivery: the unchanged server resends an outstanding assignment with
 its existing task and attempt IDs. User code restores its own checkpoint.
 
-Implemented for eligible Process, Docker, and resident Slurm client jobs.
+Implemented for eligible resident (`execution_lifetime="job"`) Process, Docker
+and Slurm client jobs. Do not infer recovery of independently launched task
+workers from those CJ restart checks; the
+[Process task-mode eligibility gap](#process-task-mode-recovery-gap) is described below.
 Kubernetes does not opt into automatic CJ recovery: its job handle retains the
 default `can_restart=False`. The persistent jobs-PVC profile now preserves task
 workspaces, and optionally resident workspaces, but it does not adopt retained
@@ -29,7 +32,13 @@ no lifetime restart limit. CP increments the counter when it launches a replacem
 and resets it when that CJ completes runner initialization and reports READY.
 The original failure does not consume an attempt. Three replacement startups that
 fail consecutively end recovery; a successful replacement restores the full budget.
-Thus a two-day task can span twelve four-hour allocations without exhausting it.
+For a resident Slurm job (`execution_lifetime="job"`), a long-running assignment
+can therefore make progress across repeated four-hour CJ allocations without a
+lifetime restart-count limit, provided the application restores durable partial
+checkpoints and the server's assignment/deadlines remain valid. For example,
+two days of useful training may require twelve or more allocations once queueing,
+startup and repeated work are accounted for. This is resident CJ replacement,
+not automatic restart of an independently allocated task worker.
 
 This measures initialization success, not training progress. A CJ that repeatedly
 initializes successfully and then crashes can continue restarting. Application
@@ -40,13 +49,6 @@ checkpoint compatibility and progress remain the application's responsibility.
 Replacing a failed **CJ** and restarting a separately allocated **task worker**
 are different operations. `max_cj_restart_failures` controls the former; it is
 not a retry budget for native task workers.
-
-| Event | Current behavior |
-| --- | --- |
-| Resident Slurm CJ reaches its allocation time limit | CP may replace it after confirmed allocation exit, subject to the recovery gates below. Application code restores a compatible checkpoint; task deadlines still apply. |
-| A native task worker times out while CJ survives | The supervisor cancels and settles the owned attempt or retains unresolved ownership. There is no automatic physical worker retry. |
-| Kubernetes task CJ exits | CP retains cleanup ownership; a surviving jobs PVC does not enable automatic CJ restart or worker adoption. |
-| A completed task worker has exited but its result reply is lost | The surviving CJ retries the saved result without launching compute again. This is transport retry, not training resume. |
 
 The [Slurm task-adapter proposal](https://github.com/NVIDIA/NVFlare/pull/5513)
 is distinct from resident Slurm recovery. Its task-mode CJ does not opt into
@@ -61,6 +63,32 @@ commits an application-selected candidate with a valid completed attempt. It
 preserves state between successful assignments, not arbitrary progress from an
 unfinished one. Periodically writing a file is not enough to make an interrupted
 candidate committed, compatible with redelivery, or safe to adopt.
+
+### Wall-limit and owner-loss timeline
+
+For native task execution, CP owns scheduler execution and cleanup, CJ owns local
+checkpoint promotion and result submission, and SJ owns assignment validity and
+attempt identity. The worker produces candidate files; writing them does not
+transfer checkpoint or result authority to the worker. This describes Kubernetes
+and the Slurm draft's intended ownership, not a deployed Slurm qualification.
+
+The successful order is **run -> seal completion -> confirm settlement -> validate
+and promote checkpoint -> submit saved result -> receive terminal receipt**.
+Compute can be released before receipt; payload cleanup has additional conditions.
+Failures at those boundaries have different outcomes:
+
+| Boundary/event | Execution and cleanup owner | Checkpoint/result outcome | Assignment and restart outcome |
+| --- | --- | --- | --- |
+| Worker allocation expires before a valid completion | Live CJ requests cancellation/settlement through the CP-owned native handle. CP retains unresolved ownership. | No new checkpoint or successful worker output. After a settled failure, surviving CJ can submit an execution-error reply through the normal result path. Retain the last committed checkpoint and failure evidence. | SJ still governs closure/deadlines and handles the error reply. No automatic physical task-worker retry or new attempt ID is created. |
+| Worker has valid completion and confirmed settlement; result reply is lost | Worker no longer owns compute; surviving CJ owns saved-result submission. | A locally committed checkpoint remains committed. CJ resends the same saved output, not unfinished computation. | Retry preserves the existing identity; receipt handling prevents duplicate result effects. No new worker is launched. |
+| CJ dies while a task allocation may still exist | Live CP retains cancellation/reconciliation ownership; CJ death alone does not establish worker settlement. | Durable files may survive, but no replacement CJ automatically adopts them or promotes an unfinished candidate. | Kubernetes and the Slurm draft disable task-CJ restart. SJ retains assignment authority; it does not promise to keep the assignment open. |
+| CP dies or its own allocation expires | There is no supported restart/adoption of CP's task ownership. Native execution may outlive CP; operator reconciliation is required. | Durable checkpoints/results are files, not a reconstructed submission owner or proof that the worker stopped. | CP restart must not be treated as permission to relaunch old work. Automatic native recovery is not implemented. |
+| Resident Slurm CJ allocation expires (`job` lifetime) | Surviving CP may replace CJ only after confirmed allocation exit and all recovery gates pass. | Application code restores its own compatible partial checkpoint; progress since that checkpoint may repeat. | Normal GET_TASK redelivery retains the outstanding task/attempt IDs. This existing resident path is distinct from launching a new native task-worker attempt. |
+
+Thus the resident same-ID redelivery path is not a specification for native task
+resume. A future native retry must coordinate a new physical attempt identity
+with SJ and prove old execution has stopped before replacement. Saved-result
+retransmission, by contrast, must not create another physical attempt.
 
 ### Native task-resume follow-up requirements
 
@@ -83,18 +111,20 @@ implemented restart behavior or a new configuration option**:
   retry and queue/deadline policy, cancellation during replacement, and behavior
   when the scheduler or shared storage cannot establish a safe state.
 
-Qualification must distinguish allocation time limits from application and
-queue timeouts. At minimum, exercise these scenarios on the native backend:
+The future design must meet these observable correctness criteria; these are
+behavioral requirements, not a runnable QA plan or claims of current support:
 
-| Scenario | Evidence required before claiming resume support |
+| Boundary | Required outcome for future resume support |
 | --- | --- |
 | Allocation expires during training, before a completed result | Restore only a verified compatible checkpoint and make progress across multiple allocations without concurrent old/new compute. |
 | Allocation ends during checkpoint publication | Reject torn/uncommitted state and retain the last valid checkpoint. |
 | Worker has completed but upload/receipt is delayed | Deliver the saved result without recompute or duplicate aggregation effects; compute is already released. |
 | CJ is lost, cancellation races relaunch, or scheduler queries fail | Preserve ownership and diagnostics; do not replace work until settlement and assignment authority are established. |
 
-Use a checkpoint-aware large-model workload for the eventual wall-time test;
-short mocked timeouts and successful normal runs do not qualify that scenario.
+Allocation time limits, application timeouts and queue timeouts are different
+events. Resource release during blocked result upload and recovery of unfinished
+training from a durable checkpoint are also separate claims: normal completion
+or saved-result retransmission cannot establish mid-assignment resume support.
 
 ## Implementation
 
@@ -156,6 +186,23 @@ manager is introduced.
 Slurm/container recovery assumes training remains inside the managed allocation
 or container. CP is the restart owner; independent scheduler/container requeue
 policies must not compete with it.
+
+### Process task-mode recovery gap
+
+In the current Process task implementation, each task worker starts a separate
+process group. `ProcessHandle.can_restart()` checks the CJ's own group and
+`client_api_bootstrap_*.json` external-trainer files; it does not check task-worker
+groups or exclude task lifetime. Consequently, CP can find CJ replacement eligible
+without proof that its task workers have stopped. The worker's startup parent-PID
+check is not CP-owned settlement evidence after a later CJ failure.
+
+This is an implementation eligibility gap, not supported task-mode recovery and
+not a guarantee that every replacement will launch overlapping compute. The
+[local task-backend removal proposal](https://github.com/NVIDIA/NVFlare/pull/5592)
+defers Process/Docker task mode instead of adding a new local recovery owner.
+Until it lands, do not qualify Process task-CJ replacement as safe solely from
+CJ-group exit. This documentation does not change or repair that restart gate.
+See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-boundaries).
 
 ## Task and checkpoint boundaries
 

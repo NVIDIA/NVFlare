@@ -23,6 +23,40 @@ provide a local GPU scheduler. It also does not make an interrupted assignment
 resumable: [client-job recovery and native task-resume boundaries](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
 are separate from resource release.
 
+## Backend and recovery boundaries
+
+The matrix distinguishes implemented behavior from release direction. Kubernetes
+task execution is implemented; the [Slurm task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)
+is an experimental draft, not deployed qualification. Local Process/Docker task
+backends are deferred by [a separate removal proposal](https://github.com/NVIDIA/NVFlare/pull/5592).
+Until that removal lands, this source still contains the Process task path and
+the recovery gap noted below; its presence is not a safe-recovery guarantee.
+
+"Release" means returning a per-task scheduler reservation while CJ/job remain
+alive, not merely masking devices or freeing GPU memory. "CP recovery" means
+adopting an existing job and its workers after CP restarts, not starting a new CP.
+
+| Backend | Lifetime | Per-task compute/GPU release | Automatic CJ replacement | CP recovery | Mid-assignment resume |
+| --- | --- | --- | --- | --- | --- |
+| Process | `job` | No per-task scheduler reservation | Conditional on confirmed termination and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Process | `task` (deferred) | No scheduler-backed resource admission | Eligibility gap: CJ-group exit does not prove worker exit | Not provided | Not guaranteed; no task-worker recovery contract |
+| Docker | `job` | No; resident container retains its device access | Conditional on confirmed container exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Docker | `task` (deferred) | No supported native task profile here | No supported task-CJ recovery contract | Not provided | Not provided |
+| Kubernetes | `job` | No; resident CJ Pod retains its allocation | Disabled | Not provided | No automatic recovery |
+| Kubernetes | `task` | Yes, after worker Pod settlement | Disabled; CP retains task cleanup | Not provided | Not implemented |
+| Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
+
+Resident recovery relies on a live CP/server and a valid client registration.
+Restoring partial progress on the original assignment additionally needs a
+still-valid assignment and a compatible application checkpoint; CP does not check
+those as replacement-launch gates. A replacement may receive a later assignment
+or recompute without a checkpoint. Recovery does not automatically capture model,
+optimizer or data-loader progress. See
+[client-job recovery](client_job_recovery.md#confirmed-failures-only) for the gates,
+the [Process task-mode gap](client_job_recovery.md#process-task-mode-recovery-gap),
+and the [wall-limit ownership timeline](client_job_recovery.md#wall-limit-and-owner-loss-timeline).
+
 ## Roles and assumptions
 
 | Role | Job lifetime | Task lifetime |
@@ -224,8 +258,9 @@ Disk handoff replaces neither all transport nor live communication. CJ still
 owns federation downloads/uploads and filters; the [worker Cell session](task_worker_cellnet_session.md)
 delivers metrics while the worker is alive. Existing job-mode
 [external-process and Attach sessions](client_api_execution_modes.md), including
-their pass-through/download paths, remain separate supported mechanisms. Task
+their pass-through/download paths, are currently separate mechanisms. Task
 mode currently rejects those session modes rather than silently nesting them.
+This describes current behavior, not a decision to retain job-mode pass-through.
 
 ### Site policy
 
