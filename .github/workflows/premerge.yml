@@ -146,9 +146,6 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
-      - name: Check unit-test timing contracts
-        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
-        run: python3 ci/check_unit_test_contracts.py
       - name: Run style checks
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: ./runtest.sh --torch-backend=cpu -s

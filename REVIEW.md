@@ -15,6 +15,10 @@ and [AGENTS.md](AGENTS.md) for agent rules. PR requirements and human approvals 
 - For test changes, apply the [test placement and authoring rules](tests/README.md#choosing-the-test-layer)
   and their review checklist. Verify the asserted regression would fail promptly, that failure paths
   release owned workers, and that moved tests retain actual CI execution and coverage.
+  Trace subprocess calls through helpers and fixtures: real shell/CLI execution
+  belongs in integration even when its external tools are fake. Check release-only
+  tests on the actual target branch and distinguish completion watchdogs from
+  product policy deadlines; a green main-branch scan is not sufficient evidence.
 - Check the linked GitHub issue and CI status per `CONTRIBUTING.md`; disclose unavailable context.
 - Scale validation to impact: documentation/link checks for prose, targeted behavior tests for
   code, and deeper failure-path and security checks for distributed execution or sensitive changes.
