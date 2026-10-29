@@ -41,6 +41,7 @@ class FakeConnObj:
     def __init__(self, send_heartbeat_supported=True):
         self.connector = SimpleNamespace(driver=FakeDriver(send_heartbeat_supported))
         self.close = MagicMock()
+        self.force_close = MagicMock(side_effect=self.close)
 
     def __str__(self):
         return "FakeConn"

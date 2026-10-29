@@ -90,7 +90,7 @@ class HeartbeatMonitor(Thread):
                         f"no frame received for {idle_seconds:.1f}s "
                         f"(timeout {self.receive_idle_timeout:.1f}s)"
                     )
-                    sfm_conn.conn.close()
+                    sfm_conn.conn.force_close()
                 continue
 
             stall_sec = sfm_conn.get_send_stall_seconds()
