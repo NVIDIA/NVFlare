@@ -14,6 +14,7 @@ System Architecture
 - :doc:`System Architecture Overview <programming_guide/system_architecture>`
 - :doc:`Detailed FLARE Architecture and Job Workflow <system_architecture/system_architecture>`
 - :doc:`CellNet Architecture <system_architecture/cellnet_architecture>`
+- :doc:`Resource Statistics Design Proposal <design/resource_statistics_design>`
 
 .. toctree::
    :maxdepth: 1
@@ -22,6 +23,7 @@ System Architecture
    programming_guide/system_architecture
    flare_system_architecture
    system_architecture/cellnet_architecture
+   design/resource_statistics_design
 
 Core Concepts
 =============
