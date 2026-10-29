@@ -117,7 +117,7 @@ class ResearchWorkflow(AsyncWorkflow):
 
     _engine_class = ResearchEngine
 
-    def _run(self, engine, names, submit, outcomes):
+    def _run(self, engine, names, submit, receive):
         scheduler = self.scheduler
         try:
             results = DiskStore(engine.run_dir / "assignment_results")
@@ -164,7 +164,7 @@ class ResearchWorkflow(AsyncWorkflow):
                 if not inflight:
                     raise RuntimeError("async workflow cannot make progress")
                 try:
-                    client_name, identity, result, error = outcomes.get(timeout=0.1)
+                    client_name, identity, result, error = receive()
                 except queue.Empty:
                     continue
                 call = inflight.pop(client_name)

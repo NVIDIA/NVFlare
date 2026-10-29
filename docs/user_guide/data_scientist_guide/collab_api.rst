@@ -323,7 +323,9 @@ Buffered Async Training
 
 Use ``AsyncRecipe`` for reusable buffered training in actual client arrival
 order. Supply a client, application hooks and model operations; the recipe owns
-assignment tracking, client dispatch and buffered weighted aggregation.
+assignment tracking, client dispatch and buffered weighted aggregation. Replies
+enter one shared server queue directly from Collab callbacks; the workflow
+consumes that queue to fill the aggregation buffer.
 
 The async guide uses **K**, **B** and **O** as shorthand for three independent
 scheduling settings:

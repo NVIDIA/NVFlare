@@ -30,6 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.collab import AsyncRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.context import get_call_context, set_call_context
+from nvflare.collab.api.group_call_context import ResultWaiter
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.async_engine import AsyncEngine, AsyncResult
 from nvflare.collab.async_recipe import AsyncWorkflow
@@ -62,10 +63,11 @@ class _Application:
 
 
 class _Client:
-    def __init__(self, release=None, failure=False, malformed=False):
+    def __init__(self, release=None, failure=False, malformed=False, increment=1):
         self.release = release
         self.failure = failure
         self.malformed = malformed
+        self.increment = increment
         self.assignments = []
 
     @collab.publish
@@ -83,7 +85,7 @@ class _Client:
         }
         if self.malformed:
             metadata["assignment_id"] = -1
-        return {"w": global_model["w"] + 1}, {"num_steps": 2}, metadata
+        return {"w": global_model["w"] + self.increment}, {"num_steps": 2}, metadata
 
 
 class _ScaleUpdate:
@@ -129,6 +131,32 @@ def test_real_nonblocking_groups_publish_while_slow_assignment_is_active():
     assert output["w"].item() == 2
     assert app.closed and app.finished
     assert len(fast.assignments) + len(slow.assignments) == 2
+
+
+def test_callback_receipt_order_survives_delayed_per_call_completion(monkeypatch):
+    delivered_a, release_a = threading.Event(), threading.Event()
+    original = ResultWaiter.set_result
+
+    def delay_completion(waiter, target_name, result):
+        if target_name == "site-1":
+            delivered_a.set()
+            assert release_a.wait(timeout=2), "first reply was held behind per-call completion"
+        return original(waiter, target_name, result)
+
+    monkeypatch.setattr(ResultWaiter, "set_result", delay_completion)
+    accepted = []
+
+    def transform(update):
+        accepted.append(update.assignment.client_name)
+        return {name: value / (1 + update.staleness) for name, value in update.delta.items()}
+
+    output = _execute(
+        _Application(release_a),
+        [_Client(increment=2), _Client(release=delivered_a, increment=4)],
+        update_transform=transform,
+    )
+    assert accepted == ["site-1", "site-2"]
+    assert output["w"].item() == 4  # 2 + 4/2; reversing replies would produce 5.
 
 
 def test_real_groups_sync_boundary():

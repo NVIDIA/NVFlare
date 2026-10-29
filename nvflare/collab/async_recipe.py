@@ -17,7 +17,6 @@
 import math
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 
@@ -123,54 +122,76 @@ class AsyncWorkflow:
 
     @contextmanager
     def _calls(self, names):
-        """Bound result readers and queued payloads by the physical worker pool.
+        """Deliver replies directly to one bounded server queue.
 
-        The protected call/engine/run methods let an example own additional
-        orchestration while reusing Collab transport, cleanup and aggregation.
-        They are implementation hooks, not a scheduler/storage plugin API.
+        Callback admission defines receipt order. Per-call Collab handles hold
+        only completion/error status; no result-reader threads stage payloads.
+        The protected call/engine/run methods share transport and lifecycle
+        with the research example, without a scheduler/storage plugin API.
         """
         stopped = False
         outcome_lock = threading.Lock()
         outcomes = queue.Queue(maxsize=len(names) or 1)
-        pool = ThreadPoolExecutor(max_workers=max(1, len(names)), thread_name_prefix="async_results")
-
-        def watch(client_name, assignment_id, results):
-            result, error = None, None
-            try:
-                for site, value in results:
-                    if site != client_name:
-                        raise ValueError("unexpected result source")
-                    result = value
-                error = results.failures.get(client_name)
-            except Exception as exc:
-                error = exc
-            with outcome_lock:
-                if not stopped:
-                    # One outstanding call per worker bounds queued outcomes.
-                    outcomes.put_nowait((client_name, assignment_id, result, error))
+        pending, queued = {}, set()
 
         def submit(client_name, assignment, **kwargs):
-            results = collab.get_clients([client_name])(blocking=False, timeout=self.call_timeout).train(
-                {client_name: assignment.assignment_id},
+            identity = assignment.assignment_id
+            with outcome_lock:
+                pending[identity] = (client_name, None)
+
+            def receive_result(group_call_context, result):
+                with outcome_lock:
+                    if (
+                        not stopped
+                        and identity in pending
+                        and identity not in queued
+                        and not group_call_context.waiter.results.failures
+                    ):
+                        queued.add(identity)
+                        outcomes.put_nowait((client_name, identity, result, None))
+                # Collab's per-call completion record must not retain the model.
+                return None
+
+            results = collab.get_clients([client_name])(
+                blocking=False, timeout=self.call_timeout, process_resp_cb=receive_result
+            ).train(
+                {client_name: identity},
                 assignment.base_version,
                 assignment.base_model,
                 {client_name: assignment.logical_name},
                 **kwargs,
             )
-            pool.submit(watch, client_name, assignment.assignment_id, results)
+            with outcome_lock:
+                pending[identity] = (client_name, results)
+
+        def receive(timeout=0.1):
+            # Collab invokes response callbacks only for successful replies.
+            # Observe failures/timeouts without another queue or reader pool.
+            with outcome_lock:
+                for identity, (client_name, results) in pending.items():
+                    if identity not in queued and results is not None:
+                        error = results.failures.get(client_name)
+                        if error is not None:
+                            queued.add(identity)
+                            outcomes.put_nowait((client_name, identity, None, error))
+            outcome = outcomes.get(timeout=timeout)
+            with outcome_lock:
+                pending.pop(outcome[1])
+                queued.remove(outcome[1])
+            return outcome
 
         try:
-            yield submit, outcomes
+            yield submit, receive
         finally:
             with outcome_lock:
                 stopped = True
+                pending.clear()
+                queued.clear()
                 while not outcomes.empty():
                     outcomes.get_nowait()
-            # Drain existing ResultQueues to their Collab timeout. Local cleanup
-            # cannot cancel remote training; readers discard subsequent replies.
-            pool.shutdown(wait=False, cancel_futures=False)
+            # Existing Collab calls finish or time out; late replies are ignored.
 
-    def _run(self, engine, names, submit, outcomes):
+    def _run(self, engine, names, submit, receive):
         if len(names) < self.num_active_jobs:
             raise ValueError("num_active_jobs exceeds available clients")
         available = list(names)
@@ -186,7 +207,7 @@ class AsyncWorkflow:
                 raise RuntimeError("async workflow aborted")
             dispatch()
             try:
-                client_name, identity, result, error = outcomes.get(timeout=0.1)
+                client_name, identity, result, error = receive()
             except queue.Empty:
                 continue
             assignment = engine.active[identity]
@@ -214,8 +235,8 @@ class AsyncWorkflow:
             engine = self._create_engine(initial)
             cleanup.callback(engine.close)
             self._hook("on_model", engine.model, engine.version)
-            with self._calls(names) as (submit, outcomes):
-                self._run(engine, names, submit, outcomes)
+            with self._calls(names) as (submit, receive):
+                self._run(engine, names, submit, receive)
             self._hook("on_finish", engine.model, engine.version)
             return engine.model
 

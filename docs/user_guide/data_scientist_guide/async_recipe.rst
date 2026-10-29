@@ -61,7 +61,10 @@ Scheduling and Aggregation
 Version zero is initial. The workflow stops after ``num_updates`` global
 publications, issuing exactly the remaining contribution budget
 ``num_updates * B``. It accepts results in actual arrival order, with one
-outstanding call per client. K must fit the available physical clients; O must
+outstanding call per client. Successful Collab callbacks enqueue replies directly
+into one shared server queue; admission to that queue defines receipt order.
+Per-call handles track completion/errors without retaining model payloads or
+using result-reader threads. K must fit the available physical clients; O must
 be between one and K. B may exceed K. K = B = O gives a synchronous boundary;
 B = O = 1 gives per-arrival updates.
 
@@ -90,9 +93,9 @@ dependency.
 
 ``AsyncEngine`` owns the current model. Each publication creates a new state;
 active assignments reference their immutable base, shared by version. Removing
-an assignment releases the engine's reference. Queued results and readers are
-bounded by physical worker count; retained bases by K, plus the current
-model/accumulator. Applications own any evaluation histories. Do not mutate
+an assignment releases the engine's reference. The result queue and pending
+call records are bounded by physical worker count; retained bases by K, plus the
+current model/accumulator. Applications own any evaluation histories. Do not mutate
 borrowed model states, including in client training; create a local model/copy
 before in-place updates.
 
@@ -143,7 +146,8 @@ Component Scope
    * - :github_nvflare_link:`async_recipe.py <nvflare/collab/async_recipe.py>`:
        ``AsyncRecipe`` and ``AsyncWorkflow``
      - Configuration/export; Collab calls; actual-arrival dispatch/result
-       delivery; bounded readers/queues; timeout/abort cleanup; application hooks.
+       delivery through one bounded result queue; timeout/abort cleanup;
+       application hooks.
      - Numerical acceptance/publication belongs to the engine. The application
        supplies data, model operations and artifacts.
    * - :github_nvflare_link:`async_engine.py <nvflare/collab/async_engine.py>`:
@@ -198,9 +202,9 @@ Failure and Recovery Limits
 ---------------------------
 
 Errors/timeouts, missing or invalid results, invalid weights and hook exceptions
-stop the workflow without retry. Abort/failure discards partial buffers. Reader
-cleanup drains outstanding Collab calls to their configured timeout and discards
-late replies; it cannot guarantee remote computation has stopped. Checkpoints do
+stop the workflow without retry. Abort/failure discards partial buffers and
+stops queuing late replies. Submitted Collab calls finish or reach their configured
+timeout; cleanup does not cancel remote computation. Checkpoints do
 not restore assignments, buffers or client optimizer state. Existing Collab
 result context can supply starting weights but starts a fresh version-zero run.
 
