@@ -21,7 +21,7 @@ provided the example, then install the example dependencies:
 
 ```bash
 # Stable installation
-python -m pip install nvflare
+python -m pip install "nvflare>=2.9"
 
 # Nightly installation
 python -m pip install nvflare-nightly

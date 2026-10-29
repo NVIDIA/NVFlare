@@ -14,7 +14,7 @@ recipe and launch code at the bottom.
 
 ## Run
 
-With NVFlare installed, download and run the standalone example:
+With NVFlare 2.9 or later installed, download and run the standalone example:
 
 ```bash
 nvflare examples get collab-simple-async
