@@ -60,7 +60,7 @@ function clean_docs() {
 }
 
 function build_html_docs() {
-    pip install -e .[dev]
+    python -m pip install -e ".[doc-build]"
     if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
         echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
     else

@@ -26,6 +26,6 @@ sphinx:
 python:
   install:
     - method: pip
-      path: .[dev]
+      path: .[doc-build]
 #  system_packages: true
 
