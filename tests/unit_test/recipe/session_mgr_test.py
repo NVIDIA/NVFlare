@@ -330,6 +330,84 @@ def test_error_log_retrieval_failure_preserves_result_and_closes_session(tmp_pat
     session.close.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "operation,return_value",
+    [("get_job_status", "RUNNING"), ("abort_job", "aborted")],
+)
+def test_admin_session_closes_after_status_or_abort(operation, return_value):
+    session = MagicMock()
+    getattr(session, operation).return_value = return_value
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    result = getattr(manager, operation)("job-id")
+
+    assert result == (return_value if operation == "get_job_status" else None)
+    getattr(session, operation).assert_called_once_with("job-id")
+    session.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("operation", ["get_job_status", "abort_job"])
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_admin_session_closes_if_status_or_abort_raises(operation, error_type):
+    session = MagicMock()
+    error = error_type("admin operation failed")
+    getattr(session, operation).side_effect = error
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    with pytest.raises(error_type) as caught:
+        getattr(manager, operation)("job-id")
+
+    assert caught.value is error
+    session.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("phase", ["monitor", "download"])
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, pytest.fail.Exception])
+def test_admin_session_closes_if_monitor_or_download_raises(phase, error_type):
+    session = MagicMock()
+    session.monitor_job.return_value = MonitorReturnCode.JOB_FINISHED
+    error = error_type(f"{phase} interrupted")
+    if phase == "monitor":
+        session.monitor_job.side_effect = error
+    else:
+        session.download_job_result.side_effect = error
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    with pytest.raises(error_type) as caught:
+        manager.get_job_result("job-id")
+
+    assert caught.value is error
+    session.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("return_code", [MonitorReturnCode.TIMEOUT, MonitorReturnCode.ENDED_BY_CB])
+def test_admin_session_closes_after_incomplete_monitor(return_code):
+    session = MagicMock()
+    session.monitor_job.return_value = return_code
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    assert manager.get_job_result("job-id", timeout=10) is None
+
+    session.download_job_result.assert_not_called()
+    session.close.assert_called_once_with()
+
+
+def test_admin_session_closes_after_unexpected_monitor_return_code():
+    session = MagicMock()
+    session.monitor_job.return_value = -1
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    with pytest.raises(RuntimeError, match="Unexpected monitor return code: -1"):
+        manager.get_job_result("job-id")
+
+    session.close.assert_called_once_with()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_module_clocks(monkeypatch):
     isolate_time(
