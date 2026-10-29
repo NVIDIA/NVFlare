@@ -147,8 +147,11 @@ html_logo = "resources/nvidia_logo.png"
 html_static_path = ["_static"]
 
 
-def generate_apidocs(*args):
+def generate_apidocs(app):
     """Generate API docs automatically by trawling the available modules"""
+    # The serial Markdown child reuses the HTML build's API stubs and doctrees.
+    if "sphinx_llm_markdown" in app.tags:
+        return
     if os.environ.get("SKIP_API_DOCS", "").lower() in ("1", "true", "yes"):
         print("Skipping API doc generation (SKIP_API_DOCS is set)")
         return

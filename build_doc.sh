@@ -70,7 +70,6 @@ function build_html_docs() {
         echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
     else
         echo "${blue}Generating API reference...${noColor}"
-        sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
     fi
     sphinx-build -b html docs docs/_build
 }
