@@ -30,7 +30,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import sphinx_rtd_theme
 from sphinx.domains.python import PythonDomain
 from sphinx.errors import ExtensionError
 
@@ -104,6 +103,8 @@ llms_txt_description = (
 )
 llms_txt_full_build = False
 llms_txt_build_parallel = False
+# Avoid scanning every document for every HTML page in sphinx-llm 1.1.0.
+llms_txt_nested_enabled = False
 llms_txt_suffix_mode = "replace"
 
 # Add any paths that contain templates here, relative to this directory.
