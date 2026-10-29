@@ -31,6 +31,7 @@ from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
+    TaskExecutionInterrupted,
     TaskExecutionPhase,
     TaskExecutionStatus,
     TaskLaunchError,
@@ -173,9 +174,44 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
         return handle
 
     attempt["launcher"].launch_task.side_effect = fail
+    handle.wait_for_settlement.return_value = replace(SETTLED, exit_code=1, retryable=True)
     with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
         supervisor.run(**attempt)
     assert (_payload(attempt).parent / "failure.json").exists()
+
+
+@pytest.mark.parametrize("case", ["interrupted", "rejected", "cancelled", "unsettled", "completed"])
+def test_only_settled_worker_loss_without_a_result_requests_cj_recovery(tmp_path, case):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    status = replace(
+        SETTLED,
+        exit_code=137,
+        failure_reason="runtime timeout",
+        retryable=case != "rejected",
+        cancel_requested=case == "cancelled",
+        settled=case != "unsettled",
+    )
+    handle.wait_for_settlement.return_value = status
+    if case != "completed":
+
+        def launch(request):
+            handle.request = request
+            return handle
+
+        attempt["launcher"].launch_task.side_effect = launch
+    if case == "completed":
+        assert supervisor.run(**attempt).result["value"] == 2
+    else:
+        error = (
+            TaskExecutionInterrupted
+            if case == "interrupted"
+            else TaskSettlementError if case == "unsettled" else IncompleteTaskArtifactError
+        )
+        with pytest.raises(error):
+            supervisor.run(**attempt)
+    assert attempt["launcher"].launch_task.call_count == 1
+    assert supervisor.settlement_unconfirmed == (case == "unsettled")
 
 
 def test_launch_error_without_handle_preserves_original_exception(tmp_path):

@@ -501,6 +501,7 @@ def test_terminal_shutdown_and_removal_required(setup, exit_code, reason):
     assert not handle.poll().settled  # removing finalizer is not confirmed removal
     assert handle.poll().settled
     assert handle.poll().succeeded == (exit_code == 0 and reason is None)
+    assert handle.poll().retryable == (exit_code != 0)
     assert handle.read_logs() == "task output\n"
     assert store.read_result(bootstrap.identity)[0]["value"] == 2
 

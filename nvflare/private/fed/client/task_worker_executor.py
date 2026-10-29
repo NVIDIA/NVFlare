@@ -226,6 +226,11 @@ class TaskWorkerExecutor(Executor):
                 with self._checkpoint_commit_guard(abort_signal):
                     fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
                     return result
+            self.log_info(
+                fl_ctx,
+                f"Task {identity.task_id}: server attempt {fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)}, "
+                f"worker attempt {identity.attempt_id}",
+            )
             resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = self._runtime_root(workspace, identity.job_id)

@@ -330,11 +330,9 @@ class K8sJobHandle(JobHandleSpec):
         self.task_owner = None
         self.pod_uid = None
         self.workspace_reservation = None
-        self._restart_ready = False
         self._termination_requested = False
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
-        self._raw_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
         self.api_instance = api_instance
         self.namespace = namespace
@@ -385,7 +383,7 @@ class K8sJobHandle(JobHandleSpec):
             self.task_owner.release()
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
-            self.workspace_job_id = ""
+            self.workspace_transfer = None
         self._delete_credential_secret()
 
     def _delete_credential_secret(self) -> None:
@@ -464,11 +462,15 @@ class K8sJobHandle(JobHandleSpec):
                 terminated = getattr(getattr(container_status, "state", None), "terminated", None)
                 exit_code = getattr(terminated, "exit_code", None)
                 if exit_code in (
+                    JobReturnCode.ABORTED,
                     ProcessExitCode.EXCEPTION,
                     ProcessExitCode.UNSAFE_COMPONENT,
                     ProcessExitCode.CONFIG_ERROR,
+                    ProcessExitCode.INFRASTRUCTURE_ERROR,
                 ):
                     self.terminal_return_code = exit_code
+                elif isinstance(exit_code, int) and exit_code != 0:
+                    self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
                 break
         self._release_job_resources()
 
@@ -711,17 +713,10 @@ class K8sJobHandle(JobHandleSpec):
             time.sleep(POLL_INTERVAL)
 
     def can_restart(self):
-        if (
-            self._termination_requested
-            or self.terminal_state != JobState.TERMINATED
-            or not self.pod_uid
-            or not self.workspace_reservation
-        ):
+        if self._termination_requested or not self.pod_uid or not self.workspace_reservation:
             return False
-        if self._restart_ready:
-            return True
         directory, _, _ = self.workspace_reservation
-        if not workspace_download_complete(directory, self._raw_job_id):
+        if not workspace_download_complete(directory):
             return False
         # Reuse the task backend's cleanup bound; resident CJs get the same
         # default. A timeout never authorizes overlapping checkpoint writers.
@@ -734,8 +729,8 @@ class K8sJobHandle(JobHandleSpec):
                 )
                 if pod.metadata.uid != self.pod_uid or pod.status.reason in ("NodeLost", "Shutdown"):
                     return False
-                if pod_shutdown_confirmed(pod) and (self.task_owner is None or self.task_owner.wait_for_settlement(0)):
-                    self._restart_ready = True
+                # The task owner's existing thread exits after all workers settle.
+                if pod_shutdown_confirmed(pod) and (self.task_owner is None or not self.task_owner.thread.is_alive()):
                     return True
             except Exception as error:
                 self.logger.warning("cannot confirm CJ shutdown for recovery: %s", type(error).__name__)
@@ -975,10 +970,8 @@ class K8sJobLauncher(JobLauncherSpec):
         pod_name = job_pod_name(job_id, site_name)
         previous = fl_ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE)
         if previous is not None:
-            if not isinstance(previous, K8sJobHandle) or previous.job_id != job_id or not previous.can_restart():
-                raise ValueError("Kubernetes recovery requires the confirmed previous job handle")
-            # Completed Pods may remain for diagnostics; each execution and its
-            # credential Secret need a new name while the logical job stays put.
+            # Each execution and credential Secret needs a new name; deletion
+            # of the previous Pod may still be pending.
             pod_name = f"{pod_name[:50].rstrip('-')}-{uuid.uuid4().hex[:12]}"
         workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is None:
@@ -1230,7 +1223,7 @@ class K8sJobLauncher(JobLauncherSpec):
             if "job_handle" in locals():
                 if job_handle.task_owner is not None:
                     job_handle.task_owner.release()
-                job_handle.workspace_job_id = ""
+                job_handle.workspace_transfer = None
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED
                 job_handle.terminal_return_code = JobReturnCode.EXCEPTION
@@ -1244,6 +1237,19 @@ class K8sJobLauncher(JobLauncherSpec):
             raise
         if not entered_running:
             self.logger.warning(f"unable to enter running phase {job_id}")
+        if previous is not None:
+            try:
+                previous.api_instance.delete_namespaced_pod(
+                    name=previous.pod_name,
+                    namespace=previous.namespace,
+                    body={"preconditions": {"uid": previous.pod_uid}},
+                    _request_timeout=10.0,
+                )
+            except Exception as error:
+                if getattr(error, "status", None) != 404:
+                    self.logger.warning(
+                        "could not delete previous CJ Pod %s: %s", previous.pod_name, type(error).__name__
+                    )
         return job_handle
 
     def _discard_empty_workspace(self, directory, device, inode):
@@ -1484,7 +1490,6 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             if (
                 previous_handle.workspace_reservation != (directory, info.st_dev, info.st_ino)
                 or os.path.realpath(directory) != directory
-                or not previous_handle.can_restart()
             ):
                 raise ValueError("persistent workspace differs from the confirmed previous execution")
             return subpath

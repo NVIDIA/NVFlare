@@ -338,12 +338,15 @@ without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
 its existing resource semantics. Images must contain the same reviewed
 framework source and the required application dependencies.
 
-The cluster must expose kubelet ``PodReadyToStartContainers`` teardown evidence
-and terminal container statuses for this profile. Pods lacking that evidence
-remain unresolved. Disable admission-injected long-lived containers for the
+Task cleanup and CJ recovery require kubelet ``PodReadyToStartContainers`` teardown
+evidence and terminal container statuses. The condition is
+`enabled by default since Kubernetes 1.29 <https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/>`_.
+If it is absent or disabled, cleanup cannot be confirmed and CJ recovery stops
+after its cleanup timeout (60 seconds by default). Unsettled workers remain
+owned by CP. Disable admission-injected long-lived containers for the
 qualified worker profile; the handle nevertheless checks every admitted main,
-init and ephemeral container before cleanup. No force deletion, automatic
-attempt restart, Job controller or TTL deletion is used. See Kubernetes
+init and ephemeral container before cleanup. No force deletion, in-place
+worker retry, Job controller or TTL deletion is used. See Kubernetes
 `Pod lifecycle <https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/>`_
 and `finalizers <https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/>`_.
 
@@ -600,14 +603,13 @@ request/limit (default 1Gi) continues to cover Pod-local storage; it does not
 limit files on the PVC. Task workers currently set no explicit ephemeral-storage
 request/limit, so namespace defaults and node eviction policy apply.
 
-The Kubernetes job handle does not opt into main's automatic CJ restart policy;
-CP continues to fence old workers and refuses retained-workspace adoption.
-Persistence does not itself implement CJ resume. Applications must write their
-required recovery state, and a future restart path must restore committed state,
-coordinate with SJ and fence every earlier CJ/worker attempt. The launcher rejects an existing job/site directory rather than overwrite or automatically
-adopt it. The current shutdown upload also remains in place for CP's result
-archive. Abrupt CJ loss preserves the jobs-PVC files without depending on that
-upload running.
+CP can replace a failed CJ after confirming shutdown of both CJ and its workers.
+A worker crash without a committed result or application error also exits CJ
+through this recovery path. Applications must save and restore their required
+recovery state. Only the running CP may reuse its previous CJ's workspace;
+unrelated launches still reject an existing job/site directory. The shutdown
+upload remains in place for CP's result archive. Abrupt CJ loss preserves the
+jobs-PVC files without depending on that upload running.
 
 Local reproduction and deployment qualification
 --------------------------------------------------

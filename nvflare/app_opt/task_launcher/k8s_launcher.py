@@ -523,6 +523,7 @@ class K8sTaskHandle(TaskHandleSpec):
             cancel_requested=self._cancel_requested,
             settled=self._settled,
             failure_reason=self._failure or self._observation_error,
+            retryable=self._exit_code not in (None, 0),
         )
 
     def _delete(self):

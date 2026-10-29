@@ -801,7 +801,12 @@ class TestK8sJobHandle:
 
     @pytest.mark.parametrize(
         "exit_code",
-        [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR],
+        [
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.UNSAFE_COMPONENT,
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+        ],
     )
     def test_wait_preserves_deliberate_process_exit_code(self, exit_code):
         api = _make_api_instance()
@@ -816,7 +821,7 @@ class TestK8sJobHandle:
 
         assert handle.poll() == exit_code
 
-    def test_wait_keeps_sigkill_exit_aborted(self):
+    def test_wait_reports_sigkill_as_execution_error(self):
         api = _make_api_instance()
         resp = _make_pod_response(
             phase=PodPhase.FAILED.value,
@@ -827,7 +832,7 @@ class TestK8sJobHandle:
 
         handle.wait()
 
-        assert handle.poll() == JobReturnCode.ABORTED
+        assert handle.poll() == JobReturnCode.EXECUTION_ERROR
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
@@ -867,6 +872,7 @@ class TestK8sJobHandle:
         api = _make_api_instance()
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        handle.terminate()
         handle.terminate()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
@@ -3844,7 +3850,7 @@ def _mock_job_workspace_owner(monkeypatch, launcher):
     monkeypatch.setattr(os, "stat", stat)
 
 
-def _exited_cj(handle, sandbox_down=True):
+def _exited_cj(handle, sandbox_down=True, exit_code=137):
     return SimpleNamespace(
         metadata=SimpleNamespace(uid=handle.pod_uid, deletion_timestamp=None),
         spec=SimpleNamespace(
@@ -3854,10 +3860,10 @@ def _exited_cj(handle, sandbox_down=True):
             ephemeral_containers=[],
         ),
         status=SimpleNamespace(
-            phase="Failed",
+            phase="Succeeded" if exit_code == 0 else "Failed",
             reason="Error",
             conditions=[SimpleNamespace(type="PodReadyToStartContainers", status="False" if sandbox_down else "True")],
-            container_statuses=[_make_terminated_container_status(handle._job_container_name, 137)],
+            container_statuses=[_make_terminated_container_status(handle._job_container_name, exit_code)],
             init_container_statuses=[],
             ephemeral_container_statuses=[],
         ),
@@ -3867,9 +3873,9 @@ def _exited_cj(handle, sandbox_down=True):
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 @pytest.mark.parametrize("extension", ["json", "conf", "yml"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
-@pytest.mark.parametrize("create_status", [None, 403, 500])
+@pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
 def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
-    tmp_path, monkeypatch, lifetime, extension, budgets, create_status
+    tmp_path, monkeypatch, lifetime, extension, budgets, create_status, cleanup_status
 ):
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
@@ -4037,17 +4043,19 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_PERSISTENT_WORKSPACE, WORKSPACE_READY_FILE
 
     assert {item["name"]: item.get("value") for item in container["env"]}[ENV_PERSISTENT_WORKSPACE] == "1"
-    (job_dir / WORKSPACE_READY_FILE).write_text(_TASK_JOB_ID)
+    (job_dir / WORKSPACE_READY_FILE).touch()
     api.read_namespaced_pod.return_value = _exited_cj(handle)
     if handle.task_owner is not None:
         handle.task_owner.backend.cleanup_timeout = 0.01
-        handle.task_owner.wait_for_settlement.return_value = True
+        handle.task_owner.thread.is_alive.return_value = False
     handle.wait()
     assert handle.can_restart()
     old_handle = handle
     fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, old_handle, private=True, sticky=False)
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
     api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-2"
+    if cleanup_status:
+        api.delete_namespaced_pod.side_effect = _FakeApiException(status=cleanup_status)
     with (
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager", transfer),
         patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService", service),
@@ -4055,6 +4063,12 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         handle = launcher.launch_job(meta, fl_ctx)
     assert handle.pod_uid == "cj-uid-2"
     assert handle.pod_name != old_handle.pod_name
+    api.delete_namespaced_pod.assert_called_once_with(
+        name=old_handle.pod_name,
+        namespace=old_handle.namespace,
+        body={"preconditions": {"uid": old_handle.pod_uid}},
+        _request_timeout=10.0,
+    )
     assert handle.workspace_reservation == old_handle.workspace_reservation
     assert handle.pod_manifest["spec"]["volumes"] == spec["volumes"]
     assert handle.pod_manifest["spec"]["containers"][0]["volumeMounts"] == container["volumeMounts"]
@@ -4062,6 +4076,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         launcher._ensure_job_credential_secret.call_args_list[1].args[0]
     )
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    api.delete_namespaced_pod.side_effect = None
     handle.terminate()
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
     with pytest.raises(ValueError, match="already exists"):
@@ -4077,10 +4092,71 @@ def recoverable_cj(tmp_path):
     handle.pod_uid = "cj-uid"
     info = tmp_path.stat()
     handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
-    (tmp_path / WORKSPACE_READY_FILE).write_text("job-1")
+    (tmp_path / WORKSPACE_READY_FILE).touch()
     handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle)
     handle.wait()
     return handle
+
+
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
+@pytest.mark.parametrize(
+    "exit_code, cancelled, restart_expected",
+    [
+        (0, False, False),
+        (1, False, True),
+        (9, False, False),
+        (101, False, True),
+        (102, False, False),
+        (103, False, False),
+        (104, False, True),
+        (137, False, True),
+        (143, False, True),
+        (137, True, False),
+    ],
+)
+def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_code, cancelled, restart_expected):
+    from nvflare.apis.job_launcher_spec import JobHandleSpec
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+    from nvflare.private.defs import JobOutcomeMsgKey
+    from nvflare.private.fed.client.client_executor import _RESTART_KEY, JobExecutor, _JobRestart
+    from nvflare.private.fed.client.client_status import ClientStatus
+
+    handle = _make_handle(workspace_job_id="job-1")
+    handle.pod_uid = "cj-uid"
+    info = tmp_path.stat()
+    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
+    (tmp_path / WORKSPACE_READY_FILE).touch()
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, exit_code=exit_code)
+    if task_mode:
+        handle.task_owner = Mock()
+        handle.task_owner.backend.cleanup_timeout = 1
+        handle.task_owner.thread.is_alive.return_value = False
+    if cancelled:
+        handle.terminate()
+
+    client, ctx = MagicMock(), _make_launch_fl_ctx()
+    executor = JobExecutor(client, "startup")
+    executor.max_cj_restart_failures = 3
+    executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: handle,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+        _RESTART_KEY: _JobRestart(Mock(), {}, {}),
+    }
+    replacement = MagicMock(spec=JobHandleSpec)
+    replacement.poll.return_value = JobReturnCode.SUCCESS
+
+    def launch(_job_id, _restart, pending, fl_ctx):
+        assert fl_ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is handle
+        pending.attach(replacement)
+
+    executor._launch_job = Mock(side_effect=launch)
+    # An abrupt CJ exit leaves no process.rc in CP's separate private workspace.
+    executor._wait_child_process_finish(client, "job-1", None, None, None, str(tmp_path / "cp"), ctx)
+    assert executor._launch_job.call_count == int(restart_expected)
+    assert not executor.run_processes
+    assert ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is None
+    outcome = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert outcome[JobOutcomeMsgKey.CODE] == (9 if cancelled else 0 if restart_expected else exit_code)
 
 
 @pytest.mark.parametrize(
@@ -4109,17 +4185,18 @@ def test_recovery_requires_durable_initialized_workspace_and_confirmed_cj(recove
 
 
 @pytest.mark.parametrize("outcome", ["settled", "timeout", "cancelled"])
-def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkeypatch, outcome):
+@pytest.mark.parametrize("order", ["worker-first", "cj-first", "together"])
+def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkeypatch, outcome, order):
     handle = recoverable_cj
     owner = handle.task_owner = Mock()
     owner.backend.cleanup_timeout = 1
-    owner.wait_for_settlement.return_value = False
-    pod = handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=False)
+    owner.thread.is_alive.return_value = order != "worker-first"
+    pod = handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=order == "cj-first")
 
     def advance(_):
-        pod.status.conditions[0].status = "False"
         if outcome == "settled":
-            owner.wait_for_settlement.return_value = True
+            pod.status.conditions[0].status = "False"
+            owner.thread.is_alive.return_value = False
         elif outcome == "cancelled":
             handle.terminate()
 
@@ -4136,7 +4213,6 @@ def test_recovery_cannot_adopt_a_replaced_workspace(tmp_path, recoverable_cj):
     directory = tmp_path / subpath
     info = directory.stat()
     recoverable_cj.workspace_reservation = (str(directory), info.st_dev, info.st_ino)
-    recoverable_cj._restart_ready = True
     directory.rename(directory.with_name("old"))
     directory.mkdir()
     with pytest.raises(ValueError, match="differs"):

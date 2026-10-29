@@ -749,6 +749,48 @@ flare.send(flare.FLModel(params=model.params, metrics={"previous": previous}))
     assert len(list(root.rglob("*.checkpoint"))) == 1
 
 
+@pytest.mark.parametrize("termination", ["SIGTERM", "SIGKILL"])
+def test_worker_crash_preserves_progress_for_replacement_cj(native_task, monkeypatch, termination):
+    from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.defs import RequestHeader
+
+    root, custom, context, policy = native_task
+    script = f"""
+import os
+import signal
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+checkpoint = Path("progress.checkpoint")
+previous = int(checkpoint.read_text()) if checkpoint.exists() else 0
+checkpoint.write_text(str(previous + 1))
+if previous == 0:
+    os.kill(os.getpid(), signal.{termination})
+flare.send(flare.FLModel(params=model.params, metrics={{"resumed_from": previous}}))
+"""
+    for generation in range(2):
+        monkeypatch.setattr(ConfigService, "_var_values", {})
+        monkeypatch.setattr(ConfigService, "_var_dict", {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"})
+        adapter, data = _adapter(custom, context, policy, script=script)
+        try:
+            if generation == 0:
+                with pytest.raises(TaskExecutionInterrupted):
+                    adapter.execute("train", data, context, Signal())
+                assert not adapter.supervisor.owns_execution
+                assert not list(root.rglob("completion.json"))
+            else:
+                result = adapter.execute("train", data, context, Signal())
+                assert FLModelUtils.from_shareable(result).metrics["resumed_from"] == 1
+        finally:
+            adapter.handle_event(EventType.END_RUN, context)
+    assert context.get_prop(FLContextKey.TASK_ID) == "task-1"
+    assert context.get_prop(FLContextKey.TASK_ATTEMPT_ID) == "attempt-1"
+    assert (root / "job-1" / "progress.checkpoint").read_text() == "2"
+
+
 @pytest.mark.parametrize("event", [EventType.END_RUN, EventType.ABORT_TASK])
 def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_false_panic(
     native_task, monkeypatch, event

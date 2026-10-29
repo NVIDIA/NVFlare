@@ -601,14 +601,6 @@ class TestWorkspaceBootstrapHelpers:
             assert len(fake_cell.requests) == (1 if persistent else 2)
             assert os.path.exists(os.path.join(ws_root, WORKSPACE_READY_FILE)) == persistent
 
-    def test_persistent_download_refuses_a_mismatched_initialization_record(self, tmp_path, monkeypatch):
-        monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "cp")
-        monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token")
-        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1")
-        (tmp_path / WORKSPACE_READY_FILE).write_text("another-job")
-        with pytest.raises(RuntimeError, match="initialization record"):
-            download_workspace(SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID), secure_mode=False)
-
     @pytest.mark.parametrize("kind", ["symlink", "pipe", "directory"])
     def test_workspace_initialization_record_must_be_a_regular_file(self, tmp_path, kind):
         record = tmp_path / WORKSPACE_READY_FILE
@@ -620,7 +612,7 @@ class TestWorkspaceBootstrapHelpers:
             os.mkfifo(record)
         else:
             record.mkdir()
-        assert not workspace_download_complete(str(tmp_path), JOB_ID)
+        assert not workspace_download_complete(str(tmp_path))
 
     def test_upload_results_noop_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN, raising=False)

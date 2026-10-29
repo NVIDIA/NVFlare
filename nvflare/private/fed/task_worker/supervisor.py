@@ -32,6 +32,7 @@ from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
+    TaskExecutionInterrupted,
     TaskExecutionPhase,
     TaskExecutionStatus,
     TaskHandleSpec,
@@ -296,6 +297,12 @@ class TaskSupervisor:
                 if failure is not None:
                     raise RuntimeError(
                         f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
+                if status.retryable and not status.cancel_requested:
+                    raise TaskExecutionInterrupted(
+                        f"task worker {identity.attempt_id} interrupted: "
+                        f"{status.failure_reason or status.termination_signal or status.exit_code} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
                     ) from e
                 raise

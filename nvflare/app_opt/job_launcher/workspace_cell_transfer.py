@@ -73,7 +73,7 @@ ENV_WORKSPACE_OWNER_FQCN = "NVFL_WORKSPACE_OWNER_FQCN"
 ENV_WORKSPACE_TRANSFER_TOKEN = "NVFL_WORKSPACE_TRANSFER_TOKEN"
 
 WORKSPACE_TRANSFER_CHANNEL = "workspace_transfer"
-ENV_PERSISTENT_WORKSPACE = "NVFLARE_PERSISTENT_WORKSPACE"
+ENV_PERSISTENT_WORKSPACE = "NVFL_PERSISTENT_WORKSPACE"
 WORKSPACE_READY_FILE = ".nvflare_workspace_ready"
 TOPIC_PREPARE_DOWNLOAD = "prepare_download"
 TOPIC_PUBLISH_RESULTS = "publish_results"
@@ -685,17 +685,10 @@ def _install_job_cert(args) -> None:
         write_job_cert(_run_dir(args.workspace, args.job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
 
 
-def workspace_download_complete(workspace_root: str, job_id: str) -> bool:
+def workspace_download_complete(workspace_root: str) -> bool:
     try:
-        # CP reads a job-writable PVC: neither a symlink nor a pipe may turn
-        # this bounded readiness check into an unrelated read or a blocked CP.
-        fd = os.open(os.path.join(workspace_root, WORKSPACE_READY_FILE), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            os.close(fd)
-            return False
-        with os.fdopen(fd, encoding="utf-8") as stream:
-            return stream.read(len(job_id) + 1) == job_id
-    except (OSError, UnicodeError):
+        return stat.S_ISREG(os.lstat(os.path.join(workspace_root, WORKSPACE_READY_FILE)).st_mode)
+    except OSError:
         return False
 
 
@@ -713,8 +706,8 @@ def download_workspace(args, secure_mode: bool) -> None:
     persistent = os.environ.get(ENV_PERSISTENT_WORKSPACE) == "1"
     ready_file = os.path.join(args.workspace, WORKSPACE_READY_FILE)
     if persistent and os.path.lexists(ready_file):
-        if not workspace_download_complete(args.workspace, args.job_id):
-            raise RuntimeError("persistent workspace initialization record does not match this job")
+        if not workspace_download_complete(args.workspace):
+            raise RuntimeError("persistent workspace initialization marker must be a regular file")
         # CP has already confirmed the previous CJ and its workers exited.
         # Downloading again could overwrite their checkpoints with CP's old copy.
         return
@@ -739,8 +732,7 @@ def download_workspace(args, secure_mode: bool) -> None:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
         if persistent:
-            with open(ready_file, "w", encoding="utf-8") as stream:
-                stream.write(args.job_id)
+            open(ready_file, "x").close()
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

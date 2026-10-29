@@ -26,12 +26,10 @@ resources or reject unsupported requirements before compute.
 Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
 admits at most one unsettled attempt per job. Worker memory, optimizer state and
 executor instances do not survive an assignment. Application-selected checkpoint
-files can survive. CJ recovery can replace a failed CJ only after its job handle
-confirms termination. Kubernetes also requires the persistent jobs profile and
-settlement of all CP-owned workers. Replacement CJs preserve the assignment and
-checkpoints but derive fresh physical worker attempt IDs from the CJ launch ID.
-See [CJ recovery](client_job_recovery.md) for its bounds. Persistent files alone
-do not provide CP restart adoption, physical task retry or distributed training.
+files can survive. Confirmed CJ or worker loss can trigger [CJ recovery](client_job_recovery.md)
+after all prior executions stop. Kubernetes requires the persistent jobs profile.
+Recovery preserves the assignment and checkpoints, with fresh physical worker IDs.
+CP restart adoption and distributed training remain unsupported.
 
 Four separate facts govern the lifecycle:
 
@@ -49,7 +47,7 @@ after server restart.
 ## One assignment from delivery to cleanup
 
 1. SJ issues an assignment with workflow, task and attempt IDs. Retransmission
-   preserves those IDs; a new physical attempt requires a new server-issued attempt ID.
+   preserves those IDs; CJ recovery changes only the physical worker attempt ID.
 2. CJ applies input hooks/filters and stages input plus an inert worker bootstrap.
    Compute definitions are authorized in CJ and again in the worker before custom
    imports, component construction or input decoding.
