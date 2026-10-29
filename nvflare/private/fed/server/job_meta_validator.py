@@ -188,9 +188,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
             client_sites = [site for site in deployments if site != SERVER_SITE_NAME]
             if client_sites:
-                client_config = (
-                    self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG, resolve=False) or {}
-                )
+                client_config = self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG) or {}
                 if not isinstance(client_config, dict):
                     raise ValueError("client app config must be a dictionary")
                 lifetime = get_client_execution_lifetime(client_config)
@@ -217,45 +215,14 @@ class JobMetaValidator(JobMetaValidatorSpec):
             meta.pop(FlowerConstant.FLOWER_PREDEPLOYED, None)
 
     @staticmethod
-    def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str, *, resolve=True) -> Optional[dict]:
+    def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:
         basename = ConfigFactory.get_file_basename(init_config_path)
         for ext, fmt in ConfigFormat.config_ext_formats().items():
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
                 config_data = zip_file.read(config_path)
-                text = config_data.decode()
-                if not resolve and fmt == ConfigFormat.PYHOCON:
-                    from pyhocon import ConfigFactory as HoconFactory
-
-                    # Client includes and substitutions belong to the client.
-                    # Strip include directives without interpreting their targets;
-                    # otherwise submission could open client paths or URLs on SJ.
-                    from pyparsing import CaselessKeyword, Literal, Regex, Suppress
-
-                    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-
-                    quoted = Regex(r'"(?:[^"\\\n]|\\.)*"[ \t]*')
-                    target = quoted | (
-                        (CaselessKeyword("url") | CaselessKeyword("file") | CaselessKeyword("package"))
-                        + Literal("(")
-                        + quoted
-                        + Literal(")")
-                    )
-                    include = CaselessKeyword("include") + (
-                        target | (CaselessKeyword("required") + Literal("(") + target + Literal(")"))
-                    )
-                    # Match pyhocon's complete opaque-token grammar, including
-                    # extra closing quotes in multiline strings.
-                    opaque = Regex(r'"""[\s\S]*?"*"""') | quoted | Regex(r"(?://|#)[^\r\n]*")
-                    text = (opaque | Suppress(include)).transform_string(text)
-                    # Never delegate a surviving directive to the include-capable
-                    # parser. Keep unrelated keys named "include" valid.
-                    remaining = (Suppress(opaque) | include).search_string(text)
-                    if any(tokens for tokens in remaining):
-                        raise ValueError("client config includes cannot be opened during submission")
-                    return PyhoconConfig(HoconFactory.parse_string(text, resolve=False)).to_dict()
-                return config_loader.load_config_from_str(text).to_dict(resolve=resolve)
+                return config_loader.load_config_from_str(config_data.decode()).to_dict()
         return None
 
     @staticmethod

@@ -28,19 +28,15 @@ class ConfigFactory:
     OmegaConfLoader, omega_import_ok = optional_import(
         module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
     )
-    PyhoconLoader, pyhocon_import_ok = optional_import(
-        module="nvflare.fuel_opt.utils.pyhocon_loader", name="PyhoconLoader"
-    )
-
     _fmt2Loader = {
         ConfigFormat.JSON: JsonConfigLoader(),
+        # HOCON includes and substitutions can read files, URLs, and environment variables.
+        # Job tools convert HOCON to JSON before submission; sites only parse .conf files as JSON.
+        ConfigFormat.PYHOCON: JsonConfigLoader(),
     }
 
     if omega_import_ok:
         _fmt2Loader.update({ConfigFormat.OMEGACONF: OmegaConfLoader()})
-
-    if pyhocon_import_ok:
-        _fmt2Loader.update({ConfigFormat.PYHOCON: PyhoconLoader()})
 
     @staticmethod
     def search_config_format(

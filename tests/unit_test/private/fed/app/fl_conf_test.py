@@ -213,3 +213,34 @@ def test_provisioned_async_tcp_client_conn_props(tmp_path, security, routed):
         assert relay[ConnPropKey.URL] == f"{scheme}://relay-1:8004"
         assert relay[ConnPropKey.CONNECTION_SECURITY] == security
         assert relay[ConnPropKey.AUTH_IDENTITY] == "relay-1"
+
+
+def test_job_folder_cannot_shadow_site_config(tmp_path):
+    import argparse
+
+    from nvflare.apis.fl_constant import SystemConfigs
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    workspace = _workspace_with_kit(tmp_path, "site-1")
+    (tmp_path / "startup" / "fed_client.json").write_text("{}")
+    (tmp_path / "local" / "resources.json").write_text(json.dumps({"owner": "site"}))
+    job_config = Path(workspace.get_app_dir("0a1b2c3d")) / "config"
+    job_config.mkdir(parents=True)
+    (job_config / "resources.json").write_text(json.dumps({"owner": "job"}))
+    configer = FLClientStarterConfiger.__new__(FLClientStarterConfiger)
+    configer.workspace = workspace
+    configer.args = argparse.Namespace(workspace=str(tmp_path))
+    configer.cmd_vars = {}
+    configer.app_validator = None
+    configer.components = {}
+    configer.handlers = []
+    configer.config_data = {"client": {}, "servers": []}
+    configer.client_config_file_names = ["fed_client.json", "resources.json"]
+
+    ConfigService.reset()
+    try:
+        with patch("nvflare.private.fed.app.fl_conf.BaseClientDeployer"):
+            configer.finalize_config(MagicMock())
+        assert ConfigService.get_section(SystemConfigs.RESOURCES_CONF) == {"owner": "site"}
+    finally:
+        ConfigService.reset()

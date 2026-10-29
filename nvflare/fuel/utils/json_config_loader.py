@@ -48,7 +48,7 @@ class JsonConfigLoader(ConfigLoader):
             conf = json.loads(config_str)
             return JsonConfig(conf)
         except Exception as e:
-            self.logger.error("Error loading config {}: {}".format(config_str, secure_format_exception(e)))
+            self.logger.error(f"Error loading JSON config (convert HOCON to JSON): {secure_format_exception(e)}")
             raise e
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
@@ -59,5 +59,7 @@ class JsonConfigLoader(ConfigLoader):
             try:
                 return json.load(file)
             except Exception as e:
-                self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
+                self.logger.error(
+                    f"Error loading JSON config file {path} (convert HOCON to JSON): {secure_format_exception(e)}"
+                )
                 raise e

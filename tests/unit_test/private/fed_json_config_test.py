@@ -54,6 +54,8 @@ def _workspace(tmp_path):
     return SimpleNamespace(
         get_app_custom_dir=lambda job_id: str(tmp_path / job_id / "custom"),
         get_app_config_dir=lambda job_id: str(tmp_path / job_id / "config"),
+        get_startup_kit_dir=lambda: str(tmp_path),
+        get_site_config_dir=lambda: str(tmp_path),
     )
 
 

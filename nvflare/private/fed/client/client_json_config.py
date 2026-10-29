@@ -241,7 +241,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={},
-            config_path=[self.app_root],
+            config_path=[self.workspace_obj.get_startup_kit_dir(), self.workspace_obj.get_site_config_dir()],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )

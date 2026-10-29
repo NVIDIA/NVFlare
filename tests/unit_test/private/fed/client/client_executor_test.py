@@ -1172,8 +1172,13 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
     else:
         (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
         monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    expected = {
+        "nested_json": "resolved client execution_lifetime",
+        "hocon_include": "Expecting value",
+        "yaml_environment": "execution_lifetime must be 'job' or 'task'",
+    }[config_case]
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        with pytest.raises(ValueError, match=expected):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                 client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
             )
@@ -1196,7 +1201,7 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
     path = config / "config_fed_client.yml"
     path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
     monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
-    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
+    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "${oc.env:NVFLARE_LIFETIME,task}"
     monkeypatch.setenv("NVFLARE_LIFETIME", "job")
     args = SimpleNamespace(
         workspace=str(tmp_path),
@@ -1208,7 +1213,7 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
         sp_target="server:8002",
     )
     with patch.object(ClientJsonConfigurator, "configure") as build:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        with pytest.raises(ValueError, match="execution_lifetime must be 'job' or 'task'"):
             ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
     build.assert_not_called()
 

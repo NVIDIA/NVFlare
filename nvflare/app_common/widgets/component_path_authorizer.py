@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import re
 import threading
@@ -185,9 +184,7 @@ class ComponentPathAuthorizer(Widget):
             if cached and cached[0] == cache_signature:
                 return cached[1], cached[2], cached[3]
 
-            with open(cache_key, "rt") as f:
-                resources = json.load(f)
-                cache_signature = self._make_file_signature(os.fstat(f.fileno()))
+            resources = ConfigService.load_config_dict(cache_key)
             allow_list, enforcement_mode, uses_default = self._get_policy_from_resources(resources)
 
             self._allow_list_cache[cache_key] = (cache_signature, allow_list, enforcement_mode, uses_default)

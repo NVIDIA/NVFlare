@@ -85,15 +85,16 @@ def _quote_resource_keys(value):
 def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
     """Loads config using pyhocon."""
     try:
-        temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
-        if temp_conf:
-            config_file_path = temp_conf.file_path
-            if temp_conf.format == ConfigFormat.PYHOCON:
-                config: ConfigTree = temp_conf.conf
-            else:
-                config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
-        else:
+        fmt, real_config_file_path = ConfigFactory.search_config_format(config_file_path, [search_dir])
+        if fmt is None:
             raise ValueError(f"Config is None for file:'{config_file_path}'.")
+        config_file_path = real_config_file_path
+        if fmt == ConfigFormat.PYHOCON:
+            # Job tools run on the author's machine; FLARE sites parse .conf files as JSON.
+            config: ConfigTree = CF.parse_file(config_file_path)
+        else:
+            temp_conf: Config = ConfigFactory.get_config_loader(fmt).load_config(config_file_path)
+            config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
 
     except Exception as e:
         raise RuntimeError(f"filed to parse file {config_file_path}:", e)

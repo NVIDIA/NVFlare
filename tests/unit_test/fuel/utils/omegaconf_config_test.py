@@ -116,3 +116,14 @@ class TestOmegaConfConfig:
         assert config is not None
         assert config.to_dict() == dicts
         assert config.get_format() == ConfigFormat.OMEGACONF
+
+    def test_runtime_load_is_inert(self, tmp_path):
+        loader = OmegaConfLoader()
+        assert loader.load_config_from_str("home: ${oc.env:HOME}").to_dict() == {"home": "${oc.env:HOME}"}
+        with pytest.raises(ValueError, match="aliases"):
+            loader.load_config_from_str("a: &x [1]\nb: *x\n")
+
+        config_file = tmp_path / "c.yml"
+        config_file.write_text("a: &x [1]\nb: *x\n")
+        with pytest.raises(ValueError, match="aliases"):
+            loader.load_config(str(config_file))
