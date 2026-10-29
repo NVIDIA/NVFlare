@@ -165,8 +165,13 @@ continue to use their configured launcher, usually process mode.
 GPU Assignment
 --------------
 
-GPU clients use the same GPU capacity configuration as process mode. For example,
-set the client's GPU count in the provisioning project:
+Clients using ``PassthroughResourceManager`` retain native Docker GPU requests,
+including site/study ``device_requests`` defaults and pinned ``DeviceIDs``.
+They do not require provisioned GPU capacity or reprovisioning. FLARE does not
+reserve GPUs or wait for GPU capacity in this mode, so concurrent jobs may share GPUs.
+
+For exclusive GPU assignment, use the same GPU capacity configuration as process
+mode. For example, set the client's GPU count in the provisioning project:
 
 .. code-block:: yaml
 
@@ -176,14 +181,14 @@ set the client's GPU count in the provisioning project:
     capacity:
       num_of_gpus: 2
 
-For existing Docker GPU sites using ``PassthroughResourceManager``, reprovision
+To enable exclusive assignment for an existing passthrough client, reprovision
 with this capacity and run ``nvflare deploy prepare`` again before restarting
-the client. Without configured GPU capacity, GPU requests are declined during scheduling.
+the client. Preparation configures passthrough when no GPU capacity is provisioned.
 
 ``nvflare deploy prepare`` preserves the client's existing ``GPUResourceManager``
 capacity, enabling ``ignore_host=True`` and ``exclusive=True``. Jobs can inherit
 ``docker_kwargs.device_requests`` from their study, or the launcher's site defaults.
-These client defaults use ``Count``; pinned ``DeviceIDs`` are not supported.
+For GPU-managed clients, these defaults use ``Count``; pinned ``DeviceIDs`` are not supported.
 An explicit ``resource_spec[site].num_of_gpus`` overrides these defaults, including
 zero to decline GPUs. The manager resolves the effective request and reserves IDs
 before launch, defers jobs when capacity is occupied, and uses its existing
