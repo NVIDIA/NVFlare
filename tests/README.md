@@ -13,6 +13,11 @@ file's location is not evidence that new cases belong there.
 | `tests/integration_test/slow/` | Integration scenarios whose duration or resource/dependency needs require nightly or dedicated CI. | Extended federated training; large models/data; expensive provisioning; GPU scenarios; scenarios requiring downloads or specialized environments. |
 
 Short runtime does not make a process or transport lifecycle test a unit test.
+Executing a real Bash script or Python CLI is a fast integration test even when
+Docker, kubectl, HTTP clients, and other commands inside it are fake executables.
+Interpreter startup, shell pipelines, inherited coverage hooks, filesystem tools,
+and process scheduling remain real boundaries. Keep validation and command
+construction in unit tests with the component's process boundary mocked.
 Conversely, temporary files, small CPU tensor operations, serialization, and
 synchronized local threads can be valid unit-test tools. Importing a real library
 does not by itself make a test integration-level; executing its distributed or
@@ -107,6 +112,15 @@ then trigger the policy event. Keep a separate unit case proving that startup
 time counts against deadlines. Never increase a timer to hide a missing
 precondition or delete a required latency assertion to make a test pass.
 
+A CLI completion watchdog is different from a product timeout contract. It must
+allow for startup and CI contention; do not assert that an entire shell workflow
+finishes in 5–15 seconds unless throughput is the behavior under test. Run the
+workflow serially, retain its functional assertions, kill and reap its owned
+process group on failure, and report captured output and the last fake-tool calls
+on timeout. Use `tests.coco_test_utils.process.run_coco_command` for CoCo executable
+contracts. Unit tests of product timeout decisions should use a controlled clock
+and fake process instead of waiting for a real CLI watchdog to expire.
+
 ## CI execution and coverage
 
 Before moving or adding a suite, check the actual workflow/runner command that
@@ -120,15 +134,27 @@ job uses the same list with `--cov-append`. Other integration suites have their
 own CI selections; do not add every fast suite to this specific runner. Keep
 conditional skip reasons visible in CI logs, for example with pytest `-rs`.
 
-`python3 ci/check_unit_test_contracts.py` rejects timer-driven test interleavings
-and unisolated clock patches. This focused check cannot prove thread safety or
+`python3 ci/check_unit_test_contracts.py` rejects timer-driven test interleavings,
+unisolated clock patches, and direct CoCo unit process launches (including aliases
+and calls in helper functions). This focused check cannot prove thread safety or
 find every indirect patch; review the behavioral contract even when it passes.
+The CoCo unit suite also rejects real `subprocess` launches during execution;
+its executable contracts live under `tests/integration_test/fast/coco/` and run
+through the shared serial/coverage selection. A mocked tool inside a real shell
+workflow does not satisfy the unit boundary. These focused guards cover their
+declared patterns and suites; passing them is not a whole-repository audit.
+The CoCo session fixture's Git checkout-metadata probe and the negative guard test
+are explicit exceptions, not patterns to copy for executable workflow tests.
 The standalone CVM Builder contracts below are outside this pytest-worker guard;
 their conftest excludes them from pytest, and the Linux wrapper runs them in a
 separate unittest process.
 
 ## Test review checklist
 
+- Audit the actual target branch, including release-only additions; a scan of
+  `main` does not establish that a release branch has the same tests.
+- Does the case launch an interpreter, shell, CLI, policy engine, or process tree,
+  including through a helper? If so, verify integration placement and CI selection.
 - What observable behavior is verified, and which concrete regression fails it?
 - Does the chosen layer match the real boundaries and resources exercised?
 - Are the asserted preconditions observed before the action that depends on them?

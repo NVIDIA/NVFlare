@@ -12,26 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ready-Trustee CLI accepts opaque credentials without local deployment inspection."""
+"""CoCo external-runtime contracts; run serially outside unit workers."""
 
 import json
 import os
 import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from nvflare.lighter.cc_provision import workload_release
-from tests.unit_test.lighter.cc_provision.impl.existing_trustee_integration_test import (
-    INITIAL_POLICY,
-    make_handoff,
-    update_manifest,
-)
+from tests.coco_test_utils.process import COMMAND_TIMEOUT, run_coco_command
+from tests.coco_test_utils.trustee import INITIAL_POLICY, make_handoff, update_manifest
 
-COCO = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+COCO = Path(__file__).resolve().parents[4] / "examples/devops/coco"
 
 
 def run_installer(tmp_path, runtime, pin_mode="omitted", invalid_target=False):
@@ -81,8 +77,8 @@ def run_installer(tmp_path, runtime, pin_mode="omitted", invalid_target=False):
     if pin_mode != "omitted":
         arguments.append({"empty": "", "valid": pin, "malformed": "bad", "mismatch": "0" * 64}[pin_mode])
     events = tmp_path / "events"
-    result = subprocess.run(
-        arguments, capture_output=True, text=True, timeout=20, env={**os.environ, "EVENTS": str(events)}
+    result = run_coco_command(
+        arguments, capture_output=True, text=True, timeout=COMMAND_TIMEOUT, env={**os.environ, "EVENTS": str(events)}
     )
     records = [json.loads(line) for line in events.read_text().splitlines()] if events.exists() else []
     return result, records, current

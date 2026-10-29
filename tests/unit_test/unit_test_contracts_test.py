@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 """Regression checks for timing patterns that previously escaped CI review."""
 
 import pytest
@@ -118,3 +119,29 @@ def test_guard_keeps_pytest_clock_checks_outside_standalone_contract_tree(tmp_pa
     output = capsys.readouterr().out
     assert "confidential_computing/clock_test.py" in output
     assert "image_builder/test_clock.py" not in output
+
+
+@pytest.mark.parametrize(
+    "imports,launch",
+    [
+        ("import subprocess", "subprocess.run(['bash', 'publish.sh'], timeout=15)"),
+        ("import subprocess as proc", "proc.Popen(['python3', 'helper.py'])"),
+        ("from subprocess import run as execute", "execute(['opa', 'eval'])"),
+        ("import os", "os.system('bash publish.sh')"),
+    ],
+)
+def test_coco_process_launches_are_checked_in_helpers_and_fixtures(imports, launch):
+    source = f"{imports}\nimport pytest\n@pytest.fixture\ndef helper():\n    {launch}\n"
+    path = "tests/unit_test/lighter/cc_provision/impl/new_workflow_test.py"
+    assert "CoCo unit process launch" in check_source(source, path)[0][1]
+
+
+def test_coco_process_guard_allows_a_mocked_component_invocation():
+    source = """
+from unittest.mock import patch
+def test_build():
+    with patch('nvflare.component.subprocess.run') as command:
+        component.build()
+    command.assert_called_once()
+"""
+    assert not check_source(source, "tests/unit_test/lighter/cc_provision/impl/build_test.py")

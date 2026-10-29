@@ -12,19 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run the GPU reference shell stages against an isolated fake KBS/RVPS."""
+"""CoCo external-runtime contracts; run serially outside unit workers."""
 
 import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[5]
+from tests.coco_test_utils.process import COMMAND_TIMEOUT, run_coco_command
+
+ROOT = Path(__file__).resolve().parents[4]
+
 SERVICE = ROOT / "examples/devops/coco/service"
+
 POST = r"""
 import json, os, sys
 from pathlib import Path
@@ -59,6 +62,7 @@ elif stage == "drivers":
         import signal
         os.kill(os.getppid(), signal.SIGTERM)
 """
+
 COMMON = r"""
 SCRIPT_ROOT="$TEST_ROOT"
 STATE_DIR="$TEST_ROOT/private-state"
@@ -140,7 +144,7 @@ def kit(tmp_path):
 
 def run_stage(kit, mode="normal"):
     root, environment = kit
-    return subprocess.run(
+    return run_coco_command(
         [
             "bash",
             str(root / "02g-install-gpu-reference-values.sh"),
@@ -149,7 +153,7 @@ def run_stage(kit, mode="normal"):
         env={**environment, "TEST_MODE": mode},
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=COMMAND_TIMEOUT,
     )
 
 
@@ -202,12 +206,12 @@ def test_verify_only_reads_current_references_without_writes(kit):
     root, environment = kit
     assert run_stage(kit).returncode == 0
     (root / "events").unlink()
-    result = subprocess.run(
+    result = run_coco_command(
         ["bash", str(root / "02g-install-gpu-reference-values.sh"), str(root / "approved.json"), "--verify-only"],
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=COMMAND_TIMEOUT,
     )
     assert result.returncode == 0, result.stderr
     assert (root / "events").read_text().splitlines() == [
@@ -221,12 +225,12 @@ def test_verifier_rejects_service_restart_option(kit):
     root, environment = kit
     assert run_stage(kit).returncode == 0
     (root / "events").unlink()
-    result = subprocess.run(
+    result = run_coco_command(
         ["bash", str(root / "02g-install-gpu-reference-values.sh"), str(root / "approved.json"), "--restart-rvps"],
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=COMMAND_TIMEOUT,
     )
     assert result.returncode != 0
     assert not (root / "events").exists()

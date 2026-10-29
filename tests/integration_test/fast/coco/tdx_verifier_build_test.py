@@ -12,18 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Build-wrapper checks; these do not replace the native Rust or hardware tests."""
+"""CoCo external-runtime contracts; run serially outside unit workers."""
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-BUILD = Path(__file__).resolve().parents[5] / "examples/devops/coco/trusted_system/tdx-verifier/build.sh"
+from tests.coco_test_utils.process import run_coco_command
+
+BUILD = Path(__file__).resolve().parents[4] / "examples/devops/coco/trusted_system/tdx-verifier/build.sh"
+
 VERIFY_INTEL_KEY = BUILD.with_name("verify-intel-key.sh")
+
 IMAGE_ID = "sha256:" + "a" * 64
 
 
@@ -56,7 +59,7 @@ def test_build_network_is_explicit_and_preserves_image_pin(tmp_path, build_env, 
     if network is not None:
         env["TDX_VERIFIER_BUILD_NETWORK"] = network
     output = tmp_path / "output"
-    result = subprocess.run(["bash", str(BUILD), str(output)], env=env, capture_output=True, text=True)
+    result = run_coco_command(["bash", str(BUILD), str(output)], env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line) for line in calls.read_text().splitlines()]
     build = next(command for command in commands if command[0] == "build")
@@ -68,7 +71,7 @@ def test_build_network_is_explicit_and_preserves_image_pin(tmp_path, build_env, 
 def test_unknown_build_network_is_rejected_before_build(tmp_path, build_env):
     env, calls = build_env
     env["TDX_VERIFIER_BUILD_NETWORK"] = "unreviewed-network"
-    result = subprocess.run(["bash", str(BUILD), str(tmp_path / "output")], env=env, capture_output=True, text=True)
+    result = run_coco_command(["bash", str(BUILD), str(tmp_path / "output")], env=env, capture_output=True, text=True)
     assert result.returncode == 2
     assert "must be default or host" in result.stderr
     assert not any(json.loads(line)[0] == "build" for line in calls.read_text().splitlines())
@@ -123,7 +126,7 @@ def test_intel_key_verification_cleans_up_gnupg_home(tmp_path, failure, returnco
     key_input = tmp_path / "intel.asc"
     key_input.write_text("test public key")
     key_output = tmp_path / "intel.gpg"
-    result = subprocess.run(
+    result = run_coco_command(
         ["bash", str(VERIFY_INTEL_KEY), str(key_input), str(key_output)], env=env, capture_output=True, text=True
     )
     assert result.returncode == returncode, result.stderr

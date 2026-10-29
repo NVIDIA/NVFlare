@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 """Run extracted process/transport scenarios serially in a fresh pytest interpreter.
 
 The matrix and coverage jobs share this list so test moves cannot silently remove
@@ -24,6 +25,7 @@ from pathlib import Path
 
 TESTS = (
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
+    "tests/integration_test/fast/coco",
     "tests/integration_test/fast/download_parallel_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",

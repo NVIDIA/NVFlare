@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Offline contract, launch capture and host-preflight tests; not hardware proof."""
+
+"""In-process CoCo policy and validation contracts."""
 
 import hashlib
 import json
 import runpy
-import subprocess
 import sys
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from nvflare.lighter.cc_provision import kata_runtime_profile as runtime
 from nvflare.lighter.cc_provision import workload_launch_profile as launch
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+
 CONTEXT = {
     "privileged": False,
     "allowPrivilegeEscalation": False,
@@ -197,12 +198,6 @@ def test_duplicate_machine_guest_selector_rejected():
     ]
     with pytest.raises(ValueError, match="duplicate QEMU machine"):
         helper(argv, "kata-qemu-tdx")
-
-
-def test_tdx_target_import_does_not_require_tomllib():
-    script = "import sys; sys.modules['tomllib'] = None; from nvflare.lighter.cc_provision import workload_launch_profile; from nvflare.lighter.cc_provision.kata_runtime_profile import runtime_target; assert runtime_target('kata-qemu-tdx')['cpu_tee'] == 'tdx'"
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
 
 
 def captured_inputs(runtime_class):

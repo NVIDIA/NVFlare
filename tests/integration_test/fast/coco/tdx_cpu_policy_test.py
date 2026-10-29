@@ -12,20 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Evaluate the actual service CPU policy with pinned OPA; only RVPS is stubbed."""
+"""CoCo external-runtime contracts; run serially outside unit workers."""
 
 import copy
 import json
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[5]
+from tests.coco_test_utils.process import run_coco_command
+
+ROOT = Path(__file__).resolve().parents[4]
+
 OPA = os.environ.get("COCO_TEST_OPA") or shutil.which("opa")
+
 pytestmark = pytest.mark.skipif(not OPA, reason="set COCO_TEST_OPA to the service-pinned OPA 1.8.0 executable")
+
 QUOTE_FIELDS = ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam")
 
 
@@ -76,7 +80,7 @@ def evaluate(tmp_path):
     def run(claims, profiles=None, references=None):
         refs = references if references is not None else {"coco_tdx_profiles_v2": profiles or [profile()]}
         data.write_text(json.dumps({"references": refs}))
-        result = subprocess.run(
+        result = run_coco_command(
             [OPA, "eval", "--format", "raw", "--stdin-input", "-d", str(policy), "-d", str(data), "data.policy"],
             input=json.dumps(claims),
             text=True,

@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Read-only runtime capability and launch-contract checks."""
+
+"""In-process CoCo policy and validation contracts."""
 
 import hashlib
 import json
 import runpy
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -26,8 +25,11 @@ import pytest
 from nvflare.lighter.cc_provision import kata_runtime_profile, workload_launch_profile
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+
 API = vars(kata_runtime_profile)
+
 ADMIN = vars(workload_launch_profile)
+
 CONFIG = (
     "[hypervisor.qemu]\n"
     'kernel_params = "pci=one pci=two quiet agent.guest_components_rest_api=all"\n'
@@ -118,25 +120,6 @@ def test_checkout_adapter_exports_current_read_only_guards(path):
     source = runpy.run_path(str(path))
     assert source["runtime_target"] is API["runtime_target"]
     source["require_token_api"](API["REQUIRED"])
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        ROOT / "shared/kata-runtime-profile.py",
-        ROOT / "trusted_system/lib/kata-runtime-profile.py",
-        Path(kata_runtime_profile.__file__),
-    ],
-)
-@pytest.mark.parametrize(
-    "arguments", [[], ["target", "kata-qemu-snp", "--field", "cpu_tee"], ["enable", "unused.toml"]]
-)
-def test_removed_runtime_cli_rejects_direct_execution(path, arguments):
-    result = subprocess.run([sys.executable, str(path), *arguments], capture_output=True, text=True, timeout=15)
-    assert result.returncode != 0
-    assert not result.stdout
-    assert "Kata runtime configuration CLI has been removed" in result.stderr
-    assert "agent.guest_components_rest_api=all" in result.stderr
 
 
 def test_admin_rejects_old_or_missing_capability(tmp_path):

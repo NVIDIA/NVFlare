@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 """Reject known sources of unit-test timing instability; this is not a concurrency proof."""
 
 import ast
 from pathlib import Path
 
 CLOCK_FUNCTIONS = {"time", "monotonic", "perf_counter", "sleep"}
+PROCESS_CALLS = {f"subprocess.{call}" for call in ("run", "Popen", "call", "check_call", "check_output")}
 
 
 def check_source(source, path):
@@ -76,6 +78,30 @@ def check_source(source, path):
             module_isolation.update(clock_isolation(node))
 
     findings = []
+    normalized_path = str(path).replace("\\", "/")
+    if "tests/unit_test/lighter/cc_provision/" in normalized_path:
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or name(node.func) not in PROCESS_CALLS | {"os.system", "os.popen"}:
+                continue
+            scope = parents.get(node)
+            while scope is not None and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                scope = parents.get(scope)
+            # The session probe checks checkout metadata, before unit fixtures
+            # run. The negative test proves the execution guard blocks launch.
+            allowed = scope is not None and (
+                normalized_path.endswith("impl/conftest.py")
+                and scope.name == "require_source_git_commit"
+                or normalized_path.endswith("impl/deployment_guards_test.py")
+                and scope.name == "test_unit_process_boundary_rejects_real_launches"
+            )
+            if not allowed:
+                findings.append(
+                    (
+                        node.lineno,
+                        "CoCo unit process launch: fake the component boundary or move the case to integration",
+                    )
+                )
     for test in ast.walk(tree):
         if not isinstance(test, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -122,7 +148,7 @@ def main():
     if findings:
         print("\n".join(findings))
         return 1
-    print("Unit-test timing contracts passed (timer interleavings and shared clock patches).")
+    print("Unit-test contracts passed (timer interleavings, shared clocks and CoCo process boundaries).")
     return 0
 
 

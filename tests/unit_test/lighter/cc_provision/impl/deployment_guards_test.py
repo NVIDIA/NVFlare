@@ -21,34 +21,9 @@ from pathlib import Path
 import pytest
 
 from nvflare.lighter.cc_provision.workload_security import normalize_resources
+from tests.coco_test_utils.shell import require_coco_bash
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
-
-
-def require_coco_bash():
-    """Check shell prerequisites without skipping the Python/static tests."""
-    bash = shutil.which("bash")
-    if not bash:
-        pytest.skip("CoCo shell tests require bash on PATH")
-    # Lowercase expansion and fractional read timeouts need Bash 4; empty
-    # arrays under nounset also require the Bash 4.4 behavior used by the harness.
-    probe = (
-        "set -eu\n"
-        "printf '%s\\n' \"$BASH_VERSION\"\n"
-        "value=ABC; [[ ${value,,} == abc ]]\n"
-        'items=(); for item in "${items[@]}"; do :; done\n'
-        'read -r -t 0.05 item <<< ready; [[ "$item" == ready ]]\n'
-    )
-    try:
-        result = subprocess.run([bash, "-c", probe], capture_output=True, text=True, timeout=5)
-    except subprocess.TimeoutExpired:
-        pytest.skip("CoCo shell prerequisite probe timed out")
-    if result.returncode:
-        pytest.skip(
-            "CoCo shell tests require lowercase expansion, fractional read timeouts and nounset-safe empty arrays "
-            f"(Bash 4.4+; macOS system Bash 3.2 is insufficient): {result.stdout.strip()} {result.stderr.strip()}"
-        )
-    return bash
 
 
 @pytest.mark.parametrize("available,returncode", [(False, 0), (True, 1), (True, 0)])
@@ -79,6 +54,11 @@ def test_shell_prerequisite_probe_is_bounded(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(pytest.skip.Exception, match="prerequisite probe timed out"):
         require_coco_bash()
+
+
+def test_unit_process_boundary_rejects_real_launches():
+    with pytest.raises(pytest.fail.Exception, match="CoCo unit test attempted to launch a real process"):
+        subprocess.run(["this-command-must-never-start"])
 
 
 @pytest.mark.parametrize("quantity", [1, "1"])
