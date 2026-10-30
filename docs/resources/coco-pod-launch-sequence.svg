@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="5420" viewBox="0 0 1120 5420" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">Confidential Containers Pod launch: five phases and four possible outcomes</title>
+  <desc id="diagram-description">A portrait sequence in five vertically stacked panels, read from top to bottom. Each panel repeats only the actors needed for that phase, with at most four lanes. The nine logical actors are CoCo IT, Kubernetes API and kubelet, containerd and Kata runtime, the confidential guest containing Kata Agent, Confidential Data Hub and Attestation Agent, private registry, Trustee KBS, Trustee AS, Trustee RVPS, and the NVFlare workload in that same guest. Phase A submits Pod YAML and boots the guest. Phase B validates InitData and fetches encrypted image artifacts. Phase C binds guest identity and launch context into CPU and required GPU evidence and appraises it against approved references. Phase D separately authorizes each exact protected resource and encrypts it to the attested guest key. Phase E verifies signatures, decrypts layers, and enforces guest policy before starting NVFlare. Four outcomes: startup failure, key-release denial, guest-request denial, and allowed change or successful launch. The actual image digest is not explicitly pinned by current guest Rego; a different validly signed same-repository image requires exact-digest binding and a negative test. Runtime aliases and unbound metadata may pass. This is a conceptual dependency sequence, not an exact RPC trace, whole-YAML hash, duplicate-prevention guarantee, or proof from Pod Running. The 2.9 implementation includes SNP and TDX, CPU-only or with a confidential NVIDIA GPU. TDX is experimental pending hardware acceptance.</desc>
+  <defs>
+    <marker id="arrow-host" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1,1 L11,6 L1,11 Z" fill="#77545f"/></marker>
+    <marker id="arrow-guest" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1,1 L11,6 L1,11 Z" fill="#087f8c"/></marker>
+    <marker id="arrow-service" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1,1 L11,6 L1,11 Z" fill="#3757a6"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #172b45; }
+      .title { font-size: 34px; font-weight: 700; }
+      .subtitle { font-size: 24px; fill: #52647a; }
+      .phase { font-size: 24px; font-weight: 700; }
+      .domain { font-size: 20px; font-weight: 700; text-anchor: middle; }
+      .actor { font-size: 22px; font-weight: 700; text-anchor: middle; }
+      .detail { font-size: 20px; fill: #52647a; text-anchor: middle; }
+      .message { font-size: 22px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: #ffffff; stroke-width: 7px; stroke-linejoin: round; }
+      .message-small { font-size: 20px; text-anchor: middle; paint-order: stroke; stroke: #ffffff; stroke-width: 7px; stroke-linejoin: round; }
+      .body { font-size: 22px; }
+      .small { font-size: 20px; }
+      .note-title { font-size: 23px; font-weight: 700; }
+      .outcome { font-size: 24px; font-weight: 700; }
+      .muted { fill: #52647a; } .teal { fill: #096674; } .blue { fill: #3757a6; }
+      .danger { fill: #963f3f; } .amber { fill: #805916; }
+      .panel { fill: #ffffff; stroke: #cad3df; stroke-width: 2; }
+      .phase-bar { fill: #e9edf3; }
+      .host-band { fill: #fff8f6; stroke: #d39a91; stroke-width: 1.5; stroke-dasharray: 8 6; }
+      .guest-band { fill: #f0faf8; stroke: #8cbcaf; stroke-width: 1.5; }
+      .service-band { fill: #f4f7fd; stroke: #9badd1; stroke-width: 1.5; }
+      .host-box { fill: #fff0ec; stroke: #bf8f85; stroke-width: 1.5; }
+      .guest-box { fill: #ddf1eb; stroke: #75ac9c; stroke-width: 1.5; }
+      .service-box { fill: #e8effc; stroke: #8b9fc6; stroke-width: 1.5; }
+      .note { fill: #ffffff; stroke: #acbbc9; stroke-width: 1.5; }
+      .denial { fill: #ffefed; stroke: #ca8a80; stroke-width: 2; }
+      .limitation { fill: #fff7dd; stroke: #c99c38; stroke-width: 2; }
+      .success { fill: #e5f5ed; stroke: #6ca489; stroke-width: 2; }
+      .lifeline { fill: none; stroke: #94a3b8; stroke-width: 2; stroke-dasharray: 8 8; }
+      .host-line { fill: none; stroke: #77545f; stroke-width: 3; stroke-linejoin: round; marker-end: url(#arrow-host); }
+      .guest-line { fill: none; stroke: #087f8c; stroke-width: 3; stroke-linejoin: round; marker-end: url(#arrow-guest); }
+      .service-line { fill: none; stroke: #3757a6; stroke-width: 3; stroke-linejoin: round; marker-end: url(#arrow-service); }
+      .response { stroke-dasharray: 10 6; }
+    </style>
+  </defs>
+  <rect width="1120" height="5420" fill="#ffffff"/>
+  <text x="32" y="51" class="title">CoCo Pod launch: five phases, four outcomes</text>
+  <text x="32" y="91" class="subtitle">Read down the page. Repeated guest and service names mean the same actors.</text>
+  <text x="32" y="128" class="small muted">Only passing branches continue. Image pulls, attestation and resource requests may</text>
+  <text x="32" y="157" class="small muted">interleave and repeat: this is a conceptual dependency sequence, not an exact RPC trace.</text>
+  <text x="32" y="192" class="small muted">Trust boundaries: rose = untrusted host · green = confidential guest · blue = secure services.</text>
+
+  <!-- A: Four actors. Domain bands end at the panel boundary, not mid-sequence. -->
+  <g id="phase-a" transform="translate(0,220)">
+    <rect x="24" width="1072" height="760" rx="14" class="panel"/>
+    <rect x="25" y="1" width="1070" height="51" rx="12" class="phase-bar"/>
+    <text x="47" y="35" class="phase">A · Submit the Pod and boot the selected runtime</text>
+    <rect x="40" y="68" width="754" height="669" rx="10" class="host-band"/>
+    <rect x="809" y="68" width="271" height="669" rx="10" class="guest-band"/>
+    <text x="410" y="95" class="domain danger">Untrusted cluster operator and host</text>
+    <text x="945" y="95" class="domain teal">Confidential guest</text>
+    <path d="M150 187 V718 M410 187 V718 M670 187 V718 M945 187 V718" class="lifeline"/>
+    <rect x="52" y="107" width="196" height="80" rx="9" class="host-box"/>
+    <rect x="294" y="107" width="232" height="80" rx="9" class="host-box"/>
+    <rect x="552" y="107" width="236" height="80" rx="9" class="host-box"/>
+    <rect x="820" y="107" width="249" height="80" rx="9" class="guest-box"/>
+    <text x="150" y="139" class="actor">CoCo IT</text><text x="150" y="169" class="detail">operator</text>
+    <text x="410" y="139" class="actor">Kubernetes API</text><text x="410" y="169" class="detail">scheduler / kubelet</text>
+    <text x="670" y="139" class="actor">containerd + Kata</text><text x="670" y="169" class="detail">runtime handler</text>
+    <text x="945" y="139" class="actor">Guest</text><text x="945" y="169" class="detail">Agent · CDH · AA</text>
+    <text x="280" y="223" class="message">1 · kubectl apply</text>
+    <text x="280" y="248" class="message-small">original or edited YAML</text>
+    <path d="M150 266 H410" class="host-line"/>
+    <text x="540" y="312" class="message">2 · Schedule + CRI</text>
+    <text x="540" y="339" class="message-small">selected handler</text>
+    <path d="M410 357 H670" class="host-line"/>
+    <rect x="60" y="387" width="1000" height="90" rx="9" class="note"/>
+    <text x="82" y="421" class="body">RuntimeClass selects an installed runtime handler.</text>
+    <text x="82" y="452" class="body">It is not a separate service or an attested runtimeClassName string.</text>
+    <text x="808" y="517" class="message">3 · Boot Kata guest</text>
+    <text x="808" y="544" class="message-small">provide InitData</text>
+    <path d="M670 561 H945" class="host-line"/>
+    <rect x="60" y="592" width="1000" height="120" rx="11" class="denial"/>
+    <text x="82" y="626" class="outcome danger">OUTCOME 1 · STARTUP FAILURE</text>
+    <text x="82" y="658" class="body">Missing handler, resources or reachability can stop startup.</text>
+    <text x="82" y="689" class="body">Host-controlled failure is not a security guarantee.</text>
+  </g>
+
+  <!-- B: The guest is the same confidential VM booted in A. -->
+  <g id="phase-b" transform="translate(0,1010)">
+    <rect x="24" width="1072" height="760" rx="14" class="panel"/>
+    <rect x="25" y="1" width="1070" height="51" rx="12" class="phase-bar"/>
+    <text x="47" y="35" class="phase">B · Initialize the guest and fetch encrypted image artifacts</text>
+    <rect x="40" y="68" width="300" height="669" rx="10" class="host-band"/>
+    <rect x="355" y="68" width="410" height="669" rx="10" class="guest-band"/>
+    <rect x="780" y="68" width="300" height="669" rx="10" class="service-band"/>
+    <text x="190" y="95" class="domain danger">Untrusted host</text>
+    <text x="560" y="95" class="domain teal">Same confidential guest</text>
+    <text x="930" y="95" class="domain blue">Secure services</text>
+    <path d="M190 187 V718 M560 187 V718 M930 187 V718" class="lifeline"/>
+    <rect x="58" y="107" width="264" height="80" rx="9" class="host-box"/>
+    <rect x="396" y="107" width="328" height="80" rx="9" class="guest-box"/>
+    <rect x="798" y="107" width="264" height="80" rx="9" class="service-box"/>
+    <text x="190" y="139" class="actor">containerd + Kata</text><text x="190" y="169" class="detail">runtime handler</text>
+    <text x="560" y="139" class="actor">Guest</text><text x="560" y="169" class="detail">Kata Agent · CDH · AA</text>
+    <text x="930" y="139" class="actor">Private registry</text><text x="930" y="169" class="detail">encrypted images</text>
+    <text x="334" y="228" class="message">4 · Validate InitData</text>
+    <text x="334" y="255" class="message-small">inside the guest</text>
+    <path d="M560 217 H612 V270 H560" class="guest-line"/>
+    <rect x="60" y="293" width="1000" height="110" rx="9" class="note"/>
+    <text x="82" y="325" class="body">Check InitData against its CPU-attested binding; initialize guest policy.</text>
+    <text x="82" y="355" class="body">A binding mismatch fails. Host YAML alone is not a trusted launch claim.</text>
+    <text x="82" y="384" class="small muted">This is the same guest and launch context throughout the remaining panels.</text>
+    <text x="375" y="442" class="message-small">CreateContainerRequest</text>
+    <text x="375" y="468" class="message-small">args, env, UID, mounts</text>
+    <path d="M190 485 H560" class="host-line"/>
+    <text x="745" y="531" class="message">5 · Guest pull</text>
+    <text x="745" y="557" class="message-small">image + signature artifacts</text>
+    <path d="M560 575 H930" class="guest-line"/>
+    <text x="745" y="625" class="message-small">Encrypted layers + signatures</text>
+    <path d="M930 645 H560" class="service-line response"/>
+    <rect x="60" y="675" width="1000" height="44" rx="8" class="note"/>
+    <text x="82" y="704" class="small">Image policy and signing key use the resource round trips in phases C and D.</text>
+  </g>
+
+  <!-- C: Four actors; registry and host lanes are not repeated while idle. -->
+  <g id="phase-c" transform="translate(0,1800)">
+    <rect x="24" width="1072" height="1130" rx="14" class="panel"/>
+    <rect x="25" y="1" width="1070" height="51" rx="12" class="phase-bar"/>
+    <text x="47" y="35" class="phase">C · Bind and appraise the confidential guest’s evidence</text>
+    <rect x="40" y="68" width="229" height="1040" rx="10" class="guest-band"/>
+    <rect x="284" y="68" width="796" height="1040" rx="10" class="service-band"/>
+    <text x="155" y="95" class="domain teal">Same guest</text>
+    <text x="682" y="95" class="domain blue">Independently administered secure services</text>
+    <path d="M155 187 V1090 M410 187 V1090 M670 187 V1090 M945 187 V1090" class="lifeline"/>
+    <rect x="52" y="107" width="205" height="80" rx="9" class="guest-box"/>
+    <rect x="296" y="107" width="228" height="80" rx="9" class="service-box"/>
+    <rect x="556" y="107" width="228" height="80" rx="9" class="service-box"/>
+    <rect x="818" y="107" width="250" height="80" rx="9" class="service-box"/>
+    <text x="155" y="139" class="actor">Guest</text><text x="155" y="169" class="detail">AA</text>
+    <text x="410" y="139" class="actor">Trustee KBS</text><text x="410" y="169" class="detail">resource release</text>
+    <text x="670" y="139" class="actor">Trustee AS</text><text x="670" y="169" class="detail">appraisal</text>
+    <text x="945" y="139" class="actor">Trustee RVPS</text><text x="945" y="169" class="detail">approved references</text>
+    <text x="283" y="223" class="message">6 · Start attestation</text>
+    <text x="283" y="249" class="message-small">request a challenge</text>
+    <path d="M155 267 H410" class="guest-line"/>
+    <text x="283" y="313" class="message-small">Fresh challenge</text>
+    <text x="283" y="339" class="message-small">for this session</text>
+    <path d="M410 357 H155" class="service-line response"/>
+    <path d="M155 407 H207 V467 H155" class="guest-line"/>
+    <rect x="240" y="391" width="820" height="126" rx="9" class="note"/>
+    <text x="262" y="424" class="note-title teal">7 · AA obtains CPU + required GPU evidence</text>
+    <text x="262" y="456" class="body">Bind the guest key and InitData into the verified context.</text>
+    <text x="262" y="487" class="small">The selected release profile determines whether GPU evidence is required.</text>
+    <text x="283" y="557" class="message-small">Evidence + guest key</text>
+    <text x="283" y="583" class="message-small">+ bound launch context</text>
+    <path d="M155 601 H410" class="guest-line"/>
+    <text x="540" y="643" class="message">8 · Appraise evidence</text>
+    <text x="540" y="669" class="message-small">verify bindings</text>
+    <path d="M410 687 H670" class="service-line"/>
+    <text x="808" y="727" class="message-small">Approved references?</text>
+    <path d="M670 747 H945" class="service-line"/>
+    <text x="808" y="799" class="message-small">Reference values / profiles</text>
+    <path d="M945 819 H670" class="service-line response"/>
+    <rect x="60" y="850" width="1000" height="126" rx="9" class="note"/>
+    <text x="82" y="883" class="body">AS appraises supplied CPU / GPU evidence, bindings and TCB.</text>
+    <text x="82" y="915" class="body">KBS enforces the release-required evidence set.</text>
+    <text x="82" y="947" class="small">Verifiers may use CPU / GPU vendor collateral and endorsement services.</text>
+    <text x="540" y="1021" class="message">Signed result (EAR)</text>
+    <text x="540" y="1048" class="message-small">continue only if acceptable</text>
+    <path d="M670 1067 H410" class="service-line response"/>
+  </g>
+
+  <!-- D: Appraisal is not blanket authorization. Outcome 2 covers C and D. -->
+  <g id="phase-d" transform="translate(0,2960)">
+    <rect x="24" width="1072" height="945" rx="14" class="panel"/>
+    <rect x="25" y="1" width="1070" height="51" rx="12" class="phase-bar"/>
+    <text x="47" y="35" class="phase">D · Authorize each exact protected resource</text>
+    <rect x="40" y="68" width="500" height="854" rx="10" class="guest-band"/>
+    <rect x="555" y="68" width="525" height="854" rx="10" class="service-band"/>
+    <text x="290" y="95" class="domain teal">Same confidential guest</text>
+    <text x="818" y="95" class="domain blue">Secure services</text>
+    <path d="M280 187 V905 M820 187 V905" class="lifeline"/>
+    <rect x="112" y="107" width="336" height="80" rx="9" class="guest-box"/>
+    <rect x="652" y="107" width="336" height="80" rx="9" class="service-box"/>
+    <text x="280" y="139" class="actor">Guest</text><text x="280" y="169" class="detail">CDH / AA</text>
+    <text x="820" y="139" class="actor">Trustee KBS</text><text x="820" y="169" class="detail">resource release</text>
+    <text x="550" y="231" class="message">9 · Request exact protected resource path</text>
+    <text x="550" y="258" class="message-small">repeat as needed</text>
+    <path d="M280 279 H820" class="guest-line"/>
+    <rect x="60" y="309" width="1000" height="86" rx="9" class="note"/>
+    <text x="82" y="343" class="body">Resources: image decryption key, signature public key and image policy.</text>
+    <text x="82" y="374" class="body">An acceptable EAR alone does not authorize every resource.</text>
+    <text x="488" y="446" class="message">KBS authorizes each path</text>
+    <text x="488" y="473" class="message-small">using the attested policy claims</text>
+    <path d="M820 428 H875 V483 H820" class="service-line"/>
+    <rect x="60" y="510" width="1000" height="105" rx="9" class="note"/>
+    <text x="82" y="544" class="body">Check the attested policy’s image / arguments and exact resource path.</text>
+    <text x="82" y="576" class="body">This is not a check of the operator’s raw YAML or the live OCI request.</text>
+    <rect x="60" y="644" width="1000" height="157" rx="11" class="denial"/>
+    <text x="82" y="680" class="outcome danger">OUTCOME 2 · KEY-RELEASE DENIAL</text>
+    <text x="82" y="713" class="body">Failure in phase C or D denies release: invalid / unapproved evidence,</text>
+    <text x="82" y="744" class="body">TCB, CPU / required GPU, wrong InitData or failed resource policy.</text>
+    <text x="82" y="775" class="body">The confidential VM may already have booted.</text>
+    <text x="550" y="854" class="message">10 · Return authorized resources</text>
+    <text x="550" y="881" class="message-small">encrypted to the attested guest key</text>
+    <path d="M820 901 H280" class="service-line response"/>
+  </g>
+
+  <!-- E: Both lanes are inside one confidential guest, not two VMs. -->
+  <g id="phase-e" transform="translate(0,3935)">
+    <rect x="24" width="1072" height="1280" rx="14" class="panel"/>
+    <rect x="25" y="1" width="1070" height="51" rx="12" class="phase-bar"/>
+    <text x="47" y="35" class="phase">E · Enforce the guest checks, then start NVFlare</text>
+    <rect x="40" y="68" width="1040" height="1189" rx="10" class="guest-band"/>
+    <text x="560" y="95" class="domain teal">Both actors are inside the SAME confidential guest</text>
+    <path d="M280 187 V1235 M820 187 V1235" class="lifeline"/>
+    <rect x="112" y="107" width="336" height="80" rx="9" class="guest-box"/>
+    <rect x="652" y="107" width="336" height="80" rx="9" class="guest-box"/>
+    <text x="280" y="139" class="actor">Guest components</text><text x="280" y="169" class="detail">Kata Agent · CDH · AA</text>
+    <text x="820" y="139" class="actor">NVFlare workload</text><text x="820" y="169" class="detail">application process</text>
+    <path d="M280 223 H334 V277 H280" class="guest-line"/>
+    <text x="672" y="242" class="message">11 · Verify, decrypt and enforce</text>
+    <text x="672" y="270" class="message-small">inside the authorized guest</text>
+    <rect x="60" y="306" width="1000" height="120" rx="9" class="note"/>
+    <text x="82" y="340" class="body">CDH / image path verifies signatures and decrypts image layers.</text>
+    <text x="82" y="372" class="body">Kata Agent checks the actual OCI / process request against guest policy.</text>
+    <text x="82" y="403" class="body">Key release and successful decryption alone do not start NVFlare.</text>
+    <rect x="60" y="454" width="1000" height="171" rx="11" class="denial"/>
+    <text x="82" y="490" class="outcome danger">OUTCOME 3 · GUEST-REQUEST DENIAL</text>
+    <text x="82" y="520" class="small danger">Includes image rejection.</text>
+    <text x="82" y="552" class="body">Bad signature / ciphertext, or a request outside effective guest policy:</text>
+    <text x="82" y="581" class="body">process, env, user, capabilities, mounts and other checked fields.</text>
+    <text x="82" y="610" class="small">This does not mean that every edit to those fields is forbidden.</text>
+    <rect x="60" y="654" width="1000" height="218" rx="11" class="limitation"/>
+    <text x="82" y="689" class="note-title amber">CURRENT LIMITATION · ACTUAL IMAGE DIGEST NOT PINNED</text>
+    <text x="82" y="722" class="body">Guest Rego allows the CRI image-name annotation key, not a fixed value.</text>
+    <text x="82" y="753" class="body">image_guest_pull has a source TODO; signatures use matchRepository.</text>
+    <text x="82" y="784" class="body">A different validly signed same-repository image needs exact-digest</text>
+    <text x="82" y="815" class="body">binding plus a negative test. It must still pass all other checks.</text>
+    <text x="82" y="847" class="small">Rejection of every changed image is not demonstrated.</text>
+    <text x="550" y="916" class="message">12 · Start NVFlare</text>
+    <text x="550" y="943" class="message-small">only after all effective checks pass</text>
+    <path d="M280 962 H820" class="guest-line"/>
+    <rect x="60" y="992" width="1000" height="168" rx="11" class="success"/>
+    <text x="82" y="1028" class="outcome teal">OUTCOME 4 · ALLOWED CHANGE / SUCCESSFUL LAUNCH</text>
+    <text x="82" y="1061" class="body">The unchanged intended Pod follows the same successful path.</text>
+    <text x="82" y="1092" class="body">A runtime alias selecting the same handler or unbound metadata may pass.</text>
+    <text x="82" y="1124" class="body">There is no whole-YAML hash or anti-duplication guarantee.</text>
+    <rect x="60" y="1187" width="1000" height="57" rx="9" class="note"/>
+    <text x="82" y="1222" class="note-title">Key release ≠ process start. Pod Running ≠ trusted launch proof.</text>
+  </g>
+
+  <text x="32" y="5254" class="small muted">Host denial of service remains possible; evidence and policy enforcement protect specific claims.</text>
+  <text x="32" y="5288" class="small muted">AA = Attestation Agent · CDH = Confidential Data Hub · KBS = Key Broker Service</text>
+  <text x="32" y="5318" class="small muted">AS = Attestation Service · RVPS = Reference Value Provider Service · EAR = Entity Attestation Result</text>
+  <text x="32" y="5348" class="small muted">OCI = Open Container Initiative runtime specification</text>
+  <text x="32" y="5383" class="small muted">2.9: SNP/TDX, CPU-only or GPU. TDX is experimental pending hardware acceptance.</text>
+</svg>
