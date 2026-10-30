@@ -78,6 +78,15 @@ serialization, other fractional quantities are quantized to nine digits using
 round-half-even, trailing fractional zeros are removed, and the result is checked
 again.
 
+A group is a category of capacity with compatible hardware descriptions. Grouping
+keeps different kinds of hardware distinguishable when reports are combined. For
+example, reports combining observations of a full GPU and a MIG compute instance
+keep them in separate GPU groups;
+their counts and capacity-time do not imply that a MIG instance is equivalent to a
+full GPU. CPU groups similarly preserve known model and architecture differences
+when capacity can be attributed to each group. A scalar CPU total alone hides those distinctions; when a shared quota cannot be attributed by model, the report
+keeps an aggregate group rather than inventing per-model values.
+
 CPU groups may include `model` and `architecture`. GPU groups use
 `kind: "full_gpu"|"mig_compute_instance"|"cuda_device_unclassified"` and may
 include `model` and `memory_bytes`; only MIG groups may include `mig_profile`.

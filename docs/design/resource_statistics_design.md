@@ -1,5 +1,8 @@
 # Resource statistics design
 
+> **Design notice:** The CLI and Session interfaces described here are proposed
+> and are not yet available on the main branch.
+
 ## Purpose
 
 Resource statistics provides a final, best-effort account of the resources visible
@@ -52,40 +55,42 @@ descriptions:
 }
 ```
 
-- **CPU capacity:** allowed logical CPUs, reduced by readable CPU-time quotas.
-  CPU capacity can be fractional.
-- **RAM capacity:** physical RAM reduced by readable memory limits; not free
-  memory or peak usage.
-- **CUDA capacity:** devices visible for CUDA execution to the observed process.
-  Device and MIG-instance counts are integers. Visibility does not prove use or
-  exclusive allocation.
-- **CPU work:** user plus system CPU time from disjoint job/worker process
-  scopes and their normally waited descendants. Task workers are folded in once;
-  arbitrary unwaited descendants are not guaranteed covered.
-- **Duration:** one participant window, including waiting. Each execution has
-  one shared CPU/capacity window internally; worker durations are not added to
-  participant elapsed time.
-- **Retained content:** bounded sum of regular-file lengths in the run directory
-  at finalization. Symlinks and the top-level report directory are excluded.
-  This is logical content size, not physical disk occupancy or peak storage.
-- **Message traffic:** separate sent/received payload-byte counters from the job
-  Cell, task workers and managed trainers, including control payloads and repeated
-  transfers. Shared parent-process traffic and network headers are excluded.
-- **Workspace filesystem:** visible filesystem capacity at finalization,
-  available in participant detail; not storage reserved for the job.
+The example describes one resident participant. Capacity is observed at job-process
+startup; work and traffic are measured over their respective collection boundaries,
+and retained content is scanned at finalization. In task mode, capacity-time also
+includes worker windows, while startup capacity still describes the job process.
+Numeric strings preserve precision.
+
+| Field | Meaning, scope, and collection |
+| --- | --- |
+| `duration_seconds` | Elapsed seconds in the participant's observation window, including waiting. A monotonic clock measures the window from the start of CPU accounting to its final snapshot. |
+| `resource_capacity.cpu.groups[].units` | Logical CPU capacity visible to the job process at startup, based on its CPU affinity and readable quota limits. Units can be fractional. |
+| `resource_capacity.memory.bytes` | Host physical RAM capacity in bytes, reduced by readable memory limits, as observed by the job process at startup. It is not free memory or peak usage. |
+| `resource_capacity.gpu.groups[].kind` and `count` | The category and integer count of CUDA devices visible to the job process at startup. The example's device is unclassified; visibility does not establish use or exclusive allocation. |
+| `resource_time.cpu.groups[].unit_seconds` | The sum of each included execution's CPU capacity multiplied by its duration, in CPU-unit-seconds. In this resident example, 2 CPU units × 10 seconds = 20 CPU-unit-seconds. |
+| `resource_time.memory.byte_seconds` | The sum of each included execution's RAM capacity in bytes multiplied by its duration in seconds. Here, 2,147,483,648 bytes × 10 seconds = 21,474,836,480 byte-seconds. |
+| `resource_time.gpu.groups[].kind` and `instance_seconds` | The GPU category and the sum of each included execution's visible device count multiplied by its duration, in device-seconds. The example records one unclassified device for 10 seconds. |
+| `resource_utilization.cpu_consumed.cpu_seconds` | Total user and system CPU work in seconds across included, disjoint process scopes and normally waited descendants, measured from CPU counters over their execution windows; arbitrary unwaited descendants are not guaranteed covered. One CPU working for two seconds and two CPUs working for one second both contribute two CPU-seconds. |
+| `resource_utilization.retained_content.bytes` | Logical length in bytes of regular files retained in the participant's run directory at finalization, measured by a bounded scan. Symlinks and the top-level report directory are excluded. It is not physical disk occupancy or peak storage. |
+| `resource_utilization.message_traffic.sent_bytes` and `received_bytes` | Payload bytes counted separately at the participant's job Cell and included worker and managed-trainer endpoints, from their observed traffic through their final snapshots. Control payloads and repeated transfers are included; shared parent traffic and network headers are excluded. |
+
+The workspace filesystem's visible capacity is also observed at finalization and
+appears in participant detail. It is not storage reserved for the job.
 
 `resource_utilization` groups recorded work, content, and traffic; it does not
 claim GPU busy time or RAM utilization. Measurement objects retain their own
 quality beside their values. For example, `retained_content.bytes` can carry a
-partial-scan explanation without affecting CPU results. Numeric strings preserve
-precision; field names identify units.
+partial-scan explanation without affecting CPU results. Field names identify units.
 
 The collector computes capacity-time for each execution and combines it in
 `resource_time`. Job/study queries sum those participant values without multiplying
 startup capacity by duration again. The example yields 20 CPU-unit seconds and
-10 device-seconds; average CPU use is 2/10 = 0.2 logical CPUs. Shared hardware
-can be visible to several executions, so totals are observations, not unique
-hardware, reservations, billing or GPU busy time. Filesystem capacity is never
+10 device-seconds; average CPU use is 2/10 = 0.2 logical CPUs. Capacity-time
+can compare the visible capacity and durations of retained jobs: for example, it
+can distinguish a job that observed one GPU for 60 seconds from one that observed
+a compatible GPU for 10 seconds. It does not measure GPU busy time. Shared
+hardware can be visible to several executions, so totals are observations, not
+unique hardware, reservations or billing. Filesystem capacity is never
 summed or multiplied by duration.
 
 Sent and received counters are summed separately, including local endpoint
@@ -140,10 +145,12 @@ must not change the training outcome, delay resource release indefinitely, or
 create a second recovery protocol.
 
 When a Client Job restarts, the replacement has a new observation window. The
-final report retains available observations and marks affected measurements
-incomplete if earlier observations are missing. Its duration describes the
-observed generation containing the included work, not the elapsed time across
-restarts. Retained content comes from the final workspace scan.
+final report preserves the available terminal generation's subtotal; it does not
+accumulate earlier generations. If earlier observations are missing, affected
+capacity-time, CPU and traffic measurements are marked incomplete. The CPU
+average uses the terminal generation's containing duration as its denominator,
+when that duration is valid; it does not use elapsed time across restarts.
+Retained content comes from the final workspace scan.
 
 Filesystem scans and requested archive members are bounded. Scan deadlines are
 cooperative and cannot interrupt a blocked filesystem call. ZIP indexing has a
