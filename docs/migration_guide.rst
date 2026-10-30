@@ -27,6 +27,44 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+.. _multi_process_executor_migration:
+
+Multi-process Executor Deprecation
+---------------------------------
+
+``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10.
+Both classes, their configuration names, and the legacy ``app_common.pt`` import
+remain available throughout 2.10. Removal will be considered in a later minor
+release after the migration period.
+
+For PyTorch DDP training, migrate to job-based Client API execution. Set
+``launch_external_process=True`` on the Recipe or ``ScriptRunner`` and configure
+a ``torchrun`` command, as shown in the
+:github_nvflare_link:`PyTorch multi-GPU example <examples/advanced/multi-gpu/pt>`.
+JSON jobs can use ``ClientAPIExecutor`` with ``execution_mode="external_process"``.
+Keep the default job execution lifetime for this distributed path.
+
+Move the wrapped Executor's training loop into a Client API script. Translate
+the model parameters, metrics, and metadata exchanged as Shareables/DXOs into
+``FLModel`` values passed to ``flare.receive()`` and ``flare.send()``. Initialize
+each rank with its global rank; only global rank zero receives the FLModel and
+sends results through FLARE. The script owns model distribution, collectives,
+and synchronization of the running/shutdown state across all ranks. Use
+``LOCAL_RANK`` for the local GPU device and preserve any optimizer/checkpoint
+state required across rounds.
+
+The legacy wrapper also forwards arbitrary FL events and constructs a configured
+component graph in each rank. Client API scripts do not provide that contract.
+Move communication-facing components and handlers into the resident client job;
+explicitly adapt rank-local initialization, training, finalization, and analytics.
+Applications depending on those events or dynamic components can keep the legacy
+wrapper during the compatibility period while their migration is validated.
+Task workers are a separate execution profile and are not a replacement for this
+multi-rank event/component graph.
+
+Before switching a deployed job, verify model/metric equivalence, multi-round
+state continuity, failure on a nonzero rank, cancellation, and clean shutdown.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 

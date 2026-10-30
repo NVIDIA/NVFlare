@@ -292,7 +292,10 @@ Client related questions
 
 #. Can a client train with multiple GPUs?
 
-    You do multiple-gpu training by putting your training executor within the a :ref:`MultiProcessExecutor <multi_process_executor>`.
+    Use the Client API with an external ``torchrun`` launcher for PyTorch DDP training.
+    See the :github_nvflare_link:`multi-GPU examples <examples/advanced/multi-gpu>`.
+    Existing MultiProcessExecutor jobs remain available during the 2.10 deprecation
+    period; see :ref:`multi_process_executor_migration`.
 
 #. How do FL clients get identified?
 

@@ -12,11 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import os
 import shlex
+import signal
+import subprocess
 import threading
 import time
+import uuid
 from abc import abstractmethod
+
+import psutil
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -42,6 +48,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
@@ -64,6 +71,9 @@ class WorkerComponentBuilder(ComponentBuilder):
 
     def get_module_scanner(self):
         return self.module_scanner
+
+    def has_component_build_authorizer(self):
+        return self.enforce_authorization
 
     @staticmethod
     def make_component_node(component_config, index=None):
@@ -134,15 +144,30 @@ class WorkerComponentBuilder(ComponentBuilder):
 
 
 class MultiProcessExecutor(Executor):
-    def __init__(self, executor_id=None, num_of_processes=1, components=None):
+    def __init__(self, executor_id=None, num_of_processes=1, components=None, task_timeout=None):
         """Manage the multi-process execution life cycle.
 
         Arguments:
             executor_id: executor component ID
             num_of_processes: number of processes to create
             components: a dictionary for component classes to their arguments
+            task_timeout: optional positive task execution timeout in seconds
         """
         super().__init__()
+        warn_deprecated(
+            "MultiProcessExecutor and PTMultiProcessExecutor are deprecated as of NVFlare 2.10. "
+            "Migrate distributed training to job-based Client API with external-process torchrun. "
+            "See the Migration Guide for event and component compatibility.",
+            stacklevel=3,
+        )
+        if task_timeout is not None and (
+            isinstance(task_timeout, bool)
+            or not isinstance(task_timeout, (int, float))
+            or not math.isfinite(task_timeout)
+            or task_timeout <= 0
+        ):
+            raise ValueError("task_timeout must be positive or None")
+        self.task_timeout = task_timeout
         self.executor_id = executor_id
 
         self.components_conf = components
@@ -163,6 +188,16 @@ class MultiProcessExecutor(Executor):
         self.logger = get_obj_logger(self)
         self.conn_clients = []
         self.exe_process = None
+        self.targets = []
+        self._child_processes = {}
+        self._launcher_process = None
+        self._result_lock = threading.Lock()
+        self._result_ready = threading.Event()
+        self._execution_id = None
+        self._pending_ranks = set()
+        self._worker_failed = False
+        self._graceful_shutdown = False
+        self._finalize_lock = threading.Lock()
 
         self.stop_execute = False
         self.relay_threads = []
@@ -194,11 +229,15 @@ class MultiProcessExecutor(Executor):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
+            self._graceful_shutdown = not self.stop_execute and self._pass_event_to_rank_processes(
+                event_type, fl_ctx, wait=True
+            )
             self.finalize(fl_ctx)
+            return
 
         self._pass_event_to_rank_processes(event_type, fl_ctx)
 
-    def _pass_event_to_rank_processes(self, event_type: str, fl_ctx: FLContext):
+    def _pass_event_to_rank_processes(self, event_type: str, fl_ctx: FLContext, wait=False):
         event_site = fl_ctx.get_prop(FLContextKey.EVENT_ORIGIN_SITE)
 
         if self.engine:
@@ -212,6 +251,19 @@ class MultiProcessExecutor(Executor):
                         }
                         # send the init data to all the child processes
                         request = new_cell_message({}, data)
+                        if wait:
+                            replies = self.engine.client.cell.broadcast_request(
+                                targets=self.targets,
+                                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                                topic=MultiProcessCommandNames.FIRE_EVENT,
+                                request=request,
+                                timeout=5.0,
+                            )
+                            return all(
+                                target in replies
+                                and replies[target].get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+                                for target in self.targets
+                            )
                         self.engine.client.cell.fire_and_forget(
                             targets=self.targets,
                             channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
@@ -225,6 +277,7 @@ class MultiProcessExecutor(Executor):
                             f"Failed to relay the event to child processes. Event: {event_type}",
                             fire_event=False,
                         )
+        return False
 
     def initialize(self, fl_ctx: FLContext):
         if not self._components_built:
@@ -282,6 +335,11 @@ class MultiProcessExecutor(Executor):
             self.logger.info(f"multi_process_executor command: {command}")
             # start in a new session to create new process group ID
             self.exe_process = popen_in_new_session(shlex.split(command, " "), shell=False, env=os.environ.copy())
+            try:
+                self._launcher_process = psutil.Process(self.exe_process.pid)
+                self._launcher_process.create_time()
+            except psutil.NoSuchProcess:
+                self._launcher_process = None
 
             # send the init data to all the child processes
             cell.register_request_cb(
@@ -298,12 +356,20 @@ class MultiProcessExecutor(Executor):
             self.targets = []
             for i in range(self.num_of_processes):
                 fqcn = FQCN.join([cell.get_fqcn(), str(i)])
-                start = time.time()
+                start = time.monotonic()
+                self._remember_child_processes()
                 while not cell.is_cell_reachable(fqcn):
+                    self._remember_child_processes()
+                    if self.exe_process.poll() is not None:
+                        raise RuntimeError("multi-process launcher exited during initialization")
+                    run_abort = fl_ctx.get_run_abort_signal()
+                    if self.stop_execute or (run_abort and run_abort.triggered):
+                        raise RuntimeError("multi-process initialization aborted")
                     time.sleep(1.0)
-                    if time.time() - start > 60.0:
+                    if time.monotonic() - start > 60.0:
                         raise RuntimeError(f"Could not reach the communication cell: {fqcn}")
                 self.targets.append(fqcn)
+            self._remember_child_processes()
             request = new_cell_message(
                 {},
                 {
@@ -317,22 +383,42 @@ class MultiProcessExecutor(Executor):
                 channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
                 topic=MultiProcessCommandNames.INITIALIZE,
                 request=request,
+                timeout=60.0,
             )
-            for name, reply in replies.items():
-                if reply.get_header(MessageHeaderKey.RETURN_CODE) != F3ReturnCode.OK:
-                    self.log_exception(fl_ctx, "error initializing multi_process executor")
-                    raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
+            for name in self.targets:
+                reply = replies.get(name)
+                if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != F3ReturnCode.OK:
+                    raise RuntimeError(f"error initializing multi-process rank {name}")
         except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
+            self.finalize(fl_ctx)
+            self.system_panic("multi-process executor initialization failed", fl_ctx)
+            raise
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
         return_data = request.payload
-        with self.engine.new_context() as fl_ctx:
-            fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
-            self.execute_result = return_data[CommunicationMetaData.SHAREABLE]
-
-        self.execute_complete = True
-        return F3make_reply(ReturnCode.OK, "", None)
+        with self._result_lock:
+            if self.execute_complete or self.stop_execute:
+                return F3make_reply(F3ReturnCode.INVALID_REQUEST)
+            if return_data.get(CommunicationMetaData.EXECUTION_ID) != self._execution_id:
+                return F3make_reply(F3ReturnCode.INVALID_REQUEST)
+            rank = return_data.get(CommunicationMetaData.RANK_NUMBER)
+            if rank not in self._pending_ranks:
+                return F3make_reply(F3ReturnCode.INVALID_REQUEST)
+            result = return_data[CommunicationMetaData.SHAREABLE]
+            self._pending_ranks.remove(rank)
+            if isinstance(result, Shareable) and result.get_return_code() != ReturnCode.OK:
+                self.execute_result = result
+                self._worker_failed = True
+            elif rank == 0:
+                self.execute_result = (
+                    result if isinstance(result, Shareable) else make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
+                )
+                self._worker_failed = not isinstance(result, Shareable)
+            if self._worker_failed or not self._pending_ranks:
+                self.execute_complete = True
+                self._result_ready.set()
+        return F3make_reply(F3ReturnCode.OK)
 
     def _relay_fire_event(self, request: CellMessage) -> CellMessage:
         data = request.payload
@@ -358,21 +444,46 @@ class MultiProcessExecutor(Executor):
         if not self.executor:
             raise RuntimeError("There's no executor for task {}".format(task_name))
 
-        self.execute_complete = False
-
-        self._execute_multi_process(task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal)
-
-        while not self.execute_complete:
-            time.sleep(0.2)
-        return self.execute_result
+        with self._result_lock:
+            self.execute_complete = False
+            self.execute_result = None
+            self._worker_failed = False
+            self._execution_id = uuid.uuid4().hex
+            self._pending_ranks = set(range(self.num_of_processes))
+            self._result_ready.clear()
+        start = time.monotonic()
+        result = self._execute_multi_process(task_name, shareable, fl_ctx, abort_signal)
+        if result is not None:
+            self.finalize(fl_ctx)
+            return result
+        while True:
+            self._remember_child_processes()
+            if abort_signal.triggered or self.stop_execute:
+                result = make_reply(ReturnCode.TASK_ABORTED)
+                break
+            if self._result_ready.is_set():
+                with self._result_lock:
+                    result = self.execute_result
+                    failed = self._worker_failed
+                if not failed:
+                    return result
+                break
+            if self.exe_process is not None and self.exe_process.poll() is not None:
+                result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                break
+            if self.task_timeout is not None and time.monotonic() - start >= self.task_timeout:
+                result = make_reply(ReturnCode.TIMEOUT)
+                break
+            self._result_ready.wait(0.2)
+        self.finalize(fl_ctx)
+        return result
 
     def _execute_multi_process(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> Shareable:
 
-        if abort_signal.triggered:
-            self.finalize(fl_ctx)
-            return make_reply(ReturnCode.OK)
+        if abort_signal.triggered or self.stop_execute:
+            return make_reply(ReturnCode.TASK_ABORTED)
 
         self.engine = fl_ctx.get_engine()
         try:
@@ -381,47 +492,101 @@ class MultiProcessExecutor(Executor):
                 CommunicationMetaData.TASK_NAME: task_name,
                 CommunicationMetaData.SHAREABLE: shareable,
                 CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                CommunicationMetaData.EXECUTION_ID: self._execution_id,
             }
 
             request = new_cell_message({}, data)
-            self.engine.client.cell.fire_and_forget(
+            errors = self.engine.client.cell.fire_and_forget(
                 targets=self.targets,
                 channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
                 topic=MultiProcessCommandNames.TASK_EXECUTION,
                 message=request,
             )
+            if any(errors.values()):
+                return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         except Exception:
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
-    def finalize(self, fl_ctx: FLContext):
-        """This is called when exiting/aborting the executor."""
-        if self.finalized:
+    def _remember_child_processes(self):
+        # torchrun ranks may own separate sessions. Retain identity-checked
+        # Process handles while their ancestry is still observable.
+        if self._launcher_process is None:
             return
-
-        self.finalized = True
-        self.stop_execute = True
-
-        request = new_cell_message({}, None)
-        self.engine.client.cell.fire_and_forget(
-            targets=self.targets,
-            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
-            topic=MultiProcessCommandNames.CLOSE,
-            message=request,
-        )
-
         try:
-            os.killpg(os.getpgid(self.exe_process.pid), 9)
-            self.logger.debug("kill signal sent")
-        except Exception:
+            if not self._launcher_process.is_running():
+                return
+            for child in self._launcher_process.children(recursive=True):
+                child.create_time()
+                self._child_processes[child.pid] = child
+        except psutil.NoSuchProcess:
             pass
 
-        if self.exe_process:
-            self.exe_process.terminate()
-
-        # wait for all relay threads to join!
-        for t in self.relay_threads:
-            if t.is_alive():
-                t.join()
-
-        self.log_info(fl_ctx, "Multi-Process Executor finalized!", fire_event=False)
+    def finalize(self, fl_ctx: FLContext):
+        """This is called when exiting/aborting the executor."""
+        with self._finalize_lock:
+            if self.finalized:
+                return
+            self.finalized = True
+            self.stop_execute = True
+            self._result_ready.set()
+            self._remember_child_processes()
+            try:
+                if self.engine and self.targets:
+                    errors = self.engine.client.cell.fire_and_forget(
+                        targets=self.targets,
+                        channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                        topic=MultiProcessCommandNames.CLOSE,
+                        message=new_cell_message({}, None),
+                    )
+                    if any(errors.values()):
+                        self._graceful_shutdown = False
+            except Exception:
+                self._graceful_shutdown = False
+            process = self.exe_process
+            if process is not None:
+                run_abort = fl_ctx.get_run_abort_signal()
+                if self._graceful_shutdown and not (run_abort and run_abort.triggered):
+                    try:
+                        process.wait(timeout=5.0)
+                    except subprocess.TimeoutExpired:
+                        pass
+                # Terminate ranks in their own sessions as well as the launcher.
+                # psutil guards these operations against PID reuse.
+                children = list(self._child_processes.values())
+                # Kill each still-owned group before signalling individuals.
+                # This also catches children forked after the ancestry snapshot,
+                # and prevents a TERM handler from spawning an orphan on exit.
+                for owner in [self._launcher_process, *children]:
+                    if owner is None or not isinstance(owner.pid, int):
+                        continue
+                    try:
+                        group = os.getpgid(owner.pid)
+                        if group == owner.pid and owner.is_running():
+                            os.killpg(group, signal.SIGKILL)
+                    except (ProcessLookupError, psutil.NoSuchProcess):
+                        pass
+                for child in children:
+                    try:
+                        child.terminate()
+                    except psutil.NoSuchProcess:
+                        pass
+                process.terminate()
+                if children:
+                    _, alive = psutil.wait_procs(children, timeout=2.0)
+                    for child in alive:
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    _, alive = psutil.wait_procs(alive, timeout=2.0)
+                    if alive:
+                        self.log_warning(fl_ctx, "rank processes did not settle after termination", fire_event=False)
+                try:
+                    process.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5.0)
+            for thread in self.relay_threads:
+                thread.join(timeout=5.0)
+            self.log_info(fl_ctx, "Multi-Process Executor finalized!", fire_event=False)
