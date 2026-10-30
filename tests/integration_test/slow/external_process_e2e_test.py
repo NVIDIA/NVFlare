@@ -22,10 +22,10 @@ import subprocess
 import sys
 import textwrap
 
-import psutil
 import pytest
 
 import nvflare
+from tests.process_test_utils import run_owned_process
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))
 _TIMEOUT_OUTPUT_TAIL_CHARS = 20_000
@@ -83,99 +83,19 @@ def _collect_simulator_log_tails(workdir: str) -> str:
     return "\n".join(sections)
 
 
-def _terminate_process_tree(process: subprocess.Popen) -> tuple[str, str]:
-    """Terminate the timed-out wrapper and every descendant visible before teardown."""
-    try:
-        descendants = psutil.Process(process.pid).children(recursive=True)
-    except (psutil.Error, OSError):
-        descendants = []
-
-    for child in reversed(descendants):
-        try:
-            child.terminate()
-        except psutil.Error:
-            pass
-    if process.poll() is None:
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            pass
-
-    try:
-        stdout, stderr = process.communicate(timeout=_TIMEOUT_CLEANUP_GRACE)
-    except subprocess.TimeoutExpired:
-        for child in reversed(descendants):
-            try:
-                if child.is_running():
-                    child.kill()
-            except psutil.Error:
-                pass
-        if process.poll() is None:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-        try:
-            stdout, stderr = process.communicate(timeout=_TIMEOUT_CLEANUP_GRACE)
-        except subprocess.TimeoutExpired as cleanup_error:
-            # A descendant that escaped the process snapshot may still hold a
-            # capture pipe open. Preserve the partial output instead of hiding
-            # the original job timeout behind a second TimeoutExpired.
-            stdout = cleanup_error.output or ""
-            stderr = cleanup_error.stderr or ""
-            if isinstance(stdout, bytes):
-                stdout = stdout.decode("utf-8", errors="replace")
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", errors="replace")
-            if process.stdout:
-                process.stdout.close()
-            if process.stderr:
-                process.stderr.close()
-            if process.poll() is None:
-                try:
-                    process.kill()
-                except OSError:
-                    pass
-            try:
-                process.wait(timeout=_TIMEOUT_CLEANUP_GRACE)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-
-    try:
-        _, alive = psutil.wait_procs(descendants, timeout=_TIMEOUT_CLEANUP_GRACE)
-    except (psutil.Error, OSError):
-        alive = []
-    for child in alive:
-        try:
-            child.kill()
-        except psutil.Error:
-            pass
-    if alive:
-        psutil.wait_procs(alive, timeout=_TIMEOUT_CLEANUP_GRACE)
-    return stdout, stderr
-
-
 def _run_job_with_timeout_diagnostics(args, cwd: str, env: dict, workdir: str, timeout: float):
-    process = subprocess.Popen(
-        args,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        stdout, stderr = _terminate_process_tree(process)
-        output = (stdout or "") + (stderr or "")
+        return run_owned_process(args, cwd=cwd, env=env, timeout=timeout, cleanup_grace=_TIMEOUT_CLEANUP_GRACE)
+    except subprocess.TimeoutExpired as error:
+        output = (error.output or "") + (error.stderr or "")
+        cleanup = getattr(error, "cleanup_error", "")
         pytest.fail(
             f"job command {args!r} timed out after {timeout} seconds\n"
             f"\n===== captured process output (tail) =====\n{output[-_TIMEOUT_OUTPUT_TAIL_CHARS:]}"
-            f"\n===== simulator log tails =====\n{_collect_simulator_log_tails(workdir)}",
+            f"\n===== simulator log tails =====\n{_collect_simulator_log_tails(workdir)}"
+            f"\n===== cleanup failures =====\n{cleanup or 'none'}",
             pytrace=False,
         )
-    return subprocess.CompletedProcess(args=args, returncode=process.returncode, stdout=stdout, stderr=stderr)
 
 
 _CLIENT_SCRIPT = textwrap.dedent(
@@ -386,12 +306,11 @@ def test_external_process_numpy_fedavg_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -450,12 +369,11 @@ def test_external_process_sklearn_fedavg_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -589,7 +507,7 @@ def test_external_process_scatter_and_gather_config_job_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -607,8 +525,7 @@ def test_external_process_scatter_and_gather_config_job_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -779,7 +696,7 @@ def test_external_process_metrics_streaming_config_job_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -797,8 +714,7 @@ def test_external_process_metrics_streaming_config_job_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -959,7 +875,7 @@ def test_external_process_pytorch_config_job_passthrough_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -977,8 +893,7 @@ def test_external_process_pytorch_config_job_passthrough_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1050,7 +965,7 @@ def test_external_process_pytorch_diff_reaches_server_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -1068,8 +983,7 @@ def test_external_process_pytorch_diff_reaches_server_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1158,12 +1072,11 @@ def test_external_process_secret_command_launch_end_to_end(tmp_path):
     env[_SECRET_ENV_NAME] = secret_value
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command, _SECRET_REF],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1286,7 +1199,7 @@ def test_external_process_cyclic_relay_config_job_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -1304,8 +1217,7 @@ def test_external_process_cyclic_relay_config_job_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1451,7 +1363,7 @@ def test_external_process_launcher_wrapped_grandchild_trainer_end_to_end(tmp_pat
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -1469,8 +1381,7 @@ def test_external_process_launcher_wrapped_grandchild_trainer_end_to_end(tmp_pat
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1571,12 +1482,11 @@ def test_external_process_large_model_streaming_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -1788,7 +1698,7 @@ def test_external_process_multi_rank_distributed_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     env["GLOO_SOCKET_IFNAME"] = "lo0" if sys.platform == "darwin" else "lo"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -1806,8 +1716,7 @@ def test_external_process_multi_rank_distributed_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -2027,7 +1936,7 @@ def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [
             sys.executable,
             "-u",
@@ -2045,8 +1954,7 @@ def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
         ],
         cwd=str(tmp_path),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -2152,12 +2060,11 @@ def test_external_process_tensorflow_fedavg_end_to_end(tmp_path):
     env["TF_CPP_MIN_LOG_LEVEL"] = "3"  # quiet TF's native logging
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
@@ -2272,12 +2179,11 @@ def test_external_process_real_dataset_pytorch_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr

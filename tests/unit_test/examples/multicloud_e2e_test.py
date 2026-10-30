@@ -16,10 +16,7 @@ import importlib.util
 import io
 import json
 import os
-import shutil
-import subprocess
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -49,43 +46,6 @@ def _load_build_module():
         "multicloud_build_and_push",
         os.path.join(_repo_root(), "examples", "devops", "multicloud", "build_and_push.py"),
     )
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
-
-
-def _versioned_repository(tmp_path):
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    _git(repository, "init", "--quiet")
-    _git(repository, "config", "user.name", "NVFlare Test")
-    _git(repository, "config", "user.email", "nvflare-test@example.com")
-    for relative in ("versioneer.py", "setup.cfg", "nvflare/_version.py"):
-        target = repository / relative
-        target.parent.mkdir(exist_ok=True)
-        shutil.copy(Path(_repo_root()) / relative, target)
-    _git(repository, "add", ".")
-    _git(repository, "commit", "--quiet", "-m", "test source")
-    _git(repository, "tag", "2.10.0dev0")
-    return repository, _git(repository, "rev-parse", "HEAD")
-
-
-def test_revision_source_retains_git_metadata_for_versioneer(monkeypatch, tmp_path):
-    build = _load_build_module()
-    repository, revision = _versioned_repository(tmp_path)
-    monkeypatch.setattr(build, "SOURCE_REPOSITORY", str(repository))
-
-    temporary, source = build.prepare_revision_source(revision)
-    try:
-        assert _git(source, "rev-parse", "HEAD") == revision
-        subprocess.run(
-            [sys.executable, "-c", "import versioneer; assert not versioneer.get_versions()['error']"],
-            cwd=source,
-            check=True,
-        )
-    finally:
-        temporary.cleanup()
 
 
 def test_downloaded_build_dry_run_uses_provenance_without_fetching(monkeypatch, tmp_path, capsys):

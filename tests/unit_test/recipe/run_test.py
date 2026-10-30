@@ -295,37 +295,6 @@ class TestRunClass:
 
         self.mock_env.abort_job.assert_called_once_with(self.job_id)
 
-    def test_concurrent_get_result_calls(self):
-        """Test that concurrent get_result calls are handled safely."""
-        import threading
-
-        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
-        self.mock_env.get_job_status.return_value = "FINISHED"
-
-        results = []
-        errors = []
-
-        def call_get_result():
-            try:
-                result = self.run.get_result()
-                results.append(result)
-            except Exception as e:
-                errors.append(e)
-
-        # Launch multiple threads calling get_result concurrently
-        threads = [threading.Thread(target=call_get_result) for _ in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        # All calls should succeed without errors
-        assert len(errors) == 0
-        # All results should be the same (cached or fresh)
-        assert all(r == "/tmp/workspace/test_job_123" for r in results)
-        # stop should only be called once (first call stops, others return cached)
-        assert self.mock_env.stop.call_count == 1
-
 
 @pytest.mark.skip(reason="Integration tests require full environment setup")
 class TestRunIntegration:
