@@ -9,6 +9,16 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9 to 2.10
 ==========================
 
+2.9 and 2.10 sites do not interoperate, whichever 2.10 features you use. Every
+2.10 connection handshake carries a transport protocol version, and a peer with
+a missing or different version, including every 2.9 peer, is rejected before it
+attaches. Upgrade the server, clients, relays, and admin environments together,
+using the procedure below, and review the behavior changes that follow it
+before you restart a federation.
+
+Upgrade Procedure
+-----------------
+
 Copy each existing client kit to a **separate workspace** and start it in a
 2.10 environment, keeping the 2.9 client running. Shared workspaces conflict
 on PID and shutdown files. No certificate or endpoint changes are needed.
@@ -26,6 +36,157 @@ Staged clients join on a subsequent probe; late sites join when installed.
 Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
+
+Re-provision Secure Projects for Per-Job Certificates
+-----------------------------------------------------
+
+This is the one security change in 2.10 that is required. Single sign-on and
+certificate-derived study memberships are optional and need no action.
+
+In secure mode, 2.10 gives each job process (server job and client job) its
+own short-lived credential, issued by a job-signing CA that ``CertBuilder``
+generates into the server startup kit. The site's long-lived key is no longer
+used by job processes.
+
+Impact (secure mode only; non-secure deployments are not affected):
+
+- A secure-mode server kit without a job CA, or with one about to expire,
+  cannot deploy jobs; the reason is reported in the job deploy detail. There
+  is no fallback to the site certificate.
+- The server and clients must run the same release.
+- In secure mode, the Docker and Slurm launchers refuse a clear-text parent
+  connection. Configure the client's internal listener with ``stcp`` or
+  ``mtls``.
+
+Action: re-provision existing secure-mode projects with 2.10 and distribute
+the new startup kits. ``CertBuilder`` generates the job CA by default. If your
+deployment manages its own CA material, mark the server ``external_job_ca``
+and install the job-CA credentials at deployment; setting
+``enable_job_ca: false`` alone leaves a secure server unable to deploy jobs.
+
+Process Jobs Now Apply ``local/study_runtime.yaml``
+---------------------------------------------------
+
+Process jobs previously ignored ``local/study_runtime.yaml``. They now apply
+the selected study's ``env`` and ``secret_env`` before each launch. Study
+values override inherited settings, and a missing secret source fails the
+launch before the process starts. Container and mount settings are rejected in
+Process mode.
+
+Action: review any existing ``local/study_runtime.yaml`` on Process sites
+before upgrading, because values that used to have no effect now take effect.
+
+Aggregation Rejects Incompatible Parameter Shapes
+-------------------------------------------------
+
+Weighted aggregation previously accepted client parameters with different
+shapes by broadcasting them (for example ``(2,)`` with ``(1,)``, or a
+zero-dimensional value with a singleton array). 2.10 validates exact shapes
+before accumulating and rejects a mismatched contribution.
+
+Impact:
+
+- Built-in FedAvg continues with the remaining valid clients. A metric shape
+  mismatch rejects the whole client contribution.
+- A round with no accepted contributions fails before updating or saving.
+- Jobs that relied on silent broadcasting now see rejected contributions in
+  the logs.
+
+Action: make client parameter shapes match the global model.
+
+Docker GPU Reservation
+----------------------
+
+For GPU-managed Docker clients, 2.10 reserves specific devices through the
+client's GPU resource manager and passes those device IDs to Docker, so
+concurrent jobs no longer receive the same GPUs.
+
+Impact:
+
+- Omitted job GPU counts inherit the site or study defaults at admission.
+  Explicit job counts, including zero and legacy process counts, override the
+  defaults.
+- A failed job start now cancels pending client reservations immediately.
+- Passthrough clients keep their previous behavior: job GPU counts and
+  site or study ``device_requests`` (including pinned ``DeviceIDs``) go
+  directly to Docker, with no FLARE reservation, and need no re-provisioning.
+  Server containers keep native Docker GPU requests.
+
+Action: review the GPU settings of Docker client sites that are GPU-managed.
+
+Dashboard Changes
+-----------------
+
+- Public registration and user self-updates accept only an unset role,
+  ``member``, or ``lead``. Administrative, custom, and malformed roles are
+  rejected, and project administrators can still assign administrative roles.
+- Client creation and PATCH requests that contain ``props`` are rejected with
+  HTTP 400, and client-kit generation ignores previously stored ``props``.
+
+Action: API integrations that send ``props`` must omit it.
+
+Dashboard Dependencies Are Optional
+-----------------------------------
+
+The base ``nvflare`` package no longer installs Flask or the other Dashboard
+web dependencies. Action: install ``nvflare[dashboard]`` where you run the
+Dashboard, and ``nvflare[edge-http]`` on HTTP routing-proxy hosts. Docker
+builds follow the same split.
+
+Collab API (Technical Preview)
+------------------------------
+
+The ``async_aggregation`` example is renamed ``response_callbacks``, and its
+entry point is ``job.py``. Update any paths or commands that refer to the old
+name.
+
+The ``simple_logging`` helper is removed from the Collab API. Delete its calls;
+logging is already configured when the code runs inside an NVFlare job.
+
+Task-Scoped Execution (Opt-In)
+------------------------------
+
+No action is needed for existing jobs; job lifetime remains the default. If
+you adopt ``execution_lifetime="task"`` with PyTorch, note that unfiltered
+Client Job input hooks receive local tensor references that support metadata
+and ``nbytes``, not tensor attributes such as ``.shape`` or ``.numel()``.
+Workers receive tensors.
+
+Local Process and Docker task execution is not supported in 2.10. Use the
+Kubernetes or Slurm task launchers for ``execution_lifetime="task"``, and keep
+Process and Docker sites at job lifetime through per-site client apps.
+
+Kubernetes: Pod Patch Permission
+--------------------------------
+
+Kubernetes job Pods use a settlement finalizer, so the server's Role needs
+``patch`` permission on Pods. The server Helm chart adds it; add it to any
+custom Role.
+
+Internal Renames With Compatibility Aliases
+-------------------------------------------
+
+The client terminal-report constant, class, and handler are renamed from job
+failure to job outcome (``REPORT_JOB_FAILURE``, ``JobFailureMsgKey``, and
+``process_job_failure`` remain as aliases, and ``report_job_failure`` remains
+the wire value). Existing peers and callers keep working; no action is needed
+unless you subclass these.
+
+New in 2.10 (No Migration Required)
+-----------------------------------
+
+The following features are opt-in or additive:
+
+- Single sign-on for administrators through ``admin_cert_provider`` with the
+  built-in ``step_ca`` provider (optional; off unless configured). Static admin
+  startup kits are unchanged and can coexist with provider-backed kits.
+- Disk-backed FedAvg and FedProx aggregation (``enable_disk_aggregation``).
+- Certificate-derived study memberships (optional; registry-based study
+  access is unchanged).
+- Outbound HTTP proxy support for the HTTPS transport.
+
+See :doc:`release_notes/flare_2100` for details, and see the job clone
+deprecation under "Upcoming Main-Branch Changes" below.
 
 Upgrading from 2.7.2 to 2.8.0
 =============================
