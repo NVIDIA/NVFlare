@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, p
 from cryptography.x509.oid import ExtensionOID, NameOID
 from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
-from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
+from nvflare.fuel.sec.admin_cert import reject_job_credential, validate_admin_leaf_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
@@ -443,6 +443,7 @@ def verify_folder_signature_and_get_signers(
                         intermediate_certs=cert_chain[1:],
                         root_ca_cert=root_ca_cert,
                     )
+                    reject_job_credential(cert, cert_chain[1:])
                     validate_admin_leaf_cert(cert)
                     signer = _cert_to_submitter(cert)
                 signers[signer] = signer
