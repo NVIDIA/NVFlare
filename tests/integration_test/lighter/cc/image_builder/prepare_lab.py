@@ -133,6 +133,25 @@ def validate_identity(pki, kbs_url):
             raise SystemExit("Acceptance server certificate does not cover the measured KBS address")
 
 
+def kbs_endpoint(kbs_url):
+    """Validate a measured KBS base URL and return its effective HTTPS port."""
+    parsed = urlsplit(kbs_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise SystemExit("--kbs-url must be an HTTPS base URL without credentials, path, query, or fragment")
+    try:
+        return parsed.port or 443
+    except ValueError:
+        raise SystemExit("--kbs-url contains an invalid port") from None
+
+
 def prepare(
     directory,
     *,
@@ -147,6 +166,9 @@ def prepare(
     if not platforms or len(set(platforms)) != len(platforms) or any(p not in PLATFORMS for p in platforms):
         raise SystemExit("Select distinct supported lab platforms")
     directory = Path(directory).resolve()
+    kbs_port = kbs_endpoint(kbs_url)
+    if identity_directory is None and kbs_url.rstrip("/") != "https://10.0.2.2:19199":
+        raise SystemExit("A custom --kbs-url requires --identity-directory with its matching server certificate")
     directory.mkdir(parents=True, exist_ok=True)
     inputs = directory / "inputs"
     inputs.mkdir(exist_ok=True)
@@ -313,7 +335,7 @@ def prepare(
         "as_public_key": str(inputs / "test-as-public.pem"),
         "token_algorithm": "ES256",
         "token_issuer": "CoCo-Attestation-Service",
-        "bootstrap_egress": [443, 19199],
+        "bootstrap_egress": sorted({443, kbs_port}),
         "vcpus": 4,
         "memory_gib": 8,
         "root_overlay_max_mib": 4096,

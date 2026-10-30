@@ -260,10 +260,16 @@ PYTHONPATH=nvflare/lighter/cc/image_builder python3 \
 ```
 
 Populate the public guest inputs and reviewed references listed in the CVM
-Builder README, build Trustee at the pinned revision in
-`/srv/cvm/acceptance/trustee-source`, and route
-`trustee.example.org` to this isolated host from the candidate guest. Start the
-local staged service from the repository root:
+Builder README and build Trustee at the pinned revision in
+`/srv/cvm/acceptance/trustee-source`. On the staged Trustee host, resolve
+`trustee.example.org` to loopback so the administration client verifies the
+eventual production name. Route that same name from the candidate guest to the
+QEMU host gateway or isolated host address. `prepare_lab.py` adds the selected
+URL port to measured guest egress; `lab_kbs.py` listens on loopback at that port
+and writes the selected URL into both administration files. For a candidate
+that cannot reach the loopback listener through the QEMU gateway, set
+`CVM_LAB_KBS_HOST` to the isolated interface address and restrict it with the
+acceptance firewall. Start the local staged service from the repository root:
 
 ```sh
 sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \

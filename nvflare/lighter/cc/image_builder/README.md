@@ -425,7 +425,9 @@ input validation against the wheel's contents, including the NVAT patch.
 test deployment with disposable PKI and explicit loopback ports. For production
 acceptance, `--identity-directory` and `--kbs-url` instead stage the eventual
 production CA, AS signer, server identity, and measured hostname as described in
-the Trustee guide. Its generated profile takes the
+the Trustee guide. The selected URL port is added to measured guest egress and
+used by the staged listener and administration files; follow the Trustee guide's
+host and guest name-resolution steps. Its generated profile takes the
 apt pins from the validated checked-in profile, because the reusable CVM build installs them
 inside the guest base image and a build host whose mirror lags the guest
 repository would force an apt downgrade. Use `--package-profile` to supply a

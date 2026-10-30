@@ -29,6 +29,7 @@ from collections import Counter
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import yaml
 from cvm.artifacts.bundle import required_acceptance_checks
 from cvm.build import config
 from cvm.common.errors import BuildError
@@ -118,6 +119,25 @@ class LabProfileTests(unittest.TestCase):
                 self.assertRaisesRegex(BuildError, "must end in /gpu"),
             ):
                 lab_kbs.verifier_config(profiles)
+
+    def test_lab_kbs_uses_measured_endpoint_for_listener_port_and_staged_administration(self):
+        lab_kbs = load_helper("lab_kbs")
+        staged = {"kbs_url": "https://trustee.example.org:8443", "identity": "provided"}
+        self.assertEqual(
+            lab_kbs.endpoint_settings(staged, {}),
+            ("127.0.0.1", 8443, "https://trustee.example.org:8443"),
+        )
+        self.assertEqual(
+            lab_kbs.endpoint_settings(staged, {"CVM_LAB_KBS_HOST": "192.0.2.10"}),
+            ("192.0.2.10", 8443, "https://trustee.example.org:8443"),
+        )
+        disposable = {"kbs_url": "https://10.0.2.2:19199", "identity": "disposable"}
+        self.assertEqual(
+            lab_kbs.endpoint_settings(disposable, {}),
+            ("127.0.0.1", 19199, "https://127.0.0.1:19199"),
+        )
+        with self.assertRaisesRegex(BuildError, "must match the measured KBS URL port"):
+            lab_kbs.endpoint_settings(staged, {"CVM_LAB_KBS_PORT": "19199"})
 
     def test_selected_profiles_require_only_their_own_references(self):
         prepare = load_helper("prepare_lab")
@@ -213,6 +233,23 @@ class LabProfileTests(unittest.TestCase):
             self.assertEqual(
                 (lab / "inputs/test-as-public.pem").read_bytes(), (identity / "as-public.pem").read_bytes()
             )
+            hardware_lab = root / "hardware-lab"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(
+                    hardware_lab,
+                    platforms=["amd_sev_snp"],
+                    identity_directory=identity,
+                    kbs_url="https://10.0.2.2:8443",
+                )
+            profile = yaml.safe_load((hardware_lab / "inputs/lab-profile.yml").read_text())
+            self.assertEqual(profile["kbs_url"], "https://10.0.2.2:8443")
+            self.assertEqual(profile["bootstrap_egress"], [443, 8443])
+
+    def test_custom_kbs_url_requires_matching_staged_identity(self):
+        prepare = load_helper("prepare_lab")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(SystemExit, "custom --kbs-url requires --identity-directory"):
+                prepare.prepare(directory, http_only=True, kbs_url="https://trustee.example.org:8443")
 
     def test_cli_supports_one_or_repeated_platform_selection(self):
         prepare = load_helper("prepare_lab")

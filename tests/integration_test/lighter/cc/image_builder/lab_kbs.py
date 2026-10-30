@@ -14,9 +14,9 @@
 
 """Run an isolated, deny-by-default lab upstream Trustee.
 
-Requires unmodified CoCo Trustee v0.22.0 binaries on
-the lab host, and the disposable PKI from prepare_lab.py. Never touches another
-KBS deployment or its credentials.
+Requires unmodified CoCo Trustee v0.22.0 binaries and lab state created by
+prepare_lab.py with either disposable or explicitly staged identity material.
+Never contacts another KBS deployment.
 """
 
 import os
@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives import serialization
 from cvm.build import config as build_config
 from cvm.build.config import SOURCE
 from cvm.build.cvm import contract
-from cvm.common.errors import require
+from cvm.common.errors import BuildError, require
 from cvm.common.gpu_policy import render as render_gpu_policy
 from cvm.common.io import canonical, digest_file, read_json, write_json
 from cvm.common.references import reference_record_name, render_reference_policy
@@ -59,11 +59,39 @@ def verifier_config(profiles):
     return result
 
 
+def endpoint_settings(lab_state, environ=None):
+    """Return the local listener and identity-preserving administration URL."""
+    environ = os.environ if environ is None else environ
+    public_url = lab_state["kbs_url"].rstrip("/")
+    endpoint = urllib.parse.urlsplit(public_url)
+    require(
+        endpoint.scheme == "https"
+        and endpoint.hostname
+        and endpoint.path in ("", "/")
+        and not endpoint.query
+        and not endpoint.fragment,
+        "Lab state contains an invalid KBS URL",
+    )
+    try:
+        endpoint_port = endpoint.port or 443
+        listen_port = int(environ.get("CVM_LAB_KBS_PORT", endpoint_port))
+    except (TypeError, ValueError):
+        raise BuildError("Lab KBS port must be an integer") from None
+    require(listen_port == endpoint_port, "CVM_LAB_KBS_PORT must match the measured KBS URL port")
+    listen_host = environ.get("CVM_LAB_KBS_HOST", "127.0.0.1")
+    require(
+        isinstance(listen_host, str) and listen_host and not any(c.isspace() for c in listen_host),
+        "Invalid lab KBS listener host",
+    )
+    administration_url = public_url if lab_state.get("identity") == "provided" else f"https://127.0.0.1:{endpoint_port}"
+    return listen_host, listen_port, administration_url
+
+
 def main(directory):
     directory = Path(directory).resolve()
-    pki = Path(read_json(directory / "lab-state.json")["pki"])
-    kbs_port = int(os.environ.get("CVM_LAB_KBS_PORT", "19199"))
-    kbs_host = os.environ.get("CVM_LAB_KBS_HOST", "127.0.0.1")
+    lab_state = read_json(directory / "lab-state.json")
+    pki = Path(lab_state["pki"])
+    kbs_host, kbs_port, administration_url = endpoint_settings(lab_state)
     state = directory / "lab-kbs"
     state.mkdir(mode=0o700, exist_ok=True)
     storage = state / "storage"
@@ -90,7 +118,6 @@ def main(directory):
     policy_id_map = {}
     immutable_as_policies = {}
     profiles = []
-    lab_state = read_json(directory / "lab-state.json")
     profile_paths = lab_state.get("profiles")
     if profile_paths is None:
         profile_paths = [lab_state["profile"]] if "profile" in lab_state else []
@@ -190,13 +217,13 @@ def main(directory):
     write_json(
         state / "resources.json",
         {
-            "url": f"https://{kbs_host}:{kbs_port}",
+            "url": administration_url,
             "ca": str(directory / "inputs/test-ca.pem"),
             "admin_token_file": str(token_path),
         },
     )
     config_admin = {
-        "url": f"https://{kbs_host}:{kbs_port}",
+        "url": administration_url,
         "ca": str(directory / "inputs/test-ca.pem"),
         "admin_private_key": str(pki / "kbs-admin.key"),
         "storage_directory": str(storage),
