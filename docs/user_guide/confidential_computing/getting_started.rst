@@ -55,8 +55,8 @@ its ability to start a VM or container.
 
 The 2.9 configuration supports AMD SEV-SNP and Intel TDX targets for standalone
 CVM and CoCo deployments, with CPU-only or NVIDIA confidential-GPU profiles.
-For CoCo, **full security qualification is incomplete**; the recorded mixed
-run does not qualify **TDX+GPU or a protected-server topology**.
+For CoCo, **full security qualification is incomplete**; the historical mixed
+run recorded below does not qualify **TDX+GPU or a protected-server topology**.
 The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
 
 * For standalone CVMs, review the :github_nvflare_link:`revision-specific
@@ -66,9 +66,9 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   worker, approved generic CVM, and Trustee service described in
   :ref:`cvm_builder`.
 * For CoCo, the :ref:`implementation scope and hardware evidence limits
-  <coco_security_architecture>` describe a mixed TDX CPU-only and SNP+NVIDIA GPU
-  functional run on **2026-10-04**, with an ordinary trusted server. The workload
-  performed CPU arithmetic, not GPU training. **Before the four-step workflow,
+  <coco_security_architecture>` describe one historical mixed TDX CPU-only and
+  SNP+NVIDIA GPU functional run on **2026-10-04**, with an ordinary trusted server.
+  The workload performed CPU arithmetic, not GPU training. **Before the four-step workflow,
   deploy and verify both Trustee and the CoCo-ready Kubernetes cluster.** Follow
   the `official Trustee installation guide
   <https://confidentialcontainers.org/docs/attestation/installation/>`_ and, for
@@ -79,6 +79,14 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   then proceed with the inputs in the
   :github_nvflare_link:`four-step deployment workflow
   <examples/devops/coco/README.md>`.
+
+  The optional :github_nvflare_link:`beginner prerequisite appendix
+  <examples/devops/coco/PREREQUISITES.md>` helps beginners bring up the
+  prerequisite systems for the NVFlare CoCo workflow. Consult the official
+  documentation for each component and the version you deploy. If there is any
+  discrepancy, the component's official documentation takes precedence. Its
+  two-machine example keeps Trustee separate from Kubernetes; review its
+  Ubuntu 26.04 and pinned-runtime qualification limits before following it.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`
   for the cloud resources and attestation setup.
 
