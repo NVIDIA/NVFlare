@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import replace
 from functools import partial
 
 from nvflare.apis.dxo import from_shareable
@@ -33,8 +34,9 @@ from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.private.defs import CellChannel
+from nvflare.private.defs import CellChannel, RequestHeader
 from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
@@ -78,7 +80,7 @@ class TaskWorkerExecutor(Executor):
         self._start_error = None
         self._ending = False
         self._panic_reported = False
-        self._completed_attempts = set()
+        self._completed_attempts = {}
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -154,14 +156,22 @@ class TaskWorkerExecutor(Executor):
         if panic:
             self.system_panic("task worker settlement is unconfirmed; retaining ownership and stopping the job", fl_ctx)
 
-    @staticmethod
-    def _identity(task_name, fl_ctx):
+    def _attempt_id(self, fl_ctx):
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        launch_id = ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID)
+        if launch_id and isinstance(attempt_id, str) and attempt_id:
+            # The server assignment survives CJ recovery; each physical worker
+            # needs a fresh identity after CP confirms prior worker shutdown.
+            return hashlib.sha256(json.dumps([launch_id, attempt_id]).encode()).hexdigest()
+        return attempt_id
+
+    def _identity(self, task_name, fl_ctx):
         return TaskAttemptIdentity(
             fl_ctx.get_job_id(),
             fl_ctx.get_identity_name(),
             fl_ctx.get_prop(FLContextKey.TASK_ID),
             task_name,
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
+            self._attempt_id(fl_ctx),
         )
 
     @staticmethod
@@ -205,10 +215,16 @@ class TaskWorkerExecutor(Executor):
                 return make_reply(ReturnCode.TASK_ABORTED)
             identity = self._identity(task_name, fl_ctx)
             if identity in self._completed_attempts:
-                result = self.supervisor.read_saved_result(identity)
+                saved_identity = self._completed_attempts[identity]
+                result = self.supervisor.read_saved_result(saved_identity)
                 with self._checkpoint_commit_guard(abort_signal):
-                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, saved_identity, private=True, sticky=False)
                     return result
+            self.log_info(
+                fl_ctx,
+                f"Task {identity.task_id}: server attempt {fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)}, "
+                f"worker attempt {identity.attempt_id}",
+            )
             resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = self._runtime_root(workspace, identity.job_id)
@@ -219,6 +235,13 @@ class TaskWorkerExecutor(Executor):
                 json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
             ).hexdigest()
             checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
+            assignment = replace(identity, attempt_id=fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID))
+            outcome = self.supervisor.recover_checkpoint_result(assignment, store, checkpoint_file, runtime_root)
+            if outcome is not None:
+                self._completed_attempts[identity] = outcome.identity
+                with self._checkpoint_commit_guard(abort_signal):
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, outcome.identity, private=True, sticky=False)
+                    return outcome.result
 
             def request_factory(attempt, path):
                 store.prepare_checkpoint(attempt, checkpoint_file)
@@ -283,8 +306,9 @@ class TaskWorkerExecutor(Executor):
                     outcome.completion,
                     checkpoint_file,
                     publication_guard=partial(self._checkpoint_commit_guard, abort_signal),
+                    assignment=assignment,
                 )
-            self._completed_attempts.add(identity)
+            self._completed_attempts[identity] = identity
             return outcome.result
         finally:
             if session is not None:
@@ -344,15 +368,8 @@ class TaskWorkerExecutor(Executor):
         identity = fl_ctx.get_prop(TASK_ATTEMPT_IDENTITY)
         if not isinstance(identity, TaskAttemptIdentity):
             return
-        expected = (identity.job_id, identity.site_name, identity.task_id, identity.task_name, identity.attempt_id)
-        actual = (
-            fl_ctx.get_job_id(),
-            fl_ctx.get_identity_name(),
-            fl_ctx.get_prop(FLContextKey.TASK_ID),
-            fl_ctx.get_prop(FLContextKey.TASK_NAME),
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
-        )
-        if actual != expected:
+        current = self._identity(fl_ctx.get_prop(FLContextKey.TASK_NAME), fl_ctx)
+        if self._completed_attempts.get(current, current) != identity:
             return
         result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
         if not isinstance(result, Shareable) or result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK:

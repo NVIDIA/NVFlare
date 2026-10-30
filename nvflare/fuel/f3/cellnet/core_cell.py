@@ -114,11 +114,12 @@ class CellAgent:
         Args:
             fqcn: FQCN of the cell represented
         """
+        fqcn = FQCN.normalize(fqcn)
         err = FQCN.validate(fqcn)
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        self.info = FqcnInfo(FQCN.normalize(fqcn))
+        self.info = FqcnInfo(fqcn)
         self.endpoint = endpoint
 
     def get_fqcn(self):
@@ -342,6 +343,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 client_1            (he root cell of client_1)
 
         """
+        # Normalize before the name is used as a key or validated, so the duplicate
+        # check, ALL_CELLS and my_info all agree on one spelling.
+        fqcn = FQCN.normalize(fqcn)
         if fqcn in self.ALL_CELLS:
             raise ValueError(f"there is already a cell named {fqcn}")
 
@@ -366,7 +370,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 secure = True
 
         self.logger.debug(f"connection secure: {secure}")
-        self.my_info = FqcnInfo(FQCN.normalize(fqcn))
+        self.my_info = FqcnInfo(fqcn)
         self.traffic_stats = PeerTrafficCounters()
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")

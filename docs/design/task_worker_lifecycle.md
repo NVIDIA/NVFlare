@@ -28,7 +28,7 @@ are separate from resource release.
 The matrix distinguishes implemented behavior from release direction. Kubernetes
 task execution is implemented; the [Slurm task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)
 is an experimental draft, not deployed qualification. Local Process/Docker task
-backends are deferred: their production launchers reject task lifetime. The
+backends are deferred: shared client-parent admission rejects local task lifetime. The
 test-only process harness exercises shared worker contracts. The historical
 Process recovery gap described below explains a boundary of the retired path.
 
@@ -42,8 +42,8 @@ adopting an existing job and its workers after CP restarts, not starting a new C
 | Process | `task` (deferred) | No scheduler-backed resource admission | Rejected before local CJ launch | Not provided | Not supported |
 | Docker | `job` | No; resident container retains its device access | Conditional on confirmed container exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
 | Docker | `task` (deferred) | No supported native task profile here | Rejected before local CJ launch | Not provided | Not supported |
-| Kubernetes | `job` | No; resident CJ Pod retains its allocation | Disabled | Not provided | No automatic recovery |
-| Kubernetes | `task` | Yes, after worker Pod settlement | Disabled; CP retains task cleanup | Not provided | Not implemented |
+| Kubernetes | `job` | No; resident CJ Pod retains its allocation | With persistent jobs PVC and confirmed shutdown | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Kubernetes | `task` | Yes, after worker Pod settlement | After confirmed CJ and worker shutdown | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
 | Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
 | Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
 
@@ -79,11 +79,11 @@ resources or reject unsupported requirements before compute.
 Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
 admits at most one unsettled attempt per job. Worker memory, optimizer state and
 executor instances do not survive an assignment. Application-selected checkpoint
-files can survive. Process CJ recovery can replace a failed CJ only after its job
-handle confirms termination. This Kubernetes profile does not opt into CJ restart:
-its CP still fences unsettled attempts and refuses retained subtree adoption.
-Persistent files alone do not provide CP restart adoption, physical task retry or
-distributed training.
+files can survive. In Kubernetes, confirmed CJ or worker loss can trigger
+[CJ recovery](client_job_recovery.md) after all prior executions stop, using the
+persistent jobs profile.
+Recovery preserves the assignment and checkpoints, with fresh physical worker IDs.
+CP restart adoption and distributed training remain unsupported.
 
 Four separate facts govern the lifecycle:
 
@@ -101,7 +101,7 @@ after server restart.
 ## One assignment from delivery to cleanup
 
 1. SJ issues an assignment with workflow, task and attempt IDs. Retransmission
-   preserves those IDs; a new physical attempt requires a new server-issued attempt ID.
+   preserves those IDs; CJ recovery changes only the physical worker attempt ID.
 2. CJ applies input hooks/filters and stages input plus an inert worker bootstrap.
    Compute definitions are authorized in CJ and again in the worker before custom
    imports, component construction or input decoding.
@@ -479,9 +479,10 @@ Additional CJ dataset volumes are not automatically inherited by task workers.
 Persistent job subtrees are retained after success as well as failure. Operators
 budget capacity, archive and remove them only after the job, runtimes, in-flight
 creates and readers/uploads are quiescent. Reusing an existing job/site subtree
-fails instead of adopting or overwriting it. Definitive pre-create/API rejection
+fails instead of adopting or overwriting it, except for CJ recovery authorized by
+the same CP's confirmed previous execution. Definitive pre-create/API rejection
 removes only a freshly reserved, unchanged empty directory; ambiguous outcomes keep
-their storage fence. There is no automatic subtree collector or Kubernetes CJ/CP recovery.
+their storage fence. There is no automatic subtree collector or CP restart adoption.
 
 ## Deadlines and failure handling
 
@@ -503,10 +504,10 @@ automatic physical retry after unconfirmed settlement. CP crash/restart, permane
 node loss or missing finalizer evidence requires operator reconciliation after
 verifying runtime shutdown; clearing a stuck finalizer is not a substitute for proof.
 
-The [recovery design](client_job_recovery.md#native-task-resume-follow-up-requirements)
-lists the missing ownership, checkpoint and timeout-qualification requirements
-for native task restart/resume. The current completion-bound checkpoint handoff
-does not implement periodic recovery from an unfinished task.
+The [recovery design](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+describes confirmed worker-loss recovery and the remaining backend limits.
+Partial-progress checkpoints remain application-owned; the completion-bound
+checkpoint handoff does not periodically save unfinished work.
 
 ## Qualification and optional references
 
