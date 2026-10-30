@@ -233,8 +233,15 @@ connection down with it.
 
 **Configuration and limits.**
 
-- The PyTorch FedAvg and FedProx recipes accept an ``execution_lifetime``
-  parameter to select job or task lifetime.
+- The PyTorch FedAvg, FedProx and FedOpt, NumPy FedAvg, and scikit-learn
+  FedAvg, K-means and SVM recipes accept an ``execution_lifetime`` parameter
+  to select job or task lifetime. FedCE stays at job lifetime, and the
+  shipped scikit-learn examples continue across rounds in fresh workers.
+- Task lifetime requires an explicit Kubernetes or Slurm task launcher in the
+  site configuration. Local Process and Docker task execution is not
+  supported, and those sites reject a task-lifetime app. Job lifetime remains
+  supported on Process, Docker, Kubernetes, and Slurm, and a federated job can
+  mix job-lifetime and task-lifetime sites through per-site client apps.
 - Supported executors are the Client API executor in ``in_process`` mode, the
   statistics executor, and the NPTrainer compatibility path. Client API
   ``external_process`` and attach modes, both SCAFFOLD implementations, and
@@ -245,6 +252,13 @@ connection down with it.
 
 Reliability
 ===========
+
+- **Confirmed shutdown before release.** A failed launch or an abort no longer
+  releases job credentials and resource reservations while the job or its
+  child processes may still be running. Parents retain the launch handle and
+  keep reconciling until the backend confirms shutdown, on Process, Docker, and
+  Kubernetes. Kubernetes job Pods use a settlement finalizer, so the server
+  Helm Role needs Pod ``patch`` permission (see the migration guide).
 
 Automatic Client Job Recovery
 -----------------------------
@@ -312,6 +326,9 @@ Federated Statistics
 Aggregation and Workflows
 -------------------------
 
+- PyTorch FedOpt final-global evaluation uses the correct framework, persistor,
+  and locator metadata, and full cross-site evaluation reuses the registered
+  locator.
 - Failed FedAvg callbacks no longer publish partial aggregates.
 - Aggregation rejects incompatible parameter shapes before weighted
   aggregation and preflights full-model weight diffs before mutation; built-in
@@ -355,8 +372,14 @@ Examples and Research
   Nemotron 3.5 Lightning support in the NeMo PEFT example, and a Hello PyTorch
   quickstart with environment continuity.
 - Collab API (technical preview): simple asynchronous MNIST and full FedBuff
-  on CIFAR-10.
-- Research: FedSCS aggregation, FedRevive, FedCoRe (Qwen3-VL missing
+  on CIFAR-10, a reusable buffered asynchronous ``AsyncRecipe`` with
+  independent active-client, buffer, and refill settings, a reproducible
+  asynchronous CIFAR-10 example, and a minimal distributed SQL example.
+- PyTorch distillation helpers under ``nvflare.app_opt.pt.distillation``:
+  supplied-data knowledge distillation and optional data-free synthesis, usable
+  without a federated runtime.
+- Research: AgenticFL (an agent-negotiated workflow on a 39-site retinal
+  cohort), FedSCS aggregation, FedRevive, FedCoRe (Qwen3-VL missing
   modality), BreastG-FCL, and a cross-round client-drift monitoring example.
 
 Upgrade and Compatibility
