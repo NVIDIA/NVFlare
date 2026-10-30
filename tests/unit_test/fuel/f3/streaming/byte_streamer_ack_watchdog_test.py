@@ -27,6 +27,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamTargetUnreachable
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup, isolate_time
 
 
 class DummyStream(Stream):
@@ -511,14 +512,12 @@ class TestByteStreamerAckWatchdog:
         task.ack_waiter = MagicMock()
         task.ack_waiter.wait.return_value = False
 
-        start = time.monotonic()
         task.send_loop()
-        elapsed = time.monotonic() - start
 
         err = task.stream_future.exception()
         assert err is not None
         assert "ack made no progress" in str(err).lower()
-        assert elapsed < 0.2
+        task.ack_waiter.wait.assert_not_called()
 
 
 class TestReliableByteStreamer:
@@ -551,27 +550,39 @@ class TestReliableByteStreamer:
         finally:
             original_pool.shutdown(wait=False)
 
-    def test_retry_scheduler_shutdown_drains_admitted_retry(self):
+    def test_retry_scheduler_shutdown_drains_admitted_retry(self, monkeypatch):
         scheduler = byte_streamer_module.ReliableRetryScheduler()
         retry_started = threading.Event()
         release_retry = threading.Event()
-        shutdown_done = threading.Event()
+        retry_completed = threading.Event()
+        join_observed = threading.Event()
 
         def retry():
             retry_started.set()
-            assert release_retry.wait(2.0)
+            assert release_retry.wait(WAIT_TIMEOUT)
+            retry_completed.set()
 
-        scheduler.retry_task_pool.submit(retry)
-        assert retry_started.wait(2.0)
-        shutdown_thread = threading.Thread(target=lambda: (scheduler.shutdown(), shutdown_done.set()))
-        shutdown_thread.start()
+        retry_future = scheduler.retry_task_pool.submit(retry)
         try:
-            assert not shutdown_done.wait(0.05)
-            release_retry.set()
-            assert shutdown_done.wait(2.0)
+            assert retry_started.wait(WAIT_TIMEOUT)
+            # Observe the actual worker join, not merely entry to shutdown(). A
+            # wait=False regression never joins and must not satisfy this test.
+            for worker in scheduler.retry_task_pool._threads:
+                real_join = worker.join
+
+                def complete_at_join(timeout=None, join=real_join):
+                    join_observed.set()
+                    release_retry.set()
+                    return join(timeout=timeout)
+
+                monkeypatch.setattr(worker, "join", complete_at_join)
+            scheduler.shutdown()
+            assert join_observed.is_set(), "shutdown returned without joining the admitted retry"
+            assert retry_completed.is_set()
+            retry_future.result(timeout=WAIT_TIMEOUT)
         finally:
             release_retry.set()
-            shutdown_thread.join(timeout=2.0)
+            scheduler.retry_task_pool.shutdown(wait=True)
 
     @pytest.fixture
     def retry_scheduler(self, monkeypatch):
@@ -780,29 +791,26 @@ class TestReliableByteStreamer:
 
     def test_reliable_send_blocks_concurrent_error_stop_until_send_returns(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.send_lock = ObservedLock(task.send_lock)
         task.buffer[0:1] = b"x"
         task.buffer_size = 1
         stop_finished = threading.Event()
-        stop_threads = []
 
         def stop_task():
             task.stop(StreamError("failed"), notify=False)
             stop_finished.set()
 
-        def slow_send(*args, **kwargs):
-            stop_thread = threading.Thread(target=stop_task)
-            stop_threads.append(stop_thread)
-            stop_thread.start()
-            assert not stop_finished.wait(0.05)
-            return {}
+        with ThreadGroup() as workers:
 
-        cell.fire_and_forget.side_effect = slow_send
+            def slow_send(*args, **kwargs):
+                workers.start(stop_task)
+                assert task.send_lock.blocked.wait(WAIT_TIMEOUT), "stop never contended with the in-flight send"
+                assert not stop_finished.is_set()
+                return {}
 
-        assert task.send_pending_buffer() is True
-        assert stop_finished.wait(1.0)
-        for stop_thread in stop_threads:
-            stop_thread.join(timeout=1.0)
-            assert not stop_thread.is_alive()
+            cell.fire_and_forget.side_effect = slow_send
+            assert task.send_pending_buffer() is True
+        assert stop_finished.is_set()
         assert task.stopped is True
 
     def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
@@ -1031,3 +1039,11 @@ class TestReliableByteStreamer:
         err = task.stream_future.exception(timeout=0.1)
         assert err is not None
         assert "retry failed" in str(err)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.fuel.f3.streaming.byte_streamer",
+    )

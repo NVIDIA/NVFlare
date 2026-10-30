@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Offline release-credential and registry identity tests; never modify the user's home."""
+"""CoCo external-runtime contracts; run serially outside unit workers."""
 
 import hashlib
 import json
@@ -26,9 +26,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import require_coco_bash
+from tests.coco_test_utils.process import COMMAND_TIMEOUT, run_coco_command
+from tests.coco_test_utils.shell import require_coco_bash
+from tests.coco_test_utils.workload_context import contract, final_workload_pod
 
-ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+ROOT = Path(__file__).resolve().parents[4] / "examples/devops/coco"
+
 PASSWORD = "fixture-password-not-for-production"
 
 
@@ -40,11 +43,11 @@ def credential_bash():
     for tool in ("realpath", "find", "install", "sort", "tr", "hostname", "mkdir", "chmod"):
         if not shutil.which(tool):
             pytest.skip(f"Publisher credential tests require {tool}")
-    probe = subprocess.run(
+    probe = run_coco_command(
         [bash, "-c", 'realpath -e -- . >/dev/null && find . -maxdepth 0 -printf "%f\\n" >/dev/null'],
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=COMMAND_TIMEOUT,
     )
     if probe.returncode:
         pytest.skip(f"Publisher credential tests require GNU realpath/find: {probe.stderr.strip()}")
@@ -123,7 +126,9 @@ for name in GENPOLICY RULES SETTINGS WORKLOAD_LAUNCH_PROFILE; do printf 'RELEASE
         OWNER_CONFIG=str(kit / "workload.env"),
         PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
     )
-    return subprocess.run([credential_bash, "-c", prelude], env=env, capture_output=True, text=True, timeout=10)
+    return run_coco_command(
+        [credential_bash, "-c", prelude], env=env, capture_output=True, text=True, timeout=COMMAND_TIMEOUT
+    )
 
 
 def _inline_python(path, marker):
@@ -147,14 +152,12 @@ def test_release_authority_matches_launcher_and_trustee(credential_bash, credent
     runtime = "kata-qemu-snp"
 
     # Exercise the launcher's real static checker with the real release identity.
-    fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
-    fixture["final_workload_pod"].__globals__["IMAGE"] = image
-    pod = fixture["final_workload_pod"](runtime)
+    pod = final_workload_pod(runtime, image=image)
     pod["spec"]["containers"][0]["image"] = image
     pod_file = tmp_path / "pod.json"
     pod_file.write_text(json.dumps(pod))
     launcher = ROOT / "coco/50-launch-handoff.sh"
-    launch = subprocess.run(
+    launch = run_coco_command(
         [
             sys.executable,
             "-",
@@ -167,7 +170,7 @@ def test_release_authority_matches_launcher_and_trustee(credential_bash, credent
         input=_inline_python(launcher, 'python3 - "$1"'),
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=COMMAND_TIMEOUT,
     )
     assert launch.returncode == 0, launch.stderr
     assert "InitData policy checks" in launch.stdout
@@ -282,12 +285,12 @@ def test_builder_rejects_missing_preinstalled_genpolicy_before_building(credenti
     python = tools / "python3"
     python.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' "$@"\n')
     python.chmod(0o700)
-    result = subprocess.run(
+    result = run_coco_command(
         [credential_bash, str(kit / "build_coco_image.sh"), str(request)],
         env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=COMMAND_TIMEOUT,
     )
     assert result.returncode != 0
     assert "GENPOLICY must name the preinstalled executable" in result.stderr
@@ -297,9 +300,8 @@ def test_builder_rejects_missing_preinstalled_genpolicy_before_building(credenti
 
 def test_image_runner_proceeds_noninteractively_with_existing_tools(credential_bash, credential_kit, tmp_path):
     kit, work_root = credential_kit
-    fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
     received_profile = tmp_path / "launch-profile.json"
-    received_profile.write_text(json.dumps(fixture["contract"]()))
+    received_profile.write_text(json.dumps(contract()))
     tools = tmp_path / "tools"
     tools.mkdir()
     for name in ("genpolicy", "rules.rego", "settings.json"):
@@ -354,7 +356,7 @@ def test_image_runner_proceeds_noninteractively_with_existing_tools(credential_b
             }
         )
     )
-    result = subprocess.run(
+    result = run_coco_command(
         [credential_bash, str(kit / "build_coco_image.sh"), str(request)],
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -365,7 +367,7 @@ def test_image_runner_proceeds_noninteractively_with_existing_tools(credential_b
             "TEST_STAGE_CALLS": str(stage_calls),
             "TEST_HANDOFF": str(work_root / "releases/fixture-v1/handoff"),
         },
-        timeout=15,
+        timeout=COMMAND_TIMEOUT,
     )
     assert result.returncode == 0, result.stderr
     assert stage_calls.read_text().splitlines() == [name + ":1" for name in stages]
@@ -386,7 +388,9 @@ def test_publish_script_accepts_workload_alone_without_an_approval_gate(credenti
     command = [credential_bash, str(script), "workload.env"]
     if legacy_flag:
         command.append("--approve-reviewed-plaintext")
-    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
+    result = run_coco_command(
+        command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=COMMAND_TIMEOUT
+    )
     assert result.returncode == 67
     assert "REACHED_RELEASE_CONFIGURATION" in result.stdout
 
@@ -396,12 +400,12 @@ def test_publish_script_accepts_workload_alone_without_an_approval_gate(credenti
     [[], ["workload.env", "--unexpected"], ["workload.env", "--approve-reviewed-plaintext", "extra"]],
 )
 def test_publish_script_rejects_malformed_flags_before_loading_configuration(credential_bash, arguments):
-    result = subprocess.run(
+    result = run_coco_command(
         [credential_bash, str(ROOT / "admin/20-encrypt-sign-publish.sh"), *arguments],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=COMMAND_TIMEOUT,
     )
     assert result.returncode == 2
     assert "Usage:" in result.stderr
@@ -541,21 +545,23 @@ def publishing(credential_kit, credential_bash, tmp_path):
             "TEST_REGISTRY_CA": str(kit / "public/registry-ca.crt"),
             "TEST_REGISTRY_PASSWORD": PASSWORD,
         }
-        publish = subprocess.run(
+        publish = run_coco_command(
             [credential_bash, str(kit / "20-encrypt-sign-publish.sh"), str(kit / "workload.env")],
             capture_output=True,
             text=True,
             env=environment,
-            timeout=15,
+            timeout=COMMAND_TIMEOUT,
+            diagnostic_paths=(calls,),
         )
         verify = None
         if publish.returncode == 0:
-            verify = subprocess.run(
+            verify = run_coco_command(
                 [credential_bash, str(kit / "25-verify-published-image.sh"), str(kit / "workload.env")],
                 capture_output=True,
                 text=True,
                 env=environment,
-                timeout=15,
+                timeout=COMMAND_TIMEOUT,
+                diagnostic_paths=(calls,),
             )
         operations = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
         assert PASSWORD not in publish.stdout + publish.stderr

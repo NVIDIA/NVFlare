@@ -40,6 +40,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from tests.timing_utils import isolate_time
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -848,3 +849,8 @@ class TestBootstrapAuthIdentityMap:
 
         assert captured["auth_identity_map"] == {FQCN.ROOT_SERVER: "gcp-server"}
         assert captured["secure"] is True
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.app_opt.job_launcher.workspace_cell_transfer")

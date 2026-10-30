@@ -41,6 +41,7 @@ from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
+from tests.timing_utils import CheckedThread, join_thread, wait_for
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -208,9 +209,24 @@ def launch_task(controller, method, task, fl_ctx, kwargs):
         controller.relay_and_wait(task=task, fl_ctx=fl_ctx, **kwargs)
 
 
-def get_ready(thread, sleep_time=0.1):
+def get_ready(thread, controller, task):
+    # Standing is set before insertion, so observe registration under the task lock.
+
+    def registered():
+        thread.raise_if_failed()
+        with controller.communicator._task_lock:
+            return task in controller.communicator._tasks or task.completion_status is not None
+
     thread.start()
-    time.sleep(sleep_time)
+    wait_for(registered, message=f"task {task.name} was not registered")
+
+
+def _wait_for_task(communicator, *args, **kwargs):
+    def assigned():
+        response = communicator.process_task_request(*args, **kwargs)
+        return response if response[0] else None
+
+    return wait_for(assigned, message="client received no task")
 
 
 def _setup_system(num_clients=1):
@@ -253,15 +269,39 @@ class TestController:
         for mod in _TIME_PATCHED_MODULES:
             monkeypatch.setattr(mod, "time", fake_time)
         self.clock = clock
+        self._systems = []
+        self._threads = []
+        yield
+        # Release wait APIs even when a test assertion fails before cancellation.
+        errors = []
+        for controller, fl_ctx in self._systems:
+            try:
+                controller.cancel_all_tasks()
+                controller.communicator.finalize_run(fl_ctx=fl_ctx)
+            except Exception as error:
+                errors.append(error)
+        for thread in self._threads:
+            if thread.ident is not None:
+                try:
+                    join_thread(thread)
+                except Exception as error:
+                    errors.append(error)
+        if errors:
+            raise errors[0]
 
-    @staticmethod
-    def setup_system(num_of_clients=1):
+    def make_thread(self, *args, **kwargs):
+        thread = CheckedThread(*args, **kwargs)
+        self._threads.append(thread)
+        return thread
+
+    def setup_system(self, num_of_clients=1):
         controller, server_engine, fl_ctx, clients_list = _setup_system(num_clients=num_of_clients)
+        self._systems.append((controller, fl_ctx))
         return controller, fl_ctx, clients_list
 
-    @staticmethod
-    def teardown_system(controller, fl_ctx):
+    def teardown_system(self, controller, fl_ctx):
         controller.communicator.finalize_run(fl_ctx=fl_ctx)
+        self._systems.remove((controller, fl_ctx))
 
 
 class TestTaskManagement(TestController):
@@ -275,7 +315,7 @@ class TestTaskManagement(TestController):
         all_tasks = []
         for i in range(num_of_tasks):
             task = create_task(name="__test_task")
-            launch_thread = threading.Thread(
+            launch_thread = self.make_thread(
                 target=launch_task,
                 kwargs={
                     "controller": controller,
@@ -285,7 +325,7 @@ class TestTaskManagement(TestController):
                     "kwargs": {"targets": [client]},
                 },
             )
-            get_ready(launch_thread)
+            get_ready(launch_thread, controller, task)
             all_threads.append(launch_thread)
             all_tasks.append(task)
         assert controller.get_num_standing_tasks() == num_of_tasks
@@ -293,7 +333,7 @@ class TestTaskManagement(TestController):
         for task in all_tasks:
             assert task.completion_status == TaskCompletionStatus.CANCELLED
         for thread in all_threads:
-            thread.join()
+            join_thread(thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method1", TestController.ALL_APIS)
@@ -304,7 +344,7 @@ class TestTaskManagement(TestController):
         task = create_task(name="__test_task")
         targets = [client]
 
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -314,14 +354,14 @@ class TestTaskManagement(TestController):
                 "kwargs": {"targets": targets},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         with pytest.raises(ValueError, match="Task was already used. Please create a new task object."):
             launch_task(controller=controller, method=method2, task=task, fl_ctx=fl_ctx, kwargs={"targets": targets})
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -335,7 +375,7 @@ class TestTaskManagement(TestController):
         all_tasks = []
         for i in range(num_of_start_tasks):
             task = create_task(name=f"__test_task{i}")
-            launch_thread = threading.Thread(
+            launch_thread = self.make_thread(
                 target=launch_task,
                 kwargs={
                     "controller": controller,
@@ -345,7 +385,7 @@ class TestTaskManagement(TestController):
                     "kwargs": {"targets": [client]},
                 },
             )
-            get_ready(launch_thread)
+            get_ready(launch_thread, controller, task)
             all_threads.append(launch_thread)
             all_tasks.append(task)
 
@@ -356,7 +396,7 @@ class TestTaskManagement(TestController):
         assert controller.get_num_standing_tasks() == (num_of_start_tasks - num_of_cancel_tasks)
         controller.cancel_all_tasks()
         for thread in all_threads:
-            thread.join()
+            join_thread(thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -365,7 +405,7 @@ class TestTaskManagement(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -375,7 +415,7 @@ class TestTaskManagement(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         controller.cancel_task(task)
         for i in range(num_client_requests):
             _, task_id, data = controller.communicator.process_task_request(client, fl_ctx)
@@ -385,7 +425,7 @@ class TestTaskManagement(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -393,7 +433,7 @@ class TestTaskManagement(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -403,12 +443,11 @@ class TestTaskManagement(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        time.sleep(0.1)
-        print(controller.communicator._tasks)
+        controller.communicator.check_tasks()
 
         # in here we make up client results:
         result = Shareable()
@@ -420,7 +459,7 @@ class TestTaskManagement(TestController):
             )
 
         assert task.last_client_task_map["__test_client0"].result is None
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
 
@@ -719,7 +758,7 @@ class TestCallback(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task", before_task_sent_cb=before_task_sent_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -729,14 +768,14 @@ class TestCallback(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, _, data = controller.communicator.process_task_request(client, fl_ctx)
 
         assert data["_test_data"] == client_name
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -750,7 +789,7 @@ class TestCallback(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task", data=input_data, result_received_cb=result_received_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -760,7 +799,7 @@ class TestCallback(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
         controller.communicator.process_submission(
             client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
@@ -769,7 +808,7 @@ class TestCallback(TestController):
         assert task.last_client_task_map[client_name].result["_test_data"] == client_name
         controller.communicator.check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("task_complete", ["normal", "timeout", "cancel"])
@@ -781,7 +820,7 @@ class TestCallback(TestController):
 
         timeout = 0 if task_complete != "timeout" else 1
         task = create_task("__test_task", data=input_data, task_done_cb=cb, timeout=timeout)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -791,7 +830,7 @@ class TestCallback(TestController):
                 "kwargs": {"targets": clients},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         client_task_ids = len(clients) * [None]
         for i, client in enumerate(clients):
@@ -820,7 +859,7 @@ class TestCallback(TestController):
         controller.communicator.check_tasks()
         assert task.props[task_name] == expected
         assert controller.get_num_standing_tasks() == 0
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -831,7 +870,7 @@ class TestCallback(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task", before_task_sent_cb=before_task_sent_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -841,13 +880,13 @@ class TestCallback(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
         assert task_name_out == ""
         assert client_task_id == ""
 
-        launch_thread.join()
+        join_thread(launch_thread)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         self.teardown_system(controller, fl_ctx)
 
@@ -861,7 +900,7 @@ class TestCallback(TestController):
         client1 = clients[0]
         client2 = create_client(name="__another_client")
         task = create_task("__test_task", result_received_cb=result_received_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -871,7 +910,7 @@ class TestCallback(TestController):
                 "kwargs": {"targets": [client1, client2]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client1, fl_ctx)
 
@@ -886,7 +925,7 @@ class TestCallback(TestController):
         assert task_name_out == ""
         assert client_task_id == ""
 
-        launch_thread.join()
+        join_thread(launch_thread)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         self.teardown_system(controller, fl_ctx)
 
@@ -897,7 +936,7 @@ class TestCallback(TestController):
         def before_task_sent_cb(client_task: ClientTask, fl_ctx: FLContext):
             inner_controller = ctx.get_prop(key="controller")
             new_task = create_task("__new_test_task")
-            inner_launch_thread = threading.Thread(
+            inner_launch_thread = self.make_thread(
                 target=launch_task,
                 kwargs={
                     "controller": inner_controller,
@@ -908,13 +947,13 @@ class TestCallback(TestController):
                 },
             )
             inner_launch_thread.start()
-            inner_launch_thread.join()
+            join_thread(inner_launch_thread)
 
         controller, ctx, clients = self.setup_system()
         ctx.set_prop("controller", controller)
         client = clients[0]
         task = create_task("__test_task", before_task_sent_cb=before_task_sent_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -927,19 +966,15 @@ class TestCallback(TestController):
         launch_thread.start()
 
         task_name_out = ""
-        while task_name_out == "":
-            task_name_out, _, _ = controller.communicator.process_task_request(client, ctx)
-            time.sleep(0.1)
+        (task_name_out, _, _) = _wait_for_task(controller.communicator, client, ctx)
         assert task_name_out == "__test_task"
         new_task_name_out = ""
-        while new_task_name_out == "":
-            new_task_name_out, _, _ = controller.communicator.process_task_request(client, ctx)
-            time.sleep(0.1)
+        (new_task_name_out, _, _) = _wait_for_task(controller.communicator, client, ctx)
         assert new_task_name_out == "__new_test_task"
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -949,7 +984,7 @@ class TestCallback(TestController):
         def result_received_cb(client_task: ClientTask, fl_ctx: FLContext):
             inner_controller = fl_ctx.get_prop(key="controller")
             new_task = create_task("__new_test_task")
-            inner_launch_thread = threading.Thread(
+            inner_launch_thread = self.make_thread(
                 target=launch_task,
                 kwargs={
                     "controller": inner_controller,
@@ -959,14 +994,14 @@ class TestCallback(TestController):
                     "kwargs": {"targets": [client_task.client]},
                 },
             )
-            get_ready(inner_launch_thread)
-            inner_launch_thread.join()
+            get_ready(inner_launch_thread, inner_controller, new_task)
+            join_thread(inner_launch_thread)
 
         controller, ctx, clients = self.setup_system()
         ctx.set_prop("controller", controller)
         client = clients[0]
         task = create_task("__test_task", result_received_cb=result_received_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -981,9 +1016,7 @@ class TestCallback(TestController):
         task_name_out = ""
         client_task_id = ""
         data = None
-        while task_name_out == "":
-            task_name_out, client_task_id, data = controller.communicator.process_task_request(client, ctx)
-            time.sleep(0.1)
+        (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, client, ctx)
         assert task_name_out == "__test_task"
 
         controller.communicator.process_submission(
@@ -992,11 +1025,9 @@ class TestCallback(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
         new_task_name_out = ""
-        while new_task_name_out == "":
-            new_task_name_out, _, _ = controller.communicator.process_task_request(client, ctx)
-            time.sleep(0.1)
+        (new_task_name_out, _, _) = _wait_for_task(controller.communicator, client, ctx)
         assert new_task_name_out == "__new_test_task"
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, ctx)
 
     def test_broadcast_schedule_task_in_result_received_cb(self):
@@ -1010,7 +1041,7 @@ class TestCallback(TestController):
             inner_controller = fl_ctx.get_prop(key="controller")
             client = client_task.client
             new_task = create_task(f"__new_test_task_{client.name}")
-            inner_launch_thread = threading.Thread(
+            inner_launch_thread = self.make_thread(
                 target=launch_task,
                 kwargs={
                     "controller": inner_controller,
@@ -1020,12 +1051,12 @@ class TestCallback(TestController):
                     "kwargs": {"targets": clients},
                 },
             )
-            get_ready(inner_launch_thread)
-            inner_launch_thread.join()
+            get_ready(inner_launch_thread, inner_controller, new_task)
+            join_thread(inner_launch_thread)
 
         ctx.set_prop("controller", controller)
         task = create_task("__test_task", result_received_cb=result_received_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1048,7 +1079,7 @@ class TestCallback(TestController):
             controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == num_of_clients - (i + 1)
 
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, ctx)
 
 
@@ -1071,7 +1102,7 @@ class TestBasic(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1081,7 +1112,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         for i in range(num_client_requests):
             task_name_out, _, data = controller.communicator.process_task_request(client, fl_ctx)
@@ -1089,7 +1120,7 @@ class TestBasic(TestController):
             assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map["__test_client0"].task_send_count == num_client_requests
         controller.cancel_task(task)
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -1097,7 +1128,7 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1107,7 +1138,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
         # in here we make up client results:
@@ -1118,14 +1149,14 @@ class TestBasic(TestController):
             client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
         )
         assert task.last_client_task_map["__test_client0"].result == result
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     def test_process_submission_rejects_unassigned_client_task_id(self):
         controller, fl_ctx, clients = self.setup_system(num_of_clients=2)
         assigned_client, other_client = clients
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1135,7 +1166,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [assigned_client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, _ = controller.communicator.process_task_request(assigned_client, fl_ctx)
         assert task_name_out == "__test_task"
@@ -1164,7 +1195,7 @@ class TestBasic(TestController):
             result=result,
         )
         assert client_task.result == result
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     def test_process_submission_drops_duplicate_result(self):
@@ -1177,7 +1208,7 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task", result_received_cb=result_received_cb)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1187,7 +1218,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, _ = controller.communicator.process_task_request(client, fl_ctx)
         assert task_name_out == "__test_task"
@@ -1218,14 +1249,14 @@ class TestBasic(TestController):
         client_task = task.last_client_task_map[client.name]
         assert result_count == 1
         assert client_task.result == result
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     def test_process_submission_completed_task_mismatch_uses_unknown_handler(self):
         controller, fl_ctx, clients = self.setup_system(num_of_clients=2)
         assigned_client, other_client = clients
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1235,7 +1266,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [assigned_client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         task_name_out, client_task_id, _ = controller.communicator.process_task_request(assigned_client, fl_ctx)
         assert task_name_out == "__test_task"
@@ -1270,7 +1301,7 @@ class TestBasic(TestController):
                 result=Shareable(),
             )
 
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -1280,7 +1311,7 @@ class TestBasic(TestController):
         client = clients[0]
         task = create_task(name="__test_task", data=Shareable(), timeout=timeout)
 
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1290,7 +1321,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
 
         assert controller.get_num_standing_tasks() == 1
         self.clock.advance(timeout + 1)
@@ -1299,7 +1330,7 @@ class TestBasic(TestController):
         ), "controller did not process task timeout"
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.TIMEOUT
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -1307,7 +1338,7 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task(name="__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1317,14 +1348,14 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         controller.cancel_task(task=task)
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
@@ -1332,7 +1363,7 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1342,9 +1373,9 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         task1 = create_task("__test_task1")
-        launch_thread1 = threading.Thread(
+        launch_thread1 = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1354,7 +1385,7 @@ class TestBasic(TestController):
                 "kwargs": {"targets": [client]},
             },
         )
-        get_ready(launch_thread1)
+        get_ready(launch_thread1, controller, task1)
         assert controller.get_num_standing_tasks() == 2
 
         controller.cancel_all_tasks()
@@ -1362,7 +1393,7 @@ class TestBasic(TestController):
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         assert task1.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     def test_finalize_run_releases_client_task_results(self, tmp_path):
@@ -1453,7 +1484,7 @@ class TestBasic(TestController):
                 cell=cell,
             )
 
-        download_thread = threading.Thread(target=run_download)
+        download_thread = self.make_thread(target=run_download)
         download_thread.start()
         assert cell.second_call_started.wait(5.0)
         assert temp_dir.exists()
@@ -1478,7 +1509,7 @@ class TestBroadcastBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1488,16 +1519,14 @@ class TestBroadcastBehavior(TestController):
                 "kwargs": {"targets": None, "min_responses": num_of_clients},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         for client in clients:
             task_name_out = ""
             client_task_id = ""
             data = None
-            while task_name_out == "":
-                task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
-                time.sleep(0.1)
+            (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, client, fl_ctx)
             assert task_name_out == "__test_task"
             assert_task_data_valid(data, input_data, method)
             assert task.last_client_task_map[client.name].task_send_count == 1
@@ -1519,7 +1548,7 @@ class TestBroadcastBehavior(TestController):
 
         controller.communicator.check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("num_of_clients", [1, 2, 3, 4])
@@ -1529,7 +1558,7 @@ class TestBroadcastBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1539,14 +1568,12 @@ class TestBroadcastBehavior(TestController):
                 "kwargs": {"targets": [clients[0]], "min_responses": 0},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         task_name_out = ""
         data = None
-        while task_name_out == "":
-            task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
-            time.sleep(0.1)
+        (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, clients[0], fl_ctx)
         assert task_name_out == "__test_task"
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
@@ -1559,7 +1586,7 @@ class TestBroadcastBehavior(TestController):
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("min_responses", [1, 2, 3, 4])
@@ -1569,7 +1596,7 @@ class TestBroadcastBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1579,7 +1606,7 @@ class TestBroadcastBehavior(TestController):
                 "kwargs": {"targets": None, "min_responses": min_responses},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         client_task_ids = []
@@ -1599,7 +1626,7 @@ class TestBroadcastBehavior(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("min_responses", [1, 2, 3, 4])
@@ -1610,7 +1637,7 @@ class TestBroadcastBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1624,7 +1651,7 @@ class TestBroadcastBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         client_task_ids = []
@@ -1642,7 +1669,7 @@ class TestBroadcastBehavior(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("num_clients", [1, 2, 3, 4])
@@ -1651,7 +1678,7 @@ class TestBroadcastBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1664,10 +1691,7 @@ class TestBroadcastBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
-        deadline = time.time() + 5.0
-        while controller.get_num_standing_tasks() == 0 and time.time() < deadline:
-            time.sleep(0.01)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         client_task_ids = []
@@ -1689,7 +1713,7 @@ class TestBroadcastBehavior(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
 
@@ -1987,7 +2011,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -1997,14 +2021,12 @@ class TestRelayBehavior(TestController):
                 "kwargs": {"targets": [clients[0]], "send_order": send_order},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         task_name_out = ""
         data = None
-        while task_name_out == "":
-            task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
-            time.sleep(0.1)
+        (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, clients[0], fl_ctx)
         assert task_name_out == "__test_task"
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
@@ -2017,7 +2039,7 @@ class TestRelayBehavior(TestController):
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     def test_task_assignment_timeout_sequential_order_only_client_in_target_will_get_task(self, method):
@@ -2027,7 +2049,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2043,7 +2065,7 @@ class TestRelayBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         self.clock.advance(task_assignment_timeout + 1)
@@ -2055,7 +2077,7 @@ class TestRelayBehavior(TestController):
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize(
@@ -2076,7 +2098,7 @@ class TestRelayBehavior(TestController):
     ):
         controller, fl_ctx, clients = self.setup_system()
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2090,7 +2112,7 @@ class TestRelayBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
         self.clock.advance(time_before_first_request)
         if dynamic_targets and not expected_to_get_task and time_before_first_request > task_assignment_timeout:
@@ -2106,7 +2128,7 @@ class TestRelayBehavior(TestController):
         assert task.targets == expected_targets
 
         controller.cancel_task(task)
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("targets", _get_sequential_sequence_test_cases())
@@ -2115,7 +2137,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["result"] = "start_"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2125,11 +2147,13 @@ class TestRelayBehavior(TestController):
                 "kwargs": {"targets": targets, "send_order": SendOrder.SEQUENTIAL},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         expected_client_index = 0
+        deadline = time.monotonic() + 10.0
         while controller.get_num_standing_tasks() != 0:
+            assert time.monotonic() < deadline, "sequential task did not complete"
             client_tasks_and_results = {}
 
             for c in targets:
@@ -2150,7 +2174,7 @@ class TestRelayBehavior(TestController):
                 assert task.last_client_task_map[c.name].result == client_result
             expected_client_index += 1
 
-        launch_thread.join()
+        join_thread(launch_thread)
         assert task.data["result"] == "start_" + "".join([c.name for c in targets])
         self.teardown_system(controller, fl_ctx)
 
@@ -2173,7 +2197,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2187,7 +2211,7 @@ class TestRelayBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         self.clock.advance(time_before_first_request)
@@ -2200,11 +2224,7 @@ class TestRelayBehavior(TestController):
                 if expected_client_to_get_task and client.name == expected_client_to_get_task.name:
                     data = None
                     task_name_out = ""
-                    while task_name_out == "":
-                        task_name_out, client_task_id, data = controller.communicator.process_task_request(
-                            client, fl_ctx
-                        )
-                        time.sleep(0.1)
+                    (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, client, fl_ctx)
                     assert task_name_out == "__test_task"
                     assert_task_data_valid(data, input_data, method)
                     assert task.last_client_task_map[client.name].task_send_count == 1
@@ -2226,7 +2246,7 @@ class TestRelayBehavior(TestController):
                     result=result,
                 )
 
-        launch_thread.join()
+        join_thread(launch_thread)
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         self.teardown_system(controller, fl_ctx)
@@ -2239,7 +2259,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2254,16 +2274,14 @@ class TestRelayBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         # first client get a task
         data = None
         task_name_out = ""
         old_client_task_id = ""
-        while task_name_out == "":
-            task_name_out, old_client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
-            time.sleep(0.1)
+        (task_name_out, old_client_task_id, data) = _wait_for_task(controller.communicator, clients[0], fl_ctx)
         assert task_name_out == "__test_task"
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
@@ -2307,7 +2325,7 @@ class TestRelayBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2322,7 +2340,7 @@ class TestRelayBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         # each client get a client task then time out
@@ -2330,9 +2348,7 @@ class TestRelayBehavior(TestController):
             data = None
             task_name_out = ""
 
-            while task_name_out == "":
-                task_name_out, old_client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
-                time.sleep(0.1)
+            (task_name_out, old_client_task_id, data) = _wait_for_task(controller.communicator, client, fl_ctx)
             assert task_name_out == "__test_task"
             assert_task_data_valid(data, input_data, method)
             assert task.last_client_task_map[client.name].task_send_count == 1
@@ -2351,7 +2367,7 @@ class TestRelayBehavior(TestController):
             controller.cancel_task(task)
             assert task.completion_status == TaskCompletionStatus.CANCELLED
 
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
 
@@ -2415,7 +2431,7 @@ class TestSendBehavior(TestController):
         client = clients[0]
         targets = [create_client("__target_client")]
         task = create_task("__test_task")
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2425,7 +2441,7 @@ class TestSendBehavior(TestController):
                 "kwargs": {"targets": targets, "send_order": send_order},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         # this client not in target so should get nothing
@@ -2436,7 +2452,7 @@ class TestSendBehavior(TestController):
         controller.cancel_task(task)
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("targets,send_order,client_idx", _get_process_task_request_test_cases())
@@ -2447,7 +2463,7 @@ class TestSendBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2457,17 +2473,13 @@ class TestSendBehavior(TestController):
                 "kwargs": {"targets": targets, "send_order": SendOrder.ANY},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         # first client
         task_name_out = ""
         data = None
-        while task_name_out == "":
-            task_name_out, client_task_id, data = controller.communicator.process_task_request(
-                targets[client_idx], fl_ctx
-            )
-            time.sleep(0.1)
+        (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, targets[client_idx], fl_ctx)
         assert task_name_out == "__test_task"
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[targets[client_idx].name].task_send_count == 1
@@ -2479,7 +2491,7 @@ class TestSendBehavior(TestController):
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize(
@@ -2501,7 +2513,7 @@ class TestSendBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2515,7 +2527,7 @@ class TestSendBehavior(TestController):
                 },
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         self.clock.advance(time_before_first_request)
@@ -2524,9 +2536,7 @@ class TestSendBehavior(TestController):
             data = None
             if client.name == expected_client_to_get_task:
                 task_name_out = ""
-                while task_name_out == "":
-                    task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
-                    time.sleep(0.1)
+                (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, client, fl_ctx)
                 assert task_name_out == "__test_task"
                 assert_task_data_valid(data, input_data, method)
                 assert task.last_client_task_map[client.name].task_send_count == 1
@@ -2537,7 +2547,7 @@ class TestSendBehavior(TestController):
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)
 
     @pytest.mark.parametrize("num_of_clients", [1, 2, 3])
@@ -2547,7 +2557,7 @@ class TestSendBehavior(TestController):
         input_data = Shareable()
         input_data["hello"] = "world"
         task = create_task("__test_task", data=input_data)
-        launch_thread = threading.Thread(
+        launch_thread = self.make_thread(
             target=launch_task,
             kwargs={
                 "controller": controller,
@@ -2557,16 +2567,14 @@ class TestSendBehavior(TestController):
                 "kwargs": {"targets": clients, "send_order": SendOrder.SEQUENTIAL},
             },
         )
-        get_ready(launch_thread)
+        get_ready(launch_thread, controller, task)
         assert controller.get_num_standing_tasks() == 1
 
         # first client
         task_name_out = ""
         client_task_id = ""
         data = None
-        while task_name_out == "":
-            task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
-            time.sleep(0.1)
+        (task_name_out, client_task_id, data) = _wait_for_task(controller.communicator, clients[0], fl_ctx)
         assert task_name_out == "__test_task"
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
@@ -2584,5 +2592,5 @@ class TestSendBehavior(TestController):
         controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
-        launch_thread.join()
+        join_thread(launch_thread)
         self.teardown_system(controller, fl_ctx)

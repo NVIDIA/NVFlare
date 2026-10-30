@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,65 +26,15 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.lighter.cc_provision import kata_runtime_profile, workload_launch_profile, workload_security
+from tests.coco_test_utils.workload_context import context, contract, final_workload_pod, pod, policy, policy_data
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+
 API = vars(workload_security)
+
 ADMIN = vars(workload_launch_profile)
+
 IMAGE = "registry.example.invalid/app@sha256:" + "a" * 64
-
-
-def context(readonly=False):
-    return {
-        "privileged": False,
-        "allowPrivilegeEscalation": False,
-        "runAsNonRoot": True,
-        "runAsUser": 65532,
-        "runAsGroup": 65532,
-        "readOnlyRootFilesystem": readonly,
-        "capabilities": {"drop": ["ALL"]},
-        "seccompProfile": {"type": "RuntimeDefault"},
-    }
-
-
-def pod(readonly=False):
-    return {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "spec": {
-            "runtimeClassName": "kata-qemu-nvidia-gpu-snp",
-            "containers": [
-                {
-                    "name": "app",
-                    "image": IMAGE,
-                    "securityContext": context(readonly),
-                    "resources": {"limits": {"nvidia.com/pgpu": "1"}},
-                }
-            ],
-        },
-    }
-
-
-def contract(readonly=False):
-    return {
-        "schema": API["SCHEMA"],
-        "profile_id": "reviewed",
-        "runtime_class": "kata-qemu-nvidia-gpu-snp",
-        "kata_version": "3.29.0",
-        "guest_token_api": "guest-local-aa-token/v1",
-        "kata_deploy_image": "registry.example.invalid/runtime@sha256:" + "b" * 64,
-        "kata_config_sha256": "c" * 64,
-        "launch_inputs_sha256": "d" * 64,
-        "vm_defaults": {"vcpus": 1, "memory_mib": 8192},
-        "workload_security_context": context(readonly),
-        "pod_constraints": {
-            "container_count": 1,
-            "gpu_resource": "nvidia.com/pgpu",
-            "gpu_count": 1,
-            "cpu_memory_resources": "omitted",
-            "host_namespaces": False,
-            "allowed_annotations": ["io.katacontainers.config.hypervisor.cc_init_data"],
-        },
-    }
 
 
 @pytest.mark.parametrize("readonly", [False, True])
@@ -165,39 +114,6 @@ def test_pod_level_override_rejected(value):
         API["pod_context"](changed)
     with pytest.raises(ValueError):
         ADMIN["validate_pod"](contract(), changed)
-
-
-def policy_data(readonly=False):
-    pause = json.loads((Path(__file__).parent / "fixtures/kata-3.29-pause-policy.json").read_text())
-    return {
-        "common": pause["common"],
-        "cluster_config": pause["cluster_config"],
-        "request_defaults": {
-            "ReadStreamRequest": False,
-            "WriteStreamRequest": False,
-            "ExecProcessRequest": {"allowed_commands": [], "regex": []},
-        },
-        "containers": [
-            {
-                "exec_commands": [],
-                "OCI": {
-                    "Annotations": {"io.kubernetes.cri.image-name": IMAGE},
-                    "Process": {
-                        "User": {"UID": 65532, "GID": 65532},
-                        "NoNewPrivileges": True,
-                        "Capabilities": {key: [] for key in API["CAPABILITY_SETS"]},
-                    },
-                    "Root": {"Readonly": readonly},
-                },
-            },
-            pause["container"],
-        ],
-    }
-
-
-def policy(data):
-    rules = (Path(__file__).parent / "fixtures/kata-3.29-hardened-rules.rego").read_text()
-    return rules + "\npolicy_data := " + json.dumps(data)
 
 
 @pytest.mark.parametrize("readonly", [False, True])
@@ -280,38 +196,6 @@ def test_request_policy_structure_fails_closed(change):
         value = value.replace('"request_defaults":', '"request_defaults": {}, "request_defaults":', 1)
     with pytest.raises(ValueError):
         API["validate_request_policy"](value)
-
-
-def final_workload_pod(runtime_class="kata-qemu-nvidia-gpu-snp", stream_enabled=False):
-    data = policy_data()
-    data["request_defaults"]["ReadStreamRequest"] = stream_enabled
-    data["containers"][0]["OCI"]["Process"]["Args"] = ["python3"]
-    # Structural fixtures only; no claim of executing Rego in a guest.
-    raw = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
-    value = pod()
-    value["spec"]["runtimeClassName"] = runtime_class
-    if runtime_class in ("kata-qemu-snp", "kata-qemu-tdx"):
-        value["spec"]["containers"][0]["resources"] = {}
-    value["metadata"] = {
-        "name": "review",
-        "annotations": {
-            "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(gzip.compress(raw.encode())).decode()
-        },
-    }
-    value["spec"].update(
-        {
-            "hostNetwork": False,
-            "hostPID": False,
-            "hostIPC": False,
-            "restartPolicy": "Never",
-            "automountServiceAccountToken": False,
-            "enableServiceLinks": False,
-        }
-    )
-    value["spec"]["containers"][0].update(
-        {"stdin": False, "tty": False, "command": ["python3"], "imagePullPolicy": "Always"}
-    )
-    return value
 
 
 RUNTIME_CLASSES = ("kata-qemu-nvidia-gpu-snp", "kata-qemu-snp", "kata-qemu-nvidia-gpu-tdx", "kata-qemu-tdx")

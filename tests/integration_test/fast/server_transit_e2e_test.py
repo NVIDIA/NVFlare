@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import multiprocessing
-import time
 import traceback
+from unittest.mock import Mock
 
 import pytest
 
@@ -22,23 +22,33 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests import cell_transit_test_utils
+from tests.cell_transit_test_utils import (
+    _CONNECT_TIMEOUT,
+    _mark_server_transit,
+    _queue_result,
+    _run_relay,
+    _wait_for_connection,
+)
+from tests.timing_utils import ManualClock, stop_processes
 
 _CHANNEL = "server_transit_test"
 _TOPIC = "ping"
-_CONNECT_TIMEOUT = 10.0
 
 
-def _mark_server_transit(message):
-    message.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
+@pytest.mark.timeout(5)
+def test_missing_connection_deadline_uses_one_monotonic_clock(monkeypatch):
+    clock = ManualClock(now=0.0)
+    clock.time = Mock(side_effect=AssertionError("wall clock used for connection deadline"))
+    clock.sleep = clock.advance
+    monkeypatch.setattr(cell_transit_test_utils, "time", clock)
+    cell = Mock()
+    cell.get_fqcn.return_value = "origin"
+    cell.is_cell_connected.return_value = False
 
-
-def _wait_for_connection(cell, peer_fqcn):
-    deadline = time.time() + _CONNECT_TIMEOUT
-    while time.time() < deadline:
-        if cell.is_cell_connected(peer_fqcn):
-            return
-        time.sleep(0.05)
-    raise RuntimeError(f"{cell.get_fqcn()} did not connect to {peer_fqcn}")
+    with pytest.raises(RuntimeError, match="origin did not connect to missing"):
+        _wait_for_connection(cell, "missing")
+    assert clock.monotonic() == pytest.approx(_CONNECT_TIMEOUT)
 
 
 def _run_server(root_url, status_queue, stop_event):
@@ -47,23 +57,8 @@ def _run_server(root_url, status_queue, stop_event):
         cell = CoreCell("server", root_url, secure=False, credentials={})
         cell.start()
         status_queue.put({"ready": True})
-        stop_event.wait(30)
-    except Exception:
-        status_queue.put({"error": traceback.format_exc()})
-        raise
-    finally:
-        if cell:
-            cell.stop()
-
-
-def _run_relay(root_url, status_queue, stop_event):
-    cell = None
-    try:
-        cell = CoreCell("relay-1", root_url, secure=False, credentials={}, create_internal_listener=True)
-        cell.start()
-        _wait_for_connection(cell, "server")
-        status_queue.put({"parent_url": cell.get_internal_listener_url()})
-        stop_event.wait(30)
+        # The parent owns teardown; a fixed lifetime can expire during slow setup.
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -91,7 +86,7 @@ def _run_destination(parent_url, status_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "relay-1")
         status_queue.put({"ready": True})
-        stop_event.wait(30)
+        stop_event.wait()
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -129,12 +124,6 @@ def _run_origin(parent_url, result_queue):
     finally:
         if cell:
             cell.stop()
-
-
-def _queue_result(queue):
-    result = queue.get(timeout=30)
-    assert "error" not in result, result.get("error")
-    return result
 
 
 @pytest.mark.timeout(90)
@@ -187,10 +176,6 @@ def test_non_secure_cross_site_request_and_reply_cross_server_under_shared_relay
         destination_stop.set()
         relay_stop.set()
         server_stop.set()
-        for process in reversed(started_processes):
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        stop_processes(origin, destination, relay, server)
 
     assert all(process.exitcode == 0 for process in started_processes)

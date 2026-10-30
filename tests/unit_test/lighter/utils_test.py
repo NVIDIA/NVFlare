@@ -18,7 +18,6 @@ import ipaddress
 import json
 import os
 import shutil
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -222,13 +221,12 @@ def test_generate_cert_rejects_duplicate_extra_extensions():
         )
 
 
-def create_folder():
-    tmp_dir = tempfile.TemporaryDirectory().name
+def create_folder(tmp_dir):
     for folder in folders:
         os.makedirs(os.path.join(tmp_dir, folder))
         for file in files:
             with open(os.path.join(tmp_dir, folder, file), "wb") as f:
-                f.write(open("/dev/urandom", "rb").read(1024))
+                f.write(os.urandom(1024))
 
     return tmp_dir
 
@@ -238,48 +236,42 @@ def tamper_one_file(folder):
         f.write("fail case")
 
 
-def update_and_sign_one_folder(folder, pri_key, cert):
-    tmp_dir = tempfile.TemporaryDirectory().name
+def update_and_sign_one_folder(folder, pri_key, cert, tmp_path):
+    tmp_dir = tmp_path / "updated"
+    tmp_dir.mkdir()
     new_folder = os.path.join(tmp_dir, "new_folder")
     shutil.move(folder, new_folder)
     with open(os.path.join(tmp_dir, "test_file"), "wt") as f:
         f.write("fail case")
-    with open("server.crt", "wb") as f:
-        f.write(serialize_cert(cert))
-    sign_folders(tmp_dir, pri_key, "server.crt", max_depth=1)
+    server_crt = tmp_path / "server.crt"
+    server_crt.write_bytes(serialize_cert(cert))
+    sign_folders(tmp_dir, pri_key, server_crt, max_depth=1)
     return tmp_dir
 
 
-def prepare_folders():
+def prepare_folders(tmp_path):
     root_cert, client_pri_key, client_cert, server_pri_key, server_cert = get_test_certs()
-    folder = create_folder()
-    with open("client.crt", "wb") as f:
-        f.write(serialize_cert(client_cert))
-    with open("root.crt", "wb") as f:
-        f.write(serialize_cert(root_cert))
-    sign_folders(folder, client_pri_key, "client.crt")
-    return folder, server_pri_key, server_cert
+    folder = create_folder(tmp_path / "original")
+    client_crt = tmp_path / "client.crt"
+    root_crt = tmp_path / "root.crt"
+    client_crt.write_bytes(serialize_cert(client_cert))
+    root_crt.write_bytes(serialize_cert(root_cert))
+    sign_folders(folder, client_pri_key, client_crt)
+    return folder, root_crt, server_pri_key, server_cert
 
 
-@pytest.mark.xdist_group(name="lighter_utils_group")
 class TestSignFolder:
-    def test_verify_folder(self):
-        folder, server_pri_key, server_cert = prepare_folders()
-        assert verify_folder_signature(folder, "root.crt") is True
+    def test_verify_folder(self, tmp_path):
+        folder, root_crt, _, _ = prepare_folders(tmp_path)
+        assert verify_folder_signature(folder, root_crt) is True
         tamper_one_file(folder)
-        assert verify_folder_signature(folder, "root.crt") is False
-        os.unlink("client.crt")
-        os.unlink("root.crt")
-        shutil.rmtree(folder)
+        assert verify_folder_signature(folder, root_crt) is False
 
-    def test_verify_updated_folder(self):
-        folder, server_pri_key, server_cert = prepare_folders()
-        assert verify_folder_signature(folder, "root.crt") is True
-        folder = update_and_sign_one_folder(folder, server_pri_key, server_cert)
-        assert verify_folder_signature(folder, "root.crt") is True
-        os.unlink("client.crt")
-        os.unlink("root.crt")
-        shutil.rmtree(folder)
+    def test_verify_updated_folder(self, tmp_path):
+        folder, root_crt, server_pri_key, server_cert = prepare_folders(tmp_path)
+        assert verify_folder_signature(folder, root_crt) is True
+        folder = update_and_sign_one_folder(folder, server_pri_key, server_cert, tmp_path)
+        assert verify_folder_signature(folder, root_crt) is True
 
     def _get_participant(self, name, participants):
         for p in participants:

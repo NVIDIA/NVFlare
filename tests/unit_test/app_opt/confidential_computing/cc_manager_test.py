@@ -36,6 +36,13 @@ from nvflare.app_opt.confidential_computing.tdx_authorizer import TDX_NAMESPACE,
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from tests.timing_utils import isolate_time
+
+
+@pytest.fixture(autouse=True)
+def _isolate_manager_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.app_opt.confidential_computing.cc_manager")
+
 
 VALID_TOKEN = "valid_token"
 INVALID_TOKEN = "invalid_token"

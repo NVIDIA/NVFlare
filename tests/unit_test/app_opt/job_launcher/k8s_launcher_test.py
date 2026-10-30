@@ -42,15 +42,25 @@ _k8s_api.core_v1_api = _k8s_core
 _k8s_mock.config = _k8s_config
 _k8s_mock.client = _k8s_client
 
-for _mod_name, _mod_obj in [
-    ("kubernetes", _k8s_mock),
-    ("kubernetes.config", _k8s_config),
-    ("kubernetes.client", _k8s_client),
-    ("kubernetes.client.rest", _k8s_rest),
-    ("kubernetes.client.api", _k8s_api),
-    ("kubernetes.client.api.core_v1_api", _k8s_core),
-]:
-    sys.modules[_mod_name] = _mod_obj
+_K8S_MODULES = {
+    "kubernetes": _k8s_mock,
+    "kubernetes.config": _k8s_config,
+    "kubernetes.client": _k8s_client,
+    "kubernetes.client.rest": _k8s_rest,
+    "kubernetes.client.api": _k8s_api,
+    "kubernetes.client.api.core_v1_api": _k8s_core,
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kubernetes_modules(monkeypatch):
+    # The SDK is imported lazily by the resident launcher. Keep these stubs
+    # local to its tests so other backends can use the real SDK utilities.
+    # Restore only SDK entries: restoring all of sys.modules evicts lazily
+    # imported NVFlare modules but leaves stale references on their packages.
+    for name, module in _K8S_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
@@ -72,6 +82,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from tests.timing_utils import isolate_time
 
 _DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
 
@@ -3655,3 +3666,11 @@ class TestK8sCredentialTransport:
             assert handle.terminal_state is None
         finally:
             _exit_patches(patches)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_opt.job_launcher.k8s_launcher",
+    )
