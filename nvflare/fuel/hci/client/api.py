@@ -25,7 +25,14 @@ from pathlib import Path
 from typing import List, Optional
 
 import nvflare.fuel.f3.streaming.file_downloader as downloader
-from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConnectionSecurity,
+    FLContextKey,
+    ProcessType,
+    ReservedKey,
+    ReturnCode,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.shareable import Shareable
@@ -86,6 +93,11 @@ from .api_status import APIStatus
 _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
+
+# Resource queries stage archived workspaces sequentially. Keep their default
+# request wait local to the operation; an explicit session timeout still wins.
+_RESOURCE_QUERY_COMMANDS = frozenset({AdminCommandNames.GET_JOB_RESOURCES, AdminCommandNames.GET_STUDY_RESOURCES})
+_RESOURCE_QUERY_TIMEOUT = 300.0
 
 MAX_AUTO_LOGIN_TRIES = 300
 AUTO_LOGIN_INTERVAL = 1.5
@@ -832,8 +844,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             conn.update_meta({MetaKey.CMD_PROPS: cmd_props})
 
         timeout = self.cmd_timeout
-        if not timeout:
-            timeout = 5.0
+        if timeout is None:
+            timeout = _RESOURCE_QUERY_TIMEOUT if ctx.get_command_name() in _RESOURCE_QUERY_COMMANDS else 5.0
 
         requester = ctx.get_requester()
         if requester:

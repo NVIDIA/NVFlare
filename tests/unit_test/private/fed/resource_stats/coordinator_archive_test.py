@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
+import json
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
 from nvflare.private.fed.resource_stats import coordinator as coordinator_module
+from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
 from nvflare.private.fed.resource_stats.contract import SCHEMA_VERSION, canonical_json_bytes
 from nvflare.private.fed.resource_stats.coordinator import (
     RESOURCE_REPORT_ACCEPTED,
@@ -52,6 +57,16 @@ def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09
     }
 
 
+def _workspace_zip(run_dir):
+    stream = io.BytesIO()
+    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
+        stats_dir = run_dir / "resource_stats"
+        archive.write(stats_dir, stats_dir.relative_to(run_dir).as_posix())
+        for path in sorted(stats_dir.rglob("*")):
+            archive.write(path, path.relative_to(run_dir).as_posix())
+    return stream.getvalue()
+
+
 @pytest.fixture
 def started_job(tmp_path):
     run_dir = tmp_path / "run_job-1"
@@ -60,7 +75,17 @@ def started_job(tmp_path):
     return coordinator, run_dir
 
 
-def test_accept_is_idempotent_and_finalized_bundle_is_published(started_job):
+@pytest.fixture
+def published_job(started_job):
+    coordinator, run_dir = started_job
+    data = canonical_json_bytes(_participant())
+    assert (
+        coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": data}) == RESOURCE_REPORT_ACCEPTED
+    )
+    return run_dir, coordinator.finalize_job("job-1")
+
+
+def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_job):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
 
@@ -110,6 +135,10 @@ def test_accept_is_idempotent_and_finalized_bundle_is_published(started_job):
         == RESOURCE_REPORT_TOO_LATE
     )
 
+    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
+    assert reader.read_resource_summary() == summary
+    assert reader.read_participant_summary("site-1") == _participant()
+
 
 def test_participant_write_failure_occurs_at_finalization_not_acceptance(started_job):
     coordinator, run_dir = started_job
@@ -146,8 +175,18 @@ def test_finalization_writes_resource_summary_last(tmp_path):
     assert writes == [("site-1.json", True), (RESOURCE_SUMMARY_FILE, False)]
 
 
+def test_workspace_reader_accepts_archive_path_and_open_file(tmp_path, published_job):
+    run_dir, summary = published_job
+    archive_path = tmp_path / "workspace.zip"
+    archive_path.write_bytes(_workspace_zip(run_dir))
+
+    assert WorkspaceResourceStatsReader(archive_path).read_resource_summary() == summary
+    with archive_path.open("rb") as archive_file:
+        assert WorkspaceResourceStatsReader(archive_file).read_participant_summary("site-1") == _participant()
+
+
 @pytest.mark.parametrize("archive_version", ["0.0", "2.0", "3.0", "4.0"])
-def test_unsupported_formats_are_rejected_by_live_receiver(started_job, archive_version):
+def test_unsupported_formats_are_rejected_by_live_and_archive_readers(started_job, archive_version):
     coordinator, run_dir = started_job
     legacy_participant = _participant()
     legacy_participant["schema_version"] = archive_version
@@ -163,6 +202,39 @@ def test_unsupported_formats_are_rejected_by_live_receiver(started_job, archive_
         )
         == RESOURCE_REPORT_ACCEPTED
     )
+    legacy_summary = coordinator.finalize_job("job-1")
+    legacy_summary["schema_version"] = archive_version
+    summary_path = run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE
+    summary_path.write_bytes(canonical_json_bytes(legacy_summary))
+    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
+    participant_path.write_bytes(canonical_json_bytes(legacy_participant))
+    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
+    with pytest.raises(WorkspaceResourceStatsError):
+        reader.read_resource_summary()
+
+
+@pytest.mark.parametrize(
+    "participant_version",
+    ["2.0", "4.0"],
+)
+def test_workspace_reader_checks_detail_version_only_when_detail_is_requested(started_job, participant_version):
+    coordinator, run_dir = started_job
+    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
+    coordinator.finalize_job("job-1")
+    summary_path = run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE
+    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
+    summary = json.loads(summary_path.read_bytes())
+    participant = json.loads(participant_path.read_bytes())
+    participant["schema_version"] = participant_version
+    summary_path.write_bytes(canonical_json_bytes(summary))
+    participant_path.write_bytes(canonical_json_bytes(participant))
+
+    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
+    # Job/study views trust the validated, self-contained rollup. Participant
+    # body consistency is checked lazily for a site-detail request.
+    reader.read_resource_summary()
+    with pytest.raises(WorkspaceResourceStatsError):
+        reader.read_participant_summary("site-1")
 
 
 def test_start_job_rejects_resource_stats_symlink(tmp_path):
@@ -314,6 +386,81 @@ def test_finalize_job_is_idempotent_and_rereads_the_published_summary(started_jo
     # the published summary from disk rather than re-running the write path.
     atomic_write_resource.assert_not_called()
     assert second == first
+
+
+@pytest.mark.parametrize(
+    "member,payloads",
+    [
+        ("resource_stats/README.txt", [b"{}"]),
+        ("resource_stats/unexpected.json", [b"{}"]),
+        ("resource_stats/staging/", [b""]),
+        ("resource_stats/README.txt", [b"first", b"second"]),
+    ],
+)
+def test_reader_ignores_unrequested_members(published_job, member, payloads):
+    run_dir, summary = published_job
+    workspace = io.BytesIO(_workspace_zip(run_dir))
+    warning = pytest.warns(UserWarning, match="Duplicate name") if len(payloads) > 1 else nullcontext()
+    with warning, ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
+        for payload in payloads:
+            archive.writestr(member, payload)
+
+    reader = WorkspaceResourceStatsReader(workspace.getvalue())
+    assert reader.read_resource_summary() == summary
+    assert reader.read_participant_summary("site-1") == _participant()
+
+
+@pytest.mark.parametrize("copies", [0, 2])
+def test_reader_checks_participant_member_count_only_when_requested(published_job, copies):
+    run_dir, summary = published_job
+    if copies == 0:
+        (run_dir / "resource_stats" / "participants" / "site-1.json").unlink()
+    workspace = io.BytesIO(_workspace_zip(run_dir))
+    if copies == 2:
+        with pytest.warns(UserWarning, match="Duplicate name"), ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
+            archive.writestr("resource_stats/participants/site-1.json", "{}")
+
+    reader = WorkspaceResourceStatsReader(workspace.getvalue())
+    assert reader.read_resource_summary() == summary
+    with pytest.raises(WorkspaceResourceStatsError, match=f"exactly one.*found {copies}"):
+        reader.read_participant_summary("site-1")
+
+
+def test_reader_rejects_duplicate_requested_resource_summary(tmp_path):
+    run_dir = tmp_path / "run_job-1"
+    coordinator = ResourceStatsCoordinator()
+    coordinator.start_job("job-1", [], run_dir)
+    coordinator.finalize_job("job-1")
+
+    workspace = io.BytesIO(_workspace_zip(run_dir))
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        with ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
+            archive.writestr("resource_stats/resource_summary.json", "{}")
+
+    with pytest.raises(WorkspaceResourceStatsError, match="exactly one.*found 2"):
+        WorkspaceResourceStatsReader(workspace.getvalue()).read_resource_summary()
+
+
+@pytest.mark.parametrize("field", ["cpu_consumed", "message_traffic"])
+def test_reader_rejects_participant_values_that_disagree_with_resource_summary(started_job, field):
+    coordinator, run_dir = started_job
+    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
+    coordinator.finalize_job("job-1")
+
+    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
+    participant = _participant()
+    participant["resource_utilization"][field] = (
+        {"sent_bytes": "1", "received_bytes": "2"}
+        if field == "message_traffic"
+        else {"status": "unavailable", "issues": ["attribution_incomplete"]}
+    )
+    participant_data = canonical_json_bytes(participant)
+    participant_path.write_bytes(participant_data)
+
+    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
+    reader.read_resource_summary()
+    with pytest.raises(WorkspaceResourceStatsError, match="values do not match"):
+        reader.read_participant_summary("site-1")
 
 
 def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):

@@ -17,9 +17,11 @@ import io
 import json
 import os
 import shutil
+import tempfile
 import threading
 import uuid
 import weakref
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
@@ -66,11 +68,27 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger, read_log_tail
 from nvflare.private.admin_defs import MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
+from nvflare.private.fed.resource_stats.contract import (
+    JOB_STATUS_PATTERN,
+    KIND_STUDY_SUMMARY,
+    MAX_JOB_NAME_LENGTH,
+    MAX_STUDY_JOBS,
+    MAX_STUDY_SUMMARY_BYTES,
+    SCHEMA_VERSION,
+    ContractError,
+    canonical_json_bytes,
+    derive_job_totals,
+    derive_study_totals,
+    utc_timestamp,
+    validate_record,
+)
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -111,6 +129,15 @@ def _active_study_from_conn(conn: Connection) -> str:
     return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
 
 
+def _resource_job_name(job: Job, job_id: str | None = None) -> str:
+    """Bound only the query display label; do not change persisted metadata."""
+
+    for name in (job.meta.get(JobMetaKey.JOB_NAME.value), job.meta.get(JobMetaKey.JOB_FOLDER_NAME.value)):
+        if isinstance(name, str) and name:
+            return name[:MAX_JOB_NAME_LENGTH]
+    return job_id or job.job_id
+
+
 def _append_no_such_job_error(conn: Connection, job_id: str):
     conn.append_error(f"no such job: {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
 
@@ -145,6 +172,33 @@ def _create_get_job_log_cmd_parser():
     parser.add_argument("log_file_name", nargs="?", default=WorkspaceConstants.LOG_FILE_NAME, help="log file name")
     parser.add_argument("--tail-bytes", type=int, help="maximum UTF-8 log bytes per site before transfer")
     return parser
+
+
+def _create_get_job_resources_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_RESOURCES)
+    parser.add_argument("job_id", help="Job ID")
+    parser.add_argument("--site", help="Include one accepted participant report")
+    return parser
+
+
+def _is_terminal_resource_job(status: str) -> bool:
+    return isinstance(status, str) and (
+        status.startswith("FINISHED:")
+        or status in {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
+    )
+
+
+def _normalize_job_status(status) -> str:
+    if isinstance(status, RunStatus):
+        return status.value
+    return status if isinstance(status, str) and status else "UNKNOWN"
+
+
+def _resource_job_status(status) -> str:
+    """Keep malformed legacy metadata out of query rows, without making it terminal."""
+
+    value = _normalize_job_status(status)
+    return value if JOB_STATUS_PATTERN.fullmatch(value) else "UNKNOWN"
 
 
 class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
@@ -194,6 +248,20 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [server|all|client_name]",
                     handler_func=self.get_job_log,
                     authz_func=self.authorize_job_id,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_JOB_RESOURCES,
+                    description="get finalized resource statistics for a job",
+                    usage=f"{AdminCommandNames.GET_JOB_RESOURCES} job_id [--site participant_name]",
+                    handler_func=self.get_job_resources,
+                    authz_func=self.authorize_job_id,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_STUDY_RESOURCES,
+                    description="get resource statistics for accessible jobs in the active study",
+                    usage=AdminCommandNames.GET_STUDY_RESOURCES,
+                    handler_func=self.get_study_resources,
+                    authz_func=self.command_authz_required,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.GET_JOB_META,
@@ -567,6 +635,193 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 )
             else:
                 _append_no_such_job_error(conn, job_id)
+
+    def get_job_resources(self, conn: Connection, args: List[str]):
+        try:
+            parsed = _create_get_job_resources_cmd_parser().parse_args(args[1:])
+        except Exception as e:
+            detail = secure_format_exception(e)
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+
+        job_id = conn.get_prop(self.JOB_ID)
+        parsed_job_id = parsed.job_id.lower()
+        if job_id != parsed_job_id:
+            detail = "job_id mismatch between authorization and request"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+        job = conn.get_prop(self.JOB)
+        status = _resource_job_status(job.meta.get(JobMetaKey.STATUS.value) if job else None)
+        if not _is_terminal_resource_job(status):
+            conn.append_error(f"job {job_id} is not finalized", meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id))
+            return
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            detail = "job definition manager is unavailable"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+            return
+        try:
+            with engine.new_context() as fl_ctx:
+                with self._staged_workspace_archive(job_def_manager, job_id, fl_ctx) as workspace_path:
+                    reader = WorkspaceResourceStatsReader(workspace_path)
+                    summary = reader.read_resource_summary()
+                    if summary["job_id"] != job_id:
+                        raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
+                    result = {"resource_summary": summary, "job_name": _resource_job_name(job, job_id)}
+                    if parsed.site:
+                        result["participant_summary"] = reader.read_participant_summary(parsed.site)
+        except (OSError, StorageException, WorkspaceResourceStatsError) as e:
+            detail = secure_format_exception(e)
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+            return
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    def get_study_resources(self, conn: Connection, args: List[str]):
+        if len(args) != 1:
+            detail = f"usage: {AdminCommandNames.GET_STUDY_RESOURCES}"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            detail = "job definition manager is unavailable"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+            return
+
+        study = _active_study_from_conn(conn)
+        with engine.new_context() as fl_ctx:
+            try:
+                jobs = [
+                    job
+                    for job in job_def_manager.get_all_jobs(fl_ctx)
+                    if get_job_meta_study(job.meta) == study and self._is_resource_job_authorized(conn, job)
+                ]
+            except Exception:
+                # Do not disclose job identities or policy details, or return partially checked results.
+                detail = "unable to authorize study resource statistics"
+                conn.append_error(detail, meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, detail))
+                return
+            if len(jobs) > MAX_STUDY_JOBS:
+                detail = f"study contains more than {MAX_STUDY_JOBS} accessible retained jobs"
+                conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+                return
+            selected = sorted(
+                (
+                    job.job_id,
+                    _resource_job_name(job),
+                    _resource_job_status(job.meta.get(JobMetaKey.STATUS.value)),
+                )
+                for job in jobs
+            )
+            rows = []
+            cumulative_row_bytes = 0
+            for job_id, job_name, status in selected:
+                if not _is_terminal_resource_job(status):
+                    row = {
+                        "job_id": job_id,
+                        "job_name": job_name,
+                        "job_status": status,
+                        "resource_data": "nonterminal",
+                    }
+                else:
+                    try:
+                        with self._staged_workspace_archive(job_def_manager, job_id, fl_ctx) as workspace_path:
+                            summary = WorkspaceResourceStatsReader(workspace_path).read_resource_summary()
+                        if summary["job_id"] != job_id:
+                            raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
+                        row = {
+                            "job_id": job_id,
+                            "job_name": job_name,
+                            "job_status": status,
+                            "resource_data": "included",
+                            "totals": derive_job_totals(summary["participants"]),
+                        }
+                    except (OSError, StorageException, WorkspaceResourceStatsError, ContractError):
+                        row = {
+                            "job_id": job_id,
+                            "job_name": job_name,
+                            "job_status": status,
+                            "resource_data": "unavailable",
+                        }
+
+                row_bytes = len(canonical_json_bytes(row))
+                if row_bytes > MAX_STUDY_SUMMARY_BYTES - cumulative_row_bytes:
+                    detail = f"study resource rows exceed {MAX_STUDY_SUMMARY_BYTES} bytes"
+                    conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+                    return
+                cumulative_row_bytes += row_bytes
+                rows.append(row)
+
+        result = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": KIND_STUDY_SUMMARY,
+            "selection": {"study_name": study},
+            "generated_at": utc_timestamp(),
+            "coverage": {
+                "selected_jobs": str(len(rows)),
+                "included_jobs": str(sum(row["resource_data"] == "included" for row in rows)),
+                "unavailable_jobs": str(sum(row["resource_data"] == "unavailable" for row in rows)),
+                "nonterminal_jobs": str(sum(row["resource_data"] == "nonterminal" for row in rows)),
+            },
+            "jobs": rows,
+        }
+        try:
+            result["totals"] = derive_study_totals(rows)
+            validate_record(result)
+            if len(canonical_json_bytes(result)) > MAX_STUDY_SUMMARY_BYTES:
+                raise ValueError(f"study resource summary exceeds {MAX_STUDY_SUMMARY_BYTES} bytes")
+        except Exception as e:
+            detail = secure_format_exception(e)
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+            return
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    @staticmethod
+    def _is_resource_job_authorized(conn: Connection, job: Job) -> bool:
+        """Apply the single-job resource permission before including a study job."""
+
+        user = Person(
+            name=conn.get_prop(ConnProps.USER_NAME, ""),
+            org=conn.get_prop(ConnProps.USER_ORG, ""),
+            role=conn.get_prop(ConnProps.USER_ROLE, ""),
+        )
+        submitter = Person(
+            name=job.meta.get(JobMetaKey.SUBMITTER_NAME, ""),
+            org=job.meta.get(JobMetaKey.SUBMITTER_ORG, ""),
+            role=job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""),
+        )
+        # AuthzFilter uses CommandEntry.name for both scoped and unscoped commands.
+        ctx = AuthzContext(user=user, submitter=submitter, right=AdminCommandNames.GET_JOB_RESOURCES)
+        decision = AuthorizationService.authorize(ctx)
+        if (
+            not isinstance(decision, tuple)
+            or len(decision) != 2
+            or not isinstance(decision[0], bool)
+            or not isinstance(decision[1], str)
+        ):
+            raise ValueError("malformed authorization response")
+        authorized, error = decision
+        return authorized and not error
+
+    @staticmethod
+    @contextmanager
+    def _staged_workspace_archive(job_def_manager: JobDefManagerSpec, job_id: str, fl_ctx):
+        if not isinstance(job_id, str) or not job_id or job_id in {".", ".."} or os.path.basename(job_id) != job_id:
+            raise WorkspaceResourceStatsError("job_id cannot be used for workspace staging")
+
+        with tempfile.TemporaryDirectory(prefix="nvflare-resource-stats-") as stage_root:
+            job_def_manager.get_storage_for_download(
+                jid=job_id,
+                download_dir=stage_root,
+                component=WORKSPACE,
+                download_file=WORKSPACE_ZIP,
+                fl_ctx=fl_ctx,
+            )
+            archive_path = os.path.join(stage_root, job_id, WORKSPACE_ZIP)
+            if not os.path.isfile(archive_path):
+                raise WorkspaceResourceStatsError("staged workspace archive is unavailable")
+            yield archive_path
 
     def get_job_log(self, conn: Connection, args: List[str]):
         try:
