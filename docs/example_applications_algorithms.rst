@@ -65,6 +65,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
   * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - Two-stage `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_ training that shares selected client feature rows and labels with the server and clients sampled for validation.
   * :github_nvflare_link:`Federated XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches. Also includes an example of vertical federated XGBoost.
+  * :github_nvflare_link:`Federated Learning on OMOP CDM Data (GitHub) <examples/advanced/omop>` - Runs one SQL study definition against every site's `OMOP Common Data Model <https://ohdsi.github.io/CommonDataModel/>`_ and trains a GI bleeding risk model with federated Newton-Raphson logistic regression.
 
 6. Medical Image Analysis
 =========================

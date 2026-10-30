@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="470" viewBox="0 0 1000 470" font-family="Helvetica, Arial, sans-serif" fill="#1f2328">
+  <title>OMOP CDM and federated learning with NVFlare</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4e7a00"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="470" fill="#ffffff"/>
+
+  <!-- Panel 1: what OMOP standardizes -->
+  <rect x="12" y="12" width="482" height="446" rx="12" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="32" y="44" font-size="16" font-weight="bold">1 · Each site maps its EHR to the OMOP CDM</text>
+
+  <g font-size="11">
+    <rect x="32" y="74" width="176" height="40" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="44" y="90" fill="#57606a">Site 1 source code</text>
+    <text x="44" y="106" font-size="13" font-weight="bold">ICD-10-CM K92.2</text>
+    <rect x="32" y="124" width="176" height="40" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="44" y="140" fill="#57606a">Site 2 source code</text>
+    <text x="44" y="156" font-size="13" font-weight="bold">SNOMED CT 74474003</text>
+    <rect x="32" y="174" width="176" height="40" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="44" y="190" fill="#57606a">Site 3 source code</text>
+    <text x="44" y="206" font-size="13" font-weight="bold">Local code GIBLEED</text>
+  </g>
+  <g stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)">
+    <line x1="208" y1="94" x2="288" y2="132"/>
+    <line x1="208" y1="144" x2="288" y2="144"/>
+    <line x1="208" y1="194" x2="288" y2="156"/>
+  </g>
+  <text x="228" y="138" font-size="10" font-style="italic" fill="#57606a">maps to</text>
+  <rect x="290" y="104" width="184" height="80" rx="8" fill="#fff4e5" stroke="#d4a72c" stroke-width="1.5"/>
+  <text x="382" y="128" font-size="14" font-weight="bold" text-anchor="middle">concept_id 192671</text>
+  <text x="382" y="148" font-size="12" text-anchor="middle">Gastrointestinal hemorrhage</text>
+  <text x="382" y="166" font-size="11" text-anchor="middle" fill="#57606a">standard concept (SNOMED)</text>
+  <text x="32" y="238" font-size="12" fill="#57606a">The ETL maps each local code to one standard concept_id.</text>
+
+  <line x1="32" y1="254" x2="474" y2="254" stroke="#d0d7de"/>
+  <text x="32" y="278" font-size="13" font-weight="bold">CDM tables this study queries</text>
+  <g font-family="Menlo, Consolas, monospace" font-size="12" text-anchor="middle">
+    <rect x="32" y="330" width="100" height="30" rx="6" fill="#eaf2fb" stroke="#4a7fc1"/>
+    <text x="82" y="349">PERSON</text>
+    <rect x="168" y="290" width="176" height="30" rx="6" fill="#eaf2fb" stroke="#4a7fc1"/>
+    <text x="256" y="309">OBSERVATION_PERIOD</text>
+    <rect x="168" y="330" width="176" height="30" rx="6" fill="#eaf2fb" stroke="#4a7fc1"/>
+    <text x="256" y="349">CONDITION_OCCURRENCE</text>
+    <rect x="168" y="370" width="176" height="30" rx="6" fill="#eaf2fb" stroke="#4a7fc1"/>
+    <text x="256" y="389">DRUG_EXPOSURE</text>
+    <rect x="360" y="310" width="120" height="30" rx="6" fill="#fff4e5" stroke="#d4a72c"/>
+    <text x="420" y="329" font-size="11">CONCEPT</text>
+    <rect x="360" y="350" width="120" height="30" rx="6" fill="#fff4e5" stroke="#d4a72c"/>
+    <text x="420" y="369" font-size="11">CONCEPT_ANCESTOR</text>
+  </g>
+  <g stroke="#4a7fc1" stroke-width="1.5">
+    <line x1="132" y1="345" x2="168" y2="305"/>
+    <line x1="132" y1="345" x2="168" y2="345"/>
+    <line x1="132" y1="345" x2="168" y2="385"/>
+  </g>
+  <g stroke="#d4a72c" stroke-width="1.5" stroke-dasharray="4 3">
+    <line x1="344" y1="345" x2="360" y2="325"/>
+    <line x1="344" y1="345" x2="360" y2="365"/>
+    <line x1="344" y1="385" x2="360" y2="365"/>
+  </g>
+  <text x="32" y="424" font-size="11.5" fill="#57606a">Solid lines join on person_id, dashed lines on concept_id.</text>
+  <text x="32" y="442" font-size="11.5" fill="#57606a">CONCEPT_ANCESTOR rolls specific codes up to the study's concepts.</text>
+
+  <!-- Panel 2: federated study -->
+  <rect x="506" y="12" width="482" height="446" rx="12" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="526" y="44" font-size="16" font-weight="bold">2 · NVFlare runs the same study at every site</text>
+
+  <rect x="526" y="62" width="442" height="58" rx="8" fill="#f1f8e6" stroke="#76b900" stroke-width="1.5"/>
+  <text x="747" y="86" font-size="14" font-weight="bold" text-anchor="middle">NVFlare server · FedAvgLrRecipe</text>
+  <text x="747" y="107" font-size="12" text-anchor="middle">averages g and H, then θ ← θ + 0.8 (H + εI)⁻¹ g</text>
+
+  <g id="site-1">
+    <line x1="578" y1="198" x2="578" y2="123" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <line x1="610" y1="123" x2="610" y2="198" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <text x="572" y="165" font-size="12" text-anchor="end">g, H</text>
+    <text x="616" y="165" font-size="12">θ</text>
+    <rect x="526" y="200" width="136" height="46" rx="6" fill="#ffffff" stroke="#76b900"/>
+    <text x="594" y="219" font-size="12" font-weight="bold" text-anchor="middle">site-1 · client.py</text>
+    <text x="594" y="236" font-size="11" fill="#57606a" text-anchor="middle">local g and H</text>
+    <line x1="594" y1="268" x2="594" y2="249" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="526" y="270" width="136" height="44" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="594" y="289" font-size="12" font-weight="bold" text-anchor="middle">cohort.py</text>
+    <text x="594" y="305" font-size="11" fill="#57606a" text-anchor="middle">same study SQL</text>
+    <line x1="594" y1="336" x2="594" y2="317" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M542,346 v50 a52,9 0 0 0 104,0 v-50" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <ellipse cx="594" cy="346" rx="52" ry="9" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <text x="594" y="374" font-size="12" font-weight="bold" text-anchor="middle">OMOP CDM</text>
+    <text x="594" y="390" font-size="11" fill="#57606a" text-anchor="middle">1,481 patients</text>
+  </g>
+  <g id="site-2">
+    <line x1="731" y1="198" x2="731" y2="123" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <line x1="763" y1="123" x2="763" y2="198" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <text x="725" y="165" font-size="12" text-anchor="end">g, H</text>
+    <text x="769" y="165" font-size="12">θ</text>
+    <rect x="679" y="200" width="136" height="46" rx="6" fill="#ffffff" stroke="#76b900"/>
+    <text x="747" y="219" font-size="12" font-weight="bold" text-anchor="middle">site-2 · client.py</text>
+    <text x="747" y="236" font-size="11" fill="#57606a" text-anchor="middle">local g and H</text>
+    <line x1="747" y1="268" x2="747" y2="249" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="679" y="270" width="136" height="44" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="747" y="289" font-size="12" font-weight="bold" text-anchor="middle">cohort.py</text>
+    <text x="747" y="305" font-size="11" fill="#57606a" text-anchor="middle">same study SQL</text>
+    <line x1="747" y1="336" x2="747" y2="317" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M695,346 v50 a52,9 0 0 0 104,0 v-50" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <ellipse cx="747" cy="346" rx="52" ry="9" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <text x="747" y="374" font-size="12" font-weight="bold" text-anchor="middle">OMOP CDM</text>
+    <text x="747" y="390" font-size="11" fill="#57606a" text-anchor="middle">808 patients</text>
+  </g>
+  <g id="site-3">
+    <line x1="884" y1="198" x2="884" y2="123" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <line x1="916" y1="123" x2="916" y2="198" stroke="#4e7a00" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+    <text x="878" y="165" font-size="12" text-anchor="end">g, H</text>
+    <text x="922" y="165" font-size="12">θ</text>
+    <rect x="832" y="200" width="136" height="46" rx="6" fill="#ffffff" stroke="#76b900"/>
+    <text x="900" y="219" font-size="12" font-weight="bold" text-anchor="middle">site-3 · client.py</text>
+    <text x="900" y="236" font-size="11" fill="#57606a" text-anchor="middle">local g and H</text>
+    <line x1="900" y1="268" x2="900" y2="249" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="832" y="270" width="136" height="44" rx="6" fill="#ffffff" stroke="#afb8c1"/>
+    <text x="900" y="289" font-size="12" font-weight="bold" text-anchor="middle">cohort.py</text>
+    <text x="900" y="305" font-size="11" fill="#57606a" text-anchor="middle">same study SQL</text>
+    <line x1="900" y1="336" x2="900" y2="317" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M848,346 v50 a52,9 0 0 0 104,0 v-50" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <ellipse cx="900" cy="346" rx="52" ry="9" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+    <text x="900" y="374" font-size="12" font-weight="bold" text-anchor="middle">OMOP CDM</text>
+    <text x="900" y="390" font-size="11" fill="#57606a" text-anchor="middle">405 patients</text>
+  </g>
+
+  <text x="747" y="428" font-size="12.5" font-weight="bold" fill="#3d6600" text-anchor="middle">Sites share g and H, never patient rows.</text>
+  <text x="747" y="446" font-size="11.5" fill="#57606a" text-anchor="middle">Summed over sites, they give the Newton step of the pooled data.</text>
+</svg>
