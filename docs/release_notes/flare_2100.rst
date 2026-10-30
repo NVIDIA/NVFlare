@@ -8,8 +8,9 @@ Highlights:
 
 - **Resource efficiency** — opt-in task-scoped execution that lowers GPU
   waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
-  while a task trains and are released between tasks, plus resource statistics
-  that report the resources each job used
+  while a task trains and are released between tasks
+- **Cost estimation** — resource statistics that report the capacity, resource
+  time, and usage of each job, as a proxy for estimating its cost
 - **Memory and large models** — opt-in disk-backed FedAvg and FedProx
   aggregation, and disk-backed tensors for task-worker payloads
 - **Reliability** — automatic recovery of failed client jobs, such as after
@@ -117,26 +118,28 @@ connection down with it.
 - Checkpoint continuity across tasks is opt-in through
   ``flare.system_info()["task_checkpoint"]``.
 
-Resource Statistics
--------------------
+Cost Estimation
+===============
 
-Each job can now report the resources it used, without a monitoring service or
-changes to the application. Resource statistics gives a final, best-effort
-account for the server and each client site, for resident jobs and task
-workers alike:
+Resource statistics give each job a record of the resources it used, as a proxy
+for estimating its cost, without a monitoring service or changes to the
+application. The record is a final, best-effort account for the server and
+each client site, for resident jobs and task workers alike:
 
 - **Capacity:** the CPUs, RAM, and CUDA devices visible to the job at startup,
   respecting affinity and cgroup limits.
 - **Resource time:** capacity multiplied by each execution's own duration, such
-  as CPU-unit seconds and GPU device-seconds, so the allocation held by a job
-  can be compared with the work it did.
+  as CPU-unit seconds and GPU device-seconds. This is the main input to a cost
+  estimate, and it shows the allocation a job held compared with the work it
+  did.
 - **Utilization:** CPU time consumed, retained file content, and sent and
   received message payload bytes. Task workers are accounted once and kept
   disjoint from the resident job.
 - **Queries:** authorized users query a job, one site, or all accessible jobs
   in a study, and totals are derived from the participant reports.
 
-Totals are observations, not reservations, billing, or GPU busy time.
+Totals are observations, not reservations, invoices, or GPU busy time, so use
+them to estimate cost rather than to bill.
 
 Memory and Large Models
 =======================
