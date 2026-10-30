@@ -15,7 +15,7 @@
 """YAML <-> RunConfig conversion with explicit validation.
 
 This module owns the config validation rules:
-  * Exactly one of `train` / `fl` is set, unless `eval.only=True`.
+  * A native FLARE workflow (`fl`) is required.
   * Settings the code accepts but does not apply are rejected (`aggregate_lora_only`,
     `client_state_keep` below 2, `attach_to` on the lerobot backend, `data.revision`).
   * Suite names valid for the chosen benchmark (deferred to benchmark
@@ -41,7 +41,6 @@ from decent_vla.configs.schemas import (
     OptimConfig,
     RunConfig,
     StrategyConfig,
-    TrainConfig,
     WandbConfig,
 )
 from decent_vla.core.lora import LoRAConfig
@@ -76,7 +75,7 @@ def _normalize_raw(raw: dict) -> dict:
     """Spec-§9 sugar → flat dataclass fields. Mutates and returns `raw`.
 
     * `data.partitioning: {scheme, num_clients, held_out, seed}` → flat keys.
-    * `fl.execution` → `fl.mode`; `fl.rounds` → `fl.num_rounds`.
+    * `fl.rounds` → `fl.num_rounds`.
     * `fl.batch_size` → `data.batch_size`.
     """
     data = raw.get("data") or {}
@@ -90,8 +89,6 @@ def _normalize_raw(raw: dict) -> dict:
         raw["data"] = data
     fl = raw.get("fl")
     if isinstance(fl, dict):
-        if "execution" in fl:
-            fl["mode"] = fl.pop("execution")
         if "rounds" in fl:
             fl["num_rounds"] = fl.pop("rounds")
         if "batch_size" in fl:
@@ -145,11 +142,9 @@ def _build_nvflare(d: dict | None) -> NVFlareConfig:
 def _build_fl(d: dict | None) -> FLConfig | None:
     if d is None:
         return None
-    # `_normalize_raw` has already rewritten the `execution`/`rounds`/`batch_size`
+    # `_normalize_raw` has already rewritten the `rounds`/`batch_size`
     # sugar, so what reaches here must be spelled exactly as FLConfig declares it.
     _reject_unknown(d, _fields_of(FLConfig), "fl")
-    if d.get("mode", "nvflare") not in ("nvflare", "local"):
-        raise ConfigError("fl.mode must be nvflare (local is a migration alias for the FLARE simulator)")
     strategy = _build_strategy(d.get("strategy"))
     if strategy.name not in ("fedavg", "fedprox", "fedadam"):
         raise ConfigError(f"Unsupported native FLARE algorithm: {strategy.name}")
@@ -163,7 +158,7 @@ def _build_fl(d: dict | None) -> FLConfig | None:
         wire.resolve(d.get("wire_dtype", "fp16"))
     except ValueError as e:
         raise ConfigError(str(e)) from e
-    return FLConfig(**{**d, "strategy": strategy, "mode": "nvflare", "nvflare": _build_nvflare(d.get("nvflare"))})
+    return FLConfig(**{**d, "strategy": strategy, "nvflare": _build_nvflare(d.get("nvflare"))})
 
 
 _WANDB_MODES = ("online", "offline", "disabled")
@@ -188,12 +183,6 @@ def _build_wandb(d: dict | None) -> WandbConfig:
     return WandbConfig(**{**d, "mode": mode, "tags": [str(x) for x in tags]})
 
 
-def _build_train(d: dict | None) -> TrainConfig | None:
-    if d is None:
-        return None
-    return TrainConfig(**d)
-
-
 def _build_benchmark(d: dict | None) -> BenchmarkConfig:
     if not d:
         return BenchmarkConfig()
@@ -214,25 +203,18 @@ def _build_eval(d: dict | None) -> EvalConfig | None:
 
 def validate_run_config(cfg: RunConfig) -> None:
     """Apply the config validation rules. Raises ConfigError on violation."""
-    eval_only = cfg.eval is not None and cfg.eval.only
-    has_train = cfg.train is not None
-    has_fl = cfg.fl is not None
+    if cfg.fl is None:
+        raise ConfigError("A native FLARE `fl` block is required.")
 
-    if not eval_only:
-        if has_train and has_fl:
-            raise ConfigError("Set exactly one of `train` or `fl`, not both.")
-        if not has_train and not has_fl:
-            raise ConfigError("Set either `train`, `fl`, or `eval.only: true`.")
-
-    if has_fl and cfg.fl.min_clients is not None and not 1 <= cfg.fl.min_clients <= cfg.data.num_clients:
+    if cfg.fl.min_clients is not None and not 1 <= cfg.fl.min_clients <= cfg.data.num_clients:
         raise ConfigError("fl.min_clients must be between 1 and data.num_clients")
-    if has_fl and cfg.fl.strategy.aggregate_lora_only:
+    if cfg.fl.strategy.aggregate_lora_only:
         raise ConfigError(
             "fl.strategy.aggregate_lora_only is not supported: the strategies aggregate every shared "
             "parameter. Restrict the federated scope with backend.shared_params instead."
         )
 
-    if has_fl and cfg.fl.client_state_keep is not None and cfg.fl.client_state_keep < 2:
+    if cfg.fl.client_state_keep is not None and cfg.fl.client_state_keep < 2:
         raise ConfigError(
             f"fl.client_state_keep={cfg.fl.client_state_keep} is too low: keep at least 2 client-state "
             "files, so the client state of the last round the server saved survives a crash."
@@ -257,10 +239,7 @@ def validate_run_config(cfg: RunConfig) -> None:
                 f"data.num_clients is {cfg.data.num_clients}; explicit_repos needs one list per client."
             )
 
-    if cfg.eval is not None and cfg.eval.every_n_rounds is not None:
-        raise ConfigError("eval.every_n_rounds is deferred to v1.1+ — leave it unset for v0.1.")
-
-    if has_fl and cfg.backend.shared_params is not None and not cfg.fl.persist_client_state:
+    if cfg.backend.shared_params is not None and not cfg.fl.persist_client_state:
         # Warm in-process state carries the personal params within one job, but
         # any process restart / chained resubmit silently resets them to
         # pretrained — a personalization run without persistence is usually a
@@ -292,7 +271,6 @@ def load_run_config(path: str | Path) -> RunConfig:
         name=raw["name"],
         backend=_build_backend(raw["backend"]),
         data=_build_data(raw.get("data")),
-        train=_build_train(raw.get("train")),
         fl=_build_fl(raw.get("fl")),
         eval=_build_eval(raw.get("eval")),
         wandb=_build_wandb(raw.get("wandb")),

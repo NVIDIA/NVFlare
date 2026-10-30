@@ -45,20 +45,6 @@ libero = ["lerobot[libero] @ git+https://github.com/huggingface/lerobot@8515d456
 peft = ["peft>=0.11", "accelerate>=1.0"]
 dev = ["pytest>=7.4"]
 
-[project.scripts]
-decent-vla = "decent_vla.cli.main:main"
-
-# Backends and benchmarks are found through these entry points, so the
-# package must be installed (`pip install -e .`); a bare src/ on the path is not enough.
-[project.entry-points."decent_vla.backends"]
-mock    = "decent_vla.adapters._mock.backend:MockBackend"
-lerobot = "decent_vla.adapters.lerobot.backend:LeRobotBackend"
-groot   = "decent_vla.adapters.groot.backend:GrootBackend"
-
-[project.entry-points."decent_vla.benchmarks"]
-mock   = "decent_vla.benchmarks._mock:MockBenchmark"
-libero = "decent_vla.benchmarks.libero:LIBEROBenchmark"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 

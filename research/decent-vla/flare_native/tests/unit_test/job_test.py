@@ -65,14 +65,6 @@ def test_paper_recipes(tmp_path, policy, tuning, algorithm, rounds, batch, worke
         assert (cfg.fl.strategy.server_lr, cfg.fl.strategy.server_eps) == (0.001, 0.001)
 
 
-def test_gpu_pool_expands_without_changing_training_budget():
-    args = job.define_parser().parse_args(["--policy", "smolvla", "--num-clients", "5", "--gpus", "2,4"])
-    cfg = job.create_config(args)
-    assert cfg["fl"]["nvflare"]["gpu"] == "2,4,2,4,2"
-    assert cfg["fl"]["nvflare"]["threads"] == 5
-    assert (cfg["fl"]["num_rounds"], cfg["fl"]["local_steps"]) == (160, 250)
-
-
 def test_generated_pipeline_is_packaged_for_deployment(tmp_path):
     args = job.define_parser().parse_args(["--policy", "pi05", "--smoke", "--output-dir", str(tmp_path)])
     path = job.write_config(args)

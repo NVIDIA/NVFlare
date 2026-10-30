@@ -45,7 +45,7 @@ def prepare_config(
     local_steps=None,
 ):
     """Apply the same explicit comparison controls to both implementations."""
-    from decent_vla.runtime.nvflare.job import split_gpu_groups
+    from nvflare.private.fed.utils.fed_utils import split_gpus
 
     cfg = copy.deepcopy(base)
     fl = cfg["fl"]
@@ -84,9 +84,13 @@ def prepare_config(
         raise ValueError("client, round and local-step counts must be positive")
     if num_workers < 0 or checkpoint_every < 0 or not 1 <= nv["threads"] <= count:
         raise ValueError("workers/checkpoint cadence must be nonnegative; threads must be in [1, num_clients]")
-    groups = split_gpu_groups(nv["gpu"]) if nv.get("gpu") else []
+    groups = split_gpus(nv["gpu"]) if nv.get("gpu") else []
     # Strict parity needs the optimizer, RNG and data iterator to survive rounds.
-    if (len(groups) <= 1 and nv["threads"] < count) or (len(groups) > 1 and len(groups) != count):
+    if (
+        any(not g for g in groups)
+        or (len(groups) <= 1 and nv["threads"] < count)
+        or (len(groups) > 1 and len(groups) != count)
+    ):
         raise ValueError(
             "Strict comparison requires resident clients: use threads=num_clients with zero/one GPU "
             "group, or one GPU-map entry per client. Sequential swapping does not preserve full "
@@ -219,13 +223,14 @@ def main():
             "num_clients": cfg["data"]["num_clients"],
             "checkpoint_every": args.checkpoint_every,
             "sources": {k: str(v) for k, v in sources.items()},
+            "simulator": {k: cfg["fl"]["nvflare"].get(k) for k in ("threads", "gpu")},
             "python": sys.version,
             "torch": torch.__version__,
             "cuda": torch.version.cuda,
             "nvflare": importlib.metadata.version("nvflare"),
         }
         metadata.write_text(json.dumps(info, indent=2))
-        # Validate both generated configs before spending time on either job.
+        # Only the reference config carries its old CLI launcher settings.
         from decent_vla.configs import load_run_config
 
         configs = {}
@@ -233,9 +238,16 @@ def main():
             raw = copy.deepcopy(cfg)
             raw["fl"]["output_dir"] = str(out / label)
             raw["fl"]["nvflare"]["workspace"] = str(out / label / "workspace")
+            if label == "native":
+                raw["fl"].pop("mode")
+                for key in ("env", "threads", "gpu", "workspace", "job_dir"):
+                    raw["fl"]["nvflare"].pop(key, None)
+                for key in ("after_training", "every_n_rounds", "only"):
+                    (raw.get("eval") or {}).pop(key, None)
             config = out / f"{label}.yaml"
             config.write_text(yaml.safe_dump(raw))
-            load_run_config(config)
+            if label == "native":
+                load_run_config(config)
             configs[label] = config
         for label, source in sources.items():
             env = {
@@ -257,28 +269,44 @@ def main():
                 env["DVLA_REFERENCE_PROBE"] = "1"
                 env["DVLA_REFERENCE_CURVE"] = str(out / label / "training_curve.json")
             print(f"Running {label}: {source}", flush=True)
-            with (out / f"{label}.log").open("w") as log:
-                if label == "reference":
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-c",
-                            "import os; assert os.environ.get('DVLA_REFERENCE_PROBE_ACTIVE') == '1', 'reference determinism probe did not load'",
-                        ],
-                        cwd=source,
-                        env=env,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        check=True,
-                    )
-                subprocess.run(
+            if label == "reference":
+                commands = [
+                    [
+                        sys.executable,
+                        "-c",
+                        "import os; assert os.environ.get('DVLA_REFERENCE_PROBE_ACTIVE') == '1', 'reference determinism probe did not load'",
+                    ],
                     [sys.executable, "-m", "decent_vla.cli.main", "train", "--config", str(configs[label])],
-                    cwd=source,
-                    env=env,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    check=True,
-                )
+                ]
+            else:
+                env["DECENT_VLA_WORKDIR"] = str(source)
+                simulator = [
+                    str(Path(sys.executable).parent / "nvflare"),
+                    "simulator",
+                    str(out / "jobs" / cfg["name"]),
+                    "-w",
+                    str(out / "native/workspace"),
+                    "-c",
+                    ",".join(f"c{i}" for i in range(info["num_clients"])),
+                    "-t",
+                    str(info["simulator"]["threads"]),
+                ]
+                if info["simulator"]["gpu"]:
+                    simulator += ["-gpu", info["simulator"]["gpu"]]
+                commands = [
+                    [
+                        sys.executable,
+                        str(source / "job.py"),
+                        "--config",
+                        str(configs[label]),
+                        "--job-dir",
+                        str(out / "jobs"),
+                    ],
+                    simulator,
+                ]
+            with (out / f"{label}.log").open("w") as log:
+                for command in commands:
+                    subprocess.run(command, cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     report = compare_outputs(
         out / "reference",
         out / "native",

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Compose a VLA experiment and run/export its native FLARE job."""
+"""Compose and export a VLA job for nvflare simulator/job submit."""
 
 import argparse
 from pathlib import Path
@@ -85,10 +85,8 @@ def create_config(args):
             "strategy": {"name": args.algorithm},
             "num_rounds": rounds,
             "local_steps": steps,
-            "mode": "nvflare",
             "save_every_n_rounds": 1 if args.smoke or policy == "mock" else 10,
             "output_dir": args.output_dir or f"outputs/{name}",
-            "nvflare": {"env": "export" if args.export else "simulator", "threads": args.threads or clients},
         },
     }
     backend, data = cfg["backend"], cfg["data"]
@@ -98,7 +96,6 @@ def create_config(args):
             "benchmark": {"name": "mock", "suites": ["default"]},
             "n_episodes_per_task": 3,
             "seed": 0,
-            "after_training": True,
         }
     if policy != "mock":
         backend["optim"].update(betas=[0.9, 0.95], scheduler="cosine", warmup_steps=1000, decay_steps=30000)
@@ -172,15 +169,6 @@ def create_config(args):
         data["batch_size"] = args.batch_size
     if args.num_workers is not None:
         data["num_workers"] = args.num_workers
-    if policy != "mock" or args.gpus:
-        ids = (
-            args.gpus.split(",")
-            if args.gpus
-            else [str(i) for i in range(min(clients, 8 if policy == "pi05" and not lora else 4))]
-        )
-        if any(not value.strip() for value in ids):
-            raise ValueError("--gpus must be a comma-separated list of device IDs")
-        cfg["fl"]["nvflare"]["gpu"] = ",".join(ids[i % len(ids)].strip() for i in range(clients))
     return cfg
 
 
@@ -212,27 +200,25 @@ def define_parser():
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--num-workers", type=int)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--gpus", help="available device IDs, e.g. 0,1; expands to one resident slot per client")
-    parser.add_argument("--threads", type=int, help="simulator threads; defaults to client count")
     parser.add_argument("--output-dir", help="config/checkpoint folder; default outputs/<experiment name>")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--generate-only", action="store_true", help="write run/pipeline YAML without starting FLARE")
-    mode.add_argument("--export", action="store_true", help="export a deployable FLARE job instead of simulating")
+    parser.add_argument("--config", help="export an existing run YAML instead of composing a recipe")
+    parser.add_argument("--job-dir", default="jobs", help="export destination; default jobs/<experiment name>")
     return parser
 
 
 def main():
     parser = define_parser()
     args = parser.parse_args()
+    from decent_vla.configs import load_run_config
+    from decent_vla.runtime.nvflare.job import export_job
+
     try:
-        path = write_config(args)
+        path = Path(args.config) if args.config else write_config(args)
+        cfg = load_run_config(path)
+        exported = export_job(cfg, str(path), args.job_dir)
     except ValueError as exc:
         parser.error(str(exc))
-    print(path, flush=True)
-    if not args.generate_only:
-        from decent_vla.cli.main import main as run
-
-        run(["train", "--config", str(path)])
+    print(exported)
 
 
 if __name__ == "__main__":

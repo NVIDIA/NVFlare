@@ -46,12 +46,19 @@ def test_exported_native_job_is_portable_and_preserves_warm_clients(tmp_path, al
             "persist_client_state": True,
             "save_every_n_rounds": 1,
             "output_dir": "outputs/portable",
-            "nvflare": {"env": "export", "job_dir": str(tmp_path / "jobs"), "launch_external_process": external},
+            "nvflare": {"launch_external_process": external},
         },
     }
     (source / "run.yaml").write_text(yaml.safe_dump(raw))
     exported = run_process(
-        [sys.executable, "-m", "decent_vla.cli.main", "train", "--config", "run.yaml"],
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[3] / "job.py"),
+            "--config",
+            "run.yaml",
+            "--job-dir",
+            str(tmp_path / "jobs"),
+        ],
         cwd=source,
         timeout=120,
     )

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import gc
 import json
 from pathlib import Path
@@ -35,9 +36,9 @@ from decent_vla.runtime.training import seed_training
 
 
 class VLAPersistor(LearnablePersistor):
-    def __init__(self, config_path, output_dir=None, workdir=None):
+    def __init__(self, config_path):
         super().__init__()
-        self.config_path, self.output_dir, self.workdir = config_path, output_dir, workdir
+        self.config_path = config_path
         self.start_round = 0
         self.optimizer_state = None
         self.curve = []
@@ -46,10 +47,11 @@ class VLAPersistor(LearnablePersistor):
         workspace = fl_ctx.get_engine().get_workspace()
         job_id = fl_ctx.get_job_id()
         self.cfg = cfg = load_job_config(Path(workspace.get_app_config_dir(job_id)) / self.config_path)
-        apply_site_paths(cfg, workspace.get_run_dir(job_id), self.workdir, self.output_dir)
+        apply_site_paths(cfg, workspace.get_run_dir(job_id))
         seed_training(cfg.seed, bool(cfg.backend.extra.get("deterministic", False)))
         self.out = Path(cfg.fl.output_dir)
         self.out.mkdir(parents=True, exist_ok=True)
+        (self.out / "config.json").write_text(json.dumps(dataclasses.asdict(cfg), indent=2, default=str))
         self.ckpts = self.out / "checkpoints"
         self.ckpts.mkdir(exist_ok=True)
         factory, cls = build_backend_factory(cfg, torch.device("cpu"))

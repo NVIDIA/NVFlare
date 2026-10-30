@@ -12,22 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Plugin builders + generic partitioning, shared by the CLI and runners.
-
-Extracted from `cli/main.py` so the NVFlare entrypoints (and anything else
-that is not the argparse CLI) can construct backends/strategies/benchmarks
-and partition data from a `RunConfig`. Lookup failures raise `SystemExit`
-with actionable messages — identical to the original CLI behavior.
-"""
+"""Policy/benchmark construction and deterministic site partitioning."""
 
 from __future__ import annotations
 
-import inspect
 from typing import TYPE_CHECKING
 
 import torch
-
-from decent_vla.core.registry import discover
 
 if TYPE_CHECKING:
     from decent_vla.configs.schemas import EvalConfig, RunConfig
@@ -35,30 +26,31 @@ if TYPE_CHECKING:
 
 
 def build_backend_factory(cfg: RunConfig, device: torch.device):
-    reg = discover()
-    if cfg.backend.name not in reg.backends:
-        raise SystemExit(f"Backend {cfg.backend.name!r} not installed. " f"Available: {sorted(reg.backends)}")
-    cls = reg.backends[cfg.backend.name]
+    if cfg.backend.name == "mock":
+        from decent_vla.adapters._mock.backend import MockBackend as BackendClass
+    elif cfg.backend.name == "lerobot":
+        from decent_vla.adapters.lerobot.backend import LeRobotBackend as BackendClass
+    elif cfg.backend.name == "groot":
+        from decent_vla.adapters.groot.backend import GrootBackend as BackendClass
+    else:
+        raise ValueError(f"Unknown backend: {cfg.backend.name}")
 
     def factory():
-        dev = device
-        # Only LeRobotBackend.from_config accepts data_cfg (explicit_repos
-        # shared normalization stats) — other backends (mock, groot) don't
-        # take this kwarg, so pass it only when supported.
-        if "data_cfg" in inspect.signature(cls.from_config).parameters:
-            return cls.from_config(cfg.backend, dev, data_cfg=cfg.data)
-        return cls.from_config(cfg.backend, dev)
+        if cfg.backend.name == "lerobot":
+            return BackendClass.from_config(cfg.backend, device, data_cfg=cfg.data)
+        return BackendClass.from_config(cfg.backend, device)
 
-    return factory, cls
+    return factory, BackendClass
 
 
 def build_benchmark(cfg_eval: EvalConfig):
-    reg = discover()
-    bench_name = cfg_eval.benchmark.name
-    if bench_name not in reg.benchmarks:
-        raise SystemExit(f"Benchmark {bench_name!r} not installed. Available: {sorted(reg.benchmarks)}")
-    cls = reg.benchmarks[bench_name]
-    return cls.from_config(cfg_eval.benchmark)
+    if cfg_eval.benchmark.name == "mock":
+        from decent_vla.benchmarks._mock import MockBenchmark as BenchmarkClass
+    elif cfg_eval.benchmark.name == "libero":
+        from decent_vla.benchmarks.libero import LIBEROBenchmark as BenchmarkClass
+    else:
+        raise ValueError(f"Unknown benchmark: {cfg_eval.benchmark.name}")
+    return BenchmarkClass.from_config(cfg_eval.benchmark)
 
 
 def resolve_device(device_str: str) -> torch.device:

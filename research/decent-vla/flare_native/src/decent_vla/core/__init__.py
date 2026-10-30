@@ -19,7 +19,6 @@ from __future__ import annotations
 from decent_vla.core.backend import Backend
 from decent_vla.core.benchmark import Benchmark, BenchmarkResult, BenchmarkSuiteResult, TaskResult
 from decent_vla.core.policy import Policy
-from decent_vla.core.registry import Registry, discover, registry
 from decent_vla.core.results import (
     RunResults,
     config_hash,
@@ -40,9 +39,6 @@ __all__ = [
     "CheckpointSpec",
     "LossDict",
     "ParamScope",
-    "Registry",
-    "registry",
-    "discover",
     "RunResults",
     "read_results",
     "write_results",

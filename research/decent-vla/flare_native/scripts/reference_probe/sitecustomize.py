@@ -27,17 +27,22 @@ if os.environ.get("DVLA_REFERENCE_PROBE") == "1":
     import decent_vla.runtime.builders as builders
     import decent_vla.runtime.round_loop as rounds
 
-    # A native installation no longer registers the old strategy entry points.
-    # Resolve reference classes from its own source tree, independent of which
-    # version provided the installed distribution metadata.
-    original_discover = builders.discover
-
+    # Resolve all reference adapters from the parent source tree. The native
+    # package has no CLI/plugin entry points in its installed metadata.
     def reference_registry():
+        from decent_vla.adapters._mock.backend import MockBackend
+        from decent_vla.adapters.groot.backend import GrootBackend
+        from decent_vla.adapters.lerobot.backend import LeRobotBackend
+        from decent_vla.benchmarks._mock import MockBenchmark
+        from decent_vla.benchmarks.libero import LIBEROBenchmark
+        from decent_vla.core.registry import Registry
         from decent_vla.strategies import FedAdam, FedAvg, FedProx
 
-        registry = original_discover()
-        registry.strategies.update(fedavg=FedAvg, fedadam=FedAdam, fedprox=FedProx)
-        return registry
+        return Registry(
+            backends={"mock": MockBackend, "lerobot": LeRobotBackend, "groot": GrootBackend},
+            benchmarks={"mock": MockBenchmark, "libero": LIBEROBenchmark},
+            strategies={"fedavg": FedAvg, "fedadam": FedAdam, "fedprox": FedProx},
+        )
 
     builders.discover = reference_registry
 

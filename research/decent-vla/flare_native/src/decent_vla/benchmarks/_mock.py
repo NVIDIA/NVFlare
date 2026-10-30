@@ -15,10 +15,8 @@
 """MockBenchmark — runs `n_episodes_per_task` short episodes against a Policy.
 
 Synthetic, deterministic, CPU-only. Episodes succeed when ‖action‖² is
-below a per-task threshold derived from the seed. Use it for:
-  * unit tests of the eval pipeline
-  * confidence-checks of a strategy/backend by `decent-vla run`-ing one
-    config end-to-end
+below a per-task threshold derived from the seed. Used to check the evaluation
+pipeline without downloading models or starting LIBERO.
 
 Real benchmarks (LIBERO, …) follow the same `evaluate(policy, suites,
 n_episodes_per_task, seed, progress_cb)` shape.

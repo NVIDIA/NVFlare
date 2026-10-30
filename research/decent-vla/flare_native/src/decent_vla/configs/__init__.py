@@ -33,7 +33,6 @@ from decent_vla.configs.schemas import (
     OptimConfig,
     RunConfig,
     StrategyConfig,
-    TrainConfig,
 )
 
 __all__ = [
@@ -46,7 +45,6 @@ __all__ = [
     "OptimConfig",
     "RunConfig",
     "StrategyConfig",
-    "TrainConfig",
     "load_run_config",
     "dump_run_config",
     "validate_run_config",

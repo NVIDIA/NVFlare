@@ -36,9 +36,7 @@ on a disjoint set of *episodes*. This module implements that subset by:
    constructor — no global state leaks.
 
 Everything here imports ``gr00t`` lazily (inside functions) so the adapter
-module imports cleanly in environments without Isaac-GR00T installed, per the
-decent-vla registry pattern (a plugin whose import fails lands in
-``registry.errors`` rather than crashing the CLI).
+module imports cleanly in environments without Isaac-GR00T installed.
 
 NOTE (parent verify on GPU): the *original episode index* used for filtering
 is ``ep_meta["episode_index"]`` from ``meta/episodes.jsonl``. Upstream's

@@ -14,10 +14,6 @@
 
 """Benchmark eval driver: per-suite loop, provenance-keyed caching, results.json.
 
-Extracted from `cli/main.py` so the eval path has a single home before the
-LIBERO benchmark lands. Backend/benchmark-agnostic and FL-framework-free; depends
-only on `core/` (plus the runtime `builders` module).
-
 Caching contract (spec §7/§10): each suite's result lands in
 `eval_dir/suites/{suite}.json` as soon as it finishes, stamped with a
 `provenance` key that identifies the *evaluated model*: the checkpoint's
@@ -66,12 +62,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# cfg.eval fields that steer bookkeeping, not the numbers — where the results
-# land, whether training also ran, how often eval fires. Excluded so they never
-# throw away finished rollouts.
-_EVAL_CACHE_IGNORED = frozenset(
-    {"output_dir", "only", "after_training", "every_n_rounds", "save_episodes", "personalized"}
-)
+# Output/bookkeeping fields do not change rollout success metrics.
+_EVAL_CACHE_IGNORED = frozenset({"output_dir", "save_episodes", "personalized"})
 
 
 def _eval_config_hash(cfg: RunConfig) -> str:
@@ -211,7 +203,7 @@ def run_eval(
     Writes per-suite JSONs under `eval_dir/suites/` and the aggregated
     `results.json`; returns the results.json path. `config_path` (the YAML
     the run was launched from) lands in the results provenance block; falls
-    back to `$DECENT_VLA_CONFIG`, which the CLI exports on every run.
+    back to `$DECENT_VLA_CONFIG` if set.
     """
     device = resolve_device(cfg.device)
     if ckpt_path is not None:

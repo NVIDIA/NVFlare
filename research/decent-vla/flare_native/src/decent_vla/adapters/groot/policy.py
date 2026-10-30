@@ -37,7 +37,7 @@ buffer the chunk and pop one per call, re-planning every ``replan_steps`` steps
 via ``backend.extra.eval_replan_steps``).
 
 GR00T-specific imports stay function-local so this module imports cleanly
-without Isaac-GR00T installed (the decent-vla plugin pattern).
+without Isaac-GR00T installed.
 """
 
 from __future__ import annotations

@@ -34,13 +34,12 @@ def main() -> None:
         default=None,
         help="run config YAML, relative to the app's config/ folder (fallback: DECENT_VLA_CONFIG)",
     )
-    parser.add_argument("--workdir", default=None, help="simulator runs only: the submitting host's cwd to restore")
     args = parser.parse_args()
 
     from decent_vla.runtime.nvflare.client import client_main
 
     # This file sits in <app>/custom/.
-    client_main(args.config, app_dir=str(Path(__file__).resolve().parent.parent), workdir=args.workdir)
+    client_main(args.config, app_dir=str(Path(__file__).resolve().parent.parent))
 
 
 if __name__ == "__main__":

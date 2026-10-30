@@ -47,7 +47,7 @@ class OptimConfig:
 
 @dataclass
 class BackendConfig:
-    name: str  # entry-point key: "mock", "lerobot", "groot"
+    name: str  # "mock", "lerobot", "groot"
     model: dict[str, Any] = field(default_factory=dict)
     pretrained_path: str | None = None
     lora: LoRAConfig | None = None
@@ -86,7 +86,7 @@ class DataConfig:
 
 @dataclass
 class StrategyConfig:
-    name: str = "fedavg"  # entry-point key
+    name: str = "fedavg"  # algorithm/benchmark name
     mu: float = 0.0  # FedProx coefficient (ignored if name != "fedprox")
     server_lr: float = 1.0  # FedAdam server-side LR
     server_betas: tuple[float, float] = (0.9, 0.999)
@@ -97,24 +97,8 @@ class StrategyConfig:
 
 @dataclass
 class NVFlareConfig:
-    """Runtime knobs for `fl.mode: nvflare` (NVIDIA FLARE >= 2.8).
+    """Site/workflow settings; simulator resources are nvflare CLI options."""
 
-    Generic FL knobs (num_rounds, local_steps, min_clients, round_timeout_s,
-    save_every_n_rounds, wire_dtype, persist_client_state, output_dir) live on
-    FLConfig; simulator/deployment specifics belong here.
-    """
-
-    env: str = "simulator"  # "simulator" (in-process, blocking) | "export" (write a
-    # job folder for POC/provisioned submission and exit)
-    workspace: str | None = None  # simulator workspace; default <fl.output_dir>/nvflare_workspace
-    threads: int | None = None  # simulator client concurrency; default num_clients — fewer
-    # threads make the simulator swap client processes, which
-    # drops warm in-memory client state between rounds
-    gpu: str | None = None  # simulator client->GPU map, ONE ENTRY PER CLIENT: 8 clients
-    # on 2 cards is "0,1,0,1,0,1,0,1", not "0,1". NVFlare runs one
-    # client per GPU group at a time, so a short map makes the
-    # simulator swap client processes (policy reload + cold Adam
-    # every round). Validated by runtime/nvflare/job.check_gpu_map.
     site_prefix: str = ""  # "" = sites named c0..cN-1 (what the simulator env uses);
     # "site-" maps a conventionally-provisioned site-{i+1} to c{i}
     launch_external_process: bool = False  # run the client script in a subprocess (CellPipe) instead of
@@ -124,8 +108,6 @@ class NVFlareConfig:
     # closes (FLARE's ScatterAndGather default). The round closes
     # sooner if every client answers.
     memory_gc_rounds: int = 1  # native workflow garbage-collection cadence (0 = never)
-    job_dir: str | None = None  # export env: where to write the job folder;
-    # default <fl.output_dir>/nvflare_job
 
 
 @dataclass
@@ -133,7 +115,6 @@ class FLConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     num_rounds: int = 10
     local_steps: int = 50
-    mode: str = "nvflare"  # "local" is a compatibility alias for the FLARE simulator
     nvflare: NVFlareConfig = field(default_factory=NVFlareConfig)
     min_clients: int | None = None  # min client updates per round (default: all)
     round_timeout_s: float | None = None  # per-round timeout
@@ -155,17 +136,8 @@ class FLConfig:
 
 
 @dataclass
-class TrainConfig:
-    """Centralized (non-FL) training. Mutually exclusive with FLConfig."""
-
-    num_steps: int = 1000
-    save_every: int = 500
-    output_dir: str = "outputs/centralized_run"
-
-
-@dataclass
 class BenchmarkConfig:
-    name: str = "mock"  # entry-point key
+    name: str = "mock"  # algorithm/benchmark name
     suites: list[str] = field(default_factory=lambda: ["default"])
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -175,10 +147,7 @@ class EvalConfig:
     benchmark: BenchmarkConfig = field(default_factory=BenchmarkConfig)
     n_episodes_per_task: int = 5
     seed: int = 42
-    after_training: bool = True
-    every_n_rounds: int | None = None  # v1.1+; ignored in v0.1
     eval_all_tasks: bool = True  # spec §9: eval held-out + seen tasks
-    only: bool = False
     output_dir: str | None = None
     save_episodes: bool = False
     personalized: bool = False  # partial-federation arms: evaluate each client's
@@ -227,12 +196,11 @@ class WandbConfig:
 
 @dataclass
 class RunConfig:
-    """Top-level config — one of `train` or `fl` must be set (unless eval.only)."""
+    """Policy, data and native FLARE workflow configuration."""
 
     name: str
     backend: BackendConfig
     data: DataConfig = field(default_factory=DataConfig)
-    train: TrainConfig | None = None
     fl: FLConfig | None = None
     eval: EvalConfig | None = None
     wandb: WandbConfig = field(default_factory=WandbConfig)

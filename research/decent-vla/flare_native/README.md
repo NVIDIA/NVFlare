@@ -5,8 +5,8 @@ FLARE `FedAvg` / PyTorch `FedOpt` workflows and `PTFedProxLoss`. Clients retain
 their local optimizer, scheduler and data iterator across rounds. FLARE owns
 dispatch, aggregation and persistence; there is no internal FL simulator.
 
-Like the other research examples, `job.py` selects a policy and generates its
-configuration before running or exporting the job. Generated YAML is editable;
+Like the other research examples, `job.py` selects a policy, generates its
+configuration and exports a standard FLARE job. Generated YAML is editable;
 the repository does not store a file for each algorithm/tuning/smoke combination.
 See [AUTHOR_COMPARISON.md](AUTHOR_COMPARISON.md) for deterministic comparison
 with the original implementation and GPU/sequential execution constraints.
@@ -46,67 +46,90 @@ Accept the gated Cosmos backbone terms before downloading. Evaluation uses
 `.venv-groot-eval`; training uses `.venv-groot`. Download/cache weights and data
 on each site before launching a federation.
 
-## Run or export
+## Export and run with FLARE
+
+`job.py` composes the experiment and exports it; execution uses FLARE commands:
 
 ```bash
-python job.py                                      # CPU mock, 2 clients, 2 rounds
-python job.py --policy pi05 --tuning lora --smoke    # real policy, short run
-python job.py --policy pi05 --algorithm fedadam     # full paper recipe
-python job.py --policy smolvla --tuning lora --num-clients 8 --gpus 0,1
-python job.py --policy groot --tuning fullft --generate-only
-python job.py --policy pi05 --tuning lora --export
+python job.py
+nvflare simulator jobs/mock_fl_nvflare -w outputs/mock_workspace -c c0,c1 -t 2
+
+# Real policy, two clients, two rounds; cache weights/data first.
+export DECENT_VLA_WORKDIR="$PWD"
+python job.py --policy pi05 --tuning lora --smoke
+nvflare simulator jobs/pi05_libero_lora_nvflare_smoke \
+  -w outputs/pi05_workspace -c c0,c1 -t 2 -gpu 0,1
+
+# Other full recipes; all export without loading the policy.
+python job.py --policy pi05 --algorithm fedadam
+python job.py --policy smolvla --tuning lora --num-clients 8
+python job.py --policy groot --tuning fullft
 ```
 
-`--generate-only` writes `outputs/<name>/run.yaml` and, for LeRobot policies,
-`train_pipeline.yaml`. `--export` writes a standard FLARE job under
-`outputs/<name>/nvflare_job/<name>`. Otherwise the job runs in the simulator.
-Use `--output-dir` for a different run folder and `python job.py --help` for
-client/round/step/batch/worker overrides. Edit generated YAML for further
-backend or algorithm options, then use `decent-vla train --config <run.yaml>`.
+The script writes `outputs/<name>/run.yaml`, LeRobot's `train_pipeline.yaml`
+where needed, and `jobs/<name>/`. Use `--output-dir` for the run folder,
+`--job-dir` for the export location, and `python job.py --help` for training
+overrides. After editing a generated YAML, re-export it with
+`python job.py --config outputs/<name>/run.yaml`.
 
-| Policy | Full run | Batch size, full / LoRA | Default GPUs, full / LoRA |
+| Policy | Full run | Batch size, full / LoRA | Reference GPU count, full / LoRA |
 | --- | --- | --- | --- |
 | π0.5 | 100 rounds × 250 steps | 32 / 32 | 8 / 4 |
 | SmolVLA | 160 rounds × 250 steps | 32 / 64 | 4 / 4 |
 | GR00T action head | 140 rounds × 250 steps | 16 / 32 | 4 / 4 |
 
 Full recipes use eight clients. `--smoke` uses two clients, two rounds and
-20 local steps while preserving policy-specific optimizer/preprocessing settings.
-The mock always defaults to a small CPU run. FedProx uses `mu=0.01` (sum for
-VLA recipes); FedAdam uses server LR/epsilon `0.001` and betas `(0.9, 0.999)`.
-GPUs must have enough memory for every assigned resident client. `--gpus 0,1`
-expands the device pool to one map entry per client; it does not limit the run
-to two concurrent clients. See the comparison guide before reducing concurrency.
+20 local steps while preserving optimizer/preprocessing settings. The mock
+defaults to a small CPU job. FedProx uses `mu=0.01` (sum for VLA recipes);
+FedAdam uses server LR/epsilon `0.001` and betas `(0.9, 0.999)`.
 
-A run records its resolved config, data/scope manifests, `training_curve.json`,
-periodic `checkpoints/server_round_NNNN.pt`, final `server_round_final.pt`,
-the backend export `round_NNNN.pt`, and the simulator workspace. A repeated run
-auto-resumes from periodic checkpoints unless `DECENT_VLA_NO_RESUME=1` is set.
-Checkpoints can be tens of GB, especially FedAdam weights plus moments.
-
-For deployment, install this package on every site and submit the exported job:
+Set simulator workspaces, client names, threads and GPUs through
+`nvflare simulator`. Match the logical client count and keep
+each client resident for curve alignment. Eight clients on two GPUs use:
 
 ```bash
-nvflare job submit -j outputs/<name>/nvflare_job/<name>
+nvflare simulator jobs/smolvla_libero_lora_nvflare \
+  -w outputs/smolvla_workspace -c c0,c1,c2,c3,c4,c5,c6,c7 -t 8 \
+  -gpu 0,1,0,1,0,1,0,1
 ```
 
-Sites are `c0`…`cN-1`, or use `fl.nvflare.site_prefix: site-` for `site-1`…`site-N`.
-The job includes its configs and client script. Relative data paths resolve
-against each site's `DECENT_VLA_WORKDIR`. Relative output paths live inside
-the site's job folder; download results with `nvflare job download <job-id>`.
-Use an absolute server output path for resume across submissions. Set
-`fl.round_timeout_s` appropriately; an unmet quorum aborts through FLARE.
+Each GPU must fit all its assigned clients. Lowering threads or shortening the
+GPU map can rotate client processes and lose warm training state. See
+[AUTHOR_COMPARISON.md](AUTHOR_COMPARISON.md#clients-threads-and-gpus) before
+reducing concurrency. A one-client, one-round job with the desired local-step
+budget provides the centralized baseline through the same FLARE workflow.
+
+For deployment, install this package on every site and submit the same job:
+
+```bash
+nvflare job submit -j jobs/<name>
+```
+
+Sites are `c0`…`cN-1`, or set `fl.nvflare.site_prefix: site-` for provisioned
+`site-1`…`site-N`. Jobs include their configs and client script. Relative data
+paths resolve against each site's `DECENT_VLA_WORKDIR` when set. Relative output
+paths live under each site's job run folder. For the default CPU simulator run,
+server artifacts are under `outputs/mock_workspace/server/simulate_job/outputs/mock_fl_nvflare/`.
+Use an absolute `fl.output_dir` to choose a fixed site-local output folder.
+Download deployed results with `nvflare job download <job-id>`.
+
+A completed run writes `config.json`, data/scope manifests, `training_curve.json`,
+periodic `checkpoints/server_round_NNNN.pt`, final `server_round_final.pt`, and
+the backend export `round_NNNN.pt`. Check the final artifact and logs: FLARE
+2.8.1 can return zero after a workflow error. Reusing outputs auto-resumes from
+periodic checkpoints unless `DECENT_VLA_NO_RESUME=1` is set. Set
+`fl.round_timeout_s` for deployment; an unmet quorum aborts through FLARE.
 
 ## Evaluate
 
 ```bash
 export MUJOCO_GL=egl
 bash scripts/eval_libero.sh outputs/pi05_libero_lora_nvflare/run.yaml \
-  outputs/pi05_libero_lora_nvflare/checkpoints/server_round_0100.pt
+  /absolute/path/to/run/checkpoints/server_round_0100.pt
 
 # In .venv-groot-eval, with Isaac-GR00T on PYTHONPATH:
-decent-vla eval --config outputs/groot_libero_lora_nvflare/run.yaml \
-  --ckpt outputs/groot_libero_lora_nvflare/checkpoints/server_round_0140.pt
+python evaluate.py --config outputs/groot_libero_lora_nvflare/run.yaml \
+  --ckpt /absolute/path/to/run/checkpoints/server_round_0140.pt
 ```
 
 LeRobot evaluation uses all four LIBERO suites, ten episodes/task and replanning

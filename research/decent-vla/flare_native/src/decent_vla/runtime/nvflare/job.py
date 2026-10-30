@@ -12,16 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FedJob wiring + simulator/export launch helpers.
-
-Version-sensitive nvflare API (FedJob, ScriptRunner, simulator invocation)
-is confined to this module — re-verify here when bumping the nvflare pin.
-"""
+"""Export portable FLARE jobs containing VLA workflows and client scripts."""
 
 from __future__ import annotations
 
 import contextlib
-import logging
 import os
 import shutil
 import tempfile
@@ -29,21 +24,10 @@ from pathlib import Path
 
 import yaml
 
-log = logging.getLogger(__name__)
-
 # Names of the files the job ships: the client script goes in each app's
 # custom/ folder, the run config (and the files it names) in config/.
 CLIENT_SCRIPT = "client_script.py"
 RUN_CONFIG = "decent_vla_run.yaml"
-
-
-def client_ids(cfg) -> list[str]:
-    return [f"c{i}" for i in range(cfg.data.num_clients)]
-
-
-def _workspace(cfg) -> str:
-    nv = cfg.fl.nvflare
-    return str(Path(nv.workspace or (Path(cfg.fl.output_dir) / "nvflare_workspace")).resolve())
 
 
 @contextlib.contextmanager
@@ -61,10 +45,6 @@ def staged_job(config_path: str):
     from decent_vla.runtime.nvflare.client import packaged_refs
 
     raw = yaml.safe_load(Path(config_path).read_text()) or {}
-    # Where the job folder and the simulator workspace go is the submitter's
-    # business; the sites never read it.
-    for key in ("job_dir", "workspace"):
-        ((raw.get("fl") or {}).get("nvflare") or {}).pop(key, None)
     cwd = os.getcwd()
     with tempfile.TemporaryDirectory(prefix="decent_vla_job_") as stage:
         config_files = [RUN_CONFIG]
@@ -72,7 +52,7 @@ def staged_job(config_path: str):
             value = holder.get(field)
             if not value:
                 continue
-            # Relative paths in a run config resolve against the cwd, as in local mode.
+            # Resolve input files against the exporting process cwd.
             src = Path(cwd, value)
             if not src.is_file():
                 raise FileNotFoundError(f"{key}={value!r}: no such file under {cwd}")
@@ -106,14 +86,8 @@ class JobConfigFiles:
             job.add_file_source(path, None, "config", ctx)
 
 
-def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None, output_dir: str | None = None):
-    """FedJob: DecentVLAController on the server, the Client-API script on clients.
-
-    Call inside `staged_job`, with what it yields. A simulator job runs on this
-    host, so it is given this host's cwd (`workdir`) and absolute output folder;
-    a job exported for deployment gets neither and carries no host paths (sites
-    use `client.apply_site_paths`).
-    """
+def build_job(cfg, staged: tuple[Path, list[str]]):
+    """Wire native FedAvg/FedOpt, a LearnablePersistor and Client API trainers."""
     from nvflare.client.config import ExchangeFormat, TransferType
     from nvflare.job_config.api import FedJob
     from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
@@ -130,7 +104,7 @@ def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None, o
     job.set_app_packages(["decent_vla"])
     stage, config_files = staged
     configs = [str(stage / name) for name in config_files]
-    job.to_server(VLAPersistor(config_path=RUN_CONFIG, output_dir=output_dir, workdir=workdir), id="persistor")
+    job.to_server(VLAPersistor(config_path=RUN_CONFIG), id="persistor")
     workflow = VLAFedAdam if cfg.fl.strategy.name == "fedadam" else VLAFedAvg
     job.to_server(
         workflow(
@@ -147,7 +121,7 @@ def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None, o
             # A name inside the job: in-process mode finds it in custom/, and
             # external-process mode runs `python3 -u custom/client_script.py`.
             script=CLIENT_SCRIPT,
-            script_args=f"--config {RUN_CONFIG}" + (f" --workdir {workdir}" if workdir else ""),
+            script_args=f"--config {RUN_CONFIG}",
             launch_external_process=cfg.fl.nvflare.launch_external_process,
             # NUMPY end-to-end + FULL transfer = the Client API applies no
             # framework conversion or diffing; params are exactly the clients'
@@ -160,90 +134,9 @@ def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None, o
     return job
 
 
-def split_gpu_groups(gpu: str) -> list[str]:
-    """Use the pinned FLARE simulator's GPU grouping rules."""
-    from nvflare.private.fed.utils.fed_utils import split_gpus
-
-    groups = split_gpus(gpu)
-    if any(not group for group in groups):
-        raise ValueError(f"fl.nvflare.gpu={gpu!r}: empty GPU group")
-    return groups
-
-
-def check_gpu_map(gpu: str | None, n_clients: int) -> list[str]:
-    """Validate `fl.nvflare.gpu` against the client count. Returns the groups.
-
-    NVFlare gives each GPU GROUP exactly one client slot at a time: with more
-    than one group it hard-sets `threads = 1` per group
-    (simulator_runner.py, "each GPU group will run with only 1 thread"), so a
-    group holding several clients runs them one at a time and tears the client
-    PROCESS down between them. That reloads the policy every round — measured
-    at ~30 s of reload per client per round for SmolVLA — and it silently drops the warm
-    Adam/scheduler/dataloader state the whole runtime is built to keep.
-
-    So the map is a client->GPU list, ONE ENTRY PER CLIENT: 8 clients on 2 cards
-    is "0,1,0,1,0,1,0,1", not "0,1". A single group ("0", or the bracket form
-    "[0,1]" for one client owning two cards) is the other legitimate shape and
-    keeps whatever `threads` asks for.
-    """
-    if not gpu:
-        return []
-    groups = split_gpu_groups(gpu)
-    if 1 < len(groups) < n_clients:
-        suggested = ",".join(groups[i % len(groups)] for i in range(n_clients))
-        raise ValueError(
-            f"fl.nvflare.gpu={gpu!r} declares {len(groups)} GPU groups for "
-            f"{n_clients} clients. NVFlare runs ONE client per group at a time, "
-            f"so {n_clients - len(groups)} client(s) would be swapped in and out "
-            f"— reloading the policy and losing warm optimizer state every round. "
-            f'Spell one entry per client: gpu: "{suggested}"'
-        )
-    return groups
-
-
-def run_simulator(cfg, config_path: str) -> None:
-    """Blocking in-process(-tree) run; raises RuntimeError on simulator failure.
-
-    threads defaults to num_clients, but NVFlare overrides it to 1 whenever the
-    GPU map names more than one group — residency comes from having one client
-    per group (see `check_gpu_map`), not from the thread count. Without a GPU map
-    the thread count is what it says: fewer threads make the simulator swap
-    client processes between rounds, which drops the warm in-memory client state
-    (Adam moments survive only via fl.persist_client_state then).
-    """
-    nv = cfg.fl.nvflare
-    cids = client_ids(cfg)
-    groups = check_gpu_map(nv.gpu, len(cids))
-    if groups:
-        log.info("nvflare simulator: %d clients over GPU groups %s (one client per group)", len(cids), groups)
-    workspace = _workspace(cfg)
-    workdir, output_dir = os.getcwd(), str(Path(cfg.fl.output_dir).resolve())
+def export_job(cfg, config_path: str, job_dir: str | Path = "jobs") -> Path:
+    """Export once; use nvflare simulator/job submit to execute the same job."""
+    job_dir = Path(job_dir).resolve()
     with staged_job(config_path) as staged:
-        job = build_job(cfg, staged, workdir=workdir, output_dir=output_dir)
-        job.simulator_run(
-            workspace,
-            clients=cids,
-            threads=nv.threads or len(cids),
-            gpu=nv.gpu,
-        )
-
-
-def export_job(cfg, config_path: str) -> Path:
-    """Write a standard NVFlare job folder for POC/provisioned submission."""
-    nv = cfg.fl.nvflare
-    job_dir = Path(nv.job_dir or (Path(cfg.fl.output_dir) / "nvflare_job")).resolve()
-    if cfg.fl.round_timeout_s is None:
-        log.warning(
-            "fl.round_timeout_s is not set: a required client that stops answering stalls its "
-            "round forever. Set it for a deployment."
-        )
-    if not Path(cfg.fl.output_dir).is_absolute():
-        log.warning(
-            "fl.output_dir is relative, so each site writes under the job's own folder: a "
-            "resubmitted job gets a new folder and starts again from round 0. Set an absolute "
-            "fl.output_dir to resume."
-        )
-    with staged_job(config_path) as staged:
-        job = build_job(cfg, staged)
-        job.export_job(str(job_dir))
-    return job_dir
+        build_job(cfg, staged).export_job(str(job_dir))
+    return job_dir / cfg.name

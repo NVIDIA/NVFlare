@@ -67,23 +67,8 @@ def load_job_config(config_path):
     return cfg
 
 
-def apply_site_paths(cfg, run_dir, workdir: str | None = None, output_dir: str | None = None, log=log) -> None:
-    """Point a run's site-local paths (data, outputs) at this site.
-
-    A simulator job runs on the submitting host and carries that host's cwd
-    (`workdir`) and, on the server, its absolute output folder: restore both, so
-    relative paths behave as under local mode.
-
-    A deployed job carries neither. Relative data paths (e.g. GR00T
-    `dataset_paths`) resolve against DECENT_VLA_WORKDIR when the site sets it,
-    otherwise against the process cwd; a relative `fl.output_dir` goes under
-    this job's run folder, so each site keeps its outputs with the job.
-    """
-    if workdir:
-        _chdir(workdir, "the submitting host's working directory")
-        if output_dir:
-            cfg.fl.output_dir = output_dir
-        return
+def apply_site_paths(cfg, run_dir) -> None:
+    """Resolve site data against DECENT_VLA_WORKDIR and outputs against the job."""
     site_workdir = os.environ.get("DECENT_VLA_WORKDIR")
     if site_workdir:
         _chdir(site_workdir, "DECENT_VLA_WORKDIR")
@@ -129,7 +114,7 @@ def resolve_config_path(arg: str | None, config_dir: str | None = None) -> str:
     return path
 
 
-def client_main(config_arg=None, app_dir=None, workdir=None):
+def client_main(config_arg=None, app_dir=None):
     """A warm policy trainer driven exclusively by the FLARE Client API."""
     import nvflare.client as flare
     import torch
@@ -144,7 +129,7 @@ def client_main(config_arg=None, app_dir=None, workdir=None):
 
     config_path = resolve_config_path(config_arg, str(Path(app_dir) / "config") if app_dir else None)
     cfg = load_job_config(config_path)
-    apply_site_paths(cfg, Path(app_dir).parent if app_dir else Path.cwd(), workdir=workdir)
+    apply_site_paths(cfg, Path(app_dir).parent if app_dir else Path.cwd())
     seed_training(cfg.seed, bool(cfg.backend.extra.get("deterministic", False)))
     flare.init()
     cid = cid_from_site(flare.get_site_name(), cfg.fl.nvflare.site_prefix)

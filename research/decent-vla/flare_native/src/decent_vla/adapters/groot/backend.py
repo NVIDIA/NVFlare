@@ -68,10 +68,6 @@ and imports cleanly without gr00t installed (all heavy imports are
 function-local). Points flagged ``VERIFY ON GPU`` mark the load-bearing
 assumptions about that API.
 
-All heavy imports (``gr00t``, ``torch`` beyond the protocol type hints,
-``peft``) are function-local so the module lands in ``registry.errors`` rather
-than crashing the CLI when Isaac-GR00T is absent (the decent-vla plugin
-pattern).
 """
 
 from __future__ import annotations

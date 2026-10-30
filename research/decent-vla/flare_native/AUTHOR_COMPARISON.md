@@ -11,22 +11,24 @@ Install the **native** package and the policy dependencies following
 
 ```bash
 # CPU check; the final line uses a fresh comparison folder.
-python job.py --generate-only
+python job.py
 python scripts/compare_training.py --reference-dir .. \
   --config outputs/mock_fl_nvflare/run.yaml \
   --output-dir /absolute/path/to/comparisons/mock-01 --wire-dtype fp32
 
 # A real-policy check; requires two suitable GPUs and cached weights/data.
-python job.py --policy pi05 --algorithm fedadam --smoke --generate-only
+python job.py --policy pi05 --algorithm fedadam --smoke
 python scripts/compare_training.py --reference-dir .. \
   --config outputs/pi05_libero_fullft_fedadam_nvflare_smoke/run.yaml \
   --output-dir /absolute/path/to/comparisons/pi05-adam-01 \
-  --wire-dtype fp32 --num-workers 0 --checkpoint-every 1
+  --wire-dtype fp32 --gpu 0,1 --num-workers 0 --checkpoint-every 1
 ```
 
-The runner executes reference then native, selecting each source through a
-separate subprocess and `PYTHONPATH`. Both packages share the `decent-vla` name,
-so do not alternately install them. After unfolding the candidate, point
+The runner executes the parent implementation's `decent_vla.cli.main` from
+`--reference-dir`, then exports the native job with `job.py --config` and runs
+`nvflare simulator`. Each source is selected through a separate subprocess and
+`PYTHONPATH`. Install the native package once; both sources share the `decent-vla`
+package name. After unfolding the candidate, point
 `--reference-dir` at a separate original checkout. Generated pipeline paths
 are shared by the two comparison jobs and packaged into exported deployments.
 
@@ -40,8 +42,8 @@ fresh outputs, and sets deterministic Python/NumPy/Torch/CUDA seeds, fixed
 `PYTHONHASHSEED`, `CUBLAS_WORKSPACE_CONFIG=:4096:8`, strict deterministic
 algorithms, cuDNN benchmarking off and TF32 off. Data workers default to zero.
 Only reference subprocesses load `scripts/reference_probe/sitecustomize.py`:
-it seeds backend construction and records the original round history without
-changing training or aggregation formulas. The runner checks that it loaded;
+it resolves the original adapters, seeds backend construction and records
+round history without changing training or aggregation formulas. The runner checks that it loaded;
 no edits to the original source are required.
 
 Unsupported deterministic CUDA operations should fail. Select the same supported
@@ -90,36 +92,44 @@ evaluation protocols and full training curves. CPU mock agreement is insufficien
 
 ## Clients, threads and GPUs
 
-`job.py --num-clients N --gpus 0,1` expands the available GPU pool into one
-resident slot per client. It does not bound concurrency to two clients.
-The generated YAML's `fl.nvflare.gpu` is the expanded **group map**. The YAML
-key and `FedJob.simulator_run` argument are `threads`, not `num_threads`.
-`SimEnv` in newer recipe-based examples calls the analogous setting `num_threads`.
+`job.py --num-clients N` sets the logical sites/shards. Simulator resources are
+FLARE command options, not native YAML fields. For eight clients on two GPUs:
 
-| FLARE 2.8.1 setting | Effect |
+```bash
+nvflare simulator jobs/smolvla_libero_lora_nvflare \
+  -w outputs/smolvla_workspace -c c0,c1,c2,c3,c4,c5,c6,c7 -t 8 \
+  -gpu 0,1,0,1,0,1,0,1
+```
+
+The simulator CLI uses `-t` / `--threads`; newer recipe examples call the
+analogous `SimEnv` option `num_threads`. `-gpu` / `--gpu` takes a **group map**,
+not simply a pool of available GPUs. The comparison runner's `--threads` and
+`--gpu` forward identical resources to the original launcher and native FLARE CLI.
+It defaults to N threads and requires resident clients for strict parity.
+
+| FLARE 2.8.1 option, with eight logical clients | Effect |
 | --- | --- |
-| `data.num_clients: N` | N logical sites/shards (`c0`…`cN-1`) |
-| `threads: N`, no GPU map | N resident workers; set `device: cpu` for CPU execution |
-| `threads: 8`, `gpu: '0'` | Eight resident clients on one GPU, if memory fits |
-| `gpu: '0,1,0,1,0,1,0,1'` | Eight groups/workers, four per physical GPU |
-| `gpu: '0,1'`, eight clients | Stock simulator rotates clients through two workers; native launcher rejects this map |
-| `threads: 1`, `gpu: '0'`, eight clients | Sequential rotation; unsuitable for current strict parity comparisons |
-| `gpu: '[0,1]'` | One group exposing two GPUs; does not enable model parallelism |
+| `-t 8`, no GPU map | Eight resident workers; set `device: cpu` for CPU execution |
+| `-t 8 -gpu 0` | Eight resident clients on one GPU, if memory fits |
+| `-gpu 0,1,0,1,0,1,0,1` | Eight groups/workers, four per physical GPU |
+| `-gpu 0,1` | Stock simulator rotates clients through two workers; loses warm state |
+| `-t 1 -gpu 0` | Sequential rotation; unsuitable for current strict comparisons |
+| `-gpu '[0,1]'` | One group exposing two GPUs; does not enable model parallelism |
 
 With multiple groups FLARE forces one worker **per group**, overriding threads.
-Thus `threads: 1` with an eight-entry map still gives eight workers. With one
-group, threads determines concurrency. The example defaults to N threads;
-the bare simulator CLI can default to one. `data.num_workers` is a separate
-per-client DataLoader setting, and `fl.min_clients` controls required updates,
-not concurrent workers. Do not lower the quorum to fit GPU memory.
+Thus `-t 1` with an eight-entry map still gives eight workers. With one group,
+threads determines concurrency. Always specify threads explicitly; the stock
+CLI can default to one. `data.num_workers` is a separate per-client DataLoader
+setting, and `fl.min_clients` controls required updates, not concurrent workers.
+Do not lower the quorum to fit GPU memory.
 
-Repeated IDs do not partition or enlarge VRAM. All resident models, optimizer
-state and buffers must fit, with enough host RAM for aggregation/final export.
-Workers set `CUDA_VISIBLE_DEVICES`; normally use `device: auto` / local `cuda:0`.
-For over 100 logical clients, export and launch with the simulator CLI's `-m N`
-and matching `-c c0,...,cN-1`. The current automatic comparison launcher retains
-the 100-client limit. See the [FLARE simulator guide](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html);
-recheck release-specific behavior when changing the 2.8.1 pin.
+Repeated IDs do not partition or enlarge VRAM. Resident models, optimizer state
+and buffers must fit, with enough host RAM for aggregation/final export. Workers
+set `CUDA_VISIBLE_DEVICES`; normally use `device: auto` / local `cuda:0`.
+For over 100 logical clients, use the simulator CLI's `-m N` and matching
+`-c c0,...,cN-1`. The automatic original/native comparison retains the reference
+launcher's 100-client limit. See the [FLARE simulator guide](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html);
+recheck behavior when changing the 2.8.1 pin.
 
 ## Sequential execution needs complete disk-backed state
 
