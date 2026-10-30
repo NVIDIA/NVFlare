@@ -9,6 +9,8 @@ ARG PYTHON_MINOR=3.14
 FROM ${PYTHON_BUILD_BASE} AS builder
 
 ARG PYTHON_MINOR
+# K8S supplies the Kubernetes client checked below; use K8S,dashboard for Dashboard.
+ARG NVFLARE_EXTRAS=K8S
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -26,7 +28,7 @@ RUN --mount=type=bind,source=.,target=/opt/NVFlare,rw \
     git ls-files --deleted -z | git update-index --skip-worktree -z --stdin \
     && python -c "import versioneer; v = versioneer.get_versions(); assert not v['error'], v['error']" \
     && python -m pip install --prefix=/opt/nvflare --ignore-installed "packaging<=25.0" \
-    && NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[K8S]" \
+    && NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[${NVFLARE_EXTRAS}]" \
     && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_MINOR}/site-packages" python -m pip check \
     && mkdir -p "/usr/local/lib/python${PYTHON_MINOR}/site-packages" \
     && printf "/opt/nvflare/lib/python%s/site-packages\n" "${PYTHON_MINOR}" \
