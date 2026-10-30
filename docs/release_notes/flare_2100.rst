@@ -215,7 +215,9 @@ Developer Experience
   around the Recipe API.
 - **Example catalog.** ``nvflare examples list`` and ``nvflare examples get
   <name>`` retrieve a curated example matching the installed NVFlare version,
-  without cloning the repository.
+  without cloning the repository. Examples that reuse another example, such
+  as ``hello-pt-environments``, download their dependency with them, and the
+  GitHub API can be accessed with a token.
 - **Recipes, Simulator, and POC.** Progress logging and run summaries across
   workflows and recipe runs, clearer Recipe script arguments and simulation
   status, a warning when export flags are not declared by the script,
@@ -340,15 +342,30 @@ Aggregation and Workflows
   workflow property conflict when assigning server tasks.
 - Lightning ``max_steps`` rounds keep a constant length, and evaluation tasks
   keep the training budget.
+- PyTorch aggregation with integer weights no longer fails on integral buffers
+  such as ``BatchNorm`` ``num_batches_tracked``.
+- ``TaskController`` sends the output of an outgoing task-data filter instead
+  of the original payload.
+- A job whose resource reservation succeeds but whose admission then fails
+  unexpectedly cancels the reservation, keeps retry backoff and the
+  maximum-attempt limit effective, and lets the scheduler continue with later
+  candidates.
+- An exception escaping the client runner no longer leaves the job running
+  indefinitely.
+- Client API rank resolution is shared by Hugging Face, Lightning, and plain
+  PyTorch distributed clients, invalid ranks are rejected, and Hugging Face
+  rejects a conflicting single-process rank marker on a nonzero rank.
 
 Networking and Infrastructure
 -----------------------------
 
 - Relay authentication refreshes after a server key replacement.
 - Slurm multi-node GPU step allocation.
-- Transport startup and shutdown lifecycle handling, and async TCP scheme
-  handling in client startup URLs.
+- Transport startup and shutdown lifecycle handling, and async TCP and gRPC
+  scheme handling in client startup URLs (``use_aio: true`` provisioning).
 - Site communication settings reload after workspace bootstrap.
+- Recursive dictionary updates work on Python 3.10 and later, and email and
+  admin domain validation rejects ``|`` in the top-level domain.
 
 Recipes, Simulator, and POC
 ---------------------------
