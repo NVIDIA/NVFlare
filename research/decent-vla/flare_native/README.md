@@ -155,10 +155,11 @@ RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q
 ```
 
 See [tests/README.md](tests/README.md). This folder is independent of the parent
-implementation. After the authors confirm alignment, retain its entire contents
-(including dotfiles), remove the other original files and move these contents
-up into `research/decent-vla/`. No source edits are needed; regenerate configs
-in their final location.
+implementation. After the authors confirm alignment, follow the
+[final PR cleanup checklist](AUTHOR_COMPARISON.md#final-pr-cleanup-after-alignment)
+to remove migration scaffolding and the original implementation, then move the
+remaining native contents (including dotfiles) up into `research/decent-vla/`.
+Regenerate configs and jobs in their final location.
 
 ## License
 

@@ -149,3 +149,36 @@ Publish checkpoints atomically with completed-round identity before acknowledgin
 completion so retries cannot train twice. Server FedAdam state cannot replace
 client state. Validate resident versus swapped runs of the same implementation
 before comparing original versus native. This feature remains unimplemented.
+
+
+## Final PR cleanup after alignment
+
+After the authors confirm real-policy training curves and evaluation alignment,
+save the comparison results as review evidence outside the contribution. Remove
+these migration-only files before preparing the final PR contents. Paths below
+are relative to `flare_native/`:
+
+| File to remove | Temporary purpose |
+| --- | --- |
+| `AUTHOR_COMPARISON.md` | This migration/author-validation guide |
+| `scripts/compare_training.py` | Launches the original and native implementations and compares their artifacts |
+| `scripts/reference_probe/sitecustomize.py` | Instruments the original implementation for deterministic comparisons; remove the entire `scripts/reference_probe/` directory |
+| `tests/unit_test/scripts/training_comparison_test.py` | Tests the temporary comparison runner; remove it together with that runner |
+
+Before deleting this guide, retain the useful simulator GPU/thread guidance and
+sequential-execution limitations in `README.md`. Remove its links to this guide,
+the migration/unfolding instructions, and comparison-tool references in
+`tests/README.md`. Check for references to the removed files and
+`DVLA_REFERENCE_*` hooks.
+
+Keep `job.py`, `evaluate.py`, policy/data adapters, native FLARE workflows,
+persistence, deterministic seeding, training metrics, and the remaining native
+unit/deployment tests. They support normal use of the example rather than the
+original-versus-native comparison. Keep their test helpers and the policy
+setup/evaluation scripts as well.
+
+Remove the original implementation outside `flare_native/` from
+`research/decent-vla/`, then move the remaining native contents, including
+dotfiles, up into `research/decent-vla/`. Generated jobs, workspaces, downloaded
+models/data and comparison outputs stay outside the final tracked contribution.
+Re-export the job and rerun the native checks from the final location.
