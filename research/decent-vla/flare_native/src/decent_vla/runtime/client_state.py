@@ -15,9 +15,8 @@
 """Per-client state that survives FL rounds (spec §6).
 
 Created once per client; the optimizer (with its Adam moments), the
-scheduler (advancing on the CUMULATIVE global step), the cycling dataloader
-and the strategy's persistent_state all live here. Rebuilding any of these
-per round is the documented cold-Adam drift bug.
+scheduler (advancing on the cumulative global step), and the cycling dataloader
+remain alive across rounds to preserve local training continuity.
 
 When ``client_ckpt_dir`` is supplied (opt-in ``fl.persist_client_state``),
 ``build_client_state`` restores a previously-saved client checkpoint instead
@@ -27,7 +26,7 @@ of cold-building — the resume counterpart to the server's checkpoint resume.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +42,6 @@ class ClientState:
     optimizer: Any
     scheduler: object | None
     dataloader: Iterator
-    persistent: dict[str, Any] = field(default_factory=dict)
     global_step: int = 0
 
 
@@ -83,7 +81,6 @@ def build_client_state(
     optimizer, scheduler = backend.build_optimizer(optim_cfg)
     start_step = start_round * local_steps
     fast_forward_scheduler(scheduler, start_step)
-    persistent = {}
     global_step = start_step
 
     # Opt-in warm resume: restore the NEWEST client checkpoint from a round
@@ -106,8 +103,6 @@ def build_client_state(
             _move_optimizer_state_to_param_device(optimizer)
             if scheduler is not None and blob.get("scheduler") is not None:
                 scheduler.load_state_dict(blob["scheduler"])
-            if blob.get("persistent") is not None:
-                persistent = blob["persistent"]
             global_step = int(blob["global_step"])
             break
 
@@ -117,6 +112,5 @@ def build_client_state(
         optimizer=optimizer,
         scheduler=scheduler,
         dataloader=dataloader,
-        persistent=persistent,
         global_step=global_step,
     )

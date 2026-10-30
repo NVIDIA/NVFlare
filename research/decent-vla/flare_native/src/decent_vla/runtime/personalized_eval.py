@@ -69,24 +69,6 @@ def _norm(name: str) -> str:
     return _WS.sub(" ", name.strip().lower())
 
 
-def match_task_names_to_ids(names: list[str], suite_tasks: dict[int, str]) -> list[int]:
-    """Map partition-manifest task names onto benchmark task ids.
-
-    Dataset task strings are often underscored ("Pick_up_the_black_bowl…")
-    while benchmark task language is spaced — match on a normalized form.
-    Unknown names raise: silently skipping a task would shrink the client's
-    eval set and inflate nothing-visible.
-    """
-    by_norm = {_norm(lang): tid for tid, lang in suite_tasks.items()}
-    out: list[int] = []
-    for n in names:
-        tid = by_norm.get(_norm(n))
-        if tid is None:
-            raise ValueError(f"task name {n!r} not found among benchmark tasks " f"{sorted(suite_tasks.values())[:3]}…")
-        out.append(tid)
-    return out
-
-
 def pool_client_results(per_client: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Pool per-client episode counts into the personalized aggregate."""
     n_eps = sum(c["n_episodes"] for c in per_client.values())

@@ -12,17 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Per-client checkpoint persistence for warm resume (opt-in).
+"""Optional client checkpoints for weights, optimizer, scheduler and global step.
 
-The server side already resumes from ``server_round_*.pt`` (see
-``runtime.nvflare.persistor.VLAPersistor``). This is the client-side counterpart:
-each client's weights + optimizer (Adam moments) + scheduler step + legacy
-``persistent`` checkpoint field are written to disk so a killed FL run resumes *warm*
-instead of cold-restarting every client's optimizer (audit #3/#9).
-
-Gated by ``fl.persist_client_state`` (default off); cadence reuses
-``fl.save_every_n_rounds``. Files live at
-``<output_dir>/client_states/<cid>_round_NNNN.pt``.
+Gated by ``fl.persist_client_state``; cadence reuses ``fl.save_every_n_rounds``.
+Files live at ``<output_dir>/client_states/<cid>_round_NNNN.pt``. RNG and
+data-iterator progress are not included, so this is not complete swap state.
 """
 
 from __future__ import annotations
@@ -51,17 +45,10 @@ def _round_re(cid: str) -> re.Pattern[str]:
 
 
 def save_client_state(ckpt_dir: str | Path, state, round_idx: int, keep: int | None = None) -> Path:
-    """Atomically write a client's full state (tmp file + rename).
+    """Atomically save client weights, optimizer/scheduler state and global step.
 
-    ``state`` is a ``ClientState`` (duck-typed: ``client_id``, ``backend``,
-    ``optimizer``, ``scheduler``, ``persistent``, ``global_step``). Stores the
-    full trainable weights plus the optimizer/scheduler/persistent state so the
-    client can be reconstructed exactly.
-
-    ``keep``: retain only the ``keep`` highest-round files for THIS client
-    after a successful write (``fl.client_state_keep``). At 3B scale a blob is
-    ~35 GB per client, so keep-all across 50 rounds is not viable. ``None``
-    keeps everything (historical behavior).
+    ``keep`` retains only the highest-round files for this client after a
+    successful write; ``None`` keeps all checkpoints.
     """
     ckpt_dir = Path(ckpt_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +60,6 @@ def save_client_state(ckpt_dir: str | Path, state, round_idx: int, keep: int | N
         "weights": state.backend.get_state("all"),
         "optimizer": state.optimizer.state_dict(),
         "scheduler": sched.state_dict() if (sched is not None and hasattr(sched, "state_dict")) else None,
-        "persistent": state.persistent,
     }
     path = ckpt_dir / f"{state.client_id}_round_{round_idx:04d}.pt"
     tmp = path.with_name(path.name + ".tmp")
