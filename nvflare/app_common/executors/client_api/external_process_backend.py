@@ -69,7 +69,11 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
-from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
+from nvflare.utils.process_utils import (
+    linux_process_group_has_live_members,
+    log_subprocess_output,
+    prepare_subprocess_command,
+)
 
 # Poll cadence for process-death detection; events wake successful waits immediately.
 _RESULT_POLL_INTERVAL = 0.5
@@ -867,81 +871,7 @@ class ExternalProcessBackend(CellBackendBase):
         return True
 
     def _linux_group_has_live_members(self, pgid: int) -> Optional[bool]:
-        """Return None when procfs cannot establish the group's state."""
-        found_zombie = False
-        try:
-            with os.scandir("/proc") as entries:
-                for entry in entries:
-                    if not entry.name.isdecimal():
-                        continue
-                    try:
-                        fields = self._read_linux_proc_stat_fields(f"/proc/{entry.name}/stat")
-                        if len(fields) < 4:
-                            raise ValueError("incomplete procfs stat")
-                        state, _, group, session = fields[:4]
-                        group, session = int(group), int(session)
-                    except (OSError, ValueError):
-                        # An unrelated process may disappear or have an unreadable
-                        # stat file. Preserve the conservative result if it might
-                        # belong to the trainer group.
-                        try:
-                            if os.getpgid(int(entry.name)) == pgid:
-                                return None
-                        except ProcessLookupError:
-                            pass
-                        except OSError:
-                            return None
-                        continue
-                    if group != pgid or session != pgid:
-                        continue
-                    if state not in (b"Z", b"X", b"x"):
-                        return True
-                    # A process leader can be a zombie after pthread_exit()
-                    # while other threads in that process keep running.
-                    threads_live = self._linux_process_has_live_threads(entry.name)
-                    if threads_live is None:
-                        return None
-                    if threads_live:
-                        return True
-                    found_zombie = True
-        except (OSError, ValueError) as e:
-            self.logger.debug(f"cannot inspect trainer process group {pgid} in procfs: {e}")
-            return None
-        return False if found_zombie else None
-
-    @staticmethod
-    def _read_linux_proc_stat_fields(path: str) -> list[bytes]:
-        with open(path, "rb") as stat_file:
-            stat = stat_file.read()
-        # comm can contain arbitrary bytes and ')'; only the suffix has fields.
-        end_of_comm = stat.rfind(b")")
-        if end_of_comm < 0:
-            raise ValueError("missing comm delimiter in procfs stat")
-        return stat[end_of_comm + 1 :].split()
-
-    @staticmethod
-    def _linux_process_has_live_threads(pid: str) -> Optional[bool]:
-        """Return None unless procfs exposes at least one thread state."""
-        found_dead = False
-        try:
-            with os.scandir(f"/proc/{pid}/task") as threads:
-                for thread in threads:
-                    if not thread.name.isdecimal():
-                        continue
-                    try:
-                        fields = ExternalProcessBackend._read_linux_proc_stat_fields(
-                            f"/proc/{pid}/task/{thread.name}/stat"
-                        )
-                    except FileNotFoundError:
-                        continue
-                    if not fields:
-                        return None
-                    if fields[0] not in (b"Z", b"X", b"x"):
-                        return True
-                    found_dead = True
-        except (OSError, ValueError):
-            return None
-        return False if found_dead else None
+        return linux_process_group_has_live_members(pgid, session_id=pgid)
 
     def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""

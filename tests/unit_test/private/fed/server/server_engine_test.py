@@ -351,8 +351,8 @@ def _make_abort_engine(job_handle):
 
 def test_abort_app_on_server_schedules_cleanup_in_background_after_in_band_abort():
     """Cleanup must run in a background thread so the admin reply returns within the
-    CLI's default cmd_timeout (5.0s). The thread must be non-daemon so process
-    exit waits for bounded cleanup instead of orphaning launcher-managed resources.
+    CLI's default cmd_timeout (5.0s). A missing backend settlement must not
+    prevent the server process from shutting down.
     """
     job_handle = MagicMock()
     engine = _make_abort_engine(job_handle)
@@ -363,8 +363,8 @@ def test_abort_app_on_server_schedules_cleanup_in_background_after_in_band_abort
 
     assert result == ""
     thread_cls.assert_called_once_with(
-        target=engine._remove_run_processes,
-        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 10.0},
+        target=engine._run_abort_cleanup,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 10.0, "background_settlement": True},
         daemon=False,
     )
     thread_cls.return_value.start.assert_called_once()
@@ -382,11 +382,26 @@ def test_abort_app_on_server_skips_graceful_wait_when_in_band_abort_fails():
 
     assert result == ""
     thread_cls.assert_called_once_with(
-        target=engine._remove_run_processes,
-        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 0.0},
+        target=engine._run_abort_cleanup,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 0.0, "background_settlement": True},
         daemon=False,
     )
     thread_cls.return_value.start.assert_called_once()
+
+
+def test_abort_first_cancellation_precedes_daemon_settlement():
+    handle = MagicMock()
+    engine = _make_abort_engine(handle)
+    with patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls:
+        thread_cls.side_effect = lambda **kwargs: handle.terminate.assert_called_once() or MagicMock()
+        engine._remove_run_processes("job-1", job_handle=handle, max_wait=0, background_settlement=True)
+    handle.wait.assert_not_called()
+    thread_cls.assert_called_once_with(
+        target=engine._wait_for_run_process_settlement,
+        kwargs={"job_id": "job-1", "job_handle": handle},
+        daemon=True,
+    )
+    assert engine.run_processes["job-1"][RunProcessKey.JOB_HANDLE] is handle
 
 
 def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires():
@@ -428,8 +443,8 @@ def test_remove_run_processes_has_nothing_to_terminate_without_run_or_handle():
 
 def test_remove_run_processes_tolerates_terminate_failure():
     """A failure to delete the launcher resource (e.g. K8s API error) must not crash
-    abort cleanup; the run_processes entry is still popped so the engine state
-    stays consistent.
+    abort cleanup. A successful independent wait still confirms shutdown even
+    when cancellation itself failed.
     """
     job_handle = MagicMock()
     job_handle.terminate.side_effect = RuntimeError("k8s api down")
@@ -679,3 +694,68 @@ def test_streamer_preconditions_and_shutdown():
     engine.run_manager = SimpleNamespace(object_streamer=MagicMock())
     engine.shutdown_streamer()
     engine.run_manager.object_streamer.shutdown.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", ["terminate", "wait", "both"])
+def test_abort_cleanup_keeps_server_registration_until_settlement(monkeypatch, failure):
+    from tests.timing_utils import isolate_time
+
+    handle = MagicMock()
+    engine = _make_abort_engine(handle)
+    observations = []
+
+    def terminate():
+        observations.append(engine.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE))
+        if handle.terminate.call_count == 1 and failure in ("terminate", "both"):
+            raise RuntimeError("cancel unavailable")
+
+    def wait():
+        observations.append(engine.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE))
+        if handle.wait.call_count == 1 and failure in ("wait", "both"):
+            raise RuntimeError("settlement unconfirmed")
+
+    handle.terminate.side_effect = terminate
+    handle.wait.side_effect = wait
+    isolate_time(monkeypatch, "nvflare.private.fed.server.server_engine").sleep = lambda _: None
+    engine._remove_run_processes("job-1", max_wait=0)
+    assert observations and all(value is handle for value in observations)
+    assert handle.wait.call_count == (1 if failure == "terminate" else 2)
+    assert engine.run_processes == {}
+
+
+def test_abort_cleanup_does_not_unregister_a_new_server_execution():
+    old, new = MagicMock(), MagicMock()
+    engine = _make_abort_engine(old)
+
+    def wait():
+        engine.run_processes["job-1"] = {RunProcessKey.JOB_HANDLE: new}
+
+    old.wait.side_effect = wait
+    engine._remove_run_processes("job-1", max_wait=0)
+    assert engine.run_processes["job-1"][RunProcessKey.JOB_HANDLE] is new
+
+
+def assert_server_backend_cleanup(runtime, backend_module, monkeypatch, advance):
+    from tests.timing_utils import isolate_time
+
+    engine = _make_abort_engine(runtime)
+    waits = []
+    failures = []
+
+    def sleep(_):
+        try:
+            assert engine.run_processes["job-1"][RunProcessKey.JOB_HANDLE] is runtime
+            assert runtime.terminal_state is None
+            waits.append(True)
+            assert len(waits) < 6
+            advance(len(waits))
+        except AssertionError as error:
+            failures.append(error)
+            raise
+
+    isolate_time(monkeypatch, backend_module).sleep = sleep
+    engine._remove_run_processes("job-1", max_wait=0)
+    assert not failures, failures
+    assert waits, "server abort returned without observing backend recovery"
+    assert runtime.poll() != JobReturnCode.UNKNOWN
+    assert engine.run_processes == {}

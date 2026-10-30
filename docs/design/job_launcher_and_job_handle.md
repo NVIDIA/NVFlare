@@ -48,9 +48,9 @@ Abstract base class representing a running job (`class JobHandleSpec(ABC)`).
 
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
-| `terminate()` | `() -> None` | Stop the job immediately. |
-| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` while running. |
-| `wait()` | `() -> None` | Block until the job finishes. |
+| `terminate()` | `() -> None` | Request termination; backend settlement may still be pending. |
+| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` until shutdown is confirmed. |
+| `wait()` | `() -> None` | Block until the backend confirms shutdown. |
 
 ### 2.2 JobLauncherSpec
 
@@ -203,6 +203,11 @@ _start_runner_process(job, job_clients, snapshot, fl_ctx)
 └─ 6. Background thread → wait_for_complete → job_handle.wait()
 ```
 
+Server abort cleanup keeps the graceful wait and first `terminate()` call in a non-daemon thread so interpreter
+shutdown cannot skip cancellation. `ServerEngine.close()` joins these bounded workers before process-monitor
+teardown can force an exit. Only the subsequent settlement/retry loop is a daemon. While the parent is
+alive, that loop retains the captured registration until shutdown is confirmed and cannot remove a replacement.
+
 ### 3.4 Client Side (`ClientExecutor`)
 
 Location: `nvflare/private/fed/client/client_executor.py`
@@ -260,9 +265,13 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 
 | Method | Implementation |
 |--------|---------------|
-| `terminate()` | Delegates to `adapter.terminate()`. |
+| `terminate()` | Requests termination of the owned process group. |
 | `poll()` | Maps exit code: 0 → `SUCCESS`, 1 → `EXECUTION_ERROR`, 9 → `ABORTED`, `None` → `UNKNOWN`. |
-| `wait()` | Delegates to `adapter.wait()`. |
+| `wait()` | Waits for the leader and its owned group, including successful leader exit. Retries group cancellation after each grace period; an expired grace period cannot release ownership. |
+
+On Linux, a group containing only unreaped zombies is quiescent. Two complete procfs observations must confirm
+there are no live processes or threads; incomplete observations retain ownership. Confirmed group shutdown is
+cached so later cleanup does not signal a released group ID.
 
 #### ProcessJobLauncher
 
@@ -272,7 +281,7 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 | 2 | Merge `get_credential_env(JOB_PROCESS_ARGS)` into the child env — bootstrap credentials travel in the environment, never in argv (see `job_process_credential_transport_design.md`). |
 | 3 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
 | 4 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
-| 5 | Return `ProcessHandle`. |
+| 5 | Publish and return `ProcessHandle`. A spawn-finalization error also publishes the acquired process before propagating the error. |
 
 **Event registration** — unconditionally registers:
 
@@ -377,11 +386,14 @@ JobLauncherSpec (FLComponent, ABC)
 
 | Method | Implementation |
 |--------|---------------|
-| `terminate()` | `delete_namespaced_pod(grace_period_seconds=0)`. Always sets `terminal_state = TERMINATED` regardless of outcome. |
-| `poll()` | Returns `terminal_state` if set; otherwise calls `_query_state()` mapped through `JOB_RETURN_CODE_MAPPING`. |
-| `wait()` | Loops `_query_state()`; sets `terminal_state` when `SUCCEEDED` or `TERMINATED`; sleeps 1s. No timeout. |
-| `_query_phase()` | Calls `read_namespaced_pod`. On 404: sets `terminal_state = TERMINATED`. Returns `PodPhase.UNKNOWN` on any error. |
+| `terminate()` | Closes task admission and requests UID-bound Pod deletion. It retains ownership until shutdown and removal are confirmed. |
+| `poll()` | Observes the Pod and returns `UNKNOWN` while shutdown evidence or cancellation cleanup is incomplete. |
+| `wait()` | Polls until settlement is confirmed; API outages and missing evidence keep it waiting. |
+| `_query_phase()` | Reads the UID-bound Pod. A 404 settles only after shutdown proof, or after deletion began for an observed UID with our settlement finalizer and that finalizer was removed. |
 | `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → delete pod and preserve `EXCEPTION` return code, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → delete pod and preserve `EXCEPTION` return code. Returns `True` on state reached, `False` otherwise. |
+
+Pod reads, patches and deletes use a five-second request timeout so cleanup can retry observation failures.
+Pod creation uses the SDK's normal timeout behavior; the cleanup timeout must not cut off admission processing.
 
 Pod phase mapping:
 
@@ -432,7 +444,7 @@ Launch sequence:
 | 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
 | 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials, the workspace transfer token, and — when the job has one — the per-job certificate and key as `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. The startup Secret never includes `*.key`; in secure mode a job without a credential is refused. |
 | 4 | Create `K8sJobHandle` (carries the credential Secret name). |
-| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
+| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). A confirmed pre-send failure or API rejection releases the unused resources and returns `EXCEPTION`. An ambiguous create preserves the handle, credential and cleanup owner until the Pod is identified and settled. |
 | 6 | Publish the created handle through `JOB_HANDLE_CALLBACK` before waiting for Running, so a concurrent abort can delete a never-started Pod. Then call `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
 
@@ -472,8 +484,10 @@ def handle_event(self, event_type, fl_ctx):
 
 `ClientSlurmJobLauncher` and `ServerSlurmJobLauncher` return a manager-backed `SlurmJobHandle`. One manager per
 parent submits, monitors, and cancels scheduler allocations. Its live-handle map prevents duplicate submissions
-within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID; otherwise it removes
-the transient job artifacts and reports failure.
+within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID. Explicit rejection
+or a confirmed failure to start `sbatch` releases unused files. An uncertain response publishes a cleanup handle
+and preserves files and ownership while the manager recovers the submission ID and requests cancellation. Each
+submission has a unique job-name suffix so reconciliation cannot adopt a previous run of the same logical job.
 
 The deploy tool prepares the appropriate client or server launcher directly in the shared workspace selected by
 `--output`. Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;

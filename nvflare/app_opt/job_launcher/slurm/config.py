@@ -141,6 +141,7 @@ class CommandResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    not_started: bool = False
 
     @property
     def available(self) -> bool:

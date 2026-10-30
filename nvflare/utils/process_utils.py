@@ -430,3 +430,79 @@ def spawn_process(cmd_args: List[str], env: dict, cwd: Optional[str] = None) -> 
         popen_kwargs["cwd"] = cwd
     process = popen_in_new_session(cmd_args, **popen_kwargs)
     return _finish_spawn(ProcessAdapter(process=process), "subprocess")
+
+
+def linux_process_group_has_live_members(pgid: int, *, session_id: Optional[int] = None) -> Optional[bool]:
+    """Return None when procfs cannot establish the group's state."""
+    found_zombie = False
+    try:
+        with os.scandir("/proc") as entries:
+            for entry in entries:
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    fields = _read_linux_proc_stat_fields(f"/proc/{entry.name}/stat")
+                    if len(fields) < 4:
+                        raise ValueError("incomplete procfs stat")
+                    state, _, group, session = fields[:4]
+                    group, session = int(group), int(session)
+                except (OSError, ValueError):
+                    # An unrelated process may disappear or have an unreadable
+                    # stat file. Preserve the conservative result if it might
+                    # belong to the trainer group.
+                    try:
+                        if os.getpgid(int(entry.name)) == pgid:
+                            return None
+                    except ProcessLookupError:
+                        pass
+                    except OSError:
+                        return None
+                    continue
+                if group != pgid or (session_id is not None and session != session_id):
+                    continue
+                if state not in (b"Z", b"X", b"x"):
+                    return True
+                # A process leader can be a zombie after pthread_exit()
+                # while other threads in that process keep running.
+                threads_live = _linux_process_has_live_threads(entry.name)
+                if threads_live is None:
+                    return None
+                if threads_live:
+                    return True
+                found_zombie = True
+    except (OSError, ValueError) as e:
+        log.debug(f"cannot inspect trainer process group {pgid} in procfs: {e}")
+        return None
+    return False if found_zombie else None
+
+
+def _read_linux_proc_stat_fields(path: str) -> list[bytes]:
+    with open(path, "rb") as stat_file:
+        stat = stat_file.read()
+    # comm can contain arbitrary bytes and ')'; only the suffix has fields.
+    end_of_comm = stat.rfind(b")")
+    if end_of_comm < 0:
+        raise ValueError("missing comm delimiter in procfs stat")
+    return stat[end_of_comm + 1 :].split()
+
+
+def _linux_process_has_live_threads(pid: str) -> Optional[bool]:
+    """Return None unless procfs exposes at least one thread state."""
+    found_dead = False
+    try:
+        with os.scandir(f"/proc/{pid}/task") as threads:
+            for thread in threads:
+                if not thread.name.isdecimal():
+                    continue
+                try:
+                    fields = _read_linux_proc_stat_fields(f"/proc/{pid}/task/{thread.name}/stat")
+                except FileNotFoundError:
+                    continue
+                if not fields:
+                    return None
+                if fields[0] not in (b"Z", b"X", b"x"):
+                    return True
+                found_dead = True
+    except (OSError, ValueError):
+        return None
+    return False if found_dead else None

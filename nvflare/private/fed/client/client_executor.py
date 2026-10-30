@@ -386,31 +386,48 @@ class JobExecutor(ClientExecutor):
         ):
             job_args[key] = (job_args[key][0], value)
         fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+        job_handle = None
 
-        def register_handle(job_handle):
-            heartbeat_cleanup = pending_handle.attach(job_handle)
+        def register_handle(handle):
+            nonlocal job_handle
+            heartbeat_cleanup = pending_handle.attach(handle)
+            job_handle = handle
             if heartbeat_cleanup is not None:
                 self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
 
-        # Publish created runtimes before scheduling waits on initial and
-        # replacement launches, so an abort can reclaim an unscheduled CJ.
+        # Initial and replacement launches can both wait after acquiring a
+        # runtime. Publish its handle before that wait so abort remains live.
         fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
-            job_handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
-        finally:
-            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
-        if job_handle is None:
-            raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
-        try:
-            register_handle(job_handle)
+            handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+            if handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+            register_handle(handle)
             self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
             fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
             fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
         except BaseException:
             # Once launched, retain ownership until the worker has exited.
-            job_handle.terminate()
-            job_handle.wait()
+            if job_handle is not None:
+                while True:
+                    try:
+                        job_handle.terminate()
+                    except Exception as e:
+                        self.logger.error(
+                            f"job {job_id}: launch cleanup termination failed: {secure_format_exception(e)}"
+                        )
+                    # A failed cancellation does not prevent natural exit. Keep
+                    # registration, credentials and admission resources until
+                    # the accepted runtime's handle confirms settlement.
+                    try:
+                        job_handle.wait()
+                        break
+                    except Exception as e:
+                        self.logger.error(f"job {job_id}: launch cleanup wait failed: {secure_format_exception(e)}")
+                        time.sleep(1.0)
             raise
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
 
     def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         engine = fl_ctx.get_engine()
@@ -686,7 +703,7 @@ class JobExecutor(ClientExecutor):
             job_handle.terminate(heartbeat_cleanup=True)
         else:
             job_handle.terminate()
-        self.logger.info(f"run ({job_id}): child worker process terminated")
+        self.logger.info(f"run ({job_id}): child worker termination requested")
 
     def abort_task(self, job_id):
         """Aborts the client executing task.

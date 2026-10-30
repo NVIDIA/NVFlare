@@ -16,6 +16,7 @@ import os
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from abc import abstractmethod
 from typing import Optional
@@ -24,7 +25,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
@@ -32,7 +39,12 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     study_runtime_file_path,
 )
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
-from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from nvflare.utils.process_utils import (
+    ProcessAdapter,
+    ProcessSpawnError,
+    linux_process_group_has_live_members,
+    spawn_process,
+)
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
@@ -49,6 +61,7 @@ class ProcessHandle(JobHandleSpec):
         super().__init__()
         self.owns_process_group = owns_process_group
         self.app_dir = app_dir
+        self._group_exit_confirmed = False
 
         if process_adapter:
             self.adapter = process_adapter
@@ -58,6 +71,8 @@ class ProcessHandle(JobHandleSpec):
             raise ValueError("ProcessHandle requires a process object, a pid, or a ProcessAdapter.")
 
     def terminate(self):
+        if self._group_exit_confirmed:
+            return
         if not self.owns_process_group:
             self.adapter.terminate()
             return
@@ -77,11 +92,11 @@ class ProcessHandle(JobHandleSpec):
 
     def wait(self):
         self.adapter.wait()
-        if self.owns_process_group and self.adapter.poll() not in (None, 0):
-            # Allow children to exit, then bound cleanup of any remaining members.
-            if not self._wait_for_group_exit():
+        if self.owns_process_group:
+            # A successful leader can also leave writers behind. Each grace
+            # period bounds a cancellation attempt, never ownership retention.
+            while not self._wait_for_group_exit():
                 self.terminate()
-                self._wait_for_group_exit()
 
     def _wait_for_group_exit(self):
         deadline = time.monotonic() + 10.0
@@ -107,6 +122,8 @@ class ProcessHandle(JobHandleSpec):
             return False
 
     def _group_exited(self):
+        if self._group_exit_confirmed:
+            return True
         # The launcher starts a new session. Other supplied processes need not
         # own their group.
         if not self.owns_process_group or self.adapter.poll() is None:
@@ -114,9 +131,20 @@ class ProcessHandle(JobHandleSpec):
         try:
             os.killpg(self.adapter.pid, 0)
         except ProcessLookupError:
+            self._group_exit_confirmed = True
             return True
         except (OSError, AttributeError):
             return False
+        if sys.platform == "linux":
+            # Zombies retain the PGID but cannot execute or write. Inspect
+            # threads too: a zombie main thread can have live worker threads.
+            # Require two complete observations to cover a concurrent fork.
+            if (
+                linux_process_group_has_live_members(self.adapter.pid) is False
+                and linux_process_group_has_live_members(self.adapter.pid) is False
+            ):
+                self._group_exit_confirmed = True
+                return True
         return False
 
 
@@ -155,11 +183,16 @@ class ProcessJobLauncher(JobLauncherSpec):
         argv = shlex.split(command, True)
 
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
-        process_adapter = spawn_process(argv, new_env)
-
-        return ProcessHandle(
-            process_adapter=process_adapter, owns_process_group=True, app_dir=workspace_obj.get_app_dir(job_id)
-        )
+        app_dir = workspace_obj.get_app_dir(job_id)
+        try:
+            process_adapter = spawn_process(argv, new_env)
+        except ProcessSpawnError as error:
+            handle = ProcessHandle(process_adapter=error.adapter, owns_process_group=True, app_dir=app_dir)
+            publish_job_handle(handle, fl_ctx)
+            raise
+        handle = ProcessHandle(process_adapter=process_adapter, owns_process_group=True, app_dir=app_dir)
+        publish_job_handle(handle, fl_ctx)
+        return handle
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:

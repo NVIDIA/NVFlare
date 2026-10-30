@@ -107,7 +107,11 @@ class JobHandleSpec(ABC):
 
     @abstractmethod
     def terminate(self):
-        """To terminate the job run.
+        """Request cancellation of the job run.
+
+        Returning from this method does not establish that execution stopped.
+        Call wait() before releasing ownership, credentials or reservations.
+        A failed cancellation must not cache a terminal result.
 
         Returns: None
 
@@ -125,9 +129,13 @@ class JobHandleSpec(ABC):
 
     @abstractmethod
     def wait(self):
-        """To wait until the job run complete.
+        """Wait until the owned execution is confirmed stopped.
 
-        Returns: returns until the job run complete.
+        Cancellation acknowledgements, observation errors and missing evidence
+        must not cause an early return. Retain ownership while retrying, or
+        raise so the caller can continue reconciliation.
+
+        Returns: None, after confirmed shutdown.
 
         """
         raise NotImplementedError()

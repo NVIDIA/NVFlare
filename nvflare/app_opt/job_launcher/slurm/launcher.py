@@ -25,7 +25,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -544,7 +550,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         if self.manager is None:
             raise SlurmLauncherError("nested Slurm job launch is unavailable inside a Slurm child process")
         plan = self._build_launch_plan(job_meta, fl_ctx)
-        return self.manager.launch(plan)
+        return self.manager.launch(plan, on_handle=lambda handle: publish_job_handle(handle, fl_ctx))
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if self.manager is None:

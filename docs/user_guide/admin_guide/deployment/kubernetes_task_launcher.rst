@@ -61,6 +61,38 @@ Do not clear an unresolved finalizer solely to remove a stuck Pod. Verify runtim
 shutdown before operator reconciliation after CP loss, node loss or missing
 settlement evidence. No timeout or subsequent 404 substitutes for that proof.
 
+Job Pod settlement
+------------------
+
+The shared Kubernetes job launcher applies the same shutdown requirement to
+client and server job Pods in both job and task modes. Each Pod carries the
+``nvflare.nvidia.com/job-settlement`` finalizer. Cancellation sends a
+UID-preconditioned DELETE, then keeps the job registration, credentials and
+resource reservation while observing shutdown. A successful DELETE request,
+transport error or unexplained 404 does not release ownership.
+
+For a scheduled Pod, settlement requires shutdown evidence for every regular,
+init and ephemeral container, plus the
+``PodReadyToStartContainers=False`` condition showing the sandbox has stopped.
+Containers must be terminated, except that a failed non-restartable init
+container in a ``Never`` Pod can prove later init and regular containers never
+started. That exception also requires explicit waiting status without a runtime
+ID or restart history. Generic waiting snapshots, missing status and PodGC
+node-loss transitions do not qualify. An unscheduled Pod can
+settle after deletion is observed while it remains unbound. After proving
+shutdown, the launcher removes only its own finalizer using UID and
+resource-version checks; cancellation also waits for confirmed Pod removal.
+Completed job Pods remain available for inspection as before.
+
+The client and server parent accounts need ``patch`` on ``pods`` in their job
+namespace to remove this finalizer. The bundled Helm Roles include it. Update
+custom Roles before upgrading; otherwise stopped Pods remain fenced. Parents
+must remain alive for cleanup. If a parent or node is lost, verify the runtime
+has stopped before manually removing its finalizer or releasing reservations.
+For a still-running parent that has observed the deleting Pod's UID and finalizer,
+removing the finalizer after that verification lets its next 404 settle the handle.
+There is no timeout-based release or automatic adoption after parent restart.
+
 Site prerequisites
 ------------------
 
@@ -338,14 +370,16 @@ without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
 its existing resource semantics. Images must contain the same reviewed
 framework source and the required application dependencies.
 
-Task cleanup and CJ recovery require kubelet ``PodReadyToStartContainers`` teardown
-evidence and terminal container statuses. The condition is
+The cluster must expose kubelet ``PodReadyToStartContainers`` teardown evidence
+and terminal container statuses for all Kubernetes job Pods, including resident
+CJs, server jobs, and task workers. The condition is
 `enabled by default since Kubernetes 1.29 <https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/>`_.
-If it is absent or disabled, cleanup cannot be confirmed and CJ recovery stops
-after its cleanup timeout (60 seconds by default). Unsettled workers remain
-owned by CP. Disable admission-injected long-lived containers for the
-qualified worker profile; the handle nevertheless checks every admitted main,
-init and ephemeral container before cleanup. No force deletion, in-place
+Missing evidence retains ownership and prevents replacement; the job launcher
+logs the missing sandbox condition. After confirmed CJ shutdown, recovery waits
+up to its cleanup timeout (60 seconds by default) for CP-owned workers to settle
+before declining replacement. Disable admission-injected long-lived containers
+for the qualified worker profile; the handle nevertheless checks every admitted
+main, init and ephemeral container before cleanup. No force deletion, in-place
 worker retry, Job controller or TTL deletion is used. See Kubernetes
 `Pod lifecycle <https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/>`_
 and `finalizers <https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/>`_.

@@ -853,7 +853,6 @@ def test_parent_abort_seals_cp_task_owner_before_deleting_cj(setup, state):
     worker = launcher.launch_task(request)
     api.running()
     parent_api = Mock()
-    parent_api.read_namespaced_pod.return_value = NS(status=NS(phase=state))
     cj = K8sJobHandle(
         "cj",
         parent_api,
@@ -866,6 +865,12 @@ def test_parent_abort_seals_cp_task_owner_before_deleting_cj(setup, state):
             "volume_list": [],
         },
     )
+    parent_pod = NS(
+        metadata=NS(uid="cj-uid", finalizers=cj.get_manifest()["metadata"]["finalizers"], deletion_timestamp=None),
+        status=NS(phase=state),
+    )
+    parent_api.read_namespaced_pod.return_value = parent_pod
+    cj.bind_pod(parent_pod)
     owner = cj.task_owner = Mock()
     owner.close.side_effect = worker.request_cancel
     owner.release.side_effect = worker.request_cancel

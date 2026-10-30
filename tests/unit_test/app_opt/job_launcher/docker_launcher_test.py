@@ -586,6 +586,7 @@ def _make_fl_ctx(
     workspace_obj=None,
     secure_mode=False,
     allocated_resources=None,
+    handle_callback=None,
 ):
     if workspace_obj is None:
         workspace_obj = _make_workspace_obj()
@@ -607,6 +608,7 @@ def _make_fl_ctx(
         FLContextKey.ARGS: SimpleNamespace(set=set_list) if set_list is not None else None,
         FLContextKey.SECURE_MODE: secure_mode,
         FLContextKey.ALLOCATED_RESOURCES: allocated_resources,
+        FLContextKey.JOB_HANDLE_CALLBACK: handle_callback,
     }.get(key)
 
     return fl_ctx, job_args
@@ -630,6 +632,37 @@ def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resourc
 
 
 class TestDockerJobLauncherLaunchJob:
+    @pytest.mark.parametrize("startup_error", [None, RuntimeError, KeyboardInterrupt])
+    def test_publishes_handle_before_startup_and_cancels_on_startup_error(self, startup_error):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        dc.containers.run.return_value.id = "abc123"
+        dc.containers.get.return_value = _make_container("running")
+        published = []
+        fl_ctx, _ = _make_fl_ctx(handle_callback=published.append)
+
+        def enter_states(handle, states):
+            assert published == [handle]
+            if startup_error is not None:
+                raise startup_error("startup interrupted")
+            return True
+
+        with patch.object(DockerJobHandle, "enter_states", autospec=True, side_effect=enter_states):
+            if startup_error is KeyboardInterrupt:
+                with pytest.raises(KeyboardInterrupt, match="startup interrupted"):
+                    launcher.launch_job(_make_job_meta(), fl_ctx)
+            else:
+                assert launcher.launch_job(_make_job_meta(), fl_ctx) is published[0]
+
+        assert len(published) == 1
+        assert published[0].container_id == "abc123"
+        if startup_error is not None:
+            dc.containers.get.return_value.stop.assert_called_once_with(timeout=0)
+            dc.containers.get.return_value.remove.assert_called_once_with(force=True)
+            assert published[0].poll() == JobReturnCode.ABORTED
+        else:
+            dc.containers.get.return_value.stop.assert_not_called()
+
     def test_launch_raises_if_image_missing_for_configured_site(self):
         launcher = _make_launcher()
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
@@ -718,9 +751,10 @@ class TestDockerJobLauncherLaunchJob:
     def test_launch_preserves_secure_parent_url(self):
         launcher = _make_launcher()
         dc = launcher._docker_client
-        container = MagicMock()
+        container = _make_container("running")
         container.id = "abc123"
         dc.containers.run.return_value = container
+        dc.containers.get.return_value = container
 
         fl_ctx, _ = _make_fl_ctx(
             identity_name="site-1",
@@ -2013,3 +2047,90 @@ class TestDockerJobLauncherStudyRuntime:
         with pytest.raises(ValueError, match="Kubernetes-only"):
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["inspect", "stop", "remove", "transport"])
+def test_failed_docker_cancel_waits_for_backend_recovery(monkeypatch, failure):
+    from types import SimpleNamespace
+
+    dc = _make_docker_client()
+    container = _make_container("running")
+    if failure == "inspect":
+        dc.containers.get.side_effect = _APIError("daemon unavailable")
+    else:
+        dc.containers.get.return_value = container
+        method = container.remove if failure == "remove" else container.stop
+        method.side_effect = ConnectionError("reply lost") if failure == "transport" else _APIError("cancel failed")
+    handle = _make_handle(docker_client=dc)
+    handle.terminate()
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert handle.terminal_state is None
+    recovered = []
+
+    def recover(_delay):
+        assert handle.terminal_state is None
+        assert container.status == "running"
+        recovered.append(True)
+        dc.containers.get.side_effect = None
+        dc.containers.get.return_value = container
+        container.stop.side_effect = None
+        container.remove.side_effect = None
+
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.docker_launcher.time", SimpleNamespace(sleep=recover))
+    handle.wait()
+    assert recovered
+    assert handle.poll() == JobReturnCode.ABORTED
+
+
+def test_docker_wait_does_not_return_on_observation_outage(monkeypatch):
+    from types import SimpleNamespace
+
+    dc = _make_docker_client()
+    dc.containers.get.side_effect = _APIError("daemon unavailable")
+    handle = _make_handle(docker_client=dc)
+    recovered = []
+
+    def recover(_delay):
+        assert handle.terminal_state is None
+        recovered.append(True)
+        dc.containers.get.side_effect = None
+        dc.containers.get.return_value = _make_container("exited")
+
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.docker_launcher.time", SimpleNamespace(sleep=recover))
+    handle.wait()
+    assert recovered
+    assert handle.poll() == JobReturnCode.SUCCESS
+
+
+@pytest.mark.parametrize("failure", ["exception", "missing-return", "server-abort"])
+def test_executor_keeps_published_docker_owner_during_cancel_outage(tmp_path, monkeypatch, failure):
+    from tests.unit_test.private.fed.client.client_executor_test import assert_published_backend_cleanup
+
+    client = _make_docker_client()
+    container = _make_container()
+    client.containers.get.return_value = container
+    container.stop.side_effect = _APIError("cancel unavailable")
+    handle = _make_handle(docker_client=client, watch_exit=False)
+
+    def advance(step):
+        if step == 1:
+            # Recovering inspection alone must not release a running CJ.
+            assert container.status == "running"
+        else:
+            container.stop.side_effect = None
+
+    if failure == "server-abort":
+        from tests.unit_test.private.fed.server.server_engine_test import assert_server_backend_cleanup
+
+        assert_server_backend_cleanup(handle, "nvflare.app_opt.job_launcher.docker_launcher", monkeypatch, advance)
+    else:
+        assert_published_backend_cleanup(
+            tmp_path,
+            handle,
+            "nvflare.app_opt.job_launcher.docker_launcher",
+            monkeypatch,
+            advance,
+            failure == "missing-return",
+        )
+    assert container.stop.call_count >= 3
+    container.remove.assert_called_once_with(force=True)

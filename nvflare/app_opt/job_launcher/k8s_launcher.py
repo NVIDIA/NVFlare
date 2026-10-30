@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import ssl
 import threading
 import time
 import uuid
@@ -80,6 +81,29 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 ENV_CJ_POD_IP = "NVFLARE_K8S_CJ_POD_IP"
+
+JOB_SETTLEMENT_FINALIZER = "nvflare.nvidia.com/job-settlement"
+_JOB_LAUNCH_LABEL = "nvflare.nvidia.com/job-launch"
+_JOB_API_REQUEST_TIMEOUT = 5
+
+
+def _create_was_not_sent(error):
+    """Recognize connection failures before an HTTP request can reach the API."""
+    if isinstance(error, (ConnectionRefusedError, ssl.SSLCertVerificationError)):
+        return True
+    try:
+        from urllib3.exceptions import ConnectTimeoutError, MaxRetryError, SSLError
+    except ImportError:
+        return False
+
+    if isinstance(error, MaxRetryError):
+        return _create_was_not_sent(error.reason)
+    if isinstance(error, SSLError) and error.args and isinstance(error.args[0], ssl.SSLCertVerificationError):
+        # Certificate verification happens before the HTTP request. Generic
+        # SSL errors may also occur after a request was sent and stay ambiguous.
+        return True
+    return isinstance(error, ConnectTimeoutError)
+
 
 _STARTUP_FEDERATION_LABEL = "nvflare.nvidia.com/startup-federation"
 
@@ -330,7 +354,6 @@ class K8sJobHandle(JobHandleSpec):
         self.task_owner = None
         self.pod_uid = None
         self.workspace_reservation = None
-        self._termination_requested = False
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -340,6 +363,24 @@ class K8sJobHandle(JobHandleSpec):
         self.python_path = python_path
         self.pod_manifest = build_pod_manifest(job_config, python_path, pod_manifest_template)
         self._job_container_name = job_config.get("container_name", "nvflare_job")
+        self._settlement_lock = threading.RLock()
+        self._launch_identity = uuid.uuid4().hex
+        self._termination_requested = False
+        self._delete_sent = False
+        self._shutdown_proved = False
+        self._shutdown_state = None
+        self._settlement_finalizer_seen = False
+        self._deleting_with_finalizer_seen = False
+        self._missing_sandbox_evidence_logged = False
+        self._resources_released = False
+        metadata = self.pod_manifest["metadata"]
+        ensure_manifest_mapping(metadata, "labels", "pod metadata labels")[_JOB_LAUNCH_LABEL] = self._launch_identity
+        finalizers = metadata.get("finalizers") or []
+        if not isinstance(finalizers, list):
+            raise ValueError("job Pod finalizers must be a list")
+        metadata["finalizers"] = [*finalizers]
+        if JOB_SETTLEMENT_FINALIZER not in finalizers:
+            metadata["finalizers"].append(JOB_SETTLEMENT_FINALIZER)
         self._stuck_count = 0
         self._pending_since = None
         # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
@@ -358,7 +399,7 @@ class K8sJobHandle(JobHandleSpec):
         if not all([isinstance(js, JobState) for js in job_states_to_enter]):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
-            if self.terminal_state is not None:
+            if self.terminal_state is not None or self._termination_requested:
                 return False
             pod = self._query_pod()
             if self.terminal_state is not None:
@@ -371,7 +412,12 @@ class K8sJobHandle(JobHandleSpec):
             if job_state in job_states_to_enter:
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
-                self._record_terminal_state(pod, pod_phase)
+                try:
+                    self._record_terminal_state(pod, pod_phase)
+                except Exception as error:
+                    # Keep the accepted handle available to its parent's wait
+                    # loop if finalizer cleanup is temporarily unavailable.
+                    self.logger.warning("job Pod settlement is unconfirmed: %s", type(error).__name__)
                 return False
             elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
@@ -379,12 +425,15 @@ class K8sJobHandle(JobHandleSpec):
             time.sleep(POLL_INTERVAL)
 
     def _release_job_resources(self) -> None:
+        if self._resources_released:
+            return
         if self.task_owner is not None:
             self.task_owner.release()
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
             self.workspace_transfer = None
         self._delete_credential_secret()
+        self._resources_released = True
 
     def _delete_credential_secret(self) -> None:
         """Delete the per-job credential Secret once the job is terminal.
@@ -398,7 +447,9 @@ class K8sJobHandle(JobHandleSpec):
         from kubernetes.client.rest import ApiException
 
         try:
-            self.api_instance.delete_namespaced_secret(name=self.credential_secret_name, namespace=self.namespace)
+            self.api_instance.delete_namespaced_secret(
+                name=self.credential_secret_name, namespace=self.namespace, _request_timeout=_JOB_API_REQUEST_TIMEOUT
+            )
         except ApiException as e:
             if getattr(e, "status", None) != 404:
                 self.logger.warning("failed to delete credential Secret")
@@ -406,35 +457,86 @@ class K8sJobHandle(JobHandleSpec):
             self.logger.warning("failed to delete credential Secret")
         self.credential_secret_name = None
 
-    def terminate(self):
-        self._termination_requested = True
-        # Fence task admission before deleting CJ. CP retains worker cleanup.
-        if self.task_owner is not None:
-            self.task_owner.close()
-        from kubernetes.client.rest import ApiException
+    def bind_pod(self, pod):
+        """Pin the UID returned by create before publishing an accepted handle."""
+        uid = pod.metadata.uid
+        if not isinstance(uid, str) or not uid:
+            raise RuntimeError("accepted job Pod has no UID")
+        if self.pod_uid is not None and self.pod_uid != uid:
+            raise RuntimeError("job Pod UID changed; retaining ownership")
+        self.pod_uid = uid
+        if JOB_SETTLEMENT_FINALIZER in (pod.metadata.finalizers or []):
+            self._settlement_finalizer_seen = True
+            if pod.metadata.deletion_timestamp:
+                self._deleting_with_finalizer_seen = True
 
+    def _request_delete(self):
+        if self._delete_sent or self.pod_uid is None:
+            return
         try:
             self.api_instance.delete_namespaced_pod(
-                name=self.pod_name, namespace=self.namespace, grace_period_seconds=0
+                name=self.pod_name,
+                namespace=self.namespace,
+                body={"preconditions": {"uid": self.pod_uid}, "gracePeriodSeconds": 0},
+                _request_timeout=_JOB_API_REQUEST_TIMEOUT,
             )
-            self.terminal_state = JobState.TERMINATED
-        except ApiException as e:
-            if getattr(e, "status", None) == 404:
-                # Expected when terminate() runs as an idempotent cleanup after the
-                # pod already exited gracefully (e.g. server abort path where the SJ
-                # left on its own before the safety-net terminate fires). Not an
-                # event of interest for operators monitoring logs.
-                self.logger.debug(
-                    f"job {self.job_id} pod {self.pod_name} not found during termination; assuming terminated"
-                )
-            else:
-                self.logger.error(f"failed to terminate job {self.job_id} pod {self.pod_name}: {e}")
-            self.terminal_state = JobState.TERMINATED
-        except Exception as e:
-            self.logger.error(f"unexpected error terminating job {self.job_id} pod {self.pod_name}: {e}")
-            self.terminal_state = JobState.TERMINATED
-        self._release_job_resources()
-        return None
+            self._delete_sent = True
+        except Exception as error:
+            # Neither a DELETE acknowledgement nor an error/404 is shutdown
+            # evidence. The finalizer preserves the Pod for kubelet observation.
+            self.logger.warning("job Pod cancellation is unconfirmed: %s", type(error).__name__)
+
+    def terminate(self):
+        """Seal admission and request deletion without declaring shutdown."""
+        with self._settlement_lock:
+            self._termination_requested = True
+            if self.terminal_state is not None:
+                return
+            if self.task_owner is not None:
+                self.task_owner.close()
+            if self.pod_uid is None:
+                self._query_pod()
+            self._request_delete()
+
+    def _log_missing_sandbox_evidence(self, pod):
+        if self._missing_sandbox_evidence_logged or not getattr(pod.spec, "node_name", None):
+            return
+        conditions = getattr(pod.status, "conditions", None) or []
+        if pod.status.phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value) and not any(
+            condition.type == "PodReadyToStartContainers" and condition.status == "False" for condition in conditions
+        ):
+            self.logger.warning(
+                "job %s Pod %s cannot settle: missing PodReadyToStartContainers=False sandbox evidence",
+                self.job_id,
+                self.pod_name,
+            )
+            self._missing_sandbox_evidence_logged = True
+
+    def _confirm_shutdown(self, pod):
+        if not pod_shutdown_confirmed(pod):
+            self._log_missing_sandbox_evidence(pod)
+            return False
+        self._shutdown_proved = True
+        metadata = pod.metadata
+        finalizers = metadata.finalizers or []
+        if JOB_SETTLEMENT_FINALIZER in finalizers:
+            # Pin both UID and version; never remove another controller's fence.
+            self.api_instance.patch_namespaced_pod(
+                name=self.pod_name,
+                namespace=self.namespace,
+                _request_timeout=_JOB_API_REQUEST_TIMEOUT,
+                body=[
+                    {"op": "test", "path": "/metadata/uid", "value": self.pod_uid},
+                    {"op": "test", "path": "/metadata/resourceVersion", "value": metadata.resource_version},
+                    {"op": "test", "path": "/metadata/finalizers", "value": finalizers},
+                    {
+                        "op": "replace",
+                        "path": "/metadata/finalizers",
+                        "value": [value for value in finalizers if value != JOB_SETTLEMENT_FINALIZER],
+                    },
+                ],
+            )
+        return True
 
     def _terminate_for_timeout(self, reason: str):
         self._terminate_for_exception(reason)
@@ -450,8 +552,13 @@ class K8sJobHandle(JobHandleSpec):
         return JOB_RETURN_CODE_MAPPING.get(job_state)
 
     def _record_terminal_state(self, pod, pod_phase):
-        self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-        if self.terminal_state == JobState.TERMINATED:
+        if not pod_shutdown_confirmed(pod):
+            self._log_missing_sandbox_evidence(pod)
+            return False
+        # Preserve the exit outcome if the finalizer patch succeeds but its
+        # response is lost and the next observation is an authoritative 404.
+        self._shutdown_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
+        if self._shutdown_state == JobState.TERMINATED:
             job_container_name = self._job_container_name
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
@@ -472,39 +579,75 @@ class K8sJobHandle(JobHandleSpec):
                 elif isinstance(exit_code, int) and exit_code != 0:
                     self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
                 break
+        if not self._confirm_shutdown(pod):
+            return False
         self._release_job_resources()
+        self.terminal_state = self._shutdown_state
+        return True
 
     def poll(self):
-        if self.terminal_state is not None:
-            return self._get_return_code(self.terminal_state)
-        pod = self._query_pod()
-        if self.terminal_state is not None:
-            return self._get_return_code(self.terminal_state)
-        pod_phase = self._get_pod_phase(pod)
-        if self._handle_starting_pod(pod, pod_phase):
-            return self._get_return_code(self.terminal_state)
-        job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-        if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
-            self._record_terminal_state(pod, pod_phase)
-        return self._get_return_code(job_state)
+        with self._settlement_lock:
+            if self.terminal_state is not None:
+                return self._get_return_code(self.terminal_state)
+            try:
+                if self._termination_requested:
+                    self._request_delete()
+                pod = self._query_pod()
+                if self.terminal_state is not None:
+                    return self._get_return_code(self.terminal_state)
+                if pod is None:
+                    return JobReturnCode.UNKNOWN
+                if self._termination_requested:
+                    # Read after DELETE, not its stale pre-deletion snapshot.
+                    if not self._delete_sent:
+                        self._request_delete()
+                        return JobReturnCode.UNKNOWN
+                    self._confirm_shutdown(pod)
+                    # Even after finalizer release, observe actual removal.
+                    return JobReturnCode.UNKNOWN
+                pod_phase = self._get_pod_phase(pod)
+                if self._handle_starting_pod(pod, pod_phase):
+                    return JobReturnCode.UNKNOWN
+                if pod_phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value):
+                    if self._record_terminal_state(pod, pod_phase):
+                        return self._get_return_code(self.terminal_state)
+                return JobReturnCode.UNKNOWN
+            except Exception as error:
+                self.logger.warning("job Pod settlement is unconfirmed: %s", type(error).__name__)
+                return JobReturnCode.UNKNOWN
 
     def _query_pod(self):
-        from kubernetes.client.rest import ApiException
-
         try:
-            return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
-        except ApiException as e:
-            if getattr(e, "status", None) == 404:
-                self.logger.info(
-                    f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
+            pod = self.api_instance.read_namespaced_pod(
+                name=self.pod_name, namespace=self.namespace, _request_timeout=_JOB_API_REQUEST_TIMEOUT
+            )
+            if self.pod_uid is None:
+                if (pod.metadata.labels or {}).get(_JOB_LAUNCH_LABEL) != self._launch_identity:
+                    raise RuntimeError("cannot identify accepted job Pod")
+            self.bind_pod(pod)
+            return pod
+        except Exception as error:
+            # An observed finalizer on this UID prevents API removal until a
+            # controller or operator clears it. The runbook requires the
+            # operator to verify runtime shutdown before doing so.
+            if getattr(error, "status", None) == 404 and (
+                self._shutdown_proved
+                or (
+                    self.pod_uid is not None
+                    and self._settlement_finalizer_seen
+                    and (self._delete_sent or self._deleting_with_finalizer_seen)
                 )
-                self.terminal_state = JobState.TERMINATED
+            ):
+                if not self._shutdown_proved:
+                    self.logger.warning(
+                        "job %s Pod %s finalizer was removed outside this handle", self.job_id, self.pod_name
+                    )
                 self._release_job_resources()
+                self.terminal_state = (
+                    JobState.TERMINATED if self._termination_requested else self._shutdown_state or JobState.TERMINATED
+                )
             else:
-                self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
-            return None
-        except Exception as e:
-            self.logger.warning(f"unexpected error querying pod for job {self.job_id} pod {self.pod_name}: {e}")
+                self.logger.warning("job Pod observation is unconfirmed: %s", type(error).__name__)
             return None
 
     def _query_phase(self):
@@ -697,19 +840,8 @@ class K8sJobHandle(JobHandleSpec):
         return conditions if isinstance(conditions, (list, tuple)) else []
 
     def wait(self):
-        while True:
-            if self.terminal_state is not None:
-                return
-            pod = self._query_pod()
-            if self.terminal_state is not None:
-                return
-            pod_phase = self._get_pod_phase(pod)
-            if self._handle_starting_pod(pod, pod_phase):
-                return
-            job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-            if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
-                self._record_terminal_state(pod, pod_phase)
-                return
+        """Retain ownership through API failures until shutdown is proved."""
+        while self.poll() == JobReturnCode.UNKNOWN:
             time.sleep(POLL_INTERVAL)
 
     def can_restart(self):
@@ -1204,7 +1336,7 @@ class K8sJobLauncher(JobLauncherSpec):
             )
             pod_create_attempted = True
             created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
-            job_handle.pod_uid = created_pod.metadata.uid
+            job_handle.bind_pod(created_pod)
             if job_handle.task_owner is not None:
                 job_handle.task_owner.attach_cj(pod_name, created_pod.metadata.uid)
             if credential_secret_name:
@@ -1212,7 +1344,16 @@ class K8sJobLauncher(JobLauncherSpec):
         except Exception as e:
             # A transport/5xx error can hide a successful create. Keep its
             # workspace fenced; a later empty read is not proof it never ran.
-            rejected = getattr(e, "status", None) in {400, 401, 403, 404, 405, 413, 415, 422, 429}
+            rejected = getattr(e, "status", None) in {400, 401, 403, 404, 405, 413, 415, 422, 429} or (
+                pod_create_attempted and _create_was_not_sent(e)
+            )
+            if "job_handle" in locals() and pod_create_attempted and (created_pod is not None or not rejected):
+                # An accepted or ambiguous create still belongs to this handle.
+                # Preserve credentials, transfer state and the CP cleanup owner.
+                job_handle.terminal_return_code = JobReturnCode.EXCEPTION
+                publish_job_handle(job_handle, fl_ctx)
+                job_handle.terminate()
+                return job_handle
             if previous is None and created_pod is None and (not pod_create_attempted or rejected):
                 for directory, device, inode in workspace_reservations:
                     self._discard_empty_workspace(directory, device, inode)

@@ -114,15 +114,16 @@ Each launched job uses one transient directory:
   sandbox_root/  # container modes only
 ```
 
-The job key is the SHA-256 digest of the NVFlare job ID. Runtime identity is deterministic:
+The job key is the SHA-256 digest of the NVFlare job ID. Each submission adds a random launch suffix:
 
 ```text
-job name = nvfl-<first-32-site-name-characters>-<first-8-job-key>
+job name = nvfl-<first-32-site-name-characters>-<first-8-job-key>-<16-hex-launch-suffix>
 comment  = nvfl:<job-id>
 ```
 
-The scheduler ID exists only in the live handle. The launcher removes job artifacts after submission failure or
-terminal completion. A leftover directory blocks relaunch of the same job ID until an operator verifies that no old
+The scheduler ID exists only in the live handle. The launcher removes job artifacts after confirmed submission
+rejection or terminal completion. Uncertain submissions retain a cleanup handle and their files. A leftover
+directory blocks relaunch of the same job ID until an operator verifies that no old
 allocation uses it and removes it.
 
 Duplicate protection is also in memory: one parent refuses a second launch while its live-handle map contains the
@@ -136,13 +137,21 @@ Launch proceeds as follows:
 2. Create the job artifact directory and render its batch and secret-environment files.
 3. Invoke `sbatch --parsable` once with structured arguments, a scrubbed scheduler environment, and the configured
    `submit_timeout`.
-4. Accept exactly one parsed bare job ID, add its handle to the live-handle map, and return it.
+4. Accept exactly one parsed bare job ID, publish its handle to the parent, and return it.
 
 An invocation timeout, exception, or output other than one line matching the Slurm job-ID format fails the launch.
-The manager immediately removes the job's artifacts.
+If acceptance remains possible, the manager publishes a cleanup handle before propagating the failure. It retains
+the files and requests cancellation. A known ID is monitored directly; otherwise `squeue` recovers the ID using
+the exact launch name, submitting UID and comment. If the allocation has already left the live queue, `sacct`
+can recover it by the unique launch name and submitting user. Accounting lookup starts one minute before
+submission, so a lost reply across midnight can still be reconciled without scanning all accounting history.
+Unknown-ID accounting retries back off from six seconds to a maximum one-minute interval.
+Empty or unavailable lookups leave an unidentified submission
+unsettled; the manager never resubmits it. Explicit rejection and known command-spawn failures clean up immediately.
 
-An out-of-contract `job-id;cluster` result triggers one best-effort `scancel -M`, a critical log, and an
-infrastructure launch failure.
+An out-of-contract `job-id;cluster` result triggers `scancel -M`, a critical log, and an infrastructure launch
+failure. Its cleanup handle retains ownership and directs subsequent observation and cancellation to that returned
+cluster until settlement. This cleanup path does not enable multi-cluster job deployment or CJ restart.
 
 ## Monitoring and results
 
@@ -152,7 +161,7 @@ job. Rows with other IDs are still ignored, and the selected row must match the 
 comment.
 
 When a job is absent from `squeue`, `sacct --jobs=<job-id>` is authoritative. The returned allocation must match the
-exact ID, deterministic job name, and submitting user.
+exact ID, unique launch name, and submitting user.
 
 An accounting outage leaves the handle non-terminal. If five successful `sacct` queries at least six seconds apart
 all return no record for a known job, the launcher reports an infrastructure exception. It does not infer a worker
@@ -185,9 +194,8 @@ any in-progress submission boundary; it does not perform a second cancellation s
 - After a parent crash, surviving Slurm allocations and their job artifacts are not cleaned up by the launcher. This
   matches the Docker and Kubernetes launchers; allocations remain bounded by their Slurm wall-time and normal
   FL-layer rejection.
-- An `sbatch` timeout fails the FL dispatch even if Slurm accepted the job, matching a timed-out Docker or Kubernetes
-  create. Removing `secret.env` prevents a pending allocation from starting unless a later launch of the same
-  job ID recreates that deterministic path first. Sites can increase `submit_timeout` to reduce this risk.
+- An unidentified submission whose scheduler records never become observable remains fenced while the parent is
+  alive. Operators must reconcile it with scheduler records; elapsed time alone cannot prove it was rejected.
 
 ## Execution backends and secrets
 
