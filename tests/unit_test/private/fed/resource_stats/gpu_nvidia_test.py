@@ -23,6 +23,11 @@ from nvflare.private.fed.resource_stats.contract import normalize_measurement
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cuda_visibility(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+
 class _FakeFunction:
     def __init__(self, implementation):
         self.implementation = implementation
@@ -216,8 +221,20 @@ def test_missing_driver_is_unavailable_even_when_environment_looks_empty(monkeyp
     assert gpu_nvidia.probe_gpu() is None
 
 
-@pytest.mark.parametrize("mask", [None, "", "0", "1,0", "0,1,2,3"])
-def test_raw_visible_devices_never_sets_or_overrides_driver_count(monkeypatch, mask):
+def test_exact_empty_visible_devices_skips_native_initialization(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    driver = _driver(count=2)
+    nvml = _nvml([])
+    _install(monkeypatch, driver, nvml)
+
+    assert gpu_nvidia.probe_gpu() == {"groups": []}
+    assert driver.calls == []
+    assert nvml.calls == []
+    assert gpu_nvidia.os.environ["CUDA_VISIBLE_DEVICES"] == ""
+
+
+@pytest.mark.parametrize("mask", [None, " ", "-1", "0", "1,0", "0,1,2,3", "GPU-abcd", "MIG-abcd", "invalid"])
+def test_nonempty_visible_devices_never_sets_or_overrides_driver_count(monkeypatch, mask):
     if mask is None:
         monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     else:

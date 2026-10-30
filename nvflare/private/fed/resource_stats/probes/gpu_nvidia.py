@@ -14,11 +14,12 @@
 
 """Measure CUDA devices available to this process with the system Driver API.
 
-The Driver count is numeric authority. Driver metadata and NVML classification
-are optional: neither can add, remove, or silently relabel a counted ordinal.
-No CUDA Runtime, framework package, command, or environment-string parser is
-used. UUIDs remain private to this call and never enter a report. This module is
-also a standalone helper: keep its imports limited to the Python standard library.
+An explicitly empty CUDA_VISIBLE_DEVICES hides every GPU without initializing
+the Driver. Otherwise the Driver count is numeric authority. Driver metadata
+and NVML classification are optional: neither changes the counted ordinals.
+No CUDA Runtime, framework package, command, or device-list parser is used.
+UUIDs remain private to this call and never enter a report. This module is also
+a standalone helper: keep its imports limited to the Python standard library.
 """
 
 from __future__ import annotations
@@ -192,16 +193,22 @@ def _classify_with_nvml(devices: list[dict[str, Any]]) -> None:
 def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
     """Return one capacity group per kind/model/memory set, or unknown.
 
-    A successful Driver count of zero and explicit CUDA_ERROR_NO_DEVICE are
-    observed zero. No loadable Driver, other Driver errors, or a count outside
-    0..4096 are unavailable. Classification failures never change a known
-    positive count. Each Driver ordinal contributes to one group exactly once.
+    With a loadable Driver, an exactly empty CUDA_VISIBLE_DEVICES is observed
+    zero without native initialization. Otherwise a successful Driver count of
+    zero and explicit CUDA_ERROR_NO_DEVICE are observed zero. No loadable Driver,
+    other Driver errors, or a count outside 0..4096 are unavailable.
+    Classification failures never change a known positive count. Each Driver
+    ordinal contributes to one group exactly once.
     Counts are integer-valued decimal strings, matching the capacity contract.
     """
 
     driver = _load_driver()
     if driver is None:
         return None
+    # CUDA defines the exact empty mask as no visible devices. Avoid waking
+    # GPUs for an explicitly CPU-only execution; all other masks use the Driver.
+    if os.environ.get("CUDA_VISIBLE_DEVICES") == "":
+        return {"groups": []}
     count = _driver_count(driver)
     if count is None:
         return None

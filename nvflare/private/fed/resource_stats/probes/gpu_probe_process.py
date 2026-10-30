@@ -106,8 +106,8 @@ class GpuProbe:
                 pass
             return deepcopy(self._value)
 
-    def close(self):
-        """Release the initialization hold and reap only this owner's helper."""
+    def close(self, *, wait: bool = True):
+        """Release this owner's helper; wait=False kills and reaps off-thread."""
 
         if os.getpid() != self._owner_pid or self._closed:
             return
@@ -122,6 +122,15 @@ class GpuProbe:
         except OSError:
             pass
         try:
+            if not wait:
+                # Task completion must not wait for optional discovery or
+                # native shutdown. The helper remains in the owned execution
+                # scope; launcher settlement still accounts for its exit.
+                try:
+                    process.kill()
+                finally:
+                    self._start_reaper(process)
+                return
             if not self._completed:
                 # Do not add a graceful-exit wait to an unfinished discovery.
                 process.kill()
@@ -134,8 +143,7 @@ class GpuProbe:
             # A driver stuck in the kernel can defer even SIGKILL. Keep its
             # sole reaper alive without extending the execution's blocking
             # collection budget or handing it to an unrelated runtime owner.
-            self._reaper = threading.Thread(target=self._reap, args=(process,), daemon=True, name="gpu-probe-reap")
-            self._reaper.start()
+            self._start_reaper(process)
         except (OSError, subprocess.SubprocessError):
             pass
         finally:
@@ -144,6 +152,10 @@ class GpuProbe:
                     process.stdout.close()
             except OSError:
                 pass
+
+    def _start_reaper(self, process):
+        self._reaper = threading.Thread(target=self._reap, args=(process,), daemon=True, name="gpu-probe-reap")
+        self._reaper.start()
 
     @staticmethod
     def _reap(process):

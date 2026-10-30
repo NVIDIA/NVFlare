@@ -244,3 +244,62 @@ def test_kernel_delayed_exit_retains_a_reaper_without_blocking_owner(monkeypatch
         if session._reaper is not None:
             session._reaper.join(5)
         session.close()
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_nonblocking_result_reads_only_ready_output(monkeypatch, ready):
+    _, _, waits, _ = _helper(monkeypatch, b'{"groups":[]}\n', ready=ready)
+    session = probe.GpuProbe()
+    try:
+        assert session.result(timeout=0) == ({"groups": []} if ready else None)
+        assert waits == [0.0]
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("kill_error", [False, True])
+def test_nonblocking_close_kills_once_and_only_reaps_off_thread(monkeypatch, completed, kill_error):
+    process, _, _, lifecycle = _helper(monkeypatch, b'{"groups":[]}\n', ready=completed)
+    owner = threading.get_ident()
+    entered = threading.Event()
+    release = threading.Event()
+    reaped = threading.Event()
+    calls = []
+
+    def kill():
+        lifecycle.append("kill")
+        if kill_error:
+            raise OSError("helper already exited")
+
+    def wait(timeout=None):
+        calls.append((threading.get_ident(), timeout))
+        if threading.get_ident() == owner:
+            raise AssertionError("nonblocking close waited on its caller")
+        entered.set()
+        release.wait()
+        reaped.set()
+        return -9
+
+    process.kill = kill
+    process.wait = wait
+    session = probe.GpuProbe()
+    try:
+        assert session.result(timeout=0) == ({"groups": []} if completed else None)
+        session.close(wait=False)
+        assert entered.wait(5)
+        assert not reaped.is_set()
+        reaper = session._reaper
+        assert reaper.daemon and reaper.is_alive()
+        assert calls == [(reaper.ident, None)]
+        session.close(wait=False)
+        session.close()
+        assert session._reaper is reaper
+        assert lifecycle == ["release", "kill", "close-output"]
+    finally:
+        release.set()
+        if session._reaper is not None:
+            session._reaper.join(5)
+            assert not session._reaper.is_alive()
+        session.close()
+    assert reaped.is_set()
